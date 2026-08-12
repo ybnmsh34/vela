@@ -49,6 +49,8 @@ import { PlatformError } from './errors';
 const MAX_ECHO_BYTES = 4096;
 /** Mirrors `MAX_SECRET_BYTES` in `src-tauri/src/ipc/secrets.rs`. */
 const MAX_SECRET_BYTES = 8192;
+/** Mirrors `MAX_LABEL_LEN` in `vela-settings/src/provider_config.rs`. */
+const MAX_LABEL_LEN = 200;
 
 export interface BrowserAdapterOptions {
   /** Injectable clock so tests are deterministic. */
@@ -82,18 +84,67 @@ function parseEndpoint(raw: string, command: CommandName): URL {
   return url;
 }
 
-/** Mirrors `vela_settings::endpoint::EndpointUrl::scope`. */
+/**
+ * Mirrors `vela_settings::endpoint::EndpointUrl::scope`.
+ *
+ * The host classifies a **parsed host** — `url::Host::{Ipv4, Ipv6, Domain}` —
+ * and never a prefix of the raw string. This side has to do the same, because
+ * a string test is wrong in both directions: `127.evil.example` is a domain
+ * anybody can register (a `startsWith('127.')` test reports it as loopback and
+ * silences every warning), and `fdn.example.test` is not a ULA address. The
+ * whole family is pinned in `tests/parity/adapter-parity.json`.
+ *
+ * `URL` gives us the parse for free: WHATWG serialises an IPv4 host as a
+ * canonical dotted quad, an IPv6 host in brackets, and anything whose last
+ * label is numeric either becomes an IPv4 host or fails to parse at all.
+ */
 function networkScope(url: URL): NetworkScope {
-  // `URL` keeps IPv6 literals in brackets; strip them before comparing.
-  const host = url.hostname.replace(/^\[|]$/g, '').toLowerCase().replace(/\.$/, '');
+  const hostname = url.hostname;
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    return ipv6Scope(hostname.slice(1, -1).toLowerCase());
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) {
+    return ipv4Scope(hostname.split('.').map(Number) as [number, number, number, number]);
+  }
+  // `trim_end_matches('.')` in the host removes *every* trailing dot, so
+  // `gpu-box.local..` is still a LAN name.
+  return domainScope(hostname.toLowerCase().replace(/\.+$/, ''));
+}
 
-  if (host === 'localhost' || host.endsWith('.localhost')) return 'loopback';
-  if (host === '::1' || /^127\./.test(host)) return 'loopback';
-  if (host.endsWith('.local') || host.endsWith('.internal')) return 'privateNetwork';
-  if (/^10\./.test(host) || /^192\.168\./.test(host)) return 'privateNetwork';
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return 'privateNetwork';
-  if (/^169\.254\./.test(host) || host === '0.0.0.0') return 'privateNetwork';
-  if (/^f[cd]/.test(host) || /^fe[89ab]/.test(host)) return 'privateNetwork';
+/** Mirrors the `IpAddr::V4` arm of `vela_settings::endpoint::scope_of_ip`. */
+function ipv4Scope([a, b, c, d]: [number, number, number, number]): NetworkScope {
+  if (a === 127) return 'loopback'; // the whole 127.0.0.0/8, as `is_loopback`
+  if (a === 10) return 'privateNetwork';
+  if (a === 172 && b >= 16 && b <= 31) return 'privateNetwork';
+  if (a === 192 && b === 168) return 'privateNetwork';
+  if (a === 169 && b === 254) return 'privateNetwork'; // link-local
+  // Exactly `Ipv4Addr::UNSPECIFIED`, not the 0.0.0.0/8 block: the host compares
+  // against the one address, and 0.1.2.3 is public on both sides.
+  if (a === 0 && b === 0 && c === 0 && d === 0) return 'privateNetwork';
+  return 'publicNetwork';
+}
+
+/**
+ * Mirrors the `IpAddr::V6` arm of `vela_settings::endpoint::scope_of_ip`.
+ *
+ * `text` is the canonical compressed form, so the first group is the text
+ * before the first `:` — unless the address *starts* with the compression, in
+ * which case that group is zero. Only `::1` is loopback: a v4-mapped
+ * `::ffff:127.0.0.1` is not, on either side.
+ */
+function ipv6Scope(text: string): NetworkScope {
+  if (text === '::1') return 'loopback';
+  if (text === '::') return 'privateNetwork'; // `is_unspecified`
+  const first = text.startsWith(':') ? 0 : Number.parseInt(text.split(':')[0] ?? '', 16);
+  if ((first & 0xfe00) === 0xfc00) return 'privateNetwork'; // fc00::/7 unique-local
+  if ((first & 0xffc0) === 0xfe80) return 'privateNetwork'; // fe80::/10 link-local
+  return 'publicNetwork';
+}
+
+/** Mirrors the `Host::Domain` arm of `EndpointUrl::scope`. Suffixes, never prefixes. */
+function domainScope(name: string): NetworkScope {
+  if (name === 'localhost' || name.endsWith('.localhost')) return 'loopback';
+  if (name.endsWith('.local') || name.endsWith('.internal')) return 'privateNetwork';
   return 'publicNetwork';
 }
 
@@ -354,8 +405,28 @@ export class BrowserAdapter implements PlatformAdapter {
 
   #settingsPutProvider(request: SettingsPutProviderReq): ProviderView {
     const id = request.id.trim();
+    // The ORDER of these checks is part of the contract, not an accident. It
+    // mirrors the host: `TryFrom<SettingsPutProviderReq> for ProviderConfig`
+    // binds the auth mode first and parses the endpoint second, and only then
+    // does `ProviderConfig::validated` look at the id, the display name and the
+    // model id. A payload with two faults must name the same field on both
+    // sides, or the UI learns to highlight the wrong input. Pinned by the
+    // `reject-order-*` rows in `tests/parity/adapter-parity.json`.
+    //
+    // Everything here runs before anything is stored, because the host writes
+    // nothing when a payload is rejected either.
+    bindAuth(id, request.auth ?? { type: 'none' });
+    parseEndpoint(request.baseUrl, 'settings_put_provider');
+
     if (id === '') {
       throw new PlatformError('INVALID_PAYLOAD', 'invalid id: must not be blank', 'settings_put_provider');
+    }
+    if (id.length > MAX_LABEL_LEN) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid id: must be at most ${MAX_LABEL_LEN} characters`,
+        'settings_put_provider',
+      );
     }
     if (id.includes('/') || /\s/.test(id)) {
       throw new PlatformError(
@@ -371,6 +442,13 @@ export class BrowserAdapter implements PlatformAdapter {
         'settings_put_provider',
       );
     }
+    if (request.displayName.length > MAX_LABEL_LEN) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid displayName: must be at most ${MAX_LABEL_LEN} characters`,
+        'settings_put_provider',
+      );
+    }
     if (request.modelId !== undefined && request.modelId.trim() === '') {
       throw new PlatformError(
         'INVALID_PAYLOAD',
@@ -378,10 +456,6 @@ export class BrowserAdapter implements PlatformAdapter {
         'settings_put_provider',
       );
     }
-    // Parsed and bound for their validation side effects, before anything is
-    // stored — the host writes nothing when a payload is rejected either.
-    parseEndpoint(request.baseUrl, 'settings_put_provider');
-    bindAuth(id, request.auth ?? { type: 'none' });
 
     const stored: SettingsPutProviderReq = { ...request, id };
     this.#providers.set(id, stored);

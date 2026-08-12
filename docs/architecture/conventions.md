@@ -322,6 +322,14 @@ Rules:
 - Every command gets a Rust test for its happy path **and** its rejection path.
 - Every `BrowserAdapter` command gets a vitest test mirroring the Rust one. When they disagree,
   the fake is wrong.
+- **A rule the fake reimplements is pinned by a shared fixture, not by prose.** `tests/parity/`
+  holds JSON tables of `(input) -> (expected output)` read from disk by *both* `cargo test` and
+  `pnpm test`; see `tests/parity/README.md`. `adapter-parity.json` covers the whole
+  `settings_put_provider` derivation — endpoint parsing and normalisation, network scope, the
+  security posture, the auth binding, the credential check, and every rejection path including
+  which field is blamed first. Add a row rather than a second pair of hand-written assertions:
+  a row is picked up by both languages automatically. The Rust host is the specification — never
+  edit an expectation to make one side go green.
 - Components are tested through `render(<App adapter={new BrowserAdapter()} />)` or by
   wrapping the subject in `<PlatformProvider adapter={fake}>`. Never mock `@tauri-apps/api`.
 - Query by role and accessible name first; `data-testid` only for values with no accessible

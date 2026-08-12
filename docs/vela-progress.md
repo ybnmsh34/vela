@@ -28,15 +28,61 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **P0** repo inventory | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (null result) | 1 |
 | **P1** docs → feature spec | ✅ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE — panel PASSED** | 1 |
-| **A1** Tauri scaffold + IPC | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | 🟡 built, panel not yet convened | 1 |
-| **A2** SQLite data layer | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 built, panel not yet convened | 1 |
-| **A3** keychain + settings | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING (builder mid-write) | 1 |
-| **A4** mock-provider harness | 🟡 | 🟡 | 🟡 | ⚪ | ✅ evidence captured | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 built, panel not yet convened | 1 |
-| **B–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
+| **A1** Tauri scaffold + IPC | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
+| **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
+| **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
+| **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
+| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | 🟡 BUILDING | 1 |
+| **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
-**No critic panel has convened yet.** Every 🟡 above means *built, ungraded* — not *passing*.
-The Phase A workflow still has integration → GATE M execution → the three binary critics ahead
-of it. Nothing in this table may be read as a pass.
+## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
+
+`PANEL_RESULT: ALL PASS — piece advances`, `failing: []`. All three critics reported
+`reference_obtainable: true`.
+
+**The security concern I flagged in advance was resolved on evidence, not waived.** I had said
+the absence of a computed risk signal for `AuthMode::None` against a non-loopback URL would be a
+legitimate FAIL. The critic found it present: `Auth::None` "never touches the keychain and never
+emits an empty header while still producing a real risk signal for non-loopback endpoints" —
+`RiskLevel::None` on loopback, `Elevated` off-machine. It verified this by execution, including a
+byte-level canary scan of the real SQLite/WAL/SHM files with explicit non-vacuity assertions.
+
+**Findings the critics recorded without inflating into failures** — all now in flight as Phase B
+pre-fixes, built by someone other than whoever found them:
+
+| Finding | Severity as judged | Status |
+|---|---|---|
+| Mock harness 413 branch is unreachable dead code (>8 MiB body → no response, silent both ends) | test infra only; disclosed and root-caused in the repo's own evidence rather than papered over | 🟡 fix in flight |
+| `browser-adapter.ts` hand-reimplements ~200 lines of Rust host logic; command *names* are pinned across languages but *semantics* are pinned by nothing → silent, monotonically growing drift | non-blocking, but the critic said land the fix **before Phase B multiplies the surface** | 🟡 fix in flight |
+| `Auth::ApiKeyQuery` has no `Concern` variant, so an HTTPS endpoint using query-param auth reports `RiskLevel::None` though the key lands in access logs | non-blocking | 🟡 fix in flight |
+| CI secret tripwire excludes `':!docs/**'` — exactly where mock transcripts live | non-blocking; docs/ scanned manually and clean today | 🟡 fix in flight |
+
+### A stated limit on the Phase A "Auth::None" proof
+
+The integration agent was explicit, and this matters more than a green check: `resolve_auth` /
+`AppliedAuth` have **zero call sites outside `vela-secrets`**, because Phase A ships no HTTP
+client. So the invariant was proven on *the function that will build the header*, not on a real
+outbound request. "End to end" ended at request-material construction. **Phase B's integration
+stage is required to close this on the wire** — capture real request headers against the mock
+harness — and its security critic is instructed not to accept a unit test in its place.
+
+### Building forward on AWAITING_DESKTOP pieces — the reasoning, stated rather than assumed
+
+The rule is: do not build forward on a piece whose desktop verdicts are outstanding. Phase B
+nominally depends on A1 and A3, both AWAITING_DESKTOP. I am proceeding, and here is why —
+so the judgement can be challenged rather than discovered later:
+
+The deferred verdicts attach to **aspects**, not to whole pieces. A1's outstanding critics are
+`visual`, `interaction`, `performance` — all judgements about the **shell UI**, not the IPC
+contract Phase B builds on. A3's is `keychain-runtime` — whether `KeyringStore` works against
+Windows Credential Manager, not the `CredentialStore` **trait** or the `Auth::None` type model
+that Phase B consumes. Phase B is a Rust crate behind both surfaces and uses `MemoryStore` in
+tests.
+
+**Residual risk, accepted and bounded:** if a desktop FAIL forces a change to the *trait shape*
+itself — say Credential Manager imposes a blob-size limit requiring chunking — Phase B pays for
+the rework. I judge that unlikely and confined to `vela-secrets` internals. If it happens, Phase B
+returns to its builder like any other FAIL.
 
 ### Evidence landed so far (inspectable, not summarized)
 

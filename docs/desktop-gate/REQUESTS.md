@@ -72,12 +72,91 @@ the binding one.
 
 ## Open requests
 
-_None yet._ Phase A (Tauri scaffold, secure IPC, settings, keychain credential store, SQLite
-layer, and the GATE M Part 1 mock-provider harness) is still building and has not yet cleared
-its cloud-side panel. The first request will be appended below when it does.
+Phase A cleared its full cloud panel on 2026-08-12 — functionality, architecture, and security
+all returned PASS, `failing: []`. The two pieces below carry deferred critics and are therefore
+**AWAITING_DESKTOP, not complete**.
 
-Expected first entries, once Phase A clears cloud critics:
+Useful setup for both: `pnpm install && pnpm build`, then `pnpm tauri dev` (or build a release
+binary). `pnpm verify` runs the full cloud-side suite. The Tauri release binary **compiles and
+links on Linux but was never launched** in the cloud container — there is no display server — so
+you are the first to actually run it.
 
-- `A3-keychain-settings` → `keychain-runtime` (the credential store's real OS integration)
-- `A1-scaffold-shell` → `visual`, `interaction`, `performance` (the app shell actually running
-  in a Windows window, plus cold start and idle RAM for a packaged binary)
+---
+
+## A1-scaffold-shell — Tauri v2 app shell, secure IPC bridge, adapter seam
+
+- **commit:** `cb385356937efb04781926f9326ec43a748f4f7c`
+- **status:** AWAITING_DESKTOP
+- **deferred critics:** `visual`, `interaction`, `performance`
+- **cloud verdicts already passed:** functionality (PASS), architecture (PASS), security (PASS)
+
+**What to exercise**
+
+1. Launch the real app on Windows. Confirm the window opens, the title bar renders, and the
+   shell paints in **both light and dark** — the cloud captured
+   `docs/regression-baseline/phase-a/app-shell-{light,dark}.png` under **Linux WebKitGTK**;
+   you are looking at **WebView2**, and any divergence is exactly what the cloud cannot see.
+2. Toggle the OS theme while the app is running. The shell reads `Theme: system`; confirm it
+   actually follows.
+3. Check the platform-bridge panel resolves to the **`tauri`** adapter, not `browser`, and that
+   the credential-store row shows the **real keychain**, not `memory-fake`.
+4. Resize, minimise, restore, and move between monitors with different DPI.
+5. **Performance, real numbers, on stated hardware:** cold start to first paint; idle RAM after
+   60 s; RAM after ten minutes idle (leak check). Compare against a Tauri-class footprint.
+
+**What "good" looks like**
+
+Interaction and visual polish **at or above Claude Desktop, Linear, Raycast, and Zed** — a
+quality *tier*, not a clone. Judge type scale and hierarchy, spacing rhythm, radii, elevation
+discipline, colour-role system, dark/light theming, motion quality, and empty/loading states.
+Compare **blind** where you can: screenshot Vela beside a reference, strip labels, pick the
+better one.
+
+**Vela must keep its OWN visual identity — do not reward resemblance to Anthropic's trade dress,
+colour palette, or marks.** Matching the *tier* is the goal.
+
+> **Calibration, so you do not fail this for the wrong reason:** this is a **Phase A diagnostic
+> shell**, not product UI. There is no chat, no sidebar, no conversation view — those are Phase C.
+> Judge the shell, the theming system, the type/spacing foundation, and window behaviour. A FAIL
+> should mean *the foundation is not at tier*, not *the product is unfinished*.
+
+---
+
+## A3-keychain-settings — credential store and settings layer
+
+- **commit:** `cb385356937efb04781926f9326ec43a748f4f7c`
+- **status:** AWAITING_DESKTOP
+- **deferred critics:** `keychain-runtime`
+- **cloud verdicts already passed:** functionality (PASS), architecture (PASS), security (PASS —
+  **static review only**; every credential test in the cloud ran against `MemoryStore` and is
+  labelled VERIFIED-BY-FAKE. `KeyringStore` has **never been executed anywhere**.)
+
+**What to exercise**
+
+1. Store an API key through the app. Confirm with `Get-StoredCredential` / `cmdkey /list` that it
+   lands in **Windows Credential Manager** under the expected target name.
+2. Round-trip it: read it back, update it, delete it. Confirm deletion actually removes the entry.
+3. **Canary scan.** Put a unique string in as a key, then grep the SQLite DB, its `-wal` and
+   `-shm` files, every app-data file, and all logs for that string. It must appear **nowhere**.
+   The cloud proved this at byte level against `MemoryStore`; you are proving it against the real
+   backend.
+4. **The `Auth::None` path — the load-bearing case.** Configure a local endpoint with **no
+   credential at all** (`http://localhost:8033/v1`). It must be accepted as a **first-class valid
+   state**: not an error, not a validation failure, and it must send **no `Authorization` header
+   whatsoever** — not an empty one. Capture the real outbound request to prove it.
+5. Confirm a **non-loopback** no-auth endpoint (e.g. `http://192.168.1.50:8033/v1`) reports an
+   elevated risk signal rather than silent trust.
+6. Restart the app; confirm credentials survive and settings reload correctly.
+7. Confirm telemetry is off and has no enable path.
+
+**What "good" looks like**
+
+Keys in Credential Manager and **nowhere else**. No plaintext on disk, nothing in logs. `Auth::None`
+works end to end without ceremony — a user pointing Vela at a local llama.cpp with no key must
+never see an error. The risk signal for off-machine no-auth endpoints is surfaced, not buried.
+
+> **Known cloud-side gap worth your attention:** `Auth::ApiKeyQuery` puts the credential in a
+> query string. It is documented as discouraged, but `SecurityPosture` has **no `Concern` variant**
+> for it, so an HTTPS remote endpoint using query-param auth currently reports `RiskLevel::None`
+> even though the key lands in server and proxy access logs. The cloud security critic flagged
+> this as non-blocking. If you judge it worse than that on real usage, say so.

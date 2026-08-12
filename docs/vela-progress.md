@@ -27,12 +27,27 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | Piece | Func | Arch | Sec (static) | Regr | GateM P1 | ‖ | Perf | Keychain-rt | Visual | Interact | Real-model | State | Rounds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **P0** repo inventory | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (null result) | 1 |
-| **P1** docs → feature spec | 🟡 | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING | 1 |
-| **A1** Tauri scaffold + IPC | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | 🟡 BUILDING | 1 |
-| **A2** SQLite data layer | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING | 1 |
-| **A3** keychain + settings | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING | 1 |
-| **A4** mock-provider harness | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING | 1 |
+| **P1** docs → feature spec | 🟡 | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 synthesis running (8/8 areas ingested) | 1 |
+| **A1** Tauri scaffold + IPC | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | 🟡 built, panel not yet convened | 1 |
+| **A2** SQLite data layer | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 built, panel not yet convened | 1 |
+| **A3** keychain + settings | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING (builder mid-write) | 1 |
+| **A4** mock-provider harness | 🟡 | 🟡 | 🟡 | ⚪ | ✅ evidence captured | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 built, panel not yet convened | 1 |
 | **B–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
+
+**No critic panel has convened yet.** Every 🟡 above means *built, ungraded* — not *passing*.
+The Phase A workflow still has integration → GATE M execution → the three binary critics ahead
+of it. Nothing in this table may be read as a pass.
+
+### Evidence landed so far (inspectable, not summarized)
+
+- `docs/regression-baseline/mock-matrix/` — **all four profiles, 13 cases each**: health, props,
+  models, plain completion (JSON + SSE), tools (JSON + SSE), vision, structured output, context
+  overflow, max-tokens, unknown-model. Deterministic and byte-reproducible, so `git diff` over
+  the directory is itself a regression test — and CI enforces exactly that.
+- `docs/regression-baseline/phase-a/` — app-shell screenshots, light and dark.
+- The harness stamps a `vela_mock` block into `/health` and `/props` so a transcript lifted out
+  of that directory can never be mistaken for a capture from a real model server. No app code
+  may read it.
 
 **A piece with ANY deferred critic outstanding is NOT complete.** It is ⏸️ AWAITING_DESKTOP —
 never reported as passing, and no dependent work is built on the assumption that it passed.
@@ -121,6 +136,21 @@ via `git log`, `git ls-remote`, `git count-objects`, and `ls`. Detail in
   reports when true. Failures are not manufactured to appear rigorous.
 
 ---
+
+## Sequencing decisions
+
+**Phase B is deliberately held, not blocked.** The Phase A workflow still has its integration
+agent ahead of it, whose whole job is reconciling three parallel builders into one coherent
+tree. Launching a second workflow that writes to the same tree concurrently would fight that
+reconciliation and produce exactly the thrash the run is meant to avoid. Phase B (provider
+abstraction + capability negotiation, exercised against the Part 1 mock matrix) launches the
+moment Phase A's panel returns — and it is genuinely independent of every deferred desktop
+verdict, so it will not be gated on the desktop session.
+
+**CI carries a draft guard.** This PR accumulates in-flight commits from parallel build agents,
+so CI stays quiet while it is a draft and gates every push once marked ready for review. A red
+run on half-written code is noise, not signal. It can be run on demand at any time via
+`workflow_dispatch`.
 
 ## Open blockers
 

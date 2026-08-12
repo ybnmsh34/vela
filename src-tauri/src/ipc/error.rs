@@ -80,6 +80,45 @@ impl From<vela_secrets::SecretError> for IpcError {
     }
 }
 
+impl From<vela_store::StoreError> for IpcError {
+    fn from(error: vela_store::StoreError) -> Self {
+        use vela_store::StoreError;
+        match error {
+            StoreError::NotFound { .. } => IpcError::not_found(error.to_string()),
+            StoreError::Invalid { .. } | StoreError::Constraint { .. } => {
+                IpcError::invalid(error.to_string())
+            }
+            // Schema, I/O and backend failures are host-side facts. The
+            // renderer gets the class, never the path or the SQLite message.
+            StoreError::SchemaAhead { .. }
+            | StoreError::MigrationChanged { .. }
+            | StoreError::Corrupt { .. }
+            | StoreError::Io { .. }
+            | StoreError::Backend { .. } => {
+                IpcError::new(IpcErrorCode::Internal, "the local database could not be read")
+            }
+        }
+    }
+}
+
+impl From<vela_settings::SettingsError> for IpcError {
+    fn from(error: vela_settings::SettingsError) -> Self {
+        use vela_settings::SettingsError;
+        match error {
+            SettingsError::Invalid { .. } => IpcError::invalid(error.to_string()),
+            SettingsError::UnknownProvider { .. } => IpcError::not_found(error.to_string()),
+            SettingsError::CredentialStoreUnavailable { .. } => {
+                IpcError::new(IpcErrorCode::SecretStoreUnavailable, error.to_string())
+            }
+            SettingsError::Corrupt { reason } => IpcError::new(
+                IpcErrorCode::Internal,
+                format!("stored settings are not readable: {reason}"),
+            ),
+            SettingsError::Store(inner) => inner.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +140,30 @@ mod tests {
         let broken: IpcError = SecretError::Unavailable { reason: "locked".into() }.into();
         assert_eq!(missing.code, IpcErrorCode::NotFound);
         assert_eq!(broken.code, IpcErrorCode::SecretStoreUnavailable);
+    }
+
+    #[test]
+    fn a_database_failure_never_leaks_a_path_or_a_sqlite_message_to_the_renderer() {
+        let error: IpcError = vela_store::StoreError::Io {
+            path: "/home/someone/.local/share/dev.vela.desktop/vela.db".into(),
+            reason: "permission denied".into(),
+        }
+        .into();
+        assert_eq!(error.code, IpcErrorCode::Internal);
+        assert!(!error.message.contains("/home/someone"));
+        assert!(!error.message.contains("permission denied"));
+    }
+
+    #[test]
+    fn a_settings_validation_failure_is_reported_as_an_invalid_payload() {
+        let error: IpcError = vela_settings::SettingsError::invalid("baseUrl", "must not be blank")
+            .into();
+        assert_eq!(error.code, IpcErrorCode::InvalidPayload);
+
+        let unknown: IpcError = vela_settings::SettingsError::UnknownProvider {
+            provider_id: "ghost".into(),
+        }
+        .into();
+        assert_eq!(unknown.code, IpcErrorCode::NotFound);
     }
 }

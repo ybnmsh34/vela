@@ -34,6 +34,15 @@ pub enum AuthMode {
     ApiKeyQuery { param: String },
 }
 
+impl Default for AuthMode {
+    /// No credential. Chosen so that a payload which omits the field describes
+    /// an unauthenticated endpoint — the configuration that works with local
+    /// runtimes — rather than failing to deserialise.
+    fn default() -> Self {
+        AuthMode::None
+    }
+}
+
 impl AuthMode {
     /// A UI-safe, provider-neutral label for the input field, if any.
     pub fn field_label(&self) -> Option<&'static str> {
@@ -189,6 +198,18 @@ mod tests {
         assert_eq!(AuthPolicy::default(), AuthPolicy::none());
         assert_eq!(AuthRequirement::default(), AuthRequirement::NotRequired);
         assert!(AuthPolicy::default().check(false).is_ok());
+    }
+
+    #[test]
+    fn an_omitted_auth_mode_deserialises_as_no_auth() {
+        #[derive(Deserialize)]
+        struct Payload {
+            #[serde(default)]
+            mode: AuthMode,
+        }
+        let parsed: Payload = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed.mode, AuthMode::None);
+        assert_eq!(AuthMode::default(), AuthMode::None);
     }
 
     #[test]

@@ -7,6 +7,7 @@ default-members = [
   "crates/vela-core",
   "crates/vela-providers",
   "crates/vela-secrets",
+  "crates/vela-settings",
   "crates/vela-store",
 ]
 resolver = "2"
@@ -26,6 +27,7 @@ thiserror = "2"
 vela-core = { path = "crates/vela-core" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
+vela-settings = { path = "crates/vela-settings" }
 vela-store = { path = "crates/vela-store" }
 
 # ---------------------------------------------------------------------------

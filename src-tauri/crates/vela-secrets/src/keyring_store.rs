@@ -5,7 +5,7 @@
 //! desktop with a keychain daemon. Every claim about it in a report must say so.
 
 use keyring::Entry;
-use vela_core::secret::SecretRef;
+use vela_core::secret::{SecretRef, SecretValue};
 
 use crate::{SecretError, SecretResult, SecretStore, KEYCHAIN_SERVICE};
 
@@ -49,20 +49,21 @@ fn map_error(key: String, error: keyring::Error) -> SecretError {
 }
 
 impl SecretStore for KeyringStore {
-    fn set(&self, reference: &SecretRef, value: &str) -> SecretResult<()> {
+    fn set(&self, reference: &SecretRef, value: &SecretValue) -> SecretResult<()> {
         let key = reference.storage_key();
         if value.is_empty() {
             return Err(SecretError::EmptyValue { key });
         }
         self.entry(reference)?
-            .set_password(value)
+            .set_password(value.expose())
             .map_err(|error| map_error(key, error))
     }
 
-    fn get(&self, reference: &SecretRef) -> SecretResult<String> {
+    fn get(&self, reference: &SecretRef) -> SecretResult<SecretValue> {
         let key = reference.storage_key();
         self.entry(reference)?
             .get_password()
+            .map(SecretValue::new)
             .map_err(|error| map_error(key, error))
     }
 
@@ -75,6 +76,21 @@ impl SecretStore for KeyringStore {
 
     fn contains(&self, reference: &SecretRef) -> bool {
         matches!(self.get(reference), Ok(_))
+    }
+
+    /// Platform keychains have no portable enumeration API — macOS Keychain,
+    /// Windows Credential Manager and Secret Service each expose a different
+    /// (and on macOS, prompt-triggering) search mechanism, and the `keyring`
+    /// crate deliberately does not paper over that.
+    ///
+    /// Returning `Err` rather than `Ok(vec![])` is the honest answer: an empty
+    /// vector would be read as "this user has stored no credentials", which is
+    /// a claim this backend cannot make. Callers enumerate configured providers
+    /// from the settings store and call [`SecretStore::contains`] instead.
+    fn list(&self) -> SecretResult<Vec<SecretRef>> {
+        Err(SecretError::EnumerationUnsupported {
+            backend: self.backend(),
+        })
     }
 
     fn backend(&self) -> &'static str {

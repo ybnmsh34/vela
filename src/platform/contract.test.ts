@@ -1,0 +1,44 @@
+import { describe, expect, it } from 'vitest';
+
+import { COMMAND_ALLOWLIST, isAllowedCommand, type IpcContract } from './contract';
+
+/**
+ * The TS half of the cross-language contract guard. The Rust half
+ * (`ipc::tests::rust_and_typescript_allowlists_are_identical`) reads this file
+ * and fails `cargo test` if the two lists diverge.
+ */
+describe('IPC contract', () => {
+  it('lists every command in the contract, and nothing else', () => {
+    // Runtime exhaustiveness: a key added to IpcContract but forgotten in the
+    // allowlist would be unreachable from the renderer.
+    const contractKeys: (keyof IpcContract)[] = [
+      'app_info',
+      'diagnostics_echo',
+      'secrets_delete',
+      'secrets_set',
+      'secrets_status',
+    ];
+    expect([...COMMAND_ALLOWLIST].sort()).toEqual([...contractKeys].sort());
+  });
+
+  it('is sorted and free of duplicates', () => {
+    expect([...COMMAND_ALLOWLIST]).toEqual([...COMMAND_ALLOWLIST].sort());
+    expect(new Set(COMMAND_ALLOWLIST).size).toBe(COMMAND_ALLOWLIST.length);
+  });
+
+  it('names every command <domain>_<verb> in snake_case', () => {
+    for (const name of COMMAND_ALLOWLIST) {
+      expect(name).toMatch(/^[a-z]+(_[a-z]+)+$/);
+    }
+  });
+
+  it('exposes no command that returns secret material', () => {
+    expect(COMMAND_ALLOWLIST).not.toContain('secrets_get');
+    expect(isAllowedCommand('secrets_get')).toBe(false);
+  });
+
+  it('rejects unknown command names at the type guard', () => {
+    expect(isAllowedCommand('app_info')).toBe(true);
+    expect(isAllowedCommand('shell_execute')).toBe(false);
+  });
+});

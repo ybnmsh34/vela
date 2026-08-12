@@ -26,7 +26,7 @@ pub use keyring_store::KeyringStore;
 
 /// Service name registered with the OS keychain. Namespacing all entries under
 /// one service keeps Vela's credentials separable and revocable as a unit.
-pub const KEYCHAIN_SERVICE: &str = "dev.vela.app";
+pub const KEYCHAIN_SERVICE: &str = "dev.vela.desktop";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SecretError {

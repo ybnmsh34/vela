@@ -1,0 +1,96 @@
+.region {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-5);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.heroMark {
+  color: var(--vela-accent);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-xl);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--vela-text-muted);
+  max-width: 52ch;
+}
+
+.card {
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-sm);
+  padding: var(--vela-space-4) var(--vela-space-5);
+}
+
+.cardTitle {
+  margin: 0 0 var(--vela-space-3);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vela-text-subtle);
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr);
+  gap: var(--vela-space-2) var(--vela-space-4);
+  margin: 0;
+  font-size: var(--vela-text-sm);
+}
+
+.rows dt {
+  color: var(--vela-text-muted);
+}
+
+.rows dd {
+  margin: 0;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text);
+  overflow-wrap: anywhere;
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--vela-space-3);
+}
+
+.slot {
+  border: 1px dashed var(--vela-border-strong);
+  border-radius: var(--vela-radius-md);
+  padding: var(--vela-space-4);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+  background: var(--vela-bg-inset);
+}
+
+.slotName {
+  font-weight: var(--vela-weight-medium);
+  color: var(--vela-text-muted);
+}
+
+.error {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}

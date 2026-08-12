@@ -1,0 +1,177 @@
+/**
+ * VELA DESIGN TOKENS — the only place raw colour, spacing, radius or type
+ * values may be written.
+ *
+ * Rules for builders:
+ *   1. Components use `var(--vela-*)`. A hex code, a px radius or a bare font
+ *      stack inside a component file is a review-blocking change.
+ *   2. Add a token here rather than a one-off value there.
+ *   3. Every colour token is defined in the light block first, then overridden
+ *      in the two dark blocks. Never define a colour only inside a dark block.
+ *
+ * IDENTITY: Vela is the constellation of the Sails. The palette is night-sky
+ * indigo with a cyan-teal "signal" accent and a warm amber highlight. It is
+ * deliberately unlike any other assistant product's trade dress; do not
+ * introduce clay/terracotta oranges or cream paper tones.
+ */
+
+:root {
+  /* ---- brand ramp: teal-cyan "signal" ------------------------------------ */
+  --vela-signal-50: #e6fbf8;
+  --vela-signal-100: #c2f4ee;
+  --vela-signal-200: #8ce8df;
+  --vela-signal-300: #5fe2d6;
+  --vela-signal-400: #2ec9bd;
+  --vela-signal-500: #14a89e;
+  --vela-signal-600: #0d857f;
+  --vela-signal-700: #0b6864;
+  --vela-signal-800: #0a4f4d;
+  --vela-signal-900: #073836;
+
+  /* ---- neutral ramp: night-sky indigo ------------------------------------ */
+  --vela-night-0: #ffffff;
+  --vela-night-25: #f7f8fb;
+  --vela-night-50: #eef0f6;
+  --vela-night-100: #e0e3ed;
+  --vela-night-200: #c7ccdc;
+  --vela-night-300: #9aa2bd;
+  --vela-night-400: #6f7896;
+  --vela-night-500: #4d5675;
+  --vela-night-600: #363e59;
+  --vela-night-700: #262c42;
+  --vela-night-800: #1a1f31;
+  --vela-night-900: #101426;
+  --vela-night-950: #080b16;
+
+  /* ---- status ------------------------------------------------------------ */
+  --vela-amber-400: #f0b429;
+  --vela-amber-600: #b7791f;
+  --vela-rose-400: #f2668b;
+  --vela-rose-600: #c33c62;
+  --vela-mint-400: #45cf88;
+  --vela-mint-600: #1f9a5c;
+
+  /* ---- semantic (LIGHT is the base definition) --------------------------- */
+  --vela-bg: var(--vela-night-25);
+  --vela-bg-inset: var(--vela-night-50);
+  --vela-surface: var(--vela-night-0);
+  --vela-surface-raised: var(--vela-night-0);
+  --vela-chrome: var(--vela-night-50);
+  --vela-border: var(--vela-night-100);
+  --vela-border-strong: var(--vela-night-200);
+
+  --vela-text: var(--vela-night-900);
+  --vela-text-muted: var(--vela-night-500);
+  --vela-text-subtle: var(--vela-night-400);
+  --vela-text-on-accent: var(--vela-night-950);
+
+  --vela-accent: var(--vela-signal-600);
+  --vela-accent-hover: var(--vela-signal-700);
+  --vela-accent-quiet: var(--vela-signal-50);
+  --vela-focus: var(--vela-signal-500);
+
+  --vela-success: var(--vela-mint-600);
+  --vela-warning: var(--vela-amber-600);
+  --vela-danger: var(--vela-rose-600);
+
+  --vela-shadow-sm: 0 1px 2px rgb(16 20 38 / 8%);
+  --vela-shadow-md: 0 6px 20px -6px rgb(16 20 38 / 18%);
+
+  /* ---- type -------------------------------------------------------------- */
+  --vela-font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
+  --vela-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --vela-text-xs: 0.75rem;
+  --vela-text-sm: 0.8125rem;
+  --vela-text-base: 0.9375rem;
+  --vela-text-lg: 1.125rem;
+  --vela-text-xl: 1.5rem;
+
+  --vela-weight-regular: 400;
+  --vela-weight-medium: 500;
+  --vela-weight-semibold: 600;
+
+  /* ---- space: 4px base scale --------------------------------------------- */
+  --vela-space-1: 0.25rem;
+  --vela-space-2: 0.5rem;
+  --vela-space-3: 0.75rem;
+  --vela-space-4: 1rem;
+  --vela-space-5: 1.5rem;
+  --vela-space-6: 2rem;
+  --vela-space-7: 3rem;
+
+  /* ---- radius ------------------------------------------------------------ */
+  --vela-radius-sm: 4px;
+  --vela-radius-md: 8px;
+  --vela-radius-lg: 12px;
+  --vela-radius-pill: 999px;
+
+  /* ---- chrome metrics ---------------------------------------------------- */
+  --vela-titlebar-height: 40px;
+  --vela-rail-width: 56px;
+
+  /* ---- motion: one duration, one easing. Respect reduced motion. --------- */
+  --vela-duration: 140ms;
+  --vela-ease: cubic-bezier(0.2, 0, 0.1, 1);
+
+  color-scheme: light dark;
+}
+
+/* Dark by system preference, unless the user forced light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --vela-bg: var(--vela-night-950);
+    --vela-bg-inset: var(--vela-night-900);
+    --vela-surface: var(--vela-night-900);
+    --vela-surface-raised: var(--vela-night-800);
+    --vela-chrome: var(--vela-night-900);
+    --vela-border: var(--vela-night-700);
+    --vela-border-strong: var(--vela-night-600);
+
+    --vela-text: var(--vela-night-50);
+    --vela-text-muted: var(--vela-night-300);
+    --vela-text-subtle: var(--vela-night-400);
+    --vela-text-on-accent: var(--vela-night-950);
+
+    --vela-accent: var(--vela-signal-300);
+    --vela-accent-hover: var(--vela-signal-200);
+    --vela-accent-quiet: var(--vela-signal-900);
+    --vela-focus: var(--vela-signal-300);
+
+    --vela-success: var(--vela-mint-400);
+    --vela-warning: var(--vela-amber-400);
+    --vela-danger: var(--vela-rose-400);
+
+    --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+  }
+}
+
+/* Dark by explicit user choice — must win in both directions. */
+:root[data-theme='dark'] {
+  --vela-bg: var(--vela-night-950);
+  --vela-bg-inset: var(--vela-night-900);
+  --vela-surface: var(--vela-night-900);
+  --vela-surface-raised: var(--vela-night-800);
+  --vela-chrome: var(--vela-night-900);
+  --vela-border: var(--vela-night-700);
+  --vela-border-strong: var(--vela-night-600);
+
+  --vela-text: var(--vela-night-50);
+  --vela-text-muted: var(--vela-night-300);
+  --vela-text-subtle: var(--vela-night-400);
+  --vela-text-on-accent: var(--vela-night-950);
+
+  --vela-accent: var(--vela-signal-300);
+  --vela-accent-hover: var(--vela-signal-200);
+  --vela-accent-quiet: var(--vela-signal-900);
+  --vela-focus: var(--vela-signal-300);
+
+  --vela-success: var(--vela-mint-400);
+  --vela-warning: var(--vela-amber-400);
+  --vela-danger: var(--vela-rose-400);
+
+  --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+}

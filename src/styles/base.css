@@ -1,0 +1,63 @@
+/**
+ * Global reset and element defaults. Everything else is a CSS Module beside its
+ * component — see docs/architecture/conventions.md. Do not add component styles
+ * to this file.
+ */
+
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--vela-bg);
+  color: var(--vela-text);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The desktop shell is not a document: no rubber-band, no text selection on
+     chrome. Content regions opt selection back in. */
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 2px;
+  border-radius: var(--vela-radius-sm);
+}
+
+::selection {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

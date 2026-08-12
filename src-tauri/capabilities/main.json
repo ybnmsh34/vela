@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Least-privilege grant for the Vela main window. The renderer gets the event channel and the window-chrome controls its custom title bar needs, and nothing else. Every other affordance must be an explicit command in the IPC allowlist (src-tauri/src/ipc/mod.rs).",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close"
+  ]
+}

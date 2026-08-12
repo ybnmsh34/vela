@@ -1,0 +1,78 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  height: var(--vela-titlebar-height);
+  padding: 0 var(--vela-space-3);
+  background: var(--vela-chrome);
+  border-bottom: 1px solid var(--vela-border);
+  flex: 0 0 auto;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  min-width: 0;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-accent);
+  background: var(--vela-accent-quiet);
+}
+
+.wordmark {
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vela-text);
+}
+
+.context {
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The draggable region. Everything interactive must sit outside it, or it
+   swallows the click. */
+.drag {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: var(--vela-space-6);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-1);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  height: 26px;
+  padding: 0 var(--vela-space-3);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-surface);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+  transition: color var(--vela-duration) var(--vela-ease),
+    border-color var(--vela-duration) var(--vela-ease);
+}
+
+.action:hover {
+  color: var(--vela-text);
+  border-color: var(--vela-border-strong);
+}

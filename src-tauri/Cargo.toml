@@ -1,5 +1,8 @@
 [workspace]
 members = ["crates/*"]
+# Bare `cargo build` / `cargo test` must cover every crate, not just the host
+# package — otherwise the domain crates silently stop being tested.
+default-members = [".", "crates/vela-core", "crates/vela-providers", "crates/vela-secrets"]
 resolver = "2"
 
 [workspace.package]

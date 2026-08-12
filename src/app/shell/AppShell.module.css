@@ -1,0 +1,73 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--vela-bg);
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Left navigation rail. A placeholder region for Phase A: the feature builders
+   fill it with real destinations. */
+.rail {
+  flex: 0 0 var(--vela-rail-width);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) 0;
+  background: var(--vela-chrome);
+  border-right: 1px solid var(--vela-border);
+}
+
+.railSlot {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vela-radius-md);
+  border: 1px dashed var(--vela-border-strong);
+  opacity: 0.55;
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  user-select: text;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  height: 26px;
+  padding: 0 var(--vela-space-3);
+  background: var(--vela-chrome);
+  border-top: 1px solid var(--vela-border);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  flex: 0 0 auto;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-text-subtle);
+}
+
+.dotOk {
+  background: var(--vela-success);
+}
+
+.dotWarn {
+  background: var(--vela-warning);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}

@@ -1,0 +1,24 @@
+================================================================================
+GATE M Part 1 — ASSERTION CONTROL (does a FAIL actually happen?)
+  recorded : 2026-08-12T20:02:33Z
+  by       : tests/harness/mock-provider/live-matrix/assertion-control.sh
+--------------------------------------------------------------------------------
+Each line applies one of record.sh's checks to a server that does NOT satisfy it
+and records the result. 'expected FAIL' lines prove the check discriminates;
+'expected PASS' lines are the same check against the right server.
+================================================================================
+
+FAIL  (expected FAIL) control ok     small-local's 'tools refused with 400' check, applied to frontier (got 200)
+PASS  (expected PASS) control ok     the same check against small-local itself (got 400)
+FAIL  (expected FAIL) control ok     frontier's 'vision accepted with 200' check, applied to small-local (got 400)
+PASS  (expected PASS) control ok     the same check against frontier (got 200)
+FAIL  (expected FAIL) control ok     hostile's 'no [DONE] sentinel' check, applied to frontier's stream
+PASS  (expected PASS) control ok     the same check against hostile's stream
+FAIL  (expected FAIL) control ok     hostile's 'unparseable frames present' check, applied to frontier's stream
+PASS  (expected PASS) control ok     the same check against hostile's stream
+FAIL  (expected FAIL) control ok     mid-local's 'answer carries <think>' check, applied to frontier
+PASS  (expected PASS) control ok     the same check against hostile
+FAIL  (expected FAIL) control ok     a string that appears in no transcript (sanity floor)
+
+CONTROL RESULT: every mismatched check FAILED and every matched check PASSED.
+The assertions in record.sh discriminate; a PASS there is a real PASS.

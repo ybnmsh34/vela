@@ -1,10 +1,10 @@
 ================================================================================
 GATE M Part 1 — LIVE mock-matrix transcript
-  profile   : small-local  ((Mock Small Local (8k, plain text only)))
+  profile   : small-local  (Mock Small Local (8k, plain text only))
   case      : 00-server-and-capabilities
   endpoint  : http://127.0.0.1:8103   (a separate `node cli.ts --profile small-local` process)
   client    : curl 8.5.0 and node:http probes — NOT the harness's own client
-  recorded  : 2026-08-12T20:00:59Z by tests/harness/mock-provider/live-matrix/record.sh
+  recorded  : 2026-08-12T20:04:38Z by tests/harness/mock-provider/live-matrix/record.sh
 --------------------------------------------------------------------------------
 THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
 deterministic function of the request. Any claim resting on it is
@@ -48,7 +48,7 @@ $ curl -sS -X GET http://127.0.0.1:8103/health
 HTTP/1.1 200 OK
 content-type: application/json; charset=utf-8
 content-length: 148
-Date: Wed, 12 Aug 2026 20:00:59 GMT
+Date: Wed, 12 Aug 2026 20:04:38 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
@@ -80,7 +80,7 @@ $ curl -sS -X GET http://127.0.0.1:8103/props
 HTTP/1.1 200 OK
 content-type: application/json; charset=utf-8
 content-length: 579
-Date: Wed, 12 Aug 2026 20:00:59 GMT
+Date: Wed, 12 Aug 2026 20:04:38 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
@@ -124,7 +124,7 @@ $ curl -sS -X GET http://127.0.0.1:8103/v1/models
 HTTP/1.1 200 OK
 content-type: application/json; charset=utf-8
 content-length: 176
-Date: Wed, 12 Aug 2026 20:00:59 GMT
+Date: Wed, 12 Aug 2026 20:04:39 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
@@ -163,7 +163,7 @@ $ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.js
 HTTP/1.1 405 Method Not Allowed
 content-type: application/json; charset=utf-8
 content-length: 158
-Date: Wed, 12 Aug 2026 20:00:59 GMT
+Date: Wed, 12 Aug 2026 20:04:39 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
@@ -194,7 +194,7 @@ $ curl -sS -X OPTIONS http://127.0.0.1:8103/v1/chat/completions
 HTTP/1.1 405 Method Not Allowed
 content-type: application/json; charset=utf-8
 content-length: 174
-Date: Wed, 12 Aug 2026 20:00:59 GMT
+Date: Wed, 12 Aug 2026 20:04:39 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 

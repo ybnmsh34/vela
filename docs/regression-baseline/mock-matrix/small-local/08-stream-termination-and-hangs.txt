@@ -1,10 +1,10 @@
 ================================================================================
 GATE M Part 1 — LIVE mock-matrix transcript
-  profile   : small-local  ((Mock Small Local (8k, plain text only)))
+  profile   : small-local  (Mock Small Local (8k, plain text only))
   case      : 08-stream-termination-and-hangs
   endpoint  : http://127.0.0.1:8103   (a separate `node cli.ts --profile small-local` process)
   client    : curl 8.5.0 and node:http probes — NOT the harness's own client
-  recorded  : 2026-08-12T20:01:00Z by tests/harness/mock-provider/live-matrix/record.sh
+  recorded  : 2026-08-12T20:04:40Z by tests/harness/mock-provider/live-matrix/record.sh
 --------------------------------------------------------------------------------
 THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
 deterministic function of the request. Any claim resting on it is
@@ -39,7 +39,7 @@ $ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://
 --- probe: wait-for-done ---
     frames seen                 11
     outcome                     SAW-[DONE]
-    elapsed                     10 ms
+    elapsed                     9 ms
     VERDICT                     terminated on the [DONE] sentinel.
 
 ### naive-consumer probe: wait-for-usage
@@ -49,7 +49,7 @@ $ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://
     frames seen                 11
     outcome                     TIMED-OUT
     usage                       (never sent)
-    elapsed                     5005 ms
+    elapsed                     5006 ms
     VERDICT                     HANG. include_usage was accepted and no usage frame ever arrived.
 
 ### naive-consumer probe: strict-json-frames

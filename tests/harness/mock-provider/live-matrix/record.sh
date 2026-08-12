@@ -156,7 +156,7 @@ record_profile() { # $1 name $2 port $3 context-window
     tries=$((tries + 1)); [ "$tries" -gt 50 ] && { echo "server $PROFILE never came up" >&2; return 1; }
     sleep 0.1
   done
-  local display; display=$(grep -o '(.*)' <"$WORK/$PROFILE.startup" | head -1)
+  local display; display=$(sed -n 's/.*profile *[a-z-]*  *(\(.*\))$/\1/p' <"$WORK/$PROFILE.startup" | head -1)
 
   # -- 00: the server itself ---------------------------------------------------
   local f="$dir/00-server-and-capabilities.txt"

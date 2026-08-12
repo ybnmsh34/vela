@@ -1,0 +1,73 @@
+================================================================================
+GATE M Part 1 — what VELA's own code did with the live matrix endpoints
+================================================================================
+  recorded : 2026-08-12T20:05:21Z
+--------------------------------------------------------------------------------
+THE BOUNDARY, STATED BEFORE THE EVIDENCE
+--------------------------------------------------------------------------------
+Phase A ships NO HTTP CLIENT. Not in the Rust core, not in any domain crate, not
+in the renderer. `vela-providers` defines the `ModelProvider` trait and one
+in-process `EchoProvider`; there is no `openai_compatible.rs` yet — that is
+Phase B.
+
+Therefore no Vela code opened a socket to any of the four servers. The only Vela
+code that can consume an endpoint today is the configuration / validation /
+security-posture layer (`vela-settings`, `vela-core`), which takes the endpoint's
+URL and decides whether the configuration is valid, usable, and risky.
+
+  PROVED BY THIS FILE
+    * Each live matrix endpoint's URL is accepted by Vela's real validator.
+    * With a COMPLETELY EMPTY keychain, each is `usable: true` and
+      `credentialCheck: satisfiedWithoutCredential` — "no API key" is a
+      first-class state, as the brief requires, not an error.
+    * Each is scored `RiskLevel::None` because it is loopback; the same
+      configuration on a remote host is scored `Elevated`, so the silence is a
+      decision rather than a blind spot.
+    * There is no HTTP client anywhere in the workspace — asserted against every
+      Cargo.toml, not narrated.
+
+  NOT PROVED BY THIS FILE, AND NOT PROVABLE IN PHASE A
+    * That Vela can talk to these endpoints.
+    * That Vela parses, degrades, or recovers correctly against any of them.
+      Every graceful-degradation claim in RESULTS.md is a claim about what the
+      ENDPOINTS did and what a naive consumer suffered — never about Vela's
+      provider layer, which does not exist yet. The transcripts are the
+      specification Phase B has to satisfy, not a report card on Phase A.
+
+--------------------------------------------------------------------------------
+$ cargo test -p vela-settings --test capability_matrix_endpoints -- --nocapture
+--------------------------------------------------------------------------------
+   Compiling vela-settings v0.1.0 (/home/user/vela/src-tauri/crates/vela-settings)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
+     Running tests/capability_matrix_endpoints.rs (target/debug/deps/capability_matrix_endpoints-cc2cf667ddc42050)
+
+running 4 tests
+test a_required_credential_that_is_missing_is_the_only_unusable_configuration ... ok
+test the_same_endpoint_moved_off_the_machine_is_reported_as_a_risk ... ok
+test no_http_client_exists_anywhere_in_the_workspace ... ok
+test every_matrix_endpoint_is_configurable_and_usable_with_no_credential_at_all ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+--------------------------------------------------------------------------------
+$ grep -rn "reqwest\|hyper\|ureq\|isahc" src-tauri/**/Cargo.toml   (dependency lines)
+--------------------------------------------------------------------------------
+(no matches — no HTTP client is declared anywhere)
+
+--------------------------------------------------------------------------------
+$ grep -rn "fetch(\|XMLHttpRequest\|EventSource\|WebSocket" src/
+--------------------------------------------------------------------------------
+(no matches — the renderer makes no network calls of any kind)
+
+--------------------------------------------------------------------------------
+ONE MORE LIMITATION, FOUND WHILE RECORDING
+--------------------------------------------------------------------------------
+The harness sends no CORS headers and answers an OPTIONS preflight with 405 (see
+each profile's 00-server-and-capabilities.txt). The frontend is required to run
+standalone in a browser via `pnpm dev` so it can be screenshotted headlessly —
+and a browser-hosted renderer therefore cannot call these endpoints directly.
+This is consistent with the architecture (HTTP belongs in the Rust core, behind
+the IPC bridge), but it does mean the browser-mode UI can never be exercised
+end-to-end against this harness. Browser-mode chat will need a mock adapter
+response, not a live endpoint.

@@ -1,10 +1,10 @@
 ================================================================================
 GATE M Part 1 — LIVE mock-matrix transcript
-  profile   : hostile  ((Mock Hostile (4k, broken everything)))
+  profile   : hostile  (Mock Hostile (4k, broken everything))
   case      : 07-reasoning-think-blocks
   endpoint  : http://127.0.0.1:8104   (a separate `node cli.ts --profile hostile` process)
   client    : curl 8.5.0 and node:http probes — NOT the harness's own client
-  recorded  : 2026-08-12T20:01:07Z by tests/harness/mock-provider/live-matrix/record.sh
+  recorded  : 2026-08-12T20:04:46Z by tests/harness/mock-provider/live-matrix/record.sh
 --------------------------------------------------------------------------------
 THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
 deterministic function of the request. Any claim resting on it is
@@ -37,7 +37,7 @@ $ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.js
 HTTP/1.1 200 OK
 content-type: application/json; charset=utf-8
 content-length: 727
-Date: Wed, 12 Aug 2026 20:01:07 GMT
+Date: Wed, 12 Aug 2026 20:04:46 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 

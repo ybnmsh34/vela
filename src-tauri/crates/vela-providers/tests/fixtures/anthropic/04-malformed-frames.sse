@@ -1,0 +1,32 @@
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Vela is the constellation of the sails. "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cut off mid-str
+
+: keepalive
+
+event: content_block_delta
+data: not-json-at-all
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"It was split from Argo Navis in 1763. "}}
+
+event: content_block_delta
+data: "a frame that is a string, not an object"
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Its brightest star is Gamma Velorum."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":40}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

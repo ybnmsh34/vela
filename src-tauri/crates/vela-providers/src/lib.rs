@@ -87,6 +87,7 @@
 //! 5. Export nothing backend-specific. If the UI needs to know something, it
 //!    becomes a capability flag.
 
+pub mod anthropic;
 pub mod capability;
 pub mod compat;
 pub mod context;

@@ -1,0 +1,220 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : small-local  ((Mock Small Local (8k, plain text only)))
+  case      : 00-server-and-capabilities
+  endpoint  : http://127.0.0.1:8103   (a separate `node cli.ts --profile small-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:00:59Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+The mock provider was started as its own OS process:
+  $ node tests/harness/mock-provider/src/cli.ts --profile small-local --port 8103
+
+--- that process's own stdout, verbatim ---
+vela mock-provider listening on http://127.0.0.1:8103
+  profile            small-local  (Mock Small Local (8k, plain text only))
+  model id           mock-small-local
+  context window     8192 tokens
+  tool calling       none
+  vision             no — image parts are rejected with 400
+  structured output  ignored
+  reasoning          none
+  [DONE] sentinel    yes
+  malformed frames   no
+  auth               none (valid, first-class state)
+
+This is a MOCK. Nothing it returns is evidence about any real model.
+Ctrl-C to stop.
+--- end of stdout ---
+
+### liveness probe
+
+$ curl -sS -X GET http://127.0.0.1:8103/health
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 83 bytes (0x53)
+0000: GET /health HTTP/1.1
+0016: Host: 127.0.0.1:8103
+002c: User-Agent: curl/8.5.0
+0044: Accept: */*
+0051: 
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 148
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (148 bytes) ---
+{
+  "status": "ok",
+  "slots_idle": 4,
+  "slots_processing": 0,
+  "vela_mock": {
+    "profile": "small-local",
+    "model": "mock-small-local"
+  }
+}
+--- end of body ---
+
+### server properties (advertised context window)
+
+$ curl -sS -X GET http://127.0.0.1:8103/props
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 82 bytes (0x52)
+0000: GET /props HTTP/1.1
+0015: Host: 127.0.0.1:8103
+002b: User-Agent: curl/8.5.0
+0043: Accept: */*
+0050: 
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 579
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (579 bytes) ---
+{
+  "default_generation_settings": {
+    "n_ctx": 8192,
+    "model": "mock-small-local",
+    "seed": 4294967295
+  },
+  "total_slots": 4,
+  "model_path": "/models/mock-small-local.gguf",
+  "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+  "build_info": "vela-mock-provider",
+  "vela_mock": {
+    "profile": "small-local",
+    "context_window": 8192,
+    "tool_calling": "none",
+    "vision": false,
+    "structured_output": "ignored",
+    "reasoning": "none",
+    "emits_done_sentinel": true,
+    "emits_malformed_sse_frames": false
+  }
+}
+--- end of body ---
+
+### model listing
+
+$ curl -sS -X GET http://127.0.0.1:8103/v1/models
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 86 bytes (0x56)
+0000: GET /v1/models HTTP/1.1
+0019: Host: 127.0.0.1:8103
+002f: User-Agent: curl/8.5.0
+0047: Accept: */*
+0054: 
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 176
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (176 bytes) ---
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "mock-small-local",
+      "object": "model",
+      "created": 1700000000,
+      "owned_by": "vela-mock-provider"
+    }
+  ]
+}
+--- end of body ---
+
+### wrong method on a GET-only route
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/health
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 136 bytes (0x88)
+0000: POST /health HTTP/1.1
+0017: Host: 127.0.0.1:8103
+002d: User-Agent: curl/8.5.0
+0045: Accept: */*
+0052: content-type: application/json
+0072: Content-Length: 72
+0086: 
+=> Send data, 72 bytes (0x48)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 405 Method Not Allowed
+content-type: application/json; charset=utf-8
+content-length: 158
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (158 bytes) ---
+{
+  "error": {
+    "message": "POST is not allowed on /health",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "method_not_allowed"
+  }
+}
+--- end of body ---
+
+### browser CORS preflight
+
+$ curl -sS -X OPTIONS http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 100 bytes (0x64)
+0000: OPTIONS /v1/chat/completions HTTP/1.1
+0027: Host: 127.0.0.1:8103
+003d: User-Agent: curl/8.5.0
+0055: Accept: */*
+0062: 
+
+--- response status and headers, verbatim ---
+HTTP/1.1 405 Method Not Allowed
+content-type: application/json; charset=utf-8
+content-length: 174
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (174 bytes) ---
+{
+  "error": {
+    "message": "OPTIONS is not allowed on /v1/chat/completions",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "method_not_allowed"
+  }
+}
+--- end of body ---
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  /health answers 200 while the process is up
+PASS  /props advertises exactly the profile's context window (8192); observed 8192
+PASS  /v1/models lists exactly this endpoint's model; observed 'mock-small-local'
+PASS  a wrong method is refused with 405, not a crash; observed 405
+PASS  OPTIONS preflight is answered (not hung); observed 405
+PASS  LIMITATION, recorded not asserted: no Access-Control-Allow-Origin — a browser-hosted renderer cannot call this endpoint directly

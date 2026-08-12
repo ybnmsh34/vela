@@ -27,7 +27,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | Piece | Func | Arch | Sec (static) | Regr | GateM P1 | ‖ | Perf | Keychain-rt | Visual | Interact | Real-model | State | Rounds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **P0** repo inventory | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (null result) | 1 |
-| **P1** docs → feature spec | 🟡 | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 synthesis running (8/8 areas ingested) | 1 |
+| **P1** docs → feature spec | ✅ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE — panel PASSED** | 1 |
 | **A1** Tauri scaffold + IPC | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | 🟡 built, panel not yet convened | 1 |
 | **A2** SQLite data layer | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 built, panel not yet convened | 1 |
 | **A3** keychain + settings | 🟡 | 🟡 | 🟡 | ⚪ | 🟡 | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | 🟡 BUILDING (builder mid-write) | 1 |
@@ -136,6 +136,35 @@ via `git log`, `git ls-remote`, `git count-objects`, and `ls`. Detail in
   reports when true. Failures are not manufactured to appear rigorous.
 
 ---
+
+## Phase 1 — COMPLETE, panel PASSED
+
+`docs/vela-feature-spec.md` — 10,117 lines, **178 features** catalogued across 8 areas
+(79 client-side portable · 62 Anthropic-server-side · 37 mixed), each carrying the four required
+fields (a) what it does, (b) how it behaves, (c) client-side vs Anthropic-server-side,
+(d) Vela reimplementation against an arbitrary backend — plus a source URL each (178/178).
+
+Phase 1 has **no deferred desktop critics** — it is a document, not a GUI, a binary, or a model
+interaction. Its single completeness critic is the whole panel, so this piece is genuinely
+COMPLETE rather than AWAITING_DESKTOP.
+
+**Why the PASS is credible.** The critic returned `reference_obtainable: true` and did real work
+to earn it: it re-fetched sources independently, confirmed the styles URLs genuinely 404, and
+caught two stale citations (MCP-23, CWK-8) — declining to inflate either into a failure because
+it verified the *content* was verbatim accurate and only the attribution was wrong. It recorded
+"No disqualifying gap."
+
+### Tracked debt carried out of Phase 1
+
+Recorded here so it cannot quietly evaporate. None of it blocks Phase A or B.
+
+| Item | Impact | Due before |
+|---|---|---|
+| Eleven Claude Code doc pages referenced but never ingested (hooks, settings, env-vars, sub-agents, auto-mode-config, …) leave four designs schema-incomplete: CCD-4 local judge, CCD-9 worktree extension points, SKL-5 skill hooks, MEM-5 PreToolUse enforcement | designs cannot be built to spec | **Phase D / H** — needs a remediation ingestion pass |
+| Consumer-surface extended thinking has no dedicated section (the API contract is exhaustive; the claude.ai/Desktop toggle appears only in passing inside WEB-7) | minor spec gap | Phase C |
+| MCP-23 cites a stale URL — content is verbatim correct but actually lives at `modelcontextprotocol.io/docs/develop/connect-local-servers` | citation hygiene | Phase F |
+| **Styles is genuinely THIN** — Anthropic *deleted* the source material (`claude.com/blog/styles` 404, help article 10181068 404/503). Preset names, the writing-sample flow, and the styles→skills migration are `[UNVERIFIED]` | upstream deletion, not skipped work | Phase H — Vela defines its own contract |
+| Three artifact API surfaces undocumented upstream (`window.claude.complete`, the storage KV API, the full `application/vnd.ant.*` enumeration) | nothing depends on them — Vela defines its own contract | Phase D |
 
 ## Sequencing decisions
 

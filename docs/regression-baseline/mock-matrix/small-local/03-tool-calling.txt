@@ -1,0 +1,149 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : small-local  ((Mock Small Local (8k, plain text only)))
+  case      : 03-tool-calling
+  endpoint  : http://127.0.0.1:8103   (a separate `node cli.ts --profile small-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:00:59Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### one tool offered, non-streaming
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8103
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 305
+0094: 
+=> Send data, 305 bytes (0x131)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 173
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (173 bytes) ---
+{
+  "error": {
+    "message": "`mock-small-local` does not support tools",
+    "type": "invalid_request_error",
+    "param": "tools",
+    "code": "tools_not_supported"
+  }
+}
+--- end of body ---
+
+### the same, with tool_choice: "required"
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8103
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 330
+0094: 
+=> Send data, 330 bytes (0x14a)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"tool_choice":"
+0140: required"}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 173
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (173 bytes) ---
+{
+  "error": {
+    "message": "`mock-small-local` does not support tools",
+    "type": "invalid_request_error",
+    "param": "tools",
+    "code": "tools_not_supported"
+  }
+}
+--- end of body ---
+
+### one tool offered, streamed
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8103
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 319
+0094: 
+=> Send data, 319 bytes (0x13f)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"stream":true}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 173
+Date: Wed, 12 Aug 2026 20:00:59 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (173 bytes) ---
+{
+  "error": {
+    "message": "`mock-small-local` does not support tools",
+    "type": "invalid_request_error",
+    "param": "tools",
+    "code": "tools_not_supported"
+  }
+}
+--- end of body ---
+
+### naive-consumer probe: index-keyed-tool-accumulator
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8103 --probe index-keyed-tool-accumulator
+
+--- probe: index-keyed-tool-accumulator ---
+    streamed frames             0 (0 unparseable, skipped)
+    stream outcome              COMPLETED
+    accumulated calls           0
+    non-streaming HTTP status   400
+    non-streaming error code    tools_not_supported
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  EXPLICIT DEGRADATION: tools are refused with 400, not silently dropped; observed 400
+PASS  the refusal carries the machine-readable code tools_not_supported
+PASS  tool_choice:required is refused the same way; observed 400
+PASS  no tool_calls field is invented in the refusal

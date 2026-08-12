@@ -1,0 +1,115 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : frontier  ((Mock Frontier (200k, tools, vision, JSON, reasoning)))
+  case      : 02-chat-plain-streaming
+  endpoint  : http://127.0.0.1:8101   (a separate `node cli.ts --profile frontier` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:00:55Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### the same question, streamed, with stream_options.include_usage
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8101/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8101
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 126
+0094: 
+=> Send data, 126 bytes (0x7e)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"stream":true,"stream_options":{"include_usage":true}}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: text/event-stream; charset=utf-8
+cache-control: no-cache
+connection: keep-alive
+Date: Wed, 12 Aug 2026 20:00:55 GMT
+Transfer-Encoding: chunked
+
+--- response body, verbatim (4878 bytes) ---
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: what is "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"the weather in B"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"erlin. zenith fa"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"thom north gauge"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" beacon rudder u"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"mber jetty lante"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"rn pennant orbit"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" meridian delta "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"gauge quartz yar"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"darm ivory fatho"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"m sextant jetty "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"keel yardarm car"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"eful orbit."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":86,"total_tokens":98}}
+
+data: [DONE]
+
+
+--- end of body ---
+
+--- stream statistics (tolerant reassembly; see reassemble-sse.py) ---
+data: frames           25
+unparseable frames     0
+[DONE] sentinel        yes
+usage frames           1
+finish_reason values   ['stop']
+content fragments      14
+reassembled chars      219
+
+--- reassembled from the stream by concatenating every choices[0].delta.content ---
+(unparseable frames skipped, which is itself a decision a consumer has to make)
+Mock frontier reply to: what is the weather in Berlin. zenith fathom north gauge beacon rudder umber jetty lantern pennant orbit meridian delta gauge quartz yardarm ivory fathom sextant jetty keel yardarm careful orbit.
+--- the same field from the non-streamed response above ---
+Mock frontier reply to: what is the weather in Berlin. zenith fathom north gauge beacon rudder umber jetty lantern pennant orbit meridian delta gauge quartz yardarm ivory fathom sextant jetty keel yardarm careful orbit.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  streaming answers 200; observed 200
+PASS  content-type is text/event-stream
+PASS  the stream terminates — the body ends and the socket closes
+PASS  streamed text is identical to the non-streamed text

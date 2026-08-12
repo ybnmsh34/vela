@@ -1,0 +1,232 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : frontier  ((Mock Frontier (200k, tools, vision, JSON, reasoning)))
+  case      : 03-tool-calling
+  endpoint  : http://127.0.0.1:8101   (a separate `node cli.ts --profile frontier` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:00:55Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### one tool offered, non-streaming
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8101/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8101
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 305
+0094: 
+=> Send data, 305 bytes (0x131)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 813
+Date: Wed, 12 Aug 2026 20:00:55 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (813 bytes) ---
+{
+  "id": "chatcmpl-mock-3137cf62",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"alpha\",\"unit\":\"celsius\"}"
+            },
+            "id": "call_3137cf62"
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 42,
+    "total_tokens": 54
+  }
+}
+--- end of body ---
+
+### the same, with tool_choice: "required"
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8101/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8101
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 330
+0094: 
+=> Send data, 330 bytes (0x14a)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"tool_choice":"
+0140: required"}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 815
+Date: Wed, 12 Aug 2026 20:00:55 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (815 bytes) ---
+{
+  "id": "chatcmpl-mock-0d365f94",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"celsius\",\"unit\":\"celsius\"}"
+            },
+            "id": "call_0d365f94"
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 43,
+    "total_tokens": 55
+  }
+}
+--- end of body ---
+
+### one tool offered, streamed
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8101/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8101
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 319
+0094: 
+=> Send data, 319 bytes (0x13f)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"stream":true}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: text/event-stream; charset=utf-8
+cache-control: no-cache
+connection: keep-alive
+Date: Wed, 12 Aug 2026 20:00:55 GMT
+Transfer-Encoding: chunked
+
+--- response body, verbatim (4246 bytes) ---
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_3137cf62","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"alp"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ha\","}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"uni"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"t\":\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"cels"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ius\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+
+--- end of body ---
+
+### naive-consumer probe: index-keyed-tool-accumulator
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8101 --probe index-keyed-tool-accumulator
+
+--- probe: index-keyed-tool-accumulator ---
+    streamed frames             20 (0 unparseable, skipped)
+    stream outcome              COMPLETED
+    accumulated calls           1
+      index=0 id=call_3137cf62 type=function name=get_weather argumentsParse=ok args="{\"city\":\"alpha\",\"unit\":\"celsius\"}"
+    non-streaming HTTP status   200
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  tools are supported: 200 and a tool_calls turn; observed 200
+PASS  exactly one tool call is returned
+PASS  its arguments parse as JSON
+PASS  it carries an id and type=function
+PASS  finish_reason is tool_calls
+PASS  tool_choice:required is honoured, not ignored

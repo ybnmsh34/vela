@@ -21,7 +21,9 @@
 //! round trip in the common case, not to replace the endpoint's judgement.
 
 use crate::error::{detail, ProviderError, ProviderResult};
-use crate::model::{ChatMessage, ChatRequest, ContentPart, ContextStrategy, Degradation, MessageRole};
+use crate::model::{
+    ChatMessage, ChatRequest, ContentPart, ContextStrategy, Degradation, MessageRole,
+};
 
 /// Bytes per token, assumed. Roughly right for English text on byte-pair
 /// tokenisers, and wrong for everything else — which is why it is conservative
@@ -66,7 +68,8 @@ impl ContextBudget {
     }
 
     pub fn prompt_allowance(&self) -> u32 {
-        self.window_tokens.saturating_sub(self.reserve_output_tokens)
+        self.window_tokens
+            .saturating_sub(self.reserve_output_tokens)
     }
 }
 
@@ -258,7 +261,10 @@ mod tests {
         let (fitted, degradations) =
             fit_request(request.clone(), ContextBudget::new(8_192), &ElisionNote).unwrap();
         assert_eq!(fitted.messages, request.messages);
-        assert!(degradations.is_empty(), "no degradation without a reduction");
+        assert!(
+            degradations.is_empty(),
+            "no degradation without a reduction"
+        );
     }
 
     #[test]
@@ -275,8 +281,15 @@ mod tests {
         };
         let (fitted, degradations) = fit_request(request, budget, &ElisionNote).unwrap();
 
-        let texts: Vec<String> = fitted.messages.iter().map(ChatMessage::answer_text).collect();
-        assert!(texts[0].contains("system prompt"), "system is never dropped");
+        let texts: Vec<String> = fitted
+            .messages
+            .iter()
+            .map(ChatMessage::answer_text)
+            .collect();
+        assert!(
+            texts[0].contains("system prompt"),
+            "system is never dropped"
+        );
         assert!(
             texts.iter().any(|text| text.contains("were omitted")),
             "the model must be told the history is incomplete: {texts:?}"
@@ -286,20 +299,23 @@ mod tests {
             "the user's own message is never dropped"
         );
         assert!(!texts.iter().any(|text| text.contains("oldest")));
-        assert!(matches!(
-            degradations.as_slice(),
-            [Degradation::ContextReduced {
-                dropped_messages: 2,
-                strategy: ContextStrategy::ElideOldest,
-                ..
-            }]
-        ), "got {degradations:?}");
+        assert!(
+            matches!(
+                degradations.as_slice(),
+                [Degradation::ContextReduced {
+                    dropped_messages: 2,
+                    strategy: ContextStrategy::ElideOldest,
+                    ..
+                }]
+            ),
+            "got {degradations:?}"
+        );
     }
 
     #[test]
     fn a_single_message_that_cannot_fit_is_refused_not_truncated() {
-        let request = ChatRequest::new("m")
-            .with_message(long_message(MessageRole::User, "huge ", 100_000));
+        let request =
+            ChatRequest::new("m").with_message(long_message(MessageRole::User, "huge ", 100_000));
         let error = fit_request(request, ContextBudget::new(4_096), &ElisionNote).unwrap_err();
         match error {
             ProviderError::ContextLengthExceeded {
@@ -319,7 +335,10 @@ mod tests {
         struct Fixed;
         impl ConversationSummariser for Fixed {
             fn summarise(&self, dropped: &[ChatMessage]) -> Option<String> {
-                Some(format!("summary of {} turns: they discussed sails", dropped.len()))
+                Some(format!(
+                    "summary of {} turns: they discussed sails",
+                    dropped.len()
+                ))
             }
         }
 
@@ -331,7 +350,9 @@ mod tests {
             reserve_output_tokens: 50,
         };
         let (fitted, degradations) = fit_request(request, budget, &Fixed).unwrap();
-        assert!(fitted.messages[0].answer_text().contains("summary of 1 turns"));
+        assert!(fitted.messages[0]
+            .answer_text()
+            .contains("summary of 1 turns"));
         assert!(matches!(
             degradations.as_slice(),
             [Degradation::ContextReduced {

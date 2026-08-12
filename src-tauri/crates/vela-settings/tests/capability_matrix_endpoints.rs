@@ -7,20 +7,27 @@
 //!
 //! # The boundary, stated plainly
 //!
-//! Phase A ships **no HTTP client at all** — not in this crate, not in
-//! `vela-providers`, not in the renderer. `no_http_client_exists_anywhere_in_the_workspace`
-//! below asserts that against every `Cargo.toml` in the workspace rather than
-//! asking anyone to take it on faith. So:
+//! Phase A shipped **no HTTP client at all**. Phase B is where Vela first
+//! speaks to an endpoint, so that claim has been replaced — not dropped — by a
+//! narrower one that is worth more:
+//! `an_http_client_exists_in_exactly_one_crate` asserts that the workspace's
+//! only HTTP client lives in `vela-providers`, and
+//! `the_renderer_makes_no_network_calls_of_its_own` asserts the renderer makes
+//! none at all. Both are checked against the tree, not taken on faith.
+//!
+//! That is the shape GATE M FINDING 8 forces: the matrix endpoints send no CORS
+//! headers and answer an `OPTIONS` preflight with `405`, so a browser-hosted
+//! renderer *cannot* call them however the code is written. All provider HTTP
+//! originates in the Rust core and reaches the renderer over the IPC bridge,
+//! which is also the correct security posture.
 //!
 //! * **Proved here:** Vela accepts each live endpoint's URL, treats an endpoint
-//!   with **no credential** as fully usable, and reports the correct security
-//!   posture for it.
-//! * **Not proved here, and not provable in Phase A:** that Vela can talk to
-//!   those endpoints, parse their responses, or degrade gracefully when they
-//!   misbehave. Nothing in this workspace can open a socket to them yet. That
-//!   is Phase B's obligation, and the transcripts under
-//!   `docs/regression-baseline/mock-matrix/` are the specification it has to
-//!   satisfy.
+//!   with **no credential** as fully usable, reports the correct security
+//!   posture for it, and confines network access to one crate.
+//! * **Proved elsewhere:** that Vela can talk to those endpoints and degrades
+//!   correctly when they misbehave — `vela-providers/tests/mock_matrix_live.rs`
+//!   starts all four profiles as real processes and drives them over real TCP.
+//!   Everything it proves is VERIFIED-BY-FAKE.
 //!
 //! This test needs no server running: it is about configuration, and it is
 //! deterministic and offline by construction.
@@ -141,19 +148,17 @@ fn a_required_credential_that_is_missing_is_the_only_unusable_configuration() {
     assert_eq!(with.credential_check, CredentialCheck::Satisfied);
 }
 
-/// The Phase A boundary, machine-checked.
+/// The network boundary, machine-checked.
 ///
-/// If this test ever fails, an HTTP client has entered the workspace — which
-/// means the claim "Phase A could not dial the matrix endpoints" has stopped
-/// being true and the gate evidence must be re-read in that light.
+/// Phase A's version of this test asserted that **no** crate declared an HTTP
+/// client. Phase B needs one, so the assertion became stricter rather than
+/// weaker: exactly one crate may declare one, and it must be `vela-providers`.
+///
+/// If this test fails, either a second crate has gained the ability to open a
+/// socket — which means "all provider HTTP originates in one auditable place"
+/// has stopped being true — or the provider crate has lost its client.
 #[test]
-fn no_http_client_exists_anywhere_in_the_workspace() {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crates/<name> sits two levels below the workspace root")
-        .to_path_buf();
-
+fn an_http_client_exists_in_exactly_one_crate() {
     // Crates that would let Rust code open an HTTP connection.
     const CLIENTS: [&str; 8] = [
         "reqwest",
@@ -166,8 +171,114 @@ fn no_http_client_exists_anywhere_in_the_workspace() {
         "http-client",
     ];
 
+    let manifests = workspace_manifests();
+    assert!(
+        manifests.len() >= 6,
+        "expected the host crate plus every domain crate; found {manifests:?}"
+    );
+
+    let mut declaring: Vec<String> = Vec::new();
+    for manifest in &manifests {
+        let text = std::fs::read_to_string(manifest).expect("readable manifest");
+        let declares_client = text.lines().any(|line| {
+            let line = line.trim();
+            // Only dependency declarations, not prose in comments.
+            !line.starts_with('#')
+                && CLIENTS.iter().any(|client| {
+                    line.starts_with(client)
+                        && line[client.len()..].trim_start().starts_with(['=', '.'])
+                })
+        });
+        if declares_client {
+            declaring.push(
+                manifest
+                    .parent()
+                    .and_then(|dir| dir.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            );
+        }
+    }
+    declaring.sort();
+
+    assert_eq!(
+        declaring,
+        vec!["vela-providers".to_string()],
+        "the workspace's only HTTP client must live in vela-providers"
+    );
+}
+
+/// GATE M FINDING 8, enforced rather than narrated: the renderer never opens a
+/// connection of its own. It could not usefully do so — there are no CORS
+/// headers on any matrix endpoint and `OPTIONS` is answered `405` — and it must
+/// not try, because that would route model traffic around the IPC bridge and
+/// around the credential rules that live behind it.
+#[test]
+fn the_renderer_makes_no_network_calls_of_its_own() {
+    const FORBIDDEN: [&str; 5] = [
+        "fetch(",
+        "XMLHttpRequest",
+        "EventSource",
+        "WebSocket",
+        "navigator.sendBeacon",
+    ];
+
+    let renderer = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("crates/<name> sits three levels below the repo root")
+        .join("src");
+    assert!(
+        renderer.is_dir(),
+        "renderer sources missing at {renderer:?}"
+    );
+
+    let mut offenders = Vec::new();
+    let mut stack = vec![renderer];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)
+            .expect("readable directory")
+            .flatten()
+        {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let is_source = path
+                .extension()
+                .is_some_and(|extension| extension == "ts" || extension == "tsx");
+            if !is_source {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("readable source");
+            for (number, line) in text.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                for needle in FORBIDDEN {
+                    if code.contains(needle) {
+                        offenders.push(format!("{}:{}: {needle}", path.display(), number + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "the renderer must reach a model only through the IPC bridge; found {offenders:#?}"
+    );
+}
+
+/// Shared walk: every `Cargo.toml` in the workspace.
+fn workspace_manifests() -> Vec<std::path::PathBuf> {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crates/<name> sits two levels below the workspace root")
+        .to_path_buf();
+
     let mut manifests = Vec::new();
-    let mut stack = vec![workspace.clone()];
+    let mut stack = vec![workspace];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir)
             .expect("readable directory")
@@ -184,32 +295,5 @@ fn no_http_client_exists_anywhere_in_the_workspace() {
             }
         }
     }
-    assert!(
-        manifests.len() >= 6,
-        "expected the host crate plus every domain crate; found {manifests:?}"
-    );
-
-    let mut offenders = Vec::new();
-    for manifest in &manifests {
-        let text = std::fs::read_to_string(manifest).expect("readable manifest");
-        for line in text.lines() {
-            let line = line.trim();
-            // Only dependency declarations, not prose in comments.
-            if line.starts_with('#') {
-                continue;
-            }
-            for client in CLIENTS {
-                let declares = line.starts_with(client)
-                    && line[client.len()..].trim_start().starts_with(['=', '.']);
-                if declares {
-                    offenders.push(format!("{}: {line}", manifest.display()));
-                }
-            }
-        }
-    }
-
-    assert!(
-        offenders.is_empty(),
-        "Phase A is supposed to have no HTTP client; found {offenders:#?}"
-    );
+    manifests
 }

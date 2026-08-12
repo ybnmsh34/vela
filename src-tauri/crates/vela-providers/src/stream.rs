@@ -19,13 +19,13 @@
 
 use serde_json::Value;
 
+use crate::emulation::ToolCallStripper;
 use crate::error::{ProviderError, ProviderResult, TransportFailure};
 use crate::event::{EventSink, StreamEvent};
 use crate::http::BodyStream;
 use crate::model::{
     ChatResponse, ContentPart, Degradation, StopReason, TokenUsage, ToolCallOutcome,
 };
-use crate::emulation::ToolCallStripper;
 use crate::provider::RequestContext;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
@@ -254,7 +254,7 @@ impl CompletionAssembler {
             sink.emit(StreamEvent::TextDelta { text: recovered });
         }
 
-        let mut tool_calls: Vec<ToolCallOutcome> = self.tools.finish();
+        let mut tool_calls: Vec<ToolCallOutcome> = std::mem::take(&mut self.tools).finish();
 
         if let Some(stripper) = self.stripper.take() {
             let (tail, emulated) = stripper.finish();
@@ -402,8 +402,11 @@ fn error_from_body(error: &Value) -> ProviderError {
         .get("message")
         .and_then(Value::as_str)
         .unwrap_or("the endpoint reported an error mid-stream");
-    let code = error.get("code").and_then(Value::as_str).unwrap_or_default();
-    crate::openai::map_error_code(code, message, None)
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    crate::openai_compatible::map_error_code(code, message, None)
 }
 
 /// Read a body to its end, feeding the assembler, honouring the stall timeout
@@ -430,13 +433,10 @@ pub async fn drive_stream(
             Err(_elapsed) => {
                 return Err(ProviderError::transport(
                     TransportFailure::Stalled,
-                    format!(
-                        "no data for {} ms",
-                        context.timeouts.stall.as_millis()
-                    ),
+                    format!("no data for {} ms", context.timeouts.stall.as_millis()),
                 ))
             }
-            Ok(Err(error)) => return Err(error.into()),
+            Ok(Err(error)) => return Err(ProviderError::from(error)),
             // End of body. The one reliable terminator.
             Ok(Ok(None)) => break,
             Ok(Ok(Some(chunk))) => assembler.push_bytes(&chunk, sink),
@@ -451,7 +451,10 @@ mod tests {
     use crate::event::CollectingSink;
     use crate::model::MalformedToolCall;
 
-    fn assemble(body: &str, requested_usage: bool) -> (CollectingSink, ProviderResult<ChatResponse>) {
+    fn assemble(
+        body: &str,
+        requested_usage: bool,
+    ) -> (CollectingSink, ProviderResult<ChatResponse>) {
         let mut sink = CollectingSink::new();
         let mut assembler = CompletionAssembler::new(true, requested_usage);
         assembler.push_bytes(body.as_bytes(), &mut sink);
@@ -506,13 +509,17 @@ mod tests {
             "one two three",
             "MEASURED-2: content that already arrived is never discarded"
         );
-        assert!(matches!(
-            response
-                .degradations
-                .iter()
-                .find(|d| matches!(d, Degradation::MalformedFramesSkipped { .. })),
-            Some(Degradation::MalformedFramesSkipped { count: 3 })
-        ), "got {:?}", response.degradations);
+        assert!(
+            matches!(
+                response
+                    .degradations
+                    .iter()
+                    .find(|d| matches!(d, Degradation::MalformedFramesSkipped { .. })),
+                Some(Degradation::MalformedFramesSkipped { count: 3 })
+            ),
+            "got {:?}",
+            response.degradations
+        );
     }
 
     #[test]

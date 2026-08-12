@@ -193,7 +193,11 @@ impl ToolDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ToolChoice {
     #[default]
     Auto,
@@ -211,7 +215,11 @@ pub enum ToolChoice {
 
 /// What shape the answer must take.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ResponseFormat {
     #[default]
     Text,
@@ -227,7 +235,11 @@ pub enum ResponseFormat {
 
 /// Whether Vela wants the model's reasoning, and how much of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ReasoningRequest {
     /// Take whatever the model does by default, and separate it correctly.
     #[default]
@@ -235,7 +247,9 @@ pub enum ReasoningRequest {
     /// Ask the model not to think out loud. Advisory: most endpoints ignore it,
     /// which is why separation runs regardless of this setting.
     Disabled,
-    Enabled { budget_tokens: Option<u32> },
+    Enabled {
+        budget_tokens: Option<u32>,
+    },
 }
 
 /// Prompt-caching hints. Advisory everywhere: an endpoint that does not cache
@@ -408,7 +422,11 @@ impl TokenUsage {
 /// [`ToolCallOutcome::Malformed`] the UI can show — never a silent drop, never
 /// a best-effort reconstruction that gets executed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ToolCallOutcome {
     Ok {
         call_id: String,
@@ -454,7 +472,11 @@ impl ToolCallOutcome {
 /// asked. **Every degradation path emits one of these.** The UI reads them as
 /// data; none of them names a provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Degradation {
     /// The model has no native tool calling, so the catalogue was rendered into
     /// the prompt and the answer parsed for a textual call.
@@ -656,7 +678,11 @@ mod tests {
             },
         ];
         assert_eq!(response.executable_tool_calls().count(), 1);
-        assert_eq!(response.tool_calls.len(), 2, "the bad one is still reported");
+        assert_eq!(
+            response.tool_calls.len(),
+            2,
+            "the bad one is still reported"
+        );
     }
 
     #[test]

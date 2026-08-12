@@ -455,12 +455,10 @@ mod tests {
     #[tokio::test]
     async fn the_transport_records_requests_so_the_wire_shape_can_be_asserted() {
         let transport = ScriptedTransport::ok("{}");
-        let request = HttpRequest::post_json("http://127.0.0.1:1/v1/chat/completions", b"{}".to_vec())
-            .with_header("Authorization", "Bearer x");
-        transport
-            .send(request, &Timeouts::default())
-            .await
-            .unwrap();
+        let request =
+            HttpRequest::post_json("http://127.0.0.1:1/v1/chat/completions", b"{}".to_vec())
+                .with_header("Authorization", "Bearer x");
+        transport.send(request, &Timeouts::default()).await.unwrap();
         let recorded = transport.recorded();
         assert_eq!(recorded.len(), 1);
         assert_eq!(recorded[0].header("authorization"), Some("Bearer x"));

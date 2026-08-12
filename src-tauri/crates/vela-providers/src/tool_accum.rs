@@ -67,7 +67,10 @@ impl ToolCallAccumulator {
     /// handled by the same code so the two paths cannot diverge.
     pub fn push(&mut self, raw: &Value) -> Option<ToolCallDelta> {
         let object = raw.as_object()?;
-        let wire_index = object.get("index").and_then(Value::as_u64).map(|i| i as u32);
+        let wire_index = object
+            .get("index")
+            .and_then(Value::as_u64)
+            .map(|i| i as u32);
         let slot_index = self.slot_for(wire_index);
 
         let id = object.get("id").and_then(Value::as_str);
@@ -206,9 +209,7 @@ impl Slot {
             // A missing id is Vela's bookkeeping problem, not the model's: the
             // id only has to correlate a result with a call within this turn.
             // Synthesised deterministically so a retry produces the same one.
-            call_id: self
-                .id
-                .unwrap_or_else(|| format!("call_slot_{position}")),
+            call_id: self.id.unwrap_or_else(|| format!("call_slot_{position}")),
             name,
             arguments,
             emulated: false,

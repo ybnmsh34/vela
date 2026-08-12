@@ -249,8 +249,9 @@ mod tests {
 
     #[test]
     fn the_descriptor_carries_no_provider_identity_at_all() {
-        let json = serde_json::to_value(ModelCapabilities::unknown("secret-model-name").to_descriptor())
-            .unwrap();
+        let json =
+            serde_json::to_value(ModelCapabilities::unknown("secret-model-name").to_descriptor())
+                .unwrap();
         let text = json.to_string();
         assert!(
             !text.contains("secret-model-name"),

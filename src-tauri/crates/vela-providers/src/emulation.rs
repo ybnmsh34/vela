@@ -117,11 +117,12 @@ pub fn emulate(request: ChatRequest) -> (ChatRequest, Vec<Degradation>) {
 /// Turn `ToolCall` / `ToolResult` parts into the same text form the model is
 /// asked to produce, so the transcript it sees is self-consistent.
 fn flatten_tool_parts(message: ChatMessage) -> ChatMessage {
-    if !message
-        .parts
-        .iter()
-        .any(|part| matches!(part, ContentPart::ToolCall { .. } | ContentPart::ToolResult { .. }))
-    {
+    if !message.parts.iter().any(|part| {
+        matches!(
+            part,
+            ContentPart::ToolCall { .. } | ContentPart::ToolResult { .. }
+        )
+    }) {
         return message;
     }
     let mut role = message.role;
@@ -202,8 +203,8 @@ impl ToolCallStripper {
                         self.inside = false;
                     }
                     None => {
-                        let safe =
-                            self.pending.len() - crate::textscan::held_back(&self.pending, &[CLOSE]);
+                        let safe = self.pending.len()
+                            - crate::textscan::held_back(&self.pending, &[CLOSE]);
                         let body: String = self.pending.drain(..safe).collect();
                         self.body.push_str(&body);
                         break;
@@ -354,7 +355,9 @@ fn build_call(slot: usize, body: &str) -> ToolCallOutcome {
 fn parse_fenced_or_bare(text: &str, slot: usize) -> Option<(ToolCallOutcome, String)> {
     let candidate = crate::structured::extract_json(text)?;
     let object = candidate.as_object()?;
-    if !object.contains_key("name") || !(object.contains_key("arguments") || object.contains_key("parameters")) {
+    if !object.contains_key("name")
+        || !(object.contains_key("arguments") || object.contains_key("parameters"))
+    {
         return None;
     }
     let call = build_call(slot, &candidate.to_string());
@@ -464,8 +467,14 @@ mod tests {
             .filter(|message| message.role == MessageRole::System)
             .map(ChatMessage::answer_text)
             .collect();
-        assert!(system.contains("be brief"), "the user's system prompt survives");
-        assert!(system.contains("get_weather"), "the catalogue is in the prompt");
+        assert!(
+            system.contains("be brief"),
+            "the user's system prompt survives"
+        );
+        assert!(
+            system.contains("get_weather"),
+            "the catalogue is in the prompt"
+        );
         assert!(system.contains("<tool_call>"));
         assert_eq!(
             degradations,
@@ -506,7 +515,8 @@ mod tests {
     fn the_relaxed_form_small_models_emit_is_still_a_call() {
         // No quotes anywhere — exactly what a 3B model writes, and exactly what
         // survives the mock harness's quote-stripping echo.
-        let parsed = parse_calls("<tool_call>{name: get_weather, arguments: {city: berlin}}</tool_call>");
+        let parsed =
+            parse_calls("<tool_call>{name: get_weather, arguments: {city: berlin}}</tool_call>");
         assert_eq!(
             parsed.calls,
             vec![ToolCallOutcome::Ok {
@@ -610,7 +620,11 @@ mod tests {
                 .any(|message| message.role == MessageRole::Tool),
             "the tool role would be rejected outright"
         );
-        let flattened: String = rewritten.messages.iter().map(ChatMessage::answer_text).collect();
+        let flattened: String = rewritten
+            .messages
+            .iter()
+            .map(ChatMessage::answer_text)
+            .collect();
         assert!(flattened.contains("<tool_call>{\"name\": \"get_weather\""));
         assert!(flattened.contains("<tool_result id=\"c1\">21C</tool_result>"));
     }

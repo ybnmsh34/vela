@@ -19,7 +19,7 @@ vela-secrets.workspace = true
 async-trait = "0.1"
 # `time` for the stall timeout that MEASURED-1 makes mandatory, `sync` for the
 # cancellation token. No `rt`: the runtime belongs to the host process.
-tokio = { version = "1", features = ["time", "sync"] }
+tokio = { version = "1", features = ["time", "sync", "macros"] }
 # THE ONLY HTTP CLIENT IN THE WORKSPACE, and it lives here on purpose: the mock
 # matrix proved the endpoints send no CORS headers and answer OPTIONS with 405,
 # so a browser-hosted renderer can never call them. All provider HTTP therefore

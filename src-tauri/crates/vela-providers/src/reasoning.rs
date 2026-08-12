@@ -37,7 +37,9 @@ const TAG_PAIRS: [(&str, &str); 2] = [("<think>", "</think>"), ("<thinking>", "<
 enum State {
     Answer,
     /// Inside the block opened by `TAG_PAIRS[pair]`.
-    Reasoning { pair: usize },
+    Reasoning {
+        pair: usize,
+    },
 }
 
 /// What [`ReasoningSplitter::finish`] concluded.
@@ -268,7 +270,10 @@ mod tests {
             !answer.contains("think"),
             "reasoning markup reached the user: {answer:?}"
         );
-        assert_eq!(answer.trim(), "Mock mid-local reply to: what is the weather in Berlin.");
+        assert_eq!(
+            answer.trim(),
+            "Mock mid-local reply to: what is the weather in Berlin."
+        );
         assert!(reasoning.starts_with("Considering the request about"));
         assert!(reasoning.ends_with("Answering directly."));
         assert_eq!(finish.recovered_answer, None, "the block closed cleanly");

@@ -90,7 +90,7 @@ impl<'a> Parser<'a> {
             }
             let key = match self.peek() {
                 Some(b'"') | Some(b'\'') => self.string()?,
-                _ => self.raw_until(&[b':'])?.trim().to_owned(),
+                _ => self.raw_until(b":")?.trim().to_owned(),
             };
             self.skip_ws();
             if self.peek() != Some(b':') {
@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
 
     /// A value with no quotes: a number, a keyword, or a bare word.
     fn bareword(&mut self) -> Result<Value, String> {
-        let raw = self.raw_until(&[b',', b'}', b']'])?;
+        let raw = self.raw_until(b",}]")?;
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err("empty value".to_owned());

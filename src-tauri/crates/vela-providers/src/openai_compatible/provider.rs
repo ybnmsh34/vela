@@ -29,7 +29,7 @@ use vela_core::provider::ProviderDescriptor;
 use vela_secrets::{resolve_auth, AppliedAuth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
-use crate::context::{fit_request, ConversationSummariser, ContextBudget, ElisionNote};
+use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
 use crate::emulation;
 use crate::error::{detail, Capability, ProviderError, ProviderResult};
 use crate::event::EventSink;
@@ -37,7 +37,7 @@ use crate::http::{HttpRequest, HttpTransport};
 use crate::model::{
     ChatMessage, ChatRequest, ChatResponse, Degradation, ResponseFormat, StopReason, ToolChoice,
 };
-use crate::provider::{ModelInfo, Provider, RequestContext, Timeouts};
+use crate::provider::{ModelInfo, Provider, RequestContext};
 use crate::stream::{drive_stream, CompletionAssembler};
 use crate::structured::{self, StructuredOutputPolicy};
 
@@ -140,13 +140,7 @@ impl OpenAiCompatibleProvider {
             .insert(capabilities.model_id.clone(), capabilities);
     }
 
-    fn learn_one(
-        &self,
-        model_id: &str,
-        capability: Capability,
-        support: Support,
-        note: &str,
-    ) {
+    fn learn_one(&self, model_id: &str, capability: Capability, support: Support, note: &str) {
         let mut capabilities = self.known_capabilities(model_id);
         capabilities.set(capability, support, Evidence::Probed, note);
         self.learn(capabilities);
@@ -231,9 +225,8 @@ impl OpenAiCompatibleProvider {
                 response.header("retry-after"),
             ));
         }
-        serde_json::from_slice(&body).map_err(|error| {
-            ProviderError::malformed(format!("response was not JSON: {error}"))
-        })
+        serde_json::from_slice(&body)
+            .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
     }
 
     /// Everything that happens before a byte is sent.
@@ -276,7 +269,8 @@ impl OpenAiCompatibleProvider {
         };
 
         let mut request = request;
-        if let Some(budget) = ContextBudget::for_request(&request, capabilities.context_window_tokens)
+        if let Some(budget) =
+            ContextBudget::for_request(&request, capabilities.context_window_tokens)
         {
             let (fitted, context_degradations) =
                 fit_request(request, budget, self.options.summariser.as_ref())?;
@@ -284,8 +278,8 @@ impl OpenAiCompatibleProvider {
             degradations.extend(context_degradations);
         }
 
-        let wants_emulation = force_emulation
-            || (self.options.emulate_tools && capabilities.needs_tool_emulation());
+        let wants_emulation =
+            force_emulation || (self.options.emulate_tools && capabilities.needs_tool_emulation());
         let emulated = if request.offers_tools() && wants_emulation {
             let (rewritten, tool_degradations) = emulation::emulate(request);
             request = rewritten;
@@ -322,11 +316,18 @@ impl OpenAiCompatibleProvider {
             streaming,
             streaming && self.options.request_usage,
         );
-        let bytes = serde_json::to_vec(&body)
-            .map_err(|error| ProviderError::malformed(format!("could not encode request: {error}")))?;
+        let bytes = serde_json::to_vec(&body).map_err(|error| {
+            ProviderError::malformed(format!("could not encode request: {error}"))
+        })?;
         let request = self.authenticate(
-            HttpRequest::post_json(self.api_url("chat/completions"), bytes)
-                .with_header("accept", if streaming { "text/event-stream" } else { "application/json" }),
+            HttpRequest::post_json(self.api_url("chat/completions"), bytes).with_header(
+                "accept",
+                if streaming {
+                    "text/event-stream"
+                } else {
+                    "application/json"
+                },
+            ),
         )?;
 
         context.cancel.err_if_cancelled()?;
@@ -342,7 +343,8 @@ impl OpenAiCompatibleProvider {
             ));
         }
 
-        let mut assembler = CompletionAssembler::new(streaming, streaming && self.options.request_usage);
+        let mut assembler =
+            CompletionAssembler::new(streaming, streaming && self.options.request_usage);
         if prepared.emulated {
             assembler = assembler.with_tool_emulation();
         }
@@ -394,7 +396,9 @@ impl OpenAiCompatibleProvider {
         }
 
         let mut response = outcome?;
-        response.degradations.splice(0..0, prepared.degradations.clone());
+        response
+            .degradations
+            .splice(0..0, prepared.degradations.clone());
 
         if let Some(schema) = &prepared.schema {
             // MEASURED-5: the endpoint will not tell us the schema was ignored,
@@ -408,9 +412,11 @@ impl OpenAiCompatibleProvider {
                         Support::Degraded,
                         "answered 200 without honouring the requested schema",
                     );
-                    response.degradations.push(Degradation::StructuredOutputMismatch {
-                        detail: mismatch.detail.clone(),
-                    });
+                    response
+                        .degradations
+                        .push(Degradation::StructuredOutputMismatch {
+                            detail: mismatch.detail.clone(),
+                        });
                     response.structured = Some(Err(mismatch));
                 }
             }
@@ -491,7 +497,10 @@ impl Provider for OpenAiCompatibleProvider {
         let mut capabilities = ModelCapabilities::unknown(model_id);
 
         // 1. Declared context window, if the runtime exposes one.
-        if let Ok(props) = self.get_json(format!("{}/props", self.origin()), context).await {
+        if let Ok(props) = self
+            .get_json(format!("{}/props", self.origin()), context)
+            .await
+        {
             if let Some(n_ctx) = props
                 .get("default_generation_settings")
                 .and_then(|settings| settings.get("n_ctx"))
@@ -499,12 +508,14 @@ impl Provider for OpenAiCompatibleProvider {
                 .and_then(|n| u32::try_from(n).ok())
             {
                 capabilities.context_window_tokens = Some(n_ctx);
-                capabilities.findings.push(crate::capability::CapabilityFinding {
-                    capability: Capability::Streaming,
-                    support: Support::Unknown,
-                    evidence: Evidence::Declared,
-                    note: format!("endpoint declares a {n_ctx}-token context window"),
-                });
+                capabilities
+                    .findings
+                    .push(crate::capability::CapabilityFinding {
+                        capability: Capability::Streaming,
+                        support: Support::Unknown,
+                        evidence: Evidence::Declared,
+                        note: format!("endpoint declares a {n_ctx}-token context window"),
+                    });
             }
         }
 
@@ -525,23 +536,22 @@ impl Provider for OpenAiCompatibleProvider {
                     capabilities.context_window_tokens.get_or_insert(window);
                 }
             }
-            Err(error) => capabilities.set(
-                Capability::ModelListing,
-                Support::Unsupported,
-                Evidence::Probed,
-                error.code(),
-            ),
-        };
+            Err(error) => {
+                capabilities.set(
+                    Capability::ModelListing,
+                    Support::Unsupported,
+                    Evidence::Probed,
+                    error.code(),
+                );
+            }
+        }
 
         // 3. A plain streamed turn: streaming, reasoning, usage.
         let plain = ChatRequest::new(model_id)
             .with_message(ChatMessage::user("Say OK."))
             .with_max_output_tokens(16);
         let mut sink = crate::event::CollectingSink::new();
-        match self
-            .run(plain, true, &mut sink, context)
-            .await
-        {
+        match self.run(plain, true, &mut sink, context).await {
             Ok(response) => {
                 capabilities.set(
                     Capability::Streaming,
@@ -591,46 +601,36 @@ impl Provider for OpenAiCompatibleProvider {
             .with_max_output_tokens(64);
         let prepared = self.prepare(tool_probe, &ModelCapabilities::unknown(model_id), false)?;
         let mut sink = crate::event::CollectingSink::new();
-        match self.send_chat(&prepared, false, &mut sink, context).await {
-            Ok(response) if response.tool_calls.iter().any(|call| call.is_ok()) => {
-                capabilities.set(
-                    Capability::ToolCalling,
+        let (tool_support, tool_note) =
+            match self.send_chat(&prepared, false, &mut sink, context).await {
+                Ok(response) if response.tool_calls.iter().any(|call| call.is_ok()) => (
                     Support::Supported,
-                    Evidence::Probed,
-                    "returned a well-formed tool call",
-                );
-            }
-            Ok(response) if !response.tool_calls.is_empty() => {
-                // Calls arrive, but broken. The affordance survives because
-                // every failure is surfaced explicitly (MEASURED-4).
-                capabilities.set(
-                    Capability::ToolCalling,
+                    "returned a well-formed tool call".to_owned(),
+                ),
+                // Calls arrive, but broken. The affordance survives because every
+                // failure is surfaced explicitly (MEASURED-4).
+                Ok(response) if !response.tool_calls.is_empty() => (
                     Support::Degraded,
-                    Evidence::Probed,
-                    "returned tool calls that could not be parsed",
-                );
-            }
-            Ok(_) => capabilities.set(
-                Capability::ToolCalling,
-                Support::Unsupported,
-                Evidence::Probed,
-                "accepted a forced tool call and produced none",
-            ),
-            Err(ProviderError::CapabilityUnsupported { .. }) => capabilities.set(
-                Capability::ToolCalling,
-                Support::Unsupported,
-                Evidence::Probed,
-                "refused a request carrying `tools`",
-            ),
-            Err(error) => capabilities.set(
-                Capability::ToolCalling,
-                Support::Unknown,
-                Evidence::Probed,
-                error.code(),
-            ),
-        };
+                    "returned tool calls that could not be parsed".to_owned(),
+                ),
+                Ok(_) => (
+                    Support::Unsupported,
+                    "accepted a forced tool call and produced none".to_owned(),
+                ),
+                Err(ProviderError::CapabilityUnsupported { .. }) => (
+                    Support::Unsupported,
+                    "refused a request carrying `tools`".to_owned(),
+                ),
+                Err(error) => (Support::Unknown, error.code().to_owned()),
+            };
+        capabilities.set(
+            Capability::ToolCalling,
+            tool_support,
+            Evidence::Probed,
+            tool_note,
+        );
 
-        // 5. Vision: one 1×1 PNG.
+        // 5. Vision: one 1x1 PNG.
         let vision_probe = ChatRequest::new(model_id)
             .with_message(ChatMessage::new(
                 crate::model::MessageRole::User,
@@ -645,28 +645,22 @@ impl Provider for OpenAiCompatibleProvider {
             .with_max_output_tokens(16);
         let prepared = self.prepare(vision_probe, &ModelCapabilities::unknown(model_id), false)?;
         let mut sink = crate::event::CollectingSink::new();
-        match self.send_chat(&prepared, false, &mut sink, context).await {
-            Ok(_) => capabilities.set(
-                Capability::Vision,
-                Support::Supported,
-                Evidence::Probed,
-                "accepted an image part",
-            ),
-            Err(ProviderError::CapabilityUnsupported { .. }) => capabilities.set(
-                Capability::Vision,
-                Support::Unsupported,
-                Evidence::Probed,
-                "refused an image part",
-            ),
-            Err(error) => capabilities.set(
-                Capability::Vision,
-                Support::Unknown,
-                Evidence::Probed,
-                error.code(),
-            ),
-        };
+        let (vision_support, vision_note) =
+            match self.send_chat(&prepared, false, &mut sink, context).await {
+                Ok(_) => (Support::Supported, "accepted an image part".to_owned()),
+                Err(ProviderError::CapabilityUnsupported { .. }) => {
+                    (Support::Unsupported, "refused an image part".to_owned())
+                }
+                Err(error) => (Support::Unknown, error.code().to_owned()),
+            };
+        capabilities.set(
+            Capability::Vision,
+            vision_support,
+            Evidence::Probed,
+            vision_note,
+        );
 
-        // 6. Structured output — the one that cannot be taken on trust.
+        // 6. Structured output - the one that cannot be taken on trust.
         let schema = json!({
             "type": "object",
             "properties": {"answer": {"type": "string"}},
@@ -681,36 +675,40 @@ impl Provider for OpenAiCompatibleProvider {
                 schema: schema.clone(),
             })
             .with_max_output_tokens(64);
-        let prepared = self.prepare(structured_probe, &ModelCapabilities::unknown(model_id), false)?;
+        let prepared = self.prepare(
+            structured_probe,
+            &ModelCapabilities::unknown(model_id),
+            false,
+        )?;
         let mut sink = crate::event::CollectingSink::new();
-        match self.send_chat(&prepared, false, &mut sink, context).await {
-            Ok(response) => match structured::check_answer(&schema, &response.answer_text()) {
-                Ok(_) => capabilities.set(
-                    Capability::StructuredOutput,
-                    Support::Supported,
-                    Evidence::Probed,
-                    "returned JSON conforming to the requested schema",
-                ),
-                Err(mismatch) => capabilities.set(
-                    Capability::StructuredOutput,
-                    Support::Degraded,
-                    Evidence::Probed,
-                    format!("answered 200 without honouring the schema: {}", mismatch.detail),
-                ),
-            },
-            Err(ProviderError::CapabilityUnsupported { .. }) => capabilities.set(
-                Capability::StructuredOutput,
-                Support::Unsupported,
-                Evidence::Probed,
-                "refused `response_format`",
-            ),
-            Err(error) => capabilities.set(
-                Capability::StructuredOutput,
-                Support::Unknown,
-                Evidence::Probed,
-                error.code(),
-            ),
-        };
+        let (structured_support, structured_note) =
+            match self.send_chat(&prepared, false, &mut sink, context).await {
+                Ok(response) => match structured::check_answer(&schema, &response.answer_text()) {
+                    Ok(_) => (
+                        Support::Supported,
+                        "returned JSON conforming to the requested schema".to_owned(),
+                    ),
+                    // MEASURED-5: 200 OK and prose. The endpoint said nothing
+                    // was wrong; only validation could tell.
+                    Err(mismatch) => (
+                        Support::Degraded,
+                        format!(
+                            "answered 200 without honouring the schema: {}",
+                            mismatch.detail
+                        ),
+                    ),
+                },
+                Err(ProviderError::CapabilityUnsupported { .. }) => {
+                    (Support::Unsupported, "refused `response_format`".to_owned())
+                }
+                Err(error) => (Support::Unknown, error.code().to_owned()),
+            };
+        capabilities.set(
+            Capability::StructuredOutput,
+            structured_support,
+            Evidence::Probed,
+            structured_note,
+        );
 
         self.learn(capabilities.clone());
         Ok(capabilities)
@@ -763,6 +761,7 @@ mod tests {
     use super::*;
     use crate::http::testing::{CannedResponse, ScriptedTransport};
     use crate::model::{ContentPart, MessageRole, ToolDefinition};
+    use crate::provider::Timeouts;
     use vela_core::auth::AuthMode;
     use vela_core::provider::ProviderKind;
     use vela_core::secret::{SecretRef, SecretValue};
@@ -772,7 +771,9 @@ mod tests {
         ProviderDescriptor::new("test", "Test", ProviderKind::Local).unwrap()
     }
 
-    fn provider(transport: ScriptedTransport) -> (OpenAiCompatibleProvider, Arc<ScriptedTransport>) {
+    fn provider(
+        transport: ScriptedTransport,
+    ) -> (OpenAiCompatibleProvider, Arc<ScriptedTransport>) {
         let transport = Arc::new(transport);
         let provider = OpenAiCompatibleProvider::new(
             descriptor(),
@@ -863,7 +864,11 @@ mod tests {
             .complete(
                 ChatRequest::new("m")
                     .with_message(ChatMessage::user("weather?"))
-                    .with_tools([ToolDefinition::new("get_weather", "d", json!({"type": "object"}))]),
+                    .with_tools([ToolDefinition::new(
+                        "get_weather",
+                        "d",
+                        json!({"type": "object"}),
+                    )]),
                 &RequestContext::new(),
             )
             .await
@@ -914,7 +919,11 @@ mod tests {
             .await
             .unwrap();
 
-        match response.structured.as_ref().expect("structured was requested") {
+        match response
+            .structured
+            .as_ref()
+            .expect("structured was requested")
+        {
             Ok(value) => panic!("prose must never be presented as conforming JSON: {value}"),
             Err(mismatch) => assert!(mismatch.detail.contains("prose")),
         }

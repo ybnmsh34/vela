@@ -39,7 +39,10 @@ pub fn encode_request(request: &ChatRequest, stream: bool, include_usage: bool) 
     if !request.model_id.is_empty() {
         body.insert("model".into(), json!(request.model_id));
     }
-    body.insert("messages".into(), Value::Array(encode_messages(&request.messages)));
+    body.insert(
+        "messages".into(),
+        Value::Array(encode_messages(&request.messages)),
+    );
     body.insert("stream".into(), json!(stream));
     if stream && include_usage {
         body.insert("stream_options".into(), json!({ "include_usage": true }));
@@ -95,11 +98,14 @@ pub fn encode_request(request: &ChatRequest, stream: bool, include_usage: bool) 
     if let Some(max) = request.max_output_tokens {
         body.insert("max_tokens".into(), json!(max));
     }
+    // Rounded on the way out: widening an `f32` to the `f64` JSON uses would
+    // otherwise put `0.20000000298023224` on the wire for a temperature the
+    // user typed as `0.2`, which is noise in every transcript that captures it.
     if let Some(temperature) = request.sampling.temperature {
-        body.insert("temperature".into(), json!(temperature));
+        body.insert("temperature".into(), json!(round4(temperature)));
     }
     if let Some(top_p) = request.sampling.top_p {
-        body.insert("top_p".into(), json!(top_p));
+        body.insert("top_p".into(), json!(round4(top_p)));
     }
     if !request.sampling.stop.is_empty() {
         body.insert("stop".into(), json!(request.sampling.stop));
@@ -111,10 +117,7 @@ pub fn encode_request(request: &ChatRequest, stream: bool, include_usage: bool) 
     // Cache hints are advisory and non-standard across runtimes; they are sent
     // as an OpenAI-compatible extension that endpoints ignore harmlessly.
     if request.cache.cache_system_prompt || request.cache.cache_conversation_prefix {
-        body.insert(
-            "cache_prompt".into(),
-            json!(true),
-        );
+        body.insert("cache_prompt".into(), json!(true));
     }
 
     Value::Object(body)
@@ -145,9 +148,7 @@ fn encode_messages(messages: &[ChatMessage]) -> Vec<Value> {
         let content_parts: Vec<&ContentPart> = message
             .parts
             .iter()
-            .filter(|part| {
-                matches!(part, ContentPart::Text { .. } | ContentPart::Image { .. })
-            })
+            .filter(|part| matches!(part, ContentPart::Text { .. } | ContentPart::Image { .. }))
             .collect();
         let tool_calls: Vec<Value> = message
             .parts
@@ -213,6 +214,10 @@ fn encode_content(parts: &[&ContentPart]) -> Value {
     )
 }
 
+fn round4(value: f32) -> f64 {
+    (f64::from(value) * 10_000.0).round() / 10_000.0
+}
+
 const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -244,11 +249,15 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ToolDefinition, Sampling};
+    use crate::model::{Sampling, ToolDefinition};
     use serde_json::json;
 
     fn tools() -> Vec<ToolDefinition> {
-        vec![ToolDefinition::new("get_weather", "d", json!({"type": "object"}))]
+        vec![ToolDefinition::new(
+            "get_weather",
+            "d",
+            json!({"type": "object"}),
+        )]
     }
 
     #[test]

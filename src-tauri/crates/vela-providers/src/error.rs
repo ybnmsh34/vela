@@ -121,7 +121,11 @@ impl TransportFailure {
 
 /// The normalised failure of any provider operation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ProviderError {
     /// The prompt (plus requested completion) does not fit. All four matrix
     /// profiles answer this cleanly, so it is modelled precisely: the UI can
@@ -279,7 +283,9 @@ impl ProviderError {
     }
 
     pub fn malformed(raw: impl AsRef<str>) -> Self {
-        ProviderError::MalformedResponse { detail: detail(raw) }
+        ProviderError::MalformedResponse {
+            detail: detail(raw),
+        }
     }
 
     pub fn unsupported(capability: Capability, raw: impl AsRef<str>) -> Self {

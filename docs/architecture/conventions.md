@@ -86,7 +86,11 @@ vela/
 │       ├── vela-settings/         Typed settings, provider configs, security posture.
 │       │                          Joins vela-store (describable config) to
 │       │                          vela-secrets (credential values). No secret on disk.
-│       └── vela-providers/        ModelProvider trait, registry, chat types, EchoProvider.
+│       └── vela-providers/        THE PROVIDER CORE (§9). Provider trait, the one
+│                                  request/response model, the one error taxonomy,
+│                                  stream normalisation, reasoning separation, tool
+│                                  emulation, capability probing, routing — and the
+│                                  workspace's ONLY HTTP client.
 │
 └── docs/
     └── architecture/conventions.md   ← this file
@@ -339,23 +343,44 @@ Rules:
 
 ---
 
-## 9. Adding a provider (the shape three builders will need)
+## 9. Adding a provider (the shape adapter builders build against)
+
+`vela-providers` is the provider **core**: one normalisation layer, one error
+taxonomy, one event stream. An adapter is a thin thing on top of it. Read
+`crates/vela-providers/src/lib.rs` — it carries the full map — then:
 
 1. New module in `src-tauri/crates/vela-providers/src/`.
-2. Implement `ModelProvider`: `descriptor()`, `list_models()`, `complete()`.
-3. Declare an `AuthPolicy`. If the endpoint has no auth, that is `AuthPolicy::none()` — a
-   supported configuration, not a gap. If auth is optional (`--api-key` may or may not be set),
-   that is `AuthPolicy::optional(...)`, and **both** states must work.
-4. Start at `ProviderCapabilities::minimal()`. Raise a flag only on evidence from a successful
-   probe, never on assumption. A provider that supports nothing but plain non-streaming
-   completion must remain fully usable.
-5. Degrade, never fail. Cannot stream? Emit one `ChatChunk::Text` then `Done`; the consumer
-   cannot tell. No model listing? Return `Unsupported` so the UI offers free-text entry — that
-   is a normal state, not an error.
-6. Export nothing provider-specific past the crate. If the UI needs to know something, it
-   becomes a capability flag on the descriptor.
+2. Implement `Provider`: `descriptor()`, `list_models()`, `probe_capabilities()`,
+   `stream()`. `complete()` is defaulted on top of `stream()`, so the streamed
+   and non-streamed answers to the same request cannot diverge; override it only
+   when the backend has a genuinely separate non-streaming API.
+3. Declare an `AuthPolicy`. No auth is `AuthPolicy::none()` — a supported
+   configuration, not a gap. Optional auth is `AuthPolicy::optional(...)` and
+   **both** states must work. Never touch the keychain: take a
+   `&dyn SecretStore` and let `vela_secrets::resolve_auth` build the header, so
+   "no credential" means *no header* rather than an empty one.
+4. Start at `ModelCapabilities::unknown()`. Raise a flag only on probe evidence,
+   never on assumption — and remember `Unknown` is not offerable, because
+   offering an affordance the endpoint cannot serve is a gate failure.
+5. Return only `ProviderError`s. An HTTP status, a vendor error string or a
+   `finish_reason` escaping this crate is a review-blocking change.
+6. Degrade deliberately, and *report* it: every reduction produces a
+   `Degradation` on the response. No native tools → prompt emulation. Short
+   context → explicit reduction with a note in the prompt, never a silent
+   truncation. No structured output → refuse the affordance or validate the
+   answer and report the mismatch. Silently wrong output is the one forbidden
+   outcome.
+7. Export nothing backend-specific. If the UI needs to know something, it
+   becomes a capability flag on `ProviderCapabilities`.
+8. All HTTP goes through the `HttpTransport` seam. Adapter tests script bytes
+   with `http::testing::{ScriptedTransport, ScriptedBody, StalledBody}`; results
+   from those are **VERIFIED-BY-FAKE**.
 
----
+Every degradation path needs an asserting test against the mock profile that
+triggers it — see `crates/vela-providers/tests/mock_matrix_live.rs`, which runs
+the whole stack against all four live profiles, and
+`docs/regression-baseline/phase-b/PROVIDER-CORE.md` for the evidence and its
+controls.
 
 ## 10. Honesty rules for reports and commits
 

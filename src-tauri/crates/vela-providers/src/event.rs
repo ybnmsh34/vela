@@ -36,23 +36,39 @@ pub struct ToolCallDelta {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum StreamEvent {
     /// Answer text. Never contains reasoning markup — the splitter has already
     /// run, across frame boundaries (MEASURED-3).
-    TextDelta { text: String },
+    TextDelta {
+        text: String,
+    },
     /// Reasoning text, from `<think>` blocks or from a `reasoning_content`
     /// field. Stored as a distinct content part, never shown as the answer.
-    ReasoningDelta { text: String },
-    ToolCallDelta { delta: ToolCallDelta },
+    ReasoningDelta {
+        text: String,
+    },
+    ToolCallDelta {
+        delta: ToolCallDelta,
+    },
     /// Usage, if the endpoint ever reports it. May never arrive; nothing waits
     /// for it.
-    Usage { usage: TokenUsage },
+    Usage {
+        usage: TokenUsage,
+    },
     /// The turn finished. Carries the assembled response so a consumer that
     /// only cares about the end state can ignore the deltas entirely.
-    Done { response: Box<ChatResponse> },
+    Done {
+        response: Box<ChatResponse>,
+    },
     /// The turn failed. Terminal: no `Done` follows.
-    Error { error: ProviderError },
+    Error {
+        error: ProviderError,
+    },
 }
 
 impl StreamEvent {
@@ -200,9 +216,9 @@ impl EventSink for CollectingSink {
 pub fn emit_whole_response(sink: &mut dyn EventSink, response: ChatResponse) {
     for part in &response.parts {
         match part {
-            crate::model::ContentPart::Text { text } => sink.emit(StreamEvent::TextDelta {
-                text: text.clone(),
-            }),
+            crate::model::ContentPart::Text { text } => {
+                sink.emit(StreamEvent::TextDelta { text: text.clone() })
+            }
             crate::model::ContentPart::Reasoning { text, .. } => {
                 sink.emit(StreamEvent::ReasoningDelta { text: text.clone() })
             }
@@ -252,10 +268,7 @@ mod tests {
         emit_whole_response(&mut sink, response);
 
         assert_eq!(sink.text(), "hello");
-        assert!(matches!(
-            sink.events.last(),
-            Some(StreamEvent::Done { .. })
-        ));
+        assert!(matches!(sink.events.last(), Some(StreamEvent::Done { .. })));
     }
 
     #[test]

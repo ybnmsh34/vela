@@ -138,7 +138,11 @@ fn parse_retry_after_ms(header: &str) -> Option<u64> {
     // Seconds form only. The HTTP-date form is deliberately not parsed: a
     // wrong-by-hours backoff is worse than none, and callers fall back to
     // their own policy when this is `None`.
-    header.trim().parse::<f64>().ok().map(|s| (s * 1000.0) as u64)
+    header
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(|s| (s * 1000.0) as u64)
 }
 
 fn fallback<'a>(message: &'a str, default: &'a str) -> &'a str {
@@ -177,7 +181,10 @@ mod tests {
         for (code, capability) in [
             ("vision_not_supported", Capability::Vision),
             ("tools_not_supported", Capability::ToolCalling),
-            ("response_format_not_supported", Capability::StructuredOutput),
+            (
+                "response_format_not_supported",
+                Capability::StructuredOutput,
+            ),
             ("model_listing_not_supported", Capability::ModelListing),
         ] {
             let body = format!(r#"{{"error":{{"message":"nope","code":"{code}"}}}}"#);

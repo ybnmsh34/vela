@@ -12,7 +12,28 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 vela-core.workspace = true
+# The credential seam. This crate resolves an `Auth` binding into request
+# material through `vela_secrets::resolve_auth`; it never touches the OS
+# keychain, and never sees a `SecretValue` it did not ask that function for.
+vela-secrets.workspace = true
 async-trait = "0.1"
+# `time` for the stall timeout that MEASURED-1 makes mandatory, `sync` for the
+# cancellation token. No `rt`: the runtime belongs to the host process.
+tokio = { version = "1", features = ["time", "sync"] }
+# THE ONLY HTTP CLIENT IN THE WORKSPACE, and it lives here on purpose: the mock
+# matrix proved the endpoints send no CORS headers and answer OPTIONS with 405,
+# so a browser-hosted renderer can never call them. All provider HTTP therefore
+# originates in the Rust core. `vela-settings/tests/capability_matrix_endpoints.rs`
+# fails if a second crate declares one.
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  "http2",
+  "charset",
+] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "process", "io-util"] }
+# The parity test deserialises this crate's content model as vela-store's and
+# back, so the two models cannot drift. A dev-dependency only: the provider seam
+# must not depend on persistence at runtime.
+vela-store.workspace = true

@@ -22,6 +22,7 @@
 //! | [`structured`] | Validating structured output that an endpoint may have ignored |
 //! | [`router`] | Ordered candidates, bounded retries, honest failover |
 //! | [`http`] | The HTTP seam — the only place in Vela that opens a socket |
+//! | [`google`] | The Gemini `generateContent` backend: `contents`/`parts`, safety blocks, thought signatures |
 //! | [`openai_compatible`] | The OpenAI-shaped backend all four matrix profiles speak |
 //! | [`compat`] | The adapter over it: server discovery, the four `/v1/models` shapes, the four error dialects |
 //!
@@ -94,6 +95,7 @@ pub mod context;
 pub mod emulation;
 pub mod error;
 pub mod event;
+pub mod google;
 pub mod http;
 pub mod lenient_json;
 pub mod model;

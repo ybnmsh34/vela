@@ -1,0 +1,8 @@
+data: {"candidates": [{"content": {"parts": [{"text": "<thi"}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "nk>The user asked for a haiku. Five, seven, five.</thi"}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "nk>Rain on the rooftop"}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 12,"candidatesTokenCount": 30,"totalTokenCount": 42},"modelVersion": "gemini-2.5-flash"}
+

@@ -1,0 +1,14 @@
+data: {"candidates": [{"content": {"parts": [{"text": "The three primary colours "}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "are red,
+
+: keepalive
+
+data: {"candidates": [{"content": {"parts": [{"text": "blue and "}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: not-json-at-all
+
+data: {"candidates": [{"content": {"parts": [{"text": "yellow."}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 8,"candidatesTokenCount": 11,"totalTokenCount": 19},"modelVersion": "gemini-2.5-flash"}
+

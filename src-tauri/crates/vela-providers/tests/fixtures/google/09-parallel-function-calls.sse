@@ -1,0 +1,6 @@
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "get_weather","args": {"city": "Berlin"}}},{"functionCall": {"name": "get_weather","args": {"city": "Paris"}}}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "get_time","args": {"zone": "CET"}}}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 96,"candidatesTokenCount": 31,"totalTokenCount": 127},"modelVersion": "gemini-2.5-flash"}
+

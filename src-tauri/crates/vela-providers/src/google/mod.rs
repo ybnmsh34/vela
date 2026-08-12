@@ -171,9 +171,9 @@ pub fn describe_block(blocked: &Blocked) -> String {
             "the endpoint's {filter} blocked this request before the model saw it, \
              so no answer was generated{flagged}"
         ),
-        (BlockStage::Answer, 0) => format!(
-            "the endpoint's {filter} blocked the answer, so nothing was returned{flagged}"
-        ),
+        (BlockStage::Answer, 0) => {
+            format!("the endpoint's {filter} blocked the answer, so nothing was returned{flagged}")
+        }
         (BlockStage::Answer, generated) => format!(
             "the endpoint's {filter} stopped the answer after {generated} characters; \
              the rest was withheld{flagged}"
@@ -332,7 +332,11 @@ pub fn map_error_object(http_status: Option<u16>, error: &Value) -> ProviderErro
         ),
         "INTERNAL" | "UNKNOWN" | "DATA_LOSS" => ProviderError::transport(
             TransportFailure::Server {
-                status: if (500..=599).contains(&code) { code } else { 500 },
+                status: if (500..=599).contains(&code) {
+                    code
+                } else {
+                    500
+                },
             },
             fallback(message, "the endpoint failed to answer"),
         ),
@@ -536,7 +540,7 @@ fn retry_info_ms(error: &Value) -> Option<u64> {
 /// A `google.protobuf.Duration` in JSON form: seconds with an `s` suffix.
 fn parse_duration_ms(raw: &str) -> Option<u64> {
     let seconds: f64 = raw.trim().trim_end_matches('s').trim().parse().ok()?;
-    (seconds.is_finite() && seconds >= 0.0).then(|| (seconds * 1000.0) as u64)
+    (seconds.is_finite() && seconds >= 0.0).then_some((seconds * 1000.0) as u64)
 }
 
 fn parse_retry_after_ms(header: &str) -> Option<u64> {

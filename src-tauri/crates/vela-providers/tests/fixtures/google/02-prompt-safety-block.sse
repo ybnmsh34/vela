@@ -1,0 +1,2 @@
+data: {"promptFeedback": {"blockReason": "SAFETY","safetyRatings": [{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT","probability": "NEGLIGIBLE","blocked": false},{"category": "HARM_CATEGORY_HATE_SPEECH","probability": "HIGH","blocked": true},{"category": "HARM_CATEGORY_HARASSMENT","probability": "MEDIUM","blocked": false},{"category": "HARM_CATEGORY_DANGEROUS_CONTENT","probability": "NEGLIGIBLE","blocked": false}]},"usageMetadata": {"promptTokenCount": 31,"totalTokenCount": 31},"modelVersion": "gemini-2.5-flash"}
+

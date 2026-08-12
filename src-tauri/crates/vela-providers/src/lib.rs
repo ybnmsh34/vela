@@ -23,6 +23,7 @@
 //! | [`router`] | Ordered candidates, bounded retries, honest failover |
 //! | [`http`] | The HTTP seam — the only place in Vela that opens a socket |
 //! | [`openai_compatible`] | The OpenAI-shaped backend all four matrix profiles speak |
+//! | [`compat`] | The adapter over it: server discovery, the four `/v1/models` shapes, the four error dialects |
 //!
 //! ## The evidence this crate is written against
 //!
@@ -87,6 +88,7 @@
 //!    becomes a capability flag.
 
 pub mod capability;
+pub mod compat;
 pub mod context;
 pub mod emulation;
 pub mod error;

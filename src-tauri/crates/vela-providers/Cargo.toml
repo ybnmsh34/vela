@@ -32,7 +32,12 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "process", "io-util"] }
+# `net` is dev-only and buys one thing: `tests/wire_auth_headers.rs` opens a
+# real loopback socket to record the literal bytes Vela puts on the wire. That
+# is the only vantage point from which "Auth::None sends no credential" is a
+# claim about the wire rather than about a struct. It is not an HTTP client —
+# `vela-settings/tests/capability_matrix_endpoints.rs` still sees exactly one.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "process", "io-util", "net"] }
 # The parity test deserialises this crate's content model as vela-store's and
 # back, so the two models cannot drift. A dev-dependency only: the provider seam
 # must not depend on persistence at runtime.

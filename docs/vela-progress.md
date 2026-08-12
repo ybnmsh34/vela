@@ -94,6 +94,32 @@ outbound request. "End to end" ended at request-material construction. **Phase B
 stage is required to close this on the wire** — capture real request headers against the mock
 harness — and its security critic is instructed not to accept a unit test in its place.
 
+**CLOSED at Phase B integration.** `src-tauri/crates/vela-providers/tests/wire_auth_headers.rs`
+records the **literal request bytes**. A `RecordingProxy` binds a real loopback port, tees every
+byte the client sends, and forwards it verbatim to the upstream; the provider is a real provider
+and the transport is the real `ReqwestTransport`. For the OpenAI-compatible case the upstream is
+the mock harness running as a separate OS process, so discovery, capability probing and a
+completed turn are all captured on one live connection. Assertions are made on the parsed request
+line and header block — not on an `HttpRequest` struct, and not inferred from a status code.
+
+Two things the old proof could not do, and this one does. First, it distinguishes *no header*
+from *a header carrying something non-empty and wrong*: the `401 empty_authorization_header`
+inference could not, because an endpoint with no key configured accepts both. Second, it covers
+the two bindings that never touch `Authorization` at all — Anthropic's `x-api-key` header and
+Google's `?key=` query parameter, the latter being the shape a header-only assertion is blind to
+by construction.
+
+Every case carries a positive control on the identical path with a credential configured,
+asserting the credential *is* on the wire (`authorization: bearer …`, `x-api-key: …`,
+`key=…`), plus a `saw_traffic` guard, so a recorder that had gone blind fails loudly instead of
+passing the negative assertions vacuously. Two further tests pin the recorder's own parser: a
+request *body* quoting `authorization:` must not be read as a header, and a header on the second
+request of a keep-alive connection must still be seen.
+
+Still **VERIFIED-BY-FAKE**: the upstreams are a deterministic mock and a canned responder, and
+the credential store is `MemoryStore`. What is now proven is what Vela puts on a socket. Nothing
+here is evidence about a real vendor endpoint or about the OS keychain.
+
 ### Building forward on AWAITING_DESKTOP pieces — the reasoning, stated rather than assumed
 
 The rule is: do not build forward on a piece whose desktop verdicts are outstanding. Phase B

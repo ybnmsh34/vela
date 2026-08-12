@@ -22,6 +22,7 @@
 //! | [`structured`] | Validating structured output that an endpoint may have ignored |
 //! | [`router`] | Ordered candidates, bounded retries, honest failover |
 //! | [`http`] | The HTTP seam — the only place in Vela that opens a socket |
+//! | [`anthropic`] | The Messages backend: `content` blocks, `thinking` blocks, `x-api-key` |
 //! | [`google`] | The Gemini `generateContent` backend: `contents`/`parts`, safety blocks, thought signatures |
 //! | [`openai_compatible`] | The OpenAI-shaped backend all four matrix profiles speak |
 //! | [`compat`] | The adapter over it: server discovery, the four `/v1/models` shapes, the four error dialects |
@@ -112,9 +113,19 @@ pub mod tool_accum;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+// The four adapter entry points, re-exported at the crate root on equal terms.
+// They landed from four separate builders and only one had reached this block,
+// so `use vela_providers::{OpenAiCompatibleProvider, AnthropicProvider}` failed
+// to compile for no reason a caller could have predicted. Each adapter's
+// `DEFAULT_BASE_URL` deliberately stays behind its own module path: three of
+// them share that name, and flattening one here would make which vendor you got
+// depend on import order.
+pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use capability::{CapabilityFinding, Evidence, ModelCapabilities, Support};
+pub use compat::{CompatOptions, CompatProvider};
 pub use error::{Capability, ProviderError, ProviderResult, TransportFailure};
 pub use event::{EventSink, StreamEvent, ToolCallDelta};
+pub use google::{GoogleOptions, GoogleProvider};
 pub use http::{HttpTransport, ReqwestTransport};
 pub use model::{
     CacheHints, ChatMessage, ChatRequest, ChatResponse, ContentPart, ContextStrategy, Degradation,

@@ -74,14 +74,13 @@ jobs:
       # The mock harness is deterministic by design, so a diff in the committed
       # transcripts means real behaviour changed. This turns the GATE M evidence
       # directory into a regression test rather than a static artifact.
+      #
+      # The check moved out of this file into a script, for the reason stated in
+      # `scripts/check-transcripts.sh`: while it lived here, `pnpm verify` could
+      # not run it, and a check builders cannot run locally is a check they
+      # discover by breaking. `pnpm verify` now invokes this same script.
       - name: Mock transcripts are reproducible
-        run: |
-          node tests/harness/mock-provider/src/record-transcripts.ts
-          if ! git diff --quiet -- docs/regression-baseline/mock-matrix; then
-            echo "::error::Mock-matrix transcripts changed. Provider behaviour moved; review and commit the new evidence."
-            git diff --stat -- docs/regression-baseline/mock-matrix
-            exit 1
-          fi
+        run: ./scripts/check-transcripts.sh
 
   test-rust:
     name: Rust core tests

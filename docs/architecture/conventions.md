@@ -319,7 +319,16 @@ never `undefined` doing double duty.
 | TS units, repositories, components | vitest + jsdom + Testing Library | colocated `*.test.ts(x)` | `pnpm test` |
 | Types | `tsc --build` | — | `pnpm typecheck` |
 
-`pnpm verify` runs typecheck → vitest → cargo test in one shot. Run it before every commit.
+`pnpm verify` runs the whole gate in one shot: typecheck → rustfmt → clippy → vitest →
+harness → frontend build → transcript reproducibility → secret tripwire → `cargo build` →
+`cargo test`, the last two with `--locked`. Run it before every commit.
+
+**It is a superset of CI, and that is asserted, not maintained by hand.** It used to be
+narrower — no `pnpm build`, no `cargo build`, no `--locked`, and the transcript check existed
+only as an inline block in `ci.yml` that nobody could run locally. Three Phase B builders each
+finished green and each shipped something CI caught. `src/platform/verify-covers-ci.test.ts`
+now fails if a gate command appears in the workflow but is unreachable from `verify`, in either
+direction. Add a CI step and you must add it here too.
 
 Rules:
 

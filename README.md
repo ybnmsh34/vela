@@ -12,7 +12,7 @@ Tauri v2 — Rust core, React + TypeScript renderer, strict IPC boundary between
 pnpm install
 pnpm dev                 # frontend alone in a browser, backed by the in-memory fake host
 pnpm verify              # typecheck + vitest + cargo test
-cargo tauri dev          # the real desktop app (needs a display server)
+pnpm tauri dev           # the real desktop app (needs a display server)
 ```
 
 Linux hosts need the webview toolchain before the Rust workspace will build:

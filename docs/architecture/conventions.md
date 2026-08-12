@@ -366,9 +366,12 @@ a real keychain. Keep that property when you replace the placeholder.
 | Command | Status here |
 |---|---|
 | `pnpm install`, `pnpm typecheck`, `pnpm build`, `pnpm test` | ✅ works |
-| `pnpm dev` (browser, `BrowserAdapter`) | ✅ works — serves on `127.0.0.1:1420` |
-| `cargo build --workspace`, `cargo test --workspace` | ✅ works |
-| `cargo tauri dev` / `cargo tauri build` (the packaged app) | ❌ **not verified here** |
+| `pnpm dev` (browser, `BrowserAdapter`) | ✅ works — serves on `127.0.0.1:1420`, renders in headless Chromium with no console errors |
+| `cargo build`, `cargo test` (workspace) | ✅ works |
+| `pnpm tauri build --no-bundle` | ✅ works — produces `src-tauri/target/release/vela` (~10.9 MB, keyring linked) |
+| **Running** that binary | ❌ panics at `gtk::rt::init` — no display server. Expected and correct. |
+| `pnpm tauri build` (with bundling: deb/AppImage/dmg/msi) | ⚠️ **not attempted** — needs the platform bundler toolchain |
+| `pnpm tauri dev` | ❌ needs a display server |
 
 The Rust workspace — including the `tauri` crate — compiles because the container has
 `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libsoup-3.0-dev`,
@@ -380,7 +383,10 @@ apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
     libjavascriptcoregtk-4.1-dev librsvg2-dev patchelf libayatana-appindicator3-dev
 ```
 
-Producing an actual bundle additionally needs a display server and the platform bundler
-toolchain, neither of which exists here. **No claim about the packaged binary — startup time,
-memory, window chrome, notifications, keychain round-trips — may be made from this
-environment.**
+The release binary compiles and links — including the real `keyring` backend — but it cannot
+be *run*: `tao` panics initialising GTK because there is no display server. Producing an
+installable bundle additionally needs the platform bundler toolchain, which was not attempted.
+
+**Therefore: no claim about the running application — startup time, idle memory, window
+chrome, OS notifications, keychain round-trips — may be made from this environment.** "It
+compiles" is the strongest honest statement available here about the desktop shell.

@@ -11,6 +11,7 @@
 
 pub mod ipc;
 pub mod state;
+pub mod store_host;
 
 use state::AppState;
 
@@ -18,8 +19,22 @@ use state::AppState;
 /// [`ipc::COMMAND_ALLOWLIST`] must agree — `cargo test` enforces it.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Scoped to this function so the module's import list stays as the scaffold
+    // left it; `manage` needs the trait in scope.
+    use tauri::Manager;
+
     tauri::Builder::default()
         .manage(AppState::for_runtime())
+        // The system of record. Opened here rather than in `AppState` because
+        // the OS application-data directory is only resolvable once the app
+        // handle exists. Migrations run inside this call; if it fails, startup
+        // fails, because running without storage would accept the user's work
+        // and then drop it.
+        .setup(|app| {
+            let store = store_host::open(app.handle())?;
+            app.manage(store);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_info,
             ipc::diagnostics::diagnostics_echo,

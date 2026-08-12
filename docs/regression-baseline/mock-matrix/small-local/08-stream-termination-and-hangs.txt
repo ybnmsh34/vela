@@ -45,3 +45,26 @@ $ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://
 ### naive-consumer probe: wait-for-usage
 $ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8103 --probe wait-for-usage
 
+--- probe: wait-for-usage ---
+    frames seen                 11
+    outcome                     TIMED-OUT
+    usage                       (never sent)
+    elapsed                     5005 ms
+    VERDICT                     HANG. include_usage was accepted and no usage frame ever arrived.
+
+### naive-consumer probe: strict-json-frames
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8103 --probe strict-json-frames
+
+--- probe: strict-json-frames ---
+    frames consumed before stop 11
+    outcome                     COMPLETED
+    chars accumulated           122
+    chars in non-streamed body  122
+    VERDICT                     every frame parsed; nothing lost.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  [DONE] is sent, so a sentinel-driven consumer terminates
+PASS  DOCUMENTED HAZARD: include_usage accepted, usage never sent — waiting for it HANGS
+PASS  every frame is parseable — a strict consumer loses nothing

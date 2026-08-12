@@ -1,0 +1,119 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : hostile  ((Mock Hostile (4k, broken everything)))
+  case      : 07-reasoning-think-blocks
+  endpoint  : http://127.0.0.1:8104   (a separate `node cli.ts --profile hostile` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:01:07Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+Where this profile puts its reasoning, and what a consumer sees if it
+trusts the obvious approaches. The non-streaming and streamed bodies for
+the same question are in 01- and 02-; this case isolates the reasoning.
+
+### plain question, non-streaming — looking at where reasoning lands
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8104/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 149 bytes (0x95)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8104
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 72
+0093: 
+=> Send data, 72 bytes (0x48)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 727
+Date: Wed, 12 Aug 2026 20:01:07 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (727 bytes) ---
+{
+  "id": "chatcmpl-mock-b85cd143",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> ▒▒ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: what is the weather in Berlin. delta gauge gauge windward harbor harbor yardarm zenith tiller jetty fathom keel. <|im_start|> <|im_start|>"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 88,
+    "total_tokens": 100
+  }
+}
+--- end of body ---
+
+--- choices[0].message.reasoning_content ---
+(field absent)
+--- choices[0].message.content ---
+<think> ▒▒ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: what is the weather in Berlin. delta gauge gauge windward harbor harbor yardarm zenith tiller jetty fathom keel. <|im_start|> <|im_start|>
+
+--- every streamed content fragment, one per line, in order (| marks the edges) ---
+  |<think>|
+  | ▒▒ <|channel|>analysis |
+  |Considering the req|
+  |uest about what is |
+  |the weather in Berl|
+  |in. Profile hostile|
+  | has a 4096-token w|
+  |indow. Answering di|
+  |rectly.|
+  | <|channel|>analysis |
+  |<think>|
+  | nested |
+  |Mock hostil|
+  |e reply to:|
+  | what is th|
+  |e weather i|
+  |n Berlin. d|
+  |elta gauge |
+  |gauge windw|
+  |ard harbor |
+  |harbor yard|
+  |arm zenith |
+  |tiller jett|
+  |y fathom ke|
+  |el.|
+  | <|im_start|> <|im_start|>|
+
+### naive-consumer probe: frame-local-think-stripper
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8104 --probe frame-local-think-stripper
+
+--- probe: frame-local-think-stripper ---
+    frames                      31
+    outcome                     COMPLETED
+    text shown to the user      "<think> ▒▒ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: what is the weather in Berlin. delta gauge gauge windward harbor harbor yardarm zenith tiller jetty fathom keel. <|im_start|> <|im_start|>"
+    <think> markers still shown 2 open, 0 close
+    VERDICT                     LEAK. Reasoning markup reached the user; per-frame stripping is not enough.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  no reasoning_content field
+PASS  <think> is opened
+PASS  …and NEVER closed
+PASS  a second <think> is opened inside the first
+PASS  junk/control tokens are interleaved into it
+PASS  a frame-local stripper leaks all of it to the user (recorded above)

@@ -1,0 +1,81 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : hostile  ((Mock Hostile (4k, broken everything)))
+  case      : 05-structured-output
+  endpoint  : http://127.0.0.1:8104   (a separate `node cli.ts --profile hostile` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:01:06Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### response_format: json_schema
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8104/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8104
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 279
+0094: 
+=> Send data, 279 bytes (0x117)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"response_format":{"type":"json_schema","json_schema":{"
+0080: name":"weather_answer","schema":{"type":"object","properties":{"
+00c0: city":{"type":"string"},"celsius":{"type":"integer"}},"required"
+0100: :["city","celsius"]}}}}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 686
+Date: Wed, 12 Aug 2026 20:01:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (686 bytes) ---
+{
+  "id": "chatcmpl-mock-9c25d657",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> [UNK] </s> Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. </s> <think> nested Mock hostile reply to: what is the weather in Berlin. ivory rudder lantern rudder zenith beacon tiller quartz pennant quartz sextant alpha. [UNK] ЖЖЖ"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 78,
+    "total_tokens": 90
+  }
+}
+--- end of body ---
+
+### naive-consumer probe: structured-output-trust
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8104 --probe structured-output-trust
+
+--- probe: structured-output-trust ---
+    HTTP status                 200
+    content                     "<think> [UNK] </s> Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. </s> <think> nested Mock hostile reply to: what is the weather in Berlin. ivory rudder lantern rudder zenith beacon tiller quartz pennant quartz sextant alpha. [UNK] ЖЖЖ"
+    JSON.parse(content)         FAILED — Unexpected token '<', "<think> [U"... is not valid JSON
+    VERDICT                     SILENT WRONG ANSWER. 200 OK, response_format accepted, prose returned. Nothing in the response says the schema was ignored.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  the request is NOT rejected — the field is accepted; observed 200
+PASS  SILENT DEGRADATION (the dangerous one): the content is prose, not JSON
+PASS  and nothing in the response says the schema was ignored

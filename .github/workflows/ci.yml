@@ -117,24 +117,27 @@ jobs:
   # Failing this job means a secret reached the tree. It is deliberately crude
   # and deliberately cheap: the real guarantee is that keys live only in the OS
   # keychain, and this is the tripwire behind it.
+  #
+  # The scan used to live inline here and carried `':!docs/**'`, exempting the
+  # whole documentation tree — including the committed mock-provider transcripts,
+  # which are precisely the kind of file a real key gets pasted into. That
+  # exclusion is gone; `scripts/secret-scan.sh` scans everything. Two consequences
+  # worth stating: the scan now covers its own script and this workflow file (so
+  # a key shape can no longer hide in either), and the scanner has its own test
+  # suite, which plants real key shapes under `docs/` and proves they are caught.
+  # A tripwire nobody can run is a tripwire nobody tests.
   secret-tripwire:
     name: No secrets on disk
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0` is not needed — the scan reads tracked files, not history.
       - uses: actions/checkout@v4
+
+      # Runs first: if the scanner is broken, a clean result from it means
+      # nothing, so prove it still catches planted keys before trusting it.
+      - name: The tripwire still catches planted keys
+        run: ./scripts/secret-scan.test.sh
+
       - name: Scan tracked files for credential material
-        run: |
-          set -o pipefail
-          # Real provider key shapes: OpenAI (sk-...), Anthropic (sk-ant-...),
-          # Google (AIza...), plus committed private keys and dotenv files.
-          pattern='(sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,}|AIza[A-Za-z0-9_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
-          if git grep -nIE "$pattern" -- . ':!docs/**' ':!.github/workflows/ci.yml' ; then
-            echo "::error::Possible credential material found in tracked files."
-            exit 1
-          fi
-          if git ls-files | grep -E '(^|/)\.env($|\.)' ; then
-            echo "::error::A .env file is tracked. Credentials must live in the OS keychain."
-            exit 1
-          fi
-          echo "No credential material found in tracked files."
+        run: ./scripts/secret-scan.sh

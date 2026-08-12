@@ -15,12 +15,13 @@
     "typecheck": "tsc --build --force",
     "test": "vitest run",
     "test:harness": "vitest run --config tests/harness/mock-provider/vitest.config.ts",
+    "test:secrets": "./scripts/secret-scan.test.sh && ./scripts/secret-scan.sh",
     "mock-provider": "node tests/harness/mock-provider/src/cli.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri",
     "lint:rust": "cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
-    "verify": "pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && cd src-tauri && cargo test --workspace"
+    "verify": "pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && pnpm test:secrets && cd src-tauri && cargo test --workspace"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

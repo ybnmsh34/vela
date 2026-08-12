@@ -54,8 +54,36 @@ pre-fixes, built by someone other than whoever found them:
 |---|---|---|
 | Mock harness 413 branch is unreachable dead code (>8 MiB body → no response, silent both ends) | test infra only; disclosed and root-caused in the repo's own evidence rather than papered over | 🟡 fix in flight |
 | `browser-adapter.ts` hand-reimplements ~200 lines of Rust host logic; command *names* are pinned across languages but *semantics* are pinned by nothing → silent, monotonically growing drift | non-blocking, but the critic said land the fix **before Phase B multiplies the surface** | 🟡 fix in flight |
-| `Auth::ApiKeyQuery` has no `Concern` variant, so an HTTPS endpoint using query-param auth reports `RiskLevel::None` though the key lands in access logs | non-blocking | 🟡 fix in flight |
-| CI secret tripwire excludes `':!docs/**'` — exactly where mock transcripts live | non-blocking; docs/ scanned manually and clean today | 🟡 fix in flight |
+| `Auth::ApiKeyQuery` has no `Concern` variant, so an HTTPS endpoint using query-param auth reports `RiskLevel::None` though the key lands in access logs | non-blocking | ✅ **closed** — `Concern::QueryParamCredentialIsLogged`, `RiskLevel::Elevated`, fires on `https:` too |
+| CI secret tripwire excludes `':!docs/**'` — exactly where mock transcripts live | non-blocking; docs/ scanned manually and clean today | ✅ **closed** — exclusion removed entirely; `scripts/secret-scan.sh` + its own test suite |
+
+#### How the two security findings were closed, and what the fix is worth
+
+Both are **VERIFIED-BY-FAKE** in the sense that matters here: no endpoint was contacted. They
+are not verified-by-fake in the sense that would make them worthless — each fix was checked by
+re-introducing the exact bug and watching the new tests go red.
+
+*Query-string credentials.* `Concern::QueryParamCredentialIsLogged` fires when the binding is
+`Auth::ApiKeyQuery` **and** the endpoint is not loopback — deliberately not gated on `https:`
+(TLS hides the URL from the network, then the server writes the request line into its access
+log, as does every TLS-terminating proxy in front of it) and deliberately not gated on a stored
+credential (the warning has to reach the user *before* they paste the key into a shape that logs
+it). It stays silent on loopback, holding the module's existing rule that risk comes from the
+endpoint being remote. Severity is `Elevated`, not `High`: the key reaches the operator the user
+already hands it to, plus their log pipeline — worse than an open endpoint, not as bad as being
+readable by every observer on the path. `RiskLevel` is now derived as the maximum of
+`Concern::severity()` rather than an `if/else` chain, so a future variant cannot be added
+without being given a rung on the ladder.
+
+*Secret tripwire.* The `':!docs/**'` exclusion is gone, not narrowed — `git grep` over the
+pattern finds nothing under `docs/` today, so there was no false positive to preserve. The scan
+moved out of `ci.yml` into `scripts/secret-scan.sh`, which now also scans itself and the
+workflow file (the old scan excluded `ci.yml` because it carried the pattern inline).
+`scripts/secret-scan.test.sh` plants real key shapes — OpenAI, Anthropic, Google, PEM — in
+throwaway repositories under `docs/regression-baseline/mock-matrix/` and asserts each is caught,
+with three no-false-positive rows so nobody is tempted to mute it. Restoring the old exclusion
+turns all four `docs/` rows red, which is the evidence that the blind spot was real. Exclusions
+must now be exact file paths; a test fails the build if a `*` appears in the list.
 
 ### A stated limit on the Phase A "Auth::None" proof
 

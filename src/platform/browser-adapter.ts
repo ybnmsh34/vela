@@ -97,6 +97,22 @@ function networkScope(url: URL): NetworkScope {
   return 'publicNetwork';
 }
 
+/** Mirrors `vela_settings::RiskLevel`, quietest first. */
+const RISK_LADDER: readonly RiskLevel[] = ['none', 'notice', 'elevated', 'high'];
+
+/**
+ * Mirrors `vela_settings::security::Concern::severity`. The posture's `level`
+ * is the loudest severity among the concerns raised, so a new concern cannot be
+ * added without being given a place on the ladder — the `Record` is total.
+ */
+const CONCERN_SEVERITY: Record<Concern, RiskLevel> = {
+  credentialSentInPlaintext: 'high',
+  plaintextTrafficLeavesDevice: 'elevated',
+  queryParamCredentialIsLogged: 'elevated',
+  remoteEndpointIsUnauthenticated: 'notice',
+  requiredCredentialMissing: 'notice',
+};
+
 /** Mirrors `vela_settings::security::SecurityPosture::assess`. */
 function assessSecurity(
   url: URL,
@@ -110,18 +126,27 @@ function assessSecurity(
   const endpointIsUnauthenticated = auth.type === 'none';
   const credentialSentInPlaintext =
     trafficIsPlaintext && leavesDevice && !endpointIsUnauthenticated && credentialPresent;
+  // Mirrors `credential_in_query_string`: gated on the endpoint being remote,
+  // and on nothing else. Not on `trafficIsPlaintext` — https does not stop an
+  // access log — and not on `credentialPresent`, because the user needs to be
+  // told before they paste the key in.
+  const credentialInQueryString = leavesDevice && auth.type === 'apiKeyQuery';
 
   const concerns: Concern[] = [];
   if (trafficIsPlaintext && leavesDevice) concerns.push('plaintextTrafficLeavesDevice');
   if (credentialSentInPlaintext) concerns.push('credentialSentInPlaintext');
+  if (credentialInQueryString) concerns.push('queryParamCredentialIsLogged');
   if (leavesDevice && endpointIsUnauthenticated) concerns.push('remoteEndpointIsUnauthenticated');
   if (credentialRequired && !credentialPresent) concerns.push('requiredCredentialMissing');
   concerns.sort();
 
-  let level: RiskLevel = 'none';
-  if (concerns.includes('credentialSentInPlaintext')) level = 'high';
-  else if (concerns.includes('plaintextTrafficLeavesDevice')) level = 'elevated';
-  else if (concerns.length > 0) level = 'notice';
+  const level = concerns.reduce<RiskLevel>(
+    (loudest, concern) =>
+      RISK_LADDER.indexOf(CONCERN_SEVERITY[concern]) > RISK_LADDER.indexOf(loudest)
+        ? CONCERN_SEVERITY[concern]
+        : loudest,
+    'none',
+  );
 
   return {
     level,
@@ -129,6 +154,7 @@ function assessSecurity(
     leavesDevice,
     trafficIsPlaintext,
     credentialSentInPlaintext,
+    credentialInQueryString,
     endpointIsUnauthenticated,
     concerns,
   };

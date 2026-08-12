@@ -140,10 +140,23 @@ export type NetworkScope = 'loopback' | 'privateNetwork' | 'publicNetwork';
  */
 export type RiskLevel = 'none' | 'notice' | 'elevated' | 'high';
 
-/** Enumerable, provider-neutral reasons. The UI owns the wording. */
+/**
+ * Enumerable, provider-neutral reasons. The UI owns the wording.
+ *
+ * Listed in the order the host emits them: `concerns` arrives sorted, and both
+ * implementations sort lexicographically by these names. See
+ * `Concern::ALL` in `src-tauri/crates/vela-settings/src/security.rs`.
+ */
 export type Concern =
-  | 'plaintextTrafficLeavesDevice'
   | 'credentialSentInPlaintext'
+  | 'plaintextTrafficLeavesDevice'
+  /**
+   * The credential rides in the URL's query string to a non-loopback endpoint.
+   * **Present even when the transport is `https:`** — TLS hides the URL from
+   * the network, then the server and every TLS-terminating proxy write the
+   * request line, query string and all, into an access log.
+   */
+  | 'queryParamCredentialIsLogged'
   | 'remoteEndpointIsUnauthenticated'
   | 'requiredCredentialMissing';
 
@@ -153,6 +166,8 @@ export interface SecurityPosture {
   readonly leavesDevice: boolean;
   readonly trafficIsPlaintext: boolean;
   readonly credentialSentInPlaintext: boolean;
+  /** Independent of `trafficIsPlaintext`: encryption does not stop logging. */
+  readonly credentialInQueryString: boolean;
   readonly endpointIsUnauthenticated: boolean;
   readonly concerns: readonly Concern[];
 }

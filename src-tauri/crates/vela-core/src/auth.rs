@@ -59,23 +59,21 @@ impl AuthMode {
 }
 
 /// Whether a credential is needed at all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AuthRequirement {
     /// The endpoint has no auth. Supplying a credential is meaningless.
-    /// This is the default for local runtimes.
+    ///
+    /// `#[default]` is load-bearing, not incidental: a payload that omits the
+    /// requirement describes an *unauthenticated* endpoint — the configuration
+    /// local runtimes actually use — rather than one that fails validation.
+    #[default]
     NotRequired,
     /// The endpoint may or may not have auth (e.g. a llama.cpp server started
     /// with `--api-key`, or one started without). Both states are valid.
     Optional,
     /// The endpoint rejects unauthenticated requests.
     Required,
-}
-
-impl Default for AuthRequirement {
-    fn default() -> Self {
-        AuthRequirement::NotRequired
-    }
 }
 
 /// The outcome of checking a configuration. Note there is no `Err` here for the

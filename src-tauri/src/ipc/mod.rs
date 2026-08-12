@@ -161,15 +161,8 @@ mod tests {
     #[test]
     fn every_command_is_domain_prefixed() {
         for name in COMMAND_ALLOWLIST {
-            assert!(
-                name.contains('_'),
-                "`{name}` must be named <domain>_<verb>"
-            );
-            assert_eq!(
-                name.to_lowercase(),
-                **name,
-                "`{name}` must be snake_case"
-            );
+            assert!(name.contains('_'), "`{name}` must be named <domain>_<verb>");
+            assert_eq!(name.to_lowercase(), **name, "`{name}` must be snake_case");
         }
     }
 }

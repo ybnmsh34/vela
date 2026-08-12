@@ -75,7 +75,13 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_oversized_payloads_with_invalid_payload() {
-        let empty = echo(EchoReq { message: String::new() }, 0).unwrap_err();
+        let empty = echo(
+            EchoReq {
+                message: String::new(),
+            },
+            0,
+        )
+        .unwrap_err();
         assert_eq!(empty.code, IpcErrorCode::InvalidPayload);
 
         let huge = echo(

@@ -82,10 +82,16 @@ pub struct ChatRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ChatChunk {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     /// Separate reasoning channel, when `capabilities.reasoning` is set.
-    Reasoning { text: String },
-    Done { stop_reason: StopReason },
+    Reasoning {
+        text: String,
+    },
+    Done {
+        stop_reason: StopReason,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

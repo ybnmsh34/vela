@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri",
-    "verify": "pnpm typecheck && pnpm test && pnpm test:harness && cd src-tauri && cargo test --workspace"
+    "lint:rust": "cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "verify": "pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && cd src-tauri && cargo test --workspace"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

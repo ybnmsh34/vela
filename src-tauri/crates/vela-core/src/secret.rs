@@ -206,10 +206,12 @@ mod tests {
     fn a_secret_nested_inside_a_derived_debug_struct_is_still_redacted() {
         // The realistic leak: nobody logs the credential directly, they log the
         // request struct that happens to hold one.
+        // Every field is read only through the derived `Debug` — which is the
+        // whole point of the test — and derived impls are ignored by dead-code
+        // analysis, so the allow belongs on the struct, not on one field.
         #[derive(Debug)]
+        #[allow(dead_code)]
         struct OutboundRequest {
-            // Read only through `Debug` — that is the whole point of the test.
-            #[allow(dead_code)]
             url: &'static str,
             credential: SecretValue,
         }

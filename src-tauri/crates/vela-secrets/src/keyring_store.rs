@@ -75,7 +75,7 @@ impl SecretStore for KeyringStore {
     }
 
     fn contains(&self, reference: &SecretRef) -> bool {
-        matches!(self.get(reference), Ok(_))
+        self.get(reference).is_ok()
     }
 
     /// Platform keychains have no portable enumeration API — macOS Keychain,

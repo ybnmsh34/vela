@@ -52,7 +52,7 @@ pre-fixes, built by someone other than whoever found them:
 
 | Finding | Severity as judged | Status |
 |---|---|---|
-| Mock harness 413 branch is unreachable dead code (>8 MiB body → no response, silent both ends) | test infra only; disclosed and root-caused in the repo's own evidence rather than papered over | 🟡 fix in flight |
+| Mock harness 413 branch is unreachable dead code (>8 MiB body → no response, silent both ends) | test infra only; disclosed and root-caused in the repo's own evidence rather than papered over | ✅ **closed** — over-cap bodies are drained (bounded) and answered `413 invalid_json` before the connection closes; 4 regression assertions that go red against the pre-fix code, plus a re-measured probe 1 |
 | `browser-adapter.ts` hand-reimplements ~200 lines of Rust host logic; command *names* are pinned across languages but *semantics* are pinned by nothing → silent, monotonically growing drift | non-blocking, but the critic said land the fix **before Phase B multiplies the surface** | 🟡 fix in flight |
 | `Auth::ApiKeyQuery` has no `Concern` variant, so an HTTPS endpoint using query-param auth reports `RiskLevel::None` though the key lands in access logs | non-blocking | ✅ **closed** — `Concern::QueryParamCredentialIsLogged`, `RiskLevel::Elevated`, fires on `https:` too |
 | CI secret tripwire excludes `':!docs/**'` — exactly where mock transcripts live | non-blocking; docs/ scanned manually and clean today | ✅ **closed** — exclusion removed entirely; `scripts/secret-scan.sh` + its own test suite |
@@ -176,6 +176,11 @@ http_code=000 · response bytes = 0
 unreachable dead code**. The server survives and logs nothing — the failure is silent on *both*
 ends. Reported, **not fixed**: this stage produces evidence, and the transcript is the regression
 test for whoever fixes it. Owner: **A4** (mock harness). Its panel will rule.
+
+> **Closed in Phase B pre-fix `fix:harness-413-defect`**, by a builder other than the finder:
+> the over-cap body is drained (bounded by `OVERSIZE_DRAIN_BYTES`) so the `413` lands on a socket
+> the client can still read. `EDGE-PROBES.txt` probe 1 now records `http_code=413` /
+> `code: invalid_json` **beside** the transcript above, which is kept as the regression evidence.
 
 #### Two hang classes — measured, not theorised
 

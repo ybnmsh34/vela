@@ -71,6 +71,21 @@ export interface MockProviderHandle {
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
+/**
+ * How much of an over-cap body we will still read — and immediately throw away
+ * — so that the 413 is something the client can actually read.
+ *
+ * WHY THIS EXISTS: the first version of this guard rejected and called
+ * `request.destroy()` in the same turn. The socket went down while the client
+ * was still uploading, so the client observed `ECONNRESET` and zero response
+ * bytes; the 413 branch was unreachable dead code (GATE M Part 1, EDGE-PROBES
+ * probe 1). A response written onto a half-closed socket is not a response.
+ * The only way to hand the client a readable answer is to let it finish
+ * sending, so we keep consuming and discarding. This constant bounds that
+ * generosity: an endless upload is still an endless upload.
+ */
+const OVERSIZE_DRAIN_BYTES = 8 * 1024 * 1024;
+
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body, null, 2);
   response.writeHead(status, {
@@ -84,29 +99,93 @@ function sendError(response: ServerResponse, error: MockHttpError): void {
   sendJson(response, error.status, error.body satisfies OpenAiErrorBody);
 }
 
-function readBody(request: IncomingMessage): Promise<string> {
+/**
+ * The outcome of reading a request body.
+ *
+ * `oversized` is not thrown from {@link readBody}, because the caller has to
+ * know *how* it ended: a body we drained to completion can be answered on a
+ * healthy keep-alive connection, whereas one we gave up draining leaves the
+ * client mid-upload and the connection has to be closed after the answer.
+ */
+type BodyRead =
+  | { readonly kind: 'complete'; readonly body: string }
+  | { readonly kind: 'oversized'; readonly clientFinished: boolean };
+
+function readBody(request: IncomingMessage): Promise<BodyRead> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    request.on('data', (chunk: Buffer) => {
+    let oversized = false;
+    let discarded = 0;
+
+    const onData = (chunk: Buffer): void => {
+      if (oversized) {
+        discarded += chunk.length;
+        if (discarded > OVERSIZE_DRAIN_BYTES) {
+          request.off('data', onData);
+          request.pause();
+          resolve({ kind: 'oversized', clientFinished: false });
+        }
+        return;
+      }
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(
-          new MockHttpError({
-            status: 413,
-            message: 'request body too large',
-            code: ERROR_CODES.invalidJson,
-          }),
-        );
-        request.destroy();
+        // Nothing will ever parse these bytes; drop them rather than hold
+        // multiple megabytes alive for the duration of the drain.
+        oversized = true;
+        chunks.length = 0;
         return;
       }
       chunks.push(chunk);
-    });
+    };
+
+    request.on('data', onData);
     request.on('end', () => {
-      resolve(Buffer.concat(chunks).toString('utf8'));
+      // A second `resolve` after the drain cap fired is a no-op, by design.
+      resolve(
+        oversized
+          ? { kind: 'oversized', clientFinished: true }
+          : { kind: 'complete', body: Buffer.concat(chunks).toString('utf8') },
+      );
     });
     request.on('error', reject);
+  });
+}
+
+/**
+ * Answers an over-cap request with the documented 413, then ends the
+ * connection cleanly — response first, close second, never the other way
+ * round. See {@link OVERSIZE_DRAIN_BYTES}.
+ */
+function sendBodyTooLarge(
+  request: IncomingMessage,
+  response: ServerResponse,
+  clientFinished: boolean,
+): void {
+  const error = new MockHttpError({
+    status: 413,
+    message: 'request body too large',
+    code: ERROR_CODES.invalidJson,
+  });
+
+  if (clientFinished) {
+    // The whole body arrived and was discarded; this is an ordinary response
+    // on an ordinary connection.
+    sendError(response, error);
+    return;
+  }
+
+  // We stopped reading while the client was still writing. Say so in the
+  // response so the client does not reuse the connection, flush the body, and
+  // only take the socket down once those bytes are on the wire.
+  const payload = JSON.stringify(error.body satisfies OpenAiErrorBody, null, 2);
+  response.writeHead(error.status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': String(Buffer.byteLength(payload)),
+    connection: 'close',
+  });
+  response.end(payload, () => {
+    request.destroy();
   });
 }
 
@@ -237,7 +316,12 @@ export async function startMockProvider(
   ): Promise<void> => {
     const rawPath = request.url ?? '/';
     const path = rawPath.split('?')[0] ?? '/';
-    const body = await readBody(request);
+    const read = await readBody(request);
+    if (read.kind === 'oversized') {
+      sendBodyTooLarge(request, response, read.clientFinished);
+      return;
+    }
+    const body = read.body;
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(request.headers)) {
       headers[key] = Array.isArray(value) ? value.join(', ') : (value ?? '');

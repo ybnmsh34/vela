@@ -147,6 +147,88 @@ describe('authentication — "no API key" is a first-class state', () => {
   });
 });
 
+describe('a request body over the 8 MiB cap', () => {
+  const MAX_BODY_BYTES = 8 * 1024 * 1024;
+  const OVERSIZE_DRAIN_BYTES = 8 * 1024 * 1024;
+
+  /** A syntactically valid chat request whose serialised form is `bytes` long. */
+  function bodyOfSize(bytes: number): string {
+    const envelope = JSON.stringify({ messages: [{ role: 'user', content: '' }] });
+    return envelope.replace('""', `"${'x'.repeat(bytes - envelope.length)}"`);
+  }
+
+  async function post(url: string, body: string): Promise<{ status: number; raw: string }> {
+    const response = await fetch(`${url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      // undici would otherwise keep the pooled socket open past the test.
+      keepalive: false,
+    });
+    return { status: response.status, raw: await response.text() };
+  }
+
+  it('answers 413 with the documented invalid_json code — not a connection reset', async () => {
+    // REGRESSION (GATE M Part 1, EDGE-PROBES probe 1): this used to produce no
+    // HTTP response at all. readBody() destroyed the socket in the same turn it
+    // rejected, so the client saw `ECONNRESET`, zero bytes, and the 413 branch
+    // was unreachable dead code.
+    const mock = await start({ profile: 'hostile' });
+    const oversized = bodyOfSize(9 * 1024 * 1024);
+    expect(Buffer.byteLength(oversized)).toBeGreaterThan(MAX_BODY_BYTES);
+
+    const response = await post(mock.url, oversized);
+
+    expect(response.status).toBe(413);
+    expect(JSON.parse(response.raw)).toEqual({
+      error: {
+        message: 'request body too large',
+        type: 'invalid_request_error',
+        param: null,
+        code: 'invalid_json',
+      },
+    });
+  });
+
+  it('still answers a body that reaches the drain cap, then closes the connection', async () => {
+    // Past MAX + DRAIN the server stops reading. It must still deliver the
+    // response before the socket goes away.
+    const mock = await start({ profile: 'hostile' });
+    const enormous = bodyOfSize(MAX_BODY_BYTES + OVERSIZE_DRAIN_BYTES + 1024 * 1024);
+
+    const response = await post(mock.url, enormous);
+
+    expect(response.status).toBe(413);
+    expect((JSON.parse(response.raw) as { error: { code: string } }).error.code).toBe(
+      'invalid_json',
+    );
+  });
+
+  it('leaves the server serving afterwards', async () => {
+    const mock = await start({ profile: 'hostile' });
+    await post(mock.url, bodyOfSize(9 * 1024 * 1024));
+
+    expect((await getJson(mock.url, '/health')).status).toBe(200);
+    expect((await postChat(mock.url, ask)).status).toBe(200);
+  });
+
+  it('leaves a body under the cap answered exactly as before', async () => {
+    // The fix must be invisible everywhere except over the cap. 7 MiB is the
+    // byte class the edge probe used as its control: it overflows the hostile
+    // profile's 4k context and so answers 400 context_length_exceeded.
+    const mock = await start({ profile: 'hostile' });
+    const under = bodyOfSize(7 * 1024 * 1024);
+    expect(Buffer.byteLength(under)).toBeLessThan(MAX_BODY_BYTES);
+
+    const response = await post(mock.url, under);
+
+    expect(response.status).toBe(400);
+    expect((JSON.parse(response.raw) as { error: { code: string } }).error.code).toBe(
+      'context_length_exceeded',
+    );
+  });
+});
+
 describe('determinism', () => {
   it('answers identical requests with byte-identical bodies', async () => {
     const mock = await start({ profile: 'frontier' });

@@ -51,20 +51,59 @@ EOF
 
 echo
 echo "### PROBE 1 — a request body larger than the server's 8 MiB cap"
-echo "The server declares a MAX_BODY_BYTES guard that is supposed to answer 413"
-echo "with code invalid_json. This is what a client actually observes."
+echo "The server declares a MAX_BODY_BYTES guard that answers 413 with code"
+echo "invalid_json. This is what a client actually observes."
+
+# The pre-fix transcript is archived verbatim, in the script rather than only in
+# the output file, so that re-running this probe cannot quietly erase the
+# evidence the fix is measured against.
+cat <<'ARCHIVED'
+
+--- PRE-FIX BEHAVIOUR — archived verbatim from the GATE M Part 1 run of
+--- 2026-08-12T20:13:34Z. THIS IS THE DEFECT, kept as regression evidence.
+--- Do not re-run to reproduce it; the code that produced it is gone.
+
+$ curl -sS -H 'Expect:' --data-binary @9.4MB.json http://127.0.0.1:8201/v1/chat/completions
+curl: (56) Recv failure: Connection reset by peer
+http_code=000
+curl exit code = 56   (56 = 'Recv failure: Connection reset by peer')
+response bytes = 0
+response body  =
+
+DEFECT: over the cap there was NO HTTP RESPONSE AT ALL — the socket was reset.
+The 413 branch was unreachable dead code: readBody() called request.destroy()
+in the same turn it rejected, so the error response could not be written. Under
+the cap the same request was answered properly. The server survived either way,
+and logged nothing, so the failure was silent on both ends.
+--- end of archived pre-fix transcript ---
+ARCHIVED
+
 python3 -c "
 import json,sys
 sys.stdout.write(json.dumps({'messages':[{'role':'user','content':'x'*(9*1024*1024)}]}))" >"$WORK/huge.json"
 echo
+echo "--- POST-FIX BEHAVIOUR — measured live by this run ---"
 echo "\$ curl -sS -H 'Expect:' --data-binary @9.4MB.json $H/v1/chat/completions"
 : >"$WORK/huge.out"   # so "0 bytes written" is a measurement, not a missing file
 curl -sS --noproxy '*' --max-time 60 -H 'Expect:' -H 'content-type: application/json' \
   -o "$WORK/huge.out" -w 'http_code=%{http_code}\n' --data-binary "@$WORK/huge.json" \
   "$H/v1/chat/completions"
-echo "curl exit code = $?   (56 = 'Recv failure: Connection reset by peer')"
+echo "curl exit code = $?   (56 would be 'Recv failure: Connection reset by peer')"
 echo "response bytes = $(wc -c <"$WORK/huge.out" 2>/dev/null || echo 0)"
 echo "response body  = $(cat "$WORK/huge.out" 2>/dev/null)"
+echo
+echo "--- and one past the drain cap too (17 MiB), where the server stops"
+echo "--- reading mid-upload and must still deliver the answer before closing ---"
+python3 -c "
+import json,sys
+sys.stdout.write(json.dumps({'messages':[{'role':'user','content':'x'*(17*1024*1024)}]}))" >"$WORK/enormous.json"
+: >"$WORK/enormous.out"
+curl -sS --noproxy '*' --max-time 60 -H 'Expect:' -H 'content-type: application/json' \
+  -o "$WORK/enormous.out" -w 'http_code=%{http_code}\n' --data-binary "@$WORK/enormous.json" \
+  "$H/v1/chat/completions"
+echo "curl exit code = $?"
+echo "response bytes = $(wc -c <"$WORK/enormous.out" 2>/dev/null || echo 0)"
+echo "response body  = $(cat "$WORK/enormous.out" 2>/dev/null)"
 echo
 echo "\$ curl -sS $H/health          # did the server survive?"
 curl -sS --noproxy '*' --max-time 10 -w '\nhttp_code=%{http_code}\n' "$H/health"
@@ -83,11 +122,12 @@ echo "--- the server's own stdout/stderr for the whole probe ---"
 cat "$WORK/hostile.log"
 echo "--- end of server output ---"
 echo
-echo "FINDING: over the cap there is NO HTTP RESPONSE AT ALL — the socket is reset."
-echo "The 413 branch is unreachable: readBody() calls request.destroy() in the same"
-echo "turn it rejects, so the error response cannot be written. Under the cap the"
-echo "same request is answered properly. The server survives either way, and logs"
-echo "nothing, so the failure is silent on both ends."
+echo "FINDING: FIXED. Over the cap the client now reads the documented 413 with"
+echo "code invalid_json — including past the drain cap, where the server stops"
+echo "reading mid-upload, writes the response, and only then closes. Under the cap"
+echo "the same request is still answered exactly as before. Regression test:"
+echo "tests/harness/mock-provider/src/server.test.ts, 'a request body over the"
+echo "8 MiB cap'. The pre-fix transcript above is what this replaced."
 
 echo
 echo "### PROBE 2 — 30 concurrent streaming requests"

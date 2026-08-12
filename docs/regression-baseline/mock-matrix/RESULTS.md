@@ -101,6 +101,19 @@ produces evidence, and a fix belongs to the harness owner, with the transcript
 above as its regression test. Phase B must treat a connection reset on a large
 POST as a possible size-limit rejection, not proof of a dead endpoint.
 
+> **UPDATE — closed after this run, by someone other than the finder.**
+> `readBody()` now drains the remainder of an over-cap body (bounded by
+> `OVERSIZE_DRAIN_BYTES`) before answering, so the response is written to a
+> socket the client can still read, and only then is the connection closed.
+> A client now observes `http_code=413` with `code: invalid_json`; the 17 MiB
+> case, where the server stops reading mid-upload, answers too. Regression test:
+> `tests/harness/mock-provider/src/server.test.ts`, *"a request body over the
+> 8 MiB cap"* — 4 assertions, all of which fail with `ECONNRESET` against the
+> pre-fix `server.ts`. Re-measured transcript: `EDGE-PROBES.txt` probe 1, which
+> keeps the pre-fix transcript above it, labelled. Everything in this section
+> above the line remains what was true at the time of this run.
+> The Phase B guidance is unaffected: a *real* endpoint may still reset.
+
 ### FINDING 2 — Two hang classes are real, reproducible, and 5 seconds wide
 
 Measured, not theorised, by `consumer-probes.mjs` against the live servers:

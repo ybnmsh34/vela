@@ -1,0 +1,21 @@
+{
+  "default_generation_settings": {
+    "n_ctx": 4096,
+    "model": "mock-hostile",
+    "seed": 4294967295
+  },
+  "total_slots": 4,
+  "model_path": "/models/mock-hostile.gguf",
+  "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+  "build_info": "vela-mock-provider",
+  "vela_mock": {
+    "profile": "hostile",
+    "context_window": 4096,
+    "tool_calling": "malformed",
+    "vision": false,
+    "structured_output": "ignored",
+    "reasoning": "unterminated-think-junk",
+    "emits_done_sentinel": false,
+    "emits_malformed_sse_frames": true
+  }
+}

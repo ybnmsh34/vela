@@ -1,0 +1,32 @@
+{
+  "id": "chatcmpl-mock-3137cf62",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"alpha\",\"unit\":\"celsius\"}"
+            },
+            "id": "call_3137cf62"
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 42,
+    "total_tokens": 54
+  }
+}

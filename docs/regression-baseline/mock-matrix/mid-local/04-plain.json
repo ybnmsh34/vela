@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-mock-f0c3494b",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-mid-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think>\nMock mid-local reply to: what is the weather in Berlin. north quartz beacon umber umber rudder umber keel ivory gauge tiller quartz orbit fathom fathom umber."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 75,
+    "total_tokens": 87
+  }
+}

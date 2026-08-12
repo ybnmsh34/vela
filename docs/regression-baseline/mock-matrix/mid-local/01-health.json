@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "slots_idle": 4,
+  "slots_processing": 0,
+  "vela_mock": {
+    "profile": "mid-local",
+    "model": "mock-mid-local"
+  }
+}

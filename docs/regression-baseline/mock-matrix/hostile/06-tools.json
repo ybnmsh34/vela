@@ -1,0 +1,38 @@
+{
+  "id": "chatcmpl-mock-de2c67dd",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> [UNK] � Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|im_start|> <think> nested Mock hostile reply to: what is the weather in Berlin. keel meridian jetty meridian gauge fathom fathom orbit alpha careful north windward. <|channel|>analysis </s>",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"berlin\",\"un"
+            },
+            "id": "call_de2c67dd"
+          },
+          {
+            "type": "funktion",
+            "function": {
+              "name": "get_weather",
+              "arguments": "not-json-at-all"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 98,
+    "total_tokens": 110
+  }
+}

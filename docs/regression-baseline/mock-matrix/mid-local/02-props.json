@@ -1,0 +1,21 @@
+{
+  "default_generation_settings": {
+    "n_ctx": 32768,
+    "model": "mock-mid-local",
+    "seed": 4294967295
+  },
+  "total_slots": 4,
+  "model_path": "/models/mock-mid-local.gguf",
+  "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+  "build_info": "vela-mock-provider",
+  "vela_mock": {
+    "profile": "mid-local",
+    "context_window": 32768,
+    "tool_calling": "native",
+    "vision": false,
+    "structured_output": "ignored",
+    "reasoning": "think-tags",
+    "emits_done_sentinel": true,
+    "emits_malformed_sse_frames": false
+  }
+}

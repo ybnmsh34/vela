@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-mock-b85cd143",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> ▒▒ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: what is the weather in Berlin. delta gauge gauge windward harbor harbor yardarm zenith tiller jetty fathom keel. <|im_start|> <|im_start|>"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 88,
+    "total_tokens": 100
+  }
+}

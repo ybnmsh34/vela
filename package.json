@@ -14,10 +14,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --build --force",
     "test": "vitest run",
+    "test:harness": "vitest run --config tests/harness/mock-provider/vitest.config.ts",
+    "mock-provider": "node tests/harness/mock-provider/src/cli.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri",
-    "verify": "pnpm typecheck && pnpm test && cd src-tauri && cargo test --workspace"
+    "verify": "pnpm typecheck && pnpm test && pnpm test:harness && cd src-tauri && cargo test --workspace"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",

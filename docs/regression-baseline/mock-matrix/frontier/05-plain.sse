@@ -1,0 +1,50 @@
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: what is "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"the weather in B"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"erlin. zenith fa"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"thom north gauge"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" beacon rudder u"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"mber jetty lante"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"rn pennant orbit"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" meridian delta "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"gauge quartz yar"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"darm ivory fatho"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"m sextant jetty "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"keel yardarm car"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"eful orbit."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-mock-d0e7ae8c","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":86,"total_tokens":98}}
+
+data: [DONE]
+

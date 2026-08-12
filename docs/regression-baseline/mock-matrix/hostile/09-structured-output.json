@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-mock-9c25d657",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> [UNK] </s> Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. </s> <think> nested Mock hostile reply to: what is the weather in Berlin. ivory rudder lantern rudder zenith beacon tiller quartz pennant quartz sextant alpha. [UNK] ЖЖЖ"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 78,
+    "total_tokens": 90
+  }
+}

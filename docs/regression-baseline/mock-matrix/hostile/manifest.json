@@ -1,0 +1,294 @@
+{
+  "profile": {
+    "name": "hostile",
+    "modelId": "mock-hostile",
+    "displayName": "Mock Hostile (4k, broken everything)",
+    "contextWindow": 4096,
+    "toolCalling": "malformed",
+    "unsupportedToolsBehaviour": "ignore",
+    "vision": false,
+    "structuredOutput": "ignored",
+    "reasoning": "unterminated-think-junk",
+    "modelListing": true,
+    "emitDoneSentinel": false,
+    "emitMalformedSseFrames": true,
+    "streamUsage": false,
+    "replyWordCount": 12
+  },
+  "captures": [
+    {
+      "file": "01-health.json",
+      "method": "GET",
+      "path": "/health",
+      "what": "liveness probe",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 140,
+      "requestBody": null
+    },
+    {
+      "file": "02-props.json",
+      "method": "GET",
+      "path": "/props",
+      "what": "server properties, including n_ctx",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 591,
+      "requestBody": null
+    },
+    {
+      "file": "03-models.json",
+      "method": "GET",
+      "path": "/v1/models",
+      "what": "model listing",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 172,
+      "requestBody": null
+    },
+    {
+      "file": "04-plain.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "plain question, non-streaming",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 727,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ]
+      }
+    },
+    {
+      "file": "05-plain.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "the same question, streamed, with usage requested",
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bytes": 5769,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    },
+    {
+      "file": "06-tools.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "one tool offered, non-streaming",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 1148,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "file": "07-tools.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "one tool offered, streamed",
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bytes": 7859,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ],
+        "stream": true
+      }
+    },
+    {
+      "file": "08-vision.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "an image input part",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 179,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "what is in this image"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "file": "09-structured-output.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "response_format: json_schema",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 686,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "weather_answer",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "celsius": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "city",
+                "celsius"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file": "10-context-overflow.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "a prompt just over the 4096-token window",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 268,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… <16448 chars total, elided>"
+          }
+        ]
+      }
+    },
+    {
+      "file": "11-max-tokens.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "max_tokens: 2, forcing truncation",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 382,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "max_tokens": 2
+      }
+    },
+    {
+      "file": "12-unknown-model.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "a model id this endpoint does not serve",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 198,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "model": "gpt-4o"
+      }
+    }
+  ]
+}

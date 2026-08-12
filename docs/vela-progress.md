@@ -73,6 +73,54 @@ or offers UI affordances the profile cannot support. Degradation must be **expli
 asserted**, never incidental. Raw transcripts land in `docs/regression-baseline/mock-matrix/`
 so critics inspect real bytes rather than summaries.
 
+### Part 1 execution — evidence landed, panel not yet convened
+
+Four profiles started as **real OS processes** on ports 8101–8104 and driven over real TCP by
+`curl` and `node:http` probes — deliberately **not** the harness's own client, since a transcript
+taken with the code under test proves less. Ten cases per profile, verbatim, in
+`docs/regression-baseline/mock-matrix/<profile>/<case>.txt`.
+
+**169 assertions, 0 failures — and that is a statement about the harness, not about Vela.**
+
+`ASSERTION-CONTROL.txt` is what makes the number mean anything: it applies each check to a server
+that does **not** satisfy it and records the FAIL, then re-applies it to the correct server and
+records the PASS. Without that control, 169/0 would be indistinguishable from 169 vacuous
+assertions. Live processes also returned bytes identical to the earlier in-process capture, so
+determinism holds across processes, ports, clients, and runs.
+
+#### 🐞 DEFECT FOUND — oversized request body gets no HTTP response at all
+
+Found by `EDGE-PROBES.txt`, deliberately probing **outside** the declared matrix.
+
+```
+$ curl -sS -H 'Expect:' --data-binary @9.4MB.json http://127.0.0.1:8201/v1/chat/completions
+curl: (56) Recv failure: Connection reset by peer
+http_code=000 · response bytes = 0
+```
+
+`readBody()` calls `request.destroy()` in the same turn it rejects, so the **413 branch is
+unreachable dead code**. The server survives and logs nothing — the failure is silent on *both*
+ends. Reported, **not fixed**: this stage produces evidence, and the transcript is the regression
+test for whoever fixes it. Owner: **A4** (mock harness). Its panel will rule.
+
+#### Two hang classes — measured, not theorised
+
+Waiting for `[DONE]` on **hostile**, and waiting for the usage frame on **small-local**, both burn
+the full 5 s budget. Both are **consumer** hangs — the body always ends.
+
+> **This pins a hard requirement for Phase B: end-of-body is the only reliable stream terminator.**
+> A consumer that waits on a `[DONE]` sentinel or a usage frame will hang on real-world endpoints.
+
+#### Vela-side result, stated plainly
+
+`VELA-SIDE-CONSUMPTION.txt`: Phase A has **no HTTP client** — asserted *mechanically* against
+every `Cargo.toml` in the new `capability_matrix_endpoints` test, not claimed in prose. The only
+Vela code that can consume an endpoint today is the configuration layer, and it blesses all four
+live URLs as usable with a **completely empty keychain**.
+
+**Nothing here shows Vela degrading gracefully, because there is nothing yet to degrade.**
+Every byte of it is VERIFIED-BY-FAKE.
+
 ### Part 2 — real-model smoke check · ⏳ DEFERRED TO DESKTOP
 
 Owned by the desktop session; procedure and interpretation limit in

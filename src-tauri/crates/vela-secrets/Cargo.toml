@@ -1,0 +1,24 @@
+[package]
+name = "vela-secrets"
+description = "Credential storage seam — OS keychain in production, in-memory fake in tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+keyring = { version = "3", optional = true, features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+] }
+
+[features]
+default = []
+# Compiles the real OS-keychain backend. Off by default so `cargo test` on a
+# headless host never links a keychain daemon it cannot reach.
+os-keychain = ["dep:keyring"]

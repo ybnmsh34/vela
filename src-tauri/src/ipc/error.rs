@@ -1,0 +1,105 @@
+//! The single error shape crossing the IPC boundary.
+//!
+//! Every command returns `Result<T, IpcError>`. Tauri serialises `Err` into a
+//! rejected promise, so the renderer receives exactly this JSON object and
+//! nothing else. In particular the renderer never sees a Rust panic message, a
+//! file path, or a provider's raw response body.
+
+use serde::Serialize;
+
+/// Machine-readable failure classes. The renderer switches on `code`; `message`
+/// is for logs and for a fallback English string, never for control flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum IpcErrorCode {
+    /// Payload failed to deserialise or violated a domain invariant.
+    InvalidPayload,
+    /// The addressed entity does not exist.
+    NotFound,
+    /// The OS keychain is present but refused the operation.
+    SecretStoreUnavailable,
+    /// The command exists but the current build/platform cannot serve it.
+    Unsupported,
+    /// Anything unexpected. Details are logged host-side, not returned.
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
+#[serde(rename_all = "camelCase")]
+#[error("{code:?}: {message}")]
+pub struct IpcError {
+    pub code: IpcErrorCode,
+    pub message: String,
+}
+
+pub type IpcResult<T> = Result<T, IpcError>;
+
+impl IpcError {
+    pub fn new(code: IpcErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid(message: impl Into<String>) -> Self {
+        Self::new(IpcErrorCode::InvalidPayload, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(IpcErrorCode::NotFound, message)
+    }
+
+    pub fn unsupported(message: impl Into<String>) -> Self {
+        Self::new(IpcErrorCode::Unsupported, message)
+    }
+}
+
+impl From<vela_core::CoreError> for IpcError {
+    fn from(error: vela_core::CoreError) -> Self {
+        use vela_core::CoreError;
+        match error {
+            CoreError::Invalid { .. } | CoreError::MissingRequiredCredential { .. } => {
+                IpcError::invalid(error.to_string())
+            }
+            CoreError::UnknownProvider { .. } => IpcError::not_found(error.to_string()),
+        }
+    }
+}
+
+impl From<vela_secrets::SecretError> for IpcError {
+    fn from(error: vela_secrets::SecretError) -> Self {
+        use vela_secrets::SecretError;
+        match error {
+            SecretError::NotFound { .. } => IpcError::not_found(error.to_string()),
+            SecretError::EmptyValue { .. } => IpcError::invalid(error.to_string()),
+            SecretError::Unavailable { .. } => {
+                IpcError::new(IpcErrorCode::SecretStoreUnavailable, error.to_string())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vela_secrets::SecretError;
+
+    #[test]
+    fn error_serialises_to_the_documented_wire_shape() {
+        let json = serde_json::to_value(IpcError::invalid("bad")).unwrap();
+        assert_eq!(json["code"], "INVALID_PAYLOAD");
+        assert_eq!(json["message"], "bad");
+        assert_eq!(json.as_object().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_missing_credential_is_not_reported_as_a_broken_keychain() {
+        // These two must stay distinguishable: "you have no key stored" is a
+        // normal state, "your keychain refused us" is a real problem.
+        let missing: IpcError = SecretError::NotFound { key: "p/primary".into() }.into();
+        let broken: IpcError = SecretError::Unavailable { reason: "locked".into() }.into();
+        assert_eq!(missing.code, IpcErrorCode::NotFound);
+        assert_eq!(broken.code, IpcErrorCode::SecretStoreUnavailable);
+    }
+}

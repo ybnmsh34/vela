@@ -1,0 +1,18 @@
+[package]
+name = "vela-providers"
+description = "Model-provider seam — the trait every backend (local or hosted) implements"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

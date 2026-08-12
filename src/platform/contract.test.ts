@@ -17,6 +17,10 @@ describe('IPC contract', () => {
       'secrets_delete',
       'secrets_set',
       'secrets_status',
+      'settings_delete_provider',
+      'settings_get',
+      'settings_put_provider',
+      'settings_set_theme',
     ];
     expect([...COMMAND_ALLOWLIST].sort()).toEqual([...contractKeys].sort());
   });

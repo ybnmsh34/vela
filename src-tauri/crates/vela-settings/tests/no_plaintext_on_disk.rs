@@ -114,7 +114,9 @@ fn a_stored_credential_never_appears_in_any_file_the_database_writes() {
 
     let files = read_all_bytes(dir.path());
     assert!(
-        files.iter().any(|(name, _)| name.ends_with(DATABASE_FILE_NAME)),
+        files
+            .iter()
+            .any(|(name, _)| name.ends_with(DATABASE_FILE_NAME)),
         "the database file was never created — this test would pass vacuously"
     );
 
@@ -188,7 +190,10 @@ fn reopening_the_database_restores_the_configuration_but_no_credential() {
     // The configuration came back; the credential did not, because it was never
     // in the database to begin with.
     assert!(!view.credential_present);
-    assert!(!view.usable, "a Required provider with no credential is not usable");
+    assert!(
+        !view.usable,
+        "a Required provider with no credential is not usable"
+    );
     assert!(!snapshot.telemetry_enabled);
 
     let serialised = serde_json::to_string(&snapshot).unwrap();

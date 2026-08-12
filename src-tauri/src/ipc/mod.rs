@@ -48,6 +48,7 @@ pub mod app;
 pub mod diagnostics;
 pub mod error;
 pub mod secrets;
+pub mod settings;
 
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +70,10 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "secrets_delete",
     "secrets_set",
     "secrets_status",
+    "settings_delete_provider",
+    "settings_get",
+    "settings_put_provider",
+    "settings_set_theme",
 ];
 
 /// Payload type for commands that take no input. Present so that *every*

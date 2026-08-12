@@ -83,6 +83,9 @@ vela/
 │   └── crates/                    ── DOMAIN LOGIC: no Tauri, no windows, no I/O ──
 │       ├── vela-core/             Provider descriptors, auth policy, secret refs, errors.
 │       ├── vela-secrets/          SecretStore trait + KeyringStore (real) + MemoryStore (fake).
+│       ├── vela-settings/         Typed settings, provider configs, security posture.
+│       │                          Joins vela-store (describable config) to
+│       │                          vela-secrets (credential values). No secret on disk.
 │       └── vela-providers/        ModelProvider trait, registry, chat types, EchoProvider.
 │
 └── docs/
@@ -100,7 +103,9 @@ vela/
 | A call to a host command | `src/data/<domain>-repository.ts`, called from a feature hook |
 | Cross-component client state | `src/state/<domain>-store.ts` |
 | A pure function with no dependencies | `src/lib/` |
-| Persistence (conversations, settings) | Rust: a new crate `vela-store`, exposed via `store_*` commands |
+| Persistence (conversations, messages) | Rust: `vela-store`, exposed via `store_*` commands |
+| A user-configurable setting or provider field | `src-tauri/crates/vela-settings/`, exposed via `settings_*` commands. Never a second database. |
+| A credential value | The OS keychain via `vela-secrets`. Never a settings row, never a log line. |
 | A colour, radius, font size or spacing value | `src/styles/tokens.css`. Nowhere else. |
 
 ---

@@ -64,7 +64,8 @@ impl<'a, S: SettingsRepository + ?Sized> SettingsService<'a, S> {
     pub fn set_theme(&self, preference: ThemePreference) -> SettingsResult<ThemePreference> {
         let value = serde_json::to_value(preference)
             .map_err(|error| SettingsError::corrupt(error.to_string()))?;
-        self.settings.put_setting(SettingEntry::new(keys::THEME, value))?;
+        self.settings
+            .put_setting(SettingEntry::new(keys::THEME, value))?;
         Ok(preference)
     }
 
@@ -475,7 +476,10 @@ mod tests {
             .find(|view| view.config.id == "acme")
             .unwrap();
         assert!(!acme.credential_present);
-        assert!(!acme.usable, "a Required provider with no key is not usable");
+        assert!(
+            !acme.usable,
+            "a Required provider with no key is not usable"
+        );
 
         let local = snapshot
             .providers

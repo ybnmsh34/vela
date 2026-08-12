@@ -3918,6 +3918,7 @@ dependencies = [
  "vela-core",
  "vela-providers",
  "vela-secrets",
+ "vela-settings",
  "vela-store",
 ]
 

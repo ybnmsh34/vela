@@ -60,13 +60,7 @@ mod tests {
 
     #[test]
     fn an_explicit_choice_produces_a_data_theme_attribute() {
-        assert_eq!(
-            ThemePreference::Dark.data_theme_attribute(),
-            Some("dark")
-        );
-        assert_eq!(
-            ThemePreference::Light.data_theme_attribute(),
-            Some("light")
-        );
+        assert_eq!(ThemePreference::Dark.data_theme_attribute(), Some("dark"));
+        assert_eq!(ThemePreference::Light.data_theme_attribute(), Some("light"));
     }
 }

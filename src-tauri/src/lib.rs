@@ -41,6 +41,10 @@ pub fn run() {
             ipc::secrets::secrets_delete,
             ipc::secrets::secrets_set,
             ipc::secrets::secrets_status,
+            ipc::settings::settings_delete_provider,
+            ipc::settings::settings_get,
+            ipc::settings::settings_put_provider,
+            ipc::settings::settings_set_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vela");

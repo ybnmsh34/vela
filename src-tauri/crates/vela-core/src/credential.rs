@@ -158,7 +158,10 @@ mod tests {
 
         let parsed: Auth = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, Auth::None);
-        assert!(parsed.policy(AuthRequirement::NotRequired).check(false).is_ok());
+        assert!(parsed
+            .policy(AuthRequirement::NotRequired)
+            .check(false)
+            .is_ok());
     }
 
     #[test]
@@ -209,9 +212,7 @@ mod tests {
             }
         )
         .is_err());
-        assert!(
-            Auth::for_provider("acme", &AuthMode::ApiKeyQuery { param: "".into() }).is_err()
-        );
+        assert!(Auth::for_provider("acme", &AuthMode::ApiKeyQuery { param: "".into() }).is_err());
     }
 
     #[test]

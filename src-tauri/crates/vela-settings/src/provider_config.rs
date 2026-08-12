@@ -263,8 +263,7 @@ mod tests {
 
     #[test]
     fn a_binding_may_not_point_at_another_providers_credential() {
-        let mut config =
-            ProviderConfig::local("mine", "Mine", "https://api.example.test").unwrap();
+        let mut config = ProviderConfig::local("mine", "Mine", "https://api.example.test").unwrap();
         config.auth = Auth::for_provider("someone-else", &AuthMode::BearerToken).unwrap();
         assert!(config.validated().is_err());
     }

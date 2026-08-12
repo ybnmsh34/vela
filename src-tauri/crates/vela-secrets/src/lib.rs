@@ -94,8 +94,14 @@ pub trait SecretStore: Send + Sync {
 pub enum AppliedAuth {
     /// Send nothing. **Not** an empty header — see [`resolve_auth`].
     None,
-    Header { name: String, value: SecretValue },
-    QueryParam { name: String, value: SecretValue },
+    Header {
+        name: String,
+        value: SecretValue,
+    },
+    QueryParam {
+        name: String,
+        value: SecretValue,
+    },
 }
 
 impl AppliedAuth {
@@ -343,7 +349,10 @@ mod tests {
 
         // The listing is a set of *pointers*. Rendering it must be safe.
         let rendered = format!("{listed:?}");
-        assert!(!rendered.contains(CANARY), "listing leaked a value: {rendered}");
+        assert!(
+            !rendered.contains(CANARY),
+            "listing leaked a value: {rendered}"
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -428,8 +437,11 @@ mod tests {
         let store = MemoryStore::new();
         store.set(&r("acme"), &v(CANARY)).unwrap();
 
-        let bearer = resolve_auth(&store, &Auth::for_provider("acme", &AuthMode::BearerToken).unwrap())
-            .unwrap();
+        let bearer = resolve_auth(
+            &store,
+            &Auth::for_provider("acme", &AuthMode::BearerToken).unwrap(),
+        )
+        .unwrap();
         let (name, value) = bearer.header().unwrap();
         assert_eq!(name, "authorization");
         assert_eq!(value.expose(), format!("Bearer {CANARY}"));
@@ -446,8 +458,13 @@ mod tests {
         assert_eq!(name, "x-api-key");
         assert_eq!(value.expose(), CANARY);
 
-        let query_auth =
-            Auth::for_provider("acme", &AuthMode::ApiKeyQuery { param: "key".into() }).unwrap();
+        let query_auth = Auth::for_provider(
+            "acme",
+            &AuthMode::ApiKeyQuery {
+                param: "key".into(),
+            },
+        )
+        .unwrap();
         let applied = resolve_auth(&store, &query_auth).unwrap();
         let (name, value) = applied.query_param().unwrap();
         assert_eq!(name, "key");
@@ -459,13 +476,18 @@ mod tests {
     fn resolved_request_material_is_redacted_when_logged() {
         let store = MemoryStore::new();
         store.set(&r("acme"), &v(CANARY)).unwrap();
-        let applied =
-            resolve_auth(&store, &Auth::for_provider("acme", &AuthMode::BearerToken).unwrap())
-                .unwrap();
+        let applied = resolve_auth(
+            &store,
+            &Auth::for_provider("acme", &AuthMode::BearerToken).unwrap(),
+        )
+        .unwrap();
 
         let printed = format!("{applied:?}");
         assert!(printed.contains("authorization"), "{printed}");
-        assert!(!printed.contains(CANARY), "resolved auth leaked in Debug: {printed}");
+        assert!(
+            !printed.contains(CANARY),
+            "resolved auth leaked in Debug: {printed}"
+        );
         assert!(!printed.contains("Bearer sk-"), "{printed}");
     }
 

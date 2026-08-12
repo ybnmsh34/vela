@@ -222,8 +222,12 @@ mod tests {
 
     #[test]
     fn plaintext_is_a_property_of_the_scheme_alone() {
-        assert!(EndpointUrl::parse("http://127.0.0.1:8080").unwrap().is_plaintext());
-        assert!(!EndpointUrl::parse("https://127.0.0.1:8080").unwrap().is_plaintext());
+        assert!(EndpointUrl::parse("http://127.0.0.1:8080")
+            .unwrap()
+            .is_plaintext());
+        assert!(!EndpointUrl::parse("https://127.0.0.1:8080")
+            .unwrap()
+            .is_plaintext());
     }
 
     #[test]

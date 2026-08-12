@@ -222,7 +222,10 @@ mod tests {
             }
         );
         assert!(printed.contains("api.example.test"), "{printed}");
-        assert!(!printed.contains(CANARY), "leaked through a derived Debug: {printed}");
+        assert!(
+            !printed.contains(CANARY),
+            "leaked through a derived Debug: {printed}"
+        );
     }
 
     #[test]

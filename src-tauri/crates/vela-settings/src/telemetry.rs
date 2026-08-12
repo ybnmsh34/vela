@@ -26,8 +26,7 @@ use serde::{Deserialize, Serialize};
 
 /// The exact sentence a user must be shown and must agree to. Requiring it
 /// verbatim means telemetry cannot be enabled by code that never showed it.
-pub const CONSENT_STATEMENT: &str =
-    "I have read what would be sent and I am choosing to send it.";
+pub const CONSENT_STATEMENT: &str = "I have read what would be sent and I am choosing to send it.";
 
 /// Evidence of an explicit, timestamped human decision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

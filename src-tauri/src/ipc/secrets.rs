@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use vela_core::secret::{SecretField, SecretRef};
+use vela_core::secret::{SecretField, SecretRef, SecretValue};
 use vela_secrets::{SecretError, SecretStore};
 
 use super::{Ack, IpcError, IpcResult};
@@ -38,12 +38,15 @@ impl TryFrom<SecretRefDto> for SecretRef {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Note the type of `value`: a [`SecretValue`], not a `String`. That makes the
+/// request struct unprintable (its `Debug` redacts) and unserialisable — a
+/// request carrying a credential must never be logged or echoed back.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretsSetReq {
     #[serde(flatten)]
     pub reference: SecretRefDto,
-    pub value: String,
+    pub value: SecretValue,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -127,9 +130,16 @@ mod tests {
     fn set_status_delete_round_trip() {
         let store = MemoryStore::new();
 
-        assert!(!status(&store, SecretsRefReq { reference: dto("acme") })
+        assert!(
+            !status(
+                &store,
+                SecretsRefReq {
+                    reference: dto("acme")
+                }
+            )
             .unwrap()
-            .present);
+            .present
+        );
 
         set(
             &store,
@@ -140,14 +150,34 @@ mod tests {
         )
         .unwrap();
 
-        assert!(status(&store, SecretsRefReq { reference: dto("acme") })
+        assert!(
+            status(
+                &store,
+                SecretsRefReq {
+                    reference: dto("acme")
+                }
+            )
             .unwrap()
-            .present);
+            .present
+        );
 
-        delete(&store, SecretsRefReq { reference: dto("acme") }).unwrap();
-        assert!(!status(&store, SecretsRefReq { reference: dto("acme") })
+        delete(
+            &store,
+            SecretsRefReq {
+                reference: dto("acme"),
+            },
+        )
+        .unwrap();
+        assert!(
+            !status(
+                &store,
+                SecretsRefReq {
+                    reference: dto("acme")
+                }
+            )
             .unwrap()
-            .present);
+            .present
+        );
     }
 
     #[test]
@@ -167,7 +197,13 @@ mod tests {
     #[test]
     fn deleting_an_absent_credential_succeeds_idempotently() {
         let store = MemoryStore::new();
-        assert!(delete(&store, SecretsRefReq { reference: dto("nobody") }).is_ok());
+        assert!(delete(
+            &store,
+            SecretsRefReq {
+                reference: dto("nobody")
+            }
+        )
+        .is_ok());
     }
 
     #[test]
@@ -177,7 +213,7 @@ mod tests {
             &store,
             SecretsSetReq {
                 reference: dto("acme"),
-                value: "x".repeat(MAX_SECRET_BYTES + 1),
+                value: SecretValue::new("x".repeat(MAX_SECRET_BYTES + 1)),
             },
         )
         .unwrap_err();
@@ -195,6 +231,21 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(blank.code, IpcErrorCode::InvalidPayload);
+    }
+
+    #[test]
+    fn a_logged_set_request_redacts_the_credential_it_carries() {
+        // The classic leak: nobody logs the credential, they log the request.
+        let request = SecretsSetReq {
+            reference: dto("acme"),
+            value: SecretValue::new("sk-live-canary-9f2b7c41-DO-NOT-LOG"),
+        };
+        let printed = format!("{request:?}");
+        assert!(printed.contains("acme"));
+        assert!(
+            !printed.contains("sk-live-canary"),
+            "the request leaked its credential: {printed}"
+        );
     }
 
     #[test]

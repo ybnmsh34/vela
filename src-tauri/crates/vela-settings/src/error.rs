@@ -76,11 +76,9 @@ impl From<SecretError> for SettingsError {
                 reason: format!("refusing to store an empty credential for `{key}`"),
             },
             SecretError::Unavailable { reason } => Self::CredentialStoreUnavailable { reason },
-            SecretError::EnumerationUnsupported { backend } => {
-                Self::CredentialStoreUnavailable {
-                    reason: format!("`{backend}` cannot enumerate stored credentials"),
-                }
-            }
+            SecretError::EnumerationUnsupported { backend } => Self::CredentialStoreUnavailable {
+                reason: format!("`{backend}` cannot enumerate stored credentials"),
+            },
         }
     }
 }

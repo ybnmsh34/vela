@@ -199,7 +199,9 @@ mod tests {
         assert_eq!(posture.level, RiskLevel::Elevated);
         assert_eq!(posture.scope, NetworkScope::PrivateNetwork);
         assert!(posture.leaves_device);
-        assert!(posture.concerns.contains(&Concern::PlaintextTrafficLeavesDevice));
+        assert!(posture
+            .concerns
+            .contains(&Concern::PlaintextTrafficLeavesDevice));
         assert!(posture
             .concerns
             .contains(&Concern::RemoteEndpointIsUnauthenticated));
@@ -215,7 +217,9 @@ mod tests {
         );
         assert_eq!(posture.level, RiskLevel::High);
         assert!(posture.credential_sent_in_plaintext);
-        assert!(posture.concerns.contains(&Concern::CredentialSentInPlaintext));
+        assert!(posture
+            .concerns
+            .contains(&Concern::CredentialSentInPlaintext));
     }
 
     #[test]
@@ -299,8 +303,14 @@ mod tests {
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect();
-        assert!(concerns.contains(&"credentialSentInPlaintext"), "{concerns:?}");
-        assert!(concerns.contains(&"plaintextTrafficLeavesDevice"), "{concerns:?}");
+        assert!(
+            concerns.contains(&"credentialSentInPlaintext"),
+            "{concerns:?}"
+        );
+        assert!(
+            concerns.contains(&"plaintextTrafficLeavesDevice"),
+            "{concerns:?}"
+        );
         // No endpoint, no id, no provider name: nothing to special-case on.
         assert!(json.get("providerId").is_none());
         assert!(!json.to_string().contains("example.test"));

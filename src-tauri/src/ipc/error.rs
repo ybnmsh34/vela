@@ -76,6 +76,12 @@ impl From<vela_secrets::SecretError> for IpcError {
             SecretError::Unavailable { .. } => {
                 IpcError::new(IpcErrorCode::SecretStoreUnavailable, error.to_string())
             }
+            // A real platform keychain cannot enumerate its contents. That is a
+            // property of the backend, not a fault on this machine, so it is
+            // `UNSUPPORTED` rather than "your keychain is broken". No command
+            // enumerates credentials today; this keeps the mapping honest if
+            // one ever tries.
+            SecretError::EnumerationUnsupported { .. } => IpcError::unsupported(error.to_string()),
         }
     }
 }
@@ -94,9 +100,10 @@ impl From<vela_store::StoreError> for IpcError {
             | StoreError::MigrationChanged { .. }
             | StoreError::Corrupt { .. }
             | StoreError::Io { .. }
-            | StoreError::Backend { .. } => {
-                IpcError::new(IpcErrorCode::Internal, "the local database could not be read")
-            }
+            | StoreError::Backend { .. } => IpcError::new(
+                IpcErrorCode::Internal,
+                "the local database could not be read",
+            ),
         }
     }
 }
@@ -136,8 +143,14 @@ mod tests {
     fn a_missing_credential_is_not_reported_as_a_broken_keychain() {
         // These two must stay distinguishable: "you have no key stored" is a
         // normal state, "your keychain refused us" is a real problem.
-        let missing: IpcError = SecretError::NotFound { key: "p/primary".into() }.into();
-        let broken: IpcError = SecretError::Unavailable { reason: "locked".into() }.into();
+        let missing: IpcError = SecretError::NotFound {
+            key: "p/primary".into(),
+        }
+        .into();
+        let broken: IpcError = SecretError::Unavailable {
+            reason: "locked".into(),
+        }
+        .into();
         assert_eq!(missing.code, IpcErrorCode::NotFound);
         assert_eq!(broken.code, IpcErrorCode::SecretStoreUnavailable);
     }
@@ -156,8 +169,8 @@ mod tests {
 
     #[test]
     fn a_settings_validation_failure_is_reported_as_an_invalid_payload() {
-        let error: IpcError = vela_settings::SettingsError::invalid("baseUrl", "must not be blank")
-            .into();
+        let error: IpcError =
+            vela_settings::SettingsError::invalid("baseUrl", "must not be blank").into();
         assert_eq!(error.code, IpcErrorCode::InvalidPayload);
 
         let unknown: IpcError = vela_settings::SettingsError::UnknownProvider {

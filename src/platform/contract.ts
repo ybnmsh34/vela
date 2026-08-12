@@ -97,6 +97,130 @@ export interface SecretsStatusRes {
 }
 
 /* -------------------------------------------------------------------------- */
+/* settings                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type ThemePreference = 'light' | 'dark' | 'system';
+
+/**
+ * The transport shape of a provider's credential, if it has one.
+ *
+ * The renderer picks a shape; it never names a keychain entry and never sees a
+ * value. `{ type: 'none' }` is a first-class choice, not an empty state — most
+ * local runtimes take no credential at all.
+ */
+export type AuthMode =
+  | { readonly type: 'none' }
+  | { readonly type: 'bearerToken' }
+  | { readonly type: 'apiKeyHeader'; readonly header: string }
+  | { readonly type: 'apiKeyQuery'; readonly param: string };
+
+/** Whether a credential is needed. Only `required` can make a config invalid. */
+export type AuthRequirement = 'notRequired' | 'optional' | 'required';
+
+/** The outcome of the host's auth check. Two of the three are success states. */
+export type CredentialCheck = 'satisfied' | 'satisfiedWithoutCredential' | 'missingRequired';
+
+export type ProviderKind = 'local' | 'remoteApi' | 'remoteSubscription';
+
+/** What the credential binding points at. Never a value. */
+export type ProviderAuth =
+  | { readonly type: 'none' }
+  | { readonly type: 'bearer'; readonly secret: SecretRefDto }
+  | { readonly type: 'apiKeyHeader'; readonly header: string; readonly secret: SecretRefDto }
+  | { readonly type: 'apiKeyQuery'; readonly param: string; readonly secret: SecretRefDto };
+
+/** How far the user's prompts travel. */
+export type NetworkScope = 'loopback' | 'privateNetwork' | 'publicNetwork';
+
+/**
+ * How loudly to speak. `none` covers the entire normal local-model case —
+ * plaintext HTTP to 127.0.0.1 with no credential is *not* a risk, and warning
+ * about it would train the user to ignore warnings that matter.
+ */
+export type RiskLevel = 'none' | 'notice' | 'elevated' | 'high';
+
+/** Enumerable, provider-neutral reasons. The UI owns the wording. */
+export type Concern =
+  | 'plaintextTrafficLeavesDevice'
+  | 'credentialSentInPlaintext'
+  | 'remoteEndpointIsUnauthenticated'
+  | 'requiredCredentialMissing';
+
+export interface SecurityPosture {
+  readonly level: RiskLevel;
+  readonly scope: NetworkScope;
+  readonly leavesDevice: boolean;
+  readonly trafficIsPlaintext: boolean;
+  readonly credentialSentInPlaintext: boolean;
+  readonly endpointIsUnauthenticated: boolean;
+  readonly concerns: readonly Concern[];
+}
+
+/**
+ * One configured provider, plus everything the host derived from it.
+ *
+ * Branch on these flags, never on `id`. Adding a backend must require zero
+ * changes under `src/`.
+ */
+export interface ProviderView {
+  readonly id: string;
+  readonly displayName: string;
+  readonly kind: ProviderKind;
+  readonly baseUrl: string;
+  readonly modelId: string | null;
+  readonly auth: ProviderAuth;
+  readonly authRequirement: AuthRequirement;
+  /**
+   * A credential is stored right now. **`false` is not a problem on its own** —
+   * gate the UI on `usable`, never on this.
+   */
+  readonly credentialPresent: boolean;
+  readonly usable: boolean;
+  readonly credentialCheck: CredentialCheck;
+  readonly authMode: AuthMode;
+  /** `null` when the provider takes no credential: render no field at all. */
+  readonly credentialFieldLabel: string | null;
+  readonly security: SecurityPosture;
+}
+
+export interface SettingsSnapshot {
+  readonly theme: ThemePreference;
+  /**
+   * Always `false`. There is no command that can change it — the field exists
+   * so the UI can show the user telemetry is off rather than assert it.
+   */
+  readonly telemetryEnabled: boolean;
+  /** `os-keychain` or `memory-fake`. Displayed verbatim; never inferred. */
+  readonly credentialBackend: string;
+  readonly providers: readonly ProviderView[];
+}
+
+export interface SettingsSetThemeReq {
+  readonly theme: ThemePreference;
+}
+
+export interface SettingsSetThemeRes {
+  readonly theme: ThemePreference;
+}
+
+export interface SettingsPutProviderReq {
+  readonly id: string;
+  readonly displayName: string;
+  readonly kind: ProviderKind;
+  readonly baseUrl: string;
+  readonly modelId?: string;
+  /** Omit for an endpoint with no authentication. */
+  readonly auth?: AuthMode;
+  /** Omit for "no credential needed". */
+  readonly authRequirement?: AuthRequirement;
+}
+
+export interface SettingsProviderRefReq {
+  readonly providerId: string;
+}
+
+/* -------------------------------------------------------------------------- */
 /* the contract                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -106,6 +230,10 @@ export interface IpcContract {
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
   secrets_status: { req: SecretsRefReq; res: SecretsStatusRes };
+  settings_delete_provider: { req: SettingsProviderRefReq; res: Ack };
+  settings_get: { req: EmptyPayload; res: SettingsSnapshot };
+  settings_put_provider: { req: SettingsPutProviderReq; res: ProviderView };
+  settings_set_theme: { req: SettingsSetThemeReq; res: SettingsSetThemeRes };
 }
 
 export type CommandName = keyof IpcContract & string;
@@ -122,6 +250,10 @@ export const COMMAND_ALLOWLIST = [
   'secrets_delete',
   'secrets_set',
   'secrets_status',
+  'settings_delete_provider',
+  'settings_get',
+  'settings_put_provider',
+  'settings_set_theme',
 ] as const;
 
 /**

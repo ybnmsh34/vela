@@ -102,7 +102,10 @@ export function describeDegradation(degradation: Degradation): Notice {
       return {
         tone: 'warning',
         title: 'A tool call could not be read',
-        detail: `${String(degradation.count)} tool call${degradation.count === 1 ? '' : 's'} arrived in a shape Vela could not reconstruct. ${degradation.count === 1 ? 'It was' : 'They were'} not run — see below.`,
+        // "Above", not "below": the transcript draws the calls first and the
+        // degradation notes under them, and a pointer in the wrong direction
+        // sends a user looking for evidence that is already on screen.
+        detail: `${String(degradation.count)} tool call${degradation.count === 1 ? '' : 's'} arrived in a shape Vela could not reconstruct. ${degradation.count === 1 ? 'It was' : 'They were'} not run — ${degradation.count === 1 ? 'it is' : 'they are'} shown above.`,
       };
     case 'failedOver':
       return {

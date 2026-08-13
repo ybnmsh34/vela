@@ -1,6 +1,6 @@
 # Assertion controls — GATE M Part 1, Phase C
 
-Forty-five experiments. **45/45 behaved as expected.** Machine-readable results in
+Forty-eight experiments. **48/48 behaved as expected.** Machine-readable results in
 `ASSERTION-CONTROL.tsv`; the script is `tests/harness/ui-bridge/controls.mjs`.
 
 A gate run that prints twenty-two green lines proves nothing unless those lines could have been
@@ -55,6 +55,9 @@ endpoint, a credentialled endpoint is really configured through `settings_put_pr
 | K43 | C30 | the sidebar pinned inline at 480px — **the constant as it shipped** | FAIL | FAIL |
 | K44 | C31 | baseline: the transcript faded into an edge that hides content | PASS | PASS |
 | K45 | C31 | the mask removed while content is still hidden above the edge | FAIL | FAIL |
+| K46 | C6b | the dropped-opening reader, on the transcript this repo **committed** at `4647556` (`mid-local`) | FAIL | FAIL |
+| K47 | C6b | the same, on the transcript committed at `a936bad` (`small-local`) | FAIL | FAIL |
+| K48 | C6b | the same reader on a turn that did arrive whole — the check is not stuck on FAIL | PASS | PASS |
 
 ## Why the second set breaks the live page rather than a fixture
 
@@ -63,6 +66,16 @@ one reproduces a state the operator actually saw on a real machine rather than a
 be red. K37 in particular rebuilds the shipped renderer byte for byte — `<p>{text}</p>`, `pre-wrap`,
 the same reasoning text flowing into it — so what the control proves is not "the reader can return
 FAIL" but "the reader returns FAIL *on the defect it was written for*".
+
+**K46/K47 — the only controls whose broken input is a file in this repository.**
+`C6b` was written because for four gate runs the recorded transcript began mid-word and all
+thirty-odd assertions passed anyway: an answer missing its first ninety-five characters is still
+non-empty, still settled, still free of reasoning markup, still painted incrementally. Nothing
+compared what was on screen to what the core had emitted. So these two controls do not invent a
+broken turn — they read `streamed-turn.json` and `core-events.json` out of git at the two commits
+where it happened, and put them through the same function the matrix run uses. The assertion has
+to fail on the evidence that motivated it, or it is decoration. (The cause was in the harness, not
+in Vela: see `tests/harness/ui-bridge/relay-adapter.ts`.)
 
 ## The three that carry the most weight
 

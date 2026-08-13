@@ -737,6 +737,104 @@ Guard that would have caught this in seconds: **run the credential canary suite 
 snapshot that touches `vela-providers` source.** With both barriers off it goes red on three of the
 four adapters — the fourth is the subject of the finding below.
 
+## 🟢 CONV-1 wave, integration — reconciled, and an eighth instance found in the gate's own evidence
+
+Three builders landed on `claude/new-session-tgl1ut`: the handler-list/allowlist binding
+(`5e5f64f`), the attachment path and the debug-log permissions (`4c99725`), and the reading
+surface (`4647556`).
+
+### Reconciliation: no conflict to resolve, and that is worth stating precisely
+
+The three commits touch **disjoint file sets** — 9, 16 and 25 non-evidence files with no overlap.
+The predicted collision on `Markdown.tsx` and the design tokens did not happen: the attachment
+builder never touched either, and its one file in that folder (`ConversationSurface.tsx`) is the
+sibling of the reading-surface builder's `ConversationSurface.test.tsx`. Both surfaces typecheck
+against each other because the reading-surface builder rebased last. Nothing was merged by hand
+and nothing needed to be.
+
+The audit that mattered was semantic, not textual:
+
+| Checked | Result |
+|---|---|
+| Two builders' additions to the Rust allowlist / `generate_handler!` | no drift; 28 commands, both lists, both directions bound by `handler_binding.rs` |
+| `syn` and `tauri/test` reaching the shipped binary | both `[dev-dependencies]`; nothing added to the runtime graph |
+| `Composer.tsx`'s new `styles.srOnly` against a stylesheet the same commit did not touch | the class exists (`Composer.module.css:147`); a missing CSS-module key resolves to `undefined` in silence |
+| Any module in `src/` nothing outside its own tests imports | only `main.tsx`, the entry |
+| The reading surface's new `--vela-reading-column` against the attachment tray | tray lives in the model bar, not the transcript column; `C29`/`C29b` hold with the attachment work present |
+
+One inert observation, not a defect and not fixed here: `SelectedModel.report` is published on the
+models context and read by nobody outside the feature (`ModelBar` and `CapabilitySummary` take it
+from the store). It promises the user nothing, so it is not the class below — but it is the shape
+that class starts in.
+
+### The invariants, verified rather than inherited
+
+| Invariant | How it was made real |
+|---|---|
+| The thinking block renders markdown, not source, in the real app | `frontier/16-thinking-markdown-expanded.png`: a bold lead-in, two bullets and `llama-server` as inline code, at 13px under a 15px answer. Control: `<p>{text}</p>` with `pre-wrap` fails 6 tests across `ThinkingBlock.test.tsx` and `MessageTurn.test.tsx` |
+| Allowlist and `generate_handler!` cannot drift | **mutated both ways.** `diagnostics_ping` allowlisted and unregistered → `every_allowlisted_command_is_reachable_in_the_assembled_app` FAILS with *"the assembled app answers `Command … not found`"*. `ui_set_layout` dropped from both allowlists and left registered → `no_command_is_reachable_that_the_allowlist_does_not_declare` FAILS. The verdict comes from invoking the real `invoke_handler`, not from reading source |
+| A staged image reaches the outgoing payload | removing `attachments={attachments}` from the composition root fails 7 of 8 tests in `staged-attachment-payload.test.tsx`. In the browser the composer's picker is now the fourth image affordance the matrix sees, with the same `accept` list as the tray's |
+| The debug log and its directory are 0600/0700 | **measured from a shell, not from the test process.** Under `umask 0022`: `drwx------` / `-rw-------`, both from a clean start and from a directory left at 0755 with a 0644 log — which was tightened in place, keeping its earlier contents |
+| The composition-root wave still holds | full gate green; `mock-matrix` byte-identical after regeneration |
+
+### The eighth instance: it was in the evidence, photographed, four runs running
+
+`small-local`'s recorded answer read `"rise what this endpoint can do.."`. `mid-local`'s at
+`4647556` read `"th fathom orbit yardarm keel…"`. The core's own log had the whole sentence. The
+screenshots show the truncation plainly, at full size, in the directory this project cites as its
+strongest visual evidence.
+
+**Every assertion passed.** Thirty-five of them. Because an answer missing its first ninety-five
+characters is still non-empty, still settled, still free of reasoning markup, still painted
+incrementally — and not one assertion compared what reached the screen with what the core emitted.
+The same class as the other seven, one layer further out: the check was built, the evidence was
+gathered, and the two were never connected.
+
+**The cause is in the harness, and Vela is not at fault.** `RelayAdapter.listen` resolved before
+its `EventSource` had connected, and `server.mjs` fans `/events` out live with no replay, so every
+`textDelta` emitted during the handshake was dropped in transit. `chat-repository.ts` awaits
+`listen` before invoking `chat_send` for exactly this reason, and `TauriAdapter` honours that
+contract — the harness did not. It is intermittent, which is why it moved between profiles from
+run to run and read as an app defect.
+
+Fixed in `tests/harness/ui-bridge/relay-adapter.ts`, and closed with **C6b — "everything the core
+produced for this turn reached the reader"**, whose controls are not synthetic: **K46** and **K47**
+read `streamed-turn.json` and `core-events.json` out of git at `4647556` and `a936bad` and put them
+through the same reader the matrix uses. It fails on them. **K48** holds it on a whole turn so it is
+not stuck on FAIL.
+
+The evidence had also stopped describing the tree: the run committed at `4647556` was driven before
+the attachment work was in the same worktree, so `C3` and `attach-affordances.json` knew nothing
+about the `composer-attachment-picker` that had existed since `4c99725`. Re-driven here.
+
+### Measured — the full gate, as CI runs it
+
+In an **isolated `git worktree`** at HEAD with a **fresh `CARGO_TARGET_DIR`**, twice: once on the
+three builders' output as committed, once on the tree with the harness fix.
+
+`pnpm install` ✅ · `pnpm typecheck` ✅ · `pnpm test` ✅ **1394/1394 in 63 files** ·
+`pnpm test:harness` ✅ **141/141 in 12 files** · `pnpm build` ✅ ·
+`cargo fmt --all --check` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅ 0 warnings ·
+`cargo build --workspace --locked` ✅ · `cargo test --workspace --locked` ✅
+**44 binaries, 929 passed, 0 failed, 3 ignored** ·
+`./scripts/check-transcripts.sh` ✅ byte-identical · `./scripts/secret-scan.sh` ✅.
+
+Browser matrix, re-driven against the production bundle over the real core and the four mock
+endpoints: **36 / 36 / 34 / 31 assertions, all passing** (was 35 / 35 / 33 / 30 — C6b is new), and
+`controls.mjs` **48/48 as expected** (was 45/45).
+
+**One environment incident.** The first `cargo test` died on `No space left on device`: the
+filesystem was full at 38 GB with 21 GB of it a stale `src-tauri/target` in the shared tree. Removed
+— it is a cache, nothing tracked — and the gate re-run from scratch. The earlier partial run is not
+counted above.
+
+**VERIFIED-BY-FAKE**, per conventions §10: `BrowserAdapter` for the payload test, `MemoryStore`
+behind the bridge, deterministic mock endpoints, Chromium rather than the Tauri webview, Linux
+rather than the platforms Vela ships to. The debug-log modes are the exception — those are real
+files on a real filesystem, read with `stat`. **GATE M Part 2 remains the desktop session's.**
+
+---
+
 ## ⚠️ FOURTH-ADAPTER FINDING — closed, but "clean for a fragile reason"
 
 Raised by the round-4 **integration agent**, unprompted, in a probe it wrote and then deleted

@@ -335,6 +335,15 @@ try {
   record('C7', 'reasoning', 'no reasoning markup reaches any visible text', check.noReasoningMarkup(await check.transcriptText(page)));
   record('C8', 'reasoning', 'the answer is not swallowed by the reasoning channel', check.answerNotSwallowed(streamed));
   record('C9', 'usage', 'token usage is shown only where the endpoint reported it', check.usageOnlyWhenReported(streamed.whole, expected.usageReported));
+  // Read from the core's own log, mid-run, so the comparison is against what
+  // this turn actually produced rather than against a string written here.
+  const emittedSoFar = check.emittedTextFor(await (await fetch(`${fast.base}/events.json`)).json());
+  record(
+    'C6b',
+    'streamed turn',
+    'everything the core produced for this turn reached the reader',
+    check.nothingWasDroppedBeforeTheReader(streamed, emittedSoFar),
+  );
 
   writeFileSync(join(outDir, 'streamed-turn.json'), `${JSON.stringify(streamed, null, 2)}\n`);
 

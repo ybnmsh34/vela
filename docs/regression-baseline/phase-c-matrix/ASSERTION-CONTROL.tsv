@@ -1,5 +1,5 @@
 id	expected	observed	as_expected	description	detail
-K1	FAIL	FAIL	yes	the "no image affordance" assertion, applied to the one profile that HAS vision	present anyway: button#attach-image"Attach an image or a file Image or file", button#"Attach an image", input[type=file]#attachment-picker-with-images"image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown"
+K1	FAIL	FAIL	yes	the "no image affordance" assertion, applied to the one profile that HAS vision	present anyway: button#attach-image"Attach an image or a file Image or file", button#"Attach an image", input[type=file]#attachment-picker-with-images"image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown", input[type=file]#composer-attachment-picker"image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown"
 K2	FAIL	FAIL	yes	the "offers an image affordance" assertion, applied to a profile with no vision	0 image affordance(s) present: 
 K3	PASS	PASS	yes	the same reader, on the profile it does hold for (the check is not stuck on one answer)	no image affordance in the DOM by name, test id or accept list
 K4	FAIL	FAIL	yes	the context-window assertion, told to expect another endpoint's window	meter says: About 0 of 4K tokens
@@ -15,9 +15,9 @@ K13	FAIL	FAIL	yes	the error-state assertion, applied to a turn that succeeded	(n
 K14	FAIL	FAIL	yes	the no-credential assertion, applied to an endpoint that genuinely requires one	usable=false check=missingRequired complaintOnScreen=false
 K15	PASS	PASS	yes	the console assertion on the run as it stood (it was clean)	clean
 K16	FAIL	FAIL	yes	the same assertion, after one deliberate console.error	error: control: a deliberate console error
-K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:36619/v1/models
-K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 20 ms
-K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3646 ms
+K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:42145/v1/models
+K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 48 ms
+K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3653 ms
 K20	FAIL	FAIL	yes	the "turn is settled" assertion, applied while the turn is still in flight	still says "Waiting for the first token…"
 K22	PASS	PASS	yes	the hierarchy assertion on the surface as it ships (it held in the matrix run)	h1=24px h2=18px h3=16px h4=15px | body=15px | distinct=4 monotonic=true outranksBody=true
 K23	FAIL	FAIL	yes	the same assertion once every heading level is set at one size — the defect as found	h1=15px h2=15px h3=15px h4=15px | body=15px | distinct=1 monotonic=true outranksBody=false
@@ -44,3 +44,6 @@ K43	FAIL	FAIL	yes	the same assertion with the sidebar pinned at 480px — the co
 K44	PASS	PASS	yes	the scroll-edge assertion on the transcript as it ships	atTop=false atBottom=false mask=linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), r
 K45	FAIL	FAIL	yes	the same assertion with the mask removed while content is still hidden above the edge	atTop=false atBottom=false mask=none
 K21	PASS	PASS	yes	FINDING 1 reproduced: settings has the endpoint, and chat_send still cannot find it	providers=1 chat_send={"code":"NOT_FOUND","message":"no provider configured with id `matrix`"}
+K46	FAIL	FAIL	yes	the dropped-opening assertion, on the transcript recorded at 4647556 (mid-local)	the core emitted "Mock mid-local reply to:" and it is NOT on screen — the turn was rendered without its opening
+K47	FAIL	FAIL	yes	the dropped-opening assertion, on the transcript recorded at a936bad (small-local)	the core emitted "Mock small-local reply to:" and it is NOT on screen — the turn was rendered without its opening
+K48	PASS	PASS	yes	the same reader on a turn that did arrive whole (the check is not stuck on FAIL)	the answer's opening reached the screen: "Mock small-local reply to:"

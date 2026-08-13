@@ -20,6 +20,13 @@
       "testid": "attachment-picker-with-images",
       "label": "image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown",
       "disabled": false
+    },
+    {
+      "via": "accept",
+      "tag": "input[type=file]",
+      "testid": "composer-attachment-picker",
+      "label": "image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown",
+      "disabled": false
     }
   ],
   "everyAttachControl": [
@@ -34,6 +41,12 @@
       "testid": "attach-image",
       "label": "Attach an image or a file",
       "accept": null
+    },
+    {
+      "tag": "input",
+      "testid": "composer-attachment-picker",
+      "label": "",
+      "accept": "image/png,image/jpeg,image/webp,image/gif,.txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.yaml,.yml,.toml,.ini,.cfg,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.rb,.php,.c,.h,.cc,.cpp,.hpp,.cs,.swift,.sh,.bash,.zsh,.sql,.diff,.patch"
     },
     {
       "tag": "button",

@@ -470,6 +470,64 @@ export function answerNotSwallowed(turn) {
   return ok(shown, `answer=${visible.length} chars, reasoning=${reasoning.length} chars, reasoningVisible=${String(turn?.reasoning?.hiddenAttribute === false)}`);
 }
 
+/**
+ * The text the core emitted, reassembled from its own event log.
+ *
+ * `server.mjs` records every `chat:event` verbatim, so this is the ground truth
+ * for what the renderer was given — as opposed to what it drew. Deltas from
+ * every turn in the run are concatenated, which is all the caller needs: the
+ * question being asked of it is whether a phrase is present, not where.
+ */
+export function emittedTextFor(events) {
+  let text = '';
+  for (const entry of events) {
+    const event = entry?.payload?.event;
+    if (event?.type === 'textDelta' && typeof event.text === 'string') text += event.text;
+  }
+  return text;
+}
+
+/**
+ * A12b. Everything the core produced for this turn reached the reader.
+ *
+ * The other assertions on a settled turn ask whether *something* is on screen.
+ * None of them asks whether it is the whole thing, and that gap had a cost: for
+ * four gate runs the recorded transcript began mid-word — `small-local` showed
+ * `"rise what this endpoint can do.."` where the core had emitted `"Mock
+ * small-local reply to: Summarise what this endpoint can do.."` — and every
+ * assertion passed, because an answer missing its first ninety-five characters
+ * is still non-empty, still settled, still free of reasoning markup, and still
+ * painted incrementally. The screenshot showed it plainly. Nothing was looking.
+ *
+ * ## Why the mock's opening words rather than a string comparison
+ *
+ * The rendered text is deliberately *not* the emitted text: markdown is turned
+ * into elements, the reasoning channel is separated out, hostile's control
+ * tokens are stripped on purpose, and hard wraps are reflowed. Comparing the
+ * two would fail on correct behaviour. What no correct behaviour may do is drop
+ * the answer's opening, so this asserts on the one deterministic phrase every
+ * profile's answer starts with — `Mock <profile> reply to:` — which is exactly
+ * the run that went missing.
+ *
+ * `emitted` is passed in from the core's own event log rather than assumed, so
+ * a run where the endpoint genuinely never said it is reported as inconclusive
+ * instead of quietly passing.
+ */
+export function nothingWasDroppedBeforeTheReader(turn, emitted) {
+  const opening = /Mock [a-z-]+ reply to:/u.exec(emitted ?? '');
+  if (opening === null) {
+    return ok(false, 'the core emitted no recognisable answer opening — cannot judge (harness fault, not the app)');
+  }
+  const visible = (turn?.whole ?? '').replace(/\s+/gu, ' ');
+  const pass = visible.includes(opening[0]);
+  return ok(
+    pass,
+    pass
+      ? `the answer's opening reached the screen: "${opening[0]}"`
+      : `the core emitted "${opening[0]}" and it is NOT on screen — the turn was rendered without its opening`,
+  );
+}
+
 /** A3. A model with no vision offers no image affordance — absent, not disabled. */
 export function visionAffordanceMatchesCapability(affordances, expectVision) {
   const describe = affordances.map((a) => `${a.tag}#${a.testid ?? ''}"${a.label}"`).join(', ');

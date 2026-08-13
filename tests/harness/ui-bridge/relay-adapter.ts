@@ -48,7 +48,11 @@ export class RelayAdapter implements PlatformAdapter {
 
   readonly #base: string;
   readonly #handlers = new Map<string, Set<(payload: never) => void>>();
-  #stream: EventSource | null = null;
+  /**
+   * Settles when the stream is receiving. Doubles as the once-only guard: the
+   * stream is opened by whoever creates this promise and by nobody else.
+   */
+  #open: Promise<void> | null = null;
 
   constructor(base = '') {
     this.#base = base;
@@ -75,28 +79,68 @@ export class RelayAdapter implements PlatformAdapter {
     return envelope.ok as CommandRes<C>;
   }
 
-  listen<E extends EventName>(
+  /**
+   * Resolves once this adapter is **actually receiving** events, not merely
+   * once it has asked to.
+   *
+   * `PlatformAdapter.listen`'s contract is that the listener is registered by
+   * the time the promise settles, and `chat-repository.ts` leans on it
+   * directly: it `await`s `ensureSubscribed()` and only then invokes
+   * `chat_send`, precisely so a turn cannot start before anything is listening.
+   * `TauriAdapter` honours that — Tauri's own `listen` resolves after
+   * registration.
+   *
+   * This adapter used to resolve synchronously while `new EventSource(…)` was
+   * still opening its connection, and `server.mjs` fans `/events` out live with
+   * no replay. Every `textDelta` the core emitted during that handshake was
+   * therefore dropped **in the harness**, and the transcript began mid-word:
+   * `small-local` recorded `"rise what this endpoint can do.."` for an answer
+   * the core's own `core-events.json` shows in full as `"Mock small-local reply
+   * to: Summarise what this endpoint can do.."`. The gap was 31 characters that
+   * run, 95 in `a936bad`, 112 in `4647556`'s `mid-local` — it moved with the
+   * connection, which is what made it look like an app defect rather than a
+   * transport one.
+   *
+   * It was in the committed evidence, screenshotted, through four gate runs.
+   * No assertion compares the rendered answer to the events the core produced,
+   * so nothing objected — and a picture of a truncated answer was being read as
+   * a picture of a working one. The bug was always here, in test
+   * infrastructure; Vela's own ordering was correct throughout.
+   */
+  async listen<E extends EventName>(
     event: E,
     handler: (payload: EventContract[E]) => void,
   ): Promise<Unsubscribe> {
     const handlers = this.#handlers.get(event) ?? new Set();
     handlers.add(handler as (payload: never) => void);
     this.#handlers.set(event, handlers);
-    this.#ensureStream();
-    return Promise.resolve(() => {
+    await this.#ensureStream();
+    return () => {
       handlers.delete(handler as (payload: never) => void);
-    });
+    };
   }
 
-  #ensureStream(): void {
-    if (this.#stream !== null) return;
-    const stream = new EventSource(`${this.#base}/events`);
-    stream.addEventListener('message', (message: MessageEvent<string>) => {
-      const framed = JSON.parse(message.data) as { name: string; payload: unknown };
-      for (const handler of this.#handlers.get(framed.name) ?? []) {
-        (handler as (payload: unknown) => void)(framed.payload);
-      }
+  #ensureStream(): Promise<void> {
+    this.#open ??= new Promise<void>((resolve, reject) => {
+      const stream = new EventSource(`${this.#base}/events`);
+      stream.addEventListener('message', (message: MessageEvent<string>) => {
+        const framed = JSON.parse(message.data) as { name: string; payload: unknown };
+        for (const handler of this.#handlers.get(framed.name) ?? []) {
+          (handler as (payload: unknown) => void)(framed.payload);
+        }
+      });
+      // `open` fires when the response headers have arrived, which is after
+      // `server.mjs` has added this response to its listener set — so from
+      // here on nothing the core emits can be missed.
+      stream.addEventListener('open', () => {
+        resolve();
+      });
+      stream.addEventListener('error', () => {
+        // Only fatal before the first open; afterwards EventSource reconnects
+        // on its own and the promise is long settled.
+        reject(new Error('the ui-bridge event stream could not be opened'));
+      });
     });
-    this.#stream = stream;
+    return this.#open;
   }
 }

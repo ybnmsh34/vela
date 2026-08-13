@@ -15,7 +15,7 @@
  * looking at.
  */
 
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { dirname, join } from 'node:path';
@@ -785,6 +785,49 @@ try {
     `providers=${String(settings.ok.providers.length)} chat_send=${JSON.stringify(turn.err ?? turn.ok)}`,
   );
   unregistered.child.kill();
+
+  /* ---- C6b, controlled against evidence this repo actually committed ----- */
+  //
+  // `nothingWasDroppedBeforeTheReader` exists because for four gate runs the
+  // recorded transcript began mid-word and every assertion passed. The control
+  // for it is therefore not a synthetic object: it is those very artifacts,
+  // read out of git, put through the same function the matrix run uses. If the
+  // assertion cannot fail on the evidence that motivated it, it is worthless.
+  const gitJson = (rev, path) =>
+    JSON.parse(execSync(`git -C ${repoRoot} show ${rev}:${path}`, { maxBuffer: 1 << 28 }).toString());
+
+  for (const [id, rev, profile] of [
+    ['K46', '4647556', 'mid-local'],
+    ['K47', 'a936bad', 'small-local'],
+  ]) {
+    const recorded = gitJson(rev, `docs/regression-baseline/phase-c-matrix/${profile}/streamed-turn.json`);
+    const emitted = check.emittedTextFor(
+      gitJson(rev, `docs/regression-baseline/phase-c-matrix/${profile}/core-events.json`),
+    );
+    const verdict = check.nothingWasDroppedBeforeTheReader(recorded, emitted);
+    control(
+      id,
+      `the dropped-opening assertion, on the transcript recorded at ${rev} (${profile})`,
+      'FAIL',
+      verdict.pass,
+      verdict.detail,
+    );
+  }
+
+  // The same reader on a turn that is whole, so the control above is not just
+  // an assertion that always fails.
+  const wholeTurn = gitJson('4647556', 'docs/regression-baseline/phase-c-matrix/small-local/streamed-turn.json');
+  const wholeEmitted = check.emittedTextFor(
+    gitJson('4647556', 'docs/regression-baseline/phase-c-matrix/small-local/core-events.json'),
+  );
+  const wholeVerdict = check.nothingWasDroppedBeforeTheReader(wholeTurn, wholeEmitted);
+  control(
+    'K48',
+    'the same reader on a turn that did arrive whole (the check is not stuck on FAIL)',
+    'PASS',
+    wholeVerdict.pass,
+    wholeVerdict.detail,
+  );
 
   writeFileSync(
     join(outDir, 'ASSERTION-CONTROL.tsv'),

@@ -1,5 +1,33 @@
 # GATE M Part 1 — Phase C — the conversation surface meets the capability matrix
 
+> **RE-RUN BY THE INTEGRATION OF THE THREE-BUILDER WAVE.** Everything below stands, and two
+> things about this directory changed.
+>
+> **1. The evidence had stopped describing the tree.** The run recorded at `4647556` was driven
+> before the attachment builder's work was in the same tree, so `attach-affordances.json` and `C3`
+> knew nothing about `composer-attachment-picker` — the paperclip that used to do nothing. The
+> assembled app has offered four image affordances since `4c99725`; the evidence said three.
+> Re-driven here: **36 / 36 / 34 / 31 assertions, all passing, 48 / 48 controls as expected.**
+>
+> **2. A defect was in these files, photographed, for four gate runs.** `small-local`'s recorded
+> answer read `"rise what this endpoint can do.."`. `mid-local`'s at `4647556` read `"th fathom
+> orbit yardarm keel…"`. The screenshots show it plainly. Every assertion passed anyway, because
+> not one of them compared what was on screen to what the core had emitted — an answer missing its
+> first ninety-five characters is still non-empty, still settled, still free of reasoning markup,
+> still painted incrementally.
+>
+> The cause was **in the harness, not in Vela**. `RelayAdapter.listen` resolved before its
+> `EventSource` had connected, and `server.mjs` fans `/events` out live with no replay, so every
+> `textDelta` the core emitted during the handshake was dropped in transit.
+> `chat-repository.ts` is correct and always was: it awaits `listen` before invoking `chat_send`
+> precisely so this cannot happen, and `TauriAdapter` honours that contract. The harness did not.
+>
+> Fixed in `tests/harness/ui-bridge/relay-adapter.ts`, and closed with a new assertion — **C6b,
+> "everything the core produced for this turn reached the reader"** — whose controls (K46, K47)
+> are the *committed artifacts from those two runs*, read out of git and put through the same
+> reader. It fails on them. That is the point: the gate's own recorded evidence is now something
+> the gate checks.
+
 > **RE-RUN FOR THE CONV-1 VISUAL FAIL — the reading surface wave.** The evidence files in this
 > directory are now a run of **35 assertions per profile** (35 / 35 / 33 / 30 — `small-local` has
 > no reasoning channel to judge, `hostile` no answer channel), all passing, with **45 assertion

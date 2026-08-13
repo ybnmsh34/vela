@@ -1412,6 +1412,46 @@ My standing rule said another B2 failure stops the provider layer. Applied hones
 So it joins the composition-root wave as one more instance, rather than spawning another provider
 round. **The tripwire still stands** for a genuinely new surface.
 
+## 🔴 SECOND cloud-blind class: filesystem case sensitivity — the app is blank on Windows
+
+The desktop session found this after the GATE-M2 verdict, and it is worse than the registry gap
+because it stops the app before React mounts.
+
+`src/features/conversation/` contains **`Markdown.tsx`** (the component) and **`markdown.ts`** (the
+parser) — names differing only in case. `MessageTurn.tsx:12` does `import { Markdown } from
+'./Markdown'`. **Vite resolves `.ts` before `.tsx`**, so on a case-insensitive filesystem that
+import resolves to the **parser**, which has no `Markdown` export. The renderer throws before
+React mounts.
+
+Observed on Windows 11 / NTFS:
+
+- `pnpm tauri dev` → **window opens fully blank white, no UI**
+- the same dev server in **Chromium** → also blank, same `SyntaxError` — so this is **not** a
+  WebView2 defect, it is filesystem case-sensitivity
+- `pnpm build` → fails exit 2 with TS1149/TS2305/TS1261 naming the collision. `pnpm typecheck` is
+  inside `pnpm verify`, so **`verify` cannot pass on Windows**
+
+**Linux resolves `./Markdown` to `Markdown.tsx` correctly, which is why CI and every cloud critic
+have seen a working app this whole time.** Verified present in the tree: both files coexist, and
+that import is the only consumer.
+
+Fix is a rename of one stem — noting that **case-only renames do not propagate through a
+case-insensitive checkout**, so the new stem must genuinely differ. A sweep found exactly one such
+collision in `src/`.
+
+### Two cloud-blind classes now, and they rhyme
+
+| Class | Why no cloud gate can see it | Found by |
+|---|---|---|
+| Composition root never wired | Every gate drove a bridge, an example, or a component — never the assembled app | desktop GATE-M2 |
+| **Filesystem case sensitivity** | **Linux is case-sensitive; Windows and macOS are not** | desktop, after the verdict |
+
+Both are invisible *by construction* to a headless Linux container, and both were found within an
+hour of the desktop session existing. That is the strongest argument yet for the two-session split:
+these are not defects the cloud was careless about — they are defects it **cannot** observe.
+
+`icons/icon.ico` is now present at `a50ee9f`; the desktop note calling it absent predates that push.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

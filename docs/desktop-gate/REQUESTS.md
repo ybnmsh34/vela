@@ -111,16 +111,32 @@ reconfigure the server.**
 | Blocker | State |
 |---|---|
 | `icons/icon.ico` missing → `tauri-build` fails | ✅ **FIXED at `a50ee9f`.** Pull. A 3-entry ICO (32, 128, and the 512×512 `icon.png` carried under the ICO 256 marker) assembled from the repo's own PNGs. It is hand-built — this container has no image tooling — so **`pnpm tauri icon` on your machine is the better regeneration path** if you want a proper 256px rendition. Landed by the lead, not by you, so your FAIL stands ungraded by its own reporter. |
-| `Markdown.tsx` / `markdown.ts` case collision → **blank white app** | 🟡 **Diagnosed, rename queued.** Confirmed in the tree: both files coexist and `MessageTurn.tsx:12` is the only consumer of `'./Markdown'`. The rename leads the composition-root wave, which cannot start until Phase C's last critics finish judging the very files it must change. |
+| `Markdown.tsx` / `markdown.ts` case collision → **blank white app** | ✅ **FIXED at `d0092af`. Pull.** The parser is now `markdown-parser.ts`, so the two stems genuinely differ rather than differing only in case. |
 
-**Until the rename lands, `pnpm tauri dev` will still open blank on Windows.** Do not spend time on
-`visual`, `interaction`, or `performance` yet — there is nothing on screen to judge, and a verdict
-against a blank window tells us only what we already know. You will be told when it lands.
+### What I verified before telling you it is fixed
 
-**What is worth your time right now**, if you want to keep going: anything that does not require
-the renderer to mount. `keychain-runtime` is the obvious one — it exercises the Rust side and the
-OS credential store, and is unaffected by the frontend collision. Its request below is marked stale
-only in its *risk-signal expectations*; the canary and `Auth::None` steps still hold exactly.
+- `MessageTurn.tsx:12` binds the **component** — there is no longer a `.ts` for Vite to prefer.
+- `Markdown.tsx` imports `parseMarkdown` from `./markdown-parser`.
+- **A sweep of every directory in `src/` and `src-tauri/src/` finds no remaining case-only
+  collision**, and `src/platform/case-collision.test.ts` now guards the class.
+- `pnpm typecheck` passes clean.
+
+**So the app should BOOT and RENDER on Windows now.** `visual` and `interaction` are worth your
+time again.
+
+### ⚠️ But a turn will still fail — that part is mid-fix
+
+The provider registry is **still empty** as I write this; the builder wiring it is running right
+now. So expect the UI to come up, show a configured provider, and then fail the send with
+`NOT_FOUND`. **That is finding 1 from your own verdict, not a new defect** — do not re-report it,
+and do not judge `performance` on a run that cannot complete a turn.
+
+Judge what renders: layout, type, spacing, theming, focus behaviour, empty and loading states.
+Hold `performance` and any end-to-end timing until I tell you the registry is wired.
+
+**What is also worth your time now:** `keychain-runtime`. It exercises the Rust side and the OS
+credential store and never needed the renderer at all. Its request below is stale only in its
+*risk-signal expectations*; the canary and `Auth::None` steps still hold exactly.
 
 **Your unrequested findings were the right call.** You were asked for `real-model` and instead also
 reported that the app cannot build, then cannot boot, on the operator's actual platform. Both are

@@ -697,6 +697,38 @@ the remaining effort asking *"what has nobody tested?"* rather than re-running w
 
 ## Run incidents
 
+**2026-08-13 ~05:04Z — the container was rolled back ~3 hours; recovered from the remote.**
+
+Found at a routine check-in: the round-4 workflow's transcript directory did not exist, and
+`git log` showed HEAD at `9970434` — a commit from before round 2's gate. Twelve commits were
+missing locally.
+
+**Diagnosis.** Not a `git reset` — a reset leaves the prior HEAD in the reflog, and the reflog
+itself was truncated at `9970434` with no rewind entry. The local filesystem had been restored
+from an earlier snapshot. The lost commits (`9c70bb8` … `67cdd8a`) were absent from the object
+store entirely: `git cat-file -t` reported MISSING for all five spot-checked shas.
+
+**Nothing was lost.** `git ls-remote` showed `origin/claude/new-session-tgl1ut` at `67cdd8a` —
+every commit was safely pushed. Recovery was `fetch` + `reset --hard 67cdd8a`, guarded by
+`git merge-base --is-ancestor HEAD FETCH_HEAD` first, which confirmed local was **strictly behind**
+and no local-only work would be destroyed by the reset. Verified afterwards that round 3's
+structural probes and round 4's in-flight adapter work are present.
+
+**What could not be recovered:** the round-3 and round-4 workflow scripts and agent caches live
+under `~/.claude/projects/`, which is **not** in the repo and was rolled back with everything else.
+`resumeFromRunId` is therefore impossible for round 4 — its cache is gone. Round 4 was relaunched
+from scratch. Its two fix builders' partial work survives *in git*, so the new builders inherit a
+tree with the fix half-written rather than starting clean.
+
+**Why the discipline paid off.** The habit of committing and pushing in-flight work at every
+check-in — which the stop hook kept insisting on, and which felt like noise at the time — is the
+only reason a three-hour rollback cost one workflow relaunch instead of an entire phase. The
+remote was the single source of truth that survived.
+
+**Practice going forward:** treat `~/.claude/projects/` as ephemeral. Anything that must survive
+belongs in the repo and pushed. Workflow scripts worth reusing should be copied into the repo, not
+left only in the session directory.
+
 **2026-08-12 ~23:19Z — Phase B workflow stalled at the integration stage and was resumed.**
 
 The integration agent's transcript ends with `[Request interrupted by user for tool use]` and

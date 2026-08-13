@@ -9,14 +9,14 @@
         "type": "none"
       },
       "authRequirement": "notRequired",
-      "baseUrl": "http://127.0.0.1:37883/v1",
+      "baseUrl": "http://127.0.0.1:45741/v1",
       "credentialCheck": "satisfiedWithoutCredential",
       "credentialFieldLabel": null,
       "credentialPresent": false,
       "displayName": "Capability matrix endpoint",
       "id": "matrix",
       "kind": "local",
-      "modelId": "mock-small-local",
+      "modelId": "mock-mid-local",
       "security": {
         "concerns": [],
         "credentialInQueryString": false,

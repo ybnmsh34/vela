@@ -1,8 +1,0 @@
-{
-  "profile": "small-local",
-  "endpoint": "http://127.0.0.1:41975",
-  "ttftAnyMs": 27.3,
-  "ttftAnswerMs": 27.3,
-  "paints": 2,
-  "turnMs": 27
-}

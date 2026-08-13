@@ -1,0 +1,14 @@
+{
+  "answer": "",
+  "whole": "1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"celsius\"\n1806 in · 8 out tokens",
+  "reasoning": null,
+  "tools": {
+    "text": "1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"celsius\"",
+    "cards": [
+      "awaitingResult",
+      "awaitingResult"
+    ]
+  },
+  "degradations": [],
+  "error": null
+}

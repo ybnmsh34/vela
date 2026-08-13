@@ -18,7 +18,9 @@
 
 .placeholder {
   display: grid;
-  place-items: center;
+  justify-items: center;
+  align-items: center;
+  align-items: safe center;
   height: 100%;
   padding: var(--vela-space-6);
   color: var(--vela-text-subtle);

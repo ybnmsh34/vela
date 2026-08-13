@@ -28,14 +28,20 @@
   --vela-signal-800: #0a4f4d;
   --vela-signal-900: #073836;
 
-  /* ---- neutral ramp: night-sky indigo ------------------------------------ */
+  /* ---- neutral ramp: night-sky indigo ------------------------------------ *
+   * The two half-steps exist because a *quiet* text role has to clear 4.5:1 in
+   * both themes and the ramp had no rung that does: 400 is 3.74–4.18:1 on the
+   * grounds it actually lands on. 350 is the quiet role in dark, 450 in light.
+   * See src/styles/contrast.test.ts, which measures every pair.              */
   --vela-night-0: #ffffff;
   --vela-night-25: #f7f8fb;
   --vela-night-50: #eef0f6;
   --vela-night-100: #e0e3ed;
   --vela-night-200: #c7ccdc;
   --vela-night-300: #9aa2bd;
+  --vela-night-350: #868fac;
   --vela-night-400: #6f7896;
+  --vela-night-450: #5b6280;
   --vela-night-500: #4d5675;
   --vela-night-600: #363e59;
   --vela-night-700: #262c42;
@@ -44,12 +50,20 @@
   --vela-night-950: #080b16;
 
   /* ---- status ------------------------------------------------------------ */
+  /* Each status hue carries a 400 for dark grounds and a 700 for light ones.
+     The 600s were the light values and every one of them was under AA on the
+     light page — amber-600 measured 3.20:1, mint-600 3.16:1 — and a warning the
+     user cannot read is worse than no warning. They are kept because both dark
+     fills and the light *fills* still read them. */
   --vela-amber-400: #f0b429;
   --vela-amber-600: #b7791f;
+  --vela-amber-700: #975a16;
   --vela-rose-400: #f2668b;
   --vela-rose-600: #c33c62;
+  --vela-rose-700: #a93253;
   --vela-mint-400: #45cf88;
   --vela-mint-600: #1f9a5c;
+  --vela-mint-700: #16794a;
 
   /* ---- semantic (LIGHT is the base definition) --------------------------- */
   --vela-bg: var(--vela-night-25);
@@ -62,17 +76,33 @@
 
   --vela-text: var(--vela-night-900);
   --vela-text-muted: var(--vela-night-500);
-  --vela-text-subtle: var(--vela-night-400);
-  --vela-text-on-accent: var(--vela-night-950);
+  /* The quiet role: the composer's placeholder, a row's timestamp, the status
+     line. It was night-400 in *both* themes — the one colour role never
+     re-authored for dark — and measured 4.16:1 light / 4.43:1 dark on the
+     operator's machine, under AA in both. It is now per theme, and every ground
+     it lands on is measured in contrast.test.ts. */
+  --vela-text-subtle: var(--vela-night-450);
+  /* What is legible *on* the two filled controls. The accent fill is dark in
+     light mode and light in dark mode, so this token inverts with it; that is
+     the whole reason it is a token and not a component's guess. Two components
+     used to write `--vela-night-0` here, which is white in both themes and so
+     was 1.4:1 on the dark theme's cyan fill. */
+  --vela-text-on-accent: var(--vela-night-0);
+  --vela-text-on-danger: var(--vela-night-0);
 
-  --vela-accent: var(--vela-signal-600);
-  --vela-accent-hover: var(--vela-signal-700);
+  /* signal-700 rather than 600 because this token is read two ways — as text on
+     a light page (5.8:1 at 700, 3.9:1 at 600) and as a fill under
+     --vela-text-on-accent (6.6:1 at 700). One value answers both. */
+  --vela-accent: var(--vela-signal-700);
+  --vela-accent-hover: var(--vela-signal-800);
   --vela-accent-quiet: var(--vela-signal-50);
-  --vela-focus: var(--vela-signal-500);
+  /* A focus ring is a UI component: WCAG 1.4.11 asks 3:1 against what is around
+     it, and signal-500 gave 2.59:1 on the chrome. */
+  --vela-focus: var(--vela-signal-600);
 
-  --vela-success: var(--vela-mint-600);
-  --vela-warning: var(--vela-amber-600);
-  --vela-danger: var(--vela-rose-600);
+  --vela-success: var(--vela-mint-700);
+  --vela-warning: var(--vela-amber-700);
+  --vela-danger: var(--vela-rose-700);
 
   --vela-shadow-sm: 0 1px 2px rgb(16 20 38 / 8%);
   --vela-shadow-md: 0 6px 20px -6px rgb(16 20 38 / 18%);
@@ -85,6 +115,24 @@
   --vela-row-selected: var(--vela-signal-50);
   --vela-row-selected-text: var(--vela-signal-700);
   --vela-scrim: rgb(16 20 38 / 32%);
+
+  /* ---- the scrollbar ------------------------------------------------------ *
+   * Vela had no scrollbar styling at all and declared `color-scheme: light dark`
+   * once, at the root, narrowed in neither dark block. So on Windows the OS
+   * painted its own light scrollbar — white trough, grey arrow buttons — down
+   * the side of a dark application. `base.css` draws it instead; `color-scheme`
+   * below is now per theme so that everything else the UA paints (the `<select>`
+   * popup, the caret, an overflow the pseudo-elements do not reach) follows the
+   * palette rather than the OS.
+   *
+   * The thumb is night-400 in *both* themes on purpose: it is the one value that
+   * clears 3:1 against every ground a scroller sits on in either theme, and a
+   * scrollbar is a control the user has to be able to see and grab.            */
+  --vela-scrollbar-thumb: var(--vela-night-400);
+  --vela-scrollbar-thumb-hover: var(--vela-night-500);
+  /* Transparent, not a colour: a scroller can sit on the page, on the chrome or
+     inside a popover, and a painted trough would be wrong on two of the three. */
+  --vela-scrollbar-track: transparent;
 
   /* ---- type -------------------------------------------------------------- *
    * Both stacks lead with the *bundled* face, which `src/styles/typeface.css`
@@ -219,6 +267,11 @@
   --vela-titlebar-height: 40px;
   --vela-statusbar-height: 28px;
   --vela-rail-width: 56px;
+  /* How wide a scrollbar is, and how far its thumb is inset from the trough
+     edge. One answer, because the transcript, the sidebar, the palette and the
+     model list all have one. */
+  --vela-scrollbar-size: 12px;
+  --vela-scrollbar-inset: 3px;
   /* The width before the host has said what the user chose. `Sidebar.tsx`
      overwrites this per element from `navigation-store.ts`, which is where the
      live value and its 200–480 clamp live; this is only what the first paint
@@ -280,7 +333,10 @@
   --vela-code-text: var(--vela-night-100);
   --vela-code-border: var(--vela-night-800);
 
-  --vela-syntax-comment: var(--vela-night-400);
+  /* night-350, not 400, and the same value in both themes: a code block is dark
+     in light mode too, so the comment colour has exactly one job in both — and
+     at night-400 it was 3.74:1 on the language bar. */
+  --vela-syntax-comment: var(--vela-night-350);
   --vela-syntax-string: var(--vela-signal-200);
   --vela-syntax-number: var(--vela-amber-400);
   --vela-syntax-keyword: var(--vela-signal-300);
@@ -297,7 +353,17 @@
   --vela-warning-bg: #fdf4e0;
   --vela-danger-bg: #fdeef2;
 
-  color-scheme: light dark;
+  /* `light`, not `light dark`. This declaration decides what the *user agent*
+     paints — scrollbars, form controls, the caret, the `<select>` popup — and
+     `light dark` hands that decision to the OS while the three blocks in this
+     file hand the palette to the user's choice. The two then disagree: a user
+     on `data-theme='dark'` with an OS set to light got Vela's dark palette and
+     Windows' white legacy scrollbar, arrow buttons and all, down the side of it.
+     Each of the three theme states now states its own answer, so the widget
+     scheme and the palette are chosen by the same rule.
+     `src/styles/platform-defaults.test.ts` walks all six (three states × two OS
+     preferences) and fails if they ever part company. */
+  color-scheme: light;
 }
 
 /* Dark by system preference, unless the user forced light. */
@@ -313,8 +379,9 @@
 
     --vela-text: var(--vela-night-50);
     --vela-text-muted: var(--vela-night-300);
-    --vela-text-subtle: var(--vela-night-400);
+    --vela-text-subtle: var(--vela-night-350);
     --vela-text-on-accent: var(--vela-night-950);
+    --vela-text-on-danger: var(--vela-night-950);
 
     --vela-accent: var(--vela-signal-300);
     --vela-accent-hover: var(--vela-signal-200);
@@ -334,6 +401,13 @@
     --vela-row-selected-text: var(--vela-signal-200);
     --vela-scrim: rgb(2 4 10 / 62%);
 
+    /* The thumb is the same night-400 as in light — the one rung that clears 3:1
+       on every ground a scroller sits on in either theme. Only its hover state
+       inverts: darker on a light page, lighter on a dark one. */
+    --vela-scrollbar-thumb: var(--vela-night-400);
+    --vela-scrollbar-thumb-hover: var(--vela-night-300);
+    --vela-scrollbar-track: transparent;
+
     --vela-turn-user-bg: var(--vela-night-800);
     --vela-turn-user-border: var(--vela-night-700);
     --vela-turn-rule: var(--vela-night-800);
@@ -346,7 +420,7 @@
     --vela-code-text: var(--vela-night-100);
     --vela-code-border: var(--vela-night-700);
 
-    --vela-syntax-comment: var(--vela-night-400);
+    --vela-syntax-comment: var(--vela-night-350);
     --vela-syntax-string: var(--vela-signal-200);
     --vela-syntax-number: var(--vela-amber-400);
     --vela-syntax-keyword: var(--vela-signal-300);
@@ -359,6 +433,8 @@
     --vela-notice-bg: var(--vela-night-800);
     --vela-warning-bg: #2a2109;
     --vela-danger-bg: #2e1420;
+
+    color-scheme: dark;
   }
 }
 
@@ -374,8 +450,9 @@
 
   --vela-text: var(--vela-night-50);
   --vela-text-muted: var(--vela-night-300);
-  --vela-text-subtle: var(--vela-night-400);
+  --vela-text-subtle: var(--vela-night-350);
   --vela-text-on-accent: var(--vela-night-950);
+  --vela-text-on-danger: var(--vela-night-950);
 
   --vela-accent: var(--vela-signal-300);
   --vela-accent-hover: var(--vela-signal-200);
@@ -395,6 +472,13 @@
   --vela-row-selected-text: var(--vela-signal-200);
   --vela-scrim: rgb(2 4 10 / 62%);
 
+  /* The thumb is the same night-400 as in light — the one rung that clears 3:1
+     on every ground a scroller sits on in either theme. Only its hover state
+     inverts: darker on a light page, lighter on a dark one. */
+  --vela-scrollbar-thumb: var(--vela-night-400);
+  --vela-scrollbar-thumb-hover: var(--vela-night-300);
+  --vela-scrollbar-track: transparent;
+
   --vela-turn-user-bg: var(--vela-night-800);
   --vela-turn-user-border: var(--vela-night-700);
   --vela-turn-rule: var(--vela-night-800);
@@ -405,7 +489,10 @@
   --vela-code-text: var(--vela-night-100);
   --vela-code-border: var(--vela-night-700);
 
-  --vela-syntax-comment: var(--vela-night-400);
+  /* night-350, not 400, and the same value in both themes: a code block is dark
+     in light mode too, so the comment colour has exactly one job in both — and
+     at night-400 it was 3.74:1 on the language bar. */
+  --vela-syntax-comment: var(--vela-night-350);
   --vela-syntax-string: var(--vela-signal-200);
   --vela-syntax-number: var(--vela-amber-400);
   --vela-syntax-keyword: var(--vela-signal-300);
@@ -418,4 +505,6 @@
   --vela-notice-bg: var(--vela-night-800);
   --vela-warning-bg: #2a2109;
   --vela-danger-bg: #2e1420;
+
+  color-scheme: dark;
 }

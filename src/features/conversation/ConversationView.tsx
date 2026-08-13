@@ -20,7 +20,7 @@ import type { ChatCapabilities } from '@/platform/contract';
 import { Composer } from './Composer';
 import { EmptyConversation } from './EmptyConversation';
 import { AssistantTurn, UserTurn } from './MessageTurn';
-import { isPinnedToBottom, scrollEdges } from './scroll';
+import { isPinnedToBottom, restingScrollTop, scrollEdges } from './scroll';
 import type { Conversation } from './use-conversation';
 import styles from './ConversationView.module.css';
 
@@ -103,8 +103,12 @@ export function ConversationView({
   // the bottom is never visible as a jump. Geometry only: no state is set here.
   useLayoutEffect(() => {
     const node = scroller.current;
-    if (node === null || !pinned.current) return;
-    node.scrollTop = node.scrollHeight;
+    if (node === null) return;
+    const resting = restingScrollTop(node, {
+      pinned: pinned.current,
+      entries: conversation.entries.length,
+    });
+    if (resting !== null) node.scrollTop = resting;
   }, [conversation.entries]);
 
   const empty = conversation.entries.length === 0;

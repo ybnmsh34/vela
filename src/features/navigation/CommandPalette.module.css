@@ -89,6 +89,14 @@
   color: var(--vela-row-selected-text);
 }
 
+/* The selected row is a *different ground* — a teal wash that is lighter than
+   the panel in dark — and the quiet role is authored against the panel. On the
+   wash it measures 4.01:1; the muted role, which is what a selected row's
+   secondary text wants anyway, is 5.08:1. */
+.active .rowKind {
+  color: var(--vela-text-muted);
+}
+
 .rowKind {
   flex: 0 0 auto;
   color: var(--vela-text-subtle);

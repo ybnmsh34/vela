@@ -54,6 +54,34 @@ export interface ScrollEdges {
 }
 
 /**
+ * Where the container belongs after the transcript changed — or `null` for
+ * "leave it where the reader put it".
+ *
+ * Following the stream means the bottom, and that was the only rule: the
+ * surface pinned to the bottom on every commit, including the first one, and
+ * including the commit that renders an **empty** conversation. That is harmless
+ * on a window tall enough for the empty state and it is the 150%-display-scaling
+ * defect on a window that is not: at a 1280×672 work area — a 1920×1080 laptop
+ * at the Windows 11 default scaling — the empty state is 536px tall in a 447px
+ * container, so pinning it to the bottom puts the Vela mark 89px above the top
+ * edge on first launch and cuts the heading against the header rule. That is
+ * exactly what the desktop session saw, and the numbers here are its measured
+ * geometry (`tests/harness/production-bundle/drive-display-scaling.mjs`).
+ *
+ * There is no stream to follow when there are no entries, so an empty
+ * conversation rests at the **top**: it is an introduction, and an introduction
+ * is read from its first line.
+ */
+export function restingScrollTop(
+  metrics: ScrollMetrics,
+  state: { readonly pinned: boolean; readonly entries: number },
+): number | null {
+  if (state.entries === 0) return 0;
+  if (!state.pinned) return null;
+  return metrics.scrollHeight;
+}
+
+/**
  * Which edges have nothing beyond them.
  *
  * A container that does not scroll is at both edges at once, which is the

@@ -37,7 +37,10 @@
   line-height: var(--vela-leading-ui);
   color: var(--vela-text);
   padding: var(--vela-space-1) 0;
-  max-height: 320px;
+  /* 320px is 41% of the configured window and 69% of the same machine's window
+     at 150% display scaling, where it would leave the transcript a sliver. The
+     cap is whichever is smaller — a long draft still scrolls inside it. */
+  max-height: min(320px, 30vh);
   overflow-y: auto;
 }
 

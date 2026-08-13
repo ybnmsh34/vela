@@ -50,15 +50,21 @@
 }
 
 .list {
-  max-height: 20rem;
+  /* Viewport-aware for the same reason as the composer: this popover hangs
+     below a bar that is already ~80px down the window. */
+  max-height: min(20rem, 45vh);
   margin: 0;
   padding: var(--vela-space-1);
   list-style: none;
   overflow-y: auto;
 }
 
+/* The list already insets its items by --vela-space-1; this adds the same
+   --vela-space-2 an option row adds, so the empty message starts on the left
+   edge every other line in the popover starts on. It was --vela-space-4, which
+   put it 20px in against a row's 12px and a footer action's 12px. */
 .empty {
-  padding: var(--vela-space-4);
+  padding: var(--vela-space-3) var(--vela-space-2);
   color: var(--vela-text-muted);
   font-size: var(--vela-text-sm);
 }

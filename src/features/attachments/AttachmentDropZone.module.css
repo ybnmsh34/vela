@@ -15,6 +15,7 @@
   gap: var(--vela-space-2);
   align-items: center;
   justify-content: center;
+  justify-content: safe center;
   border: 2px dashed var(--vela-accent);
   border-radius: var(--vela-radius-lg);
   background: var(--vela-accent-quiet);

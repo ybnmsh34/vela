@@ -4,6 +4,7 @@ import {
   EDGE_THRESHOLD_PX,
   isPinnedToBottom,
   isScrollable,
+  restingScrollTop,
   scrollEdges,
   STICK_THRESHOLD_PX,
 } from './scroll';
@@ -69,6 +70,27 @@ describe('which scroll edges have nothing beyond them', () => {
     const metrics = { scrollTop: 800 - STICK_THRESHOLD_PX, scrollHeight: 1400, clientHeight: 600 };
     expect(isPinnedToBottom(metrics)).toBe(true);
     expect(scrollEdges(metrics).atBottom).toBe(false);
+  });
+
+  it('rests an empty conversation at the top, not at the bottom', () => {
+    // The 150%-display-scaling defect, in one line. These are the measured
+    // numbers from a 1920×1080 laptop at the Windows 11 default scaling: a
+    // 536px empty state in a 447px container. Resting it at the bottom puts the
+    // Vela mark 89px above the top edge on first launch — "the mark disappears
+    // and the heading jams against the header rule".
+    const overflowing = { scrollTop: 0, scrollHeight: 536, clientHeight: 447 };
+    expect(restingScrollTop(overflowing, { pinned: true, entries: 0 })).toBe(0);
+    // And it is the *emptiness* that decides, not the overflow: a conversation
+    // with turns in it still follows the stream.
+    expect(restingScrollTop(overflowing, { pinned: true, entries: 1 })).toBe(536);
+  });
+
+  it('leaves a reader who scrolled up exactly where they are', () => {
+    const metrics = { scrollTop: 120, scrollHeight: 1400, clientHeight: 600 };
+    expect(restingScrollTop(metrics, { pinned: false, entries: 4 })).toBeNull();
+    // Except when there is nothing to follow at all, where the top is the only
+    // sensible answer and there is nothing to lose by taking it.
+    expect(restingScrollTop(metrics, { pinned: false, entries: 0 })).toBe(0);
   });
 
   it('calls a transcript shorter than its viewport both edges at once', () => {

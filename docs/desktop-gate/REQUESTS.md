@@ -413,3 +413,58 @@ the **shipping CSP** in headless Chromium on Linux. **VERIFIED-BY-FAKE** (conven
 Chromium, not WebView2. What it establishes is that the bundle contains the faces and that the
 stacks resolve to them in *an* engine. Whether they resolve to them in **yours** is your verdict,
 and it is the binding one.
+
+---
+
+## fix:dark-scrollbars-dpi-insets-contrast — re-measure the four platform defaults
+
+- **piece-id:** `fix:dark-scrollbars-dpi-insets-contrast`
+- **critic:** `visual` (and `interaction` for item 2, which is a first-launch experience)
+- **closes:** the four platform-defaults findings from the `A1-scaffold-shell` **visual FAIL** —
+  the white Windows scrollbar in dark mode, 150% DPI layout breakage, the model-picker insets, and
+  `--vela-text-subtle` under AA in both themes.
+- **evidence produced here:** `docs/regression-baseline/platform-defaults/` — `RESULTS.md`, an
+  assertion ledger of 96 checks (0 failures, 16 of them required to FAIL against a pre-fix bundle
+  and doing so), and eight screenshots. **VERIFIED-BY-FAKE and PROVISIONAL**: Chromium on Linux,
+  no Windows, no WebView2, no display scaling.
+
+**1. The scrollbar.** `color-scheme` was `light dark` at the root and narrowed in neither dark
+block, so the palette followed the user's choice and the widgets followed the OS. It is now
+`light` on `:root` and `dark` in both dark blocks, and `base.css` draws the scrollbar itself from
+tokens — 12px, pill thumb at `--vela-night-400` (≥3:1 on every ground in both themes),
+`::-webkit-scrollbar-button { display: none }` for the arrow buttons.
+
+Please check, **in all three theme states** (system, forced light, forced dark) and with the OS
+set both ways: the trough, the thumb, the absence of arrow buttons, and the hover state. Also the
+caret and any native widget you can reach. I deliberately did **not** use `scrollbar-color` /
+`scrollbar-width`: in Chromium, setting either makes the engine ignore every
+`::-webkit-scrollbar-*` rule including the one that removes the buttons. If you see arrow buttons
+anyway, that assumption is wrong and I want to know.
+
+**2. 150% DPI — and a correction to my own first diagnosis.** The clipping was **not** the
+centring. Driving the real bundle at 1280×672, 1066×552, 911×464 and 720×520 showed the content
+was reachable and the *resting scroll position* was wrong: the transcript pinned itself to the
+bottom on every commit, including the one that renders an empty conversation, so the empty state
+opened scrolled past its own first line — at 1280×672 it rested at `scrollTop: 104` with the mark
+21px above the top edge, at 911×464 at `scrollTop: 352` with the mark 269px above it. Fixed in
+`scroll.ts::restingScrollTop`. Please confirm on a real 150% display, on first launch, that the
+mark and the heading are both on screen and the heading is clear of the header rule.
+
+**3. Insets.** The picker's empty message was 20px in, its rows and footer actions 12px. All three
+are 12px now. This one is small and I would rather you spent your time on 1 and 2.
+
+**4. Contrast.** `--vela-text-subtle` is now per theme, and the audit that found it also found
+that two filled buttons painted white labels on fills that are *light* in dark mode (1.4:1 and
+2.5:1), that `--vela-warning`/`--vela-success`/`--vela-danger`/`--vela-accent` were all under AA
+as text in light, and that the focus ring was 2.59:1. All of them moved.
+`src/styles/contrast.test.ts` now measures 181 pairs in both themes and fails if a colour role is
+added without being audited. **What I cannot judge from here is whether it still looks like
+Vela.** The light accent moved from signal-600 to signal-700 and the status hues each moved one
+step darker in light; that is a real change to the light theme's character. If it now reads heavy
+or muddy on your panel, say so — AA is a floor, not a design.
+
+**A finding I could not resolve, and am not guessing about.** On a 1366×768 panel at 150% the
+Windows work area is 911×**464** CSS px. `tauri.conf.json` sets `minHeight: 520`. The window
+cannot fit the work area on that hardware. I do not know what Windows does — clamp it, let it
+overlap the taskbar, or push the composer under it — and nothing in this container can tell me.
+If you have or can simulate such a display, please report what happens to the composer.

@@ -75,7 +75,9 @@
   border: 0;
   border-radius: var(--vela-radius-md);
   background: var(--vela-accent);
-  color: var(--vela-night-0);
+  /* The role, not the ramp: --vela-night-0 is white in *both* themes, and in
+     dark the accent fill is a light cyan. This token inverts with the fill. */
+  color: var(--vela-text-on-accent);
   font: inherit;
   font-size: var(--vela-text-sm);
   font-weight: var(--vela-weight-medium);

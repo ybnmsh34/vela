@@ -79,6 +79,54 @@ select {
   color: var(--vela-text);
 }
 
+/* ---- the scrollbar -------------------------------------------------------- *
+ * There was no scrollbar styling anywhere in `src/`, and `color-scheme` said
+ * `light dark` at the root and nothing in either dark block. On Windows that
+ * combination is not "the default": it is the *legacy* non-overlay scrollbar —
+ * a white trough with grey arrow buttons at each end — painted down the side of
+ * a dark application, because the OS was answering a question the app had left
+ * open. `tokens.css` now narrows `color-scheme` per theme; these rules draw the
+ * scrollbar itself so it is the same object on every platform Vela ships to.
+ *
+ * **Do not add `scrollbar-color` or `scrollbar-width` here.** They are the
+ * standard properties and they look like the more modern choice, but in
+ * Chromium — which is WebView2, which is what Vela runs inside on Windows —
+ * setting either one on an element makes the engine ignore every
+ * `::-webkit-scrollbar-*` rule for that scroller, including
+ * `::-webkit-scrollbar-button`, and the arrow buttons come back. The two
+ * mechanisms do not compose; this file picks the one that can remove them.
+ * `src/styles/platform-defaults.test.ts` fails if the other one appears.
+ *
+ * The thumb is drawn with a transparent border and `background-clip:
+ * padding-box` so it sits inside the track without the track being painted:
+ * a scroller can be on the page, on the chrome or inside a popover, and a
+ * painted trough would be wrong on two of the three.                          */
+::-webkit-scrollbar {
+  width: var(--vela-scrollbar-size);
+  height: var(--vela-scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--vela-scrollbar-track);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vela-scrollbar-thumb);
+  background-clip: padding-box;
+  border: var(--vela-scrollbar-inset) solid transparent;
+  border-radius: var(--vela-radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vela-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

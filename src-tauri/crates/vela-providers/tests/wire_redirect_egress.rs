@@ -106,6 +106,12 @@ enum Reply {
     /// Redirect to this same authority, forever. A loop that only a hop cap
     /// terminates.
     RelocateForever { status: u16 },
+    /// One hop to `/relocated` on **this** authority, and from there a hop to
+    /// `target` on another. The laundering shape: a policy that compared each
+    /// hop against the one before it would wave this through, because the first
+    /// hop is same-authority and the second is judged against `/relocated`
+    /// rather than against what the user configured.
+    RelocateThenAway { status: u16, target: Arc<String> },
 }
 
 /// A loopback listener that records every byte it is sent.
@@ -227,21 +233,31 @@ async fn serve(
     let Some(raw) = read_request(&mut client).await else {
         return;
     };
-    let target = target_of(&raw);
+    // Named `asked_for` rather than `target`, which the redirect arms below bind
+    // to the *Location* they answer with: two different things, and confusing
+    // them silently turns a redirect chain into a self-loop.
+    let asked_for = target_of(&raw);
     sink.lock().expect("recorder poisoned").push(raw);
 
     let response = match reply {
         Reply::Fixed(bytes) => bytes.as_ref().clone(),
         Reply::RedirectAway { status, target } => redirect_response(status, &target),
         Reply::RelocateOnce { status, body } => {
-            if target.starts_with("/relocated") {
+            if asked_for.starts_with("/relocated") {
                 body.as_ref().clone()
             } else {
-                redirect_response(status, &format!("{authority}/relocated{target}"))
+                redirect_response(status, &format!("{authority}/relocated{asked_for}"))
             }
         }
         Reply::RelocateForever { status } => {
             redirect_response(status, &format!("{authority}/round-and-round"))
+        }
+        Reply::RelocateThenAway { status, target } => {
+            if asked_for.starts_with("/relocated") {
+                redirect_response(status, &target)
+            } else {
+                redirect_response(status, &format!("{authority}/relocated"))
+            }
         }
     };
     let _ = client.write_all(&response).await;
@@ -550,13 +566,28 @@ async fn no_redirect_carries_a_request_or_a_credential_off_the_configured_author
             })
             .await;
 
-            let transport = Arc::new(ReqwestTransport::new().expect("http client builds"));
+            // Both constructors, alternating, because `new()` and
+            // `with_connect_timeout()` are two doors into one builder and a
+            // policy applied in only one of them is a policy that can be
+            // sidestepped by picking the other.
+            let transport: Arc<dyn HttpTransport> = if call == Call::Complete {
+                Arc::new(ReqwestTransport::new().expect("http client builds"))
+            } else {
+                Arc::new(
+                    ReqwestTransport::with_connect_timeout(Duration::from_secs(5))
+                        .expect("http client builds"),
+                )
+            };
             let provider = build(binding, &redirector.url, transport);
-            let error = drive(provider.as_ref(), binding.adapter(), call)
-                .await
-                .expect_err("a redirect off the configured authority is refused");
+            let outcome = drive(provider.as_ref(), binding.adapter(), call).await;
 
+            // The egress assertion runs **before** the outcome is unwrapped. A
+            // followed redirect succeeds, so unwrapping first fails with
+            // `expect_err` printing the unit value of a happy turn — which says
+            // nothing about the credential that just left the machine. This
+            // ordering makes the red message the third party's own transcript.
             assert_third_party_untouched(&label, &third_party, &redirector);
+            let error = outcome.expect_err("a redirect off the configured authority is refused");
             assert_error_names_both_authorities(&label, &error, &redirector, &third_party);
         }
     }
@@ -641,6 +672,76 @@ async fn a_same_authority_redirect_is_still_followed() {
         endpoint.transcript().contains(CANARY),
         "the credential rides to the authority the user configured, as it must"
     );
+}
+
+/// A **protocol-relative** `Location` — `//host:port/path`, no scheme.
+///
+/// It inherits the scheme of the request it answers, so it never looks like a
+/// different origin in a string comparison and it never trips a check written
+/// against `starts_with("http")`. It is nonetheless a different host. The policy
+/// compares parsed authorities rather than spellings, which is what makes this
+/// case fall out rather than need its own branch — but "falls out of the design"
+/// is a claim, and this is the measurement.
+#[tokio::test]
+async fn a_protocol_relative_location_is_not_a_way_around_the_authority_check() {
+    let third_party = Recorder::third_party().await;
+    // `http://127.0.0.1:PORT` → `//127.0.0.1:PORT`.
+    let scheme_less = third_party
+        .url
+        .strip_prefix("http:")
+        .expect("the recorder builds an http url");
+    let redirector = Recorder::start(Reply::RedirectAway {
+        status: 307,
+        target: Arc::new(format!("{scheme_less}/v1/messages")),
+    })
+    .await;
+
+    let transport = Arc::new(ReqwestTransport::new().expect("http client builds"));
+    let provider = build(Binding::ApiKeyHeader, &redirector.url, transport);
+    let outcome = provider
+        .complete(turn(Adapter::Anthropic), &context())
+        .await;
+
+    assert_third_party_untouched("protocol-relative", &third_party, &redirector);
+    let error = outcome.expect_err("a scheme-less Location off the authority is still off it");
+    assert_error_names_both_authorities("protocol-relative", &error, &redirector, &third_party);
+}
+
+/// **Laundering through a legitimate hop.** The configured endpoint redirects to
+/// itself — the same-authority hop the fix deliberately allows — and *that* hop
+/// redirects to the third party.
+///
+/// This is the case a "compare each hop to the previous one" policy waves
+/// through: hop one is same-authority by construction, and hop two is judged
+/// against `/relocated` on the endpoint rather than against what the user
+/// configured. The policy anchors every hop to `previous().first()` — the
+/// original request URL, which `reqwest` pushes before consulting the policy —
+/// so the allowance cannot be used as a stepping stone.
+#[tokio::test]
+async fn a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one() {
+    let third_party = Recorder::third_party().await;
+    let redirector = Recorder::start(Reply::RelocateThenAway {
+        status: 302,
+        target: Arc::new(format!("{}/v1/messages", third_party.url)),
+    })
+    .await;
+
+    let transport = Arc::new(ReqwestTransport::new().expect("http client builds"));
+    let provider = build(Binding::ApiKeyHeader, &redirector.url, transport);
+    let outcome = provider
+        .complete(turn(Adapter::Anthropic), &context())
+        .await;
+
+    assert_third_party_untouched("laundered", &third_party, &redirector);
+    assert_eq!(
+        redirector.targets().len(),
+        2,
+        "the allowed first hop must actually have been taken, or this test is \
+         not exercising the laundering shape at all: {:?}",
+        redirector.targets()
+    );
+    let error = outcome.expect_err("the second hop leaves the configured authority");
+    assert_error_names_both_authorities("laundered", &error, &redirector, &third_party);
 }
 
 /// A same-authority redirect that never stops is a loop, and `Policy::custom`

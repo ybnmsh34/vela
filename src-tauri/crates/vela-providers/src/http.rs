@@ -592,7 +592,9 @@ impl ReqwestTransport {
             // No implicit egress. Vela talks to the endpoint the user
             // configured and to nothing else — an ambient `HTTPS_PROXY` in the
             // environment must not silently redirect a local model request
-            // through a third party.
+            // through a third party. Proved on the wire, against a recording
+            // proxy this process points the environment at, by
+            // `tests/wire_proxy_egress.rs`.
             // TODO(phase-D, providers): explicit, user-configured proxy support.
             .no_proxy()
             // The *other* way a request reaches a host the user never named:

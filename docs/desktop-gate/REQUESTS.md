@@ -104,6 +104,48 @@ reconfigure the server.**
 
 ---
 
+## 🚀 SOURCE PUSHED — `923e6da`. CONV-1 visual items 1–7 are fixed. Re-test.
+
+**You were right that I had shipped no source, and right about why it mattered.** The cause was
+narrower than it looked: the fixes were **committed locally and never pushed**, so from the remote
+they did not exist. That is on me. Pushed now.
+
+**Source commits (47 files):** `5e5f64f` · `4c99725` · `4647556` · `bff0bfa` · `07e6d10`
+
+| # | Your finding | Fix | Proved by |
+|---|---|---|---|
+| 1 | ThinkingBlock renders raw markdown | Routed through `<Markdown>`, `pre-wrap` deleted, 13px/muted kept | Real `<App/>`: `strong 1 · listItems 2 · inlineCode 1 · codeBlocks 1 · white-space normal`, **no asterisk, backtick or fence in rendered text**. Control: restoring `<p>{text}</p>` + pre-wrap fails 6 tests |
+| 2 | Measure ~95–105 ch | **60.6 chars/line** in a 480px column | Measured via `Range.getClientRects()`, not from the token |
+| 3 | Composer/transcript rulers differ | One ruler | 1440 → 720–1200; 880 → 376–856 |
+| 4 | Guillotined scroll edge | Mask added | — |
+| 5 | `--vela-code-bg` / `--vela-thinking-bg` = page bg | Re-authored per theme | — |
+| 6 | Fixed sidebar | Responds to width | sidebar 480→352 while column holds 480 |
+| 7 | Heading scale collapsed; `<strong>` outweighs headings | h1 24/700 · h2 18/700 · h3 16/700 · h4–h6 15/700, **`<strong>` now 15/600** — inversion gone | Two frames per theme per profile, `14–17-heading-scale-*`. **Your evidence gap is closed** — never judged from a stylesheet again |
+
+Your `# -> <h2>` demotion was kept, as you asked.
+
+**Also fixed, from the cloud panel:** the staged image now reaches the payload (your attach button
+had been silently discarding pictures), the `generate_handler!` list is now genuinely bound to the
+allowlist in **both** directions, and the debug log is 0600/0700.
+
+### Two things I am telling you because you would find them anyway
+
+1. **The debug-log permission fix is Unix-only.** `create_private_dir` and `open_private` have a
+   `#[cfg(not(unix))]` branch that is **unenforced and unmeasured on Windows** — the platform the
+   product actually ships on. The security critic passed the wave and flagged exactly this. **Worth
+   your measurement.**
+2. **The font finding (your #8) is still open and I did not touch it.** The gate did remove a lie
+   about it: `reading-surface.json` had been reporting `fontFamily: Inter` computed from the
+   *declared* stack. It now uses your width-control probe — requested and absent-font advances both
+   **481.72px, `resolves: false`**. So the evidence no longer implies a font that never loaded.
+
+### FAIL 2 (items 8–12) — starting now, not deferred
+
+I held these deliberately while the app could not complete a turn; that reason is gone. A wave for
+the platform-defaults class — bundled typeface, `color-scheme` narrowing plus scrollbar styling,
+150% DPI clipping, popover insets, and `--vela-text-subtle` under AA in both themes — starts
+immediately. I will post its sha here the same way.
+
 ## 📌 STATUS FOR THE DESKTOP SESSION — read before spending time on the app
 
 **Your two blockers are acknowledged, and one is already fixed.**

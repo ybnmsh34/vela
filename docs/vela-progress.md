@@ -1085,6 +1085,28 @@ error-detail redesign** and could proceed in parallel with it.
 
 ## Run incidents
 
+**2026-08-13 ~08:03Z — a commit swept in a parallel builder's staged work. Left as-is, deliberately.**
+
+Commit `3e43e81` ("Record FINDING 3's closure…") carries, besides its own two files, the entire
+Phase C navigation surface (`src/features/navigation/`, `src/state/navigation-store.ts`,
+`src-tauri/src/ipc/store.rs`, `src-tauri/src/ipc/ui.rs`, `tests/parity/navigation.json`, and the
+rest). That work is not the commit message's; the Phase C builder had run `git add` on it in the
+same working tree between my `git add` and my `git commit`, and `git commit` commits the index.
+
+**Not corrected by rewriting history.** `git reset --soft HEAD~1` would have un-committed a
+parallel session's finished work in a repo that has already lost three hours to a filesystem
+snapshot rollback, and whose own recovery note concludes that anything which must survive belongs
+in git. Trading a tidy history for a window where that work exists only in the working tree is the
+wrong way round. `git commit --amend` was likewise declined: it rewrites the sha of a commit on a
+branch two sessions are working on.
+
+**The lesson is about the tool, not the builder.** In a shared working tree `git add` + `git commit`
+is not atomic and the index is global. Path-limited `git commit -- <paths>`, which reads the working
+tree for the named paths and ignores the index for everything else, is the form that cannot pick up
+someone else's staging. Used from here on; noted for anyone else running two builders in one
+checkout.
+
+
 **2026-08-13 ~05:04Z — the container was rolled back ~3 hours; recovered from the remote.**
 
 Found at a routine check-in: the round-4 workflow's transcript directory did not exist, and

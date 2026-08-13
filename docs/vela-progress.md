@@ -1236,6 +1236,87 @@ sweep and address it in a single round.
 **The tripwire is not disarmed, it is re-aimed:** if the sweep completes and a *later* defect is
 then found outside it, that is the old pattern again and the provider layer stops for a decision.
 
+## ✅ GATE M — the composition-root gate PASSES, driven against the real assembled application
+
+The gate the whole wave existed for. Its own test of success was that it must not verify the
+composition root through another bridge, and it did not.
+
+**`run()` is now executable under test.** Its builder configuration was lifted into
+`vela_lib::configure<R: Runtime>(Builder<R>) -> Builder<R>`; `run()` is `configure(…).run(context)`
+and nothing else, so there is one description of how Vela is assembled and the gate drives that
+one. `src-tauri/tests/gate_m_assembled_app.rs` builds it on `tauri::test`'s mock runtime, runs one
+event-loop iteration so the real `setup` executes, takes the `main` window `tauri.conf.json`
+declares, and invokes commands **by name through the real `invoke_handler`**.
+
+| Layer | every previous gate | this gate |
+|---|---|---|
+| `AppState::for_runtime()` | never constructed by a test | constructed by `configure()` |
+| `setup` — open the database, `sync_from_settings`, debug-log handle | asserted by `include_str!`-grepping `lib.rs` | **executed** |
+| the `generate_handler!` allowlist | two lists of strings compared | **dispatched through** |
+| `chat_send` | reimplemented by the test | **called** |
+| the `chat:event` channel | a `Vec` the test owned | the real `Emitter` path |
+| the frontend root | components, or a variant entry point with the adapter swapped | **`dist/` → `main.tsx` → `<App/>`, no adapter argument** |
+
+| Suite | Assertions | Failures |
+|---|---|---|
+| the assembled host, through the real commands | 14 | 0 |
+| the production bundle in headless Chromium | 19 | 0 |
+| Phase C matrix, four profiles, re-run | 98 | 0 |
+| Phase B2 matrix, re-run | 1455 | 0 |
+| `cargo test --workspace` / `pnpm test` / `pnpm test:harness` | 914 / 1315 / 135 | 0 |
+| controls (Rust 6 · frontend 6 · guards 6 · Phase C 28 · B2 46) | 92 | all behaved as expected |
+
+**Phase C's only FAIL is closed.** C5 now PASSES on all four profiles: the meter reads
+`About 220,005 of 200,000 tokens — this turn is larger than the window…` where it read
+`About 0 of 200,000 tokens`. In the production bundle, where the endpoint reports no window, it
+says so rather than inventing one, and still counts the draft: 880,000 characters →
+`about 220,004 tokens`.
+
+**Persistence is proven in the two places that can prove each half.** Navigating away and back
+remounts the surface on its `key`, so what comes back came from the store, not component state
+(P13–P16). A **cold restart** of the whole application over the same data directory finds both
+messages, the right roles and the right text, and the conversation listed by title — against SQLite
+on disk, not memory.
+
+**Zero browser→endpoint requests, measured twice**: an in-page trap installed before the first
+module evaluates (`document.readyState === "loading"` asserted at that moment) *and* Chromium's own
+`request` event, because an in-page trap can be side-stepped and a network-level count cannot.
+
+### The control that says the most
+
+Six controls break one joint of the composition root each, in a detached worktree. **C2 — the exact
+pre-fix `settings::put_provider`, writing the row and never installing the provider — takes down
+seven of the fourteen assertions**, including the file's own pre-fix control. That is the measure of
+how much of this application sat downstream of the joint that was missing. Twelve of fourteen
+assertions have been watched failing under the defect they detect; the two that never went red are
+the file's own absence-controls, and C6 argues their non-vacuity from the other side.
+
+Both guards were proven able to fail too — five violations staged in a scratch worktree, including
+reintroducing the exact `markdown.ts` rename and deleting `icon.ico`.
+
+### 🔴 The finding: the wave's own controls K25–K28 had never been executed
+
+`81b1b12` added four assertion controls and they had never run. The controls script died before
+reaching them — K25's setup reloads the page and waits for `#vela-composer`, but a reload returns
+the app to the home surface, so it timed out and took K25–K28 with it. The committed
+`ASSERTION-CONTROL.tsv` stops at K21, which is the visible symptom nobody followed up.
+
+**That is this wave's defect class, in this wave's own output: written, and never run.** Recorded
+rather than quietly fixed, because the pattern is the point. Controls are now 28/28.
+
+Two smaller findings, both non-blocking: `provider_host.rs`'s `include_str!` guard is now redundant
+and should say so (left un-edited — an executor who edits what he grades is manufacturing
+agreement), and a renderer reload drops the open conversation.
+
+### What this gate is NOT entitled to conclude
+
+The mock runtime has no webview and Chromium is not WebView2; Linux does not fold case; no model was
+contacted; the credential store is `MemoryStore` and the app is asserted to *say* `memory-fake`.
+The shipping window, the Windows build, real case-insensitive resolution and any real-model claim
+are the desktop session's. **Naming them is why this project has two sessions.**
+
+Full report: `docs/regression-baseline/gate-m-composition-root/RESULTS.md`.
+
 ## Phase C gate — FAIL on the context axis (see the executor's answer below), and one finding I read as harder than the gate did
 
 | | frontier | mid-local | small-local | hostile |

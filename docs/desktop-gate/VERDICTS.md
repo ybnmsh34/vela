@@ -1066,3 +1066,30 @@ not ruled on.
 
 - evidence: `evidence/CONV-1-retest/` — six answer captures across three scroll positions in both
   themes, thinking expanded in both, `retest-measurements.txt`, `manifest.json`
+
+---
+
+## CONV-1 residual CLOSED — the composer/transcript offset is now zero
+
+The CONV-1 visual PASS recorded three residuals. One is now fixed and verified.
+
+`scrollbar-gutter: stable both-edges` landed at `0f83c71`
+(`ConversationView.module.css:46`). Measured on real WebView2 with a live conversation open, so the
+scroller is genuinely scrolling:
+
+```
+transcript column : left 490  width 480
+composer field    : left 490  width 480
+left delta        : 0
+```
+
+Previously 592 vs 599 — a 7px offset caused by the unstyled scrollbar stealing layout width from the
+centred column. Both edges now reserve the gutter, so the two boxes share one ruler exactly.
+
+Note the author chose `stable both-edges` rather than plain `stable`, which is the right call here:
+plain `stable` reserves on one side only and would have re-introduced an asymmetry of the same kind
+it was meant to remove.
+
+Two residuals from that verdict remain open, both cosmetic and neither blocking: in light theme
+`--vela-turn-user-bg` and `--vela-thinking-bg` are still the same value, and the inline-code chip
+fill still equals the thinking-panel fill in both themes.

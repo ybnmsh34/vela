@@ -80,6 +80,18 @@ function stripRustTestModules(source: string): string {
   return out + source.slice(cursor);
 }
 
+/**
+ * Is this Rust file test infrastructure rather than shipped code?
+ *
+ * Matched on a whole path segment so `src/tests_helper.rs` or a crate called
+ * `examples-core` cannot slip through on a substring.
+ */
+function isRustTestInfrastructure(relativePath: string): boolean {
+  return relativePath
+    .split(/[/\\]/u)
+    .some((segment) => segment === 'tests' || segment === 'examples');
+}
+
 describe('the harness is not reachable from app code', () => {
   it('is imported by nothing under src/', () => {
     const offenders = filesUnder(join(repoRoot, 'src'), ['.ts', '.tsx'])
@@ -94,10 +106,15 @@ describe('the harness is not reachable from app code', () => {
     // infrastructure, exactly like this harness, and Phase B drives the harness
     // from two of them over real TCP — that is why the CI Rust job installs
     // Node 22. They are excluded here for the same reason `#[cfg(test)]` bodies
-    // are. What stays in scope is every line that compiles into the shipped
-    // binary; a `mock-provider` reference there is still a hard failure.
+    // are. `crates/*/examples/` is excluded on the same grounds and no weaker
+    // ones: cargo examples are standalone binaries, they are not built by a bare
+    // `cargo build`, and nothing links them into `[[bin]] vela` — the GATE M
+    // Phase B evidence recorder lives there precisely so that a run which
+    // rewrites `docs/` can never be triggered by `cargo test`.
+    // What stays in scope is every line that compiles into the shipped binary;
+    // a `mock-provider` reference there is still a hard failure.
     const offenders = filesUnder(join(repoRoot, 'src-tauri'), ['.rs'])
-      .filter((file) => !/[/\\]tests[/\\]/u.test(file.slice(repoRoot.length)))
+      .filter((file) => !isRustTestInfrastructure(file.slice(repoRoot.length)))
       .filter((file) =>
         /tests\/harness|mock-provider/u.test(
           stripRustTestModules(stripComments(readFileSync(file, 'utf8'))),
@@ -125,6 +142,29 @@ describe('the harness is not reachable from app code', () => {
         'pub fn ship() {}\n#[cfg(test)]\nmod tests {\n  fn f() { if true { } }\n  const X: &str = "mock-provider";\n}\n',
       ),
     ).not.toMatch(/mock-provider/u);
+  });
+
+  it('the path exclusion covers test infrastructure and nothing else', () => {
+    // The exclusion was widened for `examples/` when the Phase B gate recorder
+    // landed there. Widening a guard is how blind spots are born, so what it
+    // does and does not swallow is pinned here rather than left to the regex.
+    for (const excluded of [
+      'src-tauri/crates/vela-providers/tests/mock_matrix_live.rs',
+      'src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs',
+      'src-tauri/tests/anything.rs',
+    ]) {
+      expect(isRustTestInfrastructure(excluded)).toBe(true);
+    }
+    for (const shipped of [
+      'src-tauri/src/lib.rs',
+      'src-tauri/src/ipc/secrets.rs',
+      'src-tauri/crates/vela-providers/src/http.rs',
+      // Substrings, not segments: these ship.
+      'src-tauri/crates/vela-providers/src/tests_helper.rs',
+      'src-tauri/crates/examples-core/src/lib.rs',
+    ]) {
+      expect(isRustTestInfrastructure(shipped)).toBe(false);
+    }
   });
 
   it('is excluded from the app TypeScript project, so it cannot be bundled', () => {

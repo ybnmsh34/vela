@@ -1,5 +1,5 @@
 /**
- * Renders the block tree from `markdown.ts`.
+ * Renders the block tree from `markdown-parser.ts`.
  *
  * Every node is a React element built from parsed data — there is no
  * `dangerouslySetInnerHTML` anywhere in this feature, and there must never be
@@ -9,7 +9,7 @@
 import { memo } from 'react';
 
 import { CodeBlock } from './CodeBlock';
-import { parseMarkdown, type Block, type Span } from './markdown';
+import { parseMarkdown, type Block, type Span } from './markdown-parser';
 import styles from './Markdown.module.css';
 
 interface MarkdownProps {
@@ -150,7 +150,7 @@ function Spans({ spans }: { readonly spans: readonly Span[] }) {
             );
           case 'link':
             // `href` has already been checked against an allowlist of schemes
-            // in `markdown.ts`; anything else never becomes an anchor.
+            // in `markdown-parser.ts`; anything else never becomes an anchor.
             return (
               <a
                 key={index}

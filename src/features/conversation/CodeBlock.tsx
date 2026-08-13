@@ -3,7 +3,7 @@
  *
  * While the fence is still open the block says so, quietly, instead of jumping
  * between "three literal backticks" and "a code block" as the closing fence
- * arrives. See `markdown.ts` for why the parser reports that state at all.
+ * arrives. See `markdown-parser.ts` for why the parser reports that state at all.
  */
 
 import { useMemo } from 'react';

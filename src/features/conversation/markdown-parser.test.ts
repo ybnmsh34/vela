@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSafeHref, parseInline, parseMarkdown, spansToText, type Block } from './markdown';
+import { isSafeHref, parseInline, parseMarkdown, spansToText, type Block } from './markdown-parser';
 
 function only(source: string): Block {
   const blocks = parseMarkdown(source);

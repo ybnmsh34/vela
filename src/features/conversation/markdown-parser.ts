@@ -23,6 +23,14 @@
  * Only `http:`, `https:` and `mailto:` survive as links. Anything else — most
  * importantly `javascript:` — renders as literal text with no anchor. The
  * renderer never builds an `href` it did not check.
+ *
+ * ## Why not `markdown.ts`
+ *
+ * It was, and that broke the app on every case-insensitive filesystem: the
+ * renderer beside it is `Markdown.tsx`, Vite resolves `.ts` before `.tsx`, and
+ * so `import { Markdown } from './Markdown'` bound *this* module — which
+ * exports no `Markdown` — and Windows got a blank window. The two stems must
+ * differ by more than case. `src/platform/case-collision.test.ts` holds that.
  */
 
 export type Span =

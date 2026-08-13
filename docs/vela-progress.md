@@ -1083,6 +1083,97 @@ inexpressible unscrubbed reads, redirect refusal with `no_proxy` proven on the w
 resolution, endpoint identity in redacted form. **Phase C (conversation UX) does not depend on the
 error-detail redesign** and could proceed in parallel with it.
 
+## Phase B2 — the strategic fix: a typed, closed error surface
+
+**Builder's entry.** This is not round 5. Round 5 would have been a fifth
+spelling; this removes the field the spellings were arriving in.
+
+**FINDING 3 is closed, and the security critic's reproduction goes from defeated
+to green without an `--ignored` flag.** Before:
+
+```
+$ cargo test -p vela-providers --test zz_gate_m_round4_executor_probe -- --ignored
+text:  the endpoint rejected the credential: VELA-EXEC4-MARKER: rejected credential
+       [sk%2fexec4%2bRk9mQ2%2f8xTn41-DO-NOT-LEAK] for /v1/chat/completions
+text:  {"kind":"authFailed","detail":"… [sk&#x2f;exec4&#x2b;Rk9mQ2&#x2f;8xTn41-DO-NOT-LEAK] …"}
+test result: FAILED. 0 passed; 1 failed
+```
+
+After (no `--ignored`; the attribute is deleted, which the round-4 executor named
+as the acceptance test):
+
+```
+$ cargo test -p vela-providers --test zz_gate_m_round4_executor_probe
+test no_spelling_of_the_credential_survives_into_any_surface ... ok
+test a_credential_fragmented_across_two_real_tcp_writes_is_still_removed ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored
+```
+
+**What changed.** `ProviderError`'s `detail: String` is gone from all eight
+variants, replaced by a `Diagnosis`: a `Cause` from a closed 35-variant enum
+whose sentence is a `&'static str` in Vela's own source, an HTTP status, the
+endpoint's identity parsed out of the `RequestUrl` Vela built, an optional
+content-filter verdict of closed enums and a five-bit category set, and a
+`CorrelationId`. `error::detail()` and all three adapters' `fallback(message,
+default)` are **deleted**, not left unused — they were the failed strategy in one
+function each.
+
+The raw body is kept, in `debuglog`: local, **off until `enable()` is called**,
+never across the IPC boundary, still behind round 3's byte scrubber, and linked
+to the error by the correlation id. So this is a redesign, not a deletion.
+
+**Why it is structural.** Six `compile_fail` doctests with their error codes
+asserted (`Diagnosis::new("text")` E0308, `From<String>` E0277, `detail()` E0425,
+`EndpointIdentity::new` E0599, and two more), plus an audit that walks the whole
+serde surface and reports every string the closed vocabulary — *computed from the
+enums, not hand-listed* — does not explain. There is deliberately no "looks like
+an identifier" exemption: that would have waved a purely alphanumeric credential
+through, and the control plants exactly that case.
+
+**The claim no encoding can defeat**, asserted directly: four peers answering the
+identical request with the identical status and `code`, differing only in the
+bytes of `message` — empty, plain prose, the credential in the clear, the
+credential in one `\uXXXX` escape per byte — produce **byte-identical** errors on
+`Display`, `Debug`, the serde IPC shape and `StreamEvent::Error`. If the output
+does not vary with the input, the input is not a channel.
+
+**Diagnostics survive.** Three dead ports still produce three pairwise-distinct
+errors, each naming its authority, its path, its class and its debug-log ref.
+`EndpointIdentity` in fact carries *less* than round 3's redacted URL string: the
+query string and userinfo are dropped whole rather than redacted, so the two
+places RFC 3986 lets a secret live in a URL are absent rather than masked.
+
+**One diagnosis deliberately given up, recorded rather than hidden:** a refused
+cross-authority redirect no longer names *where* the endpoint pointed, because
+that is a host the endpoint chose. It is in the debug log under the same ref, and
+`wire_redirect_egress.rs` asserts both halves.
+
+**The four rounds of canaries are kept and are now VACUOUS — stated, not
+implied.** There is no endpoint text on the surface for a needle to match, so no
+needle search can fail. Each suite therefore gained the stronger assertion the
+brief asked for — *the error surface contains no endpoint-derived text at all* —
+and seven assertions inverted, each argued at its site. Full table in
+`docs/regression-baseline/phase-b/TYPED-CLOSED-ERROR-SURFACE.md`, which also
+records that a `LaunderingTransport` re-wrapping with `carries_no_credential()`
+now legitimately loses its endpoint identity: a diagnostics degradation the
+decorator asked for, not a leak.
+
+**The IPC type changed and the frontend already agrees.** `ProviderError`'s serde
+shape is public. `src/platform/contract.ts` mirrors it, the concurrent Phase C
+session updated it, and the two were compared mechanically: all 35 `Cause` codes,
+both directions, zero drift. **No `src/` file was touched by this piece.**
+
+**Full gate green, as CI runs it:** `cargo fmt --all --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`
+(40 test binaries), 12 doctests, `pnpm typecheck`, 462 vitest, 130 harness,
+`pnpm build`, transcript reproducibility, 12 secret-tripwire tests + the scan.
+
+**VERIFIED-BY-FAKE**, per conventions §10: loopback peers, `MemoryStore`,
+scripted bytes, deliberately broken sockets. **GATE M Part 2 remains deferred to
+the desktop session and is untouched.**
+
+---
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

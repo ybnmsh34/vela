@@ -398,6 +398,20 @@ That is deliberate and is not a way of hiding it:
 Run it with
 `cargo test -p vela-providers --test zz_gate_m_round4_executor_probe -- --ignored`.
 
+> **CLOSED by piece B2 (`redesign:typed-closed-error-surface`).** The
+> `#[ignore]` is gone; the test runs in the ordinary suite and passes. It was
+> not closed by removing a fifth spelling — it was closed by removing the field
+> the spellings were arriving in. `ProviderError` carries no `String`, the
+> `detail()` that used to launder upstream text no longer exists, and the raw
+> body goes to a local, opt-in debug log keyed by a correlation id.
+>
+> **Read `docs/regression-baseline/phase-b/TYPED-CLOSED-ERROR-SURFACE.md`
+> before trusting the green.** Every needle search in every canary in this
+> crate now passes *vacuously* — there is no endpoint text on the surface for a
+> needle to match — and that document says which assertions carry weight
+> instead: the endpoint-invariance test and the closed-vocabulary audit in
+> `tests/typed_closed_error_surface.rs`.
+
 ### 5.5 What a fix probably looks like — not prescribed, only scoped
 
 The executor did not fix this and does not own the design. Two shapes are

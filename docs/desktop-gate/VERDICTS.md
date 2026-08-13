@@ -1093,3 +1093,80 @@ it was meant to remove.
 Two residuals from that verdict remain open, both cosmetic and neither blocking: in light theme
 `--vela-turn-user-bg` and `--vela-thinking-bg` are still the same value, and the inline-code chip
 fill still equals the thinking-panel fill in both themes.
+
+---
+
+## A1-scaffold-shell — visual (RE-JUDGE, supersedes the FAIL)
+
+- commit: `e7b56d665f90c1f9046469b837de17fb67bac343`
+- critic: visual
+- verdict: **PASS**
+- environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · 1400x900, and true high-DPI
+  via `--force-device-scale-factor=1.5`
+
+All five platform-defaults findings ruled on:
+
+| # | Prior finding | Now |
+|---|---|---|
+| 1 | No bundled typeface | **FIXED** — `@fontsource-variable/{inter,jetbrains-mono}` are real dependencies, four `@font-face` rules (roman + true italic per family) reachable from the entry graph via `base.css:11` |
+| 2 | White legacy scrollbar in dark | **FIXED** — was `#fcfcfc` trough with arrow buttons; now page `#080b16` with a `#6f7896` pill, no trough, no buttons |
+| 3 | Empty state clipped at 150% | **FIXED** — mark renders in full with ~76 device px of clear air below the header rule; pane scrolls, third card reachable |
+| 4 | Model-picker popover misalignment | **FIXED IN SOURCE, NOT OBSERVED** — `.empty` moved `space-4 → space-2`, so `.empty`, `.option` and `.footerAction` all land on 12px. **No capture in this evidence set has the popover open**, so this is arithmetic, not observation |
+| 5 | `--vela-text-subtle` under AA | **FIXED** — re-authored per theme (light `#5b6280`, dark `#868fac`): composer placeholder now **5.99:1** light / **5.09:1** dark, was 4.16 / 4.43 |
+
+The typeface is confirmed by runtime width control, not by inspection:
+`appBody 560.09 == InterVariable 560.09`, against `SegoeUI 523.91` and an absent-font control of
+`481.72`; `appMono 614.41 == JetBrainsMonoVariable 614.41`. Plain `'Inter'` still measures 481.72 —
+identical to the absent control — so the only reason Inter renders at all is the bundle.
+
+**Two fixes were better than the brief asked for, and both avoid a regression a naive fix invites:**
+
+- `color-scheme` is narrowed inside a *guarded* media block —
+  `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }` — which closes the
+  inverse bug (dark OS + in-app light theme) that a plain narrowing would have created.
+- `base.css` deliberately avoids `scrollbar-color` / `scrollbar-width`. Either one makes Chromium
+  discard the whole `::-webkit-scrollbar-*` block, and the arrow buttons return.
+
+Also verified absent: no FOUT risk (`font-display: block` on local files), no orphaned fallback (the
+packages' `unicode-range` values are carried, so out-of-subset codepoints degrade to the platform
+font rather than to nothing), and the scrollbar thumb clears 3:1 on every ground it sits on.
+
+### One item in this ruling is arithmetic, not observation
+
+Finding 4 is closed by reading three padding values that now agree, **not by seeing the popover**.
+No capture in `A1-retest/` has it open. I am recording that distinction rather than letting a
+source-read pass as a pixel-read, because that is exactly the gap that let the original markdown
+defect survive a full cloud review.
+
+### An evidence-hygiene failure of mine
+
+`A1-retest/manifest.json` — the 1x capture manifest — **does not exist.** My capture script threw on
+a stray reference *after* taking the shots but *before* writing the manifest; I saw the traceback,
+checked that the images were written, and reported "captures succeeded" without noticing the manifest
+was the thing that had failed. The 150% manifest exists; the 1x one does not.
+
+The theme state of `50-scrollbar-light.png` / `-dark.png` is therefore attested only by the visible
+"Theme: light" / "Theme: dark" pill in each capture and by the runtime readings in
+`typeface-verification.txt`. That is sufficient here, and the critic said so, but the record is
+weaker than it should be and I am not going to write the manifest after the fact — a state
+attestation composed from memory is worth less than none.
+
+### Blind comparison — the qualifier is gone
+
+The previous critic picked Vela **narrowly**, losing only on letterforms. Letterforms are exactly
+what this wave bought, so that loss is gone.
+
+On the **reading surface** Vela now wins outright, on two counts beyond parity: the code block is a
+genuine three-step surface in dark (`night-950` page → `night-900` block → `night-800` language bar),
+which is more considered than the flat panel most references ship; and the transcript header carries
+information no reference offers — *"Context window not reported by this endpoint · about 471 tokens
+in this turn"*.
+
+On the **shell** it is closer to a coin-flip, for one reason that is filed and outside A1's scope:
+**there are still no minimise / maximise / close controls.** With `decorations: false` and a title bar
+rendering only a theme toggle, the window reads as unfinished at a glance in a way nothing inside the
+app does. The Mac `⌘` glyphs on a Windows box are the second tell. Close both and Vela wins outright
+against every reference at this tier.
+
+- evidence: `evidence/A1-retest/` (six captures across both themes at 1x and true 150%),
+  `evidence/CONV-1-retest/typeface-verification.txt` (width-control probe and runtime readings)

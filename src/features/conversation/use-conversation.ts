@@ -16,6 +16,24 @@
  *
  * Batching is injectable (`scheduleCommit`) so tests drive it deterministically
  * instead of waiting on `requestAnimationFrame`.
+ *
+ * ## What a turn carries besides its text
+ *
+ * Whatever the user staged. {@link UseConversationOptions.attachments} is the
+ * port ({@link TurnAttachments}) the host fills in with the tray's contents;
+ * `send` reads it, puts the parts on the outgoing message, and clears it.
+ *
+ * That connection is the whole of a defect this project shipped: the tray, the
+ * picker, the capability gate, `toContentParts`, `ChatMessageInput.parts` and
+ * the host's `ContentPartDto` all existed and were all tested, and pressing
+ * Send discarded the user's picture without a word, because nothing read the
+ * tray. The reading happens **here**, in the same function that builds the
+ * payload, so a future reader cannot wire one without the other.
+ *
+ * The parts are then kept on the user's entry, which is what makes the picture
+ * part of the *conversation* rather than of one request: it is replayed with
+ * the history on every later turn, re-sent by `retry`, and written to the
+ * store with the message.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,15 +41,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createChatRepository, newTurnId, type ChatRepository, type TurnHandle } from '@/data/chat-repository';
 import { createTranscriptRepository, type TranscriptRepository } from '@/data/transcript-repository';
 import { usePlatform } from '@/platform/PlatformProvider';
-import type { ChatMessageInput, ChatStreamEvent } from '@/platform/contract';
+import type { ChatMessageInput, ChatStreamEvent, ContentPartInput } from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
 
 import { entriesFromStored, errorMessageOfTurn, partsOfTurn, statusOfTurn } from './stored-entries';
+import type { TurnAttachments } from './turn-attachments';
 import { EMPTY_TURN, isSettled, isTerminalEvent, reduceTurn, type TurnState } from './turn-stream';
 
 export type ConversationEntry =
-  | { readonly kind: 'user'; readonly id: string; readonly text: string }
+  | {
+      readonly kind: 'user';
+      readonly id: string;
+      readonly text: string;
+      /**
+       * What was attached to this message: an image, an inlined file. Absent
+       * for the ordinary turn, and never empty when present.
+       */
+      readonly parts?: readonly ContentPartInput[];
+    }
   | { readonly kind: 'assistant'; readonly id: string; readonly turn: TurnState };
+
+/** No attachments, as a shared constant so `send` allocates nothing per turn. */
+const NO_PARTS: readonly ContentPartInput[] = [];
 
 /** Shown instead of the transcript's contents when the store cannot be read. */
 const UNREADABLE = 'This conversation could not be read from the store';
@@ -54,6 +85,12 @@ export interface UseConversationOptions {
    * the caller is the authority for this mount. Turns are still written.
    */
   readonly initialEntries?: readonly ConversationEntry[];
+  /**
+   * The files the user staged for the next message, if anything is holding
+   * any. `null`/omitted is a surface with no attach affordance at all, not a
+   * surface whose tray happens to be empty.
+   */
+  readonly attachments?: TurnAttachments | null;
   /** Defaults to `requestAnimationFrame`. */
   readonly scheduleCommit?: (run: () => void) => void;
 }
@@ -234,12 +271,48 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     [drain, schedule],
   );
 
+  /**
+   * Mark a turn as never having started, with a reason the user can read.
+   *
+   * The same shape whether the refusal came from the host or from a file that
+   * could not be read: both are "this turn did not happen, and here is why",
+   * and the transcript already knows how to draw one of those.
+   */
+  const refuseTurn = useCallback(
+    (turnId: string, refusal: { code: string; message: string }) => {
+      active.current = null;
+      setStreaming(false);
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.kind === 'assistant' && entry.id === turnId
+            ? { ...entry, turn: { ...entry.turn, phase: 'failed', refusal } }
+            : entry,
+        ),
+      );
+    },
+    [],
+  );
+
+  /**
+   * `prepare` produces what this message carries besides its text.
+   *
+   * A function rather than a value because reading a file is I/O: the user's
+   * turn goes on screen in the same tick they pressed Send, and the bytes are
+   * gathered after. A read that fails takes the turn down with a sentence
+   * naming the file — it never sends a message with the attachment quietly
+   * missing.
+   */
   const start = useCallback(
-    (history: readonly ConversationEntry[], userText: string) => {
+    (
+      history: readonly ConversationEntry[],
+      userText: string,
+      prepare: () => Promise<readonly ContentPartInput[]>,
+    ) => {
       if (providerId === null || modelId === null) return;
 
       const turnId = newTurnId();
-      const userEntry: ConversationEntry = { kind: 'user', id: `${turnId}-user`, text: userText };
+      const userId = `${turnId}-user`;
+      const userEntry: ConversationEntry = { kind: 'user', id: userId, text: userText };
       const assistantEntry: ConversationEntry = { kind: 'assistant', id: turnId, turn: EMPTY_TURN };
 
       // From here the surface is the authority on what this conversation holds,
@@ -257,44 +330,74 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         return seen === 1;
       };
 
-      void repository
-        .streamTurn({
-          turnId,
-          providerId,
-          modelId,
-          messages: toMessages(history, userText),
-          onEvent: (event) => {
-            onEvent(turnId, event, isFirst);
-          },
-        })
-        .then((handle) => {
+      void (async () => {
+        let parts: readonly ContentPartInput[];
+        try {
+          parts = await prepare();
+        } catch (error: unknown) {
+          if (!mounted.current) return;
+          refuseTurn(turnId, attachmentRefusal(error));
+          return;
+        }
+        if (!mounted.current) return;
+
+        // Recorded on the entry, not just on the request: this is what makes an
+        // attached image part of the conversation — replayed with the history,
+        // re-sent by `retry`, written to the store with the message.
+        if (parts.length > 0) {
+          setEntries((current) =>
+            current.map((entry) =>
+              entry.kind === 'user' && entry.id === userId ? { ...entry, parts } : entry,
+            ),
+          );
+        }
+
+        try {
+          const handle = await repository.streamTurn({
+            turnId,
+            providerId,
+            modelId,
+            messages: toMessages(history, userText, parts),
+            onEvent: (event) => {
+              onEvent(turnId, event, isFirst);
+            },
+          });
           // The turn may have already finished by the time this resolves —
           // a terminal event clears `active`, and re-attaching here would leak
           // a handle nobody releases.
           if (active.current?.id === turnId) active.current = { id: turnId, handle };
           else handle.release();
-        })
-        .catch((error: unknown) => {
+        } catch (error: unknown) {
           if (!mounted.current) return;
-          active.current = null;
-          setStreaming(false);
-          setEntries((current) =>
-            current.map((entry) =>
-              entry.kind === 'assistant' && entry.id === turnId
-                ? { ...entry, turn: { ...entry.turn, phase: 'failed', refusal: refusalOf(error) } }
-                : entry,
-            ),
-          );
-        });
+          refuseTurn(turnId, refusalOf(error));
+        }
+      })();
     },
-    [modelId, onEvent, providerId, repository],
+    [modelId, onEvent, providerId, refuseTurn, repository],
   );
+
+  /**
+   * Read through a ref, because the controller is a fresh object on every
+   * render of the host that owns it. Depending on its identity would rebuild
+   * `send` every render, and `send` is handed to the composer.
+   */
+  const attachments = useRef<TurnAttachments | null>(null);
+  attachments.current = options.attachments ?? null;
 
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim();
       if (trimmed === '' || streaming) return;
-      start(entriesRef.current, trimmed);
+      start(entriesRef.current, trimmed, async () => {
+        const staged = attachments.current;
+        if (staged === null || staged.attachments.length === 0) return NO_PARTS;
+        const parts = await staged.toContentParts();
+        // Cleared only now: the tray is the user's copy of what is about to be
+        // sent, and emptying it before the bytes are in hand would lose the
+        // file if the read failed.
+        staged.clear();
+        return parts;
+      });
     },
     [start, streaming],
   );
@@ -327,7 +430,13 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         }
       });
     }
-    start(current.slice(0, current.indexOf(lastUser)), lastUser.text);
+    // Re-sent with what it was sent with. The tray was emptied when the turn
+    // was first sent, so a retry that read it again would send nothing — the
+    // parts on the entry are the record of what this message carries.
+    const carried = lastUser.parts ?? NO_PARTS;
+    start(current.slice(0, current.indexOf(lastUser)), lastUser.text, () =>
+      Promise.resolve(carried),
+    );
   }, [conversationId, enqueue, start, streaming, transcript]);
 
   /**
@@ -370,7 +479,10 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         const written = await transcript.append({
           conversationId,
           role: 'user',
-          parts: [{ kind: 'text', text: asked.text }],
+          // The attachment is written down with the message it came with. A
+          // record that keeps the question and drops the picture it was asked
+          // about is a record of a conversation that never happened.
+          parts: [{ kind: 'text', text: asked.text }, ...(asked.parts ?? NO_PARTS)],
         });
         messageIds.current.set(asked.id, written.id);
       }
@@ -410,18 +522,27 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
 function historyMessages(history: readonly ConversationEntry[]): ChatMessageInput[] {
   const messages: ChatMessageInput[] = [];
   for (const entry of history) {
-    if (entry.kind === 'user') messages.push({ role: 'user', text: entry.text });
+    if (entry.kind === 'user') messages.push(userMessage(entry.text, entry.parts ?? NO_PARTS));
     else if (isSettled(entry.turn) && entry.turn.answer !== '')
       messages.push({ role: 'assistant', text: entry.turn.answer });
   }
   return messages;
 }
 
+/**
+ * `parts` is omitted entirely when there are none — the host composes `text`
+ * then `parts`, and an empty array is a field on the wire that means nothing.
+ */
+function userMessage(text: string, parts: readonly ContentPartInput[]): ChatMessageInput {
+  return parts.length === 0 ? { role: 'user', text } : { role: 'user', text, parts };
+}
+
 function toMessages(
   history: readonly ConversationEntry[],
   userText: string,
+  parts: readonly ContentPartInput[],
 ): readonly ChatMessageInput[] {
-  return [...historyMessages(history), { role: 'user', text: userText }];
+  return [...historyMessages(history), userMessage(userText, parts)];
 }
 
 /**
@@ -450,4 +571,21 @@ export function pendingTurnTexts(
 function refusalOf(error: unknown): { code: string; message: string } {
   if (error instanceof PlatformError) return { code: error.code, message: error.message };
   return { code: 'INTERNAL', message: 'The host refused the request.' };
+}
+
+/**
+ * A staged file could not be read, so the turn did not happen.
+ *
+ * The thrower owns the sentence — it is the only party that knows which file
+ * and why — and this feature does not second-guess it. Anything without a
+ * message of its own still says that nothing was sent, because the one
+ * outcome that is never acceptable here is the user believing their
+ * attachment went along.
+ */
+function attachmentRefusal(error: unknown): { code: string; message: string } {
+  const message =
+    error instanceof Error && error.message !== ''
+      ? error.message
+      : 'An attached file could not be read, so nothing was sent.';
+  return { code: 'ATTACHMENT_UNREADABLE', message };
 }

@@ -162,6 +162,68 @@ describe('the fake host: chat_send', () => {
       adapter.invoke('chat_send', { ...TURN, messages: [{ role: 'user', text: 'again' }] }),
     ).resolves.toMatchObject({ accepted: true });
   });
+
+  it('takes an image as base64, the way the host does', async () => {
+    const adapter = await withProvider();
+    await expect(
+      adapter.invoke('chat_send', {
+        ...TURN,
+        messages: [
+          {
+            role: 'user',
+            text: 'what is this',
+            parts: [{ kind: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }],
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ accepted: true });
+  });
+
+  it('refuses a byte array where base64 belongs — the shape the host cannot even parse', async () => {
+    // ── THE PARITY THAT MATTERS ────────────────────────────────────────────
+    // `ContentPartDto::Image.data` is a `String` of standard base64. A byte
+    // array is not a lenient variant of that; it is a payload serde rejects
+    // outright. A fake that accepted it would let every renderer test pass
+    // while the packaged application dropped the user's picture — which is
+    // exactly the class of defect this file exists to prevent.
+    const adapter = await withProvider();
+    await expect(
+      adapter.invoke('chat_send', {
+        ...TURN,
+        messages: [
+          {
+            role: 'user',
+            text: 'what is this',
+            parts: [
+              {
+                kind: 'image',
+                mimeType: 'image/png',
+                data: [137, 80, 78, 71] as unknown as string,
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PAYLOAD',
+      message: expect.stringContaining('base64'),
+    });
+  });
+
+  it('refuses an image with no type, empty bytes, or bytes that are not base64', async () => {
+    const adapter = await withProvider();
+    const send = (data: string, mimeType = 'image/png') =>
+      adapter.invoke('chat_send', {
+        turnId: `t-${data}-${mimeType}`,
+        providerId: 'workstation',
+        modelId: 'a-model',
+        messages: [{ role: 'user', text: 'x', parts: [{ kind: 'image', mimeType, data }] }],
+      });
+
+    await expect(send('iVBORw0KGgo=', '  ')).rejects.toMatchObject({ code: 'INVALID_PAYLOAD' });
+    await expect(send('')).rejects.toMatchObject({ code: 'INVALID_PAYLOAD' });
+    await expect(send('not base64!!')).rejects.toMatchObject({ code: 'INVALID_PAYLOAD' });
+  });
 });
 
 describe('the fake host: chat_cancel', () => {

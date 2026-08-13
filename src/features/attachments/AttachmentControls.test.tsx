@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AttachmentControls } from './AttachmentControls';
 import { AttachmentDropZone } from './AttachmentDropZone';
 import { AttachmentTray } from './AttachmentTray';
-import { useAttachments } from './use-attachments';
+import { useAttachments, type AttachmentsController } from './use-attachments';
 
 /**
  * jsdom implements neither object URLs nor `DataTransfer`. Both are stubbed so
@@ -194,9 +194,16 @@ describe('staging', () => {
 });
 
 describe('toContentParts', () => {
-  it('produces the parts the core consumes, and reads no URL to do it', async () => {
+  it('produces the parts the boundary carries, and reads no URL to do it', async () => {
     // The bytes reach a model through the Rust core over IPC. There is no fetch
     // in this feature and there must never be one.
+    //
+    // The image is **base64**, which is what `ContentPartDto::Image.data` is
+    // (`src-tauri/src/ipc/content.rs`). This used to assert a byte array — the
+    // *provider* model's shape, one layer further in — and passed, while a
+    // payload built from it was one the host could not deserialise. Asserting
+    // the wrong of two adjacent shapes is indistinguishable from asserting the
+    // right one until something actually sends it.
     const parts: unknown[] = [];
     function Capture() {
       const attachments = useAttachments({ vision: true });
@@ -232,6 +239,41 @@ describe('toContentParts', () => {
       expect(parts).toHaveLength(2);
     });
     expect(parts[0]).toEqual({ kind: 'text', text: 'Attached file: notes.md\n\nthe body' });
-    expect(parts[1]).toEqual({ kind: 'image', mimeType: 'image/png', data: [1, 2, 3] });
+    // `AQID` is base64 for the bytes 1, 2, 3 — written out rather than
+    // computed, so this does not agree with the encoder by using it.
+    expect(parts[1]).toEqual({ kind: 'image', mimeType: 'image/png', data: 'AQID' });
+  });
+
+  it('fails the whole list, naming the file, rather than quietly leaving one out', async () => {
+    // The one behaviour that is never acceptable: returning the readable parts
+    // and letting the caller send a message with the attachment missing. The
+    // user is told which file, and the turn does not happen.
+    const held: { current: AttachmentsController | null } = { current: null };
+    function Capture() {
+      const controller = useAttachments({ vision: true });
+      held.current = controller;
+      return (
+        <AttachmentControls
+          vision
+          onFiles={(files) => {
+            controller.add(files);
+          }}
+        />
+      );
+    }
+
+    const broken = imageFile('broken.png');
+    Object.defineProperty(broken, 'arrayBuffer', {
+      value: () => Promise.reject(new Error('the disk went away')),
+    });
+
+    const user = userEvent.setup();
+    render(<Capture />);
+    await user.upload(screen.getByTestId('attachment-picker-with-images'), [
+      textFile('fine.md', 'readable'),
+      broken,
+    ]);
+
+    await expect(held.current?.toContentParts()).rejects.toThrow(/broken\.png/);
   });
 });

@@ -111,6 +111,12 @@ const DEFAULT_SEARCH_LIMIT = 50;
 const MAX_SEARCH_LIMIT = 200;
 /** Mirrors `MAX_TOOLS` in `src-tauri/src/ipc/chat.rs`. */
 const MAX_TOOLS = 128;
+/** Mirrors `MAX_PARTS` in `src-tauri/src/ipc/content.rs`. */
+const MAX_PARTS = 256;
+/** Mirrors `MAX_TEXT_BYTES` in `src-tauri/src/ipc/content.rs`. */
+const MAX_PART_TEXT_BYTES = 1_048_576;
+/** Mirrors `MAX_IMAGE_BYTES` in `src-tauri/src/ipc/content.rs`. */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 /** Mirrors `DEFAULT_MESSAGE_LIMIT` / `MAX_MESSAGE_LIMIT` in `transcript.rs`. */
 const DEFAULT_MESSAGE_LIMIT = 1000;
 const MAX_MESSAGE_LIMIT = 5000;
@@ -344,6 +350,97 @@ function credentialFieldLabel(mode: AuthMode): string | null {
 function splitIntoFrames(text: string): string[] {
   if (text === '') return [];
   return text.match(/\S+\s*/g) ?? [text];
+}
+
+/**
+ * How many bytes this base64 decodes to, or `null` if it is not base64 at all.
+ *
+ * Mirrors `vela_providers::base64_decode`, character class for character class:
+ * the standard and URL-safe alphabets are both accepted, whitespace is skipped
+ * because transport encodings wrap lines, `=` ends the payload, and anything
+ * else is a rejection rather than a silently different picture.
+ *
+ * Its own function because the *length* is what the bound is about, and
+ * decoding eight megabytes to measure it is the allocation the bound exists to
+ * prevent.
+ */
+function decodedBase64Bytes(data: string): number | null {
+  let symbols = 0;
+  for (const character of data) {
+    if (character === '=') break;
+    if (/[A-Za-z0-9+/\-_]/.test(character)) {
+      symbols += 1;
+      continue;
+    }
+    if (character === '\n' || character === '\r' || character === ' ' || character === '\t') continue;
+    return null;
+  }
+  return Math.floor((symbols * 6) / 8);
+}
+
+/**
+ * Mirrors `ContentPartDto::to_provider_part` / `to_store_part` and
+ * `check_count` in `src-tauri/src/ipc/content.rs`.
+ *
+ * **This is why the fake is worth testing against.** An image is base64 at this
+ * boundary and raw bytes on either side of it, and the renderer had a helper
+ * producing the wrong one of those two nearly identical shapes. Without these
+ * checks the fake would cheerfully accept `data: [137, 80, 78, ...]` — a
+ * payload the Rust host cannot even deserialise — and every renderer test
+ * would pass while the packaged application dropped the picture. A fake that
+ * accepts more than the host is not a fake, it is a second implementation with
+ * different rules.
+ */
+function validateContentParts(
+  parts: readonly ContentPartInput[],
+  whose: string,
+  command: CommandName,
+): void {
+  const invalid = (detail: string): never => {
+    throw new PlatformError('INVALID_PAYLOAD', detail, command);
+  };
+  if (parts.length > MAX_PARTS) {
+    invalid(`invalid ${whose}: at most ${MAX_PARTS} parts per message`);
+  }
+  parts.forEach((part, index) => {
+    const where = `${whose}[${index}]`;
+    switch (part.kind) {
+      case 'text':
+      case 'reasoning':
+        if (part.text.length > MAX_PART_TEXT_BYTES) {
+          invalid(`invalid ${where}.text: exceeds ${MAX_PART_TEXT_BYTES} bytes`);
+        }
+        return;
+      case 'image': {
+        if (part.mimeType.trim() === '') {
+          invalid(`invalid ${where}.mimeType: must not be blank`);
+        }
+        // The type says `string`. The host says `String` too, and a renderer
+        // that hands it anything else gets a deserialisation failure, not a
+        // lenient coercion — so this refuses it here for the same reason.
+        if (typeof part.data !== 'string') {
+          invalid(`invalid ${where}.data: must be standard base64, not a byte array`);
+        }
+        const bytes = decodedBase64Bytes(part.data);
+        if (bytes === null) invalid(`invalid ${where}.data: not standard base64`);
+        if (bytes === 0) invalid(`invalid ${where}.data: must not be empty`);
+        if ((bytes ?? 0) > MAX_IMAGE_BYTES) {
+          invalid(`invalid ${where}.data: exceeds ${MAX_IMAGE_BYTES} bytes`);
+        }
+        return;
+      }
+      case 'toolCall':
+        if (part.callId.trim() === '') invalid(`invalid ${where}.callId: must not be blank`);
+        if (part.name.trim() === '') invalid(`invalid ${where}.name: must not be blank`);
+        return;
+      case 'toolResult':
+        if (part.callId.trim() === '') invalid(`invalid ${where}.callId: must not be blank`);
+        if (part.content.length > MAX_PART_TEXT_BYTES) {
+          invalid(`invalid ${where}.content: exceeds ${MAX_PART_TEXT_BYTES} bytes`);
+        }
+        return;
+    }
+  });
 }
 
 function storageKey(reference: SecretsRefReq): string {
@@ -958,6 +1055,9 @@ export class BrowserAdapter implements PlatformAdapter {
         'chat_send',
       );
     }
+    request.messages.forEach((message, index) => {
+      validateContentParts(message.parts ?? [], `messages[${index}].parts`, 'chat_send');
+    });
     this.#validateTools(request);
     // Mirrors `resolve_provider`: an id that is not configured is NOT_FOUND,
     // never a quiet fallback to whatever else happens to be set up.
@@ -1281,6 +1381,7 @@ export class BrowserAdapter implements PlatformAdapter {
         'store_append_message',
       );
     }
+    validateContentParts(request.parts, 'parts', 'store_append_message');
     const now = this.#now();
     const message: FakeMessage = {
       id: `${conversation.id}_msg_${conversation.messages.length + 1}`,
@@ -1309,6 +1410,9 @@ export class BrowserAdapter implements PlatformAdapter {
         'invalid parts: a message needs at least one part',
         'store_update_message',
       );
+    }
+    if (request.parts !== undefined) {
+      validateContentParts(request.parts, 'parts', 'store_update_message');
     }
     const found = this.#findMessage(request.messageId, 'store_update_message');
     // An omitted field leaves the value alone. There is no way to clear one.

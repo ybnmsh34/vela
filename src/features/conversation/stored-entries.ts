@@ -56,7 +56,18 @@ export function entriesFromStored(
   const entries: ConversationEntry[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      entries.push({ kind: 'user', id: message.id, text: textOf(message.parts) });
+      // Text collapses into the message's own text — an inlined file was
+      // stored as a text part and reads as one. Everything else (an image)
+      // is carried through, because the next turn replays this message and a
+      // conversation that forgets the picture halfway through is a
+      // conversation the model stops being able to answer questions about.
+      const carried = message.parts.filter((part) => part.kind !== 'text');
+      entries.push({
+        kind: 'user',
+        id: message.id,
+        text: textOf(message.parts),
+        ...(carried.length === 0 ? {} : { parts: carried }),
+      });
     } else if (message.role === 'assistant') {
       entries.push({ kind: 'assistant', id: message.id, turn: turnFromStored(message) });
     }

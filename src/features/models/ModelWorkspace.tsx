@@ -86,6 +86,7 @@ const EMPTY_ATTACHMENTS: AttachmentsController = {
   refused: [],
   totalBytes: 0,
   vision: false,
+  accept: '',
   add: () => undefined,
   remove: () => undefined,
   clear: () => undefined,

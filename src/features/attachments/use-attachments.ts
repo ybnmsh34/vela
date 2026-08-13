@@ -5,9 +5,17 @@
  *
  * Nowhere, until the message is sent. The `File` handle is held; nothing is
  * read, copied or uploaded when it is staged. On send, {@link toContentParts}
- * reads it locally and produces `ContentPart`s — the *same* wire shape the core
- * already consumes — which travel to the Rust core over the IPC bridge with the
- * turn.
+ * reads it locally and produces `ContentPartInput`s — the shape
+ * `ChatMessageInput.parts` carries across the IPC bridge — which travel to the
+ * Rust core with the turn.
+ *
+ * **`ContentPartInput`, not `ContentPart`.** The two differ in exactly one
+ * field and it is this one: an image is raw bytes in the provider model and
+ * **standard base64** at the boundary (`src-tauri/src/ipc/content.rs`). This
+ * hook used to produce the provider shape — a byte array — which no caller
+ * could have handed to `chat_send` without the host refusing it. Producing the
+ * wrong one of two nearly identical types, in a function nothing called, is how
+ * a feature stays broken while its own tests pass.
  *
  * There is no `fetch` in this file and there must never be one. Every byte that
  * reaches a model leaves this process through the core (conventions §1: anything
@@ -26,15 +34,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ContentPart } from '@/platform/contract';
+import type { ContentPartInput } from '@/platform/contract';
+import { base64FromBytes } from '@/lib/base64';
 
 import {
   classify,
   formatBytes,
   rejectionFor,
+  IMAGE_MIME_TYPES,
+  TEXT_EXTENSIONS,
   type AttachmentKind,
   type AttachmentRejection,
 } from './attachment-rules';
+
+const TEXT_ACCEPT = TEXT_EXTENSIONS.map((extension) => `.${extension}`).join(',');
+const IMAGE_AND_TEXT_ACCEPT = `${IMAGE_MIME_TYPES.join(',')},${TEXT_ACCEPT}`;
 
 export interface StagedAttachment {
   readonly id: string;
@@ -58,12 +72,49 @@ export interface AttachmentsController {
   readonly totalBytes: number;
   /** Whether images may be staged at all. Straight off the capability struct. */
   readonly vision: boolean;
+  /**
+   * The `accept` list any picker into this holder should offer.
+   *
+   * Published by the holder rather than recomputed per picker: a second picker
+   * with its own idea of what is acceptable is a picker that offers a file type
+   * {@link rejectionFor} then refuses, which reads to the user as the file
+   * being broken.
+   */
+  readonly accept: string;
   add: (files: Iterable<File>) => void;
   remove: (id: string) => void;
   clear: () => void;
   dismissRefusals: () => void;
-  /** Reads the staged files and produces the parts the core consumes. */
-  toContentParts: () => Promise<readonly ContentPart[]>;
+  /**
+   * Reads the staged files and produces the parts a message carries.
+   *
+   * Rejects with an {@link AttachmentReadError} if any staged file cannot be
+   * read. It deliberately does **not** skip the unreadable one and return the
+   * rest: a message that quietly leaves out the picture the user attached is
+   * the failure this whole path exists to make impossible.
+   */
+  toContentParts: () => Promise<readonly ContentPartInput[]>;
+}
+
+/**
+ * A staged file could not be read off the disk.
+ *
+ * Carries a sentence already fit to show, because the surface that catches it
+ * is in another feature and must not have to know how to describe an
+ * attachment. `name` is kept separately for anything that wants to act on the
+ * file rather than talk about it.
+ */
+export class AttachmentReadError extends Error {
+  readonly fileName: string;
+
+  constructor(fileName: string, options?: { cause?: unknown }) {
+    super(
+      `${fileName} could not be read, so nothing was sent. It is still attached — try again, or remove it and send without it.`,
+      options as ErrorOptions | undefined,
+    );
+    this.name = 'AttachmentReadError';
+    this.fileName = fileName;
+  }
 }
 
 interface UseAttachmentsOptions {
@@ -235,24 +286,33 @@ export function useAttachments({ vision }: UseAttachmentsOptions): AttachmentsCo
     setRefused([]);
   }, []);
 
-  const toContentParts = useCallback(async (): Promise<readonly ContentPart[]> => {
-    const parts: ContentPart[] = [];
+  const toContentParts = useCallback(async (): Promise<readonly ContentPartInput[]> => {
+    const parts: ContentPartInput[] = [];
     for (const attachment of attachments) {
-      if (attachment.kind === 'image') {
-        const buffer = await readArrayBuffer(attachment.file);
-        parts.push({
-          kind: 'image',
-          mimeType: attachment.mimeType,
-          data: Array.from(new Uint8Array(buffer)),
-        });
-      } else {
-        const text = await readText(attachment.file);
-        // Named and fenced, because a model handed bare text has no way to tell
-        // the file from the question that came with it.
-        parts.push({
-          kind: 'text',
-          text: `Attached file: ${attachment.name}\n\n${text}`,
-        });
+      try {
+        if (attachment.kind === 'image') {
+          const buffer = await readArrayBuffer(attachment.file);
+          parts.push({
+            kind: 'image',
+            mimeType: attachment.mimeType,
+            // Base64, because that is what the boundary carries. See the
+            // module note and `src-tauri/src/ipc/content.rs`.
+            data: base64FromBytes(new Uint8Array(buffer)),
+          });
+        } else {
+          const text = await readText(attachment.file);
+          // Named and fenced, because a model handed bare text has no way to
+          // tell the file from the question that came with it.
+          parts.push({
+            kind: 'text',
+            text: `Attached file: ${attachment.name}\n\n${text}`,
+          });
+        }
+      } catch (error) {
+        // Named, and fatal to the whole turn. The alternative — dropping this
+        // one file and sending the rest — is the silent discard in a smaller
+        // costume.
+        throw new AttachmentReadError(attachment.name, { cause: error });
       }
     }
     return parts;
@@ -268,6 +328,7 @@ export function useAttachments({ vision }: UseAttachmentsOptions): AttachmentsCo
     refused,
     totalBytes,
     vision,
+    accept: vision ? IMAGE_AND_TEXT_ACCEPT : TEXT_ACCEPT,
     add,
     remove,
     clear,

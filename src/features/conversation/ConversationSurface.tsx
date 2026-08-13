@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { NO_CAPABILITIES, type ChatCapabilities } from '@/platform/contract';
 
 import { ConversationView } from './ConversationView';
+import { TurnAttachmentsProvider, type TurnAttachments } from './turn-attachments';
 import { pendingTurnTexts, useConversation, type ConversationEntry } from './use-conversation';
 
 interface ConversationSurfaceProps {
@@ -53,6 +54,18 @@ interface ConversationSurfaceProps {
    * surface changes.
    */
   readonly onPendingTurn?: ((texts: readonly string[]) => void) | undefined;
+  /**
+   * The files the user staged for the next message.
+   *
+   * Handed in rather than reached for, like the capability struct above and for
+   * the same reason: the picker, the tray and the drop zone belong to another
+   * feature, and this one must not import it. What arrives is the narrow port
+   * in `turn-attachments.ts` — read, send, clear.
+   *
+   * Omitted means *there is no attach affordance at all*, which is the state a
+   * surface mounted on its own in a test is in. It is not "the tray is empty".
+   */
+  readonly attachments?: TurnAttachments | null;
 }
 
 export function ConversationSurface({
@@ -63,11 +76,13 @@ export function ConversationSurface({
   capabilities = NO_CAPABILITIES,
   initialEntries,
   onPendingTurn,
+  attachments = null,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
     conversationId,
     providerId,
     modelId,
+    attachments,
     ...(initialEntries === undefined ? {} : { initialEntries }),
   });
 
@@ -84,12 +99,16 @@ export function ConversationSurface({
     onPendingTurn?.(pending);
   }, [pending, onPendingTurn]);
 
+  // The composer's picker reads the holder from here rather than through the
+  // view, which is presentational and has no business knowing files exist.
   return (
-    <ConversationView
-      conversation={conversation}
-      capabilities={capabilities}
-      modelLabel={modelLabel}
-      onDraftChange={setDraft}
-    />
+    <TurnAttachmentsProvider value={attachments}>
+      <ConversationView
+        conversation={conversation}
+        capabilities={capabilities}
+        modelLabel={modelLabel}
+        onDraftChange={setDraft}
+      />
+    </TurnAttachmentsProvider>
   );
 }

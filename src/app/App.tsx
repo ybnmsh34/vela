@@ -54,6 +54,19 @@ export function App({ adapter }: AppProps) {
  * `null` is the honest initial value, not `[]`: until the surface in the slot
  * has reported, this root does not know what the turn holds, and the meter says
  * "unknown" for that frame rather than "about 0".
+ *
+ * ## The other joint, and the same lesson twice
+ *
+ * The staged attachments travel the *other* way down the same seam: the models
+ * workspace owns the picker and the tray, the transcript owns the send, and
+ * `useSelectedModel().attachments` is how the one reaches the other.
+ *
+ * That property was on the context, populated, and read by nobody. So the
+ * attach button staged a file, the tray showed it, and pressing Send sent the
+ * message without it — no error, no warning, nothing. The IPC could carry an
+ * image (GATE M Part 2 proved it against a real model) and the hook could
+ * produce one; the renderer never put one in the payload. Both halves worked.
+ * The joint is here, and it is one line.
  */
 function Workspace() {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
@@ -82,7 +95,7 @@ function Workspace() {
  */
 function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonly string[]) => void }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
-  const { selection, capabilities } = useSelectedModel();
+  const { selection, capabilities, attachments } = useSelectedModel();
 
   return (
     <ConversationSurface
@@ -92,6 +105,7 @@ function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonl
       modelId={selection?.modelId ?? null}
       modelLabel={selection?.modelLabel ?? null}
       capabilities={capabilities}
+      attachments={attachments}
       onPendingTurn={onPendingTurn}
     />
   );

@@ -19,6 +19,20 @@
  * Affordances are rendered from the capability struct, never from a model or
  * backend name. A model with no vision gets **no attach control at all** —
  * not a disabled one. A disabled button is a promise the endpoint cannot keep.
+ *
+ * ## The attach button, and what it did before
+ *
+ * **Nothing.** It had no `onClick` at all: it opened no picker, staged nothing
+ * and sent nothing, while looking exactly like the way to attach a picture.
+ * A control that looks like the route to something and is not costs the user
+ * the thing they were trying to do, and they have no way to tell whether it was
+ * their file, their model or Vela that was wrong.
+ *
+ * It now opens a picker and stages into the same holder the drop zone and the
+ * model bar's own control stage into — one owner of staged files, three routes
+ * into it, one tray showing what is there. The holder arrives through
+ * {@link useTurnAttachments} rather than a prop, so the presentational view
+ * between here and the surface never has to know files exist.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -26,6 +40,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import type { ChatCapabilities } from '@/platform/contract';
 import { useFocusAnchor } from '@/state/focus-store';
 
+import { useTurnAttachments } from './turn-attachments';
 import styles from './Composer.module.css';
 
 const MAX_TEXTAREA_HEIGHT = 320;
@@ -59,6 +74,8 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState('');
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const staging = useTurnAttachments();
 
   /**
    * The composer is where a chat application's keyboard lives, so it is the
@@ -154,9 +171,32 @@ export function Composer({
           {/* Rendered only when the capability struct says the model takes
               images. Never gated on a backend identity. */}
           {capabilities.vision ? (
-            <button type="button" className={styles.iconButton} aria-label="Attach an image">
-              <ImageGlyph />
-            </button>
+            <>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                className={styles.srOnly}
+                data-testid="composer-attachment-picker"
+                accept={staging?.accept ?? ''}
+                onChange={(event) => {
+                  const chosen = event.target.files;
+                  if (chosen !== null && chosen.length > 0) staging?.add([...chosen]);
+                  // Reset, so choosing the same file twice in a row still fires.
+                  event.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Attach an image"
+                onClick={() => {
+                  picker.current?.click();
+                }}
+              >
+                <ImageGlyph />
+              </button>
+            </>
           ) : null}
 
           {streaming ? (

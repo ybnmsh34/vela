@@ -148,12 +148,53 @@ pub fn debug_log_get(handle: &DebugLogHandle, _req: EmptyPayload) -> IpcResult<D
     Ok(status_of(handle))
 }
 
+/// Create the directory the log lives in, reachable by its owner and nobody
+/// else.
+///
+/// # Why not `create_dir_all`
+///
+/// Because that is `0755` under the ordinary `0022` umask, and a `0600` log
+/// inside a world-listable directory still publishes its name, its size and its
+/// timestamps to every account on the machine — which is to say, that this user
+/// is debugging their endpoint and when they were doing it. The file's own mode
+/// is set where the file is opened (`vela_providers::debuglog`); this is the
+/// other half, and neither half is the property on its own.
+///
+/// An existing directory is tightened rather than accepted: it may have been
+/// created by an earlier run, or by a build from before this rule.
+#[cfg(unix)]
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)?;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    if permissions.mode() & 0o077 != 0 {
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(path, permissions)?;
+    }
+    Ok(())
+}
+
+/// Windows: the application-data directory is already per-user, and nothing
+/// here widens it. See the `unix` sibling for what this is protecting.
+#[cfg(not(unix))]
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)
+}
+
 /// Turn recording on or off.
 ///
 /// Enabling creates the directory first: `FileSink` opens its file lazily and
 /// swallows write failures by design — a full disk must not turn a 429 into a
 /// panic — so a missing directory would otherwise leave the switch reporting
 /// `enabled: true` over a log that never receives a line.
+///
+/// It is created **private** (`0700`), and the log inside it is opened `0600`.
+/// This file is where the raw endpoint bodies go; it is precisely the one that
+/// must not be readable by other accounts.
 pub fn debug_log_set(handle: &DebugLogHandle, req: DebugLogSetReq) -> IpcResult<DebugLogStatus> {
     if !req.enabled {
         debuglog::disable();
@@ -161,7 +202,7 @@ pub fn debug_log_set(handle: &DebugLogHandle, req: DebugLogSetReq) -> IpcResult<
     }
 
     if let Some(parent) = handle.path().parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
+        create_private_dir(parent).map_err(|error| {
             IpcError::new(
                 super::IpcErrorCode::Internal,
                 format!(
@@ -267,6 +308,72 @@ mod tests {
             before,
             "turning it off must actually stop the recording"
         );
+    }
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// **The directory the log lives in must not be listable by other accounts
+    /// either.** `create_dir_all` under the default umask makes `0755`, and a
+    /// `0700` file inside a `0755` directory still tells everyone on the
+    /// machine that this user is debugging their endpoint, and when.
+    ///
+    /// Measured, not reasoned about: this reads the mode off the real
+    /// directory the real switch created.
+    #[cfg(unix)]
+    #[test]
+    fn turning_the_log_on_creates_a_private_directory() {
+        let _guard = debug_log_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let handle = DebugLogHandle::under_data_dir(dir.path());
+
+        debug_log_set(&handle, DebugLogSetReq { enabled: true }).unwrap();
+        let created = handle.path().parent().unwrap();
+        assert_eq!(
+            mode_of(created),
+            0o700,
+            "the diagnostics directory is listable by every account on the machine"
+        );
+
+        // And the log inside it, once something is recorded — the two bits
+        // together are the property, and either one alone is not.
+        debuglog::record(|| debuglog::DebugEntryOwned {
+            correlation: vela_providers::diagnostic::CorrelationId::next(),
+            cause: vela_providers::diagnostic::Cause::CredentialRejected,
+            status: Some(401),
+            endpoint: None,
+            body: b"the endpoint's own words".to_vec(),
+        });
+        assert_eq!(mode_of(handle.path()), 0o600);
+        debuglog::disable();
+    }
+
+    /// An earlier run — or an earlier build — left a `0755` directory behind.
+    /// Turning the switch on has to fix it, because the user has no way to know
+    /// it is there and no reason to expect they must.
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_loose_directory_is_tightened() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = debug_log_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let handle = DebugLogHandle::under_data_dir(dir.path());
+        let diagnostics = handle.path().parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&diagnostics).unwrap();
+        std::fs::set_permissions(&diagnostics, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        debug_log_set(&handle, DebugLogSetReq { enabled: true }).unwrap();
+
+        assert_eq!(
+            mode_of(&diagnostics),
+            0o700,
+            "a diagnostics directory from an earlier run kept its loose mode"
+        );
+        debuglog::disable();
     }
 
     /// The status is reported from `debuglog`'s own slot, so it cannot claim

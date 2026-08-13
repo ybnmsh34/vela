@@ -103,6 +103,56 @@ impl FileSink {
     }
 }
 
+/// Open the log for appending, readable and writable by its owner and nobody
+/// else.
+///
+/// # Why this is not `OpenOptions::new().create(true).append(true)`
+///
+/// Because that produces `0644` under the ordinary `0022` umask, and this file
+/// holds **raw upstream bodies** — the endpoint text `diagnostic.rs` exists to
+/// keep out of every error Vela renders. A world-readable copy of exactly that
+/// is the property inverted: every account on the machine can read what the
+/// user's model said to them, and when they were talking to it. Measured, not
+/// assumed: [`tests::the_log_is_created_readable_only_by_its_owner`] reads the
+/// mode off a real file.
+///
+/// `mode` applies only when the file is created, so an existing log — left by
+/// an earlier run, or by a build from before this rule — is tightened after the
+/// open. A user who upgrades should not have to know a stale file is there.
+#[cfg(unix)]
+fn open_private(path: &Path) -> Option<std::fs::File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)
+        .ok()?;
+    if let Ok(metadata) = file.metadata() {
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o077 != 0 {
+            permissions.set_mode(0o600);
+            // Through the handle, so this cannot be redirected between the
+            // open and the chmod by anything swapping the path.
+            let _ = file.set_permissions(permissions);
+        }
+    }
+    Some(file)
+}
+
+/// Windows has no mode bits to set here. The log lives under the per-user
+/// application-data directory, which the OS already ACLs to that user, and
+/// nothing in this file widens it.
+#[cfg(not(unix))]
+fn open_private(path: &Path) -> Option<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()
+}
+
 impl DebugSink for FileSink {
     fn record(&self, entry: &DebugEntry<'_>) {
         let Ok(mut slot) = self.handle.lock() else {
@@ -112,11 +162,7 @@ impl DebugSink for FileSink {
             // Opened lazily and kept open: a debug log that reopens the file
             // per line is a debug log that changes the timing of the thing it
             // is meant to be observing.
-            *slot = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.path)
-                .ok();
+            *slot = open_private(&self.path);
         }
         if let Some(file) = slot.as_mut() {
             // A failed write is dropped. This is a diagnostic aid, and a full
@@ -277,6 +323,81 @@ mod tests {
             "the body is kept, locally, and found by correlation id"
         );
         assert!(!is_enabled());
+    }
+
+    /// Records one entry through `sink`, which is what opens the file.
+    fn record_one(sink: &FileSink, body: &str) {
+        let owned = entry(CorrelationId::next(), body);
+        sink.record(&DebugEntry {
+            correlation: owned.correlation,
+            cause: owned.cause,
+            status: owned.status,
+            endpoint: owned.endpoint.as_ref(),
+            body: &owned.body,
+        });
+    }
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// **The file this log exists to hold is the one that must not be shared.**
+    ///
+    /// `diagnostic.rs` takes endpoint-supplied bytes out of every error Vela
+    /// renders, and this file is where they go instead. A log created under the
+    /// default umask is `0644` — every account on the machine can read the raw
+    /// bodies of the user's exchanges with their own model. That is the whole
+    /// point of the file inverted.
+    #[cfg(unix)]
+    #[test]
+    fn the_log_is_created_readable_only_by_its_owner() {
+        let dir = std::env::temp_dir().join(format!("vela-debuglog-mode-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("exchanges.jsonl");
+        let _ = std::fs::remove_file(&path);
+
+        let sink = FileSink::new(&path);
+        record_one(&sink, "the endpoint's own words");
+
+        assert_eq!(
+            mode_of(&path),
+            0o600,
+            "the debug log is world-readable; it holds raw endpoint bodies"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The switch is off at every launch, so a log on disk is one an earlier
+    /// run left behind — created before this rule existed, or by a build that
+    /// did not have it. Opening it must tighten it, not inherit it: a user who
+    /// upgrades does not get a fixed permission bit by deleting a file they do
+    /// not know is there.
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_loose_log_is_tightened_rather_than_inherited() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("vela-debuglog-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("exchanges.jsonl");
+        std::fs::write(&path, "{\"ref\":\"0000000000000001\"}\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let sink = FileSink::new(&path);
+        record_one(&sink, "appended to a log from an earlier run");
+
+        assert_eq!(
+            mode_of(&path),
+            0o600,
+            "a pre-existing log kept its loose mode"
+        );
+        // Tightened, not truncated: the earlier run's entries are still there.
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("0000000000000001"));
+        assert!(written.contains("appended to a log from an earlier run"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

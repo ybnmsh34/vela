@@ -1,10 +1,10 @@
 GATE M Part 1 (Phase B2) — run summary
 =====================================
 
-gate assertions   1443
+gate assertions   1455
 failures          24
 controls          40 (their FAILs are expected)
-wall clock        25.365973583s
+wall clock        25.30000453s
 
 FAILURES:
   frontier / 16-reasoning-x-structured-output / openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER

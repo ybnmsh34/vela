@@ -77,6 +77,17 @@ red_cases() {
   printf '%s\n' "$1" | grep -oE '/ [0-9]{2}[a-z]?-[a-z0-9-]+ /' | tr -d '/ ' | sort -u
 }
 
+# The recorder's OWN controls, as PASS/FAIL lines. Two of B2's injections
+# (DEFECT 4 and DEFECT 7 in the first run) moved the gate count by zero, and the
+# reason in both cases was that what they break is watched by a CONTROL rather
+# than by a gate assertion — and control FAILs are excluded from the gate count
+# by design. Reporting only the gate count therefore called two working
+# experiments "no effect". This is the second channel.
+control_lines() {
+  local file="$scratch/docs/regression-baseline/phase-b2-matrix/ASSERTION-CONTROL.txt"
+  [ -f "$file" ] && grep -E '→ (PASS|FAIL)$' "$file" || true
+}
+
 failure_count() {
   printf '%s\n' "$1" | grep -oE '^failures +[0-9]+' | grep -oE '[0-9]+' | head -1
 }
@@ -114,6 +125,10 @@ record "  This is the tree as committed. FINDING 4 (case 16) is red here and is 
 record "  every block below; a reader attributing a defect to an injection must subtract"
 record "  this line first."
 record ""
+baseline_controls="$scratch/.baseline-controls.txt"
+control_lines >"$baseline_controls"
+record "  recorder control lines captured for comparison: $(wc -l <"$baseline_controls")"
+record ""
 
 # ---------------------------------------------------------------------------
 # experiment <n> <title> <aim> <expected> <sed-script> <file>
@@ -145,10 +160,19 @@ experiment() {
   record "  OBSERVED   gate failures: ${failures:-COMPILE ERROR} (baseline ${baseline_failures:-?})"
   record "  red cases:"
   red_cases "$summary" | sed 's/^/    /' >>"$out"
-  if [ "${failures:-0}" -le "${baseline_failures:-0}" ] 2>/dev/null; then
+  local flipped
+  flipped="$(control_lines | diff "$baseline_controls" - | grep -E '^[<>]' || true)"
+  if [ -n "$flipped" ]; then
+    record "  recorder CONTROL lines that changed:"
+    printf '%s\n' "$flipped" | sed 's/^/    /' >>"$out"
+  else
+    record "  recorder CONTROL lines that changed: none"
+  fi
+  if [ "${failures:-0}" -le "${baseline_failures:-0}" ] 2>/dev/null && [ -z "$flipped" ]; then
     record ""
-    record "  NOTE: this injection did not increase the failure count. Either the assertion"
-    record "  it targets is not load-bearing, or the defect is not the defect it looks like."
+    record "  NOTE: this injection moved NEITHER the gate count NOR any control line. Either"
+    record "  the assertion it targets is not load-bearing, or the defect is not the defect"
+    record "  it looks like. Reported as a gap rather than dropped."
   fi
   record ""
   mv "$file.bak" "$file"

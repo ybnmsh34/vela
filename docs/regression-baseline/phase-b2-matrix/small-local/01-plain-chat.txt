@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- streamed turn — on the wire -------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:41429/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42193/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -48,7 +48,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- non-streamed turn — on the wire ---------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:41429/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42193/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -89,8 +89,8 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   usage                                  TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
   degradations (streamed)                UsageNotReported
   degradations (non-streamed)            (none)
-  streamed wall clock                    3.517329ms
-  non-streamed wall clock                1.24952ms
+  streamed wall clock                    4.205082ms
+  non-streamed wall clock                1.296715ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] the turn produces an answer
@@ -102,7 +102,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] no wire-format remnant reaches the answer
         "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
   [PASS] the turn does not hang (well inside the recorded 5003 ms consumer hang)
-        3.517329ms
+        4.205082ms
 
 ================================================================================
 VERDICT  5 assertion(s), 0 failure(s)

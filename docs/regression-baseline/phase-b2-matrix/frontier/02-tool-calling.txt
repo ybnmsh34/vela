@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- a native tools request --------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:41329/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36845/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -59,7 +59,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   tool calls                             OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
   executable calls                       1
   degradations                           (none)
-  wall clock                             3.224845ms
+  wall clock                             2.517309ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] exactly one executable native call comes back

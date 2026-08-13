@@ -202,23 +202,32 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] google / complete(): no Degradation carries the payload either
         MalformedToolCalls { count: 1 }
 
+---- the SECOND bound — a call salvaged out of deliberation, in answer.rs --
+  salvaged raw_arguments lengths         [401]
+  [PASS] a salvaged call really was produced — this arm reaches `answer::bounded`
+        MALFORMED index=None id=call_emulated_0 name=get_weather reason=RecoveredFromUnterminatedReasoning raw="{\"city\":\"Wm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtW…"
+  [PASS] THE SECOND BOUND HOLDS TOO — a call salvaged out of deliberation is bounded at 401 characters, in answer.rs as well as in tool_accum.rs
+        [401] from a 2000-character payload
+  [PASS] and it is still not executable
+        MALFORMED index=None id=call_emulated_0 name=get_weather reason=RecoveredFromUnterminatedReasoning raw="{\"city\":\"Wm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtW…"
+
 ---- and none of it reaches the error surface, where B2 says nothing may -----
-  openai-compatible error                Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35889", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(545) } })
+  openai-compatible error                Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35581", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(549) } })
   [PASS] openai-compatible: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] openai-compatible: and NOTHING of it is on the error surface — 0 unexplained strings
         []
-  anthropic error                        Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39103", path: "/v1/messages" }), filter: None, correlation: CorrelationId(546) } })
+  anthropic error                        Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46079", path: "/v1/messages" }), filter: None, correlation: CorrelationId(550) } })
   [PASS] anthropic: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] anthropic: and NOTHING of it is on the error surface — 0 unexplained strings
         []
-  google error                           Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43949", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(547) } })
+  google error                           Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33879", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(551) } })
   [PASS] google: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] google: and NOTHING of it is on the error surface — 0 unexplained strings
         []
 
 ================================================================================
-VERDICT  72 assertion(s), 0 failure(s)
+VERDICT  75 assertion(s), 0 failure(s)
 ================================================================================

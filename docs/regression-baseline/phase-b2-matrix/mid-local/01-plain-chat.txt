@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- streamed turn — on the wire -------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:42039/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42339/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -76,7 +76,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- non-streamed turn — on the wire ---------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:42039/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42339/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -117,8 +117,8 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   usage                                  TokenUsage { input_tokens: Some(12), output_tokens: Some(78), reasoning_tokens: None, cached_input_tokens: None }
   degradations (streamed)                (none)
   degradations (non-streamed)            (none)
-  streamed wall clock                    5.029408ms
-  non-streamed wall clock                1.453679ms
+  streamed wall clock                    5.740449ms
+  non-streamed wall clock                1.283701ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] the turn produces an answer
@@ -130,7 +130,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] no wire-format remnant reaches the answer
         "\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
   [PASS] the turn does not hang (well inside the recorded 5003 ms consumer hang)
-        5.029408ms
+        5.740449ms
 
 ================================================================================
 VERDICT  5 assertion(s), 0 failure(s)

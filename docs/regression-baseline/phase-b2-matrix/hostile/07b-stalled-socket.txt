@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the stream (endpoint configured with --chunk-delay 4000, stall budget 800 ms) 
 
-  >>> exchange 1 — POST http://127.0.0.1:41435/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36581/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -25,13 +25,13 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       
 
 ---- what Vela produced ------------------------------------------------------
-  outcome                                Ok(Err(Transport { failure: Stalled, diagnosis: Diagnosis { cause: StreamStalled, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41435", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(418) } }))
-  error                                  Some(Transport { failure: Stalled, diagnosis: Diagnosis { cause: StreamStalled, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41435", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(418) } })
-  WALL CLOCK                             809.570489ms
+  outcome                                Ok(Err(Transport { failure: Stalled, diagnosis: Diagnosis { cause: StreamStalled, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36581", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(421) } }))
+  error                                  Some(Transport { failure: Stalled, diagnosis: Diagnosis { cause: StreamStalled, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36581", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(421) } })
+  WALL CLOCK                             809.215947ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] a stalled socket is abandoned rather than awaited forever
-        809.570489ms
+        809.215947ms
   [PASS] and the abandonment is an explicit error, not an empty success
         Some(true)
 

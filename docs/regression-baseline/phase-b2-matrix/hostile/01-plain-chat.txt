@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- streamed turn — on the wire -------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40109/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42037/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -88,7 +88,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- non-streamed turn — on the wire ---------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40109/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42037/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -129,8 +129,8 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   usage                                  TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
   degradations (streamed)                UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
   degradations (non-streamed)            UnterminatedReasoning { recovered_answer_chars: 166 }
-  streamed wall clock                    5.122782ms
-  non-streamed wall clock                1.36478ms
+  streamed wall clock                    5.812599ms
+  non-streamed wall clock                1.465662ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] the turn produces an answer
@@ -142,7 +142,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] no wire-format remnant reaches the answer
         "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
   [PASS] the turn does not hang (well inside the recorded 5003 ms consumer hang)
-        5.122782ms
+        5.812599ms
 
 ================================================================================
 VERDICT  5 assertion(s), 0 failure(s)

@@ -33,9 +33,10 @@
 //! redaction; the tree already owned `RequestUrl::redacted()` and now uses it.
 //!
 //! [`transport_failures_still_name_the_endpoint_they_failed_on`] pins that, and
-//! [`with_no_credential_configured_nothing_is_redacted_at_all`] is the control
-//! that tells "redacted" apart from "deleted": same endpoint, same message,
-//! `Auth::None`, everything present and verbatim.
+//! [`a_body_answering_a_credential_free_request_is_untouched`] is the control
+//! that tells "redacted" apart from "deleted": same endpoint, no credential in
+//! the request at all, so the seam must be the identity — nothing scrubbed,
+//! nothing held back, the endpoint still named.
 //!
 //! # Controls
 //!

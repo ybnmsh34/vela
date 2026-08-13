@@ -63,10 +63,12 @@
 //!   an error — **no longer exists**. The old shape does not compile.
 //!
 //! Six `compile_fail` doctests on this module pin each of those, and
-//! [`audit_closed_vocabulary`] checks the property from the other end at
-//! runtime: it walks an error's entire serde rendering and fails on any string
-//! that is not either a field name, a code drawn from one of the closed enums,
-//! or one of the two Vela-constructed identifiers.
+//! `tests/typed_closed_error_surface.rs`'s
+//! `no_error_in_the_whole_taxonomy_carries_an_unexplained_string` checks the
+//! property from the other end at runtime: it walks an error's entire serde
+//! rendering and fails on any string that is not either a field name, a code
+//! drawn from one of the closed enums, or one of the two Vela-constructed
+//! identifiers. Its own control is `the_vocabulary_audit_can_detect_a_planted_string`.
 //!
 //! # Honesty (conventions.md §10)
 //!

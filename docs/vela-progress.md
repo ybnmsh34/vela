@@ -421,7 +421,7 @@ and `RESULTS.md`. Regenerate with `bash docs/regression-baseline/phase-b-matrix/
 (Node 22+ on `PATH`; it starts and stops its own servers and exits non-zero, as it should while
 FINDING 1 stands).
 
-The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs` — an **independent**
+The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b2.rs` — an **independent**
 execution, not a re-run of the builders' `tests/mock_matrix_live.rs`: its own wire-tapping
 transport, its own assertions, its own controls. Where the two overlap they agree; the failure
 lives where they do not. Credential *values* are redacted in the transcripts even though every
@@ -1918,6 +1918,40 @@ manufacturing agreement."*
 - **Security PASS**, but: the debug log this wave newly made reachable is created **world-readable**
   — `exchanges.jsonl` 0644, `diagnostics/` 0755, measured with a real probe. Fix to 0600/0700.
 - Renderer reload drops the open conversation.
+
+## CI has never run, and that is deliberate — but it means our green is self-reported
+
+All four checks on PR #1 report **`skipped`**, started and completed in the same second. Not a
+defect: `ci.yml` carries a documented draft guard —
+
+> *"this PR is long-running and accumulates in-flight commits from parallel build agents. A red run
+> on half-written code is noise, not signal. CI stays quiet while the PR is a draft, then gates
+> every push once it is marked ready for review."*
+
+Correct reasoning. But the consequence is worth stating plainly: **every "gate green" claim in this
+project comes from agents running commands locally, never from an independent CI.** I tried to
+`workflow_dispatch` a run to test that; the integration lacks permission (403).
+
+So I checked the next best thing — **does the agents' gate actually match CI's?** If they have
+diverged, local green predicts nothing about the first real CI run, which will hit ~160 accumulated
+commits at once.
+
+| CI step | Result here |
+|---|---|
+| `pnpm install --frozen-lockfile` | ✅ **OK** |
+| `pnpm typecheck` | ✅ OK |
+| `./scripts/secret-scan.test.sh` | ✅ OK |
+| `./scripts/check-transcripts.sh` | ✅ OK |
+
+**The first row is the one that mattered.** Agents run `pnpm install`; CI runs
+`pnpm install --frozen-lockfile`. The typeface builder had just added `@fontsource` dependencies —
+if it had updated `package.json` without committing the matching lockfile, every agent gate would
+stay green and **CI would fail on its first run**, on a step no agent executes. It didn't; the
+lockfile is in step. But that divergence is a live trap for any future dependency, and it is now
+recorded rather than waiting to be discovered.
+
+Two CI steps also appear in no agent gate report I have seen: `secret-scan.test.sh` (the
+meta-control proving the scanner can actually detect a secret) and `--frozen-lockfile`. Both pass.
 
 ## Run incidents
 

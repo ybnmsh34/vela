@@ -166,7 +166,7 @@ pub struct AnswerChannel {
     /// Committed answer text, verbatim as the user saw it. **This is the only
     /// text a tool parser may see** — [`AnswerChannel::executable_text`].
     committed: String,
-    /// Text salvaged at close, held out of `parts` until [`Self::into_parts`]
+    /// Text salvaged at close, held out of `parts` until [`Self::into_answer`]
     /// so a retraction over committed text cannot touch it.
     salvaged: Option<String>,
     /// Whether this turn is emulating tool calls. `stripper` is taken during

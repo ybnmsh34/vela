@@ -72,9 +72,10 @@
 //! * every driven case asserts the failure was real and its detail non-empty,
 //!   so "no leak" can never mean "no error", and the case counter at the end
 //!   asserts the matrix actually ran.
-//! * [`redaction_removes_the_secret_and_not_the_diagnosis`] is the other
-//!   direction: the endpoint's own message must survive an encoded echo, or
-//!   this is a deletion rather than a redaction.
+//! * [`a_diagnosis_survives_even_though_the_endpoints_words_do_not`] is the
+//!   other direction: after an encoded echo the cause, the endpoint and the
+//!   correlation id must all still be there, or this is a deletion rather than
+//!   a redaction.
 //!
 //! # Honesty (conventions.md §10)
 //!
@@ -912,7 +913,7 @@ fn the_two_barriers_are_independent() {
 /// forwards the response otherwise untouched.
 ///
 /// This is not hypothetical: it is the shape of the gate's own recorder
-/// (`examples/gate_m_phase_b.rs`), which copies `response.headers` verbatim
+/// (`examples/gate_m_phase_b2.rs`), which copies `response.headers` verbatim
 /// into a transcript that is committed to `docs/`. It is also the shape a Phase
 /// C diagnostics panel or a bug-report exporter would have. Round 3 left this
 /// surface with **no** chokepoint: bodies were scrubbed, client errors were

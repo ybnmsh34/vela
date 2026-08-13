@@ -27,11 +27,11 @@
 //!
 //! # 2. The premise, per adapter
 //!
-//! `streamed_credential_canary.rs` proves the endpoint really echoed the
-//! credential for **Google/Query** only
-//! (`a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret`). Its
-//! wide matrix counts cases, not echoes, so for the other five adapter/binding
-//! pairs "no leak" and "the endpoint never sent one" are not distinguished.
+//! `streamed_credential_canary.rs` establishes that premise for the **query
+//! binding** only: `the_credential_is_still_on_the_url_that_goes_to_the_socket`
+//! asserts the secret really reaches the wire there. Its wide matrix counts
+//! cases, not echoes, so for the remaining adapter/binding pairs "no leak" and
+//! "the endpoint never sent one" are not distinguished.
 //! [`every_adapter_really_was_echoed_a_credential_and_really_redacted_it`]
 //! closes that: for each of the three adapters it asserts the marker survived
 //! (a diagnosis) *and* `<redacted>` is present (there was a secret to remove)
@@ -482,7 +482,7 @@ async fn a_decorator_that_forwards_nothing_and_lies_about_its_origin_changes_not
         // longer visible from the error, because the error carries nothing the
         // peer wrote. It is asserted from the decorator's own tee in
         // `what_the_decorator_itself_saw`, and from the peer's side in
-        // `every_adapter_really_was_sent_a_credential`. Reading it off Vela's
+        // `every_adapter_really_was_echoed_a_credential_and_really_redacted_it`. Reading it off Vela's
         // rendering was only ever possible because the rendering quoted the
         // peer, which is the thing this round removed.
         assert!(
@@ -538,7 +538,7 @@ async fn every_adapter_really_was_echoed_a_credential_and_really_redacted_it() {
             // Neither can hold now, because neither the message nor the
             // redaction is carried. The premise moved to where it belongs: the
             // peer's own record of what it received, asserted by
-            // `every_adapter_really_was_sent_a_credential` below, which reads
+            // `every_adapter_really_was_echoed_a_credential_and_really_redacted_it` below, which reads
             // the endpoint's side rather than Vela's.
             assert!(
                 !rendered.contains(MARKER),

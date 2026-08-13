@@ -319,7 +319,7 @@ async function main(): Promise<void> {
   process.stdout.write(`transcripts written to ${outputRoot}\n`);
 }
 
-// Run only when invoked directly; `transcripts.test.ts` imports the capture
+// Run only when invoked directly; `record-transcripts.test.ts` imports the capture
 // list to check the committed evidence is still current.
 if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/\\/gu, '/'))) {
   main().catch((error: unknown) => {

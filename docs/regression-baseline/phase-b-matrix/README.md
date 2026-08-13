@@ -122,7 +122,7 @@ re-introduce each defect, and restores it from a backup on every exit path
 including a failure. If it is ever interrupted hard,
 `git checkout src-tauri/crates/vela-providers/src/http.rs` is the recovery.
 
-The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs`. It
+The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b2.rs`. It
 is an example rather than a test on purpose: it writes into `docs/`, and a
 `cargo test` that rewrites the repository would be a trap. It is still compiled
 and linted by `cargo clippy --workspace --all-targets`, so it cannot rot silently.

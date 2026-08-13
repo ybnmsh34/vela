@@ -273,9 +273,16 @@ export interface SettingsProviderRefReq {
 /**
  * These types are the wire form of `vela-providers`' normalised model. They are
  * transcribed, not invented: every one mirrors a `serde` shape in
- * `src-tauri/crates/vela-providers/src/{model,event,error,capability}.rs`, and
- * `src/platform/chat-contract-parity.test.ts` reads those Rust files and fails
- * if a variant is added on one side only.
+ * `src-tauri/crates/vela-providers/src/{model,event,error,capability,diagnostic}.rs`.
+ *
+ * `src/platform/chat-contract-parity.test.ts` holds them to that, in both
+ * directions and with both halves of the gate: it reads those Rust files off
+ * disk and fails `pnpm test` when a Rust variant or field has no twin here, and
+ * it lists every member of each union through a type-level exhaustiveness check
+ * that fails `pnpm typecheck` when a member is added here and nowhere else.
+ * Until that file was written this paragraph claimed an enforcement that had
+ * never existed — the same defect `src-tauri/tests/handler_binding.rs` was
+ * written to close, one file over.
  *
  * Note what is *absent*: no HTTP status, no `finish_reason`, no vendor error
  * string, no backend identity. Six event types cover every backend Vela will

@@ -1,0 +1,92 @@
+.notes,
+.calls {
+  list-style: none;
+  margin: var(--vela-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid var(--vela-border);
+  background: var(--vela-notice-bg);
+  font-size: var(--vela-text-sm);
+  line-height: 1.5;
+}
+
+.note[data-tone='warning'] {
+  background: var(--vela-warning-bg);
+  border-color: var(--vela-warning);
+}
+
+.noteTitle {
+  font-weight: var(--vela-weight-medium);
+  color: var(--vela-text);
+}
+
+.noteDetail {
+  color: var(--vela-text-muted);
+}
+
+.call {
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid var(--vela-border);
+  background: var(--vela-surface);
+  font-size: var(--vela-text-sm);
+}
+
+.call[data-state='malformed'] {
+  border-color: var(--vela-danger);
+  background: var(--vela-danger-bg);
+}
+
+.callName {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  color: var(--vela-text);
+  margin-right: var(--vela-space-2);
+}
+
+.tag {
+  display: inline-block;
+  padding: 0 var(--vela-space-2);
+  border-radius: var(--vela-radius-pill);
+  border: 1px solid var(--vela-border-strong);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-muted);
+  vertical-align: 1px;
+}
+
+.tag[data-state='malformed'] {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}
+
+.reason {
+  margin: var(--vela-space-2) 0 0;
+  color: var(--vela-text-muted);
+  line-height: 1.5;
+}
+
+.args {
+  margin: var(--vela-space-2) 0 0;
+  padding: var(--vela-space-2);
+  overflow-x: auto;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: 1.5;
+  color: var(--vela-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

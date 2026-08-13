@@ -799,41 +799,80 @@ async fn google_leaks_nothing_on_any_forced_failure_header_binding() {
 // Redaction, not deletion
 // ---------------------------------------------------------------------------
 
-/// **The control the gate uses to tell defect 1 from defect 2.**
+/// **The control that used to tell defect 1 from defect 2 — now the sharpest
+/// statement of the redesign there is.**
 ///
-/// The same echoing endpoint, the same message, with `Auth::None`. Nothing is
-/// redacted because nothing is secret: the endpoint's own diagnostic reaches the
-/// error whole, on both transports. A "fix" that dropped the detail instead of
-/// scrubbing it would fail here.
+/// The same echoing endpoint and the same message, driven twice: once with
+/// `Auth::None` and once with a credential in the query string. Under rounds
+/// 1–4 those two produced *different* text, and had to: the first carried the
+/// endpoint's message whole, the second carried it with `<redacted>` spliced
+/// in. Telling them apart was how the gate distinguished under-redaction from
+/// over-redaction.
+///
+/// Under the redesign they are **byte-identical**, because neither carries the
+/// endpoint's message at all. That is a much stronger claim than either of the
+/// old ones, and it is the claim no encoding can defeat: if the rendering does
+/// not vary with what the endpoint sent, the endpoint has no channel.
 #[tokio::test(flavor = "multi_thread")]
-async fn with_no_credential_configured_nothing_is_redacted_at_all() {
+async fn the_rendering_does_not_vary_with_what_the_endpoint_sent() {
     for adapter in [
         Adapter::OpenAiCompatible,
         Adapter::Anthropic,
         Adapter::Google,
     ] {
         let base_url = echo_server(200).await;
-        let provider = build(adapter, Binding::None, &base_url);
-        for (path, error, _) in drive(&provider).await {
+
+        let mut without: Vec<(String, String)> = Vec::new();
+        for (path, error, _) in drive(&build(adapter, Binding::None, &base_url)).await {
             let rendered = error.to_string();
             assert!(
-                rendered.contains(MARKER),
-                "{adapter:?} · {path}: the endpoint's own message must survive \
-                 verbatim when there is no credential to remove — got {rendered}"
+                !rendered.contains(MARKER),
+                "{adapter:?} · {path}: the endpoint's own message reached the \
+                 error surface — got {rendered}"
             );
             assert!(
                 !rendered.contains("<redacted>"),
-                "{adapter:?} · {path}: nothing was secret, so nothing may be \
-                 redacted — got {rendered}"
+                "{adapter:?} · {path}: there is nothing to redact when nothing \
+                 is carried — got {rendered}"
             );
+            without.push((path.to_owned(), strip_correlation(&rendered)));
         }
+
+        let mut with: Vec<(String, String)> = Vec::new();
+        for (path, error, _) in drive(&build(adapter, Binding::Query, &base_url)).await {
+            with.push((path.to_owned(), strip_correlation(&error.to_string())));
+        }
+
+        assert!(!without.is_empty(), "{adapter:?}: nothing was driven");
+        assert_eq!(
+            without, with,
+            "{adapter:?}: the rendering must not depend on whether a credential \
+             was configured — nor, therefore, on what the endpoint echoed"
+        );
+    }
+}
+
+/// Replace the correlation id with a placeholder.
+///
+/// The id is Vela's own monotonic counter and is expected to differ between two
+/// exchanges; everything else in a rendering is expected not to.
+fn strip_correlation(rendered: &str) -> String {
+    match (rendered.find("[ref "), rendered.find(']')) {
+        (Some(start), _) => {
+            let end = rendered[start..].find(']').map(|at| start + at + 1);
+            match end {
+                Some(end) => format!("{}[ref …]{}", &rendered[..start], &rendered[end..]),
+                None => rendered.to_owned(),
+            }
+        }
+        _ => rendered.to_owned(),
     }
 }
 
 /// The positive counterpart: with a credential configured, the **same** message
 /// keeps its diagnosis and loses only the secret.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret() {
+async fn a_diagnosis_without_the_endpoints_words_is_still_actionable() {
     let base_url = echo_server(200).await;
     let provider = build(Adapter::Google, Binding::Query, &base_url);
 
@@ -844,18 +883,21 @@ async fn a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret() {
         .expect_err("the stream carries an error object");
 
     let rendered = error.to_string();
-    assert_no_credential("google · redaction keeps the diagnosis", &error, &sink);
+    assert_no_credential("google · a diagnosis without the endpoint's words", &error, &sink);
     assert!(
-        rendered.contains(MARKER),
-        "the endpoint's diagnosis must survive: {rendered}"
+        !rendered.contains(MARKER),
+        "the endpoint's own words must not reach the error: {rendered}"
+    );
+    // What replaces them: the three things Vela knew without asking the peer.
+    assert_eq!(error.cause(), Some(vela_providers::Cause::EndpointRejectedRequest));
+    let endpoint = error.endpoint().expect("the endpoint must still be named");
+    assert!(
+        endpoint.path().contains("models/canary-model"),
+        "the request target must still be legible: {endpoint}"
     );
     assert!(
-        rendered.contains("<redacted>"),
-        "the redaction must be visible rather than silent: {rendered}"
-    );
-    assert!(
-        rendered.contains("models/canary-model"),
-        "the request target must still be legible: {rendered}"
+        !error.correlation().expect("a correlation id").is_none(),
+        "and the body must be findable in the debug log by reference"
     );
 }
 
@@ -983,17 +1025,27 @@ async fn positive_control_the_pre_fix_streamed_read_leaks() {
     let frame = echoing_sse_frame();
 
     // --- the bug, rebuilt ---------------------------------------------------
+    // The detector is now the **bytes**, not the error. Round 3's property is
+    // "the bytes Vela's parser consumes are already clean", and that is what
+    // this control has to be able to fail — the error surface can no longer
+    // detect it, because under the redesign the error would not carry the
+    // credential even if the bytes did. Measuring the leak where it happens is
+    // the honest instrument; measuring it at a surface that structurally cannot
+    // show it would be a control that always passes.
     let unscrubbed = read_the_pre_fix_way(ScriptedBody::from_text(&frame)).await;
+    assert!(
+        String::from_utf8_lossy(&unscrubbed).contains(CANARY_CORE),
+        "the pre-fix read must leak into the bytes, or the byte-level property \
+         is untested"
+    );
+
+    // --- and the second barrier, which is what the redesign adds ------------
+    // The same leaking bytes, through the real assembler: **nothing** reaches
+    // any surface. The two barriers are independent, and either one alone is
+    // sufficient — which is why a fifth encoding could not have helped an
+    // attacker even if barrier 1 had missed it.
     let (leaked, leaked_sink) = assemble(&unscrubbed);
-    let mut found = Vec::new();
-    for (surface, text) in renderings(&leaked) {
-        assert!(
-            text.contains(CANARY_CORE),
-            "the pre-fix path must leak on {surface}, or that surface is untested: {text}"
-        );
-        found.push(surface);
-    }
-    assert_eq!(found.len(), 3, "all three renderings are controlled");
+    assert_no_credential("bytes that leaked, error that does not", &leaked, &leaked_sink);
     assert!(
         leaked_sink.events.is_empty(),
         "the assembler returns the error rather than emitting it — the provider \
@@ -1005,10 +1057,10 @@ async fn positive_control_the_pre_fix_streamed_read_leaks() {
         error: leaked.clone(),
     };
     assert!(
-        serde_json::to_string(&handed_to_the_ui)
+        !serde_json::to_string(&handed_to_the_ui)
             .expect("StreamEvent serialises")
             .contains(CANARY_CORE),
-        "the pre-fix path must leak into the sink too, or that surface is untested"
+        "the sink the UI reads must be clean even when the bytes were not"
     );
 
     // --- the fix ------------------------------------------------------------
@@ -1020,11 +1072,16 @@ async fn positive_control_the_pre_fix_streamed_read_leaks() {
     while let Some(chunk) = body.next_chunk().await.expect("scripted") {
         scrubbed.extend_from_slice(&chunk);
     }
+    assert!(
+        !String::from_utf8_lossy(&scrubbed).contains(CANARY_CORE),
+        "and barrier 1 alone removes it from the bytes"
+    );
     let (clean, clean_sink) = assemble(&scrubbed);
     assert_no_credential("the same frame through BodyStream", &clean, &clean_sink);
-    assert!(
-        clean.to_string().contains(MARKER),
-        "and the diagnosis survives: {clean}"
+    assert_eq!(
+        clean.cause(),
+        Some(vela_providers::Cause::CredentialRejected),
+        "and the diagnosis survives"
     );
 }
 
@@ -1039,10 +1096,9 @@ async fn positive_control_a_credential_split_across_two_chunks_leaks() {
     let fragmented = || ScriptedBody::fragmented(&frame, 1);
 
     let unscrubbed = read_the_pre_fix_way(fragmented()).await;
-    let (leaked, _) = assemble(&unscrubbed);
     assert!(
-        leaked.to_string().contains(CANARY_CORE),
-        "the control must leak, or the boundary case is untested: {leaked}"
+        String::from_utf8_lossy(&unscrubbed).contains(CANARY_CORE),
+        "the control must leak into the bytes, or the boundary case is untested"
     );
 
     let mut body = BodyStream::new(fragmented(), origin_for_the_echoing_request());
@@ -1059,9 +1115,10 @@ async fn positive_control_a_credential_split_across_two_chunks_leaks() {
     );
     let (clean, clean_sink) = assemble(&scrubbed);
     assert_no_credential("a credential split across chunks", &clean, &clean_sink);
-    assert!(
-        clean.to_string().contains(MARKER),
-        "and the diagnosis survives: {clean}"
+    assert_eq!(
+        clean.cause(),
+        Some(vela_providers::Cause::CredentialRejected),
+        "and the diagnosis survives"
     );
 }
 
@@ -1161,11 +1218,16 @@ async fn a_new_body_that_forwards_nothing_still_cannot_leak_the_credential() {
         bytes.extend_from_slice(&chunk);
     }
 
+    assert!(
+        !String::from_utf8_lossy(&bytes).contains(CANARY_CORE),
+        "barrier 1 holds through two layers of wrapping"
+    );
     let (error, sink) = assemble(&bytes);
     assert_no_credential("a decorator that forwards nothing", &error, &sink);
-    assert!(
-        error.to_string().contains(MARKER),
-        "and the diagnosis still survives two layers of wrapping: {error}"
+    assert_eq!(
+        error.cause(),
+        Some(vela_providers::Cause::CredentialRejected),
+        "and the diagnosis still survives two layers of wrapping"
     );
 }
 

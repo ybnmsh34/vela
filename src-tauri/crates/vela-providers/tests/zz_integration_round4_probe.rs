@@ -42,8 +42,8 @@
 //! # Controls
 //!
 //! Every negative assertion is paired with something that can fail:
-//! [`the_peers_own_diagnosis_survives`] proves this is redaction and not
-//! deletion, and [`the_peer_really_does_encode`] proves the peer leaves no
+//! [`a_usable_diagnosis_survives_without_the_peers_words`] proves this is a
+//! redesign and not a deletion, and [`the_peer_really_does_encode`] proves the peer leaves no
 //! literal copy on the wire — without which the byte-literal pass would be
 //! doing the work and the probe would say nothing about the decode.
 //!
@@ -206,18 +206,23 @@ fn assert_clean(label: &str, error: &ProviderError, sink: &CollectingSink) {
 /// wrong reason: an error that says nothing at all.
 #[track_caller]
 fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
-    let detail = match error {
-        ProviderError::Transport { detail, .. }
-        | ProviderError::MalformedResponse { detail }
-        | ProviderError::AuthFailed { detail }
-        | ProviderError::RateLimited { detail, .. }
-        | ProviderError::ContextLengthExceeded { detail, .. }
-        | ProviderError::ModelNotFound { detail, .. } => detail,
-        other => panic!("{label}: expected an endpoint failure, got {other:?}"),
-    };
+    let diagnosis = error
+        .diagnosis()
+        .unwrap_or_else(|| panic!("{label}: expected an endpoint failure, got {error:?}"));
     assert!(
-        !detail.is_empty(),
-        "{label}: an empty detail would pass every leak assertion vacuously"
+        !diagnosis.cause().message().is_empty(),
+        "{label}: an error with nothing to say would pass every leak assertion vacuously"
+    );
+    // The redesign's own, stronger guard: not "no credential reached the
+    // surface" but "**nothing** the endpoint sent reached the surface". An
+    // assertion about the absence of one spelling can be defeated by another
+    // spelling; this one cannot, because it enumerates what is *allowed* rather
+    // than what is forbidden.
+    let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+    assert!(
+        unexplained.is_empty(),
+        "{label}: the error surface carries text the closed vocabulary does not \
+         explain — {unexplained:?}\n  {error}"
     );
 }
 
@@ -244,24 +249,59 @@ async fn the_compat_adapters_decode_and_reencode_step_does_not_reconstitute_the_
 }
 
 /// The other direction: removing the secret must not remove the diagnosis.
-/// `normalise_error_body` is the step that could quietly drop the whole
-/// message, and a silent drop would satisfy every assertion above.
+///
+/// It used to ask for the *endpoint's* diagnosis to survive, because a silent
+/// drop of the message would have satisfied every leak assertion above and been
+/// the opposite defect. Under the redesign the message is never carried at all,
+/// so the question becomes whether a **usable** diagnosis survives — and the
+/// answer has to come from what Vela knew rather than from what the peer said.
+///
+/// It also proves the message reached Vela and was kept, by reading the local
+/// debug log back. Absent that, "nothing leaked" would be indistinguishable
+/// from "nothing arrived".
 #[tokio::test]
-async fn the_peers_own_diagnosis_survives() {
+async fn a_usable_diagnosis_survives_without_the_peers_words() {
+    let log = Arc::new(vela_providers::debuglog::MemorySink::new());
+    vela_providers::debuglog::enable(log.clone());
     let base_url = vllm_style_echo_peer().await;
     let provider = build(&base_url);
     let error = provider
         .complete(turn(), &context())
         .await
         .expect_err("the peer rejects the credential on purpose");
+    vela_providers::debuglog::disable();
+
     let rendered = error.to_string();
     assert!(
-        rendered.contains(MARKER),
-        "the endpoint's own diagnosis was deleted rather than redacted: {rendered}"
+        !rendered.contains(MARKER),
+        "the endpoint's own words reached the surface: {rendered}"
     );
     assert!(
-        rendered.contains("<redacted>"),
-        "the redaction marker must be there, or the body was merely empty: {rendered}"
+        !rendered.contains("<redacted>"),
+        "there is nothing to redact when nothing is carried: {rendered}"
+    );
+    assert_eq!(
+        error.cause(),
+        Some(vela_providers::Cause::EndpointRejectedRequest),
+        "the classification must survive: {rendered}"
+    );
+    let endpoint = error.endpoint().expect("the endpoint must be named");
+    assert_eq!(endpoint.path(), "/v1/chat/completions");
+
+    let correlation = error.correlation().expect("a correlation id");
+    let filed = log
+        .body_for(correlation)
+        .unwrap_or_else(|| panic!("nothing was filed under {correlation}"));
+    let decoded = serde_json::from_str::<serde_json::Value>(&filed)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| filed.clone());
+    assert!(
+        filed.contains(MARKER) || decoded.contains(MARKER),
+        "the peer's message never reached Vela, so nothing was tested: {filed}"
+    );
+    assert!(
+        !filed.contains(CANARY_CORE) && !decoded.contains(CANARY_CORE),
+        "and the debug log is still not a place to write the user's key: {filed}"
     );
 }
 

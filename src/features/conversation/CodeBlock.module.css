@@ -1,0 +1,72 @@
+.block {
+  margin: var(--vela-space-4) 0;
+  border: 1px solid var(--vela-code-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-code-bg);
+  overflow: hidden;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-2) var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-code-surface);
+  border-bottom: 1px solid var(--vela-code-border);
+}
+
+.language {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-syntax-comment);
+  letter-spacing: 0.02em;
+}
+
+.pending {
+  font-size: var(--vela-text-xs);
+  color: var(--vela-syntax-comment);
+  font-style: italic;
+}
+
+.bar > :last-child {
+  margin-left: auto;
+}
+
+/* The one place horizontal scrolling is allowed: inside its own container, so
+   a wide line never makes the page itself scroll sideways. */
+.pre {
+  margin: 0;
+  padding: var(--vela-space-3);
+  overflow-x: auto;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-sm);
+  line-height: 1.55;
+  color: var(--vela-code-text);
+  tab-size: 2;
+}
+
+.pre code {
+  font: inherit;
+  white-space: pre;
+}
+
+.comment {
+  color: var(--vela-syntax-comment);
+  font-style: italic;
+}
+
+.string {
+  color: var(--vela-syntax-string);
+}
+
+.number {
+  color: var(--vela-syntax-number);
+}
+
+.keyword {
+  color: var(--vela-syntax-keyword);
+}
+
+.punct {
+  color: var(--vela-syntax-punct);
+}

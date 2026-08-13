@@ -1,0 +1,36 @@
+.surface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--vela-bg);
+}
+
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Keeps the last turn from being glued to the composer as it grows. */
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+}
+
+/* `flex: 1` rather than `min-height: 100%`: it makes the column fill a short
+   transcript so the empty state can centre itself in the viewport, while a long
+   one still grows and scrolls normally. */
+.column {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--vela-measure);
+  margin: 0 auto;
+  padding: var(--vela-space-5) var(--vela-space-5) var(--vela-space-6);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+}

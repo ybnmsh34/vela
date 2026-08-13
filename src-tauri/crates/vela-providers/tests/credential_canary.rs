@@ -58,6 +58,7 @@ use tokio::net::TcpListener;
 use vela_core::credential::Auth;
 use vela_core::provider::{ProviderDescriptor, ProviderKind};
 use vela_core::secret::{SecretRef, SecretValue};
+use vela_providers::diagnostic::{Cause, Diagnosis, EndpointIdentity};
 use vela_providers::error::TransportFailure;
 use vela_providers::event::CollectingSink;
 use vela_providers::google::GoogleProvider;
@@ -125,23 +126,30 @@ fn assert_no_credential_in_the_error(label: &str, error: &ProviderError) {
 /// pass for the wrong reason: an error that says nothing at all.
 #[track_caller]
 fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
-    let detail = match error {
-        ProviderError::Transport { failure, detail } => {
-            assert!(
-                matches!(
-                    failure,
-                    TransportFailure::Connect | TransportFailure::Timeout | TransportFailure::Reset
-                ),
-                "{label}: expected a transport-level failure, got {failure:?}"
-            );
-            detail
-        }
-        ProviderError::MalformedResponse { detail } => detail,
+    match error {
+        ProviderError::Transport { failure, .. } => assert!(
+            matches!(
+                failure,
+                TransportFailure::Connect | TransportFailure::Timeout | TransportFailure::Reset
+            ),
+            "{label}: expected a transport-level failure, got {failure:?}"
+        ),
+        ProviderError::MalformedResponse { .. } => {}
         other => panic!("{label}: expected a transport failure, got {other:?}"),
-    };
+    }
+    let diagnosis = error.diagnosis().expect("a transport failure has a diagnosis");
     assert!(
-        !detail.is_empty(),
-        "{label}: an empty detail would pass every leak assertion vacuously"
+        !diagnosis.cause().message().is_empty(),
+        "{label}: an error with nothing to say would pass every leak assertion vacuously"
+    );
+    // Round 1's file, strengthened by the redesign rather than retired: the
+    // question is no longer "did the credential get through" but "did anything
+    // the endpoint chose get through".
+    let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+    assert!(
+        unexplained.is_empty(),
+        "{label}: the error surface carries text the closed vocabulary does not \
+         explain — {unexplained:?}\n  {error}"
     );
 }
 
@@ -380,11 +388,21 @@ async fn the_credential_is_still_on_the_url_that_goes_to_the_socket() {
 
 /// **POSITIVE CONTROL.** The detector must be able to fail.
 ///
-/// This rebuilds the pre-fix error by hand: `reqwest`'s `Display` for a send
-/// failure is `"error sending request"` followed by `" for url ({url})"`, and
-/// the old `map_reqwest_error` passed exactly that through `detail()` into
-/// `ProviderError::Transport`. If this test ever stops finding the canary, the
-/// searches in every other test here are looking for the wrong thing.
+/// # This control changed shape, and the reason is the whole point
+///
+/// It used to build the pre-fix error by hand — `reqwest`'s `Display` for a
+/// send failure is `"error sending request for url ({url})"`, and the old
+/// `map_reqwest_error` passed exactly that through `detail()` into
+/// `ProviderError::Transport` — and then assert the canary was found on every
+/// rendering.
+///
+/// **That error can no longer be constructed.** `ProviderError::transport` no
+/// longer accepts a string of any kind, and `error::detail` no longer exists;
+/// the old call does not compile, which `diagnostic::Diagnosis`'s `compile_fail`
+/// doctests pin. So the control does the next most useful thing: it proves the
+/// *detector* still works, by pointing it at the leaking text itself. If the
+/// needles ever stop matching that string, every negative assertion in this
+/// file is looking for the wrong thing.
 #[test]
 fn the_detector_catches_the_leak_this_file_exists_for() {
     let url = RequestUrl::new(
@@ -392,28 +410,25 @@ fn the_detector_catches_the_leak_this_file_exists_for() {
     )
     .with_query_credential("key", &SecretValue::new(CANARY));
 
-    let leaked = ProviderError::transport(
-        TransportFailure::Connect,
-        // Verbatim the shape reqwest 0.12.28 produces, with the live URL.
-        format!("error sending request for url ({})", url.expose()),
+    // Verbatim the shape reqwest 0.12.28 produces, with the live URL — the text
+    // that used to become a `detail`.
+    let leaking_text = format!("error sending request for url ({})", url.expose());
+    let matched: Vec<String> = needles()
+        .into_iter()
+        .filter(|needle| leaking_text.contains(needle))
+        .collect();
+    assert!(
+        !matched.is_empty(),
+        "the detector no longer recognises the leak it exists for: {leaking_text}"
     );
-
-    let (surface, needle, _) = found_canary(&leaked)
-        .expect("the pre-fix error leaks the credential — if it does not, this detector is broken");
-    assert_eq!(surface, "Display", "the first surface checked");
-    assert!(needles().contains(&needle));
-
-    // And it is caught on every surface independently, not just the first.
-    for (surface, text) in renderings(&leaked) {
-        assert!(
-            text.contains(CANARY_CORE),
-            "the control must leak on {surface} too, or that surface is untested"
-        );
-    }
+    assert!(
+        leaking_text.contains(CANARY_CORE),
+        "and it recognises the partial form too"
+    );
 }
 
-/// The other half of the control: the same rendering, built the way the fixed
-/// code builds it, is clean. Same URL, same failure, same error type.
+/// The other half of the control: the same failure, built the way the fixed
+/// code builds it. Same URL, same failure, same error type.
 #[test]
 fn the_same_failure_built_through_the_choke_point_is_clean() {
     let url = RequestUrl::new(
@@ -421,16 +436,24 @@ fn the_same_failure_built_through_the_choke_point_is_clean() {
     )
     .with_query_credential("key", &SecretValue::new(CANARY));
 
-    let scrubbed = url
-        .scrubber()
-        .scrub(format!("error sending request for url ({})", url.expose()));
-    let error = ProviderError::transport(TransportFailure::Connect, scrubbed);
-
-    assert_no_credential_in_the_error("scrubbed transport failure", &error);
-    assert!(
-        error.to_string().contains("<redacted>"),
-        "the redaction must be visible, not silent: {error}"
+    let error = ProviderError::transport(
+        TransportFailure::Connect,
+        Diagnosis::new(Cause::ConnectionFailed).at(EndpointIdentity::of(&url)),
     );
+
+    assert_no_credential_in_the_error("a transport failure through the chokepoint", &error);
+    // Rounds 1–4 asserted `<redacted>` was visible here, because the endpoint
+    // was a redacted URL string and a URL that had lost its query would have
+    // been a deletion. `EndpointIdentity` drops the query whole, so there is
+    // nothing to redact — and the two parts that distinguish one configured
+    // candidate from another are both still present.
+    let endpoint = error.endpoint().expect("the endpoint is still named");
+    assert_eq!(
+        endpoint.authority(),
+        "https://generativelanguage.googleapis.com"
+    );
+    assert_eq!(endpoint.path(), "/v1beta/models/m:generateContent");
+    assert!(!error.to_string().contains("<redacted>"));
 }
 
 /// **The structural guarantee, enforced against the tree rather than narrated.**

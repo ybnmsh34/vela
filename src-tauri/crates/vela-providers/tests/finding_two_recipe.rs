@@ -256,11 +256,20 @@ async fn part_2b_anthropic_with_a_header_key() {
     assert_no_canary("part 2b", &error, &sink);
 }
 
-/// **Part 3 — the positive control.** The identical path with `Auth::None`. The
-/// error must still carry the endpoint's own message, so the fix is a redaction
-/// and not a blanket "drop the detail".
+/// **Part 3 — the positive control, restated for the redesign.**
+///
+/// The identical path with `Auth::None`. Round 3 asked for the endpoint's own
+/// message to survive here, because the fix under test was a *redaction* and a
+/// redaction that deleted the message would have been the opposite defect.
+///
+/// The fix under test is no longer a redaction. So what this control asks for
+/// changed with it: nothing the endpoint wrote survives — not even when there
+/// is no credential to remove and no reason to suspect it — and what survives
+/// instead is the request target, which Vela knew before it sent anything.
+/// That is the distinction between "the diagnosis was dropped" and "the
+/// endpoint's words were never carried", and it is the one the gate needs.
 #[tokio::test(flavor = "multi_thread")]
-async fn part_3_auth_none_keeps_the_endpoints_message() {
+async fn part_3_auth_none_still_names_the_endpoint_without_quoting_it() {
     let base = echoing_stream().await;
     let secrets: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
     let provider: Arc<dyn Provider> = Arc::new(OpenAiCompatibleProvider::new(
@@ -276,15 +285,21 @@ async fn part_3_auth_none_keeps_the_endpoints_message() {
 
     let rendered = error.to_string();
     assert!(
-        rendered.contains(MARKER),
-        "the endpoint's own message must survive when nothing is secret: {rendered}"
+        !rendered.contains(MARKER),
+        "the endpoint's own message must not be carried even when nothing is \
+         secret — a channel that is open on the safe path is an open channel: \
+         {rendered}"
     );
     assert!(
         rendered.contains("/v1/chat/completions"),
-        "and so must the request target it quoted: {rendered}"
+        "but the request target must survive, because Vela built it: {rendered}"
     );
     assert!(
         !rendered.contains("<redacted>"),
         "nothing was secret, so nothing may be redacted: {rendered}"
+    );
+    assert!(
+        vela_providers::diagnostic::unexplained_in_error(&error).is_empty(),
+        "and nothing at all on the surface is endpoint-derived: {error}"
     );
 }

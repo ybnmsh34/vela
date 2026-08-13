@@ -1,0 +1,100 @@
+.block {
+  margin: 0 0 var(--vela-space-3);
+  border: 1px solid var(--vela-thinking-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-thinking-bg);
+}
+
+.headingReset {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  width: 100%;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  color: var(--vela-thinking-text);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--vela-radius-md);
+}
+
+.toggle:hover {
+  color: var(--vela-text);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -2px;
+}
+
+.chevron {
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentcolor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--vela-duration) var(--vela-ease);
+}
+
+.chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.summary {
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: 0.01em;
+}
+
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-accent);
+  animation: pulse 1.4s var(--vela-ease) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+.body {
+  padding: 0 var(--vela-space-3) var(--vela-space-3);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  line-height: 1.6;
+  color: var(--vela-thinking-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xs);
+  line-height: 1.5;
+  color: var(--vela-warning);
+}

@@ -442,15 +442,53 @@ async fn a_decorator_that_forwards_nothing_and_lies_about_its_origin_changes_not
         let label = format!("{adapter:?} · laundered");
         assert_every_surface_is_clean(&label, &laundered_error, &laundered_sink);
         assert_every_surface_is_clean(&format!("{adapter:?} · plain"), &plain_error, &plain_sink);
+        // Round 3 compared the two renderings for string equality. Under the
+        // redesign that is *almost* right and one field off: an origin that
+        // claims `carries_no_credential()` also claims to know no endpoint, so
+        // the laundered error legitimately loses its `[endpoint …]`. That is a
+        // diagnostics degradation the decorator asked for, not a leak — and the
+        // claim this probe exists to make is about what became *readable*.
+        //
+        // So both halves are asserted, separately and more strongly: the two
+        // errors agree on everything the decorator could not have invented, and
+        // neither carries a single string the closed vocabulary does not
+        // explain.
         assert_eq!(
-            laundered_error.to_string(),
-            plain_error.to_string(),
-            "{label}: the decorator changed the outcome, which means it \
-             changed what was readable"
+            laundered_error.cause(),
+            plain_error.cause(),
+            "{label}: the decorator changed the classification"
+        );
+        assert_eq!(
+            laundered_error.code(),
+            plain_error.code(),
+            "{label}: the decorator changed the taxonomy variant"
+        );
+        for (which, error) in [("laundered", &laundered_error), ("plain", &plain_error)] {
+            let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+            assert!(
+                unexplained.is_empty(),
+                "{label}/{which}: endpoint-derived text on the surface: {unexplained:?}"
+            );
+        }
+        assert!(
+            laundered_error.endpoint().is_none(),
+            "{label}: an origin that claims to know no endpoint must not produce one"
         );
         assert!(
-            laundered_error.to_string().contains("<redacted>"),
-            "{label}: THE PREMISE — a credential was echoed and removed: {laundered_error}"
+            plain_error.endpoint().is_some(),
+            "{label}: and the undecorated path must still name it"
+        );
+        // The premise — that a credential was actually echoed back — is no
+        // longer visible from the error, because the error carries nothing the
+        // peer wrote. It is asserted from the decorator's own tee in
+        // `what_the_decorator_itself_saw`, and from the peer's side in
+        // `every_adapter_really_was_sent_a_credential`. Reading it off Vela's
+        // rendering was only ever possible because the rendering quoted the
+        // peer, which is the thing this round removed.
+        assert!(
+            !saw.lock().expect("not poisoned").is_empty(),
+            "{label}: THE PREMISE — the decorator saw no bytes at all, so \
+             nothing was exercised"
         );
         checked += 1;
     }
@@ -492,14 +530,23 @@ async fn every_adapter_really_was_echoed_a_credential_and_really_redacted_it() {
             let rendered = error.to_string();
             let empty = CollectingSink::new();
             assert_every_surface_is_clean(&label, error, sink.unwrap_or(&empty));
+            // Round 3 asserted the endpoint's message survived and carried a
+            // visible `<redacted>`, the second being THE PREMISE — without it
+            // the endpoint might simply never have been sent a credential, and
+            // every leak assertion would be vacuous.
+            //
+            // Neither can hold now, because neither the message nor the
+            // redaction is carried. The premise moved to where it belongs: the
+            // peer's own record of what it received, asserted by
+            // `every_adapter_really_was_sent_a_credential` below, which reads
+            // the endpoint's side rather than Vela's.
             assert!(
-                rendered.contains(MARKER),
-                "{label}: the endpoint's diagnosis must survive redaction: {rendered}"
+                !rendered.contains(MARKER),
+                "{label}: the endpoint's own words reached the surface: {rendered}"
             );
             assert!(
-                rendered.contains("<redacted>"),
-                "{label}: THE PREMISE — without this the endpoint may simply \
-                 never have been sent a credential: {rendered}"
+                error.cause().is_some() && error.endpoint().is_some(),
+                "{label}: and the diagnosis Vela owns must still be there: {rendered}"
             );
             checked += 1;
         }
@@ -551,9 +598,18 @@ async fn three_configured_candidates_produce_three_distinguishable_errors() {
             "the error must name the candidate that failed: {message:?} \
              (looking for {authority:?})"
         );
+        // Round 3 required `<redacted>` here, because the endpoint was a
+        // redacted URL string and a URL that had lost its query would have been
+        // a deletion. `EndpointIdentity` drops the query whole, so there is
+        // nothing to redact — and the two parts that tell candidates apart, the
+        // authority and the path, are both asserted present.
         assert!(
-            message.contains("<redacted>"),
-            "the key must be redacted IN the named URL, not absent from it: {message}"
+            !message.contains("<redacted>") && !message.contains('?'),
+            "the query string is dropped rather than redacted: {message}"
+        );
+        assert!(
+            message.contains("/v1/chat/completions"),
+            "and the request target survives: {message}"
         );
         assert_clean("three candidates", "Display", message);
     }

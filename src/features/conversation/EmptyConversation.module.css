@@ -1,0 +1,75 @@
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--vela-space-7) 0;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-accent-quiet);
+  color: var(--vela-accent);
+  margin-bottom: var(--vela-space-5);
+}
+
+.title {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xl);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: -0.02em;
+  color: var(--vela-text);
+}
+
+.lede {
+  margin: 0 0 var(--vela-space-6);
+  max-width: 40rem;
+  font-size: var(--vela-text-base);
+  line-height: 1.6;
+  color: var(--vela-text-muted);
+}
+
+.capabilities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--vela-space-2) var(--vela-space-5);
+  width: 100%;
+}
+
+.capability {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-subtle);
+}
+
+.capability[data-available='true'] {
+  color: var(--vela-text);
+}
+
+.tick {
+  width: 1em;
+  color: var(--vela-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.capability[data-available='true'] .tick {
+  color: var(--vela-accent);
+}
+
+.note {
+  margin: var(--vela-space-5) 0 0;
+  max-width: 40rem;
+  font-size: var(--vela-text-sm);
+  line-height: 1.6;
+  color: var(--vela-text-subtle);
+}

@@ -757,7 +757,21 @@ async fn no_fixture_ever_leaks_backend_vocabulary_into_an_error_or_a_degradation
             replay(&fixture(name), 7, ask("hello").with_tools([weather_tool()])).await;
         let rendered = match &response {
             Ok(response) => serde_json::to_string(&response.degradations).unwrap(),
-            Err(error) => format!("{error}"),
+            Err(error) => {
+                // The endpoint *identity* is excluded from this scan, and only
+                // it. It is the URL the user typed into their own settings —
+                // `…/models/gemini-fixture` here — so it necessarily contains
+                // whatever vendor and model name they configured, and hiding it
+                // from them would defeat the one diagnostic a user with three
+                // candidates actually needs. §0.3 is about this API's *wire*
+                // vocabulary reaching the UI, which is what everything else in
+                // the rendering is checked for.
+                let rendered = format!("{error}");
+                match error.endpoint() {
+                    Some(endpoint) => rendered.replace(&endpoint.to_string(), "<endpoint>"),
+                    None => rendered,
+                }
+            }
         };
         for token in FORBIDDEN {
             assert!(

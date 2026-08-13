@@ -1,0 +1,168 @@
+.turn {
+  padding: var(--vela-space-5) 0;
+}
+
+.turn[data-role='assistant'] + .turn[data-role='user'],
+.turn[data-role='user'] + .turn[data-role='assistant'] {
+  border-top: 1px solid var(--vela-turn-rule);
+}
+
+/* The user's own words: contained, quieter, and never re-flowed as markdown —
+   what you typed is what you see. */
+.userBody {
+  display: inline-block;
+  max-width: 100%;
+  padding: var(--vela-space-3) var(--vela-space-4);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-turn-user-bg);
+  border: 1px solid var(--vela-turn-user-border);
+}
+
+.userText {
+  margin: 0;
+  font-size: var(--vela-text-base);
+  line-height: 1.6;
+  color: var(--vela-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.awaiting {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-subtle);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--vela-radius-pill);
+  background: currentcolor;
+  animation: bounce 1.1s var(--vela-ease) infinite;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.noAnswer {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-muted);
+  font-style: italic;
+}
+
+.error {
+  margin-top: var(--vela-space-3);
+  padding: var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid var(--vela-danger);
+  background: var(--vela-danger-bg);
+}
+
+/* Stopping is something the user did. It must not look like a fault. */
+.error[data-kind='stopped'] {
+  border-color: var(--vela-border);
+  background: var(--vela-notice-bg);
+}
+
+.errorTitle {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  color: var(--vela-text);
+}
+
+.errorDetail {
+  margin: var(--vela-space-1) 0 0;
+  font-size: var(--vela-text-sm);
+  line-height: 1.5;
+  color: var(--vela-text-muted);
+}
+
+.errorTrace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-3);
+  margin: var(--vela-space-2) 0 0;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  overflow-wrap: anywhere;
+}
+
+.retry {
+  margin-top: var(--vela-space-3);
+  appearance: none;
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  padding: var(--vela-space-1) var(--vela-space-3);
+  border-radius: var(--vela-radius-sm);
+  border: 1px solid var(--vela-border-strong);
+  background: var(--vela-surface);
+  color: var(--vela-text);
+  cursor: pointer;
+}
+
+.retry:hover {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 2px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  margin-top: var(--vela-space-3);
+  min-height: 22px;
+  opacity: 0;
+  transition: opacity var(--vela-duration) var(--vela-ease);
+}
+
+/* Revealed on hover or on keyboard focus — never on hover alone, which would
+   make the copy button unreachable without a pointer. */
+.turn:hover .footer,
+.turn:focus-within .footer {
+  opacity: 1;
+}
+
+.usage {
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  font-variant-numeric: tabular-nums;
+}

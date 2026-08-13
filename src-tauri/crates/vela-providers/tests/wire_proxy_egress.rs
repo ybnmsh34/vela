@@ -446,10 +446,10 @@ impl HttpTransport for NoNoProxyTransport {
         if let Some(body) = request.body {
             builder = builder.body(body);
         }
-        let response = builder.send().await.map_err(|error| {
+        let response = builder.send().await.map_err(|_| {
             TransportError::new(
                 TransportFailure::Reset,
-                origin.scrubber().scrub(error.without_url().to_string()),
+                origin.diagnose(vela_providers::Cause::ConnectionReset),
             )
         })?;
         let status = response.status().as_u16();
@@ -483,9 +483,9 @@ impl ByteStream for ControlBody {
         match self.response.chunk().await {
             Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
             Ok(None) => Ok(None),
-            Err(error) => Err(TransportError::new(
+            Err(_) => Err(TransportError::new(
                 TransportFailure::Reset,
-                error.without_url().to_string(),
+                vela_providers::Cause::ConnectionReset,
             )),
         }
     }

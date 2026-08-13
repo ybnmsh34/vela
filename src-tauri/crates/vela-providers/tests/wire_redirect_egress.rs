@@ -510,7 +510,18 @@ fn assert_third_party_untouched(label: &str, third_party: &Recorder, redirector:
 }
 
 #[track_caller]
-fn assert_error_names_both_authorities(
+/// The process-wide debug log these tests read back through. Installed once.
+fn debug_log() -> &'static Arc<vela_providers::debuglog::MemorySink> {
+    static LOG: std::sync::OnceLock<Arc<vela_providers::debuglog::MemorySink>> =
+        std::sync::OnceLock::new();
+    LOG.get_or_init(|| {
+        let sink = Arc::new(vela_providers::debuglog::MemorySink::new());
+        vela_providers::debuglog::enable(sink.clone());
+        sink
+    })
+}
+
+fn assert_the_error_names_the_endpoint_and_files_the_destination(
     label: &str,
     error: &ProviderError,
     redirector: &Recorder,
@@ -525,12 +536,29 @@ fn assert_error_names_both_authorities(
             text.contains(&redirector.url),
             "{label}: {surface} does not say which endpoint redirected: {text}"
         );
+        // The *destination* is a host the endpoint named in a `Location`
+        // header — endpoint-chosen text, and therefore the one thing this
+        // redesign does not carry. Rounds 3–4 put it on every surface. It is
+        // still recorded, in the local debug log, keyed by the ref the error
+        // shows the user; what they are told without opening it is that the
+        // endpoint they configured tried to send the request elsewhere and Vela
+        // refused, which is the actionable half.
         assert!(
-            text.contains(&third_party.url),
-            "{label}: {surface} does not say where it was pointed: {text}"
+            !text.contains(&third_party.url),
+            "{label}: {surface} carries a host the endpoint chose: {text}"
         );
         assert_no_canary_anywhere(&format!("{label}/{surface}"), &text);
     }
+    let correlation = error.correlation().expect("a refused redirect is correlated");
+    let filed = debug_log()
+        .body_for(correlation)
+        .unwrap_or_else(|| panic!("{label}: nothing was filed under {correlation}"));
+    assert!(
+        filed.contains(&third_party.url),
+        "{label}: where it pointed must still be recoverable from the debug log, \
+         or the diagnosis really was deleted — got {filed}"
+    );
+    assert_no_canary_anywhere(&format!("{label}/debug log"), &filed);
     assert!(
         matches!(
             error,
@@ -556,6 +584,7 @@ fn assert_error_names_both_authorities(
 /// configured authority reaches the third party with nothing at all.
 #[tokio::test]
 async fn no_redirect_carries_a_request_or_a_credential_off_the_configured_authority() {
+    debug_log();
     for binding in Binding::ALL {
         for call in Call::BOTH {
             let label = format!("{} · {}", binding.label(), call.label());
@@ -588,7 +617,7 @@ async fn no_redirect_carries_a_request_or_a_credential_off_the_configured_author
             // ordering makes the red message the third party's own transcript.
             assert_third_party_untouched(&label, &third_party, &redirector);
             let error = outcome.expect_err("a redirect off the configured authority is refused");
-            assert_error_names_both_authorities(&label, &error, &redirector, &third_party);
+            assert_the_error_names_the_endpoint_and_files_the_destination(&label, &error, &redirector, &third_party);
         }
     }
 }
@@ -684,6 +713,7 @@ async fn a_same_authority_redirect_is_still_followed() {
 /// is a claim, and this is the measurement.
 #[tokio::test]
 async fn a_protocol_relative_location_is_not_a_way_around_the_authority_check() {
+    debug_log();
     let third_party = Recorder::third_party().await;
     // `http://127.0.0.1:PORT` → `//127.0.0.1:PORT`.
     let scheme_less = third_party
@@ -704,7 +734,7 @@ async fn a_protocol_relative_location_is_not_a_way_around_the_authority_check() 
 
     assert_third_party_untouched("protocol-relative", &third_party, &redirector);
     let error = outcome.expect_err("a scheme-less Location off the authority is still off it");
-    assert_error_names_both_authorities("protocol-relative", &error, &redirector, &third_party);
+    assert_the_error_names_the_endpoint_and_files_the_destination("protocol-relative", &error, &redirector, &third_party);
 }
 
 /// **Laundering through a legitimate hop.** The configured endpoint redirects to
@@ -719,6 +749,7 @@ async fn a_protocol_relative_location_is_not_a_way_around_the_authority_check() 
 /// so the allowance cannot be used as a stepping stone.
 #[tokio::test]
 async fn a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one() {
+    debug_log();
     let third_party = Recorder::third_party().await;
     let redirector = Recorder::start(Reply::RelocateThenAway {
         status: 302,
@@ -741,7 +772,7 @@ async fn a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one() 
         redirector.targets()
     );
     let error = outcome.expect_err("the second hop leaves the configured authority");
-    assert_error_names_both_authorities("laundered", &error, &redirector, &third_party);
+    assert_the_error_names_the_endpoint_and_files_the_destination("laundered", &error, &redirector, &third_party);
 }
 
 /// A same-authority redirect that never stops is a loop, and `Policy::custom`
@@ -820,10 +851,10 @@ impl HttpTransport for PreFixTransport {
         if let Some(body) = request.body {
             builder = builder.body(body);
         }
-        let response = builder.send().await.map_err(|error| {
+        let response = builder.send().await.map_err(|_| {
             TransportError::new(
                 TransportFailure::Reset,
-                origin.scrubber().scrub(error.without_url().to_string()),
+                origin.diagnose(vela_providers::Cause::ConnectionReset),
             )
         })?;
         let status = response.status().as_u16();
@@ -856,9 +887,9 @@ impl ByteStream for ControlBody {
         match self.response.chunk().await {
             Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
             Ok(None) => Ok(None),
-            Err(error) => Err(TransportError::new(
+            Err(_) => Err(TransportError::new(
                 TransportFailure::Reset,
-                error.without_url().to_string(),
+                vela_providers::Cause::ConnectionReset,
             )),
         }
     }

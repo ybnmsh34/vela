@@ -1,0 +1,157 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) var(--vela-space-5) var(--vela-space-4);
+  background: var(--vela-bg);
+  border-top: 1px solid var(--vela-border);
+}
+
+.field {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vela-space-2);
+  width: 100%;
+  max-width: var(--vela-measure);
+  margin: 0 auto;
+  padding: var(--vela-space-2) var(--vela-space-2) var(--vela-space-2) var(--vela-space-3);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-surface-raised);
+  box-shadow: var(--vela-shadow-sm);
+  transition: border-color var(--vela-duration) var(--vela-ease);
+}
+
+.field:focus-within {
+  border-color: var(--vela-accent);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--vela-text-base);
+  line-height: 1.55;
+  color: var(--vela-text);
+  padding: var(--vela-space-1) 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.input::placeholder {
+  color: var(--vela-text-subtle);
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-1);
+  flex: 0 0 auto;
+}
+
+.send,
+.stop {
+  appearance: none;
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--vela-duration) var(--vela-ease),
+    color var(--vela-duration) var(--vela-ease);
+}
+
+.send {
+  background: var(--vela-accent);
+  color: var(--vela-text-on-accent);
+}
+
+.send:hover:not(:disabled) {
+  background: var(--vela-accent-hover);
+}
+
+.send:disabled {
+  background: var(--vela-bg-inset);
+  color: var(--vela-text-subtle);
+  cursor: not-allowed;
+}
+
+.stop {
+  background: var(--vela-surface);
+  border-color: var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.stop:hover {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}
+
+.send:focus-visible,
+.stop:focus-visible,
+.iconButton:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 2px;
+}
+
+.iconButton {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vela-radius-md);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vela-text-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--vela-text);
+  background: var(--vela-bg-inset);
+}
+
+.hint {
+  margin: 0 auto;
+  width: 100%;
+  max-width: var(--vela-measure);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+.hint kbd {
+  font-family: var(--vela-font-mono);
+  font-size: 0.95em;
+  padding: 0 0.3em;
+  border: 1px solid var(--vela-border);
+  border-bottom-width: 2px;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

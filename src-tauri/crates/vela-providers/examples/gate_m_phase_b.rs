@@ -228,7 +228,7 @@ impl HttpTransport for RecordingTransport {
                     url,
                     request_headers,
                     request_body,
-                    outcome: WireOutcome::Failed(format!("{:?}: {}", error.failure, error.detail)),
+                    outcome: WireOutcome::Failed(format!("{:?}: {}", error.failure, error.diagnosis)),
                 });
                 Err(error)
             }
@@ -262,7 +262,7 @@ impl ByteStream for Tee {
             Err(error) => self.sink.lock().expect("poisoned").extend_from_slice(
                 format!(
                     "\n<<< body read failed: {:?} {} >>>\n",
-                    error.failure, error.detail
+                    error.failure, error.diagnosis
                 )
                 .as_bytes(),
             ),
@@ -4936,10 +4936,10 @@ impl HttpTransport for PreFixTransport {
         if let Some(body) = request.body {
             builder = builder.body(body);
         }
-        let response = builder.send().await.map_err(|error| {
+        let response = builder.send().await.map_err(|_error| {
             TransportError::new(
                 vela_providers::TransportFailure::Reset,
-                origin.scrubber().scrub(error.without_url().to_string()),
+                origin.diagnose(vela_providers::Cause::ConnectionReset),
             )
         })?;
         let status = response.status().as_u16();
@@ -4970,9 +4970,9 @@ impl ByteStream for PreFixBody {
         match self.response.chunk().await {
             Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
             Ok(None) => Ok(None),
-            Err(error) => Err(TransportError::new(
+            Err(_) => Err(TransportError::new(
                 vela_providers::TransportFailure::Reset,
-                error.without_url().to_string(),
+                vela_providers::Cause::ConnectionReset,
             )),
         }
     }
@@ -6349,11 +6349,14 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
         let url = RequestUrl::new("http://127.0.0.1:8080/v1/chat/completions")
             .with_query_credential("key", &SecretValue::new(CANARY));
         // The pre-fix path, rebuilt: reqwest's Display appends the URL, and
-        // `detail()` sanitises without redacting.
-        let pre_fix = vela_providers::error::detail(format!(
-            "error sending request for url ({})",
-            url.expose()
-        ));
+        // the `detail()` that used to sanitise it did not redact.
+        //
+        // `detail()` no longer exists — the redesign deleted it — so the string
+        // is built directly. That is not a weakening of the control: the string
+        // is what the grep must be able to see, and the fact that it can no
+        // longer be put *into* an error is asserted by the `compile_fail`
+        // doctests on `diagnostic::Diagnosis`.
+        let pre_fix = format!("error sending request for url ({})", url.expose());
         for (label, text) in [
             (
                 "RequestUrl::expose() — the socket form",

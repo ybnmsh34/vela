@@ -368,12 +368,56 @@ fn inspect(label: &str, error: &ProviderError, sink: &CollectingSink) -> Vec<Bre
 /// Guards against every leak assertion passing because nothing arrived.
 #[track_caller]
 fn assert_the_peers_message_arrived(label: &str, error: &ProviderError) {
+    // This guard inverted with the redesign, and the inversion is the fix.
+    //
+    // It used to look for the peer's marker **in the error**, because that was
+    // the only evidence available that the echoed message had reached Vela at
+    // all — and an absent message would have made every leak assertion in this
+    // file pass for the wrong reason.
+    //
+    // The error no longer carries the peer's words, so the guard reads the
+    // local debug log instead: the message arrived, it was kept, and it did not
+    // travel. That is three claims where there used to be one, and the middle
+    // one is what makes the first two more than a deletion.
     let text = error.to_string();
     assert!(
-        text.contains(MARKER),
-        "{label}: the peer's echoed message never reached the error, so nothing \
-         above was tested: {text}"
+        !text.contains(MARKER),
+        "{label}: the peer's echoed message reached the error surface: {text}"
     );
+    let correlation = error
+        .correlation()
+        .unwrap_or_else(|| panic!("{label}: no correlation id, so nothing is recoverable"));
+    let filed = debug_log()
+        .body_for(correlation)
+        .unwrap_or_else(|| panic!("{label}: nothing was filed under {correlation}"));
+    let decoded = serde_json::from_str::<serde_json::Value>(&filed)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| filed.clone());
+    assert!(
+        filed.contains(MARKER) || decoded.contains(MARKER),
+        "{label}: the peer's echoed message never reached Vela at all, so \
+         nothing above was tested — the debug log holds {filed:?}"
+    );
+    // And the strongest form of what this whole file was written to check:
+    // nothing on the error's surface is endpoint-derived in ANY spelling,
+    // because there is no field for endpoint text to occupy.
+    let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+    assert!(
+        unexplained.is_empty(),
+        "{label}: the error surface carries text the closed vocabulary does not \
+         explain — {unexplained:?}\n  {text}"
+    );
+}
+
+/// The process-wide debug log this probe reads back through. Installed once.
+fn debug_log() -> &'static Arc<vela_providers::debuglog::MemorySink> {
+    static LOG: std::sync::OnceLock<Arc<vela_providers::debuglog::MemorySink>> =
+        std::sync::OnceLock::new();
+    LOG.get_or_init(|| {
+        let sink = Arc::new(vela_providers::debuglog::MemorySink::new());
+        vela_providers::debuglog::enable(sink.clone());
+        sink
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -643,27 +687,34 @@ async fn drive(provider: &Arc<dyn Provider>) -> Vec<(&'static str, ProviderError
 /// Every unbriefed spelling, both response shapes, both calls, all three
 /// adapters, both bindings.
 ///
-/// # This test is RED, and `#[ignore]` is not a way of hiding that
+/// # This test was RED, and the `#[ignore]` is gone
 ///
-/// It carries **round 4's open finding** (GATE M Part 1 Phase B `RESULTS.md`
-/// §5): three spellings of a credential reach `Display`, `Debug`, the serde
-/// JSON that crosses the IPC bridge and the `StreamEvent` the UI is handed.
-/// The gate verdict is **FAIL** and that verdict lives in `RESULTS.md` and in
-/// `record.sh`'s non-zero exit, not here.
+/// It carried **round 4's open finding** (GATE M Part 1 Phase B `RESULTS.md`
+/// §5): three spellings of a credential — percent-encoded with lowercase hex,
+/// percent-encoded byte for byte, and HTML-entity-escaped — reached `Display`,
+/// `Debug`, the serde JSON that crosses the IPC bridge and the `StreamEvent`
+/// the UI is handed. It was marked `#[ignore]` so that `cargo test` kept
+/// meaning "nothing NEW is broken", with the note that **deleting the
+/// `#[ignore]` is the acceptance test for the fix.**
 ///
-/// It is ignored so that `cargo test` keeps meaning "nothing NEW is broken" —
-/// a permanently-red suite trains a reader to skip the failure list, which is
-/// how a second defect hides behind a first. **Deleting the `#[ignore]` is the
-/// acceptance test for the fix.** Run it with:
+/// That attribute is deleted. This test now runs in the ordinary suite.
 ///
-/// ```text
-/// cargo test -p vela-providers --test zz_gate_m_round4_executor_probe -- --ignored
-/// ```
-#[ignore = "ROUND 4 OPEN FINDING — this test is SUPPOSED to fail today; \
-            see docs/regression-baseline/phase-b-matrix/RESULTS.md §5. \
-            Removing this attribute is the fix's acceptance test."]
+/// # And it is *not* the interesting assertion any more
+///
+/// Every leak search below is now vacuous by construction, and that is worth
+/// saying out loud rather than letting a green tick imply something it does
+/// not. There is no endpoint text on the error surface for a needle to match,
+/// so a needle search cannot fail — which is exactly why the searches alone
+/// would be a bad test.
+///
+/// [`assert_the_peers_message_arrived`] is what carries the weight. It asserts
+/// the strictly stronger property: that **nothing** on the surface is
+/// endpoint-derived, checked by enumerating the closed vocabulary rather than
+/// by enumerating spellings. A fifth encoding cannot defeat an allowlist of
+/// what is permitted, which is the whole reason the strategy changed.
 #[tokio::test]
 async fn no_spelling_of_the_credential_survives_into_any_surface() {
+    debug_log();
     let mut cases = 0usize;
     let mut premise_checked = 0usize;
     let mut breaches: Vec<Breach> = Vec::new();
@@ -762,6 +813,7 @@ async fn no_spelling_of_the_credential_survives_into_any_surface() {
 /// sequence, and on every other boundary there is.
 #[tokio::test]
 async fn a_credential_fragmented_across_two_real_tcp_writes_is_still_removed() {
+    debug_log();
     let mut splits_inside_the_credential = 0usize;
 
     for spelling in [Spelling::Verbatim, Spelling::DoubleSolidus] {

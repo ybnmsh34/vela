@@ -1,7 +1,7 @@
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--vela-z-palette);
   display: flex;
   justify-content: center;
   /* `flex-start`, not the default `stretch`: a palette showing two results
@@ -14,7 +14,7 @@
 .panel {
   display: flex;
   flex-direction: column;
-  width: min(620px, 100%);
+  width: min(var(--vela-overlay-md), 100%);
   max-height: 60vh;
   overflow: hidden;
   /* The results scroll; the panel itself is only as tall as it needs to be. */

@@ -34,7 +34,7 @@
   background: none;
   font: inherit;
   font-size: var(--vela-text-base);
-  line-height: 1.55;
+  line-height: var(--vela-leading-ui);
   color: var(--vela-text);
   padding: var(--vela-space-1) 0;
   max-height: 320px;
@@ -104,16 +104,16 @@
 .send:focus-visible,
 .stop:focus-visible,
 .iconButton:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .iconButton {
   appearance: none;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--vela-control-md);
+  height: var(--vela-control-md);
   border-radius: var(--vela-radius-md);
   border: 1px solid transparent;
   background: none;
@@ -136,7 +136,7 @@
 
 .hint kbd {
   font-family: var(--vela-font-mono);
-  font-size: 0.95em;
+  font-size: var(--vela-text-inline);
   padding: 0 0.3em;
   border: 1px solid var(--vela-border);
   border-bottom-width: 2px;

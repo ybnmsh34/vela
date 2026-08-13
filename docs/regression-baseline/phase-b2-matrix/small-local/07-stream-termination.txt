@@ -1,0 +1,75 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: small-local — case 07-stream-termination: stream termination
+================================================================================
+
+PURPOSE   MEASURED-1: hostile never sends [DONE]; small-local accepts include_usage and never sends usage. Both hung a recorded consumer for over 5 s. Vela must terminate on end-of-body.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream --------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (170 bytes) ---
+      {"max_tokens":256,"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2208 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: what "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"is the weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n Berlin. gauge "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ivory zenith emb"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"er yardarm caref"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ul windward gaug"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"e windward beaco"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-814e4b66","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: [DONE]
+      
+
+---- timing — the number this case exists for ------------------------------
+  WALL CLOCK for the whole turn          2.513217ms
+  recorded naive [DONE] consumer         5003 ms (TIMED OUT)
+  recorded naive usage consumer          5006 ms (TIMED OUT)
+  `data: [DONE]` present in the body     true
+  a usage frame present in the body      false
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 "Mock small-local reply to: what is the weather in Berlin. gauge ivory zenith ember yardarm careful windward gauge windward beacon."
+  usage                                  TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
+  degradations                           UsageNotReported
+
+---- assertions --------------------------------------------------------------
+  [PASS] VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang
+        wall clock 2.513217ms
+  [PASS] the answer arrives whole regardless of how the stream ended
+        130 characters
+  [PASS] a stream that does send [DONE] reports no missing-sentinel degradation
+        UsageNotReported
+  [PASS] usage is reported only when it actually arrived — never invented
+        usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
+  [PASS] requested-but-absent usage is declared as a degradation
+        UsageNotReported
+
+================================================================================
+VERDICT  5 assertion(s), 0 failure(s)
+================================================================================

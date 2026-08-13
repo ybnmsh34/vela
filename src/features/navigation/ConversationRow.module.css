@@ -31,8 +31,8 @@
 }
 
 .main:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }
 
 .selected .main {
@@ -76,8 +76,8 @@
 .action {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
   padding: 0;
   background: none;
   border: 0;
@@ -92,8 +92,8 @@
 }
 
 .action:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }
 
 .renaming {
@@ -118,6 +118,6 @@
 }
 
 .renameInput:focus {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }

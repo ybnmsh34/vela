@@ -1,0 +1,347 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: mid-local — case 16-reasoning-x-structured-output: a value the model rejected must not come back as a validated answer
+================================================================================
+
+PURPOSE   Case 06 and case 04 were never driven in one turn. In one turn, a model that deliberates in JSON and is cut off mid-thought has a route by which the value it REJECTED is extracted, validated against the schema, and returned as conforming.
+SUBJECT   all three shipping adapters, with `ResponseFormat::JsonSchema` requested
+ENDPOINT  one purpose-built loopback peer per adapter, real TCP
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE TURN:
+    <think>The user wants an object. My first guess is
+    {"city":"Atlantis","celsius":-273.15} — no, that city does not exist and
+    that temperature is below absolute zero, so I must
+  — and the stream ends there. The block never closes.
+  `{"city":"Atlantis","celsius":-273.15}` VALIDATES against the requested schema.
+  It is a well-formed object with both required properties of the right types. The
+  only thing wrong with it is that the model said it was wrong — which is a fact
+  that lives in the prose around it, not in the JSON.
+
+---- openai-compatible / stream() — the raw exchange -----------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36019/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (370 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"cross-compat","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1940 bytes, read to end) ---
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"<think>The us"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"er wants an o"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"bject. My fir"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"st guess is {"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\"city\":\"Atlan"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"tis\",\"celsius"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\":-273.15} — "},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"no, that city"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" does not exi"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"st and that t"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"emperature is"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" below absolu"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"te zero, so I"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" must"},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+      data: [DONE]
+      
+
+---- openai-compatible / stream() — what Vela produced ---------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+
+---- openai-compatible / stream() — assertions -----------------------------
+  [PASS] openai-compatible / stream(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+  [PASS] openai-compatible / stream(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] openai-compatible / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+  [PASS] openai-compatible / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- openai-compatible / complete() — the raw exchange ---------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:40151/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (331 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"cross-compat","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (381 bytes, read to end) ---
+      {"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"<think>The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"},"finish_reason":"length"}],"usage":{"prompt_tokens":9,"completion_tokens":40,"total_tokens":49}}
+
+---- openai-compatible / complete() — what Vela produced -------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+
+---- openai-compatible / complete() — assertions ---------------------------
+  [PASS] openai-compatible / complete(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] openai-compatible / complete(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] openai-compatible / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] openai-compatible / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- anthropic / stream() — the raw exchange -------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:41253/v1/messages
+      content-type: application/json
+      accept: text/event-stream
+      anthropic-version: 2023-06-01
+      (no authorization header)
+      --- request body (524 bytes) ---
+      {"max_tokens":4096,"messages":[{"content":[{"text":"give me the weather in Berlin as JSON","type":"text"}],"role":"user"}],"model":"claude-cross","stream":true,"tool_choice":{"name":"vela_structured_output","type":"tool"},"tools":[{"description":"Return the answer for `weather` as this tool's input. Call this tool exactly once and produce no other output.","input_schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"name":"vela_structured_output"}]}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (2152 bytes, read to end) ---
+      event: content_block_start
+      data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"<think>The us"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"er wants an o"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"bject. My fir"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"st guess is {"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\"city\":\"Atlan"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"tis\",\"celsius"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\":-273.15} — "}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"no, that city"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" does not exi"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"st and that t"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"emperature is"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" below absolu"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"te zero, so I"}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" must"}}
+      
+      event: content_block_stop
+      data: {"type":"content_block_stop","index":0}
+      
+      event: message_delta
+      data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":40}}
+      
+      event: message_stop
+      data: {"type":"message_stop"}
+      
+
+---- anthropic / stream() — what Vela produced -----------------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+
+---- anthropic / stream() — assertions -------------------------------------
+  [PASS] anthropic / stream(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] anthropic / stream(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] anthropic / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] anthropic / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- anthropic / complete() — the raw exchange -----------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:34619/v1/messages
+      content-type: application/json
+      accept: application/json
+      anthropic-version: 2023-06-01
+      (no authorization header)
+      --- request body (525 bytes) ---
+      {"max_tokens":4096,"messages":[{"content":[{"text":"give me the weather in Berlin as JSON","type":"text"}],"role":"user"}],"model":"claude-cross","stream":false,"tool_choice":{"name":"vela_structured_output","type":"tool"},"tools":[{"description":"Return the answer for `weather` as this tool's input. Call this tool exactly once and produce no other output.","input_schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"name":"vela_structured_output"}]}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (370 bytes, read to end) ---
+      {"id":"msg_cross","type":"message","role":"assistant","model":"claude-cross","content":[{"type":"text","text":"<think>The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"}],"stop_reason":"max_tokens","usage":{"input_tokens":9,"output_tokens":40}}
+
+---- anthropic / complete() — what Vela produced ---------------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+
+---- anthropic / complete() — assertions -----------------------------------
+  [PASS] anthropic / complete(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] anthropic / complete(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] anthropic / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] anthropic / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- google / stream() — the raw exchange ----------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:33005/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (281 bytes) ---
+      {"contents":[{"parts":[{"text":"give me the weather in Berlin as JSON"}],"role":"user"}],"generationConfig":{"responseMimeType":"application/json","responseSchema":{"properties":{"celsius":{"type":"NUMBER"},"city":{"type":"STRING"}},"required":["city","celsius"],"type":"OBJECT"}}}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (2010 bytes, read to end) ---
+      data: {"candidates":[{"content":{"parts":[{"text":"<think>The us"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"er wants an o"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"bject. My fir"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"st guess is {"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"\"city\":\"Atlan"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"tis\",\"celsius"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"\":-273.15} — "}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"no, that city"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":" does not exi"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"st and that t"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"emperature is"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":" below absolu"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"te zero, so I"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":" must"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[],"role":"model"},"finishReason":"MAX_TOKENS","index":0}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":40,"totalTokenCount":49},"modelVersion":"gemini-cross"}
+      
+
+---- google / stream() — what Vela produced --------------------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+
+---- google / stream() — assertions ----------------------------------------
+  [PASS] google / stream(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] google / stream(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] google / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] google / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- google / complete() — the raw exchange --------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:42003/v1beta/models/gemini-cross:generateContent
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (281 bytes) ---
+      {"contents":[{"parts":[{"text":"give me the weather in Berlin as JSON"}],"role":"user"}],"generationConfig":{"responseMimeType":"application/json","responseSchema":{"properties":{"celsius":{"type":"NUMBER"},"city":{"type":"STRING"}},"required":["city","celsius"],"type":"OBJECT"}}}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (403 bytes, read to end) ---
+      {"candidates":[{"content":{"parts":[{"text":"<think>The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"}],"role":"model"},"finishReason":"MAX_TOKENS","index":0}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":40,"totalTokenCount":49},"modelVersion":"gemini-cross"}
+
+---- google / complete() — what Vela produced ------------------------------
+  answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+
+---- google / complete() — assertions --------------------------------------
+  [PASS] google / complete(): the reasoning block really never closed
+        UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] google / complete(): a schema really was requested, so there is a verdict at all
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [FAIL] google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+  [PASS] google / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
+        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+  [PASS] google / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
+        "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
+
+---- CONTROL — the identical deliberation with the block CLOSED ------------
+  Same peer, same schema, same transports, same three adapters. The only difference
+  is `</think>` before the final sentence. If the verdict changes, the cause is the
+  intersection and nothing else.
+  openai-compatible / stream() verdict   Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] openai-compatible / stream() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  openai-compatible / complete() verdict Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] openai-compatible / complete() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  anthropic / stream() verdict           Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] anthropic / stream() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  anthropic / complete() verdict         Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] anthropic / complete() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  google / stream() verdict              Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] google / stream() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  google / complete() verdict            Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] google / complete() CONTROL: with the block closed, the deliberated value does NOT come back — the cause is the intersection
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+
+================================================================================
+VERDICT  36 assertion(s), 6 failure(s)
+================================================================================

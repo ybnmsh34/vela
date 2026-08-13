@@ -1,7 +1,7 @@
 .scrim {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--vela-z-dialog);
   display: grid;
   place-items: center;
   padding: var(--vela-space-6);
@@ -9,7 +9,7 @@
 }
 
 .dialog {
-  width: min(420px, 100%);
+  width: min(var(--vela-overlay-sm), 100%);
   padding: var(--vela-space-5);
   background: var(--vela-surface-raised);
   border: 1px solid var(--vela-border);
@@ -28,7 +28,7 @@
   margin: 0 0 var(--vela-space-5);
   color: var(--vela-text-muted);
   font-size: var(--vela-text-sm);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
 }
 
 .name {
@@ -74,6 +74,6 @@
 
 .cancel:focus-visible,
 .confirm:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }

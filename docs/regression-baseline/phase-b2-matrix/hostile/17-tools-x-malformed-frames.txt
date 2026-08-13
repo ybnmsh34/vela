@@ -1,0 +1,323 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 17-tools-x-malformed-frames: junk frames woven through a batch of parallel calls
+================================================================================
+
+PURPOSE   MEASURED-2 says skip a bad frame and keep going. MEASURED-4 says `index` is the only join key, and it lives in the frames. Individually right, jointly dangerous: a skipped frame is exactly what moves a fragment into the wrong call.
+SUBJECT   all three shipping adapters
+ENDPOINT  one purpose-built loopback peer per adapter, real TCP
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  FOUR KINDS OF JUNK, woven between the fragments of three real calls:
+    1. a frame that is not JSON at all
+    2. an empty `data:` line
+    3. a line that is not an SSE field at all
+    4. A TRUNCATED FRAME THAT IS THE PREFIX OF A REAL CALL
+  The fourth is the one that matters. A consumer that recovers optimistically turns
+  it into a phantom fourth call; one that resynchronises badly loses the real third.
+  THE NON-STREAMED ARM drives the other half of FINDING 1's shape: a whole batch of
+  three in which only the MIDDLE one is broken. A consumer that loses calls reports
+  one where the socket carried three.
+
+---- openai-compatible / stream() — the raw exchange -----------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:40683/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (559 bytes) ---
+      {"messages":[{"content":"weather in Berlin and Paris, and the time in CET","role":"user"}],"model":"cross-compat","stream":true,"stream_options":{"include_usage":true},"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1144 bytes, read to end) ---
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Ber"}}]},"finish_reason":null}]}
+      
+      data:
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"lin\"}"}}]},"finish_reason":null}]}
+      
+      this line is not an SSE field at all
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"id":"call_c","type":"functi
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"id":"call_c","type":"function","function":{"name":"get_time","arguments":"{\"zone\":\"CET\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+      
+      data: [DONE]
+      
+
+---- openai-compatible / stream() — what Vela produced ---------------------
+  tool calls                             OK id=call_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    OK id=call_b name=get_weather emulated=false args={"city":"Paris"}
+                                    OK id=call_c name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedFramesSkipped { count: 3 }, UsageNotReported
+
+---- openai-compatible / stream() — assertions -----------------------------
+  [PASS] openai-compatible / stream(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] openai-compatible / stream(): the stream really did carry junk — frames were skipped
+        MalformedFramesSkipped { count: 3 }, UsageNotReported
+  [PASS] openai-compatible / stream(): ALL THREE CALLS SURVIVE THE JUNK, whole and unspliced — none lost, none merged
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"], expected ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] openai-compatible / stream(): THE TRUNCATED PREFIX DID NOT BECOME A PHANTOM CALL — exactly three well-formed calls, not four
+        3 well-formed call(s): ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] openai-compatible / stream(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] openai-compatible / stream(): no junk-frame text reached the user as answer content
+        ""
+
+---- openai-compatible / complete() — the raw exchange ---------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:45657/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (520 bytes) ---
+      {"messages":[{"content":"weather in Berlin and Paris, and the time in CET","role":"user"}],"model":"cross-compat","stream":false,"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (453 bytes, read to end) ---
+      {"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Berlin\"}"}},{"id":"call_bad","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Par"}},{"id":"call_c","type":"function","function":{"name":"get_time","arguments":"{\"zone\":\"CET\"}"}}]},"finish_reason":"tool_calls"}]}
+
+---- openai-compatible / complete() — what Vela produced -------------------
+  tool calls                             OK id=call_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=None id=call_bad name=get_weather reason=UnparseableArguments raw="{\"city\":\"Par"
+                                    OK id=call_c name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedToolCalls { count: 1 }
+
+---- openai-compatible / complete() — assertions ---------------------------
+  [PASS] openai-compatible / complete(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] openai-compatible / complete(): the two intact calls of a three-call batch both survive — a broken sibling does not take them with it
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] openai-compatible / complete(): the broken one is REPORTED rather than dropped (MEASURED-4)
+        OK id=call_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=None id=call_bad name=get_weather reason=UnparseableArguments raw="{\"city\":\"Par"
+                                    OK id=call_c name=get_time emulated=false args={"zone":"CET"}
+  [PASS] openai-compatible / complete(): THE BATCH IS NOT SPLICED — no well-formed call carries another call's arguments
+        ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] openai-compatible / complete(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] openai-compatible / complete(): no junk-frame text reached the user as answer content
+        ""
+
+---- anthropic / stream() — the raw exchange -------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:37179/v1/messages
+      content-type: application/json
+      accept: text/event-stream
+      anthropic-version: 2023-06-01
+      (no authorization header)
+      --- request body (534 bytes) ---
+      {"max_tokens":4096,"messages":[{"content":[{"text":"weather in Berlin and Paris, and the time in CET","type":"text"}],"role":"user"}],"model":"claude-cross","stream":true,"tool_choice":{"type":"auto"},"tools":[{"description":"Current weather for a city","input_schema":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"},"name":"get_weather"},{"description":"Current time in a timezone","input_schema":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"},"name":"get_time"}]}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1658 bytes, read to end) ---
+      event: content_block_start
+      data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"get_weather","input":{}}}
+      
+      event: content_block_delta
+      data: {"type":"content_bl
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Ber"}}
+      
+      data:
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"lin\"}"}}
+      
+      event: content_block_stop
+      data: {"type":"content_block_stop","index":0}
+      
+      this line is not an SSE field at all
+      
+      event: content_block_start
+      data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_b","name":"get_weather","input":{}}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\": \"Paris\"}"}}
+      
+      event: content_block_stop
+      data: {"type":"content_block_stop","index":1}
+      
+      event: content_block_start
+      data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_c
+      
+      event: content_block_start
+      data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_c","name":"get_time","input":{}}}
+      
+      event: content_block_delta
+      data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"zone\": \"CET\"}"}}
+      
+      event: content_block_stop
+      data: {"type":"content_block_stop","index":2}
+      
+      event: message_delta
+      data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":50}}
+      
+      event: message_stop
+      data: {"type":"message_stop"}
+      
+
+---- anthropic / stream() — what Vela produced -----------------------------
+  tool calls                             OK id=toolu_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    OK id=toolu_b name=get_weather emulated=false args={"city":"Paris"}
+                                    OK id=toolu_c name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedFramesSkipped { count: 3 }
+
+---- anthropic / stream() — assertions -------------------------------------
+  [PASS] anthropic / stream(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] anthropic / stream(): the stream really did carry junk — frames were skipped
+        MalformedFramesSkipped { count: 3 }
+  [PASS] anthropic / stream(): ALL THREE CALLS SURVIVE THE JUNK, whole and unspliced — none lost, none merged
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"], expected ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] anthropic / stream(): THE TRUNCATED PREFIX DID NOT BECOME A PHANTOM CALL — exactly three well-formed calls, not four
+        3 well-formed call(s): ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] anthropic / stream(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] anthropic / stream(): no junk-frame text reached the user as answer content
+        ""
+
+---- anthropic / complete() — the raw exchange -----------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:45437/v1/messages
+      content-type: application/json
+      accept: application/json
+      anthropic-version: 2023-06-01
+      (no authorization header)
+      --- request body (535 bytes) ---
+      {"max_tokens":4096,"messages":[{"content":[{"text":"weather in Berlin and Paris, and the time in CET","type":"text"}],"role":"user"}],"model":"claude-cross","stream":false,"tool_choice":{"type":"auto"},"tools":[{"description":"Current weather for a city","input_schema":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"},"name":"get_weather"},{"description":"Current time in a timezone","input_schema":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"},"name":"get_time"}]}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (376 bytes, read to end) ---
+      {"id":"msg_cross","type":"message","role":"assistant","model":"claude-cross","content":[{"type":"tool_use","id":"toolu_a","name":"get_weather","input":{"city":"Berlin"}},{"type":"tool_use","id":"toolu_bad","name":"","input":{}},{"type":"tool_use","id":"toolu_c","name":"get_time","input":{"zone":"CET"}}],"stop_reason":"tool_use","usage":{"input_tokens":9,"output_tokens":40}}
+
+---- anthropic / complete() — what Vela produced ---------------------------
+  tool calls                             OK id=toolu_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=Some(1) id=toolu_bad name=MISSING reason=MissingName raw=""
+                                    OK id=toolu_c name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedToolCalls { count: 1 }
+
+---- anthropic / complete() — assertions -----------------------------------
+  [PASS] anthropic / complete(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] anthropic / complete(): the two intact calls of a three-call batch both survive — a broken sibling does not take them with it
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] anthropic / complete(): the broken one is REPORTED rather than dropped (MEASURED-4)
+        OK id=toolu_a name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=Some(1) id=toolu_bad name=MISSING reason=MissingName raw=""
+                                    OK id=toolu_c name=get_time emulated=false args={"zone":"CET"}
+  [PASS] anthropic / complete(): THE BATCH IS NOT SPLICED — no well-formed call carries another call's arguments
+        ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] anthropic / complete(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] anthropic / complete(): no junk-frame text reached the user as answer content
+        ""
+
+---- google / stream() — the raw exchange ----------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:37885/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (511 bytes) ---
+      {"contents":[{"parts":[{"text":"weather in Berlin and Paris, and the time in CET"}],"role":"user"}],"toolConfig":{"functionCallingConfig":{"mode":"AUTO"}},"tools":[{"functionDeclarations":[{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"STRING"}},"required":["city"],"type":"OBJECT"}},{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"STRING"}},"required":["timezone"],"type":"OBJECT"}}]}]}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (877 bytes, read to end) ---
+      data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city": "Berlin"}}}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates": [{"content": {"parts
+      
+      data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city": "Paris"}}}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data:
+      
+      this line is not an SSE field at all
+      
+      data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_ti
+      
+      data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_time","args":{"zone": "CET"}}}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":96,"candidatesTokenCount":31,"totalTokenCount":127},"modelVersion":"gemini-cross"}
+      
+
+---- google / stream() — what Vela produced --------------------------------
+  tool calls                             OK id=call_slot_0 name=get_weather emulated=false args={"city":"Berlin"}
+                                    OK id=call_slot_1 name=get_weather emulated=false args={"city":"Paris"}
+                                    OK id=call_slot_2 name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedFramesSkipped { count: 3 }
+
+---- google / stream() — assertions ----------------------------------------
+  [PASS] google / stream(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] google / stream(): the stream really did carry junk — frames were skipped
+        MalformedFramesSkipped { count: 3 }
+  [PASS] google / stream(): ALL THREE CALLS SURVIVE THE JUNK, whole and unspliced — none lost, none merged
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"], expected ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] google / stream(): THE TRUNCATED PREFIX DID NOT BECOME A PHANTOM CALL — exactly three well-formed calls, not four
+        3 well-formed call(s): ["get_weather({\"city\":\"Berlin\"})", "get_weather({\"city\":\"Paris\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] google / stream(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] google / stream(): no junk-frame text reached the user as answer content
+        ""
+
+---- google / complete() — the raw exchange --------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:45459/v1beta/models/gemini-cross:generateContent
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (511 bytes) ---
+      {"contents":[{"parts":[{"text":"weather in Berlin and Paris, and the time in CET"}],"role":"user"}],"toolConfig":{"functionCallingConfig":{"mode":"AUTO"}},"tools":[{"functionDeclarations":[{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"STRING"}},"required":["city"],"type":"OBJECT"}},{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"STRING"}},"required":["timezone"],"type":"OBJECT"}}]}]}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (372 bytes, read to end) ---
+      {"candidates":[{"content":{"parts":[{"functionCall":{"name":"get_weather","args":{"city":"Berlin"}}},{"functionCall":{"args":{"city":"Paris"}}},{"functionCall":{"name":"get_time","args":{"zone":"CET"}}}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":96,"candidatesTokenCount":31,"totalTokenCount":127},"modelVersion":"gemini-cross"}
+
+---- google / complete() — what Vela produced ------------------------------
+  tool calls                             OK id=call_slot_0 name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=Some(1) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"Paris\"}"
+                                    OK id=call_slot_2 name=get_time emulated=false args={"zone":"CET"}
+  well-formed fingerprints               ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  stop reason                            ToolUse
+  degradations                           MalformedToolCalls { count: 1 }
+
+---- google / complete() — assertions --------------------------------------
+  [PASS] google / complete(): junk frames are NOT FATAL — the turn completes (MEASURED-2)
+        the turn returned Ok
+  [PASS] google / complete(): the two intact calls of a three-call batch both survive — a broken sibling does not take them with it
+        produced ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] google / complete(): the broken one is REPORTED rather than dropped (MEASURED-4)
+        OK id=call_slot_0 name=get_weather emulated=false args={"city":"Berlin"}
+                                    MALFORMED index=Some(1) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"Paris\"}"
+                                    OK id=call_slot_2 name=get_time emulated=false args={"zone":"CET"}
+  [PASS] google / complete(): THE BATCH IS NOT SPLICED — no well-formed call carries another call's arguments
+        ["get_weather({\"city\":\"Berlin\"})", "get_time({\"zone\":\"CET\"})"]
+  [PASS] google / complete(): the turn ends in ToolUse — calls that survived are executable
+        ToolUse
+  [PASS] google / complete(): no junk-frame text reached the user as answer content
+        ""
+
+================================================================================
+VERDICT  36 assertion(s), 0 failure(s)
+================================================================================

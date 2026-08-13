@@ -9,7 +9,7 @@
 .overlay {
   position: absolute;
   inset: var(--vela-space-3);
-  z-index: 10;
+  z-index: var(--vela-z-overlay);
   display: flex;
   flex-direction: column;
   gap: var(--vela-space-2);

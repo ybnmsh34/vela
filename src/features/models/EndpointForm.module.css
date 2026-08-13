@@ -36,15 +36,15 @@
 }
 
 .input:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }
 
 .hint {
   margin: 0;
   color: var(--vela-text-muted);
   font-size: var(--vela-text-xs);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
 }
 
 .checkbox {
@@ -62,7 +62,7 @@
   background: var(--vela-danger-bg);
   color: var(--vela-danger);
   font-size: var(--vela-text-xs);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
 }
 
 .actions {
@@ -104,6 +104,6 @@
 
 .save:focus-visible,
 .cancel:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }

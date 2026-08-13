@@ -1,0 +1,313 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 15-reasoning-x-tools-every-adapter: deliberation is not a call — on all three adapters, both transports
+================================================================================
+
+PURPOSE   FINDING 3 was closed and verified on ONE adapter. The defect lived in shared normalisation that all three adapters reach by three different routes. This case drives the identical turn down all three.
+SUBJECT   all three shipping adapters — OpenAiCompatibleProvider, AnthropicProvider, GoogleProvider
+ENDPOINT  one purpose-built loopback peer per adapter, real TCP, speaking that adapter's dialect
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE TURN, verbatim from the round-4 panel and identical to case 14:
+    <think>I could call <tool_call>{"name":"delete_everything",
+    "arguments":{"path":"/"}}</tool_call> but that would be destructive,
+    so I will not.
+  — and the stream ends there, on `length`. The block never closes.
+  HOW EMULATION IS ENTERED, per adapter — this is the part a test flag would have
+  faked, and the part that makes the case real:
+
+---- openai-compatible / stream() — the raw exchange -----------------------
+  route into emulation                   not probed — emulation is entered by retry after the endpoint's 400
+
+  >>> exchange 1 — POST http://127.0.0.1:36845/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (350 bytes) ---
+      {"messages":[{"content":"tidy up the disk","role":"user"}],"model":"cross-compat","stream":true,"stream_options":{"include_usage":true},"tools":[{"function":{"description":"Irreversibly delete a directory tree","name":"delete_everything","parameters":{"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (117 bytes, read to end) ---
+      {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
+
+  >>> exchange 2 — POST http://127.0.0.1:36845/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (673 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n","role":"system"},{"content":"tidy up the disk","role":"user"}],"model":"cross-compat","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1791 bytes, read to end) ---
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"<think>I co"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"uld call <t"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ool_call>{\""},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"name\":\"dele"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"te_everythi"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ng\",\"argume"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"nts\":{\"path"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\":\"/\"}}</to"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ol_call> bu"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"t that woul"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"d be destru"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ctive, so I"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" will not."},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+      data: [DONE]
+      
+
+---- openai-compatible / stream() — what Vela produced ---------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  TextDelta events                       "I could call  but that would be destructive, so I will not."
+
+---- openai-compatible / stream() — assertions -----------------------------
+  [PASS] openai-compatible / stream(): emulation was entered through the endpoint's own refusal
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  [PASS] openai-compatible / stream(): the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  [PASS] openai-compatible / stream(): the endpoint really was asked in the EMULATED shape — the catalogue was prose, not a `tools` array
+        2 request(s) recorded by the peer
+  [PASS] openai-compatible / stream(): A CALL RECOVERED FROM A NEVER-CLOSED <think> IS NOT EXECUTABLE
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] openai-compatible / stream(): the turn does not end in ToolUse
+        MaxTokens
+  [PASS] openai-compatible / stream(): the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] openai-compatible / stream(): no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] openai-compatible / stream(): no raw tool-call markup on any TextDelta
+        "I could call  but that would be destructive, so I will not."
+  [PASS] openai-compatible / stream(): MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] openai-compatible / stream(): the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+---- openai-compatible / complete() — the raw exchange ---------------------
+  route into emulation                   not probed — emulation is entered by retry after the endpoint's 400
+
+  >>> exchange 1 — POST http://127.0.0.1:33995/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (311 bytes) ---
+      {"messages":[{"content":"tidy up the disk","role":"user"}],"model":"cross-compat","stream":false,"tools":[{"function":{"description":"Irreversibly delete a directory tree","name":"delete_everything","parameters":{"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (117 bytes, read to end) ---
+      {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
+
+  >>> exchange 2 — POST http://127.0.0.1:33995/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (634 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n","role":"system"},{"content":"tidy up the disk","role":"user"}],"model":"cross-compat","stream":false}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (351 bytes, read to end) ---
+      {"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"<think>I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."},"finish_reason":"length"}],"usage":{"prompt_tokens":9,"completion_tokens":40,"total_tokens":49}}
+
+---- openai-compatible / complete() — what Vela produced -------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+
+---- openai-compatible / complete() — assertions ---------------------------
+  [PASS] openai-compatible / complete(): emulation was entered through the endpoint's own refusal
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] openai-compatible / complete(): the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] openai-compatible / complete(): the endpoint really was asked in the EMULATED shape — the catalogue was prose, not a `tools` array
+        2 request(s) recorded by the peer
+  [PASS] openai-compatible / complete(): A CALL RECOVERED FROM A NEVER-CLOSED <think> IS NOT EXECUTABLE
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] openai-compatible / complete(): the turn does not end in ToolUse
+        MaxTokens
+  [PASS] openai-compatible / complete(): the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] openai-compatible / complete(): no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] openai-compatible / complete(): MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] openai-compatible / complete(): the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+---- anthropic / stream() — the raw exchange -------------------------------
+  route into emulation                   probed: tool_calling = Unsupported
+  (no HTTP request was made)
+
+---- anthropic / stream() — what Vela produced -----------------------------
+  outcome                                Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  This adapter REFUSES rather than emulating, and says so in its own source:
+  "This backend has native tool calling on every model that serves it, so a
+  probed refusal means the affordance genuinely is not there. Refusing is
+  truthful; rewriting the request into prompt emulation behind the user's
+  back would not be."
+  So the FINDING 3 shape is not merely untested here — it is UNREACHABLE, and
+  the honest thing to record is that, not a manufactured pass.
+  [PASS] anthropic / stream(): the turn is refused, not silently emulated
+        Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  [PASS] anthropic / stream(): NO UNSUPPORTED AFFORDANCE IS OFFERED — the refusal is not retried or failed over into one
+        Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  [PASS] anthropic / stream(): no tool-call markup reached the UI on the way to refusing
+        ""
+  [PASS] anthropic / stream(): emulation is structurally unreachable here — no `with_tool_emulation` call site exists on this adapter
+        grepped anthropic/stream.rs and anthropic/provider.rs
+
+---- anthropic / complete() — the raw exchange -----------------------------
+  route into emulation                   probed: tool_calling = Unsupported
+  (no HTTP request was made)
+
+---- anthropic / complete() — what Vela produced ---------------------------
+  outcome                                Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  This adapter REFUSES rather than emulating, and says so in its own source:
+  "This backend has native tool calling on every model that serves it, so a
+  probed refusal means the affordance genuinely is not there. Refusing is
+  truthful; rewriting the request into prompt emulation behind the user's
+  back would not be."
+  So the FINDING 3 shape is not merely untested here — it is UNREACHABLE, and
+  the honest thing to record is that, not a manufactured pass.
+  [PASS] anthropic / complete(): the turn is refused, not silently emulated
+        Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  [PASS] anthropic / complete(): NO UNSUPPORTED AFFORDANCE IS OFFERED — the refusal is not retried or failed over into one
+        Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  [PASS] anthropic / complete(): no tool-call markup reached the UI on the way to refusing
+        ""
+  [PASS] anthropic / complete(): emulation is structurally unreachable here — no `with_tool_emulation` call site exists on this adapter
+        grepped anthropic/stream.rs and anthropic/provider.rs
+
+---- google / stream() — the raw exchange ----------------------------------
+  route into emulation                   probed: tool_calling = Unsupported
+
+  >>> exchange 1 — POST http://127.0.0.1:42853/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (618 bytes) ---
+      {"contents":[{"parts":[{"text":"tidy up the disk"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n"}]}}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1865 bytes, read to end) ---
+      data: {"candidates":[{"content":{"parts":[{"text":"<think>I co"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"uld call <t"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"ool_call>{\""}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"name\":\"dele"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"te_everythi"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"ng\",\"argume"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"nts\":{\"path"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"\":\"/\"}}</to"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"ol_call> bu"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"t that woul"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"d be destru"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":"ctive, so I"}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[{"text":" will not."}],"role":"model"},"index":0}],"modelVersion":"gemini-cross"}
+      
+      data: {"candidates":[{"content":{"parts":[],"role":"model"},"finishReason":"MAX_TOKENS","index":0}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":40,"totalTokenCount":49},"modelVersion":"gemini-cross"}
+      
+
+---- google / stream() — what Vela produced --------------------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  TextDelta events                       "I could call  but that would be destructive, so I will not."
+
+---- google / stream() — assertions ----------------------------------------
+  [PASS] google / stream(): emulation was entered through the endpoint's own refusal
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] google / stream(): the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] google / stream(): the endpoint really was asked in the EMULATED shape — the catalogue was prose, not a `tools` array
+        6 request(s) recorded by the peer
+  [PASS] google / stream(): A CALL RECOVERED FROM A NEVER-CLOSED <think> IS NOT EXECUTABLE
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] google / stream(): the turn does not end in ToolUse
+        MaxTokens
+  [PASS] google / stream(): the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] google / stream(): no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] google / stream(): no raw tool-call markup on any TextDelta
+        "I could call  but that would be destructive, so I will not."
+  [PASS] google / stream(): MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] google / stream(): the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+---- google / complete() — the raw exchange --------------------------------
+  route into emulation                   probed: tool_calling = Unsupported
+
+  >>> exchange 1 — POST http://127.0.0.1:32839/v1beta/models/gemini-cross:generateContent
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (618 bytes) ---
+      {"contents":[{"parts":[{"text":"tidy up the disk"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n"}]}}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (373 bytes, read to end) ---
+      {"candidates":[{"content":{"parts":[{"text":"<think>I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."}],"role":"model"},"finishReason":"MAX_TOKENS","index":0}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":40,"totalTokenCount":49},"modelVersion":"gemini-cross"}
+
+---- google / complete() — what Vela produced ------------------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+
+---- google / complete() — assertions --------------------------------------
+  [PASS] google / complete(): emulation was entered through the endpoint's own refusal
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] google / complete(): the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] google / complete(): the endpoint really was asked in the EMULATED shape — the catalogue was prose, not a `tools` array
+        6 request(s) recorded by the peer
+  [PASS] google / complete(): A CALL RECOVERED FROM A NEVER-CLOSED <think> IS NOT EXECUTABLE
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] google / complete(): the turn does not end in ToolUse
+        MaxTokens
+  [PASS] google / complete(): the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] google / complete(): no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] google / complete(): MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] google / complete(): the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+================================================================================
+VERDICT  46 assertion(s), 0 failure(s)
+================================================================================

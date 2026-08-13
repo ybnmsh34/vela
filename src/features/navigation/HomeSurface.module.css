@@ -17,8 +17,8 @@
 .mark {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: var(--vela-mark-lg);
+  height: var(--vela-mark-lg);
   margin-bottom: var(--vela-space-2);
   border-radius: var(--vela-radius-lg);
   background: var(--vela-accent-quiet);
@@ -29,7 +29,7 @@
   margin: 0;
   font-size: var(--vela-text-xl);
   font-weight: var(--vela-weight-semibold);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--vela-tracking-tight);
   color: var(--vela-text);
 }
 
@@ -38,7 +38,7 @@
   margin: 0;
   color: var(--vela-text-muted);
   font-size: var(--vela-text-lg);
-  line-height: 1.45;
+  line-height: var(--vela-leading-snug);
 }
 
 .actions {
@@ -84,8 +84,8 @@
 .primary:focus-visible,
 .secondary:focus-visible,
 .recentItem:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .kbd {
@@ -121,7 +121,7 @@
   margin: 0;
   color: var(--vela-text-muted);
   font-size: var(--vela-text-sm);
-  line-height: 1.55;
+  line-height: var(--vela-leading-ui);
 }
 
 .recent {
@@ -135,7 +135,7 @@
   color: var(--vela-text-subtle);
   font-size: var(--vela-text-xs);
   font-weight: var(--vela-weight-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--vela-tracking-caps);
   text-transform: uppercase;
 }
 
@@ -204,7 +204,7 @@
   color: var(--vela-text-subtle);
   font-size: var(--vela-text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--vela-tracking-caps);
 }
 
 .fact dd {

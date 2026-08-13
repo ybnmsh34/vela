@@ -34,8 +34,8 @@
 }
 
 .limits:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .limitsActive {
@@ -63,7 +63,7 @@
   margin: 0;
   color: var(--vela-text);
   font-size: var(--vela-text-xs);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
 }
 
 .noticeDismiss {
@@ -79,6 +79,6 @@
 }
 
 .noticeDismiss:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }

@@ -1,0 +1,159 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 18-error-echo-every-adapter: the error surface carries NO endpoint-derived text — not merely no credential
+================================================================================
+
+PURPOSE   Four rounds asked whether the CREDENTIAL was on the error surface, and four times found a spelling the previous round missed. B2 changed the surface. This case asserts the stronger property the change was made for, on all three adapters and both transports.
+SUBJECT   all three shipping adapters
+ENDPOINT  one purpose-built loopback peer per adapter/transport — ONE port per group, so the invariance comparison is not comparing ephemeral ports
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  FOUR PEER ANSWERS, identical but for the bytes of `message`:
+    empty     ""
+    prose     "the model is currently overloaded"
+    marker    "VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so"
+    escaped   the same marker, ONE \uXXXX ESCAPE PER BYTE
+  Same status, same `code`, same everything else. If any rendering of the resulting
+  error differs between the four, the endpoint has a channel into it.
+  TWO TRANSPORT SHAPES: a 400 read whole, and FINDING 2's shape — a 200 whose
+  stream carries an error object, read frame by frame through `BodyStream`.
+
+---- openai-compatible / 400 read whole — the raw exchange (variant `marker`) 
+
+  >>> exchange 1 — POST http://127.0.0.1:39095/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (95 bytes) ---
+      {"messages":[{"content":"variant:marker","role":"user"}],"model":"cross-compat","stream":false}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (137 bytes, read to end) ---
+      {"error":{"message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so","type":"invalid_request_error","code":"cross_probe"}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006b]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39095", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(107) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:39095","path":"/v1/chat/completions"},"correlation":107}}
+
+---- openai-compatible / 400 read whole — invariance across the four peer answers 
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 0000000000000069]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006a]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006b]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006c]
+
+---- openai-compatible / 400 read whole — assertions -----------------------
+  [FAIL] openai-compatible / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 0000000000000069]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006a]"
+        marker / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 0000000000000069]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006b]"
+        escaped / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 0000000000000069]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:39095/v1/chat/completions] [http 400] [ref 000000000000006c]"
+
+---- openai-compatible / 200 + in-stream error object — invariance across the four peer answers 
+  `empty` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006d]
+  `prose` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006e]
+  `marker` Display                       the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006f]
+  `escaped` Display                      the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 0000000000000070]
+
+---- openai-compatible / 200 + in-stream error object — assertions ---------
+  [FAIL] openai-compatible / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006d]" vs "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006e]"
+        marker / Display: "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006d]" vs "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006f]"
+        escaped / Display: "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 000000000000006d]" vs "the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:40487/v1/chat/completions] [ref 0000000000000070]"
+
+---- anthropic / 400 read whole — the raw exchange (variant `marker`) ------
+
+  >>> exchange 1 — POST http://127.0.0.1:38217/v1/messages
+      content-type: application/json
+      accept: application/json
+      anthropic-version: 2023-06-01
+      (no authorization header)
+      --- request body (138 bytes) ---
+      {"max_tokens":4096,"messages":[{"content":[{"text":"variant:marker","type":"text"}],"role":"user"}],"model":"claude-cross","stream":false}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (131 bytes, read to end) ---
+      {"type":"error","error":{"type":"invalid_request_error","message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so"}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000073]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38217", path: "/v1/messages" }), filter: None, correlation: CorrelationId(115) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:38217","path":"/v1/messages"},"correlation":115}}
+
+---- anthropic / 400 read whole — invariance across the four peer answers --
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000071]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000072]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000073]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000074]
+
+---- anthropic / 400 read whole — assertions -------------------------------
+  [FAIL] anthropic / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000071]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000072]"
+        marker / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000071]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000073]"
+        escaped / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000071]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38217/v1/messages] [http 400] [ref 0000000000000074]"
+
+---- anthropic / 200 + in-stream error object — invariance across the four peer answers 
+  `empty` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000075]
+  `prose` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000076]
+  `marker` Display                       could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000077]
+  `escaped` Display                      could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000078]
+
+---- anthropic / 200 + in-stream error object — assertions -----------------
+  [FAIL] anthropic / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000075]" vs "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000076]"
+        marker / Display: "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000075]" vs "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000077]"
+        escaped / Display: "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000075]" vs "could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44015/v1/messages] [http 529] [ref 0000000000000078]"
+
+---- google / 400 read whole — the raw exchange (variant `marker`) ---------
+
+  >>> exchange 1 — POST http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (66 bytes) ---
+      {"contents":[{"parts":[{"text":"variant:marker"}],"role":"user"}]}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (124 bytes, read to end) ---
+      {"error":{"code":400,"message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so","status":"INVALID_ARGUMENT"}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007b]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41669", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(123) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:41669","path":"/v1beta/models/gemini-cross:generateContent"},"correlation":123}}
+
+---- google / 400 read whole — invariance across the four peer answers -----
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000079]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007a]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007b]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007c]
+
+---- google / 400 read whole — assertions ----------------------------------
+  [FAIL] google / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000079]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007a]"
+        marker / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000079]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007b]"
+        escaped / Display: "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000079]" vs "could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:41669/v1beta/models/gemini-cross:generateContent] [http 400] [ref 000000000000007c]"
+
+---- google / 200 + in-stream error object — invariance across the four peer answers 
+  `empty` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007d]
+  `prose` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007e]
+  `marker` Display                       could not reach the endpoint (server): the endpoint failed to answer [endpoint http://<n>.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007f]
+  `escaped` Display                      could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 0000000000000080]
+
+---- google / 200 + in-stream error object — assertions --------------------
+  [FAIL] google / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
+        prose / Display: "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007d]" vs "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007e]"
+        marker / Display: "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007d]" vs "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://<n>.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007f]"
+        marker / Debug: "Transport { failure: Server { status: 503 }, diagnosis: Diagnosis { cause: EndpointFailedToAnswer, status: Some(503), endpoint: Some(EndpointIdentity { authority: \"http://127.0.0.1:43749\", path: \"/v1beta/models/gemini-cross:streamGenerateContent\" }), filter: None, correlation: CorrelationId(<n>) } }" vs "Transport { failure: Server { status: 503 }, diagnosis: Diagnosis { cause: EndpointFailedToAnswer, status: Some(503), endpoint: Some(EndpointIdentity { authority: \"http://<n>.0.0.1:43749\", path: \"/v1beta/models/gemini-cross:streamGenerateContent\" }), filter: None, correlation: CorrelationId(<n>) } }"
+        marker / Debug (alternate): "Transport {\n    failure: Server {\n        status: 503,\n    },\n    diagnosis: Diagnosis {\n        cause: EndpointFailedToAnswer,\n        status: Some(\n            503,\n        ),\n        endpoint: Some(\n            EndpointIdentity {\n                authority: \"http://127.0.0.1:43749\",\n                path: \"/v1beta/models/gemini-cross:streamGenerateContent\",\n            },\n        ),\n        filter: None,\n        correlation: CorrelationId(\n            <n>,\n        ),\n    },\n}" vs "Transport {\n    failure: Server {\n        status: 503,\n    },\n    diagnosis: Diagnosis {\n        cause: EndpointFailedToAnswer,\n        status: Some(\n            503,\n        ),\n        endpoint: Some(\n            EndpointIdentity {\n                authority: \"http://<n>.0.0.1:43749\",\n                path: \"/v1beta/models/gemini-cross:streamGenerateContent\",\n            },\n        ),\n        filter: None,\n        correlation: CorrelationId(\n            <n>,\n        ),\n    },\n}"
+        marker / serde_json (THE IPC WIRE SHAPE): "{\"kind\":\"transport\",\"failure\":{\"server\":{\"status\":503}},\"diagnosis\":{\"cause\":\"endpoint_failed_to_answer\",\"status\":503,\"endpoint\":{\"authority\":\"http://127.0.0.1:43749\",\"path\":\"/v1beta/models/gemini-cross:streamGenerateContent\"},\"correlation\":<n>}}" vs "{\"kind\":\"transport\",\"failure\":{\"server\":{\"status\":503}},\"diagnosis\":{\"cause\":\"endpoint_failed_to_answer\",\"status\":503,\"endpoint\":{\"authority\":\"http://<n>.0.0.1:43749\",\"path\":\"/v1beta/models/gemini-cross:streamGenerateContent\"},\"correlation\":<n>}}"
+        marker / serde_json (pretty): "{\n  \"kind\": \"transport\",\n  \"failure\": {\n    \"server\": {\n      \"status\": 503\n    }\n  },\n  \"diagnosis\": {\n    \"cause\": \"endpoint_failed_to_answer\",\n    \"status\": 503,\n    \"endpoint\": {\n      \"authority\": \"http://127.0.0.1:43749\",\n      \"path\": \"/v1beta/models/gemini-cross:streamGenerateContent\"\n    },\n    \"correlation\": <n>\n  }\n}" vs "{\n  \"kind\": \"transport\",\n  \"failure\": {\n    \"server\": {\n      \"status\": 503\n    }\n  },\n  \"diagnosis\": {\n    \"cause\": \"endpoint_failed_to_answer\",\n    \"status\": 503,\n    \"endpoint\": {\n      \"authority\": \"http://<n>.0.0.1:43749\",\n      \"path\": \"/v1beta/models/gemini-cross:streamGenerateContent\"\n    },\n    \"correlation\": <n>\n  }\n}"
+        marker / StreamEvent[0]: "{\"type\":\"error\",\"error\":{\"kind\":\"transport\",\"failure\":{\"server\":{\"status\":503}},\"diagnosis\":{\"cause\":\"endpoint_failed_to_answer\",\"status\":503,\"endpoint\":{\"authority\":\"http://127.0.0.1:43749\",\"path\":\"/v1beta/models/gemini-cross:streamGenerateContent\"},\"correlation\":<n>}}}" vs "{\"type\":\"error\",\"error\":{\"kind\":\"transport\",\"failure\":{\"server\":{\"status\":503}},\"diagnosis\":{\"cause\":\"endpoint_failed_to_answer\",\"status\":503,\"endpoint\":{\"authority\":\"http://<n>.0.0.1:43749\",\"path\":\"/v1beta/models/gemini-cross:streamGenerateContent\"},\"correlation\":<n>}}}"
+        escaped / Display: "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 000000000000007d]" vs "could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:43749/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref 0000000000000080]"
+
+---- assertions — across every adapter and both transport shapes -----------
+  [PASS] every arm really did produce an error — nothing above is vacuous
+        24 of 24 arms errored
+  [PASS] the marker really did arrive on the wire, in both spellings, on every adapter
+        12 of 12 marker-carrying arms saw it on the wire
+  [PASS] NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde shape is drawn from Vela's own closed vocabulary, on all three adapters
+        24 arms audited, 0 unexplained strings
+  [FAIL] invariance holds on every adapter and both transport shapes, not just one
+        0 of 6 groups invariant
+
+================================================================================
+VERDICT  10 assertion(s), 7 failure(s)
+================================================================================

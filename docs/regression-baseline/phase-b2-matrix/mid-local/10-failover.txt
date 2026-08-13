@@ -1,0 +1,140 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: mid-local — case 10-failover: routing and failover
+================================================================================
+
+PURPOSE   A dead candidate must be routed past. An endpoint that dies MID-STREAM, after the user has already seen output, must NOT be replayed from another candidate.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- candidate 1 refuses the connection; candidate 2 is live -----------------
+
+  >>> exchange 1 — POST http://127.0.0.1:1/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (127 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< NO RESPONSE — Connect: the connection could not be established [endpoint http://127.0.0.1:1/v1/chat/completions] [ref 0000000000000108]
+
+  >>> exchange 2 — POST http://127.0.0.1:33295/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (127 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (4376 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about hello. Profile mid"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"-local has a 32768-token"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" window. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"</thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"\n"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Mock mid-local r"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"eply to: hello. "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tiller quartz ga"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"uge umber north "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"gauge ivory yard"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"arm sextant quar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tz careful caref"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"ul keel yardarm "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"north meridian."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":65,"total_tokens":71}}
+      
+      data: [DONE]
+      
+  outcome                                Ok(true)
+  wall clock                             9.595406ms
+  answer                                 Some("\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian.")
+  degradations                           FailedOver { attempts: 2 }
+
+---- assertions --------------------------------------------------------------
+  [PASS] a dead candidate is routed past, not surfaced as a failure
+        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+  [PASS] the failover is declared to the caller
+        FailedOver { attempts: 2 }
+  [PASS] failover does not hang
+        9.595406ms
+
+---- the endpoint is KILLED mid-stream, after output has already been shown --
+  The primary is started with a 40 ms inter-frame delay so the turn is still running
+  when its process is SIGKILLed. A second, healthy candidate is configured behind it.
+  Rule 2 of the router: once a character has reached the user, moving to another
+  candidate would restart the answer in front of them.
+
+  >>> exchange 1 — POST http://127.0.0.1:45913/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (173 bytes) ---
+      {"max_tokens":256,"messages":[{"content":"write me something reasonably long","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1138 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about write me something"},"finish_reason":null}]}
+      
+      
+      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:45913/v1/chat/completions] [ref 0000000000000109] >>>
+
+---- what Vela produced ------------------------------------------------------
+  wall clock                             205.946022ms
+  answer text the user saw               ""
+  reasoning text the user saw            "Considering the request about write me something"
+  TextDelta events                       0
+  ReasoningDelta events                  2
+  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45913", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(265) } })
+  requests sent to the backup candidate  0
+
+---- assertions --------------------------------------------------------------
+  [PASS] killing the endpoint mid-stream does not hang the app
+        205.946022ms
+  output had already been committed      true
+  [PASS] after visible output, the turn is NOT replayed from another candidate
+        0 request(s) reached the backup
+  [PASS] a killed stream is never reported as a normally finished turn
+        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45913", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(265) } }))
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

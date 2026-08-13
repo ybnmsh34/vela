@@ -1,0 +1,155 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 06-reasoning: reasoning separation
+================================================================================
+
+PURPOSE   MEASURED-3: `</think>` splits across frames, hostile never closes its block, frontier uses a separate field. No markup may leak, and reasoning must never reach tool parsing.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the raw stream ----------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (150 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (5071 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"the weather in B"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"erlin. rudder ga"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"uge windward bea"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"con meridian bea"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"con sextant fath"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"om windward harb"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"or fathom ember "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"umber rudder nor"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"th pennant ivory"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" orbit beacon me"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ridian umber zen"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ith pennant umbe"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"r."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":88,"total_tokens":100}}
+      
+      data: [DONE]
+      
+
+---- what Vela produced ------------------------------------------------------
+  user-visible answer                    "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+  reasoning channel                      "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+  ReasoningDelta events                  "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+  content parts                          ["reasoning", "text"]
+  degradations                           (none)
+  wall clock                             7.302367ms
+
+---- baseline — every `content` delta concatenated, no state machine -------
+    "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+
+---- assertions --------------------------------------------------------------
+  [PASS] no reasoning markup reaches the user-visible answer
+        "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+  [PASS] the answer itself survives
+        "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u\n… [elided: 226 characters total]"
+  [PASS] the deltas the consumer saw equal the final answer
+        226 vs 226 chars
+  [PASS] reasoning from a dedicated field lands in the reasoning channel
+        "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+  [PASS] and never in the answer channel
+        "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+
+---- reasoning is excluded from tool-call parsing ----------------------------
+  Emulation is active (seeded as if a previous probe had found no native tools), so
+  the textual <tool_call> parser IS running. The prompt puts a complete tool_call
+  block where the endpoint echoes it into BOTH channels, then `max_output_tokens` is
+  squeezed until the answer channel is cut short of the markup while the reasoning
+  channel — which is not budgeted by the harness — still carries all of it.
+
+  >>> exchange 1 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (643 bytes) ---
+      {"max_tokens":4,"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- echo_tool: Echo some text\n  arguments schema: {\"properties\":{\"text\":{\"type\":\"string\"}},\"type\":\"object\"}\n","role":"system"},{"content":"<tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>","role":"user"}],"model":"mock-frontier","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (585 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-f1ddb78c",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock frontier re",
+              "reasoning_content": "Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 130,
+          "completion_tokens": 44,
+          "total_tokens": 174
+        }
+      }
+  answer channel on the wire             "Mock frontier re"
+  reasoning channel on the wire          "Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
+  answer                                 "Mock frontier re"
+  tool calls                             (none)
+  [PASS] precondition — the markup is in the reasoning channel and not in the answer channel
+        answer="Mock frontier re" reasoning="Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
+  [PASS] NO tool call is recovered from reasoning text
+        Ok("(none)")
+
+---- positive control — the same markup, in the answer channel -------------
+  answer channel on the wire             "Mock frontier reply to: <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. fathom fathom gauge delta delta gauge meridian alpha quartz jetty gauge ember meridian delta gauge jetty orbit fathom ember yardarm gauge harbor rudder meridian."
+  tool calls                             OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+  [PASS] control — the parser DOES recover a call when the markup is in the answer
+        if this fails, the assertion above proves nothing
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

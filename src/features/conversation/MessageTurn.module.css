@@ -21,7 +21,7 @@
 .userText {
   margin: 0;
   font-size: var(--vela-text-base);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
   color: var(--vela-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -42,8 +42,8 @@
 }
 
 .dots span {
-  width: 5px;
-  height: 5px;
+  width: var(--vela-dot);
+  height: var(--vela-dot);
   border-radius: var(--vela-radius-pill);
   background: currentcolor;
   animation: bounce 1.1s var(--vela-ease) infinite;
@@ -106,7 +106,7 @@
 .errorDetail {
   margin: var(--vela-space-1) 0 0;
   font-size: var(--vela-text-sm);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
   color: var(--vela-text-muted);
 }
 
@@ -140,8 +140,8 @@
 }
 
 .retry:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .footer {
@@ -149,7 +149,7 @@
   align-items: center;
   gap: var(--vela-space-3);
   margin-top: var(--vela-space-3);
-  min-height: 22px;
+  min-height: var(--vela-control-xs);
   opacity: 0;
   transition: opacity var(--vela-duration) var(--vela-ease);
 }

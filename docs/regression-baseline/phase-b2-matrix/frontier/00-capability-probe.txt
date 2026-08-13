@@ -1,0 +1,249 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 00-capability-probe: capability probe
+================================================================================
+
+PURPOSE   Establish what this endpoint can do by asking it. Nothing may be assumed from a name.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the probe on the wire ---------------------------------------------------
+
+  >>> exchange 1 — GET http://127.0.0.1:38785/props
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (595 bytes, read to end) ---
+      {
+        "default_generation_settings": {
+          "n_ctx": 200000,
+          "model": "mock-frontier",
+          "seed": 4294967295
+        },
+        "total_slots": 4,
+        "model_path": "/models/mock-frontier.gguf",
+        "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+        "build_info": "vela-mock-provider",
+        "vela_mock": {
+          "profile": "frontier",
+          "context_window": 200000,
+          "tool_calling": "native",
+          "vision": true,
+          "structured_output": "honoured",
+          "reasoning": "reasoning-content-field",
+          "emits_done_sentinel": true,
+          "emits_malformed_sse_frames": false
+        }
+      }
+
+  >>> exchange 2 — GET http://127.0.0.1:38785/v1/models
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (173 bytes, read to end) ---
+      {
+        "object": "list",
+        "data": [
+          {
+            "id": "mock-frontier",
+            "object": "model",
+            "created": 1700000000,
+            "owned_by": "vela-mock-provider"
+          }
+        ]
+      }
+
+  >>> exchange 3 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (144 bytes) ---
+      {"max_tokens":16,"messages":[{"content":"Say OK.","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2657 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about Say OK.. P"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"rofile frontier has "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"a 200000-token windo"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"w. Answering directl"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"y."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: Say OK.."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" lantern zenith "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"meridian windwar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+      data: {"id":"chatcmpl-mock-2a6dfdd1","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":42,"total_tokens":48}}
+      
+      data: [DONE]
+      
+
+  >>> exchange 4 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (351 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"What is the weather in Berlin?","role":"user"}],"model":"mock-frontier","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (793 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-565cf74e",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "Considering the request about What is the weather in Berlin?. Profile frontier has a 200000-token window. Answering directly.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"alpha\"}"
+                  },
+                  "id": "call_565cf74e"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 39,
+          "total_tokens": 51
+        }
+      }
+
+  >>> exchange 5 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (301 bytes) ---
+      {"max_tokens":16,"messages":[{"content":[{"text":"What colour is this?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="},"type":"image_url"}],"role":"user"}],"model":"mock-frontier","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (589 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-348478a0",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock frontier reply to: What colour is this?. ivory jetty tiller",
+              "reasoning_content": "Considering the request about What colour is this?. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 94,
+          "completion_tokens": 45,
+          "total_tokens": 139
+        }
+      }
+
+  >>> exchange 6 — POST http://127.0.0.1:38785/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (335 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"Reply with a JSON object containing the key \"answer\".","role":"user"}],"model":"mock-frontier","response_format":{"json_schema":{"name":"vela_probe","schema":{"properties":{"answer":{"type":"string"}},"required":["answer"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (561 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-a5956699",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"answer\":\"celsius\"}",
+              "reasoning_content": "Considering the request about Reply with a JSON object containing. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 38,
+          "total_tokens": 56
+        }
+      }
+
+---- what Vela concluded -----------------------------------------------------
+  model                                  mock-frontier
+  context window (tokens)                Some(200000)
+  streaming                              Supported
+  tool calling                           Supported
+  vision                                 Supported
+  structured output                      Supported
+  reasoning                              Supported
+  model listing                          Supported
+  usage reporting                        Supported
+  prompt caching                         Unknown
+  probe wall clock                       18.033579ms
+
+  findings (how each belief was reached):
+    Streaming = Unknown (Declared) — endpoint declares a 200000-token context window
+    ModelListing = Supported (Probed) — 1 model(s) listed
+    Streaming = Supported (Probed) — streamed a completion
+    UsageReporting = Supported (Probed) — usage frame on a streamed turn
+    Reasoning = Supported (Probed) — emitted a reasoning channel
+    ToolCalling = Supported (Probed) — returned a well-formed tool call
+    Vision = Supported (Probed) — accepted an image part
+    StructuredOutput = Supported (Probed) — returned JSON conforming to the requested schema
+
+---- the flag set the renderer is allowed to see -----------------------------
+  {"streaming":true,"vision":true,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+
+---- assertions --------------------------------------------------------------
+  [PASS] the declared context window is read from the endpoint, not guessed
+        expected 200000, probe reported Some(200000)
+  [PASS] tool calling matches the recorded matrix row
+        expected Supported, probed Supported
+  [PASS] vision matches the recorded matrix row
+        expected Supported, probed Supported
+  [PASS] structured output matches the recorded matrix row
+        expected Supported, probed Supported
+  [PASS] every belief carries probe evidence, none is a default
+        8 findings recorded
+  [PASS] no backend identity reaches the UI flag set
+        flag set = {"streaming":true,"vision":true,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+  [PASS] the vision affordance follows the probe exactly
+        descriptor.vision = true, probe = Supported
+  [PASS] structured output is never advertised unless honoured (MEASURED-5)
+        honours_structured_output() = true
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

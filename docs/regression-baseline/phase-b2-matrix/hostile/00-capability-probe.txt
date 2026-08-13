@@ -1,0 +1,234 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 00-capability-probe: capability probe
+================================================================================
+
+PURPOSE   Establish what this endpoint can do by asking it. Nothing may be assumed from a name.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the probe on the wire ---------------------------------------------------
+
+  >>> exchange 1 — GET http://127.0.0.1:45341/props
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (591 bytes, read to end) ---
+      {
+        "default_generation_settings": {
+          "n_ctx": 4096,
+          "model": "mock-hostile",
+          "seed": 4294967295
+        },
+        "total_slots": 4,
+        "model_path": "/models/mock-hostile.gguf",
+        "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+        "build_info": "vela-mock-provider",
+        "vela_mock": {
+          "profile": "hostile",
+          "context_window": 4096,
+          "tool_calling": "malformed",
+          "vision": false,
+          "structured_output": "ignored",
+          "reasoning": "unterminated-think-junk",
+          "emits_done_sentinel": false,
+          "emits_malformed_sse_frames": true
+        }
+      }
+
+  >>> exchange 2 — GET http://127.0.0.1:45341/v1/models
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (172 bytes, read to end) ---
+      {
+        "object": "list",
+        "data": [
+          {
+            "id": "mock-hostile",
+            "object": "model",
+            "created": 1700000000,
+            "owned_by": "vela-mock-provider"
+          }
+        ]
+      }
+
+  >>> exchange 3 — POST http://127.0.0.1:45341/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (143 bytes) ---
+      {"max_tokens":16,"messages":[{"content":"Say OK.","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1623 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ЖЖЖ � "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about Say OK.."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" Profile hos"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-5d3eba81","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+
+  >>> exchange 4 — POST http://127.0.0.1:45341/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (350 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"What is the weather in Berlin?","role":"user"}],"model":"mock-hostile","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (1066 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-1717ad3e",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> ▒▒ � Considering the request about What is the weather in Berlin?. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: What is the weather in Berlin?. pennant windward careful fatho",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"c"
+                  },
+                  "id": "call_1717ad3e"
+                },
+                {
+                  "type": "funktion",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "not-json-at-all"
+                  }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 77,
+          "total_tokens": 89
+        }
+      }
+
+  >>> exchange 5 — POST http://127.0.0.1:45341/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (300 bytes) ---
+      {"max_tokens":16,"messages":[{"content":[{"text":"What colour is this?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="},"type":"image_url"}],"role":"user"}],"model":"mock-hostile","stream":false}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (179 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-hostile` does not support image input",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "vision_not_supported"
+        }
+      }
+
+  >>> exchange 6 — POST http://127.0.0.1:45341/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (334 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"Reply with a JSON object containing the key \"answer\".","role":"user"}],"model":"mock-hostile","response_format":{"json_schema":{"name":"vela_probe","schema":{"properties":{"answer":{"type":"string"}},"required":["answer"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (634 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-e7aa2e69",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> ЖЖЖ <|im_start|> Considering the request about Reply with a JSON object containing. Profile hostile has a 4096-token window. Answering directly. [UNK] <think> nested Mock hostile reply to: Reply with a JSON object containing the key. gauge ember de"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 64,
+          "total_tokens": 82
+        }
+      }
+
+---- what Vela concluded -----------------------------------------------------
+  model                                  mock-hostile
+  context window (tokens)                Some(4096)
+  streaming                              Supported
+  tool calling                           Degraded
+  vision                                 Unsupported
+  structured output                      Degraded
+  reasoning                              Supported
+  model listing                          Supported
+  usage reporting                        Unsupported
+  prompt caching                         Unknown
+  probe wall clock                       17.599812ms
+
+  findings (how each belief was reached):
+    Streaming = Unknown (Declared) — endpoint declares a 4096-token context window
+    ModelListing = Supported (Probed) — 1 model(s) listed
+    Streaming = Supported (Probed) — streamed a completion
+    UsageReporting = Unsupported (Probed) — usage frame on a streamed turn
+    Reasoning = Supported (Probed) — emitted a reasoning channel
+    ToolCalling = Degraded (Probed) — returned tool calls that could not be parsed
+    Vision = Unsupported (Probed) — refused an image part
+    StructuredOutput = Degraded (Probed) — answered 200 without honouring the schema: the model returned prose, not JSON — the schema was ignored
+
+---- the flag set the renderer is allowed to see -----------------------------
+  {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":false,"promptCaching":false}
+
+---- assertions --------------------------------------------------------------
+  [PASS] the declared context window is read from the endpoint, not guessed
+        expected 4096, probe reported Some(4096)
+  [PASS] tool calling matches the recorded matrix row
+        expected Degraded, probed Degraded
+  [PASS] vision matches the recorded matrix row
+        expected Unsupported, probed Unsupported
+  [PASS] structured output matches the recorded matrix row
+        expected Degraded, probed Degraded
+  [PASS] every belief carries probe evidence, none is a default
+        8 findings recorded
+  [PASS] no backend identity reaches the UI flag set
+        flag set = {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":false,"promptCaching":false}
+  [PASS] the vision affordance follows the probe exactly
+        descriptor.vision = false, probe = Unsupported
+  [PASS] structured output is never advertised unless honoured (MEASURED-5)
+        honours_structured_output() = false
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

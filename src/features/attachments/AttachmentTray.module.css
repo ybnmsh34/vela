@@ -28,8 +28,8 @@
 }
 
 .preview {
-  width: 32px;
-  height: 32px;
+  width: var(--vela-thumb);
+  height: var(--vela-thumb);
   border-radius: var(--vela-radius-sm);
   object-fit: cover;
 }
@@ -37,14 +37,14 @@
 .glyph {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--vela-thumb);
+  height: var(--vela-thumb);
   border-radius: var(--vela-radius-sm);
   background: var(--vela-bg-inset);
   color: var(--vela-text-subtle);
-  font-size: 9px;
+  font-size: var(--vela-text-2xs);
   font-weight: var(--vela-weight-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--vela-tracking-caps);
 }
 
 .meta {
@@ -69,14 +69,14 @@
 .remove {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
   border: 0;
   border-radius: var(--vela-radius-sm);
   background: transparent;
   color: var(--vela-text-muted);
-  font-size: 16px;
-  line-height: 1;
+  font-size: var(--vela-text-icon);
+  line-height: var(--vela-leading-none);
   cursor: pointer;
 }
 
@@ -86,8 +86,8 @@
 }
 
 .remove:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .refusals {
@@ -108,7 +108,7 @@
   padding-left: var(--vela-space-4);
   color: var(--vela-warning);
   font-size: var(--vela-text-xs);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
 }
 
 .dismiss {
@@ -124,6 +124,6 @@
 }
 
 .dismiss:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }

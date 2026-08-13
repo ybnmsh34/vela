@@ -45,8 +45,8 @@
 
 .close:focus-visible,
 .add:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .muted,
@@ -54,7 +54,7 @@
   margin: 0;
   color: var(--vela-text-muted);
   font-size: var(--vela-text-sm);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
 }
 
 .backend code {
@@ -154,6 +154,6 @@
 
 .rowButton:focus-visible,
 .rowDanger:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }

@@ -25,7 +25,7 @@
   margin: 0;
   color: var(--vela-text-muted);
   font-size: var(--vela-text-xs);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
 }
 
 .warning {

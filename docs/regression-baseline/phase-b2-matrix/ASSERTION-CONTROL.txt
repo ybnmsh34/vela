@@ -1,0 +1,144 @@
+GATE M Part 1 (Phase B2) — ASSERTION CONTROLS
+================================================================================
+
+A green ledger is worthless if red is unreachable. Every control below applies one
+of the gate's assertions where it should NOT hold, and records the FAIL, then
+applies it where it should hold and records the PASS.
+
+VERIFIED-BY-FAKE: every endpoint is a deterministic mock.
+
+
+--------------------------------------------------------------------------------
+CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
+--------------------------------------------------------------------------------
+The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
+`data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
+  hostile      finished=false wall clock=5.001431497s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=12.909156ms chars=16   → PASS
+  EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
+  Vela's own consumer finishes both in single-digit milliseconds — see each profile's
+  07-stream-termination.txt. The assertion discriminates.
+
+--------------------------------------------------------------------------------
+CONTROL 2 — "no <think> markup in the answer" applied to the raw content channel
+--------------------------------------------------------------------------------
+The frame-local stripper's output is the concatenation of every `content` delta. The
+assertion is applied to THAT instead of to Vela's answer.
+  mid-local    raw channel clean=false → FAIL      Vela's answer clean=true  → PASS
+  hostile      raw channel clean=false → FAIL      Vela's answer clean=true  → PASS
+  frontier     raw channel clean=true  → PASS      Vela's answer clean=true  → PASS
+  EXPECTED: mid-local and hostile FAIL on the raw channel and PASS on Vela's answer;
+  frontier passes both, because it carries reasoning in a separate field and never
+  touches the <think> state machine. That difference is the discrimination.
+
+--------------------------------------------------------------------------------
+CONTROL 3 — "the answer conforms to the requested schema" applied to each profile
+--------------------------------------------------------------------------------
+The assertion Vela's structured verdict is built on, applied directly to the answer
+text each endpoint returned for a `json_schema` request.
+  frontier     HTTP 200, answer="{\"city\":\"eastward\"}"                    conforms=true  → PASS
+  mid-local    HTTP 200, answer="\nMock mid-local reply to: give me the \n… [elided: 171 characters total]" conforms=false → FAIL
+  small-local  HTTP 200, answer="Mock small-local reply to: give me the\n… [elided: 125 characters total]" conforms=false → FAIL
+  hostile      HTTP 200, answer="nested Mock hostile reply to: give me \n… [elided: 167 characters total]" conforms=false → FAIL
+  EXPECTED: frontier PASSES, the other three FAIL — all four answered 200 OK and
+  none of them said anything was wrong. That is MEASURED-5, and it is why Vela's
+  verdict is a Result the caller has to destructure.
+
+--------------------------------------------------------------------------------
+CONTROL 4 — "no authorization header on the wire" applied to a configured credential
+--------------------------------------------------------------------------------
+  Auth::Bearer   no auth header on the wire=false → FAIL
+  Auth::None     no auth header on the wire=true  → PASS
+  EXPECTED: the bearer case FAILS (the header is there, which is correct
+  behaviour) and the Auth::None case PASSES. The header check is not vacuous.
+
+--------------------------------------------------------------------------------
+CONTROL 5 — "the vision affordance is absent" applied to the profile that has vision
+--------------------------------------------------------------------------------
+  frontier     vision affordance absent=false → FAIL
+  mid-local    vision affordance absent=true  → PASS
+  EXPECTED: frontier FAILS (it has vision, so the affordance is correctly offered),
+  mid-local PASSES. The capability check tracks the endpoint, not a hard-coded table.
+
+--------------------------------------------------------------------------------
+CONTROL 6 — "the tool call is executable" applied to the profile that breaks them
+--------------------------------------------------------------------------------
+  frontier     exactly one executable call=true  → PASS   (1 call(s) reported)
+  hostile      exactly one executable call=false → FAIL   (2 call(s) reported)
+  EXPECTED: frontier PASSES, hostile FAILS — and hostile failing is the desired
+  behaviour: what comes back is surfaced and nothing is executable.
+  NOTE: hostile sends TWO broken calls and this non-streamed path now reports BOTH.
+  Round 1 reported one spliced call here — that was FINDING 1 in RESULTS.md, fixed in
+  round 2. The control itself is unchanged: neither call is executable either way.
+
+--------------------------------------------------------------------------------
+CONTROL 7 — "the turn overflows the context window" applied to a prompt that fits
+--------------------------------------------------------------------------------
+  a 5-character prompt   overflow reported=false → FAIL
+  EXPECTED: FAIL. The overflow assertion in case 05 is not something every turn
+  satisfies by accident.
+
+--------------------------------------------------------------------------------
+CONTROL 8 — "every parallel call comes back" applied with the round-1 rule restored
+--------------------------------------------------------------------------------
+Case 02p's assertions are only worth something if the defect they were written for is
+still detectable. The three whole calls below are the non-streamed OpenAI shape: an
+`id`, a `type`, a name and complete arguments on each, and NO `index` on any of them.
+They are fed to the SAME accumulator twice — once with the shape the boundary states
+today (`WholeCall`), and once with the shape round 1 assumed for everything
+(`Fragment`, whose rule is "no index continues the last-touched slot").
+  WholeCall (today)    calls reported=3  → PASS
+        OK id=call_a name=get_weather emulated=false args={"city":"berlin"}
+                                            OK id=call_b name=get_weather emulated=false args={"city":"paris"}
+                                            OK id=call_c name=get_weather emulated=false args={"city":"rome"}
+  Fragment  (round 1)  calls reported=1  → FAIL
+        MALFORMED index=None id=call_a name=get_weather reason=UnparseableArguments raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}{\"city\":\"rome\"}"
+  EXPECTED: WholeCall PASSES with three calls; Fragment FAILS with ONE call whose
+  arguments are the three spliced together — `{"city":"berlin"}{"city":"paris"}
+  {"city":"rome"}`, a string that never existed on any wire. That is GATE M
+  FINDING 1 reproduced verbatim, and it is why case 02p is not measuring nothing.
+
+--------------------------------------------------------------------------------
+CONTROL 9 — "the credential is not in this text" applied to text that has not been
+redacted
+--------------------------------------------------------------------------------
+Case 11's grep is worthless if it cannot see a credential that is right there. It is
+applied here to the wire form of the same URL, and to the pre-fix error string that
+Phase B's security review actually found.
+  RequestUrl::expose() — the socket form   clean=false → FAIL
+        http://127.0.0.1:8080/v1/chat/completions?key=vela%2Bgate%2Fm1-<CANARY>-DO-NOT-LEAK
+  the pre-fix detail string                clean=false → FAIL
+        error sending request for url (http://127.0.0.1:8080/v1/chat/completions?key=vela%2Bgate%2Fm1-<CANARY>-DO-NOT-LEAK)
+  RequestUrl Display — the redacted form   clean=true  → PASS
+        http://127.0.0.1:8080/v1/chat/completions?key=<redacted>
+  RequestUrl Debug — the redacted form     clean=true  → PASS
+        "http://127.0.0.1:8080/v1/chat/completions?key=<redacted>"
+  EXPECTED: the two unredacted renderings FAIL and the two redacted ones PASS. The
+  `expose()` failure is correct behaviour — that string goes to a socket, never to a
+  message. The pre-fix failure is the bug itself, still reproducible on demand.
+
+--------------------------------------------------------------------------------
+CONTROL 10 — "the two transports agree" applied to two answers that differ
+--------------------------------------------------------------------------------
+Case 02p's central assertion compares the two transports call by call. Here it is
+given a matching pair and a deliberately mismatched one.
+  the same two calls, streamed     agree=true  → PASS   (non-streamed 2 call(s), streamed 2)
+  only the first call, streamed    agree=false → FAIL   (non-streamed 2 call(s), streamed 1)
+  EXPECTED: the matching pair PASSES, the truncated one FAILS. A comparison that
+  passed both would be comparing nothing — which is precisely what round 1's
+  count-only check did on the profiles that only ever sent one call.
+
+--------------------------------------------------------------------------------
+CONTROL 11 — "the turn ends in single-digit milliseconds" applied to a stalled socket
+--------------------------------------------------------------------------------
+Case 07c asserts a median under 10 ms. Applied to the endpoint of case 07b — 4 s
+between frames, 800 ms stall budget — the same assertion must fail.
+  stalled socket        wall clock=808.264262ms outcome=transport → FAIL
+  EXPECTED: FAIL, at roughly the 800 ms stall budget. The single-digit-millisecond
+  claim in case 07c is a measurement of Vela ending a stream promptly, not an artefact
+  of every code path in this recorder being fast.
+
+================================================================================
+Controls are recorded in verdicts.tsv under case names beginning `control-`. Their
+FAILs are EXPECTED and are excluded from the gate ledger totals in RESULTS.md.
+================================================================================

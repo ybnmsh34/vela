@@ -19,8 +19,8 @@
 .mark {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
   border-radius: var(--vela-radius-sm);
   color: var(--vela-accent);
   background: var(--vela-accent-quiet);
@@ -29,7 +29,7 @@
 .wordmark {
   font-size: var(--vela-text-sm);
   font-weight: var(--vela-weight-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--vela-tracking-wordmark);
   text-transform: uppercase;
   color: var(--vela-text);
 }
@@ -60,7 +60,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--vela-space-2);
-  height: 26px;
+  height: var(--vela-control-sm);
   padding: 0 var(--vela-space-3);
   border: 1px solid var(--vela-border);
   border-radius: var(--vela-radius-pill);

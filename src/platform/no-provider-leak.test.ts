@@ -362,6 +362,62 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     expect(report).not.toMatch(/readonly (note|detail|message|reason): string/);
   });
 
+  it('the composition root joins three features without inspecting a backend', () => {
+    // Phase C's integration created a place that did not exist before: `src/app`
+    // now wires navigation ("which conversation"), the model feature ("where it
+    // runs and what it can do") and the conversation surface ("what is in it")
+    // to each other. A `providerId` and a capability struct pass through it.
+    //
+    // That makes the shell the one layer with a view of all three at once, and
+    // therefore the easiest place to write the branch none of the three features
+    // is allowed to contain. The rule is the carried-never-inspected one: the
+    // root may thread an id from the model feature to the transcript, and may
+    // not look at it on the way past.
+    const files = sourceFiles(join(SRC_ROOT, 'app'), ['.ts', '.tsx', '.css']).filter(
+      (path) => !/\.test\.[a-z]+$/.test(path),
+    );
+    expect(files.length, 'the app shell moved; fix this path').toBeGreaterThan(3);
+
+    const offenders = files.flatMap((path) => {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      return [
+        ...offendingLines(path, source),
+        ...source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          .filter(({ line }) => comparesToALiteral(line) || indexesById(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`),
+      ];
+    });
+
+    expect(
+      offenders,
+      'the shell sees all three features at once; that is exactly why it may not branch on a backend',
+    ).toEqual([]);
+  });
+
+  it('no design token is named after a backend', () => {
+    // The integration pass unified the four builders' tokens into one scale.
+    // A token is a global name every component can reach, so a vendor-shaped one
+    // — `--vela-ollama-accent`, a `[data-provider='…']` block — would hand every
+    // stylesheet in the tree the branch the TypeScript rules forbid, without any
+    // component appearing to take it.
+    const styles = sourceFiles(join(SRC_ROOT, 'styles'), ['.css']);
+    expect(styles.length, 'the styles folder moved; fix this path').toBeGreaterThan(1);
+
+    const offenders = styles.flatMap((path) =>
+      offendingLines(path, stripComments(readFileSync(path, 'utf8'))),
+    );
+    expect(offenders, 'a palette that names a backend is a branch every component inherits').toEqual(
+      [],
+    );
+
+    const all = styles.map((path) => readFileSync(path, 'utf8')).join('\n');
+    expect(all, 'styling by provider is the same leak, spelled as a selector').not.toMatch(
+      /\[data-(provider|model|backend|endpoint)/i,
+    );
+  });
+
   it('the scan actually catches a leak', () => {
     // A guard whose pattern silently stopped matching is worse than no guard.
     expect(offendingLines('x.tsx', "if (provider.id === 'ollama') return <OllamaPanel />;")).toEqual(

@@ -1,0 +1,71 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: small-local — case 08-malformed-frames: malformed SSE frames
+================================================================================
+
+PURPOSE   MEASURED-2: a consumer that JSON.parse'd every frame threw after 4 frames and lost 318 of 349 characters. One bad frame must cost one frame.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream --------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (153 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2207 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: what "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"is the weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n Berlin. tiller"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" lantern sextant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" zenith gauge la"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ntern umber quar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"tz rudder rudder"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: [DONE]
+      
+
+---- frame census ------------------------------------------------------------
+  frames in the body                     12
+  frames that are not valid JSON         0
+
+---- what Vela produced, against the non-streamed ground truth ---------------
+  streamed answer                        "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+  non-streamed answer                    "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+  streamed characters                    129
+  ground-truth characters                129
+  degradations                           UsageNotReported
+  a strict-JSON consumer would have delivered 129
+
+---- assertions --------------------------------------------------------------
+  [PASS] an endpoint that emits no bad frames produces no skip degradation
+        UsageNotReported
+  [PASS] content that arrives AFTER the bad frames still reaches the user
+        the tail of the ground truth is present in the streamed answer
+  [PASS] one bad frame never aborts the turn
+        129 characters delivered
+
+================================================================================
+VERDICT  3 assertion(s), 0 failure(s)
+================================================================================

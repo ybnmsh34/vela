@@ -1,0 +1,154 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: small-local — case 02-tool-calling: tool calling
+================================================================================
+
+PURPOSE   Native where the endpoint has it; prompt emulation end to end where it does not.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a native tools request --------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (337 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-small-local","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (173 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-small-local` does not support tools",
+          "type": "invalid_request_error",
+          "param": "tools",
+          "code": "tools_not_supported"
+        }
+      }
+
+  >>> exchange 2 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (682 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- get_weather: Current weather for a city\n  arguments schema: {\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"type\":\"object\"}\n\nYou must call one of these tools this turn.\n","role":"system"},{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-small-local","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (505 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-c3739d2f",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-small-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 142,
+          "completion_tokens": 32,
+          "total_tokens": 174
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern."
+  stop reason                            EndTurn
+  tool calls                             (none)
+  executable calls                       0
+  degradations                           ToolCallingEmulated { tool_count: 1 }
+  wall clock                             4.278418ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] an endpoint with no tools is refused explicitly, never silently
+        Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(142), output_tokens: Some(32), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ToolCallingEmulated { tool_count: 1 }] })
+  [PASS] the turn is degraded into emulation rather than failed
+        ToolCallingEmulated { tool_count: 1 }
+
+---- control: the same request with emulation switched OFF -------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (316 bytes) ---
+      {"messages":[{"content":"weather?","role":"user"}],"model":"mock-small-local","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (173 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-small-local` does not support tools",
+          "type": "invalid_request_error",
+          "param": "tools",
+          "code": "tools_not_supported"
+        }
+      }
+  outcome                                Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39677", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(269) } })
+  [PASS] control — this endpoint really does refuse a native tools request
+        if this passes, the emulation result below is not an artefact
+
+---- the emulation path, end to end ------------------------------------------
+  The prompt carries a call in the shape a small model writes one (no quotes at
+  all) and the endpoint echoes it back. That is the honest limit of a mock: it
+  proves the request rewriting, the round trip and the parser — not that any model
+  would choose to emit a call.
+
+  >>> exchange 1 — POST http://127.0.0.1:39677/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (631 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- echo_tool: Echo some text\n  arguments schema: {\"properties\":{\"text\":{\"type\":\"string\"}},\"type\":\"object\"}\n","role":"system"},{"content":"<tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>","role":"user"}],"model":"mock-small-local","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (538 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-9b0c333b",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-small-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock small-local reply to: <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. beacon delta quartz umber rudder umber fathom ivory zenith careful."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 130,
+          "completion_tokens": 40,
+          "total_tokens": 170
+        }
+      }
+  answer shown to the user               "Mock small-local reply to: . beacon delta quartz umber rudder umber fathom ivory zenith careful."
+  tool calls                             OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+  stop reason                            ToolUse
+  degradations                           ToolCallingEmulated { tool_count: 1 }
+  wall clock                             1.098635ms
+  [PASS] the textual call is recovered into an executable call
+        OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+  [PASS] arguments survive the round trip and the call is marked emulated
+        OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+  [PASS] call markup never reaches the user-visible answer
+        Some("Mock small-local reply to: . beacon delta quartz umber rudder umber fathom ivory zenith careful.")
+  [PASS] the emulation is declared as a degradation
+        ToolCallingEmulated { tool_count: 1 }
+  [PASS] the emulated turn ends in ToolUse, like a native one
+        Some(ToolUse)
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

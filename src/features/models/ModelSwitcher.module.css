@@ -25,8 +25,8 @@
 }
 
 .trigger:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: 1px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
 }
 
 .triggerLabel {
@@ -37,7 +37,7 @@
 
 .popover {
   position: absolute;
-  z-index: 20;
+  z-index: var(--vela-z-popover);
   top: calc(100% + var(--vela-space-2));
   left: 0;
   width: 24rem;
@@ -83,8 +83,8 @@
 }
 
 .option:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }
 
 .option:disabled {
@@ -162,6 +162,6 @@
 }
 
 .footerAction:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }

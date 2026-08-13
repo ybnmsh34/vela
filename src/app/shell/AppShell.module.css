@@ -11,40 +11,15 @@
   min-height: 0;
 }
 
-/* Left navigation rail. A placeholder region for Phase A: the feature builders
-   fill it with real destinations. */
-.rail {
-  flex: 0 0 var(--vela-rail-width);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--vela-space-2);
-  padding: var(--vela-space-3) 0;
-  background: var(--vela-chrome);
-  border-right: 1px solid var(--vela-border);
-}
-
-.railSlot {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--vela-radius-md);
-  border: 1px dashed var(--vela-border-strong);
-  opacity: 0.55;
-}
-
-.main {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: auto;
-  padding: var(--vela-space-6);
-  user-select: text;
-}
+/* Phase A's placeholder rail and content region used to live here. Both are
+   gone: `NavigationSurface` owns the sidebar and the content region now, and
+   the shell is left with the two bands it actually draws. */
 
 .statusBar {
   display: flex;
   align-items: center;
   gap: var(--vela-space-3);
-  height: 26px;
+  height: var(--vela-statusbar-height);
   padding: 0 var(--vela-space-3);
   background: var(--vela-chrome);
   border-top: 1px solid var(--vela-border);
@@ -54,8 +29,8 @@
 }
 
 .dot {
-  width: 7px;
-  height: 7px;
+  width: var(--vela-dot);
+  height: var(--vela-dot);
   border-radius: var(--vela-radius-pill);
   background: var(--vela-text-subtle);
 }

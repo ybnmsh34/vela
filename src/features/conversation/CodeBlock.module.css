@@ -19,7 +19,7 @@
   font-family: var(--vela-font-mono);
   font-size: var(--vela-text-xs);
   color: var(--vela-syntax-comment);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--vela-tracking-code);
 }
 
 .pending {
@@ -40,7 +40,7 @@
   overflow-x: auto;
   font-family: var(--vela-font-mono);
   font-size: var(--vela-text-sm);
-  line-height: 1.55;
+  line-height: var(--vela-leading-code);
   color: var(--vela-code-text);
   tab-size: 2;
 }

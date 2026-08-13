@@ -1,0 +1,92 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: mid-local — case 05-context-overflow: context overflow
+================================================================================
+
+PURPOSE   A prompt that cannot fit. A clean, surfaced error carrying the endpoint's own numbers — never a crash and never a silent truncation.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- an oversized prompt, with no local planning (max_context_tokens unset) --
+  prompt length: 163840 characters
+
+  >>> exchange 1 — POST http://127.0.0.1:41911/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (163923 bytes) ---
+      {"messages":[{"content":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      … [elided: 163923 characters total]
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (271 bytes, read to end) ---
+      {
+        "error": {
+          "message": "this model's maximum context length is 32768 tokens, however you requested 40964 tokens (40964 in the messages, 0 in the completion)",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "context_length_exceeded"
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  outcome                                Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
+  wall clock                             8.990233ms
+
+---- assertions --------------------------------------------------------------
+  limit reported by the endpoint         Some(32768)
+  requested, per the endpoint            Some(40964)
+  [PASS] an overflow is a clean ContextLengthExceeded, not a generic transport error
+        Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
+  [PASS] the endpoint's own window is carried through so the UI can say something true
+        expected limit 32768
+  [PASS] the requested size is carried through too
+        Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
+  [PASS] an overflow is never retried elsewhere — it is about the request
+        Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
+
+---- the same conversation when the window is known — reduce, visibly ------
+
+  >>> exchange 1 — POST http://127.0.0.1:41911/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (98844 bytes) ---
+      {"messages":[{"content":"[17 earlier turn(s) in this conversation were omitted because they did not fit the model's context window.]","role":"system"},{"content":"understood","role":"assistant"},{"content":"turn 9: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+      … [elided: 98844 characters total]
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (689 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-a3c459fc",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-mid-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think>Considering the request about finally: what did I ask first?. Profile mid-local has a 32768-token window. Answering directly.</think>\nMock mid-local reply to: finally: what did I ask first?. ivory orbit sextant delta north orbit north jetty lantern alpha lantern tiller sextant ember lantern lantern."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 24667,
+          "completion_tokens": 77,
+          "total_tokens": 24744
+        }
+      }
+  answer                                 "\nMock mid-local reply to: finally: what did I ask first?. ivory orbit sextant delta north orbit north jetty lantern alpha lantern tiller sextant ember lantern lantern."
+  degradations                           ContextReduced { dropped_messages: 17, approx_dropped_tokens: 73838, strategy: ElideOldest }
+  [PASS] a conversation that will not fit is reduced and answered, not refused
+        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: finally: what did I ask first?. ivory orbit sextant delta north orbit north jetty lantern alpha lantern tiller sextant ember lantern lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(24667), output_tokens: Some(77), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 73838, strategy: ElideOldest }] })
+  [PASS] the reduction is reported explicitly — never a silent truncation
+        dropped messages = Some(17)
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

@@ -33,16 +33,16 @@
 }
 
 .toggle:focus-visible {
-  outline: 2px solid var(--vela-focus);
-  outline-offset: -2px;
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
 }
 
 .chevron {
   width: 0;
   height: 0;
-  border-left: 5px solid currentcolor;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
+  border-left: var(--vela-chevron-run) solid currentcolor;
+  border-top: var(--vela-chevron-rise) solid transparent;
+  border-bottom: var(--vela-chevron-rise) solid transparent;
   transition: transform var(--vela-duration) var(--vela-ease);
 }
 
@@ -52,12 +52,12 @@
 
 .summary {
   font-weight: var(--vela-weight-medium);
-  letter-spacing: 0.01em;
+  letter-spacing: var(--vela-tracking-label);
 }
 
 .pulse {
-  width: 6px;
-  height: 6px;
+  width: var(--vela-dot);
+  height: var(--vela-dot);
   border-radius: var(--vela-radius-pill);
   background: var(--vela-accent);
   animation: pulse 1.4s var(--vela-ease) infinite;
@@ -86,7 +86,7 @@
 .text {
   margin: 0;
   font-size: var(--vela-text-sm);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
   color: var(--vela-thinking-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -95,6 +95,6 @@
 .notice {
   margin: 0 0 var(--vela-space-2);
   font-size: var(--vela-text-xs);
-  line-height: 1.5;
+  line-height: var(--vela-leading-ui);
   color: var(--vela-warning);
 }

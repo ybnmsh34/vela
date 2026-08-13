@@ -1,0 +1,57 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 03-vision: image input
+================================================================================
+
+PURPOSE   Vision where the endpoint has it. Where it does not: the affordance must be absent, and an image must be refused explicitly.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- an image sent to a provider whose capabilities are known ----------------
+  (no HTTP request was made)
+
+---- what Vela produced ------------------------------------------------------
+  error                                  CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } }
+  probed vision support                  Unsupported
+  UI vision affordance                   false
+  requests actually sent                 0
+  wall clock                             17.87µs
+
+---- assertions --------------------------------------------------------------
+  [PASS] the vision affordance is NOT offered to the UI
+        descriptor.vision = false
+  [PASS] an image is refused as a capability error, not a generic 400
+        Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+  [PASS] the refusal is local — the image never leaves the machine
+        0 HTTP request(s) were made
+  [PASS] a vision refusal is never shopped around to other backends
+        Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
+
+---- the same image before any probe has run ---------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:45341/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (206 bytes) ---
+      {"messages":[{"content":[{"text":"what is in this image?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgo="},"type":"image_url"}],"role":"user"}],"model":"mock-hostile","stream":false}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (179 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-hostile` does not support image input",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "vision_not_supported"
+        }
+      }
+  outcome                                Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45341", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(406) } })
+  [PASS] an unprobed endpoint's refusal is learned from the endpoint itself
+        Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45341", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(406) } })
+
+================================================================================
+VERDICT  5 assertion(s), 0 failure(s)
+================================================================================

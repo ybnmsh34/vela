@@ -91,15 +91,39 @@
     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
   --vela-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
+  --vela-text-2xs: 0.625rem;
   --vela-text-xs: 0.75rem;
   --vela-text-sm: 0.8125rem;
   --vela-text-base: 0.9375rem;
   --vela-text-lg: 1.125rem;
   --vela-text-xl: 1.5rem;
 
+  /* Sized against the text it sits in, not the root: a glyph button's mark and
+     inline code have to track whatever they are embedded in. */
+  --vela-text-icon: 1rem;
+  --vela-text-inline: 0.9em;
+
   --vela-weight-regular: 400;
   --vela-weight-medium: 500;
   --vela-weight-semibold: 600;
+
+  /* ---- leading: one step per job, not one per author --------------------- *
+   * Four Phase C builders each answered "how tall is a line?" separately and
+   * the tree ended up with 1.3/1.45/1.5/1.55/1.6/1.65 for overlapping jobs.
+   * These are the steps; a bare ratio in a component is drift.               */
+  --vela-leading-none: 1; /* a glyph centred in a box */
+  --vela-leading-tight: 1.3; /* headings */
+  --vela-leading-snug: 1.45; /* large-size text — a lede at --vela-text-lg up */
+  --vela-leading-ui: 1.5; /* the default for interface text */
+  --vela-leading-code: 1.55; /* monospace blocks */
+  --vela-leading-prose: 1.6; /* sustained reading: answers, markdown, notices */
+
+  /* ---- tracking ---------------------------------------------------------- */
+  --vela-tracking-tight: -0.01em; /* display sizes, which set too loose */
+  --vela-tracking-label: 0.01em; /* the slight lift on an emphasised label */
+  --vela-tracking-code: 0.02em; /* monospace, which sets too tight */
+  --vela-tracking-caps: 0.04em; /* uppercase micro-labels */
+  --vela-tracking-wordmark: 0.06em; /* identity: the Vela wordmark alone */
 
   /* ---- space: 4px base scale --------------------------------------------- */
   --vela-space-1: 0.25rem;
@@ -111,13 +135,61 @@
   --vela-space-7: 3rem;
 
   /* ---- radius ------------------------------------------------------------ */
+  --vela-radius-xs: 2px;
   --vela-radius-sm: 4px;
   --vela-radius-md: 8px;
   --vela-radius-lg: 12px;
   --vela-radius-pill: 999px;
 
+  /* ---- square controls --------------------------------------------------- *
+   * A bare icon button arrived at 22px, 24px, 26px, 30px and 32px from five
+   * different files. Three steps cover every one of those jobs.              */
+  --vela-control-xs: 24px; /* a glyph button inside a row or a chip */
+  --vela-control-sm: 28px; /* a compact control in chrome */
+  --vela-control-md: 32px; /* a standalone icon button */
+
+  /* One size for every status/activity dot, so four indicators cannot each
+     land on a different diameter. */
+  --vela-dot: 6px;
+
+  /* An attachment's thumbnail. Its own token rather than a control size: it is
+     an image well, and it should not move when a button size does. */
+  --vela-thumb: 32px;
+
+  /* The Vela mark at empty-state size. Two features draw this same mark to
+     introduce an empty screen; they arrived at 52px and 56px. */
+  --vela-mark-lg: 56px;
+
+  /* ---- overlay widths ---------------------------------------------------- */
+  --vela-overlay-sm: 420px; /* a dialog asking one question */
+  --vela-overlay-md: 620px; /* a palette listing results */
+
+  /* The disclosure triangle, drawn with borders in two features. Tokenised so
+     the two cannot drift apart. */
+  --vela-chevron-run: 5px; /* the pointing edge */
+  --vela-chevron-rise: 4px; /* each transparent flank */
+
+  /* ---- focus ------------------------------------------------------------- *
+   * base.css sets the global :focus-visible ring; these are the same ring for
+   * components that must draw their own. Offset has exactly two answers: the
+   * ring sits outside a control, or inside a full-bleed row where an outward
+   * ring would be clipped by the scroll container.                           */
+  --vela-focus-width: 2px;
+  --vela-focus-ring: var(--vela-focus-width) solid var(--vela-focus);
+  --vela-focus-offset: 2px;
+  --vela-focus-offset-inset: -2px;
+
+  /* ---- layering ---------------------------------------------------------- *
+   * The whole stacking order of the app, in one place. A bare z-index in a
+   * component is a guess about what else is on screen.                       */
+  --vela-z-overlay: 10; /* an overlay inside a surface — the drop target */
+  --vela-z-popover: 20; /* a menu anchored to its control */
+  --vela-z-dialog: 40; /* a modal dialog and its scrim */
+  --vela-z-palette: 50; /* the command palette, above everything */
+
   /* ---- chrome metrics ---------------------------------------------------- */
   --vela-titlebar-height: 40px;
+  --vela-statusbar-height: 28px;
   --vela-rail-width: 56px;
 
   /* ---- motion: one duration, one easing. Respect reduced motion. --------- */

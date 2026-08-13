@@ -1,8 +1,8 @@
-//! **GATE M Part 1, Phase B — the evidence recorder.**
+//! **GATE M Part 1, Phase B2 — the evidence recorder.**
 //!
 //! Runs Vela's own provider stack against all four capability-matrix profiles,
 //! started as real OS processes and driven over real TCP, and writes verbatim
-//! evidence to `docs/regression-baseline/phase-b-matrix/<profile>/`.
+//! evidence to `docs/regression-baseline/phase-b2-matrix/<profile>/`.
 //!
 //! This binary is deliberately *not* a test. It is an executor: it records what
 //! happened — request bytes, response bytes, normalised outcome, wall-clock
@@ -17,7 +17,7 @@
 //! is unreachable from this container and is not attempted.
 //!
 //! ```text
-//! cargo run -p vela-providers --example gate_m_phase_b
+//! cargo run -p vela-providers --example gate_m_phase_b2
 //! ```
 //!
 //! Exits non-zero if any assertion fails.
@@ -47,9 +47,9 @@ use vela_providers::openai_compatible::{OpenAiCompatibleProvider, ProviderOption
 use vela_providers::redact::RequestUrl;
 use vela_providers::tool_accum::{ToolCallAccumulator, ToolCallShape};
 use vela_providers::{
-    Candidate, ChatMessage, ChatRequest, ContentPart, Degradation, MalformedToolCall, MessageRole,
-    Provider, ProviderError, RequestContext, ResponseFormat, RetryPolicy, Router, StopReason,
-    StructuredOutputPolicy, Timeouts, ToolCallOutcome, ToolChoice, ToolDefinition,
+    Candidate, Capability, ChatMessage, ChatRequest, ContentPart, Degradation, MalformedToolCall,
+    MessageRole, Provider, ProviderError, RequestContext, ResponseFormat, RetryPolicy, Router,
+    StopReason, StructuredOutputPolicy, Timeouts, ToolCallOutcome, ToolChoice, ToolDefinition,
 };
 use vela_secrets::{MemoryStore, SecretStore};
 
@@ -122,8 +122,14 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Where the evidence lands.
+///
+/// **This moved in B2, deliberately.** `phase-b-matrix/` is round 4's record —
+/// a run that exits 1 and names FINDING 3 open. That is history worth keeping
+/// verbatim, not something to overwrite with a run that closes it. B2 writes
+/// beside it, and `phase-b-matrix/` is frozen; see its README.
 fn out_dir() -> PathBuf {
-    repo_root().join("docs/regression-baseline/phase-b-matrix")
+    repo_root().join("docs/regression-baseline/phase-b2-matrix")
 }
 
 // ===========================================================================
@@ -297,6 +303,32 @@ struct Doc {
 
 impl Doc {
     fn new(profile: &str, case: &str, title: &str, purpose: &str) -> Self {
+        Doc::new_with(
+            profile,
+            case,
+            title,
+            purpose,
+            "Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)",
+            &format!(
+                "tests/harness/mock-provider, profile `{profile}`, a real OS process on loopback"
+            ),
+        )
+    }
+
+    /// [`Doc::new`] with the SUBJECT and ENDPOINT lines supplied.
+    ///
+    /// B2's cross-product cases drive the Anthropic and Gemini adapters against
+    /// purpose-built loopback peers rather than the four matrix profiles, and a
+    /// transcript that claimed otherwise in its own header would be the exact
+    /// kind of quiet lie this gate exists to catch.
+    fn new_with(
+        profile: &str,
+        case: &str,
+        title: &str,
+        purpose: &str,
+        subject: &str,
+        endpoint: &str,
+    ) -> Self {
         let mut body = String::new();
         let _ = writeln!(
             body,
@@ -304,7 +336,7 @@ impl Doc {
         );
         let _ = writeln!(
             body,
-            "GATE M Part 1 (Phase B) — profile: {profile} — case {case}: {title}"
+            "GATE M Part 1 (Phase B2) — profile: {profile} — case {case}: {title}"
         );
         let _ = writeln!(
             body,
@@ -312,14 +344,8 @@ impl Doc {
         );
         let _ = writeln!(body);
         let _ = writeln!(body, "PURPOSE   {purpose}");
-        let _ = writeln!(
-            body,
-            "SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)"
-        );
-        let _ = writeln!(
-            body,
-            "ENDPOINT  tests/harness/mock-provider, profile `{profile}`, a real OS process on loopback"
-        );
+        let _ = writeln!(body, "SUBJECT   {subject}");
+        let _ = writeln!(body, "ENDPOINT  {endpoint}");
         let _ = writeln!(
             body,
             "HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced"
@@ -2499,11 +2525,54 @@ async fn case_09b(profile: &str, ledger: &mut Vec<Verdict>) {
             .is_some_and(|e| !e.allows_retry() && !e.allows_failover()),
         format!("{outcome:?}"),
     );
+    // INVERTED IN B2, and argued here rather than deleted.
+    //
+    // The round-4 wording was "no upstream body **or HTTP status** escapes into
+    // the error", and it now FAILS: `Display` prints `HTTP 401`. That is not a
+    // regression, it is the redesign. B2 carries the status **deliberately** —
+    // it is one of the five typed fields `Diagnosis` is allowed to hold, it is
+    // Vela's own parse of the status line, and it is the single most useful
+    // thing a user can be told about a failed turn.
+    //
+    // Keeping the old wording would have been the dishonest move twice over:
+    // it would have failed a gate for doing the thing the gate asked for, and
+    // it would have blurred "a three-digit code from RFC 9110's registry" into
+    // "text the endpoint wrote". So the assertion splits in two, and the second
+    // half is strictly stronger than what it replaces.
     doc.check(
-        "no upstream body or HTTP status escapes into the error",
+        "no upstream BODY text escapes into the error",
         outcome.as_ref().err().is_some_and(|e| {
-            !format!("{e}").contains("401") && !format!("{e}").contains("{\"error\"")
+            let rendered = format!("{e}\n{e:?}");
+            !rendered.contains("{\"error\"") && !rendered.contains("expected-key")
         }),
+        format!("{outcome:?}"),
+    );
+    doc.check(
+        "STRONGER: every string in the error's serde shape is drawn from Vela's own \
+         closed vocabulary — nothing on the wire reached it in any spelling",
+        outcome
+            .as_ref()
+            .err()
+            .is_some_and(|e| vela_providers::diagnostic::unexplained_in_error(e).is_empty()),
+        outcome.as_ref().err().map_or_else(
+            || "no error".to_owned(),
+            |e| {
+                let unexplained = vela_providers::diagnostic::unexplained_in_error(e);
+                if unexplained.is_empty() {
+                    "0 unexplained strings".to_owned()
+                } else {
+                    format!("unexplained: {unexplained:?}")
+                }
+            },
+        ),
+    );
+    doc.check(
+        "the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep",
+        outcome
+            .as_ref()
+            .err()
+            .and_then(|e| e.diagnosis().map(|d| d.status()))
+            == Some(Some(401)),
         format!("{outcome:?}"),
     );
     doc.write(ledger);
@@ -4578,15 +4647,41 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
         std::fs::read_to_string(repo_root().join("src-tauri/src/ipc/mod.rs")).unwrap_or_default();
     let contract =
         std::fs::read_to_string(repo_root().join("src/platform/contract.ts")).unwrap_or_default();
-    let provider_command_in_rust = allowlist.contains("\"provider_");
-    let provider_command_in_ts = contract.contains("provider_");
+    // THE PROBE WAS LYING, AND IS FIXED HERE RATHER THAN FILED.
+    //
+    // Round 4 asked `contract.ts.contains("provider_")`. In B2 that matches the
+    // string `'no_provider_configured'` — a `Cause` **code**, not a command
+    // name — so the probe reported a provider command on the bridge that does
+    // not exist, and the gate went red for a fact that was not true. A tooling
+    // lie that makes a gate red is still a tooling lie; it would have made a
+    // real red indistinguishable from noise.
+    //
+    // The fix is to ask the question the assertion is actually about: is there
+    // a Tauri *command* named `provider_…`, invoked from the frontend? Command
+    // names appear as `invoke('provider_x'` in TS and as a `provider_x` handler
+    // registered in the Rust allowlist.
+    let provider_command_in_rust = allowlist.contains("\"provider_")
+        || allowlist.contains("fn provider_")
+        || allowlist.contains("::provider_");
+    let provider_command_in_ts =
+        contract.contains("'provider_") || contract.contains("\"provider_");
     doc.kv(
         "a provider_* command on the Rust allowlist",
         provider_command_in_rust,
     );
     doc.kv(
-        "a provider_* command in contract.ts",
+        "a provider_* command invoked from contract.ts",
         provider_command_in_ts,
+    );
+    doc.kv(
+        "(round 4's substring probe would have said, of contract.ts)",
+        contract.contains("provider_"),
+    );
+    doc.p(
+        "  The third line is why this probe changed. `contract.ts` contains `provider_`, but\n  \
+         inside `'no_provider_configured'` — a Cause CODE, one of the 35 strings B2's own\n  \
+         closed vocabulary defines. Round 4's probe read that as a live IPC command and failed\n  \
+         the gate on it. The probe was fixed and re-run rather than reported as a finding.",
     );
     doc.p(
         "  No command carries a ProviderError across the bridge yet, so today the leak surface\n  \
@@ -5041,7 +5136,7 @@ async fn case_12(profile: &str, ledger: &mut Vec<Verdict>) {
     let mut third_party_bytes = 0usize;
     let mut redirector_hits = 0usize;
     let mut leaked_bindings: Vec<&'static str> = Vec::new();
-    let mut error_named_both = 0usize;
+    let mut error_named_configured_only = 0usize;
     let mut retryable = 0usize;
     let mut canary_in_error: Vec<String> = Vec::new();
 
@@ -5077,11 +5172,16 @@ async fn case_12(profile: &str, ledger: &mut Vec<Verdict>) {
                 Err(error) => {
                     refused += 1;
                     let renderings = renderings_of(error);
-                    let names_both = renderings.iter().all(|(_, text)| {
-                        text.contains(&redirector.url) && text.contains(&third_party.url)
-                    });
-                    if names_both {
-                        error_named_both += 1;
+                    // B2 INVERTED THIS, on purpose, and the inversion is the
+                    // assertion now. See the argument at the check below.
+                    let names_configured_only = renderings
+                        .iter()
+                        .all(|(_, text)| text.contains(&redirector.url))
+                        && renderings
+                            .iter()
+                            .all(|(_, text)| !text.contains(&third_party.url));
+                    if names_configured_only {
+                        error_named_configured_only += 1;
                     }
                     if error.allows_retry() {
                         retryable += 1;
@@ -5160,10 +5260,25 @@ async fn case_12(profile: &str, ledger: &mut Vec<Verdict>) {
         refused == arms,
         format!("{refused} refused of {arms} arms"),
     );
+    // INVERTED IN B2. Round 4 asserted the error named BOTH authorities; B2
+    // asserts it names ONE, and never the other. Argued here, not buried:
+    //
+    // The redirect target is a host **the endpoint chose**. Printing it into
+    // an error is the exact shape of the defect four rounds died on — carrying
+    // endpoint-controlled text and hoping to launder it — with the extra sting
+    // that a hostile endpoint could pick a "hostname" that is really a message
+    // to the user. So B2 drops it from the error and keeps it in the local
+    // debug log under the correlation id, which is where a user who wants it
+    // can deliberately go.
+    //
+    // This is a diagnostics degradation, and it is recorded as one in
+    // docs/regression-baseline/phase-b/TYPED-CLOSED-ERROR-SURFACE.md rather
+    // than presented as a pure win.
     doc.check(
-        "the error names BOTH authorities — who redirected, and where to — in every rendering",
-        error_named_both == arms,
-        format!("{error_named_both} of {arms}"),
+        "the error names the CONFIGURED authority and NOT the redirect target, in every \
+         rendering — the target is a host the endpoint chose",
+        error_named_configured_only == arms,
+        format!("{error_named_configured_only} of {arms}"),
     );
     doc.check(
         "a refused redirect is never retried — the same request earns the same Location",
@@ -5689,6 +5804,11 @@ struct EncodingOutcome {
     reconstructible: bool,
     /// `<redacted>` is present, so this is redaction rather than deletion.
     redacted_marker: bool,
+    /// B2's property, strictly stronger than any needle search: every string in
+    /// the error's serde shape that is NOT drawn from Vela's own closed
+    /// vocabulary. Empty means no endpoint byte reached the error in any
+    /// spelling — so there is no spelling left to try.
+    unexplained: Vec<String>,
     example: String,
 }
 
@@ -5707,6 +5827,7 @@ async fn drive_encoding(peer_url: &str, header_binding: bool, streamed: bool) ->
             readable: None,
             reconstructible: false,
             redacted_marker: false,
+            unexplained: Vec::new(),
             example: "the peer's rejection did not produce an error at all".into(),
         };
     };
@@ -5747,6 +5868,7 @@ async fn drive_encoding(peer_url: &str, header_binding: bool, streamed: bool) ->
         readable,
         reconstructible,
         redacted_marker: surfaces.iter().any(|(_, text)| text.contains("<redacted>")),
+        unexplained: vela_providers::diagnostic::unexplained_in_error(&error),
         example,
     }
 }
@@ -5784,6 +5906,8 @@ async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
     let mut premise_arms = 0usize;
     let mut redaction_not_deletion = 0usize;
     let mut leak_example = String::new();
+    let mut peer_sent_marker_arms = 0usize;
+    let mut unexplained_arms: Vec<String> = Vec::new();
 
     for encoding in Encoding::ALL {
         for header_binding in [false, true] {
@@ -5797,6 +5921,15 @@ async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
                     }
                     if outcome.redacted_marker {
                         redaction_not_deletion += 1;
+                    }
+                    if !outcome.unexplained.is_empty() {
+                        unexplained_arms.push(format!(
+                            "{} · {} · HTTP {status} · {} → {:?}",
+                            encoding.label(),
+                            if header_binding { "x-api-key" } else { "?key=" },
+                            transport_label(streamed),
+                            outcome.unexplained
+                        ));
                     }
                     let leaked = outcome.readable.is_some() || outcome.reconstructible;
                     if encoding.briefed() {
@@ -5836,6 +5969,16 @@ async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
                 // must have put NO literal copy on the wire, or the literal pass
                 // caught it and the spelling was never exercised.
                 let wire = peer.sent_text();
+                // B2's premise, which replaces round 4's. Round 4 proved the
+                // canary search was not vacuous by showing the endpoint's
+                // message REACHED the error. B2 removed that field, so that
+                // premise can no longer hold — and the search really is
+                // vacuous. The honest replacement is one step upstream: the
+                // peer put its message on the SOCKET, and it did not survive
+                // the boundary. Same job, asked where the answer still exists.
+                if wire.contains(ENCODING_MARKER) {
+                    peer_sent_marker_arms += 2; // both transports drove this peer
+                }
                 if !matches!(encoding, Encoding::Verbatim) && wire.contains(ENCODING_MARKER) {
                     premise_arms += 1;
                     if !wire.contains(ENCODING_CANARY) {
@@ -5856,10 +5999,53 @@ async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.p(indent(&elide(&leak_example, 900), 4));
 
     doc.h("assertions");
+    // INVERTED IN B2, and this is the single most important inversion in the
+    // file, so it is argued at length rather than flipped quietly.
+    //
+    // Round 4 asserted `arrived_arms == total_arms`: the endpoint's message
+    // reached the error on every arm, which is what made the canary search
+    // below non-vacuous. B2 deleted the field that message arrived in. So the
+    // round-4 assertion CANNOT hold any more, and the canary search below is
+    // now VACUOUS — there is no endpoint text on the surface for a needle to
+    // match, in any spelling.
+    //
+    // A vacuous test that reads green is a trap, so three things happen here
+    // instead of one flip:
+    //
+    //   1. The vacuity is asserted DIRECTLY — `arrived_arms == 0` — so a
+    //      regression that starts carrying endpoint text again turns this red
+    //      immediately, before any needle question is asked.
+    //   2. The non-vacuity premise moves upstream to a place where it is still
+    //      answerable: the peer really did put its marker on the socket.
+    //   3. The needle search is kept anyway (below) as regression coverage,
+    //      and a strictly stronger assertion is added beside it.
     doc.check(
-        "the endpoint's message reached the error on every arm — nothing below is vacuous",
-        arrived_arms == total_arms,
+        "B2's inversion: the endpoint's message reaches the error on NO arm — the field it \
+         used to arrive in is gone",
+        arrived_arms == 0,
         format!("{arrived_arms} of {total_arms} arms carried the endpoint's own marker"),
+    );
+    doc.check(
+        "and the peers really did send it — the premise moved upstream to the socket, where \
+         it is still answerable",
+        peer_sent_marker_arms >= total_arms,
+        format!(
+            "{peer_sent_marker_arms} arm-equivalents saw the marker on the wire, of {total_arms}"
+        ),
+    );
+    doc.check(
+        "STRONGEST: no string in any error's serde shape is unexplained by Vela's own closed \
+         vocabulary — not 'no credential', NO ENDPOINT TEXT AT ALL",
+        unexplained_arms.is_empty(),
+        if unexplained_arms.is_empty() {
+            format!("{total_arms} arms, 0 unexplained strings")
+        } else {
+            format!(
+                "{} arm(s) carried endpoint-derived text:\n        {}",
+                unexplained_arms.len(),
+                unexplained_arms.join("\n        ")
+            )
+        },
     );
     doc.check(
         "the encoding peers put NO literal copy of the credential on the wire — the literal \
@@ -5873,10 +6059,16 @@ async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
         briefed_clean == briefed_arms,
         format!("{briefed_clean} of {briefed_arms} briefed arms clean"),
     );
+    // INVERTED IN B2. Round 4 wanted `<redacted>` present, to prove the scrub
+    // was masking rather than deleting — a reasonable thing to want when the
+    // strategy was "carry the endpoint's text, laundered". B2's strategy is
+    // "do not carry it", so a `<redacted>` marker on the ERROR surface would
+    // now mean a laundering step had crept back in. The marker still belongs
+    // on the URL Vela prints and in the debug log; it does not belong here.
     doc.check(
-        "redaction, not deletion — `<redacted>` is present somewhere on the arms that were \
-         cleaned",
-        redaction_not_deletion > 0,
+        "DELETION, not redaction — no `<redacted>` marker on the error surface either, \
+         because there is nothing there to mask",
+        redaction_not_deletion == 0,
         format!("{redaction_not_deletion} of {total_arms} arms carry the marker"),
     );
     doc.check(
@@ -5966,7 +6158,7 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "GATE M Part 1 (Phase B) — ASSERTION CONTROLS\n\
+        "GATE M Part 1 (Phase B2) — ASSERTION CONTROLS\n\
          ================================================================================\n\n\
          A green ledger is worthless if red is unreachable. Every control below applies one\n\
          of the gate's assertions where it should NOT hold, and records the FAIL, then\n\
@@ -6830,6 +7022,2007 @@ async fn case_14(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.write(ledger);
 }
 
+// ===========================================================================
+// PHASE B2 — CROSS PRODUCTS. Shared apparatus.
+// ===========================================================================
+//
+// Four gate rounds drove the matrix CASE BY CASE. Every case was driven; every
+// PAIR of cases was not. FINDING 3 — the highest-severity defect of the whole
+// run — lived in the pair (06 reasoning, 02 tools), and survived four rounds
+// because nothing ever put them in the same turn.
+//
+// The lesson is not "add case 14". It is that a matrix of independent cases has
+// a blind spot the size of its own cross product, and the blind spot is where
+// the next defect is. Everything from here down drives PAIRS.
+//
+// It also drives all THREE adapters. Cases 00–14 drive `OpenAiCompatible` and
+// nothing else, so every property they establish is a property of one adapter.
+// `Anthropic` and `Google` reach the same shared normalisation — `answer.rs`,
+// `reasoning.rs`, `tool_accum.rs` — by three different routes, and a fix
+// installed on one route is not evidence about the other two.
+
+/// What a [`CrossPeer`] answers with.
+struct Reply {
+    status: u16,
+    content_type: &'static str,
+    body: String,
+    /// Write this many bytes, then go quiet for this long. The shape a user
+    /// meets when they press stop while the model is still emitting.
+    stall: Option<(usize, Duration)>,
+}
+
+impl Reply {
+    fn json(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            content_type: "application/json",
+            body: body.into(),
+            stall: None,
+        }
+    }
+
+    fn sse(body: impl Into<String>) -> Self {
+        Self {
+            status: 200,
+            content_type: "text/event-stream",
+            body: body.into(),
+            stall: None,
+        }
+    }
+
+    fn stalling_after(mut self, bytes: usize, quiet: Duration) -> Self {
+        self.stall = Some((bytes, quiet));
+        self
+    }
+}
+
+fn reason_phrase(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "Status",
+    }
+}
+
+type PeerScript = Arc<dyn Fn(&str, &str) -> Reply + Send + Sync>;
+
+/// A loopback peer whose every answer is a pure function of the request it
+/// received — real TCP, real HTTP, one OS socket per exchange.
+///
+/// The four matrix profiles are Node processes speaking one dialect. These
+/// cases need three dialects and need to answer differently depending on what
+/// the request carried (a tool catalogue, a schema, a particular user turn), so
+/// they get a peer that is a closure.
+struct CrossPeer {
+    url: String,
+    seen: Arc<Mutex<Vec<(String, String)>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl CrossPeer {
+    async fn start(script: PeerScript) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a free port");
+        let port = listener.local_addr().expect("bound").port();
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_task = Arc::clone(&seen);
+        let task = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let script = Arc::clone(&script);
+                let seen = Arc::clone(&seen_task);
+                tokio::spawn(async move {
+                    let mut raw = Vec::new();
+                    let mut scratch = vec![0u8; 16384];
+                    let (head_end, length, target) = loop {
+                        let read = match socket.read(&mut scratch).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(read) => read,
+                        };
+                        raw.extend_from_slice(&scratch[..read]);
+                        let text = String::from_utf8_lossy(&raw).into_owned();
+                        if let Some(at) = text.find("\r\n\r\n") {
+                            let length = text
+                                .to_ascii_lowercase()
+                                .split("\r\n")
+                                .find_map(|line| {
+                                    line.strip_prefix("content-length:")
+                                        .and_then(|value| value.trim().parse::<usize>().ok())
+                                })
+                                .unwrap_or(0);
+                            let target = text
+                                .lines()
+                                .next()
+                                .unwrap_or_default()
+                                .split_whitespace()
+                                .nth(1)
+                                .unwrap_or("/")
+                                .to_owned();
+                            if raw.len() >= at + 4 + length {
+                                break (at + 4, length, target);
+                            }
+                        }
+                    };
+                    let body =
+                        String::from_utf8_lossy(&raw[head_end..head_end + length]).into_owned();
+                    seen.lock()
+                        .expect("peer log poisoned")
+                        .push((target.clone(), body.clone()));
+                    let reply = script(&target, &body);
+                    let head = format!(
+                        "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\n\
+                         connection: close\r\n\r\n",
+                        reply.status,
+                        reason_phrase(reply.status),
+                        reply.content_type,
+                        reply.body.len()
+                    );
+                    let _ = socket.write_all(head.as_bytes()).await;
+                    match reply.stall {
+                        None => {
+                            let _ = socket.write_all(reply.body.as_bytes()).await;
+                            let _ = socket.flush().await;
+                        }
+                        Some((at, quiet)) => {
+                            let bytes = reply.body.as_bytes();
+                            let at = at.min(bytes.len());
+                            let _ = socket.write_all(&bytes[..at]).await;
+                            let _ = socket.flush().await;
+                            tokio::time::sleep(quiet).await;
+                            let _ = socket.write_all(&bytes[at..]).await;
+                            let _ = socket.flush().await;
+                        }
+                    }
+                });
+            }
+        });
+        Self {
+            url: format!("http://127.0.0.1:{port}"),
+            seen,
+            task,
+        }
+    }
+
+    fn requests(&self) -> Vec<(String, String)> {
+        self.seen.lock().expect("peer log poisoned").clone()
+    }
+
+    fn stop(self) {
+        self.task.abort();
+    }
+}
+
+/// The three adapters Vela ships. Every cross product below is driven through
+/// all three unless the adapter makes the shape structurally unreachable — in
+/// which case that fact is asserted instead of faked.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Adapter {
+    Compat,
+    Anthropic,
+    Google,
+}
+
+impl Adapter {
+    const ALL: [Adapter; 3] = [Adapter::Compat, Adapter::Anthropic, Adapter::Google];
+
+    fn label(self) -> &'static str {
+        match self {
+            Adapter::Compat => "openai-compatible",
+            Adapter::Anthropic => "anthropic",
+            Adapter::Google => "google",
+        }
+    }
+
+    fn model(self) -> &'static str {
+        match self {
+            Adapter::Compat => "cross-compat",
+            Adapter::Anthropic => "claude-cross",
+            Adapter::Google => "gemini-cross",
+        }
+    }
+
+    fn provider(self, base_url: &str, log: &WireLog) -> Arc<dyn Provider> {
+        let transport: Arc<dyn HttpTransport> = Arc::new(RecordingTransport::new(log.clone()));
+        let secrets = Arc::new(MemoryStore::new());
+        let descriptor = ProviderDescriptor::new(
+            format!("cross-{}", self.label()),
+            format!("Cross-product peer ({})", self.label()),
+            ProviderKind::Local,
+        )
+        .expect("a valid descriptor");
+        match self {
+            Adapter::Compat => Arc::new(OpenAiCompatibleProvider::new(
+                descriptor,
+                base_url.to_owned(),
+                Auth::None,
+                secrets,
+                transport,
+            )),
+            Adapter::Anthropic => Arc::new(vela_providers::AnthropicProvider::new(
+                descriptor,
+                base_url.to_owned(),
+                Auth::None,
+                secrets,
+                transport,
+            )),
+            Adapter::Google => Arc::new(vela_providers::GoogleProvider::new(
+                descriptor,
+                base_url.to_owned(),
+                Auth::None,
+                secrets,
+                transport,
+            )),
+        }
+    }
+
+    /// A whole non-streamed answer whose assistant text is `text`.
+    ///
+    /// `finish` is this dialect's spelling of "the model hit its token budget",
+    /// which is WHY a reasoning block never closed and is therefore part of the
+    /// scenario, not decoration.
+    fn whole(self, text: &str) -> String {
+        let escaped = serde_json::to_string(text).expect("a string serialises");
+        match self {
+            Adapter::Compat => format!(
+                "{{\"id\":\"c\",\"object\":\"chat.completion\",\"choices\":[{{\"index\":0,\
+                 \"message\":{{\"role\":\"assistant\",\"content\":{escaped}}},\
+                 \"finish_reason\":\"length\"}}],\
+                 \"usage\":{{\"prompt_tokens\":9,\"completion_tokens\":40,\"total_tokens\":49}}}}"
+            ),
+            Adapter::Anthropic => format!(
+                "{{\"id\":\"msg_cross\",\"type\":\"message\",\"role\":\"assistant\",\
+                 \"model\":\"claude-cross\",\"content\":[{{\"type\":\"text\",\"text\":{escaped}}}],\
+                 \"stop_reason\":\"max_tokens\",\
+                 \"usage\":{{\"input_tokens\":9,\"output_tokens\":40}}}}"
+            ),
+            Adapter::Google => format!(
+                "{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{escaped}}}],\
+                 \"role\":\"model\"}},\"finishReason\":\"MAX_TOKENS\",\"index\":0}}],\
+                 \"usageMetadata\":{{\"promptTokenCount\":9,\"candidatesTokenCount\":40,\
+                 \"totalTokenCount\":49}},\"modelVersion\":\"gemini-cross\"}}"
+            ),
+        }
+    }
+
+    /// An SSE body delivering `text` in `chunk`-character pieces.
+    ///
+    /// The chunking is load-bearing and is MEASURED-3's recorded requirement:
+    /// no single frame may contain `<think>`, `<tool_call>` or `</tool_call>`
+    /// whole, so a frame-local stripper cannot pass by accident.
+    fn streamed(self, text: &str, chunk: usize) -> String {
+        let pieces: Vec<String> = text
+            .chars()
+            .collect::<Vec<char>>()
+            .chunks(chunk)
+            .map(|piece| piece.iter().collect())
+            .collect();
+        let mut out = String::new();
+        match self {
+            Adapter::Compat => {
+                for piece in &pieces {
+                    let escaped = serde_json::to_string(piece).expect("serialises");
+                    let _ = write!(
+                        out,
+                        "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\
+                         \"choices\":[{{\"index\":0,\"delta\":{{\"content\":{escaped}}},\
+                         \"finish_reason\":null}}]}}\n\n"
+                    );
+                }
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\
+                     \"finish_reason\":\"length\"}]}\n\n",
+                );
+                out.push_str("data: [DONE]\n\n");
+            }
+            Adapter::Anthropic => {
+                out.push_str(
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\
+                     \"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+                );
+                for piece in &pieces {
+                    let escaped = serde_json::to_string(piece).expect("serialises");
+                    let _ = write!(
+                        out,
+                        "event: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\
+                         \"index\":0,\"delta\":{{\"type\":\"text_delta\",\"text\":{escaped}}}}}\n\n"
+                    );
+                }
+                out.push_str(
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\
+                     \"index\":0}\n\n",
+                );
+                out.push_str(
+                    "event: message_delta\ndata: {\"type\":\"message_delta\",\
+                     \"delta\":{\"stop_reason\":\"max_tokens\"},\
+                     \"usage\":{\"output_tokens\":40}}\n\n",
+                );
+                out.push_str("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+            }
+            Adapter::Google => {
+                for piece in &pieces {
+                    let escaped = serde_json::to_string(piece).expect("serialises");
+                    let _ = write!(
+                        out,
+                        "data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{escaped}}}],\
+                         \"role\":\"model\"}},\"index\":0}}],\"modelVersion\":\"gemini-cross\"}}\n\n"
+                    );
+                }
+                out.push_str(
+                    "data: {\"candidates\":[{\"content\":{\"parts\":[],\"role\":\"model\"},\
+                     \"finishReason\":\"MAX_TOKENS\",\"index\":0}],\
+                     \"usageMetadata\":{\"promptTokenCount\":9,\"candidatesTokenCount\":40,\
+                     \"totalTokenCount\":49},\"modelVersion\":\"gemini-cross\"}\n\n",
+                );
+            }
+        }
+        out
+    }
+
+    /// This dialect's error envelope, carrying `message` verbatim.
+    fn error_body(self, message: &str) -> String {
+        let escaped = serde_json::to_string(message).expect("a string serialises");
+        match self {
+            Adapter::Compat => format!(
+                "{{\"error\":{{\"message\":{escaped},\"type\":\"invalid_request_error\",\
+                 \"code\":\"cross_probe\"}}}}"
+            ),
+            Adapter::Anthropic => format!(
+                "{{\"type\":\"error\",\"error\":{{\"type\":\"invalid_request_error\",\
+                 \"message\":{escaped}}}}}"
+            ),
+            Adapter::Google => format!(
+                "{{\"error\":{{\"code\":400,\"message\":{escaped},\"status\":\"INVALID_ARGUMENT\"}}}}"
+            ),
+        }
+    }
+
+    /// Does this request body carry a NATIVE tool catalogue? The emulated one
+    /// is prose in a system message and must not match.
+    fn carries_tools(self, body: &str) -> bool {
+        match self {
+            Adapter::Compat | Adapter::Anthropic => body.contains("\"tools\":[{"),
+            Adapter::Google => body.contains("functionDeclarations"),
+        }
+    }
+
+    /// The refusal that means "this model has no tool calling" in this dialect,
+    /// worded so the adapter's own recogniser classifies it as a capability
+    /// refusal rather than a mistake. This is how emulation is entered in
+    /// production; a test flag would make every assertion below a fiction.
+    fn tools_refusal(self) -> Reply {
+        match self {
+            Adapter::Compat => Reply::json(
+                400,
+                "{\"error\":{\"message\":\"this model does not support tools\",\
+                 \"code\":\"tools_not_supported\",\"type\":\"invalid_request_error\"}}",
+            ),
+            Adapter::Anthropic => Reply::json(
+                400,
+                self.error_body("tool use is not supported by this model"),
+            ),
+            Adapter::Google => Reply::json(
+                400,
+                self.error_body(
+                    "Function calling is not supported for this model. \
+                     functionDeclarations was rejected.",
+                ),
+            ),
+        }
+    }
+
+    /// A minimal model listing, so `probe_capabilities` gets past step 1.
+    fn model_list(self) -> String {
+        match self {
+            Adapter::Compat => format!(
+                "{{\"object\":\"list\",\"data\":[{{\"id\":\"{}\",\"object\":\"model\"}}]}}",
+                self.model()
+            ),
+            Adapter::Anthropic => format!(
+                "{{\"data\":[{{\"id\":\"{}\",\"type\":\"model\",\
+                 \"display_name\":\"Cross\"}}],\"has_more\":false}}",
+                self.model()
+            ),
+            Adapter::Google => format!(
+                "{{\"models\":[{{\"name\":\"models/{}\",\
+                 \"supportedGenerationMethods\":[\"generateContent\",\"streamGenerateContent\"],\
+                 \"inputTokenLimit\":32000}}]}}",
+                self.model()
+            ),
+        }
+    }
+
+    fn is_model_list(self, path: &str) -> bool {
+        match self {
+            Adapter::Compat | Adapter::Anthropic => path.contains("/models"),
+            Adapter::Google => path.contains("/models?"),
+        }
+    }
+
+    /// Did the caller ask for a stream? Each dialect says so differently, and
+    /// the Gemini one says it in the URL rather than the body.
+    fn wants_stream(self, path: &str, body: &str) -> bool {
+        match self {
+            Adapter::Compat | Adapter::Anthropic => body.contains("\"stream\":true"),
+            Adapter::Google => path.contains("streamGenerateContent"),
+        }
+    }
+}
+
+// ===========================================================================
+// Case 15 — REASONING x TOOLS, on every adapter, both transports
+// ===========================================================================
+//
+// Case 14 drove FINDING 3's turn on ONE adapter. The finding was never a
+// property of the OpenAI-compatible adapter: `<think>` handling lives in
+// `reasoning.rs`, the answer channel in `answer.rs`, and all three adapters
+// route text through both. A fix verified on one route is not evidence about
+// the other two, and the three routes differ in ways that matter:
+//
+//   openai-compatible  emulation entered by RETRY after the endpoint's own 400
+//   google             emulation entered because a PROBE learned the model has
+//                      no function calling — a different code path, in a
+//                      different file, reaching the same shared normaliser
+//   anthropic          emulation is STRUCTURALLY UNREACHABLE, and this case
+//                      asserts that rather than pretending otherwise
+//
+// The turn is FINDING 3's, verbatim, on all three.
+
+/// The script every adapter's peer runs in this case. It refuses a native tool
+/// catalogue the way a runtime without tool calling does, answers the
+/// deliberation turn with the never-closed block, and answers everything else
+/// (the probe's plain, vision and schema turns) blandly.
+fn deliberation_script(adapter: Adapter) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        if adapter.carries_tools(body) {
+            return adapter.tools_refusal();
+        }
+        let streamed = adapter.wants_stream(path, body);
+        // `delete_everything` reaches the body only through the EMULATED
+        // catalogue — the native one was refused above — so this is also the
+        // proof that emulation is what is being driven.
+        let deliberating = body.contains("tidy up the disk");
+        let text = if deliberating { DELIBERATION } else { "OK." };
+        if streamed {
+            Reply::sse(adapter.streamed(text, 11))
+        } else {
+            Reply::json(200, adapter.whole(text))
+        }
+    })
+}
+
+async fn case_15(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "15-reasoning-x-tools-every-adapter",
+        "deliberation is not a call — on all three adapters, both transports",
+        "FINDING 3 was closed and verified on ONE adapter. The defect lived in shared \
+         normalisation that all three adapters reach by three different routes. This case \
+         drives the identical turn down all three.",
+        "all three shipping adapters — OpenAiCompatibleProvider, AnthropicProvider, GoogleProvider",
+        "one purpose-built loopback peer per adapter, real TCP, speaking that adapter's dialect",
+    );
+    doc.p(
+        "  THE TURN, verbatim from the round-4 panel and identical to case 14:\n    \
+         <think>I could call <tool_call>{\"name\":\"delete_everything\",\n    \
+         \"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive,\n    \
+         so I will not.\n  \
+         — and the stream ends there, on `length`. The block never closes.",
+    );
+    doc.p(
+        "  HOW EMULATION IS ENTERED, per adapter — this is the part a test flag would have\n  \
+         faked, and the part that makes the case real:",
+    );
+
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(deliberation_script(adapter)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let transport = transport_label(streamed);
+            let arm = format!("{} / {transport}", adapter.label());
+
+            // The probe is the production route into emulation on Gemini, and
+            // the production route into the documented REFUSAL on Messages. On
+            // the OpenAI-compatible adapter the production route is the retry
+            // after the endpoint's own 400, so that one is left unprobed — the
+            // three arms deliberately differ, because the three code paths do.
+            let probed = if adapter == Adapter::Compat {
+                None
+            } else {
+                Some(
+                    provider
+                        .probe_capabilities(adapter.model(), &context())
+                        .await,
+                )
+            };
+            let probe_note = match &probed {
+                None => {
+                    "not probed — emulation is entered by retry after the endpoint's 400".to_owned()
+                }
+                Some(Ok(capabilities)) => {
+                    format!("probed: tool_calling = {:?}", capabilities.tool_calling)
+                }
+                Some(Err(error)) => format!("probe failed: {}", error.code()),
+            };
+            let _ = log.drain();
+
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user("tidy up the disk"))
+                .with_tools([destructive_tool()])
+                .with_tool_choice(ToolChoice::Auto);
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let entries = log.drain();
+
+            doc.h(&format!("{arm} — the raw exchange"));
+            doc.kv("route into emulation", &probe_note);
+            doc.wire(&entries);
+
+            // ---- the Anthropic arm: a refusal, and why that is the right
+            //      answer rather than a gap in coverage ----------------------
+            if adapter == Adapter::Anthropic {
+                doc.h(&format!("{arm} — what Vela produced"));
+                doc.kv("outcome", format!("{outcome:?}"));
+                doc.p(
+                    "  This adapter REFUSES rather than emulating, and says so in its own source:\n  \
+                     \"This backend has native tool calling on every model that serves it, so a\n  \
+                     probed refusal means the affordance genuinely is not there. Refusing is\n  \
+                     truthful; rewriting the request into prompt emulation behind the user's\n  \
+                     back would not be.\"\n  \
+                     So the FINDING 3 shape is not merely untested here — it is UNREACHABLE, and\n  \
+                     the honest thing to record is that, not a manufactured pass.",
+                );
+                doc.check(
+                    &format!("{arm}: the turn is refused, not silently emulated"),
+                    matches!(
+                        &outcome,
+                        Err(ProviderError::CapabilityUnsupported {
+                            capability: Capability::ToolCalling,
+                            ..
+                        })
+                    ),
+                    format!("{outcome:?}"),
+                );
+                doc.check(
+                    &format!(
+                        "{arm}: NO UNSUPPORTED AFFORDANCE IS OFFERED — the refusal is not \
+                         retried or failed over into one"
+                    ),
+                    outcome
+                        .as_ref()
+                        .err()
+                        .is_some_and(|error| !error.allows_retry() && !error.allows_failover()),
+                    format!("{outcome:?}"),
+                );
+                doc.check(
+                    &format!("{arm}: no tool-call markup reached the UI on the way to refusing"),
+                    !sink.text().contains("<tool_call>")
+                        && !sink.text().contains("delete_everything"),
+                    format!("{:?}", sink.text()),
+                );
+                doc.check(
+                    &format!(
+                        "{arm}: emulation is structurally unreachable here — no \
+                         `with_tool_emulation` call site exists on this adapter"
+                    ),
+                    !std::fs::read_to_string(
+                        repo_root().join("src-tauri/crates/vela-providers/src/anthropic/stream.rs"),
+                    )
+                    .unwrap_or_default()
+                    .contains("with_tool_emulation")
+                        && !std::fs::read_to_string(
+                            repo_root()
+                                .join("src-tauri/crates/vela-providers/src/anthropic/provider.rs"),
+                        )
+                        .unwrap_or_default()
+                        .contains("with_tool_emulation"),
+                    "grepped anthropic/stream.rs and anthropic/provider.rs".to_owned(),
+                );
+                peer.stop();
+                continue;
+            }
+
+            // ---- the two adapters that DO emulate --------------------------
+            let response = match outcome {
+                Ok(response) => response,
+                Err(error) => {
+                    doc.check(
+                        &format!("{arm}: the turn completes"),
+                        false,
+                        format!("{error:?}"),
+                    );
+                    peer.stop();
+                    continue;
+                }
+            };
+
+            doc.h(&format!("{arm} — what Vela produced"));
+            doc.kv("answer", format!("{:?}", response.answer_text()));
+            doc.kv(
+                "reasoning",
+                format!("{:?}", elide(&response.reasoning_text(), 240)),
+            );
+            doc.kv("tool calls", describe_calls(&response.tool_calls));
+            doc.kv("stop reason", format!("{:?}", response.stop_reason));
+            doc.kv(
+                "degradations",
+                describe_degradations(&response.degradations),
+            );
+            if streamed {
+                doc.kv("TextDelta events", format!("{:?}", sink.text()));
+            }
+
+            doc.h(&format!("{arm} — assertions"));
+
+            // The premises. Everything below is worthless without them.
+            doc.check(
+                &format!("{arm}: emulation was entered through the endpoint's own refusal"),
+                response.degradations.iter().any(|degradation| {
+                    matches!(degradation, Degradation::ToolCallingEmulated { .. })
+                }),
+                describe_degradations(&response.degradations),
+            );
+            doc.check(
+                &format!("{arm}: the reasoning block really never closed"),
+                response.degradations.iter().any(|degradation| {
+                    matches!(degradation, Degradation::UnterminatedReasoning { .. })
+                }),
+                describe_degradations(&response.degradations),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: the endpoint really was asked in the EMULATED shape — the \
+                     catalogue was prose, not a `tools` array"
+                ),
+                peer.requests().iter().any(|(_, body)| {
+                    body.contains("delete_everything") && !adapter.carries_tools(body)
+                }),
+                format!("{} request(s) recorded by the peer", peer.requests().len()),
+            );
+
+            // THE CLAIM.
+            let executable: Vec<&ToolCallOutcome> = response
+                .tool_calls
+                .iter()
+                .filter(|call| call.is_ok())
+                .collect();
+            doc.check(
+                &format!("{arm}: A CALL RECOVERED FROM A NEVER-CLOSED <think> IS NOT EXECUTABLE"),
+                executable.is_empty(),
+                describe_calls(&response.tool_calls),
+            );
+            doc.check(
+                &format!("{arm}: the turn does not end in ToolUse"),
+                response.stop_reason != StopReason::ToolUse,
+                format!("{:?}", response.stop_reason),
+            );
+            doc.check(
+                &format!("{arm}: the refusal is REPORTED, not silently dropped"),
+                response.tool_calls.iter().any(|call| {
+                    matches!(
+                        call,
+                        ToolCallOutcome::Malformed {
+                            reason: MalformedToolCall::RecoveredFromUnterminatedReasoning,
+                            ..
+                        }
+                    )
+                }),
+                describe_calls(&response.tool_calls),
+            );
+            doc.check(
+                &format!("{arm}: no raw tool-call markup in the answer"),
+                !response.answer_text().contains("<tool_call>")
+                    && !response.answer_text().contains("</tool_call>")
+                    && !response.answer_text().contains("delete_everything"),
+                format!("{:?}", response.answer_text()),
+            );
+            if streamed {
+                doc.check(
+                    &format!("{arm}: no raw tool-call markup on any TextDelta"),
+                    !sink.text().contains("<tool_call>")
+                        && !sink.text().contains("delete_everything"),
+                    format!("{:?}", sink.text()),
+                );
+            }
+            doc.check(
+                &format!("{arm}: MEASURED-3 still holds — the answer is not swallowed"),
+                response
+                    .answer_text()
+                    .contains("but that would be destructive, so I will not."),
+                format!("{:?}", response.answer_text()),
+            );
+            doc.check(
+                &format!("{arm}: the deliberation is kept as reasoning"),
+                response.reasoning_text().contains("I could call"),
+                format!("{:?}", elide(&response.reasoning_text(), 200)),
+            );
+
+            peer.stop();
+        }
+    }
+
+    doc.write(ledger);
+}
+
+// ===========================================================================
+// Case 16 — REASONING x STRUCTURED OUTPUT
+// ===========================================================================
+//
+// The same intersection logic that found FINDING 3, pointed at a different
+// pair. Case 06 drives an unterminated `<think>`. Case 04 drives a schema. Put
+// them in one turn and a specific, nasty thing becomes possible:
+//
+//   MEASURED-3 says the salvaged text of a never-closed block is SHOWN, because
+//   hiding it would be a lie about what came back. `structured::extract_json`
+//   says "the first balanced object in the text" is the answer. A model that
+//   deliberates in JSON — which is exactly what a model asked for JSON does —
+//   therefore has a route by which a value it CONSIDERED AND REJECTED is
+//   validated against the schema and handed to the caller as conforming.
+//
+// That is FINDING 3's shape in the data channel rather than the action channel:
+// deliberation becoming an answer instead of deliberation becoming a call. It
+// is the same severity, because a caller that receives `Ok(value)` from a
+// schema-validated field has been told the model produced it.
+
+/// The turn: the model deliberates *in JSON*, rejects the value it wrote, and
+/// is cut off before closing the block. Both halves are what a model asked for
+/// JSON actually does.
+const DELIBERATED_JSON: &str = concat!(
+    "<think>The user wants an object. My first guess is ",
+    "{\"city\":\"Atlantis\",\"celsius\":-273.15}",
+    " — no, that city does not exist and that temperature is below absolute zero, so I must"
+);
+
+fn weather_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {"city": {"type": "string"}, "celsius": {"type": "number"}},
+        "required": ["city", "celsius"]
+    })
+}
+
+/// The SAME deliberation with the block CLOSED, and one sentence of real answer
+/// after it. This is the control arm, and it is the whole reason the case can
+/// name its own cause: the two arms differ by four characters — `</think>` —
+/// and by nothing else.
+const TERMINATED_JSON: &str = concat!(
+    "<think>The user wants an object. My first guess is ",
+    "{\"city\":\"Atlantis\",\"celsius\":-273.15}",
+    " — no, that city does not exist and that temperature is below absolute zero, so I must",
+    "</think>",
+    "I could not find a real value for that."
+);
+
+fn structured_script(adapter: Adapter, text: &'static str) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        if adapter.wants_stream(path, body) {
+            Reply::sse(adapter.streamed(text, 13))
+        } else {
+            Reply::json(200, adapter.whole(text))
+        }
+    })
+}
+
+async fn case_16(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "16-reasoning-x-structured-output",
+        "a value the model rejected must not come back as a validated answer",
+        "Case 06 and case 04 were never driven in one turn. In one turn, a model that \
+         deliberates in JSON and is cut off mid-thought has a route by which the value it \
+         REJECTED is extracted, validated against the schema, and returned as conforming.",
+        "all three shipping adapters, with `ResponseFormat::JsonSchema` requested",
+        "one purpose-built loopback peer per adapter, real TCP",
+    );
+    doc.p("  THE TURN:\n    \
+         <think>The user wants an object. My first guess is\n    \
+         {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and\n    \
+         that temperature is below absolute zero, so I must\n  \
+         — and the stream ends there. The block never closes.");
+    doc.p(
+        "  `{\"city\":\"Atlantis\",\"celsius\":-273.15}` VALIDATES against the requested schema.\n  \
+         It is a well-formed object with both required properties of the right types. The\n  \
+         only thing wrong with it is that the model said it was wrong — which is a fact\n  \
+         that lives in the prose around it, not in the JSON.",
+    );
+
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(structured_script(adapter, DELIBERATED_JSON)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let transport = transport_label(streamed);
+            let arm = format!("{} / {transport}", adapter.label());
+
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user("give me the weather in Berlin as JSON"))
+                .with_response_format(ResponseFormat::JsonSchema {
+                    name: "weather".into(),
+                    schema: weather_schema(),
+                });
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let entries = log.drain();
+
+            doc.h(&format!("{arm} — the raw exchange"));
+            doc.wire(&entries);
+
+            let response = match outcome {
+                Ok(response) => response,
+                Err(error) => {
+                    doc.check(
+                        &format!("{arm}: the turn completes"),
+                        false,
+                        format!("{error:?}"),
+                    );
+                    peer.stop();
+                    continue;
+                }
+            };
+
+            doc.h(&format!("{arm} — what Vela produced"));
+            doc.kv(
+                "answer",
+                format!("{:?}", elide(&response.answer_text(), 260)),
+            );
+            doc.kv(
+                "reasoning",
+                format!("{:?}", elide(&response.reasoning_text(), 260)),
+            );
+            doc.kv("STRUCTURED VERDICT", format!("{:?}", response.structured));
+            doc.kv(
+                "degradations",
+                describe_degradations(&response.degradations),
+            );
+
+            doc.h(&format!("{arm} — assertions"));
+
+            // The premises.
+            doc.check(
+                &format!("{arm}: the reasoning block really never closed"),
+                response.degradations.iter().any(|degradation| {
+                    matches!(degradation, Degradation::UnterminatedReasoning { .. })
+                }),
+                describe_degradations(&response.degradations),
+            );
+            doc.check(
+                &format!("{arm}: a schema really was requested, so there is a verdict at all"),
+                response.structured.is_some(),
+                format!("{:?}", response.structured),
+            );
+
+            // THE CLAIM.
+            let rejected = json!({"city": "Atlantis", "celsius": -273.15});
+            let handed_back_as_conforming =
+                matches!(&response.structured, Some(Ok(value)) if *value == rejected);
+            doc.check(
+                &format!(
+                    "{arm}: THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING \
+                     STRUCTURED ANSWER"
+                ),
+                !handed_back_as_conforming,
+                format!("{:?}", response.structured),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: a caller cannot read the structured field without meeting the \
+                     unterminated-reasoning fact — either the verdict is an Err, or the \
+                     degradation is on the response"
+                ),
+                matches!(&response.structured, Some(Err(_)))
+                    || response.degradations.iter().any(|degradation| {
+                        matches!(degradation, Degradation::UnterminatedReasoning { .. })
+                    }),
+                format!(
+                    "{:?} / {}",
+                    response.structured,
+                    describe_degradations(&response.degradations)
+                ),
+            );
+            doc.check(
+                &format!("{arm}: MEASURED-3 still holds — the salvaged prose is not swallowed"),
+                response.answer_text().contains("does not exist"),
+                format!("{:?}", elide(&response.answer_text(), 200)),
+            );
+
+            peer.stop();
+        }
+    }
+
+    // ---- the in-case control -------------------------------------------
+    //
+    // The claim above is only worth something if the same peer, differing by
+    // the eight characters `</think>` and nothing else, produces the RIGHT
+    // answer. If both arms behaved identically the case would be measuring the
+    // schema, or the model, or the adapter — not the intersection.
+    doc.h("CONTROL — the identical deliberation with the block CLOSED");
+    doc.p(
+        "  Same peer, same schema, same transports, same three adapters. The only difference\n  \
+         is `</think>` before the final sentence. If the verdict changes, the cause is the\n  \
+         intersection and nothing else.",
+    );
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(structured_script(adapter, TERMINATED_JSON)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let arm = format!("{} / {}", adapter.label(), transport_label(streamed));
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user("give me the weather in Berlin as JSON"))
+                .with_response_format(ResponseFormat::JsonSchema {
+                    name: "weather".into(),
+                    schema: weather_schema(),
+                });
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let _ = log.drain();
+            match outcome {
+                Ok(response) => {
+                    doc.kv(
+                        &format!("{arm} verdict"),
+                        format!("{:?}", response.structured),
+                    );
+                    doc.check(
+                        &format!(
+                            "{arm} CONTROL: with the block closed, the deliberated value does \
+                             NOT come back — the cause is the intersection"
+                        ),
+                        !matches!(
+                            &response.structured,
+                            Some(Ok(value)) if *value == json!({"city": "Atlantis", "celsius": -273.15})
+                        ),
+                        format!("{:?}", response.structured),
+                    );
+                }
+                Err(error) => doc.check(
+                    &format!("{arm} CONTROL: the turn completes"),
+                    false,
+                    format!("{error:?}"),
+                ),
+            }
+            peer.stop();
+        }
+    }
+
+    doc.write(ledger);
+}
+
+// ===========================================================================
+// Case 17 — TOOLS x MALFORMED FRAMES
+// ===========================================================================
+//
+// Case 02p drives parallel tool calls down a clean stream. Case 08 drives junk
+// frames down a stream carrying prose. Neither drives junk frames THROUGH a
+// batch of parallel calls, and that pair is where two recorded requirements
+// collide:
+//
+//   MEASURED-2  a malformed frame is SKIPPED, never fatal, and prior content is
+//               kept.
+//   MEASURED-4  tool-call deltas are lossy if keyed naively; `index` is the
+//               only join key, and it is the thing a skipped frame removes.
+//
+// "Skip the frame and keep going" and "the join key lives in the frames" are
+// individually right and jointly dangerous: a skipped frame can silently move a
+// fragment into the wrong call, drop a call, or manufacture one out of a
+// truncated frame that merely LOOKS like the start of a call. Round 1's
+// FINDING 1 was a call-splicing defect that a green suite missed; this is the
+// same failure mode reached through the malformed-frame door.
+//
+// The junk is deliberately of four kinds, because they fail differently:
+//   * a frame that is not JSON at all
+//   * an empty `data:` line
+//   * a line that is not an SSE field at all
+//   * A TRUNCATED FRAME THAT IS THE PREFIX OF A REAL CALL — the dangerous one
+
+/// The three calls every arm of this case must produce, and nothing else.
+const EXPECTED_CALLS: [(&str, &str); 3] = [
+    ("get_weather", r#"{"city":"Berlin"}"#),
+    ("get_weather", r#"{"city":"Paris"}"#),
+    ("get_time", r#"{"zone":"CET"}"#),
+];
+
+impl Adapter {
+    /// Three parallel calls, fragmented, with junk frames woven through them.
+    fn parallel_with_junk(self) -> String {
+        let mut out = String::new();
+        match self {
+            Adapter::Compat => {
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":0,\"id\":\"call_a\",\"type\":\"function\",\"function\":\
+                     {\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n",
+                );
+                out.push_str("data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\n\n");
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Ber\"}}]},\
+                     \"finish_reason\":null}]}\n\n",
+                );
+                out.push_str("data:\n\n");
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":0,\"function\":{\"arguments\":\"lin\\\"}\"}}]},\
+                     \"finish_reason\":null}]}\n\n",
+                );
+                out.push_str("this line is not an SSE field at all\n\n");
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":1,\"id\":\"call_b\",\"type\":\"function\",\"function\":\
+                     {\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}]},\
+                     \"finish_reason\":null}]}\n\n",
+                );
+                // THE DANGEROUS ONE: the prefix of a real third call.
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":2,\"id\":\"call_c\",\"type\":\"functi\n\n",
+                );
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":\
+                     [{\"index\":2,\"id\":\"call_c\",\"type\":\"function\",\"function\":\
+                     {\"name\":\"get_time\",\"arguments\":\"{\\\"zone\\\":\\\"CET\\\"}\"}}]},\
+                     \"finish_reason\":null}]}\n\n",
+                );
+                out.push_str(
+                    "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\
+                     \"finish_reason\":\"tool_calls\"}]}\n\n",
+                );
+                out.push_str("data: [DONE]\n\n");
+            }
+            Adapter::Anthropic => {
+                let block = |index: u64, id: &str, name: &str| {
+                    format!(
+                        "event: content_block_start\ndata: {{\"type\":\"content_block_start\",\
+                         \"index\":{index},\"content_block\":{{\"type\":\"tool_use\",\
+                         \"id\":\"{id}\",\"name\":\"{name}\",\"input\":{{}}}}}}\n\n"
+                    )
+                };
+                let delta = |index: u64, json: &str| {
+                    let escaped = serde_json::to_string(json).expect("serialises");
+                    format!(
+                        "event: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\
+                         \"index\":{index},\"delta\":{{\"type\":\"input_json_delta\",\
+                         \"partial_json\":{escaped}}}}}\n\n"
+                    )
+                };
+                let stop = |index: u64| {
+                    format!(
+                        "event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\
+                         \"index\":{index}}}\n\n"
+                    )
+                };
+                out.push_str(&block(0, "toolu_a", "get_weather"));
+                out.push_str("event: content_block_delta\ndata: {\"type\":\"content_bl\n\n");
+                out.push_str(&delta(0, "{\"city\": \"Ber"));
+                out.push_str("data:\n\n");
+                out.push_str(&delta(0, "lin\"}"));
+                out.push_str(&stop(0));
+                out.push_str("this line is not an SSE field at all\n\n");
+                out.push_str(&block(1, "toolu_b", "get_weather"));
+                out.push_str(&delta(1, "{\"city\": \"Paris\"}"));
+                out.push_str(&stop(1));
+                // THE DANGEROUS ONE: the prefix of a real third block.
+                out.push_str(
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\
+                     \"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_c\
+                     \n\n",
+                );
+                out.push_str(&block(2, "toolu_c", "get_time"));
+                out.push_str(&delta(2, "{\"zone\": \"CET\"}"));
+                out.push_str(&stop(2));
+                out.push_str(
+                    "event: message_delta\ndata: {\"type\":\"message_delta\",\
+                     \"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":50}}\n\n",
+                );
+                out.push_str("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+            }
+            Adapter::Google => {
+                let call = |name: &str, args: &str| {
+                    format!(
+                        "data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"functionCall\":\
+                         {{\"name\":\"{name}\",\"args\":{args}}}}}],\"role\":\"model\"}},\
+                         \"index\":0}}],\"modelVersion\":\"gemini-cross\"}}\n\n"
+                    )
+                };
+                out.push_str(&call("get_weather", "{\"city\": \"Berlin\"}"));
+                out.push_str("data: {\"candidates\": [{\"content\": {\"parts\n\n");
+                out.push_str(&call("get_weather", "{\"city\": \"Paris\"}"));
+                out.push_str("data:\n\n");
+                out.push_str("this line is not an SSE field at all\n\n");
+                // THE DANGEROUS ONE: the prefix of a real third call.
+                out.push_str(
+                    "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":\
+                     {\"name\":\"get_ti\n\n",
+                );
+                out.push_str(&call("get_time", "{\"zone\": \"CET\"}"));
+                out.push_str(
+                    "data: {\"candidates\":[{\"content\":{\"parts\":[],\"role\":\"model\"},\
+                     \"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":\
+                     {\"promptTokenCount\":96,\"candidatesTokenCount\":31,\
+                     \"totalTokenCount\":127},\"modelVersion\":\"gemini-cross\"}\n\n",
+                );
+            }
+        }
+        out
+    }
+
+    /// The same three calls in the NON-STREAMED shape, with the middle one
+    /// broken — `hostile`'s recorded batch, which is the shape that hid
+    /// FINDING 1.
+    fn parallel_whole_with_one_broken(self) -> String {
+        match self {
+            Adapter::Compat => "{\"id\":\"c\",\"object\":\"chat.completion\",\"choices\":\
+                 [{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\
+                 \"tool_calls\":[\
+                 {\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\
+                 \"arguments\":\"{\\\"city\\\":\\\"Berlin\\\"}\"}},\
+                 {\"id\":\"call_bad\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\
+                 \"arguments\":\"{\\\"city\\\":\\\"Par\"}},\
+                 {\"id\":\"call_c\",\"type\":\"function\",\"function\":{\"name\":\"get_time\",\
+                 \"arguments\":\"{\\\"zone\\\":\\\"CET\\\"}\"}}]},\
+                 \"finish_reason\":\"tool_calls\"}]}"
+                .to_owned(),
+            Adapter::Anthropic => "{\"id\":\"msg_cross\",\"type\":\"message\",\
+                 \"role\":\"assistant\",\"model\":\"claude-cross\",\"content\":[\
+                 {\"type\":\"tool_use\",\"id\":\"toolu_a\",\"name\":\"get_weather\",\
+                 \"input\":{\"city\":\"Berlin\"}},\
+                 {\"type\":\"tool_use\",\"id\":\"toolu_bad\",\"name\":\"\",\"input\":{}},\
+                 {\"type\":\"tool_use\",\"id\":\"toolu_c\",\"name\":\"get_time\",\
+                 \"input\":{\"zone\":\"CET\"}}],\"stop_reason\":\"tool_use\",\
+                 \"usage\":{\"input_tokens\":9,\"output_tokens\":40}}"
+                .to_owned(),
+            Adapter::Google => "{\"candidates\":[{\"content\":{\"parts\":[\
+                 {\"functionCall\":{\"name\":\"get_weather\",\"args\":{\"city\":\"Berlin\"}}},\
+                 {\"functionCall\":{\"args\":{\"city\":\"Paris\"}}},\
+                 {\"functionCall\":{\"name\":\"get_time\",\"args\":{\"zone\":\"CET\"}}}],\
+                 \"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\
+                 \"usageMetadata\":{\"promptTokenCount\":96,\"candidatesTokenCount\":31,\
+                 \"totalTokenCount\":127},\"modelVersion\":\"gemini-cross\"}"
+                .to_owned(),
+        }
+    }
+}
+
+fn junk_parallel_script(adapter: Adapter) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        if adapter.wants_stream(path, body) {
+            Reply::sse(adapter.parallel_with_junk())
+        } else {
+            Reply::json(200, adapter.parallel_whole_with_one_broken())
+        }
+    })
+}
+
+/// `name(arguments)` for a well-formed call, so two calls that were spliced
+/// into one are visibly different from two that were not.
+fn ok_fingerprints(calls: &[ToolCallOutcome]) -> Vec<String> {
+    calls
+        .iter()
+        .filter_map(|call| match call {
+            ToolCallOutcome::Ok {
+                name, arguments, ..
+            } => Some(format!(
+                "{name}({})",
+                serde_json::to_string(arguments).unwrap_or_default()
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+async fn case_17(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "17-tools-x-malformed-frames",
+        "junk frames woven through a batch of parallel calls",
+        "MEASURED-2 says skip a bad frame and keep going. MEASURED-4 says `index` is the \
+         only join key, and it lives in the frames. Individually right, jointly dangerous: \
+         a skipped frame is exactly what moves a fragment into the wrong call.",
+        "all three shipping adapters",
+        "one purpose-built loopback peer per adapter, real TCP",
+    );
+    doc.p(
+        "  FOUR KINDS OF JUNK, woven between the fragments of three real calls:\n    \
+         1. a frame that is not JSON at all\n    \
+         2. an empty `data:` line\n    \
+         3. a line that is not an SSE field at all\n    \
+         4. A TRUNCATED FRAME THAT IS THE PREFIX OF A REAL CALL\n  \
+         The fourth is the one that matters. A consumer that recovers optimistically turns\n  \
+         it into a phantom fourth call; one that resynchronises badly loses the real third.",
+    );
+    doc.p(
+        "  THE NON-STREAMED ARM drives the other half of FINDING 1's shape: a whole batch of\n  \
+         three in which only the MIDDLE one is broken. A consumer that loses calls reports\n  \
+         one where the socket carried three.",
+    );
+
+    let expected: Vec<String> = EXPECTED_CALLS
+        .iter()
+        .map(|(name, args)| {
+            let value: Value = serde_json::from_str(args).expect("fixture args parse");
+            format!(
+                "{name}({})",
+                serde_json::to_string(&value).unwrap_or_default()
+            )
+        })
+        .collect();
+
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(junk_parallel_script(adapter)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let arm = format!("{} / {}", adapter.label(), transport_label(streamed));
+
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user(
+                    "weather in Berlin and Paris, and the time in CET",
+                ))
+                .with_tools([weather_tool(), time_tool()])
+                .with_tool_choice(ToolChoice::Auto);
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let entries = log.drain();
+
+            doc.h(&format!("{arm} — the raw exchange"));
+            doc.wire(&entries);
+
+            let response = match outcome {
+                Ok(response) => response,
+                Err(error) => {
+                    doc.check(
+                        &format!("{arm}: junk frames are NOT FATAL — the turn completes"),
+                        false,
+                        format!("{error:?}"),
+                    );
+                    peer.stop();
+                    continue;
+                }
+            };
+
+            let produced = ok_fingerprints(&response.tool_calls);
+            doc.h(&format!("{arm} — what Vela produced"));
+            doc.kv("tool calls", describe_calls(&response.tool_calls));
+            doc.kv("well-formed fingerprints", format!("{produced:?}"));
+            doc.kv("stop reason", format!("{:?}", response.stop_reason));
+            doc.kv(
+                "degradations",
+                describe_degradations(&response.degradations),
+            );
+
+            doc.h(&format!("{arm} — assertions"));
+
+            doc.check(
+                &format!("{arm}: junk frames are NOT FATAL — the turn completes (MEASURED-2)"),
+                true,
+                "the turn returned Ok".to_owned(),
+            );
+            if streamed {
+                // The premise. Without it the case is measuring a clean stream.
+                doc.check(
+                    &format!("{arm}: the stream really did carry junk — frames were skipped"),
+                    response.degradations.iter().any(|degradation| {
+                        matches!(degradation, Degradation::MalformedFramesSkipped { count } if *count > 0)
+                    }),
+                    describe_degradations(&response.degradations),
+                );
+                doc.check(
+                    &format!(
+                        "{arm}: ALL THREE CALLS SURVIVE THE JUNK, whole and unspliced — none \
+                         lost, none merged"
+                    ),
+                    produced == expected,
+                    format!("produced {produced:?}, expected {expected:?}"),
+                );
+                doc.check(
+                    &format!(
+                        "{arm}: THE TRUNCATED PREFIX DID NOT BECOME A PHANTOM CALL — exactly \
+                         three well-formed calls, not four"
+                    ),
+                    produced.len() == 3,
+                    format!("{} well-formed call(s): {produced:?}", produced.len()),
+                );
+            } else {
+                doc.check(
+                    &format!(
+                        "{arm}: the two intact calls of a three-call batch both survive — a \
+                         broken sibling does not take them with it"
+                    ),
+                    produced.len() == 2
+                        && produced.contains(&expected[0])
+                        && produced.contains(&expected[2]),
+                    format!("produced {produced:?}"),
+                );
+                doc.check(
+                    &format!("{arm}: the broken one is REPORTED rather than dropped (MEASURED-4)"),
+                    response.tool_calls.iter().any(|call| !call.is_ok())
+                        && response.degradations.iter().any(|degradation| {
+                            matches!(degradation, Degradation::MalformedToolCalls { count } if *count > 0)
+                        }),
+                    describe_calls(&response.tool_calls),
+                );
+                doc.check(
+                    &format!(
+                        "{arm}: THE BATCH IS NOT SPLICED — no well-formed call carries \
+                         another call's arguments"
+                    ),
+                    !produced.iter().any(|call| {
+                        call.contains("Berlin") && call.contains("Paris")
+                            || call.contains("Berlin") && call.contains("CET")
+                    }),
+                    format!("{produced:?}"),
+                );
+            }
+            doc.check(
+                &format!("{arm}: the turn ends in ToolUse — calls that survived are executable"),
+                response.stop_reason == StopReason::ToolUse,
+                format!("{:?}", response.stop_reason),
+            );
+            doc.check(
+                &format!("{arm}: no junk-frame text reached the user as answer content"),
+                !response.answer_text().contains("not an SSE field")
+                    && !response.answer_text().contains("functionCall")
+                    && !response.answer_text().contains("tool_calls"),
+                format!("{:?}", elide(&response.answer_text(), 160)),
+            );
+
+            peer.stop();
+        }
+    }
+
+    doc.write(ledger);
+}
+
+// ===========================================================================
+// Case 18 — ERROR-ECHO x every adapter x both transports
+// ===========================================================================
+//
+// Rounds 1–4 asked one question of the error surface, four times, in four
+// spellings: *is the CREDENTIAL in there?* Each round found a spelling the last
+// one missed, which is why B2 stopped answering that question and changed the
+// surface instead.
+//
+// This case asks the STRONGER question the B2 brief names, and asks it of all
+// three adapters rather than one:
+//
+//   does the error surface contain ANY endpoint-derived text at all?
+//
+// It is answered two independent ways, because either alone is weak:
+//
+//   1. AUDIT. `diagnostic::unexplained_strings` walks the error's serde shape
+//      and reports every string leaf not drawn from the closed vocabulary —
+//      which is COMPUTED FROM THE ENUMS, not hand-listed. Zero unexplained
+//      strings is the property.
+//   2. INVARIANCE. Four peers answer the identical request with the identical
+//      status and code, differing ONLY in the bytes of `message`: empty, plain
+//      prose, a marker in the clear, and the same marker spelled one `\uXXXX`
+//      escape per byte. If the output does not vary with the input, the input
+//      is not a channel — and no encoding anyone thinks of later can make it
+//      one.
+//
+// The audit could in principle be fooled by a vocabulary that was widened to
+// excuse a leak; the invariance test cannot, because it never asks what the
+// bytes MEAN. Together they are hard to fool by accident.
+
+const ECHO_MARKER: &str = "VELA-B2-ECHO-MARKER-Qp7Xn";
+
+/// Every byte of `text` as its own `\uXXXX` escape — legal JSON, and a decoder
+/// resolves it back to the marker.
+fn unicode_escaped(text: &str) -> String {
+    text.chars()
+        .map(|ch| format!("\\u{:04x}", ch as u32))
+        .collect()
+}
+
+/// The four bodies, differing only in `message`. Named in the request so all
+/// four arms hit ONE peer on ONE port — otherwise the ephemeral port would
+/// differ between arms and the invariance comparison would be comparing ports.
+const ECHO_VARIANTS: [&str; 4] = ["empty", "prose", "marker", "escaped"];
+
+fn echo_message(variant: &str) -> String {
+    match variant {
+        "empty" => String::new(),
+        "prose" => "the model is currently overloaded".to_owned(),
+        "marker" => format!("{ECHO_MARKER}: rejected because 127.0.0.1 said so"),
+        _ => format!("{ECHO_MARKER}: rejected"),
+    }
+}
+
+impl Adapter {
+    /// This dialect's error envelope, with `message` written RAW rather than
+    /// through `serde_json::to_string` — so the `escaped` variant really does
+    /// travel as `\uXXXX` escapes on the wire rather than as backslash-u text.
+    fn error_body_raw(self, message_json_inner: &str) -> String {
+        match self {
+            Adapter::Compat => format!(
+                "{{\"error\":{{\"message\":\"{message_json_inner}\",\
+                 \"type\":\"invalid_request_error\",\"code\":\"cross_probe\"}}}}"
+            ),
+            Adapter::Anthropic => format!(
+                "{{\"type\":\"error\",\"error\":{{\"type\":\"invalid_request_error\",\
+                 \"message\":\"{message_json_inner}\"}}}}"
+            ),
+            Adapter::Google => format!(
+                "{{\"error\":{{\"code\":400,\"message\":\"{message_json_inner}\",\
+                 \"status\":\"INVALID_ARGUMENT\"}}}}"
+            ),
+        }
+    }
+
+    /// FINDING 2's shape: a 200 whose stream carries an error object.
+    fn stream_error_body(self, message_json_inner: &str) -> String {
+        match self {
+            Adapter::Compat => format!(
+                "data: {{\"error\":{{\"message\":\"{message_json_inner}\",\
+                 \"type\":\"server_error\",\"code\":\"upstream\"}}}}\n\n"
+            ),
+            Adapter::Anthropic => format!(
+                "event: error\ndata: {{\"type\":\"error\",\"error\":\
+                 {{\"type\":\"overloaded_error\",\"message\":\"{message_json_inner}\"}}}}\n\n"
+            ),
+            Adapter::Google => format!(
+                "data: {{\"error\":{{\"code\":503,\"message\":\"{message_json_inner}\",\
+                 \"status\":\"UNAVAILABLE\"}}}}\n\n"
+            ),
+        }
+    }
+}
+
+fn echo_script(adapter: Adapter, in_stream: bool) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        let variant = ECHO_VARIANTS
+            .iter()
+            .find(|variant| body.contains(&format!("variant:{variant}")))
+            .copied()
+            .unwrap_or("prose");
+        let message = echo_message(variant);
+        let inner = if variant == "escaped" {
+            unicode_escaped(&message)
+        } else {
+            // Only the characters JSON requires. The marker has none of them,
+            // so `marker` travels literally, which is the point.
+            message.replace('\\', "\\\\").replace('"', "\\\"")
+        };
+        if in_stream {
+            Reply::sse(adapter.stream_error_body(&inner))
+        } else {
+            Reply::json(400, adapter.error_body_raw(&inner))
+        }
+    })
+}
+
+/// Everything about an error that a UI, a log line or the IPC bridge could
+/// ever see, with the two values that are Vela's OWN and expected to differ
+/// between runs replaced by placeholders.
+///
+/// Normalising the correlation id is not a loophole: it is a monotonic counter
+/// Vela mints, it carries no endpoint bytes, and leaving it in would make every
+/// pair of errors differ for a reason that has nothing to do with the property.
+/// It is called out here rather than done quietly.
+fn normalised_renderings(error: &ProviderError, sink: &CollectingSink) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = renderings_of(error)
+        .into_iter()
+        .map(|(label, text)| (label.to_owned(), strip_correlation(&text)))
+        .collect();
+    for (index, event) in sink.events.iter().enumerate() {
+        out.push((
+            format!("StreamEvent[{index}]"),
+            strip_correlation(&serde_json::to_string(event).unwrap_or_default()),
+        ));
+    }
+    out
+}
+
+/// Blank the correlation id out of a rendering, in every shape it takes,
+/// WITHOUT touching anything else.
+///
+/// # Why this is not a `replace(&id.to_string(), "<n>")`
+///
+/// It was, in the first draft, and that draft turned the gate red for a reason
+/// that was not true: correlation id 127 rewrote `127.0.0.1` into `<n>.0.0.1`
+/// and the two arms then "differed". A probe that manufactures a red is exactly
+/// as dishonest as one that manufactures a green, so this is structural — three
+/// named shapes, none of which can match an IP address, a port or a status.
+fn strip_correlation(text: &str) -> String {
+    let mut out = text.to_owned();
+
+    // 1. `Display`: ` [ref 00000000000000ab]`.
+    while let Some(start) = out.find("[ref ") {
+        match out[start..].find(']') {
+            Some(offset) => out.replace_range(start..start + offset + 1, "[ref <n>]"),
+            None => break,
+        }
+    }
+
+    // 2. `Debug`, in both the compact and the pretty spelling:
+    //    `CorrelationId(105)` and `CorrelationId(\n    105,\n)`.
+    loop {
+        let Some(start) = out.find("CorrelationId(") else {
+            break;
+        };
+        let open = start + "CorrelationId(".len();
+        let mut depth = 1usize;
+        let mut end = open;
+        for (offset, ch) in out[open..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + offset;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if end <= open {
+            break;
+        }
+        out.replace_range(start..=end, "CorrelationRef");
+    }
+    out = out.replace("CorrelationRef", "CorrelationId(<n>)");
+
+    // 3. The serde shape, compact and pretty: `"correlation":105` /
+    //    `"correlation": 105`.
+    let mut rebuilt = String::with_capacity(out.len());
+    let mut rest = out.as_str();
+    while let Some(at) = rest.find("\"correlation\"") {
+        rebuilt.push_str(&rest[..at]);
+        rebuilt.push_str("\"correlation\"");
+        let after = &rest[at + "\"correlation\"".len()..];
+        let mut cursor = 0usize;
+        for ch in after.chars() {
+            if ch == ':' || ch == ' ' || ch.is_ascii_digit() {
+                cursor += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        rebuilt.push_str(":<n>");
+        rest = &after[cursor..];
+    }
+    rebuilt.push_str(rest);
+    rebuilt
+}
+
+async fn case_18(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "18-error-echo-every-adapter",
+        "the error surface carries NO endpoint-derived text — not merely no credential",
+        "Four rounds asked whether the CREDENTIAL was on the error surface, and four times \
+         found a spelling the previous round missed. B2 changed the surface. This case \
+         asserts the stronger property the change was made for, on all three adapters and \
+         both transports.",
+        "all three shipping adapters",
+        "one purpose-built loopback peer per adapter/transport — ONE port per group, so the \
+         invariance comparison is not comparing ephemeral ports",
+    );
+    doc.p(
+        "  FOUR PEER ANSWERS, identical but for the bytes of `message`:\n    \
+         empty     \"\"\n    \
+         prose     \"the model is currently overloaded\"\n    \
+         marker    \"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so\"\n    \
+         escaped   the same marker, ONE \\uXXXX ESCAPE PER BYTE\n  \
+         Same status, same `code`, same everything else. If any rendering of the resulting\n  \
+         error differs between the four, the endpoint has a channel into it.",
+    );
+    doc.p(
+        "  TWO TRANSPORT SHAPES: a 400 read whole, and FINDING 2's shape — a 200 whose\n  \
+         stream carries an error object, read frame by frame through `BodyStream`.",
+    );
+
+    let mut total_arms = 0usize;
+    let mut errored_arms = 0usize;
+    let mut marker_on_the_wire = 0usize;
+    let mut unexplained_arms: Vec<String> = Vec::new();
+    let mut variant_arms: Vec<String> = Vec::new();
+
+    for adapter in Adapter::ALL {
+        for in_stream in [false, true] {
+            let peer = CrossPeer::start(echo_script(adapter, in_stream)).await;
+            let shape = if in_stream {
+                "200 + in-stream error object"
+            } else {
+                "400 read whole"
+            };
+            let arm = format!("{} / {shape}", adapter.label());
+            let mut fingerprints: Vec<(String, Vec<(String, String)>)> = Vec::new();
+
+            for variant in ECHO_VARIANTS {
+                let log = WireLog::default();
+                let provider = adapter.provider(&peer.url, &log);
+                let request = ChatRequest::new(adapter.model())
+                    .with_message(ChatMessage::user(format!("variant:{variant}")));
+                let mut sink = CollectingSink::new();
+                let outcome = if in_stream {
+                    provider.stream(request, &mut sink, &context()).await
+                } else {
+                    provider.complete(request, &context()).await
+                };
+                let entries = log.drain();
+                total_arms += 1;
+
+                // The premise, read off the wire rather than assumed: for the
+                // two variants that carry it, the marker really did arrive.
+                if matches!(variant, "marker" | "escaped") {
+                    let wire = joined_bodies(&entries);
+                    if wire.contains(ECHO_MARKER) || wire.contains(&unicode_escaped(ECHO_MARKER)) {
+                        marker_on_the_wire += 1;
+                    }
+                }
+
+                let Err(error) = outcome else {
+                    doc.check(
+                        &format!("{arm} / {variant}: the peer's rejection produces an error"),
+                        false,
+                        "the turn succeeded".to_owned(),
+                    );
+                    continue;
+                };
+                errored_arms += 1;
+
+                if variant == "marker" && !in_stream {
+                    doc.h(&format!("{arm} — the raw exchange (variant `marker`)"));
+                    doc.wire(&entries);
+                    doc.kv("Display", error.to_string());
+                    doc.kv("Debug", format!("{error:?}"));
+                    doc.kv(
+                        "serde (the IPC wire shape)",
+                        serde_json::to_string(&error).unwrap_or_default(),
+                    );
+                }
+
+                let unexplained = vela_providers::diagnostic::unexplained_in_error(&error);
+                if !unexplained.is_empty() {
+                    unexplained_arms.push(format!("{arm} / {variant} → {unexplained:?}"));
+                }
+                fingerprints.push((variant.to_owned(), normalised_renderings(&error, &sink)));
+            }
+
+            // ---- the invariance comparison ------------------------------
+            doc.h(&format!("{arm} — invariance across the four peer answers"));
+            let mut differing: Vec<String> = Vec::new();
+            if let Some((_, first)) = fingerprints.first() {
+                for (variant, rendering) in fingerprints.iter().skip(1) {
+                    for ((label, left), (_, right)) in first.iter().zip(rendering.iter()) {
+                        if left != right {
+                            differing.push(format!("{variant} / {label}: {left:?} vs {right:?}"));
+                        }
+                    }
+                    if first.len() != rendering.len() {
+                        differing.push(format!(
+                            "{variant}: {} rendering(s) vs {}",
+                            rendering.len(),
+                            first.len()
+                        ));
+                    }
+                }
+            }
+            for (variant, rendering) in &fingerprints {
+                doc.kv(
+                    &format!("`{variant}` Display"),
+                    rendering
+                        .iter()
+                        .find(|(label, _)| label == "Display")
+                        .map(|(_, text)| text.clone())
+                        .unwrap_or_default(),
+                );
+            }
+            if differing.is_empty() {
+                variant_arms.push(arm.clone());
+            }
+
+            doc.h(&format!("{arm} — assertions"));
+            doc.check(
+                &format!(
+                    "{arm}: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde \
+                     IPC shape and every StreamEvent — the endpoint's message is not a channel"
+                ),
+                differing.is_empty(),
+                if differing.is_empty() {
+                    format!("{} rendering(s) compared per variant", fingerprints.len())
+                } else {
+                    differing.join("\n        ")
+                },
+            );
+
+            peer.stop();
+        }
+    }
+
+    doc.h("assertions — across every adapter and both transport shapes");
+    doc.check(
+        "every arm really did produce an error — nothing above is vacuous",
+        errored_arms == total_arms && total_arms > 0,
+        format!("{errored_arms} of {total_arms} arms errored"),
+    );
+    doc.check(
+        "the marker really did arrive on the wire, in both spellings, on every adapter",
+        marker_on_the_wire == Adapter::ALL.len() * 2 * 2,
+        format!(
+            "{marker_on_the_wire} of {} marker-carrying arms saw it on the wire",
+            Adapter::ALL.len() * 2 * 2
+        ),
+    );
+    doc.check(
+        "NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde \
+         shape is drawn from Vela's own closed vocabulary, on all three adapters",
+        unexplained_arms.is_empty(),
+        if unexplained_arms.is_empty() {
+            format!("{total_arms} arms audited, 0 unexplained strings")
+        } else {
+            unexplained_arms.join("\n        ")
+        },
+    );
+    doc.check(
+        "invariance holds on every adapter and both transport shapes, not just one",
+        variant_arms.len() == Adapter::ALL.len() * 2,
+        format!("{} of {} groups invariant", variant_arms.len(), Adapter::ALL.len() * 2),
+    );
+
+    doc.write(ledger);
+}
+
+// ===========================================================================
+// Case 19 — CANCELLATION x TOOL ACCUMULATION  (executor's pick #1)
+// ===========================================================================
+//
+// WHY THIS PAIR. FINDING 3 was "a call the model never finished becomes
+// executable". The model truncating itself is one way a call arrives half
+// built. There is a second, and it is far more common in a desktop app: THE
+// USER PRESSES STOP. Cancellation and tool accumulation have each been driven
+// alone — `CancelToken` in case 07, the accumulator in 02/02p — and never
+// together. That is precisely the shape of the gap FINDING 3 sat in for four
+// rounds, so it is where I looked first.
+//
+// Two things must hold, and the second is the dangerous one:
+//
+//   1. A call that was half-streamed when the user cancelled must not come back
+//      executable. (`Cancelled` returns `Err`, so the strong form is: no
+//      `ChatResponse` is produced at all, and the sink is never told the turn
+//      finished.)
+//   2. A CANCELLED TURN MUST NOT BE FAILED OVER. A router that treats
+//      cancellation as a transport hiccup re-sends the request to the next
+//      candidate — so the user presses stop and Vela runs the action twice, on
+//      a second endpoint. That is "deliberation becomes an executed action"
+//      with the user's own decision as the deliberation.
+
+fn cancellable_tool_script(adapter: Adapter) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        if !adapter.wants_stream(path, body) {
+            return Reply::json(200, adapter.parallel_whole_with_one_broken());
+        }
+        // The batch, but the socket goes quiet in the middle of it — the shape
+        // a user meets when they hit stop while a model is still emitting
+        // calls. Half the body, then a long silence.
+        let full = adapter.parallel_with_junk();
+        let split = full.len() / 3;
+        Reply::sse(full).stalling_after(split, Duration::from_secs(30))
+    })
+}
+
+async fn case_19(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "19-cancellation-x-tool-accumulation",
+        "the user pressing stop must not leave half a call executable, or run it twice",
+        "Executor's pick. Cancellation and tool accumulation were each driven alone and \
+         never together — the same gap shape FINDING 3 sat in. A half-arrived call is a \
+         half-arrived call whether the MODEL truncated it or the USER did.",
+        "all three shipping adapters, plus the Router",
+        "one purpose-built loopback peer per adapter that goes silent mid-batch, real TCP",
+    );
+    doc.p(
+        "  THE TURN: a batch of parallel tool calls, streamed, with the socket falling silent\n  \
+         one third of the way through. The cancel token is fired 120 ms in — while a call is\n  \
+         demonstrably half accumulated.",
+    );
+
+    for adapter in Adapter::ALL {
+        let peer = CrossPeer::start(cancellable_tool_script(adapter)).await;
+        let log = WireLog::default();
+        let provider = adapter.provider(&peer.url, &log);
+        let arm = adapter.label().to_owned();
+
+        let cancel = vela_providers::provider::CancelToken::new();
+        let fired = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            fired.cancel();
+        });
+
+        let request = ChatRequest::new(adapter.model())
+            .with_message(ChatMessage::user(
+                "weather in Berlin and Paris, and the time in CET",
+            ))
+            .with_tools([weather_tool(), time_tool()])
+            .with_tool_choice(ToolChoice::Auto);
+        let mut sink = CollectingSink::new();
+        let started = Instant::now();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(10),
+            provider.stream(request, &mut sink, &context().with_cancel(cancel)),
+        )
+        .await;
+        let elapsed = started.elapsed();
+        let _ = log.drain();
+
+        doc.h(&format!("{arm} — what Vela produced"));
+        doc.kv("wall clock", format!("{elapsed:?}"));
+        doc.kv(
+            "outcome",
+            match &outcome {
+                Err(_) => "HUNG — the 10 s outer deadline fired".to_owned(),
+                Ok(Ok(response)) => format!("Ok, {} tool call(s)", response.tool_calls.len()),
+                Ok(Err(error)) => format!("{error:?}"),
+            },
+        );
+        doc.kv(
+            "events the sink was handed",
+            format!(
+                "{:?}",
+                sink.events
+                    .iter()
+                    .map(|event| serde_json::to_value(event)
+                        .ok()
+                        .and_then(|value| value
+                            .get("type")
+                            .and_then(|kind| kind.as_str())
+                            .map(str::to_owned))
+                        .unwrap_or_else(|| "?".into()))
+                    .collect::<Vec<String>>()
+            ),
+        );
+
+        doc.h(&format!("{arm} — assertions"));
+        doc.check(
+            &format!("{arm}: cancellation ends the turn promptly — no hang"),
+            outcome.is_ok() && elapsed < Duration::from_secs(5),
+            format!("{elapsed:?}"),
+        );
+        let error = outcome.ok().and_then(|result| result.err());
+        doc.check(
+            &format!(
+                "{arm}: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call"
+            ),
+            matches!(error, Some(ProviderError::Cancelled)),
+            format!("{error:?}"),
+        );
+        doc.check(
+            &format!(
+                "{arm}: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason \
+                 to run the same tool call against a second endpoint"
+            ),
+            error
+                .as_ref()
+                .is_some_and(|error| !error.allows_failover() && !error.allows_retry()),
+            format!("{error:?}"),
+        );
+        doc.check(
+            &format!("{arm}: the sink is never told the turn finished normally"),
+            !sink.events.iter().any(|event| {
+                serde_json::to_value(event)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("type")
+                            .and_then(|kind| kind.as_str())
+                            .map(|kind| kind == "done")
+                    })
+                    .unwrap_or(false)
+            }),
+            format!("{} event(s)", sink.events.len()),
+        );
+
+        peer.stop();
+    }
+
+    // ---- through the Router, which is where a wrong answer costs most ----
+    doc.h("the same cancellation, driven through the Router with a second candidate waiting");
+    doc.p(
+        "  A provider-level answer is not enough: the Router is what decides whether a failed\n  \
+         turn is re-sent. If cancellation reached the second candidate, the user's stop would\n  \
+         have STARTED a turn rather than ended one.",
+    );
+    let first = CrossPeer::start(cancellable_tool_script(Adapter::Compat)).await;
+    let second = CrossPeer::start(cancellable_tool_script(Adapter::Compat)).await;
+    let log = WireLog::default();
+    let router = Router::new(vec![
+        Candidate::new(
+            Adapter::Compat.provider(&first.url, &log),
+            Adapter::Compat.model(),
+        ),
+        Candidate::new(
+            Adapter::Compat.provider(&second.url, &log),
+            Adapter::Compat.model(),
+        ),
+    ])
+    .with_policy(RetryPolicy::default());
+    let cancel = vela_providers::provider::CancelToken::new();
+    let fired = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        fired.cancel();
+    });
+    let mut sink = CollectingSink::new();
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(10),
+        router.stream(
+            ChatRequest::new(Adapter::Compat.model())
+                .with_message(ChatMessage::user(
+                    "weather in Berlin and Paris, and the time in CET",
+                ))
+                .with_tools([weather_tool(), time_tool()]),
+            &mut sink,
+            &context().with_cancel(cancel),
+        ),
+    )
+    .await;
+    let second_hits = second.requests().len();
+    doc.kv(
+        "router outcome",
+        match &outcome {
+            Err(_) => "HUNG".to_owned(),
+            Ok(Ok(_)) => "Ok".to_owned(),
+            Ok(Err(error)) => format!("{error:?}"),
+        },
+    );
+    doc.kv("requests the SECOND candidate received", second_hits);
+    doc.check(
+        "THE SECOND CANDIDATE WAS NEVER CONTACTED — a cancelled turn is not sprayed at the \
+         next endpoint",
+        second_hits == 0,
+        format!("{second_hits} request(s)"),
+    );
+    doc.check(
+        "the router reports the cancellation as a cancellation",
+        matches!(&outcome, Ok(Err(ProviderError::Cancelled))),
+        format!("{outcome:?}"),
+    );
+    first.stop();
+    second.stop();
+
+    doc.write(ledger);
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let started = Instant::now();
@@ -6862,6 +9055,11 @@ async fn main() -> ExitCode {
         case_12(profile, &mut ledger).await;
         case_13(profile, &mut ledger).await;
         case_14(profile, &mut ledger).await;
+        case_15(profile, &mut ledger).await;
+        case_16(profile, &mut ledger).await;
+        case_17(profile, &mut ledger).await;
+        case_18(profile, &mut ledger).await;
+        case_19(profile, &mut ledger).await;
         case_09b(profile, &mut ledger).await;
         case_10(profile, &mut ledger).await;
     }
@@ -6961,7 +9159,7 @@ async fn main() -> ExitCode {
     let mut summary = String::new();
     let _ = writeln!(
         summary,
-        "GATE M Part 1 (Phase B) — run summary\n\
+        "GATE M Part 1 (Phase B2) — run summary\n\
          =====================================\n\n\
          gate assertions   {}\n\
          failures          {}\n\

@@ -13,7 +13,7 @@
   font-size: var(--vela-text-xs);
   font-weight: var(--vela-weight-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--vela-tracking-caps);
 }
 
 .list {
@@ -24,7 +24,7 @@
   padding-left: var(--vela-space-4);
   color: var(--vela-text);
   font-size: var(--vela-text-xs);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
 }
 
 .notice_ {

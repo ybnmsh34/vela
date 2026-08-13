@@ -10,8 +10,8 @@
 .mark {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
+  width: var(--vela-mark-lg);
+  height: var(--vela-mark-lg);
   border-radius: var(--vela-radius-lg);
   background: var(--vela-accent-quiet);
   color: var(--vela-accent);
@@ -22,7 +22,7 @@
   margin: 0 0 var(--vela-space-2);
   font-size: var(--vela-text-xl);
   font-weight: var(--vela-weight-semibold);
-  letter-spacing: -0.02em;
+  letter-spacing: var(--vela-tracking-tight);
   color: var(--vela-text);
 }
 
@@ -30,7 +30,7 @@
   margin: 0 0 var(--vela-space-6);
   max-width: 40rem;
   font-size: var(--vela-text-base);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
   color: var(--vela-text-muted);
 }
 
@@ -70,6 +70,6 @@
   margin: var(--vela-space-5) 0 0;
   max-width: 40rem;
   font-size: var(--vela-text-sm);
-  line-height: 1.6;
+  line-height: var(--vela-leading-prose);
   color: var(--vela-text-subtle);
 }

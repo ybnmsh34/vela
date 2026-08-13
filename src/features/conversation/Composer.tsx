@@ -36,6 +36,16 @@ interface ComposerProps {
   readonly blockedReason: string | null;
   readonly onSend: (text: string) => void;
   readonly onCancel: () => void;
+  /**
+   * The draft, on every change and on send.
+   *
+   * The composer keeps owning its own text — an editor whose value round-trips
+   * through a parent is an editor that drops characters the moment anything
+   * above it re-renders slowly. What travels upward is a *copy*, for surfaces
+   * that need to know what the turn currently weighs. Without it the context
+   * meter measures an empty string forever, which is exactly what it did.
+   */
+  readonly onDraftChange?: ((text: string) => void) | undefined;
 }
 
 export function Composer({
@@ -44,9 +54,15 @@ export function Composer({
   blockedReason,
   onSend,
   onCancel,
+  onDraftChange,
 }: ComposerProps) {
   const [text, setText] = useState('');
   const textarea = useRef<HTMLTextAreaElement>(null);
+
+  const change = (next: string): void => {
+    setText(next);
+    onDraftChange?.(next);
+  };
 
   // Grow with the content, up to a ceiling, then scroll inside. Layout effect
   // so the height is corrected in the same frame the text changed — measuring
@@ -69,7 +85,7 @@ export function Composer({
   const send = (): void => {
     if (!canSend) return;
     onSend(text.trim());
-    setText('');
+    change('');
     // Focus stays in the box, including when the send came from the button.
     // Otherwise focus lands on Send, and `Escape` — the documented way to stop
     // the stream that just started — goes nowhere.
@@ -112,7 +128,7 @@ export function Composer({
           placeholder={blockedReason ?? 'Send a message…'}
           disabled={blockedReason !== null}
           onChange={(event) => {
-            setText(event.target.value);
+            change(event.target.value);
           }}
           onKeyDown={onKeyDown}
         />

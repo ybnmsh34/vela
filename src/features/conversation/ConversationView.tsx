@@ -29,12 +29,15 @@ interface ConversationViewProps {
   readonly capabilities: ChatCapabilities;
   /** How the user named this model. Never a backend identity. */
   readonly modelLabel: string | null;
+  /** Forwarded to the composer; see {@link Composer}'s own note on why. */
+  readonly onDraftChange?: ((text: string) => void) | undefined;
 }
 
 export function ConversationView({
   conversation,
   capabilities,
   modelLabel,
+  onDraftChange,
 }: ConversationViewProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -94,6 +97,7 @@ export function ConversationView({
         blockedReason={conversation.blockedReason}
         onSend={conversation.send}
         onCancel={conversation.stop}
+        onDraftChange={onDraftChange}
       />
     </section>
   );

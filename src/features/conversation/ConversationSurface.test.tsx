@@ -757,3 +757,98 @@ describe('the conversation surface: the real fake host', () => {
     expect(within(screen.getByLabelText('Your message')).getByText('round trip please')).toBeInTheDocument();
   });
 });
+
+describe('the conversation surface: what it reports about the turn to come', () => {
+  /**
+   * The surface owns the transcript and the composer owns the draft, so nothing
+   * outside can weigh the next turn — which is why the meter that tried, and
+   * was mounted with nothing feeding it, read zero forever. What travels out is
+   * this report.
+   */
+  it('reports the draft as it is typed, and again as it is cleared', async () => {
+    const host = new ScriptedHost();
+    const reported: (readonly string[])[] = [];
+    render(
+      <PlatformProvider adapter={host}>
+        <ConversationSurface
+          providerId="p"
+          modelId="m"
+          capabilities={{ ...NO_CAPABILITIES, streaming: true }}
+          onPendingTurn={(texts) => reported.push(texts)}
+        />
+      </PlatformProvider>,
+    );
+
+    // Reported once on mount, before a key is pressed: an empty turn is a
+    // measurement, and the surface says so rather than staying silent.
+    await waitFor(() => {
+      expect(reported.at(-1)).toEqual([]);
+    });
+
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'weigh me');
+    await waitFor(() => {
+      expect(reported.at(-1)).toEqual(['weigh me']);
+    });
+
+    await user.clear(screen.getByRole('textbox', { name: 'Message' }));
+    await waitFor(() => {
+      expect(reported.at(-1)).toEqual([]);
+    });
+  });
+
+  /**
+   * **The anti-drift assertion.** The report and the send are derived from one
+   * traversal, and this is what says so: whatever the surface last reported it
+   * would send, plus the draft, is byte-for-byte what `chat_send` carried.
+   *
+   * A meter with its own opinion of the transcript drifts from the sender the
+   * first time either changes — reasoning starts being replayed, or an
+   * unsettled turn starts counting — and the user finds out by losing a
+   * message. This fails the moment the two disagree.
+   */
+  it('reports exactly the messages chat_send will carry — reasoning excluded', async () => {
+    const host = new ScriptedHost();
+    let latest: readonly string[] = [];
+    render(
+      <PlatformProvider adapter={host}>
+        <ConversationSurface
+          providerId="p"
+          modelId="m"
+          capabilities={{ ...NO_CAPABILITIES, streaming: true }}
+          onPendingTurn={(texts) => {
+            latest = texts;
+          }}
+        />
+      </PlatformProvider>,
+    );
+
+    await ask('first question');
+    act(() => {
+      host.push(
+        { type: 'reasoningDelta', text: 'private deliberation nobody replays' },
+        { type: 'textDelta', text: 'first answer' },
+        done({ parts: [{ kind: 'text', text: 'first answer' }] }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Model reply')).toHaveTextContent('first answer');
+    });
+
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'second question');
+    await waitFor(() => {
+      expect(latest).toEqual(['first question', 'first answer', 'second question']);
+    });
+    const measured = latest;
+
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => {
+      expect(host.sent).toHaveLength(2);
+    });
+    expect(host.sent[1]?.messages.map((message) => message.text)).toEqual(measured);
+    // Stated separately because it is the thing most likely to drift: the
+    // model's reasoning is not replayed, so it must not be weighed either.
+    expect(measured.join(' ')).not.toContain('private deliberation');
+  });
+});

@@ -31,8 +31,11 @@ interface ModelBarProps {
   readonly probing: boolean;
   readonly probeFailure: ChatError | null;
   readonly switchedFrom: ModelSelection | null;
-  /** Everything this turn would send, for the context estimate. */
-  readonly texts: readonly string[];
+  /**
+   * Everything this turn would send, for the context estimate. `null` means no
+   * surface reported it, which the meter states rather than reading as zero.
+   */
+  readonly texts: readonly string[] | null;
   readonly onSelect: (selection: ModelSelection, hasHistory: boolean) => void;
   readonly onProbe: () => void;
   readonly onAcknowledgeSwitch: () => void;

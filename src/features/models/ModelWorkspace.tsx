@@ -20,11 +20,19 @@
  *
  * ## What the context meter can and cannot see
  *
- * It measures what this surface holds: the staged files, plus whatever the host
- * surface passes as `turnTexts`. It cannot reach into the transcript, and it
- * does not pretend to — the readout says "this turn". The *window* it measures
- * against is the endpoint's own number, and when the endpoint reports none, the
- * meter says so and draws no bar.
+ * It measures what it is handed: the staged text files, plus whatever the host
+ * surface passes as `turnTexts` — which is the transcript Vela will replay plus
+ * the composer's draft, reported upward by the surface in the slot. The *window*
+ * it measures against is the endpoint's own number, and when the endpoint
+ * reports none, the meter says so and draws no bar.
+ *
+ * **`turnTexts` defaults to `null`, not `[]`, and that is load-bearing.** This
+ * workspace cannot see into the slot; a host that mounts it and passes nothing
+ * has told it nothing, which is not the same as telling it the turn is empty.
+ * The default used to be `[]`, `App` passed no `turnTexts` at all, and the
+ * meter therefore measured a permanently empty array and reported "About 0 of
+ * 200,000 tokens" no matter what the user typed. The component was never
+ * broken. Nothing was connected to it. `null` makes that state say so.
  */
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -98,14 +106,21 @@ interface ModelWorkspaceProps {
   readonly children?: ReactNode;
   /** Whether a conversation is open, which is what makes a switch consequential. */
   readonly hasHistory?: boolean;
-  /** Anything else this turn will send, for the context estimate. */
-  readonly turnTexts?: readonly string[];
+  /**
+   * Everything else this turn will send, for the context estimate: the
+   * transcript that will be replayed plus the composer's draft.
+   *
+   * `null` — the default — means **nobody reported it**, and the meter says
+   * "unknown" rather than counting an empty list as an empty turn. Pass `[]`
+   * only when you genuinely know the turn carries no text.
+   */
+  readonly turnTexts?: readonly string[] | null;
 }
 
 export function ModelWorkspace({
   children,
   hasHistory = false,
-  turnTexts = [],
+  turnTexts = null,
 }: ModelWorkspaceProps) {
   const providers = useProviders();
   const providerList = providers.state.status === 'ready' ? providers.state.providers : NO_PROVIDERS;
@@ -127,13 +142,20 @@ export function ModelWorkspace({
   // enough to a character count. Images are deliberately *not* charged: what an
   // endpoint spends on one is model-specific and unknowable here, and a made-up
   // number in a budget is worse than an acknowledged gap.
+  //
+  // With no report from the slot the whole figure stays `null`, attachments
+  // included. A partial total is the same lie in a smaller font: it would look
+  // like a measurement and be short by the entire conversation.
   const texts = useMemo(
-    () => [
-      ...turnTexts,
-      ...attachments.attachments
-        .filter((attachment) => attachment.kind === 'text')
-        .map((attachment) => 'x'.repeat(attachment.size)),
-    ],
+    () =>
+      turnTexts === null
+        ? null
+        : [
+            ...turnTexts,
+            ...attachments.attachments
+              .filter((attachment) => attachment.kind === 'text')
+              .map((attachment) => 'x'.repeat(attachment.size)),
+          ],
     [turnTexts, attachments.attachments],
   );
 

@@ -50,7 +50,7 @@ describe('contextBudget', () => {
   it('is comfortable well inside the window', () => {
     const budget = contextBudget(4096, ['a'.repeat(400)]);
     expect(budget.verdict).toBe('comfortable');
-    expect(budget.approxRemainingTokens).toBe(4096 - budget.approxUsedTokens);
+    expect(budget.approxRemainingTokens).toBe(4096 - (budget.approxUsedTokens ?? 0));
   });
 
   it('turns tight before it turns over, so the warning arrives in time to act', () => {
@@ -73,5 +73,39 @@ describe('contextBudget', () => {
   it('treats a zero or negative window as no window at all', () => {
     expect(contextBudget(0, ['x']).verdict).toBe('unknown');
     expect(contextBudget(-1, ['x']).windowTokens).toBeNull();
+  });
+
+  it('refuses to answer at all when nothing was measured', () => {
+    // The distinction the whole `null` overload exists for. A caller that was
+    // never told what the turn holds must not be handed a number, because a
+    // number is indistinguishable from a measurement — and this one would read
+    // "about 0", i.e. "you have the whole window", to a user holding 880,000
+    // characters.
+    const budget = contextBudget(200_000, null);
+    expect(budget.verdict).toBe('unknown');
+    expect(budget.unknownReason).toBe('nothingMeasured');
+    expect(budget.approxUsedTokens).toBeNull();
+    expect(budget.fraction).toBeNull();
+    expect(budget.approxRemainingTokens).toBeNull();
+    // The window is a fact the endpoint reported and is still carried: not
+    // knowing the usage says nothing about the ceiling.
+    expect(budget.windowTokens).toBe(200_000);
+  });
+
+  it('distinguishes an empty turn from an unmeasured one', () => {
+    // `[]` is a measurement whose answer is zero. `null` is the absence of one.
+    // Collapsing them is exactly the bug.
+    const empty = contextBudget(200_000, []);
+    expect(empty.verdict).toBe('comfortable');
+    expect(empty.approxUsedTokens).toBe(0);
+    expect(empty.unknownReason).toBeNull();
+
+    expect(contextBudget(200_000, null).verdict).toBe('unknown');
+  });
+
+  it('names which half is missing, so the UI can say which', () => {
+    expect(contextBudget(null, ['hello']).unknownReason).toBe('noWindow');
+    expect(contextBudget(null, null).unknownReason).toBe('nothingMeasured');
+    expect(contextBudget(4096, ['hello']).unknownReason).toBeNull();
   });
 });

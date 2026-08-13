@@ -232,18 +232,44 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
  * A turn that only ever produced reasoning contributes nothing, and is dropped
  * rather than sent as an empty assistant message that some endpoints reject.
  */
-function toMessages(
-  history: readonly ConversationEntry[],
-  userText: string,
-): readonly ChatMessageInput[] {
+function historyMessages(history: readonly ConversationEntry[]): ChatMessageInput[] {
   const messages: ChatMessageInput[] = [];
   for (const entry of history) {
     if (entry.kind === 'user') messages.push({ role: 'user', text: entry.text });
     else if (isSettled(entry.turn) && entry.turn.answer !== '')
       messages.push({ role: 'assistant', text: entry.turn.answer });
   }
-  messages.push({ role: 'user', text: userText });
   return messages;
+}
+
+function toMessages(
+  history: readonly ConversationEntry[],
+  userText: string,
+): readonly ChatMessageInput[] {
+  return [...historyMessages(history), { role: 'user', text: userText }];
+}
+
+/**
+ * What pressing send would put on the wire, as plain strings — for the context
+ * meter, and for anything else that needs to weigh a turn before it happens.
+ *
+ * **Derived from the same traversal as {@link toMessages} on purpose.** A meter
+ * with its own opinion of what gets sent is a meter that drifts from the sender
+ * the first time either changes, and the user only finds out by losing a
+ * message. Reasoning is excluded here because it is excluded there; an
+ * unsettled turn is excluded here because it is excluded there.
+ *
+ * The draft is included only when it is non-blank, because a blank composer
+ * sends nothing — `toMessages` would append an empty user message that `send`
+ * refuses to start.
+ */
+export function pendingTurnTexts(
+  history: readonly ConversationEntry[],
+  draft: string,
+): readonly string[] {
+  const messages = historyMessages(history);
+  if (draft.trim() !== '') messages.push({ role: 'user', text: draft });
+  return messages.map((message) => message.text);
 }
 
 function refusalOf(error: unknown): { code: string; message: string } {

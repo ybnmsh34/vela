@@ -68,39 +68,81 @@ export function approxTurnTokens(texts: readonly string[]): number {
  */
 export type BudgetVerdict = 'unknown' | 'comfortable' | 'tight' | 'over';
 
+/**
+ * Which half of the sum is missing. Two very different absences, and a surface
+ * that conflates them tells the user the wrong thing about their own machine.
+ *
+ * `noWindow` — the endpoint did not report a context window. The usage figure
+ * is real; there is simply no ceiling to draw it against.
+ *
+ * `nothingMeasured` — **no caller supplied anything to count.** This is not
+ * "the turn is empty". It is "the wiring that would tell me what the turn holds
+ * is not attached", and the two are indistinguishable from in here, which is
+ * exactly why the caller passes `null` rather than `[]`. Printing "about 0
+ * tokens" for it is the defect this distinction exists to prevent: the meter
+ * that measured nothing read *"About 0 of 200,000 tokens"* while the composer
+ * held 880,000 characters, which does not merely fail to inform — it tells the
+ * user they have room they do not have.
+ */
+export type BudgetUnknownReason = 'noWindow' | 'nothingMeasured';
+
 export interface ContextBudget {
   /** Exactly what the endpoint reported. `null` means it reported nothing. */
   readonly windowTokens: number | null;
-  readonly approxUsedTokens: number;
-  /** `null` when there is no window to subtract from. Never negative. */
+  /** `null` when there was nothing to measure — never a stand-in zero. */
+  readonly approxUsedTokens: number | null;
+  /** `null` when either half of the subtraction is missing. Never negative. */
   readonly approxRemainingTokens: number | null;
-  /** `0`–`1`+, or `null` with no window. May exceed 1 — that is the point. */
+  /** `0`–`1`+, or `null` when either half is missing. May exceed 1. */
   readonly fraction: number | null;
   readonly verdict: BudgetVerdict;
+  /** Set exactly when `verdict` is `unknown`. */
+  readonly unknownReason: BudgetUnknownReason | null;
 }
 
+/**
+ * @param texts everything the turn will send, or `null` for "nothing reported
+ * what this turn holds". `[]` means the turn is genuinely empty and is counted
+ * as zero; `null` refuses to answer. A caller that cannot tell the difference
+ * must pass `null`.
+ */
 export function contextBudget(
   windowTokens: number | null,
-  texts: readonly string[],
+  texts: readonly string[] | null,
 ): ContextBudget {
+  const window = windowTokens === null || windowTokens <= 0 ? null : windowTokens;
+
+  if (texts === null) {
+    return {
+      windowTokens: window,
+      approxUsedTokens: null,
+      approxRemainingTokens: null,
+      fraction: null,
+      verdict: 'unknown',
+      unknownReason: 'nothingMeasured',
+    };
+  }
+
   const approxUsedTokens = approxTurnTokens(texts);
 
-  if (windowTokens === null || windowTokens <= 0) {
+  if (window === null) {
     return {
       windowTokens: null,
       approxUsedTokens,
       approxRemainingTokens: null,
       fraction: null,
       verdict: 'unknown',
+      unknownReason: 'noWindow',
     };
   }
 
-  const fraction = approxUsedTokens / windowTokens;
+  const fraction = approxUsedTokens / window;
   return {
-    windowTokens,
+    windowTokens: window,
     approxUsedTokens,
-    approxRemainingTokens: Math.max(0, windowTokens - approxUsedTokens),
+    approxRemainingTokens: Math.max(0, window - approxUsedTokens),
     fraction,
     verdict: fraction >= 1 ? 'over' : fraction >= TIGHT_FRACTION ? 'tight' : 'comfortable',
+    unknownReason: null,
   };
 }

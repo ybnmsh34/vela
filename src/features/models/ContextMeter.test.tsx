@@ -35,6 +35,28 @@ describe('ContextMeter', () => {
     expect(meter).toHaveTextContent(/drop the oldest messages, or the endpoint will refuse it/i);
   });
 
+  it('says the use is unknown rather than printing a zero it did not measure', () => {
+    // The Phase C failure, at the component's own boundary. `null` means "no
+    // caller told me what this turn holds", which is not "the turn is empty" —
+    // and the difference is the whole distance between a meter that informs and
+    // one that tells the user they have room they do not have.
+    render(<ContextMeter windowTokens={200_000} texts={null} />);
+    const meter = screen.getByTestId('context-meter');
+    expect(meter).toHaveTextContent(/^Context use unknown/);
+    expect(meter).not.toHaveTextContent(/About 0/);
+    expect(meter).toHaveAttribute('data-verdict', 'unknown');
+    // The window is still the endpoint's own reported fact, so it is still said.
+    expect(meter).toHaveTextContent(/200,000 token window/);
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument();
+  });
+
+  it('counts an empty turn as empty, which is a different sentence', () => {
+    render(<ContextMeter windowTokens={4096} texts={[]} />);
+    const meter = screen.getByTestId('context-meter');
+    expect(meter).toHaveAttribute('data-verdict', 'comfortable');
+    expect(meter).toHaveTextContent(/About 0 of 4K tokens/);
+  });
+
   it('exposes the estimate to assistive technology as an estimate', () => {
     render(<ContextMeter windowTokens={4096} texts={['hello']} />);
     const meter = screen.getByRole('meter', { name: 'Estimated context used' });

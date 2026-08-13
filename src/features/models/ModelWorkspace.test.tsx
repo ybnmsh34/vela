@@ -55,10 +55,21 @@ async function host(): Promise<BrowserAdapter> {
   return adapter;
 }
 
-function mount(adapter: BrowserAdapter, hasHistory = false) {
+/**
+ * `turnTexts` stands in for the report a real transcript surface sends up. It
+ * defaults to `[]` — "measured, and the turn is empty" — because that is what a
+ * mounted surface with an empty composer reports, and it is what these tests
+ * mean. Passing nothing at all is a *different* state with its own test below:
+ * `null`, "nobody told me", which the meter refuses to render as a figure.
+ */
+function mount(
+  adapter: BrowserAdapter,
+  hasHistory = false,
+  turnTexts: readonly string[] | null = [],
+) {
   return render(
     <PlatformProvider adapter={adapter}>
-      <ModelWorkspace hasHistory={hasHistory}>
+      <ModelWorkspace hasHistory={hasHistory} turnTexts={turnTexts}>
         <p>transcript</p>
       </ModelWorkspace>
     </PlatformProvider>,
@@ -174,6 +185,26 @@ describe('capability-driven affordances', () => {
     expect(await screen.findByTestId('context-meter')).toHaveTextContent(
       /not reported by this endpoint/i,
     );
+  });
+
+  it('says the use is unknown when nothing in the slot reports what the turn holds', async () => {
+    // The Phase C composition-root defect, held at this component's boundary.
+    // A workspace mounted with no `turnTexts` has been told nothing about the
+    // turn — it cannot see into its own slot — and "About 0 of 4K tokens" would
+    // be a figure computed from that silence and presented as a measurement.
+    const adapter = await host();
+    adapter.seedCapabilities(
+      profile({ providerId: 'workstation', modelId: 'text-only', contextWindowTokens: 4096 }),
+    );
+    mount(adapter, false, null);
+
+    const meter = await screen.findByTestId('context-meter');
+    await waitFor(() => {
+      expect(meter).toHaveTextContent(/Context use unknown/);
+    });
+    expect(meter).not.toHaveTextContent(/About 0/);
+    // The window is a reported fact and survives not knowing the usage.
+    expect(meter).toHaveTextContent(/4K token window/);
   });
 
   it('probes on demand and never on mount, because a probe is a network request', async () => {

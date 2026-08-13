@@ -71,25 +71,40 @@ describe('the theme is kept where it is kept', () => {
   it('lets a click that beats the first read win', async () => {
     // The load is asynchronous. A stored preference landing after the user has
     // already chosen must not overrule them.
-    class SlowHost extends BrowserAdapter {
+    //
+    // The ordering is held open by hand rather than by a timeout: a sleep long
+    // enough to be safe on an idle machine is a coin toss on a loaded one, and
+    // the two orderings this test tells apart are exactly the two a race would
+    // pick between.
+    let releaseLoad = (): void => undefined;
+    const loadReached = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+
+    class HeldHost extends BrowserAdapter {
       override async invoke(command: never, payload: never): Promise<never> {
-        if ((command as string) === 'settings_get') {
-          await new Promise((resolve) => setTimeout(resolve, 30));
-        }
+        if ((command as string) === 'settings_get') await loadReached;
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return super.invoke(command, payload) as never;
       }
     }
     // Typed as the base class so the seeding call below uses its generic
     // signature rather than the narrowed override.
-    const adapter: BrowserAdapter = new SlowHost();
+    const adapter: BrowserAdapter = new HeldHost();
     await adapter.invoke('settings_set_theme', { theme: 'dark' });
 
     const user = userEvent.setup();
     render(<App adapter={adapter} />);
-    await user.click(themeButton());
 
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    // The stored `dark` cannot have arrived yet; the user chooses first.
+    await user.click(themeButton());
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+
+    releaseLoad();
+    await waitFor(async () => {
+      expect((await adapter.invoke('settings_get', {})).theme).toBe('light');
+    });
+    // The stored value has now landed, and has not overruled the choice.
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 

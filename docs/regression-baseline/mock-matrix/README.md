@@ -16,6 +16,23 @@ records the request, HTTP status and content type behind every file.
 | small-local | none (400) | no | 8k | accepted then ignored | none |
 | hostile | malformed / partial | no | 4k | accepted then ignored | unterminated `<think>` with junk |
 
+## Parallel tool calls — read 13 and 14 together
+
+`13-tools-parallel.json` and `14-tools-parallel.sse` are **one logical answer
+in two transports**, and they are the pair that matters:
+
+| | `13-…json` — `message.tool_calls[]` | `14-…sse` — `delta.tool_calls[]` |
+|---|---|---|
+| an element is | a **whole** call | a **fragment** of a call |
+| `index` | **absent — the field does not exist in this shape** | present on every fragment; the only join key |
+
+Two or more complete, valid calls in one turn is the commonest tool-calling
+shape in the wild, and until GATE M Part 1 (Phase B) no profile here could emit
+it — which is precisely why a defect that collapsed a non-streamed batch into a
+single spliced call survived a green suite. On `hostile` the batch is three
+calls of which only the middle one is broken, so a consumer that loses calls
+reports one where the socket carried three.
+
 ## What these files are
 
 Evidence about how an OpenAI-compatible **mock** behaves when it cannot do what

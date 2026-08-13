@@ -289,6 +289,129 @@
         ],
         "model": "gpt-4o"
       }
+    },
+    {
+      "file": "13-tools-parallel.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "two tools offered, parallel calls, non-streaming (no index field anywhere)",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 173,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin and what time is it there"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "get_local_time",
+              "description": "Look up the local time.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timezone"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "file": "14-tools-parallel.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "the same parallel answer, streamed as index-keyed fragments",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 173,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin and what time is it there"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "get_local_time",
+              "description": "Look up the local time.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timezone"
+                ]
+              }
+            }
+          }
+        ],
+        "stream": true
+      }
     }
   ]
 }

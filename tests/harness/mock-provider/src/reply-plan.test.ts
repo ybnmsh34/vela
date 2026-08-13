@@ -120,6 +120,80 @@ describe('the reply plan', () => {
     expect(built.content.length).toBeGreaterThan(0);
   });
 
+  it('answers every offered tool at once on native profiles — the parallel shape', () => {
+    // Parallel tool calling is the commonest tool-calling shape in the wild and
+    // was, until GATE M Part 1 (Phase B), impossible to express here.
+    for (const name of ['frontier', 'mid-local'] as const) {
+      const built = plan(name, {
+        ...ask,
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'get_weather',
+              parameters: { type: 'object', properties: { city: { type: 'string' } } },
+            },
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'get_local_time',
+              parameters: { type: 'object', properties: { timezone: { type: 'string' } } },
+            },
+          },
+        ],
+      });
+      expect(built.parallelToolCalls, name).toBe(true);
+      expect(built.toolCalls.map((call) => call.name), name).toEqual([
+        'get_weather',
+        'get_local_time',
+      ]);
+      expect(built.toolCalls.map((call) => call.index), name).toEqual([0, 1]);
+      // Distinct ids: a batch that collapsed into one slot is detectable.
+      expect(new Set(built.toolCalls.map((call) => call.id)).size, name).toBe(2);
+      for (const call of built.toolCalls) {
+        expect(() => JSON.parse(call.argumentsText), name).not.toThrow();
+        expect(call.omitId, name).toBe(false);
+        expect(call.typeField, name).toBe('function');
+      }
+    }
+  });
+
+  it('does not call one offered tool a parallel batch', () => {
+    const built = plan('frontier', {
+      ...ask,
+      tools: [{ type: 'function', function: { name: 'get_weather' } }],
+    });
+    expect(built.toolCalls).toHaveLength(1);
+    expect(built.parallelToolCalls).toBe(false);
+    // The id of a single call is unsuffixed — the committed transcripts carry
+    // this exact form and adding the parallel shape must not rewrite them.
+    expect(built.toolCalls[0]?.id).toMatch(/^call_[0-9a-f]{8}$/u);
+  });
+
+  it('breaks only the middle call of a parallel batch on hostile', () => {
+    const built = plan('hostile', {
+      ...ask,
+      tools: [
+        { type: 'function', function: { name: 'get_weather', parameters: { type: 'object', properties: { city: { type: 'string' } } } } },
+        { type: 'function', function: { name: 'get_local_time', parameters: { type: 'object', properties: { timezone: { type: 'string' } } } } },
+      ],
+    });
+    expect(built.parallelToolCalls).toBe(true);
+    expect(built.toolCalls).toHaveLength(3);
+    const [first, broken, third] = built.toolCalls;
+
+    expect(() => JSON.parse(first?.argumentsText ?? '')).not.toThrow();
+    expect(() => JSON.parse(broken?.argumentsText ?? '')).toThrow();
+    expect(broken?.omitId).toBe(true);
+    expect(broken?.typeField).toBe('funktion');
+    expect(() => JSON.parse(third?.argumentsText ?? '')).not.toThrow();
+
+    // Two of three survive intact, so "N-1 calls vanished" is a countable
+    // failure rather than an invisible one — and the indices are not contiguous.
+    expect(built.toolCalls.map((call) => call.index)).toEqual([0, 1, 4]);
+  });
+
   it('emits no tool calls at all when the profile has no tool support', () => {
     const built = plan('small-local', {
       ...ask,

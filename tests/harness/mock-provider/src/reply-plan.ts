@@ -39,6 +39,12 @@ export interface ReplyPlan {
   readonly content: string;
   readonly contentFragments: readonly string[];
   readonly toolCalls: readonly PlannedToolCall[];
+  /**
+   * The turn answers several tools at once — the commonest tool-calling shape
+   * in the wild, and the one the transports disagree about. Renderers use it to
+   * choose the parallel wire shape; nothing else in the plan depends on it.
+   */
+  readonly parallelToolCalls: boolean;
   readonly finishReason: FinishReason;
   readonly promptTokens: number;
   readonly completionTokens: number;
@@ -172,15 +178,35 @@ function structuredReply(
   return JSON.stringify(sampleFromSchema(format.json_schema.schema, rng));
 }
 
-function resolveRequestedTool(request: ValidatedChatRequest): ToolDefinition | null {
+/**
+ * Which tools the turn answers.
+ *
+ * One offered tool means one call, exactly as before. **Several offered tools
+ * mean several calls** — parallel tool calling, which is what a real frontier
+ * endpoint does when a question needs two lookups, and the shape GATE M Part 1
+ * (Phase B) found the harness could not express. `tool_choice` naming a
+ * function still pins the answer to that one tool.
+ */
+function resolveRequestedTools(request: ValidatedChatRequest): readonly ToolDefinition[] {
   if (request.tools.length === 0 || request.toolChoice === 'none') {
-    return null;
+    return [];
   }
   if (typeof request.toolChoice === 'object') {
     const wanted = request.toolChoice.function.name;
-    return request.tools.find((tool) => tool.function.name === wanted) ?? null;
+    const named = request.tools.find((tool) => tool.function.name === wanted);
+    return named === undefined ? [] : [named];
   }
-  return request.tools[0] ?? null;
+  return request.tools;
+}
+
+/**
+ * Call ids. The first keeps the bare `call_<seed>` form the committed
+ * single-call transcripts already carry; later calls get a suffix. Ids are
+ * opaque strings on the wire, so any distinct value is legal — and keeping the
+ * first one stable means adding the parallel shape rewrites no existing byte.
+ */
+function callId(seedHex: string, position: number): string {
+  return position === 0 ? `call_${seedHex}` : `call_${seedHex}_${String(position)}`;
 }
 
 function planToolCalls(
@@ -188,50 +214,99 @@ function planToolCalls(
   request: ValidatedChatRequest,
   rng: Rng,
   seedHex: string,
-): readonly PlannedToolCall[] {
-  const tool = resolveRequestedTool(request);
-  if (tool === null || profile.toolCalling === 'none') {
-    return [];
+): { calls: readonly PlannedToolCall[]; parallel: boolean } {
+  const tools = resolveRequestedTools(request);
+  const none = { calls: [] as readonly PlannedToolCall[], parallel: false };
+  if (tools.length === 0 || profile.toolCalling === 'none') {
+    return none;
   }
-  const validArguments = JSON.stringify(
-    sampleFromSchema(tool.function.parameters ?? { type: 'object' }, rng),
-  );
+  const validArgumentsFor = (tool: ToolDefinition): string =>
+    JSON.stringify(sampleFromSchema(tool.function.parameters ?? { type: 'object' }, rng));
 
   if (profile.toolCalling === 'native') {
-    return [
+    // One well-formed call per tool. Streamed they are joined by `index`;
+    // non-streamed each is a whole entry and `index` does not exist — see
+    // `render-json.ts` and `render-sse.ts`.
+    const calls = tools.map((tool, position) => ({
+      id: callId(seedHex, position),
+      name: tool.function.name,
+      argumentsText: validArgumentsFor(tool),
+      index: position,
+      omitId: false,
+      typeField: 'function',
+    }));
+    return { calls, parallel: calls.length > 1 };
+  }
+
+  const truncate = (text: string): string =>
+    text.slice(0, Math.max(1, Math.floor(text.length * 0.6)));
+
+  if (tools.length > 1) {
+    // hostile, parallel: three calls of which only the middle one is broken.
+    // "Only some are broken" is what makes lost calls detectable — a consumer
+    // that merges the batch reports a single malformed call, and the two
+    // well-formed ones have visibly vanished instead of never having existed.
+    const first = tools[0] as ToolDefinition;
+    const second = tools[1] as ToolDefinition;
+    const third = tools[2] ?? second;
+    return {
+      calls: [
+        {
+          id: callId(seedHex, 0),
+          name: first.function.name,
+          argumentsText: validArgumentsFor(first),
+          index: 0,
+          omitId: false,
+          typeField: 'function',
+        },
+        {
+          id: '',
+          name: second.function.name,
+          argumentsText: truncate(validArgumentsFor(second)),
+          index: 1,
+          omitId: true,
+          typeField: 'funktion',
+        },
+        {
+          // The index jumps: a real broken runtime does not promise contiguity,
+          // and anything treating `index` as an array offset breaks here.
+          id: callId(seedHex, 2),
+          name: third.function.name,
+          argumentsText: validArgumentsFor(third),
+          index: 4,
+          omitId: false,
+          typeField: 'function',
+        },
+      ],
+      parallel: true,
+    };
+  }
+
+  // hostile, one tool: one call whose arguments are truncated mid-JSON, and a
+  // second whose id is missing, whose discriminator is misspelled, and whose
+  // index jumps — every one of these has been seen from a real broken runtime.
+  const tool = tools[0] as ToolDefinition;
+  return {
+    calls: [
       {
-        id: `call_${seedHex}`,
+        id: callId(seedHex, 0),
         name: tool.function.name,
-        argumentsText: validArguments,
+        argumentsText: truncate(validArgumentsFor(tool)),
         index: 0,
         omitId: false,
         typeField: 'function',
       },
-    ];
-  }
-
-  // hostile: one call whose arguments are truncated mid-JSON, and a second
-  // whose id is missing, whose discriminator is misspelled, and whose index
-  // jumps — every one of these has been seen from a real broken runtime.
-  const truncated = validArguments.slice(0, Math.max(1, Math.floor(validArguments.length * 0.6)));
-  return [
-    {
-      id: `call_${seedHex}`,
-      name: tool.function.name,
-      argumentsText: truncated,
-      index: 0,
-      omitId: false,
-      typeField: 'function',
-    },
-    {
-      id: '',
-      name: tool.function.name,
-      argumentsText: 'not-json-at-all',
-      index: 7,
-      omitId: true,
-      typeField: 'funktion',
-    },
-  ];
+      {
+        id: '',
+        name: tool.function.name,
+        argumentsText: 'not-json-at-all',
+        index: 7,
+        omitId: true,
+        typeField: 'funktion',
+      },
+    ],
+    parallel: false,
+  };
 }
 
 function junkRun(rng: Rng, count: number): string {
@@ -332,7 +407,12 @@ export function buildReplyPlan(
   const reasoningText = profile.reasoning === 'reasoning-content-field' ? narration : '';
   const inlineReasoning = profile.reasoning === 'none' ? '' : narration;
 
-  const toolCalls = planToolCalls(profile, request, rng, seedHex);
+  const { calls: toolCalls, parallel: parallelToolCalls } = planToolCalls(
+    profile,
+    request,
+    rng,
+    seedHex,
+  );
   // A tool-calling turn carries no prose on native profiles, exactly like the
   // real APIs. Hostile ignores that rule too — it sends both.
   const wantsProse = toolCalls.length === 0 || profile.toolCalling === 'malformed';
@@ -364,6 +444,7 @@ export function buildReplyPlan(
     content,
     contentFragments: budgeted.fragments,
     toolCalls,
+    parallelToolCalls,
     finishReason,
     promptTokens: request.promptTokens,
     completionTokens,

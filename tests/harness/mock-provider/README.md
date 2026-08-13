@@ -34,9 +34,41 @@ alternative is weaker evidence:
   behaviour — accept the `tools` field and answer with prose anyway. Both are in
   the wild; both are tested.
 
+### Parallel tool calls
+
+**Offer one tool and you get one call; offer several and you get one call per
+tool.** That second shape — two or more complete, valid calls in a single turn —
+is the commonest tool-calling shape in the wild, and it is emitted by both
+profiles with native tools (`frontier`, `mid-local`).
+
+It is available in **both transports, carrying the same logical answer**, and
+that pairing is the point:
+
+| | streamed `delta.tool_calls[]` | non-streamed `message.tool_calls[]` |
+|---|---|---|
+| an element is | a *fragment* of a call | a *whole* call |
+| `index` | on every fragment; the only join key | **absent — not part of this shape** |
+| arguments | split across frame boundaries | complete |
+
+GATE M Part 1 (Phase B) FINDING 1 was exactly a consumer that applied the
+streaming rule to the non-streamed shape and concatenated a batch into one
+call. No profile could express the shape, so the harness could not see it; the
+executor had to script it by hand. `parallel-tool-calls.test.ts` now pins it,
+and `13-tools-parallel.json` / `14-tools-parallel.sse` record it per profile.
+
+`hostile` sends a **partly** broken batch: three calls, of which only the middle
+one is malformed (no `id`, `type: "funktion"`, arguments truncated mid-JSON),
+its indices are `0, 1, 4`, and the streamed fragments arrive **round-robin**
+across all three. So a consumer that merges the batch reports one call where the
+socket carried three, and the two well-formed survivors are visibly missing
+rather than merely absent.
+
 ### What `hostile` actually does
 
 - `tool_calls[].function.arguments` is truncated mid-JSON and will never parse.
+- Asked for several tools at once it answers with a **partly** broken batch —
+  see *Parallel tool calls* above — instead of failing every call, because a
+  batch that is uniformly broken hides call loss.
 - A second tool call arrives with **no `id`**, `type: "funktion"`, and `index: 7`
   — indices are non-contiguous, so anything treating them as array offsets breaks.
 - In the stream, the tool *name* arrives in a delta with **no `index`**, so an

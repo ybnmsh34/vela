@@ -103,6 +103,59 @@ function wellBehavedStream(
   return frames;
 }
 
+/**
+ * Hostile rendering of a parallel batch: the calls are opened up front and
+ * their argument fragments then arrive **round-robin**, so frames belonging to
+ * three different `index`es interleave.
+ *
+ * That is the discriminating case. With one call's fragments emitted
+ * contiguously, an accumulator that simply appends to "the call I touched last"
+ * is indistinguishable from one that keys by `index`. Interleaved, it produces
+ * an argument string that never existed on the wire.
+ *
+ * Returned in two halves so the caller can keep the profile's unparseable
+ * frames where they already are — in the middle of the tool-call run.
+ */
+function interleavedToolFrames(plan: ReplyPlan): { before: string[]; after: string[] } {
+  const opens = plan.toolCalls.map((call) =>
+    chunkFrame(
+      plan,
+      {
+        tool_calls: [
+          {
+            index: call.index,
+            ...(call.omitId ? {} : { id: call.id }),
+            type: call.typeField,
+            function: { name: call.name, arguments: '' },
+          },
+        ],
+      },
+      null,
+    ),
+  );
+
+  const perCall = plan.toolCalls.map((call) => argumentFragments(call.argumentsText));
+  const rounds = perCall.reduce((most, fragments) => Math.max(most, fragments.length), 0);
+  const interleaved: string[][] = [];
+  for (let round = 0; round < rounds; round += 1) {
+    const frames: string[] = [];
+    plan.toolCalls.forEach((call, position) => {
+      const piece = perCall[position]?.[round];
+      if (piece !== undefined) {
+        frames.push(
+          chunkFrame(plan, { tool_calls: [{ index: call.index, function: { arguments: piece } }] }, null),
+        );
+      }
+    });
+    interleaved.push(frames);
+  }
+
+  return {
+    before: [...opens, ...(interleaved[0] ?? [])],
+    after: interleaved.slice(1).flat(),
+  };
+}
+
 function hostileStream(profile: CapabilityProfile, plan: ReplyPlan): readonly string[] {
   const frames: string[] = [chunkFrame(plan, { role: 'assistant' }, null)];
   const content = plan.contentFragments;
@@ -124,7 +177,14 @@ function hostileStream(profile: CapabilityProfile, plan: ReplyPlan): readonly st
 
   emitContent(2, 5);
 
-  const [first, second] = plan.toolCalls;
+  const parallel = plan.parallelToolCalls ? interleavedToolFrames(plan) : null;
+  if (parallel !== null) {
+    frames.push(...parallel.before);
+  }
+
+  // The one-call-at-a-time hostilities below are the single-tool shape; a
+  // parallel batch is rendered by `interleavedToolFrames` instead.
+  const [first, second] = plan.parallelToolCalls ? [] : plan.toolCalls;
   if (first !== undefined) {
     // The function name arrives with no `index`, no `id` and no `type` — the
     // accumulator has nothing to key on yet.
@@ -167,6 +227,10 @@ function hostileStream(profile: CapabilityProfile, plan: ReplyPlan): readonly st
         null,
       ),
     );
+  }
+
+  if (parallel !== null) {
+    frames.push(...parallel.after);
   }
 
   emitContent(5, content.length);

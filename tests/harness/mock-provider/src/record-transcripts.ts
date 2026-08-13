@@ -43,7 +43,31 @@ const weatherTool = {
   },
 };
 
+const timeTool = {
+  type: 'function',
+  function: {
+    name: 'get_local_time',
+    description: 'Look up the local time.',
+    parameters: {
+      type: 'object',
+      properties: { timezone: { type: 'string' } },
+      required: ['timezone'],
+    },
+  },
+};
+
 const ask = { messages: [{ role: 'user', content: 'what is the weather in Berlin' }] };
+
+/**
+ * A question that needs two lookups, so the answer is a *parallel* tool call —
+ * two or more complete calls in one turn. Deliberately a separate prompt from
+ * `ask`: the single-tool captures above are committed evidence and their bytes
+ * must not move.
+ */
+const askBoth = {
+  messages: [{ role: 'user', content: 'what is the weather in Berlin and what time is it there' }],
+  tools: [weatherTool, timeTool],
+};
 
 export function captures(contextWindow: number): readonly Capture[] {
   return [
@@ -136,6 +160,25 @@ export function captures(contextWindow: number): readonly Capture[] {
       what: 'a model id this endpoint does not serve',
       body: { ...ask, model: 'gpt-4o' },
     },
+    // 13 and 14 are one logical answer in two transports, and must be read
+    // together: the non-streamed body carries whole calls with NO `index`, the
+    // stream carries fragments that only `index` joins. A stack that is right
+    // about one and wrong about the other — GATE M Part 1 (Phase B) FINDING 1 —
+    // shows up as a disagreement between these two files.
+    {
+      file: '13-tools-parallel.json',
+      method: 'POST',
+      path: '/v1/chat/completions',
+      what: 'two tools offered, parallel calls, non-streaming (no index field anywhere)',
+      body: askBoth,
+    },
+    {
+      file: '14-tools-parallel.sse',
+      method: 'POST',
+      path: '/v1/chat/completions',
+      what: 'the same parallel answer, streamed as index-keyed fragments',
+      body: { ...askBoth, stream: true },
+    },
   ];
 }
 
@@ -227,6 +270,23 @@ records the request, HTTP status and content type behind every file.
 | mid-local | native | no | 32k | accepted then ignored | inline \`<think>\` blocks |
 | small-local | none (400) | no | 8k | accepted then ignored | none |
 | hostile | malformed / partial | no | 4k | accepted then ignored | unterminated \`<think>\` with junk |
+
+## Parallel tool calls — read 13 and 14 together
+
+\`13-tools-parallel.json\` and \`14-tools-parallel.sse\` are **one logical answer
+in two transports**, and they are the pair that matters:
+
+| | \`13-…json\` — \`message.tool_calls[]\` | \`14-…sse\` — \`delta.tool_calls[]\` |
+|---|---|---|
+| an element is | a **whole** call | a **fragment** of a call |
+| \`index\` | **absent — the field does not exist in this shape** | present on every fragment; the only join key |
+
+Two or more complete, valid calls in one turn is the commonest tool-calling
+shape in the wild, and until GATE M Part 1 (Phase B) no profile here could emit
+it — which is precisely why a defect that collapsed a non-streamed batch into a
+single spliced call survived a green suite. On \`hostile\` the batch is three
+calls of which only the middle one is broken, so a consumer that loses calls
+reports one where the socket carried three.
 
 ## What these files are
 

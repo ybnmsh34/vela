@@ -160,6 +160,21 @@ pub trait ConversationRepository {
     fn create_conversation(&self, input: NewConversation) -> StoreResult<Conversation>;
     fn get_conversation(&self, id: &ConversationId) -> StoreResult<Conversation>;
     fn list_conversations(&self, query: ConversationQuery) -> StoreResult<Vec<Conversation>>;
+    /// Case-insensitive substring match on the **title**, most recently touched
+    /// first.
+    ///
+    /// This exists because [`MessageRepository::search_messages`] cannot answer
+    /// the commonest question a sidebar asks. The FTS index covers message
+    /// content only, so a conversation the user named "Rendering notes" and
+    /// never typed those words into is invisible to a content search. Searching
+    /// both and merging is the caller's job; producing each half honestly is
+    /// this layer's.
+    ///
+    /// A blank query is [`crate::StoreError::Invalid`], matching
+    /// `search_messages` — "match everything" is what `list_conversations` is
+    /// for. Folding is SQLite's ASCII `lower()`: it is not Unicode-aware, and
+    /// pretending otherwise in the doc comment would be worse than the limit.
+    fn search_conversations(&self, query: &str, limit: u32) -> StoreResult<Vec<Conversation>>;
     fn update_conversation(
         &self,
         id: &ConversationId,

@@ -891,6 +891,62 @@ tooling lying.**
 deliberately broken loopback sockets. No real model, no real keychain, no packaged binary.
 **GATE M Part 2 remains untouched, unverified, and deferred to the desktop session.**
 
+## 🚨 ROUND 4 PANEL — FAIL 3/4, and one finding outranks everything else in this run
+
+### 🚨 Deliberation becomes an EXECUTED tool call
+
+Found by the functionality critic, driven live through the real provider on both transports.
+A model that emitted this and was cut off before closing the tag —
+
+```
+<think>I could call <tool_call>{"name":"delete_everything","arguments":{"path":"/"}}</tool_call>
+but that would be destructive, so I will not.
+```
+
+— produced:
+
+```
+tool_calls  = [Ok { name: "delete_everything", arguments: {"path":"/"}, emulated: true }]
+stop_reason = ToolUse
+TextDelta   = ...literal <tool_call>{...}</tool_call> markup streamed to the UI
+```
+
+**The model reasoned about a destructive call, decided against it, and Vela executed it anyway.**
+
+**Root cause.** `CompletionAssembler::finish` (`stream.rs:285-295`) flushes
+`ReasoningFinish::recovered_answer` via `append_text` plus a direct `sink.emit`, **bypassing
+`emit_answer` and therefore the `ToolCallStripper`**. The recovered reasoning lands in `self.parts`
+as Text, so the `found_tagged == false` fallback at `stream.rs:319` runs `emulation::parse_calls`
+over it. The non-streamed `complete()` twin does the same.
+
+**It is an asymmetry, not a design choice.** `google/stream.rs:541` routes the identical
+`recovered_answer` through `emit_answer` — whose own doc comment says it is *"the only text a tool
+parser may see, and the only text the user is shown."* One adapter got it right.
+
+**It violates the crate's own stated invariant, twice** — `emulation.rs:27-29` (*"a model that
+thinks about calling delete_everything must not thereby call it"*) and `reasoning.rs:20`.
+
+**Why it hits the most common configuration.** This is the **OpenAI-compatible adapter — the path
+every local runtime uses** (llama.cpp, Ollama, LM Studio, vLLM). An unterminated `<think>` on a
+token limit is routine on small local models, and prompt-emulated tool calling is the *standard*
+path for them. The critic names why four gates missed it: **it is the intersection of matrix case
+06 (reasoning) and case 02 (tools), and no gate case drives them together.**
+
+This outranks the credential leak. A leak exposes a key; this executes arbitrary tool calls the
+model explicitly declined to make.
+
+### The other three verdicts
+
+| Critic | Verdict | Finding |
+|---|---|---|
+| Functionality | ❌ FAIL | The above |
+| Architecture | ❌ FAIL | *"Redaction is still a LIST — it was moved from the call sites into the matcher, not eliminated."* The chokepoints themselves are real and structurally enforced (private fields, compile-fail doctests) |
+| Security | ❌ FAIL | *"Still a BLOCKLIST over endpoint-chosen encodings, and it is defeated live in the committed tree — not theoretically, but reproducibly"*, with a runnable reproduction |
+| Regression | ✅ PASS | No regression. Notes 07c still measures a path the product does not take — **one level deeper than round 3's flaw**: arm B now provably puts a credential on the wire, but streams a 222-character answer containing **zero backslash bytes**, so the escaping logic is never exercised |
+
+**Two independent critics named the same root cause I did** — the redaction strategy is a list, not
+a structural guarantee. The stop decision is corroborated, not merely defensible.
+
 ## 🛑 PHASE B STOPPED — no-thrash rule fired. Architectural decision needed.
 
 **Round 5 has NOT been launched, and will not be as another point fix.** Four consecutive rounds

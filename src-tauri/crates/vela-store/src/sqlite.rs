@@ -683,6 +683,29 @@ impl ConversationRepository for SqliteStore {
             .collect::<StoreResult<Vec<_>>>()
     }
 
+    fn search_conversations(&self, query: &str, limit: u32) -> StoreResult<Vec<Conversation>> {
+        let needle = query.trim();
+        if needle.is_empty() {
+            return Err(StoreError::invalid("query", "must not be blank"));
+        }
+        let conn = self.connection();
+        // `instr` on two `lower()`ed strings rather than `LIKE`: a substring the
+        // user typed can contain `%`, `_` or `\`, and every one of those is a
+        // metacharacter to `LIKE`. Searching for "100%" must find "100%", not
+        // "1000 tokens".
+        let mut statement = conn.prepare(&format!(
+            "SELECT {CONVERSATION_COLUMNS} FROM conversations c
+             WHERE c.archived_at IS NULL AND instr(lower(c.title), lower(?1)) > 0
+             ORDER BY c.updated_at DESC, c.id DESC
+             LIMIT ?2"
+        ))?;
+        let rows = statement
+            .query_map(params![needle, i64::from(limit)], read_conversation)
+            .map_err(unwrap_store_error)?;
+        rows.map(|row| row.map_err(unwrap_store_error))
+            .collect::<StoreResult<Vec<_>>>()
+    }
+
     fn update_conversation(
         &self,
         id: &ConversationId,

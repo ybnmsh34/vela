@@ -251,7 +251,10 @@ fn validated_model_id(raw: &str) -> IpcResult<&str> {
 /// A cache miss is not `NOT_FOUND`: "nothing has been established about this
 /// model" is a fact the UI must render, and turning it into an error would
 /// leave the switcher unable to say anything about a model the user just added.
-pub fn capabilities(cache: &CapabilityCache, req: ModelsRefReq) -> IpcResult<ModelCapabilityReport> {
+pub fn capabilities(
+    cache: &CapabilityCache,
+    req: ModelsRefReq,
+) -> IpcResult<ModelCapabilityReport> {
     let provider_id = validated_provider_id(&req.provider_id)?;
     let model_id = validated_model_id(&req.model_id)?;
     let known = cache

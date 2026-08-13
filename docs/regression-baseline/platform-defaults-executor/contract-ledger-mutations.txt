@@ -1,0 +1,58 @@
+# Contract-ledger mutation battery — the executor's attempts to defeat claims marked true
+
+Each mutation was staged in a DETACHED SCRATCH WORKTREE (git worktree add … --detach HEAD).
+The shared tree was never modified. Every mutation was reverted before the next.
+
+INSTRUMENT                              MUTATION                                                              VERDICT
+--------------------------------------------------------------------------------------------------------------------
+R1  ipc/mod.rs                          a name added to the TypeScript COMMAND_ALLOWLIST only                  guard fired
+    rust_and_typescript_allowlists_are_identical
+    -> assertion failed at src/ipc/mod.rs:173. Claim holds.
+
+R2  tests/handler_binding.rs            a new #[tauri::command] whose renderer-supplied argument               guard fired
+    every_command_takes_exactly_one_        is named `req`, not `payload`
+    argument_and_it_is_named_payload
+    -> assertion failed at tests/handler_binding.rs:725. Claim holds. This is the guard
+       conventions.md §3.1 stakes its "there is no exception to this rule" on.
+
+L1  claimed-guards.test.ts              a comment naming `src/features/tauri-adapter.ts`                       DID NOT FIRE
+    "names only files that exist"          (no such file; basename exists in src/platform/)
+L1c same                                a comment naming `src/app/contract.ts`                                 DID NOT FIRE
+                                           (no such file; basename exists in src/platform/)
+L1b same                                a comment naming `src/platform/definitely-not-here.ts`                 guard fired
+                                           (basename exists nowhere)
+    -> CLAIM DEFEATED for the common case. `resolves()`'s `path` arm falls back to
+       BASENAMES.has(basename) and to ALL_FILES.some(p => p.endsWith('/'+token)), so a claim
+       resolves whenever a file of that NAME exists anywhere in the tree. The guard enforces
+       "a file with this name exists", not "this path exists".
+
+L2  claimed-guards.test.ts              a doc comment naming `a_guard_that_nobody_ever_wrote_here`             guard fired
+    "names only tests that exist"
+    -> Claim holds. This is the ninth false enforcement's shape and it is caught.
+
+L3  adapter.test.ts                     a second file under src/ importing @tauri-apps/api                     guard fired
+    -> "only platform/tauri-adapter.ts may import @tauri-apps/api: [ 'platform/errors.ts' ]"
+
+L4  design-system.test.ts               a raw hex colour in Composer.module.css                                guard fired
+L5  design-system.test.ts               var(--vela-not-a-real-token) in Composer.module.css                    guard fired
+L6  contrast.test.ts                    a NEW colour token painted as a text colour, absent from the table     guard fired
+    -> "every token used as a text colour appears in the table" failed. Claim holds
+       WITHIN ITS SCOPE — see the executor's RESULTS.md on what that scope excludes.
+
+L7  verify-covers-ci.test.ts            a new CI job running `pnpm test:ledger-probe`                          DID NOT FIRE
+    "every gate command in the
+     workflow is accounted for above"
+L7c same                                a new CI job running `pnpm test:e2e`                                   DID NOT FIRE
+L7b same                                a new CI job running `./scripts/ledger-probe.sh`                       guard fired
+    -> CLAIM DEFEATED for any command that has a listed gate as a prefix. The check filters
+       with `line.includes(ci)` against CI_GATES, and `'pnpm test:e2e'.includes('pnpm test')`
+       is true. `pnpm test:*`, `pnpm build*` and `cargo test …` variants are all silently
+       "accounted for" and never have to appear in `pnpm verify`.
+
+L8  chat-contract-parity.test.ts        a Rust enum variant renamed (ContentPart::Reasoning -> Rumination)      guard fired
+    -> "model.rs::ContentPart vs ContentPart: expected [ 'image', 'rumination', … ] to deeply
+       equal [ 'image', 'reasoning', … ]". The test written to close the NINTH false
+       enforcement genuinely enforces.
+
+SUMMARY: 10 mutations against 7 claimed guards. 8 caught, 2 defeated (L1/L1c and L7/L7c),
+both of them in the guards whose subject is other guards.

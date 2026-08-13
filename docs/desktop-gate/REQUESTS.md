@@ -568,3 +568,62 @@ If it does flash, the fix is a decision about where the theme is known before fi
 should be made with your numbers rather than guessed at here. I deliberately have not touched the
 boot path: changing the order in which the app decides its own appearance, on evidence this
 container cannot produce, is how the last two rounds of this project went wrong.
+
+---
+
+## From the GATE M platform-defaults EXECUTOR — three items, one of them a regression
+
+Full report and evidence: `docs/regression-baseline/platform-defaults-executor/RESULTS.md`.
+Everything below was measured on **Chromium on Linux against the production bundle**, so all of
+it is PROVISIONAL. Three things need your engine.
+
+### 1. The CONV-1 shared ruler is broken again at narrow windows, and the cause is this wave's own fix
+
+`scrollbar-gutter: stable both-edges` (`ConversationView.module.css`, landed at `0f83c71`) closed
+the 7px composer offset you measured at 1400×900. It also reserves 24px **inside** the scroller
+unconditionally. The transcript column lives inside that reservation; the composer lives outside
+it. While the window is wide enough for the column to reach `--vela-measure` both boxes are 480px
+and the ruler holds — which is exactly the width you measured, and your reading of `left delta 0`
+is correct there. Narrow the window and the column clamps to 456px while the composer stays 480px.
+
+The Phase C matrix, re-run on all four profiles, dropped from `40 / 38 / 36 / 33, 0 failures` to
+`38 / 36 / 34 / 31`: `C29b` and `C30` fail on every profile. Bisected with the matrix's own
+`layoutRuler` in `tests/harness/production-bundle/drive-ruler-bisect.mjs` — removing the
+declaration flips both back to PASS.
+
+**What only you can settle.** Linux Chromium OVERLAYS its scrollbars, so here the whole 24px comes
+from the declaration and no widget contributes. On Windows a classic scrollbar also takes width
+out of the scroller's content box, so the two effects may add, or partly cancel. Please measure,
+with a conversation open and the **sidebar dragged to its maximum**, at **1400×900 and again at
+about 880px wide**:
+
+- the transcript column's *text* edges (content box — subtract its padding);
+- the composer field's box edges;
+- `offsetWidth - clientWidth` on the scroller.
+
+The wide reading alone is how this reached the tree; please take both.
+
+**Note for whoever fixes it:** `drive-display-scaling.mjs`'s `-h` assertion cannot see this
+defect. It compares the two boxes' **centres**, and both stay centred, so it reports
+`column 456.0 vs field 456.0` and passes on a broken ruler. It will pass on the fix too. Edges,
+not centres.
+
+### 2. The endpoints form's placeholders are painted in a colour Vela never chose
+
+`EndpointForm.tsx` sets three real placeholders and `EndpointForm.module.css` has no
+`::placeholder` rule, so the user agent's default paints them. In Chromium that is `#757575`:
+**3.96:1** on the dark form fill (`--vela-bg-inset`, `#101426`) — under AA — and 4.61:1 in light.
+Every other placeholder in the app is styled (`Composer.module.css:47`,
+`CommandPalette.module.css:52`).
+
+The defect — that Vela does not choose this colour at all — is engine-independent. **The ratio is
+not**: please report what WebView2's default placeholder colour actually is on the endpoints form
+in dark theme, since that is the number a Windows user meets.
+
+### 3. The painted scrollbar, after any fix to item 1
+
+This container cannot photograph a scrollbar at all, and that was measured rather than assumed: an
+unstyled scroller, one carrying explicit `::-webkit-scrollbar` rules, and a `scrollbar-width: thin`
+scroller all reserve **0px** here and produce **byte-identical** screenshots. Linux Chromium draws
+overlay scrollbars. Your A1 re-judge is the only evidence that exists for the painted widget, and a
+fix to item 1 will touch `scrollbar-gutter`, so it needs re-photographing afterwards in both themes.

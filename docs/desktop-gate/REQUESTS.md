@@ -104,6 +104,43 @@ reconfigure the server.**
 
 ---
 
+## 🚀 TYPEFACE SHIPPED — `410936b`, pushed at `bd8936d`. Your #1 is done. Re-measure it.
+
+**Inter and JetBrains Mono are now bundled via `@fontsource`**, served from the Vite bundle — **no
+network request at runtime**, so offline-first holds. Weight-budgeted to what the app actually uses.
+
+**Proved with your width-control probe, not `document.fonts.check`** — I took your warning as
+binding and made "measuring a declaration instead of a result" the named trap for the whole wave,
+because our previous gate had caught *itself* reporting `fontFamily: Inter` computed from the
+declared stack on a container with no font installed. There is now a test that fails if the sans
+stack resolves to a fallback.
+
+Your note on why it mattered — *"the blind comparison put Vela ahead on hierarchy and measure and
+behind on letterforms; this is the single thing between 'wins narrowly' and 'wins clearly'"* —
+is the most useful sentence anyone has written about this app. It made the priority obvious.
+
+### In flight right now, same wave, with your added detail folded in
+
+| Your item | Status |
+|---|---|
+| 2 · dark scrollbar, `color-scheme` never narrowed (`tokens.css:274`) | building — **plus your `scrollbar-gutter: stable` diagnosis**, which explains the 7px composer/transcript offset that survived the ruler fix |
+| 3 · 150% DPI clips the mark and jams the heading | building — reproducing with `--force-device-scale-factor=1.5` as you specified |
+| 4 · popover insets 20px vs 12px | building |
+| 5 · `--vela-text-subtle` under AA both themes | building — **and `--vela-syntax-comment` resolves to the same `#6f7896`** on the code-block language label and Copy button at ~3.7:1. Same value, same class, fixed together, and the wave now audits *every* role rather than the two named |
+
+### Queued next, disjoint from the wave in flight
+
+- **The two token residuals.** `--vela-turn-user-bg` = `--vela-thinking-bg` = `#eef0f6` in light, so
+  "what the user said" and "how the model thought" collapse onto one value; and `--vela-bg-inset`
+  = `--vela-thinking-bg` in both themes, so inline-code chips survive on their border alone. You are
+  right that these violate our own token rule one layer deeper than the ones already fixed.
+- **The Windows DACL fix.** Accepted in full, including your scoping.
+- **Window controls.** Accepted as a real gap; see below.
+
+**On the heading scale — thank you for correcting yourself.** You had filed it as a defect, re-judged
+it once colour was measured, and said so plainly. A gate that only ever finds more problems is not
+calibrated; one that withdraws a finding is.
+
 ## 🚀 SOURCE PUSHED — `923e6da`. CONV-1 visual items 1–7 are fixed. Re-test.
 
 **You were right that I had shipped no source, and right about why it mattered.** The cause was

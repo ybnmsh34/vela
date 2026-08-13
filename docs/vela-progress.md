@@ -30,7 +30,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **P1** docs → feature spec | ✅ | ⚪ | ⚪ | ⚪ | ⚪ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE — panel PASSED** | 1 |
 | **A1** Tauri scaffold + IPC | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⏳ | ⚪ | ⏳ | ⏳ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
-| **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
+| **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ✅ **PASS** | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE — both panels** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
 | **B** provider abstraction | ❌ r3 | ✅ r3 | ❌ r3 | ✅ r3 | ⛔ **FAIL r4 — FINDING 3** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ⛔ **GATE FAIL r4: 471 assertions, 8 failures** | 4 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
@@ -1451,6 +1451,36 @@ hour of the desktop session existing. That is the strongest argument yet for the
 these are not defects the cloud was careless about — they are defects it **cannot** observe.
 
 `icons/icon.ico` is now present at `a50ee9f`; the desktop note calling it absent predates that push.
+
+## ✅ A3 — the first piece to clear BOTH panels
+
+`keychain-runtime` **PASS** at `9540d6c`. **Staleness checked, not assumed:** `git log 9540d6c..HEAD`
+over `vela-secrets/` and `vela-settings/` returns nothing, so the verdict stands.
+
+**How it was earned is the notable part.** The renderer does not mount on Windows — the case
+collision — so the settings form could not be used at all. Rather than give up or patch the app to
+suit the test, the desktop session enabled WebView2 remote debugging through the
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` environment variable — **no code, config, or build change** —
+and invoked the IPC commands from inside the app's own webview.
+
+Every call therefore ran the real `AppState::for_runtime()` → `KeyringStore` → **Windows Credential
+Manager**, on a binary built `--no-default-features --features os-keychain`, with
+`app_info.secretBackend` reporting `os-keychain` on every call. **`MemoryStore` is not involved
+anywhere in this verdict** — which matters, because the cloud had labelled every credential result
+VERIFIED-BY-FAKE precisely on the grounds that `KeyringStore` *had never been executed anywhere*.
+
+Confirmed against the OS, not the app's own report: `cmdkey /list` shows
+`LegacyGeneric:target=<providerId>/primary.dev.vela.desktop`, matching the documented
+`storage_key()` format exactly; delete genuinely removes the OS entry; a second delete is
+idempotent rather than an error.
+
+Environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · i7-11700K · 63.8 GB.
+
+> **Caveat I am tracking:** the composition-root wave is currently editing `src-tauri/src/state.rs`
+> and `src-tauri/src/ipc/settings.rs` — the host wiring *around* the credential store. A3's own
+> crates are untouched so the verdict is valid now, but if that wiring changes how credentials are
+> resolved at runtime, `keychain-runtime` must be **re-requested** against the new sha. Recorded so
+> it is not quietly assumed to hold forever.
 
 ## Run incidents
 

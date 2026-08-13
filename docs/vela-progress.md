@@ -1362,6 +1362,56 @@ This is the single most valuable thing the two-session split has produced, and i
 class of defect the cloud is structurally blind to: a Linux container never needs `icon.ico`, and
 never launches the real app.
 
+## Phase B2 panel — FAIL 3/4. Three critics, one root cause, independently.
+
+| Critic | Verdict | Framing |
+|---|---|---|
+| Functionality | ❌ | All six schema-check sites call `check_answer(schema, &response.answer_text())`, and `answer_text()` includes salvaged text |
+| Architecture | ❌ | *"The deliberation chokepoint is installed on ONE machine consumer and left as a convention for the other."* |
+| Security | ❌ | *"The salvage quarantine is drawn at ONE accessor, and the sibling machine-consumed output path was left on the other side of it."* |
+| Regression | ✅ | No regression — but found a **dead pointer**, below |
+
+**The defect in one line:** `AnswerChannel` gives tool parsing `executable_text()` (committed text
+only, salvage excluded) — but `into_parts()` appends salvaged text as a `ContentPart::Text`, so
+`answer_text()` includes it, and **schema validation reads `answer_text()`**. Tool parsing got the
+safe accessor; the schema checker, *which is the same kind of consumer*, got the unsafe one.
+
+**What is genuinely fixed and holding:** FINDING 3 (deliberation → executed tool call) is closed —
+case 15 green on all adapters, and CONTROL 12 reproduces the pre-fix consumer producing an
+executable `delete_everything`. The typed error surface landed with 12 compile-fail doctests and
+both positive controls. 808 Rust tests pass, `mock-matrix/` regenerates byte-identical.
+
+**The executor refused to fix what it grades** — *"an executor who fixes what he also grades is
+manufacturing agreement"* — and instead named both candidate fixes and **measured** the naive one:
+`extract_json` ceasing to scavenge takes 24 failures → 0 and moves nothing else in the matrix, but
+removes inline-JSON extraction and breaks `structured.rs`'s own unit test, which the recorder does
+not run. That is the information needed to fix it right the first time.
+
+### 🔴 Regression's find: the correlation id is a dead pointer
+
+B2 removed endpoint text from errors and replaced it with a correlation id into a local debug log.
+But `vela_providers::debuglog::enable` **is called nowhere outside tests** — no Tauri command, no
+setting, no UI affordance — while `MessageTurn.tsx` prints `trace 0000000000000002` on every failed
+turn.
+
+**That is a composition-root defect**, exactly like the other four: a component built, tested, and
+never connected. The user is shown a pointer to a log they have no way to turn on.
+
+### Why this folds into the composition-root wave rather than becoming "B3"
+
+My standing rule said another B2 failure stops the provider layer. Applied honestly:
+
+- The failure is **not** a new unexamined surface. It is the *other half* of the chokepoint the
+  sweep was built to find, named identically by three independent critics, with the fix located to
+  six call sites and both candidate approaches already measured.
+- Everything B2 earned **held** under adversarial re-test.
+- And it is the **same shape as the composition-root defect**: a guarantee installed at one site
+  and left as convention at its sibling, vs a component built and never wired. Both are "the parts
+  are right, the assembly is not."
+
+So it joins the composition-root wave as one more instance, rather than spawning another provider
+round. **The tripwire still stands** for a genuinely new surface.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

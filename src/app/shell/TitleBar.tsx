@@ -13,9 +13,10 @@
  */
 
 import { VelaMark } from '@/components/VelaMark';
-import { useThemeStore, type ThemePreference } from '@/state/theme-store';
+import type { ThemePreference } from '@/state/theme-store';
 
 import styles from './TitleBar.module.css';
+import { useTheme } from './use-theme';
 
 const THEME_LABEL: Record<ThemePreference, string> = {
   system: 'Theme: system',
@@ -29,8 +30,11 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ context }: TitleBarProps) {
-  const preference = useThemeStore((state) => state.preference);
-  const cyclePreference = useThemeStore((state) => state.cyclePreference);
+  // Through the hook rather than straight into the store: the store is client
+  // state with no IPC in it (conventions §5), and the preference has somewhere
+  // to be *kept*. Reading the store directly is what left `settings_set_theme`
+  // without a caller and the user's choice discarded at every restart.
+  const { preference, cycle: cyclePreference } = useTheme();
 
   return (
     <header className={styles.bar}>

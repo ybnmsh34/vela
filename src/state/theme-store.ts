@@ -17,14 +17,19 @@ import { create } from 'zustand';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+/**
+ * Note what is **not** here: a `cyclePreference`. It used to be, the title bar
+ * called it, and because a store may not do IPC (see the rules above) the
+ * user's choice went no further than this object — while `settings_set_theme`,
+ * which persists it, had no caller anywhere in the renderer. Cycling now lives
+ * in `src/app/shell/use-theme.ts`, where it can also be written down. A store
+ * action that changes a *persisted* setting without being able to persist it is
+ * an invitation to lose the setting, so this one is gone rather than unused.
+ */
 interface ThemeState {
   readonly preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
-  /** Cycles system -> light -> dark -> system. */
-  cyclePreference: () => void;
 }
-
-const CYCLE: readonly ThemePreference[] = ['system', 'light', 'dark'];
 
 /**
  * Applies the preference to the document root. `system` removes the attribute
@@ -42,16 +47,16 @@ export function applyThemePreference(
   }
 }
 
-export const useThemeStore = create<ThemeState>((set, get) => ({
+export const useThemeStore = create<ThemeState>((set) => ({
   preference: 'system',
   setPreference: (preference) => {
     applyThemePreference(preference);
     set({ preference });
   },
-  cyclePreference: () => {
-    const current = get().preference;
-    const index = CYCLE.indexOf(current);
-    const next = CYCLE[(index + 1) % CYCLE.length] ?? 'system';
-    get().setPreference(next);
-  },
 }));
+
+/** Test helper: put the store, and the document, back to their defaults. */
+export function resetThemeStore(): void {
+  applyThemePreference('system');
+  useThemeStore.setState({ preference: 'system' });
+}

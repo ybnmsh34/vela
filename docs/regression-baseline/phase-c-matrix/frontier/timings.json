@@ -1,8 +1,8 @@
 {
   "profile": "frontier",
-  "endpoint": "http://127.0.0.1:43573",
-  "ttftAnyMs": 31.9,
-  "ttftAnswerMs": 45.4,
+  "endpoint": "http://127.0.0.1:35131",
+  "ttftAnyMs": 50,
+  "ttftAnswerMs": 66.9,
   "paints": 2,
-  "turnMs": 45
+  "turnMs": 67
 }

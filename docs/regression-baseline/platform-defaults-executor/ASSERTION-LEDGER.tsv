@@ -1,0 +1,135 @@
+id	verdict	claim	detail
+X1-bodyRoot-loaded	PASS	the sans face the rendered <body> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 2009px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-bodyRoot-painted	PASS	the rendered <body> is painted in that face and not in a fallback behind it	applied 2009px vs requested 2009px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+X1-emptyStateHeading-loaded	PASS	the sans face the rendered <h2> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 2043px vs absent-font control 1808.09px (document.fonts.check said true, which is not evidence)
+X1-emptyStateHeading-painted	PASS	the rendered <h2> is painted in that face and not in a fallback behind it	applied 2043px vs requested 2043px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+X1-prose-loaded	PASS	the sans face the rendered <p> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 2009px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-prose-painted	PASS	the rendered <p> is painted in that face and not in a fallback behind it	applied 2009px vs requested 2009px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+X1-button-loaded	PASS	the sans face the rendered <button> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 2009px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-button-painted	PASS	the rendered <button> is painted in that face and not in a fallback behind it	applied 2009px vs requested 2009px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+X1-composer-loaded	PASS	the sans face the rendered <textarea> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 2009px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-composer-painted	PASS	the rendered <textarea> is painted in that face and not in a fallback behind it	applied 2009px vs requested 2009px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+X1-inlineCode-loaded	PASS	the mono face the rendered <code> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"JetBrains Mono Variable": 2356px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-inlineCode-painted	PASS	the rendered <code> is painted in that face and not in a fallback behind it	applied 2356px vs requested 2356px; resolved stack "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+X1-codeBlock-loaded	PASS	the mono face the rendered <pre> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"JetBrains Mono Variable": 2356px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+X1-codeBlock-painted	PASS	the rendered <pre> is painted in that face and not in a fallback behind it	applied 2356px vs requested 2356px; resolved stack "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+X1-two-faces	PASS	prose and code on screen are set in two different faces	prose 2009px, code 2356px
+X2-trap-order	PASS	the traps were installed before the document had a body, so "zero requests" is a measurement of the whole session and not of what happened after mount	document.readyState was loading
+X2-no-egress	PASS	a whole session — mount, endpoint configured through the UI, a turn sent and rendered — produced zero fetch/XHR/WebSocket/EventSource/beacon/FontFace calls	[]
+X2-no-off-origin	PASS	Chromium's own request event saw nothing leave the page origin	[]
+X2-fonts-from-bundle	PASS	every font byte was served by the bundle itself	4 font requests: ["/assets/inter-latin-wght-normal-Dx4kXJAl.woff2","/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2","/assets/jetbrains-mono-latin-wght-italic-B2M6KQje.woff2","/assets/inter-latin-wght-italic-DpCbqKDY.woff2"]
+X2-font-src	PASS	the shipping CSP confines font-src to 'self' — a remote face could not be fetched even if a stylesheet asked for one	font-src 'self' data:
+X3-light-oslight-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: light
+X3-light-oslight-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "light" → UA painted light; page rgb(247, 248, 251) (light); widget computed rgb(255, 255, 255)
+X3-light-osdark-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: light
+X3-light-osdark-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "light" → UA painted light; page rgb(247, 248, 251) (light); widget computed rgb(255, 255, 255)
+X3-dark-oslight-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: dark
+X3-dark-oslight-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "dark" → UA painted dark; page rgb(8, 11, 22) (dark); widget computed rgb(59, 59, 59)
+X3-dark-osdark-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: dark
+X3-dark-osdark-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "dark" → UA painted dark; page rgb(8, 11, 22) (dark); widget computed rgb(59, 59, 59)
+X3-system-oslight-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: light
+X3-system-oslight-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "light" → UA painted light; page rgb(247, 248, 251) (light); widget computed rgb(255, 255, 255)
+X3-system-osdark-decides	PASS	the app states exactly one colour scheme rather than delegating to the OS	color-scheme: dark
+X3-system-osdark-painted	PASS	the UA paints its own widgets in the palette the app is in — read off the pixels, not off getComputedStyle	declared "dark" → UA painted dark; page rgb(8, 11, 22) (dark); widget computed rgb(59, 59, 59)
+X4-light-scrollable	PASS	the region captured in this theme is genuinely scrollable, so a scrollbar would be drawn here if this engine drew one	scrollHeight 1581 vs clientHeight 355
+X4-dark-scrollable	PASS	the region captured in this theme is genuinely scrollable, so a scrollbar would be drawn here if this engine drew one	scrollHeight 1581 vs clientHeight 355
+X4-system-scrollable	PASS	the region captured in this theme is genuinely scrollable, so a scrollbar would be drawn here if this engine drew one	scrollHeight 1581 vs clientHeight 355
+X4-gutter	PASS	the painted scrollbar is not obtainable in this engine	REPORTED, NOT ASSERTED — an unstyled scroller reserves 0px here, so Linux Chromium is drawing OVERLAY scrollbars and no scrollbar widget exists to be measured or photographed. The app's own scroller still reserves 24px because scrollbar-gutter: stable both-edges reserves it explicitly. The painted scrollbar is the desktop session's verdict and only theirs.
+X5-1920x1080@150-light-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 161.8–195.8 (34×34) inside container 86.5–533.5; rested at scrollTop 0
+X5-1920x1080@150-light-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	153.3px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 230.8)
+X5-1920x1080@150-light-empty-composer	PASS	the composer is still inside the window	bottom 593.0 of 672
+X5-1920x1080@150-light-empty-no-sideways	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+X5-1920x1080@150-light-empty-clean	PASS	no uncaught exception at this size	
+X5-1920x1080@150-light-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -277.5–501.9 vs container 126.5–533.5; rested at scrollTop 1174 of 1581
+X5-1920x1080@150-light-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1920x1080@150-light-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1920x1080@150-light-conversation-composer	PASS	the composer is still inside the window	bottom 593.0 of 672
+X5-1920x1080@150-light-conversation-no-sideways	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+X5-1920x1080@150-light-conversation-clean	PASS	no uncaught exception at this size	
+X5-1920x1080@150-dark-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 161.8–195.8 (34×34) inside container 86.5–533.5; rested at scrollTop 0
+X5-1920x1080@150-dark-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	153.3px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 230.8)
+X5-1920x1080@150-dark-empty-composer	PASS	the composer is still inside the window	bottom 593.0 of 672
+X5-1920x1080@150-dark-empty-no-sideways	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+X5-1920x1080@150-dark-empty-clean	PASS	no uncaught exception at this size	
+X5-1920x1080@150-dark-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -277.5–501.9 vs container 126.5–533.5; rested at scrollTop 1174 of 1581
+X5-1920x1080@150-dark-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1920x1080@150-dark-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1920x1080@150-dark-conversation-composer	PASS	the composer is still inside the window	bottom 593.0 of 672
+X5-1920x1080@150-dark-conversation-no-sideways	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+X5-1920x1080@150-dark-conversation-clean	PASS	no uncaught exception at this size	
+X5-1600x900@150-light-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 194.6–228.6 (34×34) inside container 126.5–413.5; rested at scrollTop 0
+X5-1600x900@150-light-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	186.1px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 263.6)
+X5-1600x900@150-light-empty-composer	PASS	the composer is still inside the window	bottom 473.0 of 552
+X5-1600x900@150-light-empty-no-sideways	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+X5-1600x900@150-light-empty-clean	PASS	no uncaught exception at this size	
+X5-1600x900@150-light-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -397.5–381.9 vs container 126.5–413.5; rested at scrollTop 1294 of 1581
+X5-1600x900@150-light-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1600x900@150-light-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1600x900@150-light-conversation-composer	PASS	the composer is still inside the window	bottom 473.0 of 552
+X5-1600x900@150-light-conversation-no-sideways	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+X5-1600x900@150-light-conversation-clean	PASS	no uncaught exception at this size	
+X5-1600x900@150-dark-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 194.6–228.6 (34×34) inside container 126.5–413.5; rested at scrollTop 0
+X5-1600x900@150-dark-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	186.1px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 263.6)
+X5-1600x900@150-dark-empty-composer	PASS	the composer is still inside the window	bottom 473.0 of 552
+X5-1600x900@150-dark-empty-no-sideways	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+X5-1600x900@150-dark-empty-clean	PASS	no uncaught exception at this size	
+X5-1600x900@150-dark-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -397.5–381.9 vs container 126.5–413.5; rested at scrollTop 1294 of 1581
+X5-1600x900@150-dark-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1600x900@150-dark-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1600x900@150-dark-conversation-composer	PASS	the composer is still inside the window	bottom 473.0 of 552
+X5-1600x900@150-dark-conversation-no-sideways	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+X5-1600x900@150-dark-conversation-clean	PASS	no uncaught exception at this size	
+X5-1366x768@150-light-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 189.3–223.3 (34×34) inside container 126.5–325.5; rested at scrollTop 0
+X5-1366x768@150-light-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	180.8px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 258.3)
+X5-1366x768@150-light-empty-composer	PASS	the composer is still inside the window	bottom 385.0 of 464
+X5-1366x768@150-light-empty-no-sideways	PASS	the window does not scroll sideways	document 911 vs viewport 911
+X5-1366x768@150-light-empty-clean	PASS	no uncaught exception at this size	
+X5-1366x768@150-light-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -485.5–293.9 vs container 126.5–325.5; rested at scrollTop 1382 of 1581
+X5-1366x768@150-light-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1366x768@150-light-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1366x768@150-light-conversation-composer	PASS	the composer is still inside the window	bottom 385.0 of 464
+X5-1366x768@150-light-conversation-no-sideways	PASS	the window does not scroll sideways	document 911 vs viewport 911
+X5-1366x768@150-light-conversation-clean	PASS	no uncaught exception at this size	
+X5-1366x768@150-dark-empty-mark	PASS	on first launch the Vela mark is drawn, whole, inside the scroll container	mark 189.3–223.3 (34×34) inside container 126.5–325.5; rested at scrollTop 0
+X5-1366x768@150-dark-empty-clears-rule	PASS	the empty-state heading clears the header rule rather than sitting flush against it	180.8px of clear air below the rule at y=77.5 (heading "No model chosen yet" at 258.3)
+X5-1366x768@150-dark-empty-composer	PASS	the composer is still inside the window	bottom 385.0 of 464
+X5-1366x768@150-dark-empty-no-sideways	PASS	the window does not scroll sideways	document 911 vs viewport 911
+X5-1366x768@150-dark-empty-clean	PASS	no uncaught exception at this size	
+X5-1366x768@150-dark-conversation-latest-turn	PASS	a conversation with entries opens on its latest turn, inside the container	latest turn -485.5–293.9 vs container 126.5–325.5; rested at scrollTop 1382 of 1581
+X5-1366x768@150-dark-conversation-first-turn-reachable	PASS	wound back to the top, the first turn is inside the container — nothing is stranded above the scrollable area	wound to top: first turn at 150.5 vs container 126.5
+X5-1366x768@150-dark-conversation-clears-rule	PASS	wound to the top, the transcript clears the header rule	73.0px below the rule
+X5-1366x768@150-dark-conversation-composer	PASS	the composer is still inside the window	bottom 385.0 of 464
+X5-1366x768@150-dark-conversation-no-sideways	PASS	the window does not scroll sideways	document 911 vs viewport 911
+X5-1366x768@150-dark-conversation-clean	PASS	no uncaught exception at this size	
+X6-light-body-aa	PASS	every body-text pair painted in the light theme clears 4.5:1 against the ground actually underneath it	22 body pairs, worst 4.61:1
+X6-light-large-aa	PASS	every large-text pair in the light theme clears 3:1	1 large pairs
+X6-dark-body-aa	FAIL	every body-text pair painted in the dark theme clears 4.5:1 against the ground actually underneath it	3.96:1 #757575 on #101426 [endpoints:<input>::placeholder]
+X6-dark-large-aa	PASS	every large-text pair in the dark theme clears 3:1	1 large pairs
+X6-coverage	PASS	the audit actually reached the surfaces — a rendered-DOM audit that found nothing would pass every ratio check vacuously	273 painted (element, ground) observations rolled up to 47 distinct pairs; 43 computable, 4 not
+X6-uncomputable	PASS	a pair whose ground is not a single colour: #9aa2bd in dark	REPORTED, NOT ASSERTED — opacity 0.75 on <kbd> — seen in conversation:<kbd> text, endpoints:<kbd> text
+X6-uncomputable	PASS	a pair whose ground is not a single colour: #4d5675 in light	REPORTED, NOT ASSERTED — opacity 0.75 on <kbd> — seen in conversation:<kbd> text, endpoints:<kbd> text
+X6-uncomputable	PASS	a pair whose ground is not a single colour: #ffffff in light	REPORTED, NOT ASSERTED — opacity 0.75 on <kbd> — seen in conversation:<kbd> text, endpoints:<kbd> text
+X6-uncomputable	PASS	a pair whose ground is not a single colour: #080b16 in dark	REPORTED, NOT ASSERTED — opacity 0.75 on <kbd> — seen in conversation:<kbd> text, endpoints:<kbd> text
+C1-X1-bodyRoot-loaded	PASS	the sans face the rendered <body> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-bodyRoot-painted	PASS	the rendered <body> is painted in that face and not in a fallback behind it	applied 2134.16px vs requested 1725.91px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+C1-X1-emptyStateHeading-loaded	PASS	the sans face the rendered <h2> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 1808.09px vs absent-font control 1808.09px (document.fonts.check said true, which is not evidence)
+C1-X1-emptyStateHeading-painted	PASS	the rendered <h2> is painted in that face and not in a fallback behind it	applied 2385.31px vs requested 1808.09px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+C1-X1-prose-loaded	PASS	the sans face the rendered <p> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-prose-painted	PASS	the rendered <p> is painted in that face and not in a fallback behind it	applied 2134.16px vs requested 1725.91px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+C1-X1-button-loaded	PASS	the sans face the rendered <button> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-button-painted	PASS	the rendered <button> is painted in that face and not in a fallback behind it	applied 2134.16px vs requested 1725.91px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+C1-X1-composer-loaded	PASS	the sans face the rendered <textarea> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"Inter Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-composer-painted	PASS	the rendered <textarea> is painted in that face and not in a fallback behind it	applied 2134.16px vs requested 1725.91px; resolved stack "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+C1-X1-inlineCode-loaded	PASS	the mono face the rendered <code> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"JetBrains Mono Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-inlineCode-painted	PASS	the rendered <code> is painted in that face and not in a fallback behind it	applied 2388.94px vs requested 1725.91px; resolved stack "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+C1-X1-codeBlock-loaded	PASS	the mono face the rendered <pre> asks for is a face the engine has — WIDTH CONTROL, never document.fonts.check	"JetBrains Mono Variable": 1725.91px vs absent-font control 1725.91px (document.fonts.check said true, which is not evidence)
+C1-X1-codeBlock-painted	PASS	the rendered <pre> is painted in that face and not in a fallback behind it	applied 2388.94px vs requested 1725.91px; resolved stack "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+C3-dark-app-light-widget	PASS	CONTROL: with `light dark` restored, the UA paints a LIGHT widget on the dark app — the reported white-scrollbar defect, in pixels	declared "light dark" → painted light; widget rgb(255, 255, 255) on page rgb(8, 11, 22)
+C5-1920x1080@150-pinned-to-bottom	PASS	CONTROL: with the empty state resting at the bottom — the pre-fix behaviour — the mark assertion FAILS at this 150% viewport	mark 72.8–106.8 vs container 86.5–533.5 at scrollTop 89
+C5-1600x900@150-pinned-to-bottom	PASS	CONTROL: with the empty state resting at the bottom — the pre-fix behaviour — the mark assertion FAILS at this 150% viewport	mark -39.4–-5.4 vs container 126.5–413.5 at scrollTop 234
+C5-1366x768@150-pinned-to-bottom	PASS	CONTROL: with the empty state resting at the bottom — the pre-fix behaviour — the mark assertion FAILS at this 150% viewport	mark -122.7–-88.7 vs container 126.5–325.5 at scrollTop 312
+C6-X6-light-body-aa	PASS	every body-text pair painted in the light theme clears 4.5:1 against the ground actually underneath it	3.84:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #eef0f6 [conversation:<button> text] | 3.95:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #f3f3f4 [home:<kbd> text] | 4.06:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #e6fbf8 [conversation:<span> text] | 4.12:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #f7f8fb [conversation:<p> text] | 4.37:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #ffffff [conversation:<textarea>::placeholder]
+C6-X6-light-large-aa	PASS	every large-text pair in the light theme clears 3:1	1 large pairs
+C6-X6-dark-body-aa	PASS	every body-text pair painted in the dark theme clears 4.5:1 against the ground actually underneath it	3.34:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #112c39 [conversation:<span> text] | 3.6:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #1e2233 [home:<kbd> text] | 3.74:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #1a1f31 [conversation:<textarea>::placeholder] | 3.96:1 #757575 on #101426 [endpoints:<input>::placeholder] | 4.18:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #101426 [conversation:<button> text] | 4.49:1 #6f7896 (--vela-night-400 / --vela-scrollbar-thumb / --vela-text-subtle) on #080b16 [conversation:<p> text]
+C6-X6-dark-large-aa	PASS	every large-text pair in the dark theme clears 3:1	1 large pairs
+C6b-damaged-body-text	PASS	CONTROL: with --vela-text damaged the rendered-DOM audit FAILS on real painted text, so X6 is reading the page rather than the token file	3 of 15 body pairs under 4.5:1; worst 2.23:1

@@ -16,13 +16,13 @@ C23	reading surface	PASS	wrapped prose reflows to the reader's column, not the m
 C24	reading surface	PASS	nothing in the answer makes the reading column scroll sideways	column 480px wide, content 480px
 C22b	reading surface	PASS	all six heading levels are rendered, and none is smaller or lighter than a bold run	strong=600 body=15px | outweighed=[] undersized=[]
 C22c	reading surface	PASS	every heading level from one to six reached the answer channel	levels present: 1,2,3,4,5,6
-C25	reading surface	PASS	the reading column sets a comfortable number of characters per line	60.6 characters per line at 480px, set in Inter (NOT resolved — a fallback face was used)
+C25	reading surface	PASS	the reading column sets a comfortable number of characters per line	65 characters per line at 480px, set in Inter Variable (resolved)
 C26	reasoning	PASS	a settled thought is closed, unless closing it would hide the only text the turn produced	summary="Thought process" expanded=false (unterminated=false)
 C27	reasoning	PASS	the thinking block renders markdown instead of printing its source	leaked=[] strong=1 items=2 inlineCode=1 fences=1 white-space=normal
 C28	reasoning	PASS	nothing inside the aside sets larger than the answer it is about	scale=aside largest in aside=13px, answer body=15px
 C29	layout	PASS	the transcript and the composer stand on one vertical ruler	text 720–1200 (480px), composer 720–1200 (480px)
-C29b	layout	PASS	they stay on it when the window narrows	text 376–856 (480px), composer 376–856 (480px)
-C30	layout	PASS	the sidebar gives way to the reading column as the window narrows	1440px → sidebar 480px, column 480px; 880px → sidebar 352px, column 480px
+C29b	layout	FAIL	they stay on it when the window narrows	text 388–844 (456px), composer 376–856 (480px)
+C30	layout	FAIL	the sidebar gives way to the reading column as the window narrows	1440px → sidebar 480px, column 480px; 880px → sidebar 352px, column 456px
 C31	layout	PASS	the transcript fades into a scroll edge that hides content, and only into one that does	atTop=false atBottom=false mask=linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), r
 C11	tool calls	PASS	a native tool call is rendered as a call	cards=[awaitingResult,awaitingResult]
 C12	tool calls	PASS	no reasoning markup in the tool turn either	no reasoning tags in visible text
@@ -31,11 +31,11 @@ C33	attachments	PASS	the composer's attach button opens the composer's own picke
 C34	attachments	PASS	a staged image reaches the outgoing payload AND the bytes arrive at the endpoint	renderer->host parts=["image"] carriesImage=true | core->endpoint body 8304 bytes, carriesImage=true
 C35	attachments	PASS	the endpoint was asked to look at an image part, not handed base64 as prose	content parts=["text","text","text","image_url"] url starts "data:image/png;base64,iV"
 C13	no credential	PASS	an endpoint with no API key is a working state, with no error and no warning	usable=true check=satisfiedWithoutCredential complaintOnScreen=false
-C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:43573/v1/chat/completions Try again
+C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:35131/v1/chat/completions Try again
 C15	error state	PASS	the failed turn is settled, not a stuck spinner	settled
 C16	streaming	PASS	the transcript shows a partial turn while it is still streaming	answer=79 reasoning=129
 C17	reasoning	PASS	no reasoning markup mid-stream, when a tag may be split across frames	no reasoning tags in visible text
-C18	streaming	PASS	the turn is painted incrementally, not in one lump	25 paints, 24 growing, spread over 1484 ms
+C18	streaming	PASS	the turn is painted incrementally, not in one lump	25 paints, 24 growing, spread over 1478 ms
 C19	console	PASS	zero console errors and zero uncaught exceptions	clean
-C20	network	PASS	the browser never requested the model endpoint	none of 349 requests went to http://127.0.0.1:43573
-C21	network	PASS	the browser never requested the slow endpoint either	none of 349 requests went to http://127.0.0.1:44807
+C20	network	PASS	the browser never requested the model endpoint	none of 354 requests went to http://127.0.0.1:35131
+C21	network	PASS	the browser never requested the slow endpoint either	none of 354 requests went to http://127.0.0.1:45877

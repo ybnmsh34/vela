@@ -113,7 +113,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 5
+      "renderedLines": 4
     },
     {
       "text": "This is the level the scale used to lose. It sat at exactly body size, at a weight an unclassed bold run beat outright, ",
@@ -140,7 +140,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 5
+      "renderedLines": 4
     },
     {
       "text": "Vertical rhythm is half of a heading scale: space above a heading binds it to what follows and separates it from what ca",
@@ -149,7 +149,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 7
+      "renderedLines": 6
     },
     {
       "text": "Below the fold there is ordinary prose, long enough to measure a line against: a comfortable reading measure is sixty-fi",
@@ -203,14 +203,14 @@
     "lineHeightPx": 24,
     "clientWidthPx": 480,
     "scrollWidthPx": 480,
-    "fontFamily": "Inter",
+    "fontFamily": "Inter Variable",
     "firstFamilyResolves": {
-      "asked": "Inter",
-      "requestedAdvancePx": 481.72,
+      "asked": "\"Inter Variable\"",
+      "requestedAdvancePx": 561,
       "absentControlAdvancePx": 481.72,
-      "resolves": false
+      "resolves": true
     },
-    "charsPerLine": 60.6
+    "charsPerLine": 65
   },
   "counts": {
     "headings": 7,

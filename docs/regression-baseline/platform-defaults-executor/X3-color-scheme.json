@@ -1,0 +1,62 @@
+[
+  {
+    "theme": "light",
+    "prefersDark": false,
+    "declared": "light",
+    "bodyBackground": "rgb(247, 248, 251)",
+    "bodyLuminance": 0.9725647058823529,
+    "uaWidgetComputed": "rgb(255, 255, 255)",
+    "palette": "light",
+    "paintedScheme": "light"
+  },
+  {
+    "theme": "light",
+    "prefersDark": true,
+    "declared": "light",
+    "bodyBackground": "rgb(247, 248, 251)",
+    "bodyLuminance": 0.9725647058823529,
+    "uaWidgetComputed": "rgb(255, 255, 255)",
+    "palette": "light",
+    "paintedScheme": "light"
+  },
+  {
+    "theme": "dark",
+    "prefersDark": false,
+    "declared": "dark",
+    "bodyBackground": "rgb(8, 11, 22)",
+    "bodyLuminance": 0.04375058823529412,
+    "uaWidgetComputed": "rgb(59, 59, 59)",
+    "palette": "dark",
+    "paintedScheme": "dark"
+  },
+  {
+    "theme": "dark",
+    "prefersDark": true,
+    "declared": "dark",
+    "bodyBackground": "rgb(8, 11, 22)",
+    "bodyLuminance": 0.04375058823529412,
+    "uaWidgetComputed": "rgb(59, 59, 59)",
+    "palette": "dark",
+    "paintedScheme": "dark"
+  },
+  {
+    "theme": "system",
+    "prefersDark": false,
+    "declared": "light",
+    "bodyBackground": "rgb(247, 248, 251)",
+    "bodyLuminance": 0.9725647058823529,
+    "uaWidgetComputed": "rgb(255, 255, 255)",
+    "palette": "light",
+    "paintedScheme": "light"
+  },
+  {
+    "theme": "system",
+    "prefersDark": true,
+    "declared": "dark",
+    "bodyBackground": "rgb(8, 11, 22)",
+    "bodyLuminance": 0.04375058823529412,
+    "uaWidgetComputed": "rgb(59, 59, 59)",
+    "palette": "dark",
+    "paintedScheme": "dark"
+  }
+]

@@ -9,7 +9,7 @@
         "type": "none"
       },
       "authRequirement": "notRequired",
-      "baseUrl": "http://127.0.0.1:36697/v1",
+      "baseUrl": "http://127.0.0.1:42899/v1",
       "credentialCheck": "satisfiedWithoutCredential",
       "credentialFieldLabel": null,
       "credentialPresent": false,

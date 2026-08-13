@@ -201,14 +201,14 @@
     "lineHeightPx": 24,
     "clientWidthPx": 480,
     "scrollWidthPx": 480,
-    "fontFamily": "Inter",
+    "fontFamily": "Inter Variable",
     "firstFamilyResolves": {
-      "asked": "Inter",
-      "requestedAdvancePx": 481.72,
+      "asked": "\"Inter Variable\"",
+      "requestedAdvancePx": 561,
       "absentControlAdvancePx": 481.72,
-      "resolves": false
+      "resolves": true
     },
-    "charsPerLine": 57.4
+    "charsPerLine": 61.2
   },
   "counts": {
     "headings": 6,

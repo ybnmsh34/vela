@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | ❌ | ❌ | ❌ | ✅ | ❌ **FAIL r2** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL r2 3/4 — round 3 building** | 3 |
+| **B** provider abstraction | ❌ r3 | ✅ r3 | ❌ r3 | ✅ r3 | ✅ **PASS r3** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL r3 2/4 — round 4 building** | 4 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -621,6 +621,79 @@ broken tree. It found it by injecting the hole and checking the probe noticed fo
 **This is the third consecutive round in which the gate executor caught its own tooling lying and
 repaired it instead of filing the finding.** That habit is why these gate results are worth
 believing.
+
+### Round 3 panel — ❌ FAIL 2/4. The gate passed; two critics did not.
+
+| Critic | Verdict | Finding |
+|---|---|---|
+| Functionality | ❌ FAIL | Byte-literal redaction is defeated by **JSON escaping** |
+| Architecture | ✅ PASS | Structural work holds; noted a **latent** response-header gap |
+| Security | ❌ FAIL | 🔴 **Credential egress to an unconfigured host on redirect** |
+| Regression | ✅ PASS | No regression; caught an **evidentiary** flaw in the latency case |
+
+**A clean gate is not a safe system.** The gate scored 373/0 and every guarantee it tested holds.
+Both failures are surfaces the gate did not look at. That is the panel doing its job.
+
+### 🔴 The most serious defect found in this run: credentials leave the machine
+
+`ReqwestTransport` follows redirects with reqwest's defaults — `Policy::limited(10)`,
+`referer: true` — and never restricts them. A 3xx from the configured endpoint **hands the user's
+API key to a host they never configured**, on the first request of a healthy turn, with no error
+involved. Confirmed live on real sockets with a real provider:
+
+| Binding | What the third-party host received |
+|---|---|
+| `Auth::ApiKeyHeader{"x-api-key"}` | `x-api-key: <canary>` **verbatim** |
+| `Auth::ApiKeyQuery{"key"}` | `referer: http://…/v1/messages?key=<canary>` |
+| `Auth::Bearer` | *(safe)* |
+
+**Root cause, confirmed in reqwest-0.12.28's source:** `remove_sensitive_headers` strips only
+`authorization`/`cookie`/`cookie2`/`proxy-authorization`/`www-authenticate` on cross-host.
+`x-api-key`, `x-goog-api-key`, and any user-named header are **not on that list** — and those are
+**Anthropic's and Google's auth headers**. The two non-Bearer bindings Vela ships are exactly the
+two reqwest does not protect. Separately, `make_referer` clears username/password/fragment but
+**keeps the query string**.
+
+This defeats the rule stated in that very function's own comment (`http.rs:516-521`): *"No implicit
+egress. Vela talks to the endpoint the user configured and to nothing else… must not silently
+redirect a local model request through a third party."* `grep -rni redirect` over `crates/` and
+`src/` returns **one hit — that comment — and zero tests.**
+
+For a product whose premise is offline-first local data sovereignty, silently forwarding the user's
+key to a third party is close to the worst defect available.
+
+### The other FAIL: the leak moved one decode step downstream
+
+Round 3 made the byte-stream scrub structural — and that holds. But it is **byte-literal**. An
+endpoint that JSON-escapes `/` as `\/` (PHP's `json_encode` default) emits a credential that matches
+no needle, passes the scrub untouched, and is then **reconstituted by the crate's own `serde_json`
+decoder** downstream of every scrub point, landing in `AuthFailed` and printing in Display, Debug,
+and the IPC serde shape.
+
+The critic's framing is the important part: RESULTS.md claimed *"the scrub is not a property of the
+error-formatting code, it is a property of the byte stream"* — and **that is exactly what creates
+the hole, because the error-formatting code sits after a decode.**
+
+### Why this is NOT thrash — the rule applied honestly
+
+The stop rule is: *the same critic FAILs twice on the same evidence and the fix is not landing.*
+
+- **The security FAIL is not a redaction defect at all.** No amount of scrubbing would have fixed
+  it. It is a different vulnerability class on a surface no prior round touched.
+- **The fix is demonstrably landing.** Every earlier guarantee held under an adversarial re-test:
+  the accumulator, the structural inexpressibility of an unscrubbed read (five compile bypasses
+  rejected, a laundering decorator defeated), endpoint identity in redacted form.
+- **Stopping now would leave a live, confirmed, exploitable credential-exfiltration path in the
+  tree.** That is the worst possible use of a rule meant to prevent wasted effort.
+
+My earlier tripwire said "a third unscrubbed path is thrash." The redirect finding is decisively
+not that. I am not lawyering the rule to keep going — I am recording that the rule's condition is
+not met, and would have stopped the piece had a critic merely found a fourth place the scrubber
+was not called.
+
+**The real pattern, stated plainly:** every round has died on a surface the previous round's tests
+did not cover. Round 4's critics are briefed on that pattern directly — if inclined to PASS, spend
+the remaining effort asking *"what has nobody tested?"* rather than re-running what is green.
 
 ## Run incidents
 

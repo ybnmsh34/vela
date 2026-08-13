@@ -1,0 +1,168 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: hostile — case 02-tool-calling: tool calling
+================================================================================
+
+PURPOSE   Native where the endpoint has it; prompt emulation end to end where it does not.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a native tools request --------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (333 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-hostile","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (1151 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-c16f5968",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> ЖЖЖ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|im_start|> <think> nested Mock hostile reply to: what is the weather in Berlin. fathom beacon yardarm quartz tiller harbor zenith rudder meridian fathom alpha delta. ▒▒ <|im_start|>",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"del"
+                  },
+                  "id": "call_c16f5968"
+                },
+                {
+                  "type": "funktion",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "not-json-at-all"
+                  }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 98,
+          "total_tokens": 110
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 "nested Mock hostile reply to: what is the weather in Berlin. fathom beacon yardarm quartz tiller harbor zenith rudder meridian fathom alpha delta. ▒▒ <|im_start|>"
+  stop reason                            ToolUse
+  tool calls                             MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  executable calls                       0
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 162 }, MalformedToolCalls { count: 1 }
+  wall clock                             2.184073ms
+
+---- assertions --------------------------------------------------------------
+  [FAIL] both broken calls are reported, neither is dropped
+        MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  [PASS] NOTHING from a broken stream is executable
+        0 executable
+  [FAIL] truncated arguments are reported as unparseable, not guessed at
+        [UnknownDiscriminator]
+  [PASS] the misspelled discriminator `funktion` is reported as such
+        [UnknownDiscriminator]
+  [PASS] the name that arrived with no `index` was not lost (MEASURED-4)
+        MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  [PASS] the failure is a declared degradation, not silence
+        UnterminatedReasoning { recovered_answer_chars: 162 }, MalformedToolCalls { count: 1 }
+
+---- the SAME request, STREAMED — do the two paths agree? ------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (372 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true},"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (7410 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ЖЖЖ <|channel|>analysis "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"the weather in Berl"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"function":{"name":"get_weather"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_c16f5968","type":"function"}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"del"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":7,"type":"funktion","function":{"name":"get_weather","arguments":"not-json-at-all"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"in. Profile hostile"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" has a 4096-token w"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"indow. Answering di"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rectly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|im_start|> "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" nested "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Mock hostil"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e reply to:"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"n Berlin. f"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"athom beaco"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"n yardarm q"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-c16f5968","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta"
+      … [elided: 7403 characters total]
+  streamed tool calls                    MALFORMED index=Some(0) id=call_c16f5968 name=get_weather reason=UnparseableArguments raw="{\"city\":\"del"
+                                    MALFORMED index=Some(7) id=MISSING name=get_weather reason=UnknownDiscriminator raw="not-json-at-all"
+  non-streamed tool calls                MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  [FAIL] streamed and non-streamed report the same number of calls
+        streamed 2 call(s), non-streamed 1 call(s)
+
+================================================================================
+VERDICT  7 assertion(s), 3 failure(s)
+================================================================================

@@ -1,0 +1,72 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: small-local — case 06-reasoning: reasoning separation
+================================================================================
+
+PURPOSE   MEASURED-3: `</think>` splits across frames, hostile never closes its block, frontier uses a separate field. No markup may leak, and reasoning must never reach tool parsing.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the raw stream ----------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36493/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (153 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2207 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: what "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"is the weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n Berlin. tiller"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" lantern sextant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" zenith gauge la"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ntern umber quar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"tz rudder rudder"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-fa02e8b4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: [DONE]
+      
+
+---- what Vela produced ------------------------------------------------------
+  user-visible answer                    "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+  reasoning channel                      ""
+  ReasoningDelta events                  ""
+  content parts                          ["text"]
+  degradations                           UsageNotReported
+  wall clock                             2.179335ms
+
+---- baseline — every `content` delta concatenated, no state machine -------
+    "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+
+---- assertions --------------------------------------------------------------
+  [PASS] no reasoning markup reaches the user-visible answer
+        "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+  [PASS] the answer itself survives
+        "Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+  [PASS] the deltas the consumer saw equal the final answer
+        129 vs 129 chars
+  [PASS] an endpoint that emits no reasoning produces no reasoning part
+        ""
+
+================================================================================
+VERDICT  4 assertion(s), 0 failure(s)
+================================================================================

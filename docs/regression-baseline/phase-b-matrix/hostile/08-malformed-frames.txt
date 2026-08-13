@@ -1,0 +1,115 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: hostile — case 08-malformed-frames: malformed SSE frames
+================================================================================
+
+PURPOSE   MEASURED-2: a consumer that JSON.parse'd every frame threw after 4 frames and lost 318 of 349 characters. One bad frame must cost one frame.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream --------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (149 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (5757 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|channel|>analysis ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"the weather in Berl"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"in. Profile hostile"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" has a 4096-token w"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"indow. Answering di"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rectly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" nested "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Mock hostil"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e reply to:"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"n Berlin. a"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"lpha umber "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rudder zeni"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"th fathom q"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uartz jetty"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" alpha meri"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"dian sextan"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"t umber ivo"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"ry."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|channel|>analysis ЖЖЖ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+
+---- frame census ------------------------------------------------------------
+  frames in the body                     31
+  frames that are not valid JSON         2
+    unparseable: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+    unparseable: not-json-at-all
+
+---- what Vela produced, against the non-streamed ground truth ---------------
+  streamed answer                        "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  non-streamed answer                    "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  streamed characters                    166
+  ground-truth characters                166
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+  a strict-JSON consumer would have delivered 31
+
+---- assertions --------------------------------------------------------------
+  [PASS] skipping bad frames is reported, not silent
+        reported 3 skipped, body contains 2 bad frames
+  [PASS] NO DATA LOSS — the stream delivers what a strict consumer would have lost
+        Vela 166 chars vs strict-JSON consumer 31 chars
+  [PASS] content that arrives AFTER the bad frames still reaches the user
+        the tail of the ground truth is present in the streamed answer
+  [PASS] one bad frame never aborts the turn
+        166 characters delivered
+
+================================================================================
+VERDICT  4 assertion(s), 0 failure(s)
+================================================================================

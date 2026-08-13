@@ -1,0 +1,281 @@
+profile	case	verdict	assertion	detail
+frontier	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 200000, probe reported Some(200000)
+frontier	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Supported, probed Supported
+frontier	00-capability-probe	PASS	vision matches the recorded matrix row	expected Supported, probed Supported
+frontier	00-capability-probe	PASS	structured output matches the recorded matrix row	expected Supported, probed Supported
+frontier	00-capability-probe	PASS	every belief carries probe evidence, none is a default	8 findings recorded
+frontier	00-capability-probe	PASS	no backend identity reaches the UI flag set	flag set = {"streaming":true,"vision":true,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+frontier	00-capability-probe	PASS	the vision affordance follows the probe exactly	descriptor.vision = true, probe = Supported
+frontier	00-capability-probe	PASS	structured output is never advertised unless honoured (MEASURED-5)	honours_structured_output() = true
+frontier	01-plain-chat	PASS	the turn produces an answer	226 characters
+frontier	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 226 chars / whole 226 chars
+frontier	01-plain-chat	PASS	the deltas add up to the answer	delta sum 226 chars
+frontier	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	3.962732ms
+frontier	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+frontier	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+frontier	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
+frontier	02-tool-calling	PASS	streamed: two parallel calls come back as two executable calls	OK id=call_a name=get_weather emulated=false args={"city":"berlin"}                                     OK id=call_b name=get_weather emulated=false args={"city":"paris"}
+frontier	02-tool-calling	FAIL	non-streamed: two parallel calls come back as two executable calls	MALFORMED index=None id=call_a name=get_weather reason=UnparseableArguments raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"
+frontier	02-tool-calling	FAIL	the streamed and non-streamed paths agree on the same answer	non-streamed 1 call(s), streamed 2 call(s)
+frontier	03-vision	PASS	vision is offered and an image is answered	Ok("Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge.")
+frontier	03-vision	PASS	an unprobed vision endpoint answers	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [] })
+frontier	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+frontier	04-structured-output	PASS	an endpoint that honours the schema returns validated JSON	Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+frontier	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})))
+frontier	04-structured-output	PASS	refusal is a capability decision, not a blanket ban	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "{\"celsius\":69,\"city\":\"eastward\"}" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(14), output_tokens: Some(39), reasoning_tokens: None, cached_input_tokens: None }, structured: Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})), degradations: [] })
+frontier	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), detail: "this model's maximum context length is 200000 tokens, however you requested 250004 tokens (250004 in the messages, 0 in the completion)" })
+frontier	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 200000
+frontier	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), detail: "this model's maximum context length is 200000 tokens, however you requested 250004 tokens (250004 in the messages, 0 in the completion)" })
+frontier	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), detail: "this model's maximum context length is 200000 tokens, however you requested 250004 tokens (250004 in the messages, 0 in the completion)" })
+frontier	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: finally: what did I ask first?. tiller careful fathom jetty gauge tiller lantern sextant careful keel umber delta tiller jetty orbit zenith zenith ivory rudder alpha alpha fathom quartz beacon." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(150091), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 450110, strategy: ElideOldest }] })
+frontier	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
+frontier	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+frontier	06-reasoning	PASS	the answer itself survives	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u\n… [elided: 226 characters total]"
+frontier	06-reasoning	PASS	the deltas the consumer saw equal the final answer	226 vs 226 chars
+frontier	06-reasoning	PASS	reasoning from a dedicated field lands in the reasoning channel	"Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+frontier	06-reasoning	PASS	and never in the answer channel	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+frontier	06-reasoning	PASS	precondition — the markup is in the reasoning channel and not in the answer channel	answer="Mock frontier re" reasoning="Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
+frontier	06-reasoning	PASS	NO tool call is recovered from reasoning text	Ok("(none)")
+frontier	06-reasoning	PASS	control — the parser DOES recover a call when the markup is in the answer	if this fails, the assertion above proves nothing
+frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.189746ms
+frontier	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	222 characters
+frontier	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
+frontier	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
+frontier	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
+frontier	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
+frontier	08-malformed-frames	PASS	one bad frame never aborts the turn	226 characters delivered
+frontier	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
+frontier	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
+frontier	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
+frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:42593/v1/chat/completions
+frontier	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
+frontier	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
+frontier	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
+frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.457919ms
+frontier	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
+frontier	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
+frontier	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
+frontier	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
+frontier	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+frontier	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
+frontier	10-failover	PASS	failover does not hang	10.170469ms
+frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	205.200486ms
+frontier	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
+frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
+mid-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 32768, probe reported Some(32768)
+mid-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Supported, probed Supported
+mid-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
+mid-local	00-capability-probe	PASS	structured output matches the recorded matrix row	expected Degraded, probed Degraded
+mid-local	00-capability-probe	PASS	every belief carries probe evidence, none is a default	8 findings recorded
+mid-local	00-capability-probe	PASS	no backend identity reaches the UI flag set	flag set = {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+mid-local	00-capability-probe	PASS	the vision affordance follows the probe exactly	descriptor.vision = false, probe = Unsupported
+mid-local	00-capability-probe	PASS	structured output is never advertised unless honoured (MEASURED-5)	honours_structured_output() = false
+mid-local	01-plain-chat	PASS	the turn produces an answer	170 characters
+mid-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 170 chars / whole 170 chars
+mid-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 170 chars
+mid-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.01926ms
+mid-local	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
+mid-local	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
+mid-local	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
+mid-local	03-vision	PASS	the vision affordance is NOT offered to the UI	descriptor.vision = false
+mid-local	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+mid-local	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
+mid-local	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+mid-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, detail: "`mock-mid-local` does not support image input" })
+mid-local	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+mid-local	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+mid-local	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+mid-local	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
+mid-local	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
+mid-local	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" }); 0 request(s) sent
+mid-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), detail: "this model's maximum context length is 32768 tokens, however you requested 40964 tokens (40964 in the messages, 0 in the completion)" })
+mid-local	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 32768
+mid-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), detail: "this model's maximum context length is 32768 tokens, however you requested 40964 tokens (40964 in the messages, 0 in the completion)" })
+mid-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), detail: "this model's maximum context length is 32768 tokens, however you requested 40964 tokens (40964 in the messages, 0 in the completion)" })
+mid-local	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: finally: what did I ask first?. ivory orbit sextant delta north orbit north jetty lantern alpha lantern tiller sextant ember lantern lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(24667), output_tokens: Some(77), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 73838, strategy: ElideOldest }] })
+mid-local	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
+mid-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+mid-local	06-reasoning	PASS	the answer itself survives	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+mid-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	170 vs 170 chars
+mid-local	06-reasoning	PASS	reasoning is captured, not discarded	"Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
+mid-local	06-reasoning	PASS	reasoning is stored as its own content part (vela-store models it separately)	["reasoning", "text"]
+mid-local	06-reasoning	PASS	the closing tag is in NO single frame — a frame-local stripper cannot work	confirmed against the recorded frames
+mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.057712ms
+mid-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	165 characters
+mid-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
+mid-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }
+mid-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
+mid-local	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
+mid-local	08-malformed-frames	PASS	one bad frame never aborts the turn	170 characters delivered
+mid-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
+mid-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
+mid-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
+mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:33141/v1/chat/completions
+mid-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
+mid-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
+mid-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
+mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.07041ms
+mid-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
+mid-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
+mid-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
+mid-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
+mid-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+mid-local	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
+mid-local	10-failover	PASS	failover does not hang	10.359088ms
+mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.555248ms
+mid-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
+mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
+small-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 8192, probe reported Some(8192)
+small-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Unsupported, probed Unsupported
+small-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
+small-local	00-capability-probe	PASS	structured output matches the recorded matrix row	expected Degraded, probed Degraded
+small-local	00-capability-probe	PASS	every belief carries probe evidence, none is a default	7 findings recorded
+small-local	00-capability-probe	PASS	no backend identity reaches the UI flag set	flag set = {"streaming":true,"vision":false,"toolCalls":false,"reasoning":false,"modelListing":true,"usageReporting":false,"promptCaching":false}
+small-local	00-capability-probe	PASS	the vision affordance follows the probe exactly	descriptor.vision = false, probe = Unsupported
+small-local	00-capability-probe	PASS	structured output is never advertised unless honoured (MEASURED-5)	honours_structured_output() = false
+small-local	01-plain-chat	PASS	the turn produces an answer	129 characters
+small-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 129 chars / whole 129 chars
+small-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 129 chars
+small-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	3.045804ms
+small-local	02-tool-calling	PASS	an endpoint with no tools is refused explicitly, never silently	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(142), output_tokens: Some(32), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ToolCallingEmulated { tool_count: 1 }] })
+small-local	02-tool-calling	PASS	the turn is degraded into emulation rather than failed	ToolCallingEmulated { tool_count: 1 }
+small-local	02-tool-calling	PASS	control — this endpoint really does refuse a native tools request	if this passes, the emulation result below is not an artefact
+small-local	02-tool-calling	PASS	the textual call is recovered into an executable call	OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+small-local	02-tool-calling	PASS	arguments survive the round trip and the call is marked emulated	OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
+small-local	02-tool-calling	PASS	call markup never reaches the user-visible answer	Some("Mock small-local reply to: . beacon delta quartz umber rudder umber fathom ivory zenith careful.")
+small-local	02-tool-calling	PASS	the emulation is declared as a degradation	ToolCallingEmulated { tool_count: 1 }
+small-local	02-tool-calling	PASS	the emulated turn ends in ToolUse, like a native one	Some(ToolUse)
+small-local	03-vision	PASS	the vision affordance is NOT offered to the UI	descriptor.vision = false
+small-local	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+small-local	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
+small-local	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+small-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, detail: "`mock-small-local` does not support image input" })
+small-local	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+small-local	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+small-local	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+small-local	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
+small-local	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
+small-local	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" }); 0 request(s) sent
+small-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), detail: "this model's maximum context length is 8192 tokens, however you requested 10244 tokens (10244 in the messages, 0 in the completion)" })
+small-local	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 8192
+small-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), detail: "this model's maximum context length is 8192 tokens, however you requested 10244 tokens (10244 in the messages, 0 in the completion)" })
+small-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), detail: "this model's maximum context length is 8192 tokens, however you requested 10244 tokens (10244 in the messages, 0 in the completion)" })
+small-local	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: finally: what did I ask first?. careful yardarm zenith alpha sextant sextant ember tiller pennant yardarm." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6235), output_tokens: Some(34), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 18542, strategy: ElideOldest }] })
+small-local	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
+small-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+small-local	06-reasoning	PASS	the answer itself survives	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
+small-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	129 vs 129 chars
+small-local	06-reasoning	PASS	an endpoint that emits no reasoning produces no reasoning part	""
+small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.150401ms
+small-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	130 characters
+small-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	UsageNotReported
+small-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
+small-local	07-stream-termination	PASS	requested-but-absent usage is declared as a degradation	UsageNotReported
+small-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	UsageNotReported
+small-local	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
+small-local	08-malformed-frames	PASS	one bad frame never aborts the turn	129 characters delivered
+small-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
+small-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
+small-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
+small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:36493/v1/chat/completions
+small-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
+small-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
+small-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
+small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.82205ms
+small-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
+small-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
+small-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
+small-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
+small-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UsageNotReported, FailedOver { attempts: 2 }] }))
+small-local	10-failover	PASS	the failover is declared to the caller	UsageNotReported, FailedOver { attempts: 2 }
+small-local	10-failover	PASS	failover does not hang	9.186911ms
+small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	206.143596ms
+small-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
+small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
+hostile	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 4096, probe reported Some(4096)
+hostile	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Degraded, probed Degraded
+hostile	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
+hostile	00-capability-probe	PASS	structured output matches the recorded matrix row	expected Degraded, probed Degraded
+hostile	00-capability-probe	PASS	every belief carries probe evidence, none is a default	8 findings recorded
+hostile	00-capability-probe	PASS	no backend identity reaches the UI flag set	flag set = {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":false,"promptCaching":false}
+hostile	00-capability-probe	PASS	the vision affordance follows the probe exactly	descriptor.vision = false, probe = Unsupported
+hostile	00-capability-probe	PASS	structured output is never advertised unless honoured (MEASURED-5)	honours_structured_output() = false
+hostile	01-plain-chat	PASS	the turn produces an answer	166 characters
+hostile	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 166 chars / whole 166 chars
+hostile	01-plain-chat	PASS	the deltas add up to the answer	delta sum 166 chars
+hostile	01-plain-chat	PASS	no wire-format remnant reaches the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.508112ms
+hostile	02-tool-calling	FAIL	both broken calls are reported, neither is dropped	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+hostile	02-tool-calling	PASS	NOTHING from a broken stream is executable	0 executable
+hostile	02-tool-calling	FAIL	truncated arguments are reported as unparseable, not guessed at	[UnknownDiscriminator]
+hostile	02-tool-calling	PASS	the misspelled discriminator `funktion` is reported as such	[UnknownDiscriminator]
+hostile	02-tool-calling	PASS	the name that arrived with no `index` was not lost (MEASURED-4)	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+hostile	02-tool-calling	PASS	the failure is a declared degradation, not silence	UnterminatedReasoning { recovered_answer_chars: 162 }, MalformedToolCalls { count: 1 }
+hostile	02-tool-calling	FAIL	streamed and non-streamed report the same number of calls	streamed 2 call(s), non-streamed 1 call(s)
+hostile	03-vision	PASS	the vision affordance is NOT offered to the UI	descriptor.vision = false
+hostile	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+hostile	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
+hostile	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+hostile	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, detail: "`mock-hostile` does not support image input" })
+hostile	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+hostile	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+hostile	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	UnterminatedReasoning { recovered_answer_chars: 155 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+hostile	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
+hostile	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
+hostile	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" }); 0 request(s) sent
+hostile	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), detail: "this model's maximum context length is 4096 tokens, however you requested 5124 tokens (5124 in the messages, 0 in the completion)" })
+hostile	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 4096
+hostile	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), detail: "this model's maximum context length is 4096 tokens, however you requested 5124 tokens (5124 in the messages, 0 in the completion)" })
+hostile	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), detail: "this model's maximum context length is 4096 tokens, however you requested 5124 tokens (5124 in the messages, 0 in the completion)" })
+hostile	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: " ЖЖЖ </s> Considering the request about finally: what did I ask first?. Profile hostile has a 4096-token window. Answering directly. ЖЖЖ  nested Mock hostile reply to: finally: what did I ask first?. quartz sextant jetty fathom lantern north beacon orbit keel quartz delta meridian. ▒▒ ▒▒", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: finally: what did I ask first?. quartz sextant jetty fathom lantern north beacon orbit keel quartz delta meridian. ▒▒ ▒▒" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(3163), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 9326, strategy: ElideOldest }, UnterminatedReasoning { recovered_answer_chars: 150 }] })
+hostile	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
+hostile	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+hostile	06-reasoning	PASS	the answer itself survives	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+hostile	06-reasoning	PASS	the deltas the consumer saw equal the final answer	166 vs 166 chars
+hostile	06-reasoning	PASS	an unterminated <think> does not swallow the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+hostile	06-reasoning	PASS	the recovery is declared, not silent	UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.363706ms
+hostile	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	160 characters
+hostile	07-stream-termination	PASS	a missing [DONE] sentinel is reported, not silently absorbed	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+hostile	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
+hostile	07-stream-termination	PASS	requested-but-absent usage is declared as a degradation	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+hostile	08-malformed-frames	PASS	skipping bad frames is reported, not silent	reported 3 skipped, body contains 2 bad frames
+hostile	08-malformed-frames	PASS	NO DATA LOSS — the stream delivers what a strict consumer would have lost	Vela 166 chars vs strict-JSON consumer 31 chars
+hostile	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
+hostile	08-malformed-frames	PASS	one bad frame never aborts the turn	166 characters delivered
+hostile	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
+hostile	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
+hostile	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
+hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:35549/v1/chat/completions
+hostile	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
+hostile	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
+hostile	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
+hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.438609ms
+hostile	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
+hostile	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
+hostile	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
+hostile	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
+hostile	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }] }))
+hostile	10-failover	PASS	the failover is declared to the caller	UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
+hostile	10-failover	PASS	failover does not hang	10.523866ms
+hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	205.759409ms
+hostile	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
+hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
+hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001348548s, 0 chars
+frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	12.542072ms, 16 chars
+mid-local	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think> Mock mid-local reply to: what is the weather in Berlin. penn … [elided: 309 characters total]
+hostile	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what i … [elided: 330 characters total]
+frontier	control-2-raw-content-channel	PASS	the raw content channel is free of reasoning markup	Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u … [elided: 226 characters total]
+frontier	control-3-schema-conformance	PASS	the answer conforms to the requested schema	{"city":"eastward"}
+mid-local	control-3-schema-conformance	FAIL	the answer conforms to the requested schema	 Mock mid-local reply to: give me the weather as JSON. quartz lantern harbor tiller rudder pennant tiller tiller quartz meridian windward gauge beacon quartz rudder orbit.
+small-local	control-3-schema-conformance	FAIL	the answer conforms to the requested schema	Mock small-local reply to: give me the weather as JSON. ivory ivory rudder beacon careful ivory orbit lantern jetty windward.
+hostile	control-3-schema-conformance	FAIL	the answer conforms to the requested schema	nested Mock hostile reply to: give me the weather as JSON. tiller quartz lantern north zenith lantern yardarm delta delta rudder delta ivory. [UNK] <|channel|>analysis
+frontier	control-4-credential-on-the-wire	FAIL	no authorization header on the wire	provider configured WITH a bearer token
+frontier	control-5-vision-affordance	FAIL	the vision affordance is absent	Supported
+mid-local	control-5-vision-affordance	PASS	the vision affordance is absent	Unsupported
+frontier	control-6-executable-tool-call	PASS	exactly one executable tool call comes back	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+hostile	control-6-executable-tool-call	FAIL	exactly one executable tool call comes back	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+small-local	control-7-overflow	FAIL	the turn overflows the context window	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(26), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [] })

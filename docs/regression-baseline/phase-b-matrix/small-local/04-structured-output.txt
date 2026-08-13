@@ -1,0 +1,112 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: small-local — case 04-structured-output: structured output
+================================================================================
+
+PURPOSE   MEASURED-5: three of four profiles answer 200 with prose and say nothing. Vela must never hand that back as if it conformed.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a json_schema request, non-streaming ------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36493/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (335 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-small-local","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (519 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-afb19869",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-small-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock small-local reply to: give me the weather in Berlin as JSON. meridian windward fathom careful beacon zenith meridian tiller zenith orbit."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 14,
+          "completion_tokens": 36,
+          "total_tokens": 50
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer text                            "Mock small-local reply to: give me the weather in Berlin as JSON. meridian windward fathom careful beacon zenith meridian tiller zenith orbit."
+  structured verdict                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  wall clock                             1.394629ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] a structured request always comes back with an explicit verdict
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] prose is NEVER presented as conforming JSON (the gate's most dangerous case)
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] the mismatch is a reported degradation, not a silent one
+        StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  [PASS] the endpoint's behaviour is remembered, so the affordance is withdrawn
+        Degraded
+
+---- the same request, STREAMED, on a provider that has learned nothing yet --
+
+  >>> exchange 1 — POST http://127.0.0.1:36493/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (374 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-small-local","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2220 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: give "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"me the weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n Berlin as JSON"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":". meridian windw"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ard fathom caref"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ul beacon zenith"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" meridian tiller"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" zenith orbit."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-afb19869","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: [DONE]
+      
+  answer text                            "Mock small-local reply to: give me the weather in Berlin as JSON. meridian windward fathom careful beacon zenith meridian tiller zenith orbit."
+  structured verdict                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UsageNotReported, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  [PASS] the streaming path validates structured output as well
+        Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
+
+---- the same request under StructuredOutputPolicy::Refuse, after probing ----
+  (no HTTP request was made)
+  probe verdict                          Ok(Degraded)
+  outcome                                Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" })
+  [PASS] a probed-bad endpoint is refused locally, with no request sent
+        Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" }); 0 request(s) sent
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

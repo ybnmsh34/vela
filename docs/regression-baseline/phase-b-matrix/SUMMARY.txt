@@ -1,0 +1,19 @@
+GATE M Part 1 (Phase B) — run summary
+=====================================
+
+gate assertions   265
+failures          5
+controls          15 (their FAILs are expected)
+wall clock        16.859908113s
+
+FAILURES:
+  frontier / 02-tool-calling / non-streamed: two parallel calls come back as two executable calls
+      MALFORMED index=None id=call_a name=get_weather reason=UnparseableArguments raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"
+  frontier / 02-tool-calling / the streamed and non-streamed paths agree on the same answer
+      non-streamed 1 call(s), streamed 2 call(s)
+  hostile / 02-tool-calling / both broken calls are reported, neither is dropped
+      MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  hostile / 02-tool-calling / truncated arguments are reported as unparseable, not guessed at
+      [UnknownDiscriminator]
+  hostile / 02-tool-calling / streamed and non-streamed report the same number of calls
+      streamed 2 call(s), non-streamed 1 call(s)

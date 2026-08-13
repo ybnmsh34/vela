@@ -1,0 +1,138 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: frontier — case 10-failover: routing and failover
+================================================================================
+
+PURPOSE   A dead candidate must be routed past. An endpoint that dies MID-STREAM, after the user has already seen output, must NOT be replayed from another candidate.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- candidate 1 refuses the connection; candidate 2 is live -----------------
+
+  >>> exchange 1 — POST http://127.0.0.1:1/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (126 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< NO RESPONSE — Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+
+  >>> exchange 2 — POST http://127.0.0.1:45669/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (126 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (4260 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about hello. Pro"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"file frontier has a "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"200000-token window."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Answering directly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: hello. b"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"eacon umber yard"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"arm tiller alpha"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" pennant windwar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"d pennant delta "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"keel zenith yard"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"arm keel windwar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"d north orbit pe"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"nnant lantern wi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ndward lantern h"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"arbor gauge umbe"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"r tiller."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-5c67f056","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":76,"total_tokens":82}}
+      
+      data: [DONE]
+      
+  outcome                                Ok(true)
+  wall clock                             10.170469ms
+  answer                                 Some("Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern wi\n… [elided: 201 characters total]")
+  degradations                           FailedOver { attempts: 2 }
+
+---- assertions --------------------------------------------------------------
+  [PASS] a dead candidate is routed past, not surfaced as a failure
+        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+  [PASS] the failover is declared to the caller
+        FailedOver { attempts: 2 }
+  [PASS] failover does not hang
+        10.170469ms
+
+---- the endpoint is KILLED mid-stream, after output has already been shown --
+  The primary is started with a 40 ms inter-frame delay so the turn is still running
+  when its process is SIGKILLed. A second, healthy candidate is configured behind it.
+  Rule 2 of the router: once a character has reached the user, moving to another
+  candidate would restart the answer in front of them.
+
+  >>> exchange 1 — POST http://127.0.0.1:43653/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (172 bytes) ---
+      {"max_tokens":256,"messages":[{"content":"write me something reasonably long","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1113 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about write me s"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"omething reasonably "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"long. Profile fronti"},"finish_reason":null}]}
+      
+      
+      <<< body read failed: Reset error decoding response body >>>
+
+---- what Vela produced ------------------------------------------------------
+  wall clock                             205.200486ms
+  answer text the user saw               ""
+  reasoning text the user saw            "Considering the request about write me something reasonably long. Profile fronti"
+  TextDelta events                       0
+  ReasoningDelta events                  4
+  outcome                                Err(Transport { failure: Reset, detail: "error decoding response body" })
+  requests sent to the backup candidate  0
+
+---- assertions --------------------------------------------------------------
+  [PASS] killing the endpoint mid-stream does not hang the app
+        205.200486ms
+  output had already been committed      true
+  [PASS] after visible output, the turn is NOT replayed from another candidate
+        0 request(s) reached the backup
+  [PASS] a killed stream is never reported as a normally finished turn
+        Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

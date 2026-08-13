@@ -1,0 +1,73 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 02-tool-calling: tool calling
+================================================================================
+
+PURPOSE   Native where the endpoint has it; prompt emulation end to end where it does not.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a native tools request --------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:33141/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (335 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-mid-local","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (635 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-76cfac58",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-mid-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"alpha\"}"
+                  },
+                  "id": "call_76cfac58"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 7,
+          "total_tokens": 19
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 ""
+  stop reason                            ToolUse
+  tool calls                             OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
+  executable calls                       1
+  degradations                           (none)
+  wall clock                             2.13495ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] exactly one executable native call comes back
+        OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
+  [PASS] the call is named, parsed into an object, and not marked emulated
+        OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
+  [PASS] the stop reason says a tool was requested
+        ToolUse
+
+================================================================================
+VERDICT  3 assertion(s), 0 failure(s)
+================================================================================

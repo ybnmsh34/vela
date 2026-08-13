@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | 🟡 BUILDING | 1 |
+| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | ❌ **FAIL** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **GATE FAIL — returns to builder** | 1 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -318,6 +318,60 @@ Recorded here so it cannot quietly evaporate. None of it blocks Phase A or B.
 | MCP-23 cites a stale URL — content is verbatim correct but actually lives at `modelcontextprotocol.io/docs/develop/connect-local-servers` | citation hygiene | Phase F |
 | **Styles is genuinely THIN** — Anthropic *deleted* the source material (`claude.com/blog/styles` 404, help article 10181068 404/503). Preset names, the writing-sample flow, and the styles→skills migration are `[UNVERIFIED]` | upstream deletion, not skipped work | Phase H — Vela defines its own contract |
 | Three artifact API surfaces undocumented upstream (`window.claude.complete`, the storage KV API, the full `application/vnd.ant.*` enumeration) | nothing depends on them — Vela defines its own contract | Phase D |
+
+## Phase B — ❌ GATE FAIL, round 1. Returns to a fresh builder.
+
+265 gate assertions, **5 failures**, 15 controls, 16.8 s wall clock. All five failures are the
+same defect, in `02-tool-calling`.
+
+### The defect: parallel tool calls collapse into one on the non-streamed path
+
+The accumulator keys on the SSE delta `index` field. Non-streamed OpenAI responses carry **no
+`index`** — it is a streaming concept — so every parallel call lands in one `index=None` bucket
+and their arguments are concatenated:
+
+| transport | sent | Vela reported |
+|---|---|---|
+| streamed (`index` 0 and 1) | `get_weather{"city":"berlin"}`, `get_weather{"city":"paris"}` | **2 executable calls** ✅ |
+| non-streamed (no `index`) | the same two calls | **1 malformed call**, `raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"` ⛔ |
+
+Same root cause on hostile: two broken calls become one, and the second is **lost**. It also
+mis-reports truncated arguments as `UnknownDiscriminator` rather than unparseable.
+
+**Mitigation that is genuinely present:** nothing executes on a bad reconstruction —
+`executable_tool_calls()` returns empty and a `MalformedToolCalls { count: 1 }` degradation is
+raised. So this is *loudly* wrong, not *silently* wrong, which is the far better failure mode.
+It is still data loss — two valid calls become zero executable ones — and the gate criterion is
+crashes, hangs, silent wrong output, **or unsupported affordances**. It fails.
+
+### How the gate found it — worth recording
+
+No matrix profile emits two *well-formed* parallel calls, so **the commonest tool-calling shape
+in the wild was invisible to the harness**. The executor noticed the blind spot in its own
+evidence base and scripted the shape itself, through the same accumulator, labelling the bytes as
+scripted in the transcript. The defect exists only in a case nothing was testing.
+
+### Everything else passed, including the parts most likely to break
+
+| Case | Result |
+|---|---|
+| **02** tool calling, small-local (NO native tools) | ✅ **prompt emulation works end to end** — not a polite failure |
+| **04** structured output, three profiles that silently ignore it | ✅ mismatch **reported**, affordance withdrawn — the dangerous silent case is handled |
+| **06** reasoning | ✅ split `</think>` never leaks; unterminated block does not swallow the answer; none invented where none emitted |
+| **07** stream termination | ✅ **2.8–3.6 ms** on all four, vs the 5 000 ms hangs a sentinel-driven consumer measured in Phase A |
+| **08** malformed frames, hostile | ✅ **166 chars delivered vs 31** for a strict consumer |
+| **09** no credential | ✅ nothing on the wire, all four profiles |
+| **10** failover / mid-request kill | ✅ routed past a dead peer; a killed stream is **not** replayed |
+
+The two hang classes Phase A measured at a full 5 s budget are now closed at ~3 ms. That was the
+single hardest requirement carried into this phase, and it holds.
+
+### Disposition
+
+Phase B returns to a **fresh builder** — not to whoever wrote the accumulator. Phase C does **not**
+start. The fix is one round: key non-streamed tool calls on their own identity rather than on a
+streaming-only `index`, correct the truncated-argument discriminator, and add the parallel-call
+shape to the harness so it stops being invisible.
 
 ## Run incidents
 

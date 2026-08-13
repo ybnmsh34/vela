@@ -1,0 +1,152 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: hostile — case 04-structured-output: structured output
+================================================================================
+
+PURPOSE   MEASURED-5: three of four profiles answer 200 with prose and say nothing. Vela must never hand that back as if it conformed.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a json_schema request, non-streaming ------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (331 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-hostile","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (706 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-a127bc89",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> ▒▒ ▒▒ Considering the request about give me the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: give me the weather in Berlin as JSON. rudder zenith alpha umber rudder fathom delta careful delta tiller tiller tiller. ▒▒ �"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 14,
+          "completion_tokens": 80,
+          "total_tokens": 94
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer text                            "nested Mock hostile reply to: give me the weather in Berlin as JSON. rudder zenith alpha umber rudder fathom delta careful delta tiller tiller tiller. ▒▒ �"
+  structured verdict                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 155 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  wall clock                             1.553005ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] a structured request always comes back with an explicit verdict
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] prose is NEVER presented as conforming JSON (the gate's most dangerous case)
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] the mismatch is a reported degradation, not a silent one
+        UnterminatedReasoning { recovered_answer_chars: 155 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  [PASS] the endpoint's behaviour is remembered, so the affordance is withdrawn
+        Degraded
+
+---- the same request, STREAMED, on a provider that has learned nothing yet --
+
+  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (370 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-hostile","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (5749 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ▒▒ ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about give me "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"the weather in Berl"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"in. Profile hostile"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" has a 4096-token w"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"indow. Answering di"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rectly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|channel|>analysis "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" nested "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Mock hostil"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e reply to:"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" give me th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"n Berlin as"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" JSON. rudd"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"er zenith a"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"lpha umber "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rudder fath"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"om delta ca"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"reful delta"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" tiller til"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"ler tiller."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ▒▒ �"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-a127bc89","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+  answer text                            "nested Mock hostile reply to: give me the weather in Berlin as JSON. rudder zenith alpha umber rudder fathom delta careful delta tiller tiller tiller. ▒▒ �"
+  structured verdict                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 155 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
+  [PASS] the streaming path validates structured output as well
+        Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
+
+---- the same request under StructuredOutputPolicy::Refuse, after probing ----
+  (no HTTP request was made)
+  probe verdict                          Ok(Degraded)
+  outcome                                Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" })
+  [PASS] a probed-bad endpoint is refused locally, with no request sent
+        Err(CapabilityUnsupported { capability: StructuredOutput, detail: "this model was probed and does not honour a response schema" }); 0 request(s) sent
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

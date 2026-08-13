@@ -1,0 +1,112 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 06-reasoning: reasoning separation
+================================================================================
+
+PURPOSE   MEASURED-3: `</think>` splits across frames, hostile never closes its block, frontier uses a separate field. No markup may leak, and reasoning must never reach tool parsing.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the raw stream ----------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:33141/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (151 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (4985 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about what is the weathe"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"r in Berlin. Profile mid"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"-local has a 32768-token"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" window. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"</thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"\n"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Mock mid-local r"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"eply to: what is"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" the weather in "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Berlin. pennant "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"ember north gaug"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"e pennant harbor"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" meridian ember "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"ember gauge meri"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"dian pennant gau"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"ge zenith yardar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"m harbor."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-bc342664","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":78,"total_tokens":90}}
+      
+      data: [DONE]
+      
+
+---- what Vela produced ------------------------------------------------------
+  user-visible answer                    "\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+  reasoning channel                      "Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
+  ReasoningDelta events                  "Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
+  content parts                          ["reasoning", "text"]
+  degradations                           (none)
+  wall clock                             3.438021ms
+
+---- baseline — every `content` delta concatenated, no state machine -------
+    "<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think>\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+
+---- assertions --------------------------------------------------------------
+  [PASS] no reasoning markup reaches the user-visible answer
+        "\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+  [PASS] the answer itself survives
+        "\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
+  [PASS] the deltas the consumer saw equal the final answer
+        170 vs 170 chars
+  [PASS] reasoning is captured, not discarded
+        "Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
+  [PASS] reasoning is stored as its own content part (vela-store models it separately)
+        ["reasoning", "text"]
+  [PASS] the closing tag is in NO single frame — a frame-local stripper cannot work
+        confirmed against the recorded frames
+
+---- reasoning is excluded from tool-call parsing — NOT CONSTRUCTIBLE HERE -
+  This profile carries reasoning INLINE, inside the same `content` channel the
+  answer uses, and the harness budgets that channel as one string. There is
+  therefore no `max_output_tokens` that leaves tool-call markup in the reasoning
+  half while removing it from the answer half: the budget cuts both together. The
+  probe is run on `frontier`, whose reasoning arrives in a separate, unbudgeted
+  field. Recorded rather than quietly omitted.
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

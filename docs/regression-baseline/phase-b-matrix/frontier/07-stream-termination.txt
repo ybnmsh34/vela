@@ -1,0 +1,99 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: frontier — case 07-stream-termination: stream termination
+================================================================================
+
+PURPOSE   MEASURED-1: hostile never sends [DONE]; small-local accepts include_usage and never sends usage. Both hung a recorded consumer for over 5 s. Vela must terminate on end-of-body.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream --------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:42593/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (167 bytes) ---
+      {"max_tokens":256,"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (4881 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"the weather in B"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"erlin. quartz ca"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"reful pennant ke"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"el yardarm tille"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"r keel orbit yar"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"darm pennant orb"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"it yardarm sexta"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"nt quartz rudder"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" jetty alpha nor"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"th meridian delt"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"a gauge rudder u"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"mber meridian."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-61956f76","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":87,"total_tokens":99}}
+      
+      data: [DONE]
+      
+
+---- timing — the number this case exists for ------------------------------
+  WALL CLOCK for the whole turn          3.189746ms
+  recorded naive [DONE] consumer         5003 ms (TIMED OUT)
+  recorded naive usage consumer          5006 ms (TIMED OUT)
+  `data: [DONE]` present in the body     true
+  a usage frame present in the body      true
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 "Mock frontier reply to: what is the weather in Berlin. quartz careful pennant keel yardarm tiller keel orbit yardarm pennant orbit yardarm sextant quartz rudder jetty alpha north meridian delta gauge rudder umber meridian."
+  usage                                  TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
+  degradations                           (none)
+
+---- assertions --------------------------------------------------------------
+  [PASS] VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang
+        wall clock 3.189746ms
+  [PASS] the answer arrives whole regardless of how the stream ended
+        222 characters
+  [PASS] a stream that does send [DONE] reports no missing-sentinel degradation
+        (none)
+  [PASS] usage is reported only when it actually arrived — never invented
+        usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
+
+================================================================================
+VERDICT  4 assertion(s), 0 failure(s)
+================================================================================

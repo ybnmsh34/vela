@@ -1,0 +1,57 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: small-local — case 03-vision: image input
+================================================================================
+
+PURPOSE   Vision where the endpoint has it. Where it does not: the affordance must be absent, and an image must be refused explicitly.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- an image sent to a provider whose capabilities are known ----------------
+  (no HTTP request was made)
+
+---- what Vela produced ------------------------------------------------------
+  error                                  CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" }
+  probed vision support                  Unsupported
+  UI vision affordance                   false
+  requests actually sent                 0
+  wall clock                             18.84µs
+
+---- assertions --------------------------------------------------------------
+  [PASS] the vision affordance is NOT offered to the UI
+        descriptor.vision = false
+  [PASS] an image is refused as a capability error, not a generic 400
+        Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+  [PASS] the refusal is local — the image never leaves the machine
+        0 HTTP request(s) were made
+  [PASS] a vision refusal is never shopped around to other backends
+        Err(CapabilityUnsupported { capability: Vision, detail: "this model does not accept image input" })
+
+---- the same image before any probe has run ---------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36493/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (210 bytes) ---
+      {"messages":[{"content":[{"text":"what is in this image?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgo="},"type":"image_url"}],"role":"user"}],"model":"mock-small-local","stream":false}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (183 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-small-local` does not support image input",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "vision_not_supported"
+        }
+      }
+  outcome                                Err(CapabilityUnsupported { capability: Vision, detail: "`mock-small-local` does not support image input" })
+  [PASS] an unprobed endpoint's refusal is learned from the endpoint itself
+        Err(CapabilityUnsupported { capability: Vision, detail: "`mock-small-local` does not support image input" })
+
+================================================================================
+VERDICT  5 assertion(s), 0 failure(s)
+================================================================================

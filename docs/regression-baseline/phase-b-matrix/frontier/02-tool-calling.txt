@@ -1,0 +1,109 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: frontier — case 02-tool-calling: tool calling
+================================================================================
+
+PURPOSE   Native where the endpoint has it; prompt emulation end to end where it does not.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a native tools request --------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:42593/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (334 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-frontier","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (795 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-f3fedcb8",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"eastward\"}"
+                  },
+                  "id": "call_f3fedcb8"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 39,
+          "total_tokens": 51
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 ""
+  stop reason                            ToolUse
+  tool calls                             OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+  executable calls                       1
+  degradations                           (none)
+  wall clock                             1.916473ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] exactly one executable native call comes back
+        OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+  [PASS] the call is named, parsed into an object, and not marked emulated
+        OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
+  [PASS] the stop reason says a tool was requested
+        ToolUse
+
+---- SCRIPTED: two well-formed calls in one answer (parallel tool calls) -----
+  Not from the live harness — no matrix profile emits two good calls. These are
+  scripted bytes in the shape every OpenAI-compatible endpoint uses for parallel
+  tool calls. Note what the two shapes differ in: streamed elements carry `index`
+  and are FRAGMENTS; non-streamed elements carry NO `index` and are WHOLE CALLS.
+
+  --- scripted non-streaming body ---
+      {"id":"chatcmpl-parallel","object":"chat.completion","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"berlin\"}"}},{"id":"call_b","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"paris\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":9,"completion_tokens":9,"total_tokens":18}}
+
+  --- scripted streaming body ---
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"berlin\"}"}}]}}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"paris\"}"}}]}}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+      
+      data: [DONE]
+      
+
+---- what Vela produced from each --------------------------------------------
+  non-streamed calls                     MALFORMED index=None id=call_a name=get_weather reason=UnparseableArguments raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"
+  streamed calls                         OK id=call_a name=get_weather emulated=false args={"city":"berlin"}
+                                    OK id=call_b name=get_weather emulated=false args={"city":"paris"}
+  non-streamed executable                0
+  streamed executable                    2
+
+---- assertions --------------------------------------------------------------
+  [PASS] streamed: two parallel calls come back as two executable calls
+        OK id=call_a name=get_weather emulated=false args={"city":"berlin"}
+                                    OK id=call_b name=get_weather emulated=false args={"city":"paris"}
+  [FAIL] non-streamed: two parallel calls come back as two executable calls
+        MALFORMED index=None id=call_a name=get_weather reason=UnparseableArguments raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"
+  [FAIL] the streamed and non-streamed paths agree on the same answer
+        non-streamed 1 call(s), streamed 2 call(s)
+
+================================================================================
+VERDICT  6 assertion(s), 2 failure(s)
+================================================================================

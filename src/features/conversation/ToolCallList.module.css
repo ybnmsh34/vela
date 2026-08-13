@@ -86,6 +86,16 @@
   outline-offset: -2px;
 }
 
+/* A card with nothing to open: the same row, without the promise of a panel. */
+.static {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-muted);
+}
+
 .chevron {
   flex: none;
   width: 0;
@@ -240,7 +250,7 @@
 .reveal {
   appearance: none;
   padding: var(--vela-space-1) var(--vela-space-2);
-  margin: 0 0 var(--vela-space-2);
+  margin: 0;
   border: 1px solid var(--vela-border-strong);
   border-radius: var(--vela-radius-sm);
   background: none;
@@ -258,6 +268,12 @@
 .reveal:focus-visible {
   outline: 2px solid var(--vela-focus);
   outline-offset: 1px;
+}
+
+/* Only once the bytes are actually showing — a gap under a closed disclosure
+   reads as a rendering fault. */
+.reveal + .block:not([hidden]) {
+  margin-top: var(--vela-space-2);
 }
 
 .callId {

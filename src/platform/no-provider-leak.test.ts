@@ -225,6 +225,58 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     for (const field of fields) expect(field.trim()).toMatch(/: boolean;$/);
   });
 
+  it('the tool-call surface carries no backend vocabulary at all', () => {
+    // Tool calling is where a backend identity is most tempting: the three
+    // transports differ, emulation exists *because* one of them is missing, and
+    // "which endpoint was it" is one keystroke from "how shall we render it".
+    // The rule for this surface is therefore the strict one — the files may not
+    // so much as name a provider id, let alone inspect one.
+    const files = sourceFiles(join(SRC_ROOT, 'features', 'conversation'), ['.ts', '.tsx', '.css'])
+      .filter((path) => /tool-calls?|ToolCall/i.test(path))
+      .filter((path) => !/\.test\.[a-z]+$/.test(path));
+
+    expect(files.length, 'the tool-call presentation moved; fix this filter').toBeGreaterThan(1);
+
+    const offenders = files.flatMap((path) => {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      return [
+        ...offendingLines(path, source),
+        ...source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          .filter(({ line }) => /\bproviderId\b|\bmodelId\b/.test(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`),
+      ];
+    });
+
+    expect(
+      offenders,
+      'how a tool call is drawn must follow from the call, never from what answered',
+    ).toEqual([]);
+  });
+
+  it('emulation is a flag on the call, not a name for the thing that emulated it', () => {
+    // The honest disclosure "this model has no built-in tool calling" has to be
+    // derivable from the wire type alone. `emulated: boolean` is that: the core
+    // sets it because the capability probe found no native tools, and a boolean
+    // is the one shape that cannot smuggle an identity along with the fact.
+    // `rawArguments: string` is its counterpart — the evidence a malformed call
+    // must carry, or the UI has nothing to show and the refusal renders blank.
+    const contract = stripComments(readFileSync(join(SRC_ROOT, 'platform', 'contract.ts'), 'utf8'));
+    const start = contract.indexOf('export type ToolCallOutcome');
+    const end = contract.indexOf('export type ContextStrategy');
+    expect(start, 'ToolCallOutcome moved; fix this slice').toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const outcome = contract.slice(start, end);
+    expect(offendingLines('contract.ts', outcome)).toEqual([]);
+    expect(outcome).toMatch(/readonly emulated: boolean;/);
+    expect(outcome).toMatch(/readonly rawArguments: string;/);
+    // A free-text field here would be somewhere for an endpoint's own words to
+    // land, and the renderer owns every sentence a user reads.
+    expect(outcome).not.toMatch(/readonly (detail|message|providerMessage): string;/);
+  });
+
   it('the scan actually catches a leak', () => {
     // A guard whose pattern silently stopped matching is worse than no guard.
     expect(offendingLines('x.tsx', "if (provider.id === 'ollama') return <OllamaPanel />;")).toEqual(

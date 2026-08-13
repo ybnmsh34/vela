@@ -1,0 +1,24 @@
+Heading scale, OBSERVED on real WebView2 from real model output
+Release build, Windows 11 26200, WebView2 151.0.4129.78, window 1400x900.
+Closes the evidence gap noted in the CONV-1 visual verdict: the heading-scale
+finding was previously source-read only, because no artifact exercised h1 or h3-h6.
+
+MARKDOWN LEVEL -> RENDERED ELEMENT | size | weight | transform | text
+  h3 | 15px | w400 | tt:none | Thought process
+  h2 | 24px | w600 | tt:none | Heading level one
+  h3 | 18px | w600 | tt:none | Heading level two
+  h4 | 16px | w600 | tt:none | Heading level three
+  h5 | 15px | w600 | tt:none | Heading level four
+  h6 | 13px | w600 | tt:none | Heading level five
+  h6 | 13px | w600 | tt:uppercase | HEADING LEVEL SIX
+  paragraph | 15px | w400 | Body after h1.
+  paragraph | 15px | w400 | Body after h2.
+  strong | 15px | w700 | bold inline text
+
+Notes:
+  * Markdown levels are DEMOTED by one (# renders as <h2>) so the page keeps a single
+    h1. That is correct accessibility practice and is a point in the app's favour.
+  * CONFIRMED: markdown h5 and h6 render at the SAME size and SAME weight (13px/600).
+    They are distinguished only by text-transform, not by the type scale.
+  * CONFIRMED: <strong> renders at w700 while every heading is w600. Bold body text is
+    therefore HEAVIER than a markdown h4 at the same 15px size.

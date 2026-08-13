@@ -92,3 +92,34 @@ NOT VERIFIED -- do not read these as pass or fail:
    no rows
    after F2        : "body :: Hmmm… can't reach this page\n\nlocalhost refuse"
    F2 did not open the rename field
+
+== CLOSING THE TWO OPEN MOMENTS — release build, Enter dispatched WITH text ==
+   The interaction critic identified that a text-less keyDown is rawKeyDown only,
+   so no keypress fires and implicit form submission never runs. Applying its fix.
+
+-- MOMENT: committing an F2 rename --
+    focused
+   after F2         : 'input :: Rename New conversation'
+   rename committed  : True   <-- critic predicted True
+   focus after commit: 'button :: RENAME COMMIT PROOF\n4 messages'
+   dropped to body?  : False
+
+-- MOMENT: confirming a delete --
+    focused
+   confirmation buttons: ["Cancel", "Delete"] | focus: 'button :: Cancel'
+   row deleted       : True
+   focus after confirm: 'button :: Start a conversation'
+   dropped to body?  : False
+
+-- MOMENT 4: dismissing the model switcher by CHOOSING a model --
+   switcher trigger: 'Local llama.cpp · unsloth/Qwen3.6-27B-GG'
+   popover options : ["unsloth/Qwen3.6-27B-GGUF:Q5_K_M\nLocal ll"]
+   focus in popover: 'button :: Local llama.cpp · unsloth/Qwen3.6-27B-GGUF:Q5'
+   after CHOOSING a model:
+     focus            : 'button :: Local llama.cpp · unsloth/Qwen3.6-27B-GGUF:Q5'
+     dropped to body? : False
+
+== ALL FOUR MOMENTS, FINAL ==
+  1 Escape out of the command bar : FIXED (focus -> composer, 0 tabs)
+  2 Committing an F2 rename       : FIXED (focus -> the renamed row)
+  3 Confirming a delete           : FIXED (focus -> Start a conversation)

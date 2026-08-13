@@ -891,6 +891,76 @@ tooling lying.**
 deliberately broken loopback sockets. No real model, no real keychain, no packaged binary.
 **GATE M Part 2 remains untouched, unverified, and deferred to the desktop session.**
 
+## 🛑 PHASE B STOPPED — no-thrash rule fired. Architectural decision needed.
+
+**Round 5 has NOT been launched, and will not be as another point fix.** Four consecutive rounds
+have died on one generative root cause. Continuing would be manufacturing agreement, which the
+run's own rules forbid.
+
+### What was tried, round by round
+
+| Round | Gate | What was found | What was fixed |
+|---|---|---|---|
+| 1 | 265 / **5 fail** | Tool-call accumulator merged non-streamed parallel calls; credentials in reqwest error strings | Accumulator fixed — **has held ever since** |
+| 2 | 361 / **16 fail** | The streamed body path never scrubbed | Scrub made structural: an unscrubbed read is **inexpressible** (5 compile bypasses rejected, laundering decorator defeated) — **has held ever since** |
+| 3 | 373 / **0** ✅ | *Gate passed.* Panel then failed 2/4: JSON-escaping defeats byte-literal redaction; redirects hand `x-api-key`/`x-goog-api-key` to unconfigured hosts | Both closed — redirect egress **closed**, JSON escapes **resolved properly** |
+| 4 | 471 / **8 fail** | **Percent-encoding (upper/lower hex), full percent-encoding, HTML entities** all reach Display, Debug, the IPC serde shape, and the StreamEvent sink | — *stopped here* |
+
+Each round genuinely closed what the previous one found. **Nothing regressed.** The evidence base
+strengthened every round: 265 → 361 → 373 → 471 assertions; 10 → 15 → 36 → 39 controls that
+actually fail. This is not a team failing to fix bugs.
+
+### The root cause is the strategy, not any of the defects
+
+**Redaction is a blocklist over endpoint-controlled text.** Vela receives an error body written by
+a server it does not trust, searches it for spellings of the credential, and forwards the rest to
+`Display`, `Debug`, the IPC bridge, and the UI.
+
+A blocklist over an adversary-chosen encoding **cannot be completed**. Four rounds is the
+demonstration: JSON escapes, then percent-encoding in two hex cases, then full percent-encoding,
+then HTML entities. Base64, mixed encodings, unicode escapes, and case-folding are untested and
+there is no reason to believe they behave differently.
+
+Round 4's own evidence names the shape of the mistake precisely: the JSON-escape mechanism is
+*correct and general*, while percent-encoding was handled by **"the opposite mechanism: a
+hard-coded second literal, added in one place, for one binding."** And because that needle lives
+only inside `RequestUrl`, a **header-bound credential never passes through it** — so `x-api-key`
+(Anthropic) and `x-goog-api-key` (Google) carry a **strictly smaller needle set** than the query
+binding. The intent existed; it was implemented for one of three shapes.
+
+### The decision needed
+
+**Recommended: stop scrubbing untrusted text and stop carrying it.** Replace the blocklist with an
+allowlist at the trust boundary:
+
+- Endpoint-supplied error text **never** reaches `ProviderError`'s public surface, the IPC bridge,
+  or the UI. Errors carry a **typed, closed set** of fields Vela constructs itself: error class,
+  HTTP status, endpoint authority (redacted), a correlation id.
+- The raw body goes to a **local, opt-in debug log** — never across the IPC boundary — and the
+  correlation id links them for a user who deliberately opens it.
+- The property becomes *"untrusted bytes are not carried"*, which is checkable by inspection and
+  cannot be defeated by a spelling. Compare the current property, *"untrusted bytes are carried but
+  laundered"*, which has failed four times.
+
+This preserves diagnostics — the regression critic's legitimate objection in round 3 — because the
+useful part of an error (which endpoint, what class, what status) is exactly the part Vela already
+knows without quoting the peer.
+
+**Alternatives considered:** an egress allowlist or single proxy chokepoint fixes redirect-class
+defects but not the echo problem, and would leave FINDING 3 open. Continuing to extend the needle
+set is round 5, and is what this stop rule exists to prevent.
+
+**Cost of the recommendation:** it is a redesign of the error type and every adapter's error
+mapping — larger than any single round so far, and it touches code that four rounds of tests now
+cover well. That coverage is an asset for the redesign, not a sunk cost.
+
+### What is NOT blocked
+
+Everything Phase B earned stands and is not in question: the tool-call accumulator, structurally
+inexpressible unscrubbed reads, redirect refusal with `no_proxy` proven on the wire, JSON-escape
+resolution, endpoint identity in redacted form. **Phase C (conversation UX) does not depend on the
+error-detail redesign** and could proceed in parallel with it.
+
 ## Run incidents
 
 **2026-08-13 ~05:04Z — the container was rolled back ~3 hours; recovered from the remote.**

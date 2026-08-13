@@ -319,6 +319,28 @@ Recorded here so it cannot quietly evaporate. None of it blocks Phase A or B.
 | **Styles is genuinely THIN** — Anthropic *deleted* the source material (`claude.com/blog/styles` 404, help article 10181068 404/503). Preset names, the writing-sample flow, and the styles→skills migration are `[UNVERIFIED]` | upstream deletion, not skipped work | Phase H — Vela defines its own contract |
 | Three artifact API surfaces undocumented upstream (`window.claude.complete`, the storage KV API, the full `application/vnd.ant.*` enumeration) | nothing depends on them — Vela defines its own contract | Phase D |
 
+## Run incidents
+
+**2026-08-12 ~23:19Z — Phase B workflow stalled at the integration stage and was resumed.**
+
+The integration agent's transcript ends with `[Request interrupted by user for tool use]` and
+recorded no further activity for ~55 minutes. The workflow task had disappeared entirely
+(`TaskGet` → not found), which is why no completion notification ever arrived — it died rather
+than finishing.
+
+Detected by noticing the workflow's event count was **identical across two consecutive
+check-ins** (7 results / 8 started), then checking agent-transcript mtimes rather than trusting
+the event count alone. A stalled run and a slow run look the same from the outside; only the
+timestamps distinguish them.
+
+Resumed via `resumeFromRunId`, so the six completed agents (three pre-fixes, provider core, three
+adapters) replayed from cache and only the integration agent re-ran live. No work was lost and no
+tokens were re-spent on completed stages. Its partial output had already been committed at
+`9970434`, so the resumed agent picked up a tree containing its own in-flight work.
+
+**Lesson applied to check-in cadence:** an unchanged event count between check-ins is now treated
+as a stall signal, not as evidence of a long-running stage.
+
 ## Sequencing decisions
 
 **Phase B is deliberately held, not blocked.** The Phase A workflow still has its integration

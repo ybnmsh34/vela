@@ -1,6 +1,16 @@
 # GATE M Part 1 — Phase C — the conversation surface meets the capability matrix
 
-**Verdict: FAIL, on the context axis alone.**
+> **SUPERSEDED ON THE CONTEXT AXIS — the FAIL below is closed.** The composition-root wave wired
+> `turnTexts` from the conversation surface through `App.tsx` to the meter, and the GATE M
+> composition-root executor re-ran this matrix on the result. **C5 now PASSES on all four
+> profiles**, reading e.g. `About 220,005 of 200,000 tokens — this turn is larger than the
+> window…` where it used to read `About 0 of 200,000 tokens`. Every other assertion is unchanged,
+> and four reading-surface assertions (C22–C24) were added since. The evidence files in this
+> directory are the **new** run, at 25/25/25/23; the analysis below is kept verbatim because the
+> argument that produced the FAIL is worth more than the verdict it produced. Current numbers:
+> `../gate-m-composition-root/RESULTS.md`.
+
+**Verdict (as recorded at the time): FAIL, on the context axis alone.**
 
 On the capability axes the surface is sound: no profile crashed the UI, hung it, leaked
 reasoning markup, dropped a malformed tool call, or offered an affordance its endpoint cannot

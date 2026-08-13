@@ -71,6 +71,14 @@ function Workspace() {
  * previous transcript's streaming state attached to the new one, and remounting
  * on the id is the cheapest way to make that impossible rather than merely
  * unlikely.
+ *
+ * Remounting is also what made the *other* half of this necessary. A remount
+ * discards the surface's state, so for as long as the transcript lived only in
+ * that state, clicking another conversation and clicking back was enough to
+ * lose everything said in it — with `transcript.rs`, `store_append_message`,
+ * their contract types and their fake all written, tested, and called by
+ * nothing. Handing the id down is the whole connection: given one, the surface
+ * reads the conversation back and writes each settled turn to it.
  */
 function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonly string[]) => void }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
@@ -79,6 +87,7 @@ function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonl
   return (
     <ConversationSurface
       key={conversationId ?? 'none'}
+      conversationId={conversationId}
       providerId={selection?.providerId ?? null}
       modelId={selection?.modelId ?? null}
       modelLabel={selection?.modelLabel ?? null}

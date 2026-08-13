@@ -29,6 +29,13 @@ import { ConversationView } from './ConversationView';
 import { pendingTurnTexts, useConversation, type ConversationEntry } from './use-conversation';
 
 interface ConversationSurfaceProps {
+  /**
+   * Which conversation this is. Given one, the surface reads its transcript
+   * back from the store on mount and writes each settled turn to it — which is
+   * what makes a conversation a record rather than the lifetime of a mount.
+   * `null` keeps the old behaviour: nothing is read, nothing is written.
+   */
+  readonly conversationId?: string | null;
   /** `null` until a model has been chosen. The composer says so. */
   readonly providerId?: string | null;
   readonly modelId?: string | null;
@@ -49,6 +56,7 @@ interface ConversationSurfaceProps {
 }
 
 export function ConversationSurface({
+  conversationId = null,
   providerId = null,
   modelId = null,
   modelLabel = null,
@@ -57,6 +65,7 @@ export function ConversationSurface({
   onPendingTurn,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
+    conversationId,
     providerId,
     modelId,
     ...(initialEntries === undefined ? {} : { initialEntries }),

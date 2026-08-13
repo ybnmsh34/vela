@@ -69,6 +69,33 @@ async function openConversation(user: ReturnType<typeof userEvent.setup>): Promi
   await screen.findByRole('region', { name: 'Conversation' });
 }
 
+/** The transcript's turns, or `[]` when the surface is showing its empty state. */
+function turns(): readonly HTMLElement[] {
+  const log = screen.queryByRole('log');
+  return log === null ? [] : within(log).getAllByRole('article');
+}
+
+/** Send a message and wait for the fake to echo it back and settle. */
+async function say(
+  user: ReturnType<typeof userEvent.setup>,
+  text: string,
+): Promise<void> {
+  await user.click(composer());
+  await user.paste(text);
+  await user.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    expect(turns()).toHaveLength(2);
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false');
+  });
+}
+
+/** The sidebar rows, newest first — the order the store lists them in. */
+function rows(): readonly HTMLElement[] {
+  return screen.getAllByRole('button', { name: /^Open / });
+}
+
 function composer(): HTMLTextAreaElement {
   return screen.getByRole('textbox', { name: 'Message' });
 }
@@ -176,5 +203,75 @@ describe('the context meter measures the turn that will actually be sent', () =>
       expect(meter()).toHaveTextContent(/Context window not reported by this endpoint/);
     });
     expect(meter()).toHaveTextContent(/about 104 tokens in this turn/);
+  });
+});
+
+describe('a conversation is a record, not a session', () => {
+  it('keeps a message when the user leaves the conversation and comes back', async () => {
+    // ── THE LOAD-BEARING TEST ──────────────────────────────────────────────
+    // The same composition-root defect, one layer down. `transcript.rs`,
+    // `store_append_message` / `store_list_messages`, their contract types and
+    // their fake are all written and separately tested; `ConversationSurface`
+    // even takes an `initialEntries` prop documented as "a transcript restored
+    // from the store". Nothing in `src/` called any of it, so the transcript
+    // lived in React state that `App.tsx` destroys by design — it remounts the
+    // surface on `key={conversationId}` so a switch cannot leave the previous
+    // conversation's stream attached to the new one.
+    //
+    // The consequence is not subtle: clicking another conversation and
+    // clicking back is enough to lose everything that was said.
+    const user = userEvent.setup();
+    render(<App adapter={await host()} />);
+    await openConversation(user);
+
+    await say(user, 'remember this');
+
+    // Somewhere else, and back. Two rows now; the store lists the newest first,
+    // so the conversation just left is the second one.
+    await user.click(screen.getByRole('button', { name: /^New conversation/ }));
+    await waitFor(() => {
+      expect(rows()).toHaveLength(2);
+    });
+    await waitFor(() => {
+      expect(turns()).toHaveLength(0);
+    });
+
+    const previous = rows()[1];
+    expect(previous).toBeDefined();
+    await user.click(previous as HTMLElement);
+
+    await waitFor(() => {
+      expect(turns()).toHaveLength(2);
+    });
+    expect(screen.getByRole('log')).toHaveTextContent('remember this');
+  });
+
+  it('writes the turn to the store, where the rest of the app can see it', async () => {
+    // The other half, asserted at the seam rather than through the DOM: the
+    // host must actually hold the messages. `messageCount` is not decoration —
+    // `use-conversations.ts` will only ask the host to derive a title for a
+    // conversation whose `messageCount > 0`, so an unwritten transcript also
+    // means every conversation keeps its placeholder name forever.
+    const user = userEvent.setup();
+    const adapter = await host();
+    render(<App adapter={adapter} />);
+    await openConversation(user);
+
+    await say(user, 'a message worth keeping');
+
+    await waitFor(async () => {
+      const { conversations } = await adapter.invoke('store_list_conversations', {});
+      expect(conversations[0]?.messageCount).toBe(2);
+    });
+
+    const conversationId = (await adapter.invoke('store_list_conversations', {}))
+      .conversations[0]?.id;
+    expect(conversationId).toBeDefined();
+    const { messages } = await adapter.invoke('store_list_messages', {
+      conversationId: conversationId as string,
+    });
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'a message worth keeping' }]);
+    expect(messages[1]?.status).toBe('complete');
   });
 });

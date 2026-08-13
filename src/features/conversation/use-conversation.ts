@@ -21,22 +21,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createChatRepository, newTurnId, type ChatRepository, type TurnHandle } from '@/data/chat-repository';
+import { createTranscriptRepository, type TranscriptRepository } from '@/data/transcript-repository';
 import { usePlatform } from '@/platform/PlatformProvider';
 import type { ChatMessageInput, ChatStreamEvent } from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
 
+import { entriesFromStored, errorMessageOfTurn, partsOfTurn, statusOfTurn } from './stored-entries';
 import { EMPTY_TURN, isSettled, isTerminalEvent, reduceTurn, type TurnState } from './turn-stream';
 
 export type ConversationEntry =
   | { readonly kind: 'user'; readonly id: string; readonly text: string }
   | { readonly kind: 'assistant'; readonly id: string; readonly turn: TurnState };
 
+/** Shown instead of the transcript's contents when the store cannot be read. */
+const UNREADABLE = 'This conversation could not be read from the store';
+
 export interface UseConversationOptions {
   /** Substituted in tests; defaults to one built over the platform adapter. */
   readonly repository?: ChatRepository;
+  /**
+   * Which conversation this is, so the transcript is a record rather than a
+   * session: `null` means nothing is loaded and nothing is written.
+   */
+  readonly conversationId?: string | null;
+  /** Substituted in tests; defaults to one built over the platform adapter. */
+  readonly transcript?: TranscriptRepository;
   /** `null` until the user has chosen where this conversation runs. */
   readonly providerId?: string | null;
   readonly modelId?: string | null;
+  /**
+   * A transcript supplied by the caller. When given, the store is not read —
+   * the caller is the authority for this mount. Turns are still written.
+   */
   readonly initialEntries?: readonly ConversationEntry[];
   /** Defaults to `requestAnimationFrame`. */
   readonly scheduleCommit?: (run: () => void) => void;
@@ -66,14 +82,19 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     () => options.repository ?? createChatRepository(adapter),
     [options.repository, adapter],
   );
+  const transcript = useMemo(
+    () => options.transcript ?? createTranscriptRepository(adapter),
+    [options.transcript, adapter],
+  );
   const schedule = options.scheduleCommit ?? defaultScheduler;
   const providerId = options.providerId ?? null;
   const modelId = options.modelId ?? null;
+  const conversationId = options.conversationId ?? null;
+  const supplied = options.initialEntries;
 
-  const [entries, setEntries] = useState<readonly ConversationEntry[]>(
-    () => options.initialEntries ?? [],
-  );
+  const [entries, setEntries] = useState<readonly ConversationEntry[]>(() => supplied ?? []);
   const [streaming, setStreaming] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
 
   // Read by `send`/`retry`, which need the current transcript without taking a
   // dependency on it — a side effect inside a state updater would run twice
@@ -98,6 +119,80 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       active.current?.handle?.release();
     };
   }, []);
+
+  /**
+   * Which store row each rendered entry was written as. Seeded by a restore
+   * (where the entry id *is* the message id) and extended by every turn this
+   * mount writes, so `retry` knows what it is replacing.
+   */
+  const messageIds = useRef(new Map<string, string>());
+  /** Entries a write has already been started for. Claimed before the await. */
+  const claimed = useRef(new Set<string>());
+  /**
+   * Whether anything has happened on this mount yet.
+   *
+   * The restore below is a read that started before the user could act, and it
+   * can still be in flight when they do. Applying it then would replace the
+   * turn they just sent with the transcript as it was a moment earlier — the
+   * message disappearing as they watch. So the restore is only ever applied to
+   * an untouched surface.
+   */
+  const touched = useRef(false);
+
+  /**
+   * Every store mutation, in order, on one chain.
+   *
+   * The alternative is a set of independent promises whose interleaving decides
+   * the order rows land in — and the transcript's order *is* its meaning. One
+   * chain also makes `retry`'s delete land after the writes it is deleting,
+   * without any of them having to know about each other. A failed write breaks
+   * the record, not the chain: the surface keeps rendering what it has.
+   */
+  const writes = useRef<Promise<void>>(Promise.resolve());
+  const enqueue = useCallback((work: () => Promise<void>) => {
+    writes.current = writes.current.then(work).catch(() => {
+      // Deliberately swallowed: a store that cannot be written is not a reason
+      // to stop drawing the answer that is already on screen. The next mount
+      // reads what did land, and says so if it cannot read at all.
+    });
+  }, []);
+
+  /**
+   * Read the conversation back on the way in.
+   *
+   * `App.tsx` remounts this surface on `key={conversationId}`, so this runs once
+   * per conversation the user opens — which is exactly the moment the record
+   * has to reappear.
+   */
+  useEffect(() => {
+    if (conversationId === null || supplied !== undefined) return;
+    let abandoned = false;
+    void (async () => {
+      try {
+        const messages = await transcript.list(conversationId);
+        if (abandoned || !mounted.current || touched.current) return;
+        const restored = entriesFromStored(messages);
+        for (const entry of restored) {
+          messageIds.current.set(entry.id, entry.id);
+          // Claimed as well as mapped: the write-on-settle effect below fires
+          // for whatever settled turn is last in the transcript, and a restored
+          // turn is already settled. Without this, opening a conversation
+          // would append its own last turn to it again, every time.
+          claimed.current.add(entry.id);
+        }
+        setEntries(restored);
+      } catch {
+        // An empty transcript and an unreadable one look identical on screen,
+        // and one of them is a lie — so this one says which it is, and blocks
+        // sending. Appending a turn to a history that failed to load would
+        // write a reply with the conversation missing from behind it.
+        if (!abandoned && mounted.current) setUnreadable(true);
+      }
+    })();
+    return () => {
+      abandoned = true;
+    };
+  }, [conversationId, supplied, transcript]);
 
   const drain = useCallback((turnId: string) => {
     scheduled.current = false;
@@ -147,6 +242,9 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       const userEntry: ConversationEntry = { kind: 'user', id: `${turnId}-user`, text: userText };
       const assistantEntry: ConversationEntry = { kind: 'assistant', id: turnId, turn: EMPTY_TURN };
 
+      // From here the surface is the authority on what this conversation holds,
+      // and a restore still in flight must not overwrite it.
+      touched.current = true;
       setEntries([...history, userEntry, assistantEntry]);
       setStreaming(true);
       queue.current = [];
@@ -214,11 +312,88 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     if (lastUser === undefined) return;
     // Everything before that user turn is the history; the failed reply and the
     // message itself are replaced, not appended to.
+    const dropped = current.slice(current.indexOf(lastUser));
+    // …and replaced in the store too. Without this the record grows a second
+    // copy of every retried message, so the transcript that comes back after a
+    // retry is not the transcript the user was looking at when they retried.
+    if (conversationId !== null) {
+      enqueue(async () => {
+        for (const entry of dropped) {
+          const messageId = messageIds.current.get(entry.id);
+          if (messageId === undefined) continue;
+          messageIds.current.delete(entry.id);
+          claimed.current.delete(entry.id);
+          await transcript.remove(messageId);
+        }
+      });
+    }
     start(current.slice(0, current.indexOf(lastUser)), lastUser.text);
-  }, [start, streaming]);
+  }, [conversationId, enqueue, start, streaming, transcript]);
 
-  const blockedReason =
-    providerId === null || modelId === null ? 'Choose a model to start a conversation' : null;
+  /**
+   * Write the turn once it has settled.
+   *
+   * Watching the committed transcript rather than hooking the terminal event
+   * keeps every store call off the streaming hot path — the whole reason the
+   * frames above are batched — and means a turn is written from the same state
+   * the user is looking at, not from a reconstruction of it.
+   *
+   * A turn is written when it settles, not as it opens. That does lose a turn
+   * the app never got to finish, and the alternative — opening a `streaming`
+   * row and closing it later, which is what `StoreAppendMessageReq.status` and
+   * `store_update_message` are shaped for — is the better record. It is not
+   * this change: it needs the write to survive an unmount that currently
+   * abandons the turn, and both hosts reject a message with no parts, so an
+   * opening row would have to carry a placeholder part that the close then has
+   * to remember to replace.
+   *
+   * The question is always written; the reply is written only if it produced
+   * something, because a message with no parts is a payload both hosts refuse.
+   * So a turn that failed before a single token restores as what it was — the
+   * user's message, with nothing after it.
+   */
+  useEffect(() => {
+    if (conversationId === null || streaming) return;
+    const reply = entries[entries.length - 1];
+    const asked = entries[entries.length - 2];
+    if (reply === undefined || reply.kind !== 'assistant' || !isSettled(reply.turn)) return;
+    if (asked === undefined || asked.kind !== 'user') return;
+    if (claimed.current.has(reply.id)) return;
+    claimed.current.add(asked.id);
+    claimed.current.add(reply.id);
+
+    const { turn } = reply;
+    const parts = partsOfTurn(turn);
+    const errorMessage = errorMessageOfTurn(turn);
+    enqueue(async () => {
+      if (!messageIds.current.has(asked.id)) {
+        const written = await transcript.append({
+          conversationId,
+          role: 'user',
+          parts: [{ kind: 'text', text: asked.text }],
+        });
+        messageIds.current.set(asked.id, written.id);
+      }
+      if (parts.length === 0) return;
+      const written = await transcript.append({
+        conversationId,
+        role: 'assistant',
+        parts,
+        status: statusOfTurn(turn),
+        providerId,
+        modelId,
+        ...(turn.stopReason === null ? {} : { stopReason: turn.stopReason }),
+        ...(errorMessage === null ? {} : { errorMessage }),
+      });
+      messageIds.current.set(reply.id, written.id);
+    });
+  }, [conversationId, enqueue, entries, modelId, providerId, streaming, transcript]);
+
+  const blockedReason = unreadable
+    ? UNREADABLE
+    : providerId === null || modelId === null
+      ? 'Choose a model to start a conversation'
+      : null;
 
   return { entries, streaming, blockedReason, send, stop, retry };
 }

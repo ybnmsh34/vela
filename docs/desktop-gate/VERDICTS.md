@@ -807,3 +807,45 @@ the honest figure and is acceptable, though it is the number most worth improvin
 
 This PASS therefore covers footprint, cold start and idle cost. It does **not** cover behaviour
 under sustained load or under a fast endpoint, and should not be read as doing so.
+
+---
+
+## ⚠️ ROUTING CORRECTION — the CONV-1 visual FAIL is not the platform-defaults class
+
+Raised because `docs/vela-progress.md` (at `a3579f4`) summarises the run as:
+
+> **Visual remains FAIL** — the platform-defaults class: no bundled typeface, the white Windows
+> scrollbar in dark mode, and 150% DPI layout breakage. That is the platform-polish wave's job.
+
+Those three are the **A1** visual findings and they are correctly attributed in that document's own
+A1 section. But they are being carried onto the **CONV-1** row, and a search of that document for
+`thinking block`, `raw markdown`, `pre-wrap`, `measure` or `characters per line` returns **nothing**.
+The CONV-1 visual verdict's actual content is absent from the record.
+
+**The CONV-1 visual FAIL's largest gap is not a platform default and a platform-polish wave will not
+fix it:**
+
+1. **`ThinkingBlock.tsx:64` renders raw markdown source.** It emits `<p>{text}</p>` — never routed
+   through `<Markdown>` — with `white-space: pre-wrap` at `ThinkingBlock.module.css:91`. The user
+   sees literal `**Deconstruct the requirements:**`, literal `*   ` bullets, literal backticks and
+   fences, wrapped at the model's column. `ThinkingBlock.tsx:36` opens the block by default while
+   streaming, so on a reasoning-heavy endpoint it is the first thing on screen every turn, and on a
+   short prompt the only thing for ~10 s. **This is a content-rendering defect, not a platform one.
+   It reproduces identically on Linux.**
+2. **The reading measure sets prose at ~95–105 characters** (`--vela-measure: 46rem` → a 688px
+   column at 15px). One token change.
+3. Composer and transcript do not share a vertical ruler (688px vs 736px, asymmetric).
+4. Content is guillotined at the scroll edge with no mask.
+5. `--vela-code-bg` and `--vela-thinking-bg` each equal the page background in one of the two themes.
+6. The sidebar is a fixed width and does not respond to window width.
+7. The heading scale collapses below h3 — h4 equals body size, h5/h6 are smaller, and unclassed
+   `<strong>` (UA 700) outweighs every heading below h3 (600).
+
+Items 1, 2, 3, 4, 6 and 7 are all engine-independent. Routing this FAIL to the platform-polish wave
+would ship the typeface, the scrollbars and the DPI fix and leave the thinking block still printing
+asterisks at the user.
+
+**Still-open evidence gap, carried from the CONV-1 visual verdict:** no artifact in the set exercises
+`h1`, `h3`, `h4`, `h5` or `h6`, so finding 7 is source-read rather than observed. That is the same
+gap that let the original markdown defect survive a full cloud review. A prompt that emits every
+heading level should be part of the re-test.

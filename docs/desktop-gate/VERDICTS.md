@@ -191,11 +191,23 @@ Raw bytes in `docs/regression-baseline/local-smoke/`, request bodies in `00-requ
   src-tauri/icons/ src-tauri/crates/vela-providers/src/openai_compatible/mod.rs
   src-tauri/crates/vela-providers/src/stream.rs` is **empty**. Every surface this verdict rests on
   is byte-identical at `11c46d1`. **This verdict is NOT stale and does not need re-requesting.**
-- limits of this run: the GUI could not be driven at the time — screen-control access was denied —
-  so the `NOT_FOUND` path was confirmed from code, not from the running window. The app compiled and
-  launched once a local `icon.ico` was supplied, but **it renders a blank window** — see the
-  standalone finding below, which supersedes the earlier note that it "launched successfully".
-  `visual`, `interaction` and `performance` were not requested and are not judged here.
+- `NOT_FOUND` is confirmed **at runtime**, not merely from code. Running the bridge with
+  `--no-register` — the flag it provides precisely to reproduce the shipping host — yields
+  `{"ready":true,"registered":false,"seeded":true}`, and then:
+
+  ```
+  chat_send   -> {"err":{"code":"NOT_FOUND","message":"no provider configured with id `local`"}}
+  models_list -> {"err":{"code":"NOT_FOUND","message":"no provider configured with id `local`"}}
+  ```
+
+  Note `seeded: true`: the settings row **is** written. So the user configures an endpoint and the
+  app then tells them no provider is configured with that id. The message is not merely unhelpful,
+  it directly contradicts what the user just did.
+  Evidence: `evidence/GATE-M2-real-model/12-shipping-host-not-found.jsonl`
+- limits of this run: the app compiled and launched once a local `icon.ico` was supplied, but
+  **it renders a blank window** — see the standalone finding below, which supersedes the earlier
+  note that it "launched successfully". `visual`, `interaction` and `performance` were not requested
+  and are not judged here; they are in any case unobtainable until the app renders.
 
 ---
 

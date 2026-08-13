@@ -1444,3 +1444,80 @@ delivered from a malformed-frame stream against a strict consumer's 31.
 deliberately broken loopback sockets. No real model, no real keychain, no packaged binary.
 **GATE M Part 2 remains untouched, unverified, and deferred to the desktop session — it is
 still the largest hole in the evidence base for the project.**
+
+---
+
+## Phase C — navigation and persistence surface
+
+Landed in `3e43e81` rather than in its own commit: a parallel session's `git add`/`git commit`
+swept the shared index while this piece was staged. The code is intact and green; this section
+is the record the commit message would have carried.
+
+### The store grew the query it was missing
+
+`ConversationRepository::search_conversations` — a case-insensitive substring match on the
+**title**. FTS5 indexes message content only, so a conversation the user *named* "Rendering
+notes" and never typed those words into was invisible to search. `instr(lower(), lower())`
+rather than `LIKE`, because a substring a user types can contain `%`, `_` or `\` and every one
+of those is a `LIKE` metacharacter: searching for `100%` must find "100% context", not "1000
+tokens". That row is in the tests.
+
+### Three decisions at the IPC boundary
+
+1. **`ConversationSummary` drops `providerId` and `modelId`.** The stored row carries them;
+   the wire type does not. Conventions §0 rule 3 says the UI branches on capability flags and
+   never on a backend identity, and the cheapest way to keep that true is for the navigation
+   surface to have no vocabulary for one. `no-provider-leak.test.ts` gained two guards for
+   exactly this — `providerId` is not a vendor name, so the existing scan would never have
+   caught it.
+2. **Search returns two labelled halves, never one blended list.** A title match and a content
+   match are different claims; merging them would let the UI imply words appear in a transcript
+   when they only appear in its name. A hit inside a reasoning block says so, rather than being
+   quoted back as an answer.
+3. **The raw query is rewritten before it reaches FTS5.** A user typing `"the deal` into a
+   search box is not writing a query language, and `INVALID_PAYLOAD` for an unbalanced quote is
+   a search box blaming the user for its own syntax. Alphanumeric runs become quoted terms with
+   the last prefix-matched, so results narrow while typing.
+
+`ui_set_layout` clamps rather than rejects — a width is a preference, not an assertion — and is
+a narrow typed command rather than a generic settings key/value pair, which would have handed
+the renderer an arbitrary write primitive into the system of record (§3.4).
+
+### `tests/parity/navigation.json`
+
+28 rows pinning the two rules `BrowserAdapter` has to reimplement: how a conversation is named
+from what was said in it, and how raw text becomes an FTS expression. Read from disk by both
+`cargo test` and `pnpm test`; the Rust host produced the expectations and is the specification.
+One Rust test additionally proves every rewritten query is one FTS5 actually accepts — so the
+fixture pins a string that is agreed *and* valid, not merely agreed.
+
+### Renderer
+
+`src/features/navigation/` — sidebar (recency groups, in-place rename, delete behind an
+`alertdialog`, roving-tabindex arrow navigation, resize via a keyboard-operable `separator`),
+home screen, and one command bar doing both quick-switch and search.
+
+* **Roving tabindex, not `tabindex=0` per row.** Forty conversations costing forty Tab presses
+  to step past is keyboard-hostile, not keyboard-accessible.
+* **A failed search says "Search unavailable", never "no results."** One is a claim about Vela;
+  the other is a claim about the user's data.
+* **Width is written back on settle, not per pointer-move.** Every frame of a drag would be a
+  SQLite write, and the value that matters is where the user let go.
+* **Titles derive from what was said, never from reasoning.**
+
+The home screen replaced `PlaceholderRegion` (deleted; nothing referenced it) and carries
+forward the §10 honesty readout it held — which adapter is live, which credential backend is
+really in use — so a screenshot of it still cannot be mistaken for evidence about a real
+keychain.
+
+### Measured
+
+`pnpm typecheck` ✅ · `pnpm test` ✅ 411/411 · `pnpm build` ✅ ·
+`cargo test -p vela-store -p vela-app` ✅ 139 passed, 0 failed.
+Rendered in headless Chromium against `BrowserAdapter`, light and dark, no console errors.
+
+**VERIFIED-BY-FAKE.** Everything renderer-side runs against `BrowserAdapter`: it proves
+protocol shape and UI behaviour, and nothing about SQLite, FTS5, a real database file, or a
+packaged binary. The visual and interaction judgements are **provisional** — Linux Chromium is
+not Windows WebView2, and the binding verdicts belong to a desktop session via
+`docs/desktop-gate/`.

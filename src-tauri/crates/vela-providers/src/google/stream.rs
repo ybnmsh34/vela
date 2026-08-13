@@ -60,7 +60,7 @@ use crate::model::{
 };
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
-use crate::tool_accum::ToolCallAccumulator;
+use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};
 
 use super::wire::base64_decode;
 use super::{blocked_error, map_error_object, Blocked};
@@ -306,7 +306,10 @@ impl CandidateAssembler {
         {
             delta["id"] = Value::String(id.to_owned());
         }
-        if let Some(emitted) = self.tools.push(&delta) {
+        // A whole call: this API sends every `functionCall` complete, with no
+        // index and nothing further to append. The slot number above is Vela's
+        // own, assigned so a malformed call can still be reported by position.
+        if let Some(emitted) = self.tools.push(&delta, ToolCallShape::WholeCall) {
             sink.emit(StreamEvent::ToolCallDelta { delta: emitted });
         }
     }

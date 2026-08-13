@@ -57,7 +57,7 @@ use crate::model::{
 };
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
-use crate::tool_accum::ToolCallAccumulator;
+use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};
 
 use super::map_error_object;
 
@@ -305,7 +305,10 @@ impl MessageAssembler {
                 {
                     delta["function"]["arguments"] = Value::String(input.to_string());
                 }
-                if let Some(emitted) = self.tools.push(&delta) {
+                // A fragment even when it arrives complete: on the streaming
+                // path the `input_json_delta`s that finish this call are still
+                // to come, and the content-block index is what joins them to it.
+                if let Some(emitted) = self.tools.push(&delta, ToolCallShape::Fragment) {
                     sink.emit(StreamEvent::ToolCallDelta { delta: emitted });
                 }
             }
@@ -385,7 +388,7 @@ impl MessageAssembler {
                     "index": index,
                     "function": {"arguments": partial},
                 });
-                if let Some(emitted) = self.tools.push(&fragment) {
+                if let Some(emitted) = self.tools.push(&fragment, ToolCallShape::Fragment) {
                     sink.emit(StreamEvent::ToolCallDelta { delta: emitted });
                 }
             }

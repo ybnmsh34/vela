@@ -42,13 +42,10 @@
 //! streamed as two executable calls and non-streamed as one `Malformed` whose
 //! evidence string was `{"city":"berlin"}{"city":"paris"}`.
 //!
-//! The shape is therefore **stated by the caller, not guessed at here**:
-//! [`push_fragment`](ToolCallAccumulator::push_fragment) for a streamed
-//! fragment, [`push_whole_call`](ToolCallAccumulator::push_whole_call) for an
-//! element of a non-streamed `tool_calls` array. There is deliberately no
-//! shape-agnostic `push`: the information is only available at the boundary
-//! where the response was read, and once it is lost no rule in here can
-//! recover it.
+//! The shape is therefore **stated by the caller, not guessed at here**: every
+//! call site names a [`ToolCallShape`]. It has to be the caller, because the
+//! information exists only at the boundary where the response was read — once
+//! it is lost, no rule in here can recover it.
 
 use std::collections::BTreeMap;
 
@@ -84,6 +81,10 @@ struct Slot {
     arguments: String,
     /// `type` was present and was not `function`.
     bad_discriminator: bool,
+    /// Opened by a [`ToolCallShape::WholeCall`] element. Such a slot is closed
+    /// to everything that follows it: it cannot be continued, and it cannot be
+    /// adopted by a later indexed fragment.
+    arrived_whole: bool,
 }
 
 #[derive(Debug, Default)]
@@ -106,26 +107,11 @@ impl ToolCallAccumulator {
         self.slots.is_empty()
     }
 
-    /// Merge one element of a **streaming** `delta.tool_calls` array — a
-    /// *fragment*, keyed by `index`, which may carry any subset of the call and
-    /// may continue a fragment that arrived earlier.
+    /// Merge one element of a `tool_calls` array, in the shape the caller says
+    /// it is. Returns a UI-facing delta when anything changed.
     ///
-    /// Returns a UI-facing delta when anything changed.
-    pub fn push_fragment(&mut self, raw: &Value) -> Option<ToolCallDelta> {
-        self.merge(raw, Shape::Fragment)
-    }
-
-    /// Merge one element of a **non-streamed** `message.tool_calls` array — a
-    /// *whole* call, which gets its own slot no matter what it does or does not
-    /// carry. It is never a continuation of anything, because in this shape
-    /// there is nothing to continue: the response arrived in one piece.
-    ///
-    /// Returns a UI-facing delta when anything changed.
-    pub fn push_whole_call(&mut self, raw: &Value) -> Option<ToolCallDelta> {
-        self.merge(raw, Shape::WholeCall)
-    }
-
-    fn merge(&mut self, raw: &Value, shape: Shape) -> Option<ToolCallDelta> {
+    /// `shape` is not optional and has no default: see [`ToolCallShape`].
+    pub fn push(&mut self, raw: &Value, shape: ToolCallShape) -> Option<ToolCallDelta> {
         let object = raw.as_object()?;
         let wire_index = object
             .get("index")
@@ -168,8 +154,8 @@ impl ToolCallAccumulator {
     }
 
     /// Which slot does this element belong to?
-    fn slot_for(&mut self, shape: Shape, wire_index: Option<u32>) -> usize {
-        if shape == Shape::WholeCall {
+    fn slot_for(&mut self, shape: ToolCallShape, wire_index: Option<u32>) -> usize {
+        if shape == ToolCallShape::WholeCall {
             // A whole call opens its own slot, always — even when a sibling
             // shares its id, its name, or its (absent) index. `wire_index` is
             // recorded so a report can echo an index a proxy happened to add,
@@ -178,6 +164,7 @@ impl ToolCallAccumulator {
             // the collapse it caused before.
             self.slots.push(Slot {
                 wire_index,
+                arrived_whole: true,
                 ..Slot::default()
             });
             // Nothing may be appended to a call that already arrived whole.
@@ -193,11 +180,9 @@ impl ToolCallAccumulator {
                 // Adopt an open, still-unindexed slot rather than starting a
                 // second one — this is the `hostile` case where `{function:
                 // {name}}` arrives before `{index, id, type}`.
-                if let Some(orphan) = self
-                    .slots
-                    .iter()
-                    .position(|slot| slot.wire_index.is_none() && !slot.is_empty())
-                {
+                if let Some(orphan) = self.slots.iter().position(|slot| {
+                    slot.wire_index.is_none() && !slot.is_empty() && !slot.arrived_whole
+                }) {
                     self.slots[orphan].wire_index = Some(index);
                     self.by_wire_index.insert(index, orphan);
                     self.last_touched = Some(orphan);
@@ -306,10 +291,21 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Streaming fragments — the shape every test below this line but the
+    /// `whole_call` ones feeds.
     fn accumulate(deltas: &[Value]) -> Vec<ToolCallOutcome> {
         let mut accumulator = ToolCallAccumulator::new();
         for delta in deltas {
-            accumulator.push(delta);
+            accumulator.push(delta, ToolCallShape::Fragment);
+        }
+        accumulator.finish()
+    }
+
+    /// Elements of a non-streamed `message.tool_calls` array.
+    fn accumulate_whole(calls: &[Value]) -> Vec<ToolCallOutcome> {
+        let mut accumulator = ToolCallAccumulator::new();
+        for call in calls {
+            accumulator.push(call, ToolCallShape::WholeCall);
         }
         accumulator.finish()
     }
@@ -452,7 +448,188 @@ mod tests {
     #[test]
     fn a_delta_that_is_not_an_object_is_ignored_rather_than_fatal() {
         let mut accumulator = ToolCallAccumulator::new();
-        assert!(accumulator.push(&json!("nonsense")).is_none());
+        assert!(accumulator
+            .push(&json!("nonsense"), ToolCallShape::Fragment)
+            .is_none());
+        assert!(accumulator
+            .push(&json!("nonsense"), ToolCallShape::WholeCall)
+            .is_none());
         assert!(accumulator.is_empty());
+    }
+
+    // -- the non-streamed shape (GATE M Part 1, Phase B, FINDING 1) ---------
+
+    #[test]
+    fn two_whole_calls_with_no_index_are_two_calls_not_one() {
+        // The commonest tool-calling shape in the wild, and the one that used
+        // to collapse: `message.tool_calls` with no `index` on either element.
+        let outcomes = accumulate_whole(&[
+            json!({"id": "call_a", "type": "function",
+                   "function": {"name": "get_weather", "arguments": "{\"city\":\"berlin\"}"}}),
+            json!({"id": "call_b", "type": "function",
+                   "function": {"name": "get_weather", "arguments": "{\"city\":\"paris\"}"}}),
+        ]);
+        assert_eq!(
+            outcomes,
+            vec![
+                ToolCallOutcome::Ok {
+                    call_id: "call_a".into(),
+                    name: "get_weather".into(),
+                    arguments: json!({"city": "berlin"}),
+                    emulated: false,
+                },
+                ToolCallOutcome::Ok {
+                    call_id: "call_b".into(),
+                    name: "get_weather".into(),
+                    arguments: json!({"city": "paris"}),
+                    emulated: false,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn whole_calls_never_splice_their_arguments_into_one_another() {
+        // Both broken, both reported, and each carrying only its own bytes: the
+        // evidence string shown to the user is what arrived on the wire, never a
+        // concatenation of two different calls.
+        let outcomes = accumulate_whole(&[
+            json!({"id": "call_c16f5968", "type": "function",
+                   "function": {"name": "get_weather", "arguments": "{\"city\":\"del"}}),
+            json!({"type": "funktion",
+                   "function": {"name": "get_weather", "arguments": "not-json-at-all"}}),
+        ]);
+        assert_eq!(outcomes.len(), 2, "neither is dropped: {outcomes:#?}");
+        match &outcomes[0] {
+            ToolCallOutcome::Malformed {
+                reason,
+                raw_arguments,
+                ..
+            } => {
+                assert_eq!(
+                    *reason,
+                    MalformedToolCall::UnparseableArguments,
+                    "truncated arguments are unparseable — the misspelled `type` \
+                     belongs to the *other* call and must not be reported here"
+                );
+                assert_eq!(raw_arguments, "{\"city\":\"del");
+            }
+            other => panic!("expected malformed, got {other:?}"),
+        }
+        match &outcomes[1] {
+            ToolCallOutcome::Malformed {
+                reason,
+                raw_arguments,
+                ..
+            } => {
+                assert_eq!(*reason, MalformedToolCall::UnknownDiscriminator);
+                assert_eq!(raw_arguments, "not-json-at-all");
+            }
+            other => panic!("expected malformed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn two_whole_calls_sharing_a_name_and_an_id_still_get_a_slot_each() {
+        // Nothing about a whole call may merge it with its neighbour — not a
+        // repeated id, not a repeated name, not an `index` a proxy invented.
+        let outcomes = accumulate_whole(&[
+            json!({"id": "same", "index": 0, "type": "function",
+                   "function": {"name": "f", "arguments": "{\"n\":1}"}}),
+            json!({"id": "same", "index": 0, "type": "function",
+                   "function": {"name": "f", "arguments": "{\"n\":2}"}}),
+        ]);
+        assert_eq!(outcomes.len(), 2, "{outcomes:#?}");
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter_map(|outcome| match outcome {
+                    ToolCallOutcome::Ok { arguments, .. } => Some(arguments.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![json!({"n": 1}), json!({"n": 2})]
+        );
+    }
+
+    #[test]
+    fn a_whole_call_reports_the_same_answer_as_the_fragments_of_the_same_call() {
+        // The invariant the two paths owe each other: one endpoint, one answer.
+        let streamed = accumulate(&[
+            json!({"index": 0, "id": "call_1", "type": "function",
+                   "function": {"name": "get_weather", "arguments": "{\"cit"}}),
+            json!({"index": 0, "function": {"arguments": "y\":\"berlin\"}"}}),
+        ]);
+        let whole = accumulate_whole(&[json!({
+            "id": "call_1", "type": "function",
+            "function": {"name": "get_weather", "arguments": "{\"city\":\"berlin\"}"}
+        })]);
+        assert_eq!(streamed, whole);
+    }
+
+    #[test]
+    fn a_whole_call_with_no_id_is_still_executable_and_still_its_own_call() {
+        let outcomes = accumulate_whole(&[
+            json!({"type": "function", "function": {"name": "get_time", "arguments": ""}}),
+            json!({"type": "function", "function": {"name": "get_date", "arguments": "{}"}}),
+        ]);
+        assert_eq!(outcomes.len(), 2, "{outcomes:#?}");
+        let ids: Vec<&str> = outcomes
+            .iter()
+            .filter_map(|outcome| match outcome {
+                ToolCallOutcome::Ok { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids.len(), 2, "both are executable: {outcomes:#?}");
+        assert_ne!(
+            ids[0], ids[1],
+            "synthesised correlation ids must not collide"
+        );
+    }
+
+    #[test]
+    fn a_whole_call_is_never_continued_or_adopted_by_a_later_fragment() {
+        // Defence in depth against a body that mixes the shapes: once a call
+        // has arrived whole, nothing may be appended to it — not an unindexed
+        // fragment looking for the last-touched slot, and not an indexed one
+        // looking for an unindexed slot to adopt.
+        let mut accumulator = ToolCallAccumulator::new();
+        accumulator.push(
+            &json!({"id": "call_a", "type": "function",
+                    "function": {"name": "f", "arguments": "{\"n\":1}"}}),
+            ToolCallShape::WholeCall,
+        );
+        accumulator.push(
+            &json!({"function": {"arguments": "{\"n\":2}"}}),
+            ToolCallShape::Fragment,
+        );
+        accumulator.push(
+            &json!({"index": 0, "id": "call_b", "type": "function",
+                    "function": {"name": "g", "arguments": "{}"}}),
+            ToolCallShape::Fragment,
+        );
+        let outcomes = accumulator.finish();
+        // Two, not three: the whole call keeps its own slot, and the two
+        // fragments join each other exactly as MEASURED-4 requires — the
+        // unindexed one opens a slot, the indexed one adopts it.
+        assert_eq!(outcomes.len(), 2, "{outcomes:#?}");
+        assert_eq!(
+            outcomes[0],
+            ToolCallOutcome::Ok {
+                call_id: "call_a".into(),
+                name: "f".into(),
+                arguments: json!({"n": 1}),
+                emulated: false,
+            },
+            "the completed call is untouched by either fragment"
+        );
+        assert!(
+            matches!(
+                &outcomes[1],
+                ToolCallOutcome::Malformed { call_id, .. } if call_id.as_deref() == Some("call_b")
+            ),
+            "the fragments accumulated into a call of their own: {outcomes:#?}"
+        );
     }
 }

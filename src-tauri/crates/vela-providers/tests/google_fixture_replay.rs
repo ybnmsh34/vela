@@ -36,7 +36,7 @@ use vela_core::provider::{ProviderDescriptor, ProviderKind};
 use vela_providers::event::CollectingSink;
 use vela_providers::google::GoogleProvider;
 use vela_providers::http::testing::{CannedResponse, ScriptedTransport};
-use vela_providers::tool_accum::ToolCallAccumulator;
+use vela_providers::tool_accum::{ToolCallAccumulator, ToolCallShape};
 use vela_providers::{
     ChatMessage, ChatRequest, ChatResponse, ContentPart, Degradation, MalformedToolCall, Provider,
     ProviderResult, RequestContext, ResponseFormat, StopReason, StreamEvent, ToolCallOutcome,
@@ -696,14 +696,20 @@ fn control_calls_with_no_index_of_their_own_collapse_into_one_slot() {
             continue;
         };
         for call in parts.iter().filter_map(|part| part.get("functionCall")) {
-            // The wire carries no index, so the naive delta carries none either.
-            accumulator.push(&json!({
-                "type": "function",
-                "function": {
-                    "name": call["name"],
-                    "arguments": call["args"].to_string(),
-                },
-            }));
+            // The wire carries no index, so the naive delta carries none
+            // either — and forwarding it as a streaming fragment, which is what
+            // skipping this adapter's own slot allocation amounts to, folds
+            // every call into the one the accumulator last touched.
+            accumulator.push(
+                &json!({
+                    "type": "function",
+                    "function": {
+                        "name": call["name"],
+                        "arguments": call["args"].to_string(),
+                    },
+                }),
+                ToolCallShape::Fragment,
+            );
         }
     }
     let outcomes = accumulator.finish();

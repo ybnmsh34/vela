@@ -15,7 +15,9 @@
 //! * **MEASURED-3 — reasoning is separated across the whole stream**, by
 //!   [`ReasoningSplitter`], never per frame.
 //! * **MEASURED-4 — tool calls accumulate defensively**, by
-//!   [`ToolCallAccumulator`].
+//!   [`ToolCallAccumulator`] — and the two wire shapes it can be fed are told
+//!   apart *here*, in [`CompletionAssembler::apply_choice`], because this is the
+//!   only place that still knows which one arrived. See [`ToolCallShape`].
 
 use serde_json::Value;
 
@@ -29,13 +31,20 @@ use crate::model::{
 use crate::provider::RequestContext;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
-use crate::tool_accum::ToolCallAccumulator;
+use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};
 
 /// Assembles one completion out of wire fragments.
 ///
 /// Shared by the streaming and non-streaming paths so the two cannot drift:
 /// the same reasoning splitter, the same tool accumulator, the same usage
 /// handling, the same degradation reporting.
+///
+/// Sharing the machinery is not the same as pretending the two wire shapes are
+/// one. Where they genuinely differ — `choices[].delta` carries *fragments*,
+/// `choices[].message` carries *whole values* — the difference is read off the
+/// body and passed down as a [`ToolCallShape`] rather than averaged away. That
+/// distinction, missing, is what let the same endpoint answer differently
+/// depending on how it was asked (GATE M Part 1, Phase B, FINDING 1).
 pub struct CompletionAssembler {
     sse: SseDecoder,
     splitter: ReasoningSplitter,
@@ -189,7 +198,7 @@ impl CompletionAssembler {
             }
             if let Some(Value::Array(calls)) = payload.get("tool_calls") {
                 for call in calls {
-                    if let Some(delta) = self.tools.push(call) {
+                    if let Some(delta) = self.tools.push(call, shape) {
                         sink.emit(StreamEvent::ToolCallDelta { delta });
                     }
                 }

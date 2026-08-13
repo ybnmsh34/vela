@@ -82,9 +82,11 @@ async fn complete_body(body: &str) -> ProviderResult<ChatResponse> {
 /// The same request streamed, through `stream(…)`.
 async fn stream_frames(frames: Vec<&str>) -> ProviderResult<ChatResponse> {
     let mut sink = CollectingSink::new();
-    provider(ScriptedTransport::new(vec![Ok(CannedResponse::sse(frames))]))
-        .stream(request(), &mut sink, &RequestContext::new())
-        .await
+    provider(ScriptedTransport::new(vec![Ok(CannedResponse::sse(
+        frames,
+    ))]))
+    .stream(request(), &mut sink, &RequestContext::new())
+    .await
 }
 
 /// `(name, arguments)` for every call, executable or not — the shape the two
@@ -188,7 +190,9 @@ fn hostile_whole_body() -> String {
 
 #[tokio::test]
 async fn two_parallel_calls_with_no_index_come_back_as_two_executable_calls() {
-    let response = complete_body(&parallel_whole_body()).await.expect("a 200 body");
+    let response = complete_body(&parallel_whole_body())
+        .await
+        .expect("a 200 body");
     let calls = &response.tool_calls;
     assert_eq!(
         calls.len(),
@@ -230,7 +234,9 @@ async fn two_parallel_calls_with_no_index_come_back_as_two_executable_calls() {
 
 #[tokio::test]
 async fn the_streamed_equivalent_reports_the_same_two_calls() {
-    let response = stream_frames(PARALLEL_STREAM.to_vec()).await.expect("a 200 stream");
+    let response = stream_frames(PARALLEL_STREAM.to_vec())
+        .await
+        .expect("a 200 stream");
     assert_eq!(
         response.tool_calls.len(),
         2,
@@ -245,8 +251,12 @@ async fn streamed_and_non_streamed_agree_on_the_same_endpoint_answer() {
     // The invariant `CompletionAssembler`'s doc comment claims: one endpoint,
     // one answer, whichever transport asked for it. Same count, same ids, same
     // names, same arguments.
-    let whole = complete_body(&parallel_whole_body()).await.expect("a 200 body");
-    let streamed = stream_frames(PARALLEL_STREAM.to_vec()).await.expect("a 200 stream");
+    let whole = complete_body(&parallel_whole_body())
+        .await
+        .expect("a 200 body");
+    let streamed = stream_frames(PARALLEL_STREAM.to_vec())
+        .await
+        .expect("a 200 stream");
     assert_eq!(
         describe(&whole.tool_calls),
         describe(&streamed.tool_calls),
@@ -261,7 +271,9 @@ async fn streamed_and_non_streamed_agree_on_the_same_endpoint_answer() {
 
 #[tokio::test]
 async fn two_broken_calls_in_one_body_are_both_reported_and_neither_is_spliced() {
-    let response = complete_body(&hostile_whole_body()).await.expect("a 200 body");
+    let response = complete_body(&hostile_whole_body())
+        .await
+        .expect("a 200 body");
     let calls = &response.tool_calls;
     assert_eq!(
         calls.len(),

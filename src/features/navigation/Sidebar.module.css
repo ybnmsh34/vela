@@ -1,0 +1,196 @@
+.sidebar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--vela-chrome);
+  border-right: 1px solid var(--vela-border);
+}
+
+.collapsed {
+  width: var(--vela-rail-width);
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) 0;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+}
+
+.newButton {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-accent);
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-on-accent);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: default;
+}
+
+.newButton span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.newButton:hover {
+  background: var(--vela-accent-hover);
+}
+
+.searchButton {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-muted);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: default;
+}
+
+.searchButton span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchButton:hover {
+  border-color: var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.newButton:focus-visible,
+.searchButton:focus-visible,
+.iconButton:focus-visible,
+.handle:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 1px;
+}
+
+.kbd {
+  flex: 0 0 auto;
+  padding: 1px var(--vela-space-1);
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-row-hover);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-xs);
+  opacity: 0.75;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-muted);
+  cursor: default;
+}
+
+.iconButton:hover {
+  background: var(--vela-surface);
+  color: var(--vela-text);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vela-space-2);
+}
+
+.group + .group {
+  margin-top: var(--vela-space-3);
+}
+
+.groupLabel {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3) var(--vela-space-1);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note {
+  margin: 0;
+  padding: var(--vela-space-4) var(--vela-space-3);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+}
+
+.error {
+  margin: var(--vela-space-2) 0 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-row-hover);
+  color: var(--vela-danger);
+  font-size: var(--vela-text-xs);
+}
+
+/* The drag target is wider than the visible line: a 1px hit area is a 1px
+   frustration. The line itself only appears on hover or focus. */
+.handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--vela-accent);
+  opacity: 0;
+  transition: opacity var(--vela-duration) var(--vela-ease);
+}
+
+.handle:hover::after,
+.handle:focus-visible::after {
+  opacity: 1;
+}

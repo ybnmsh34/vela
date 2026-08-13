@@ -126,6 +126,105 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     expect(offendingLines(join(SRC_ROOT, 'platform', 'contract.ts'), contract)).toEqual([]);
   });
 
+  it('the navigation surface has no vocabulary for a backend at all', () => {
+    // The sharper form of the rule for the one wire type most likely to grow a
+    // leak by accident. A stored `Conversation` carries `provider_id` and
+    // `model_id` — the backend that last answered in it — and
+    // `ConversationSummary` deliberately drops both. If those fields ever reach
+    // the renderer, the sidebar can group, colour or badge by backend without
+    // anybody deciding to, and the `PROVIDER_SPECIFIC` scan above would not
+    // notice: `providerId` is not a vendor name.
+    const contract = stripComments(readFileSync(join(SRC_ROOT, 'platform', 'contract.ts'), 'utf8'));
+    const navigationTypes = contract.slice(
+      contract.indexOf('export interface ConversationSummary'),
+      contract.indexOf('export interface IpcContract'),
+    );
+    expect(navigationTypes.length, 'the navigation wire types moved; fix this slice').toBeGreaterThan(
+      400,
+    );
+    expect(
+      navigationTypes.split('\n').filter((line) => /\bprovider|\bmodelId/i.test(line)),
+      'a conversation summary that names a backend is a leak the sidebar will eventually branch on',
+    ).toEqual([]);
+  });
+
+  it('no navigation component reads a backend identity off anything', () => {
+    const offenders = sourceFiles(join(SRC_ROOT, 'features', 'navigation'), ['.ts', '.tsx', '.css'])
+      .filter((path) => !/\.test\.[a-z]+$/.test(path))
+      .flatMap((path) => {
+        const source = stripComments(readFileSync(path, 'utf8'));
+        return source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          .filter(({ line }) => /\bproviderId\b|\bmodelId\b/.test(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`);
+      });
+
+    expect(offenders, 'navigation is about which conversation, never about what answered').toEqual(
+      [],
+    );
+  });
+
+  it('the conversation surface carries a backend id without ever reading one', () => {
+    // The conversation surface is the first feature that *must* handle a
+    // `providerId`: it is what `chat_send` addresses. So the rule for it cannot
+    // be "never mentions one" — it is the sharper one, that the id is only ever
+    // **passed through**, never inspected.
+    //
+    // Two files may hold it: the repository that puts it on the wire, and the
+    // hook that carries it from a prop to that repository. A *component*
+    // touching it means the surface has started to look at what answered, and
+    // the next step from there is always a branch.
+    const CARRIERS = new Set(['use-conversation.ts']);
+    const offenders = sourceFiles(join(SRC_ROOT, 'features', 'conversation'), ['.ts', '.tsx', '.css'])
+      .filter((path) => !/\.test\.[a-z]+$/.test(path))
+      .filter((path) => !CARRIERS.has(path.split('/').at(-1) ?? ''))
+      .flatMap((path) => {
+        const source = stripComments(readFileSync(path, 'utf8'));
+        return source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          // A comparison, a lookup, a template — anything but declaring the
+          // prop and forwarding it verbatim.
+          .filter(({ line }) => /\bproviderId\b\s*(?:===|!==|\?\.|\[|\.)/.test(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`);
+      });
+
+    expect(
+      offenders,
+      'the conversation surface addresses a backend; it must never inspect one',
+    ).toEqual([]);
+
+    // The guard proves it can fail. Both shapes a component would actually
+    // reach for, and neither of the two that are fine.
+    const inspects = (line: string): boolean => /\bproviderId\b\s*(?:===|!==|\?\.|\[|\.)/.test(line);
+    expect(inspects("if (providerId === 'x') return null;")).toBe(true);
+    expect(inspects('const badge = BADGES[providerId.toLowerCase()];')).toBe(true);
+    expect(inspects('readonly providerId: string | null;')).toBe(false);
+    expect(inspects('await repository.streamTurn({ providerId, modelId });')).toBe(false);
+  });
+
+  it('every user-visible chat state is reachable from capability flags alone', () => {
+    // The positive form of the rule, checked against the vocabulary rather than
+    // the code: if the renderer can describe what a model can do without
+    // naming one, no component ever needs a provider id to decide what to
+    // offer. `ChatCapabilities` is that vocabulary, and `NO_CAPABILITIES` is
+    // its floor — an unprobed endpoint offers nothing.
+    const contract = stripComments(readFileSync(join(SRC_ROOT, 'platform', 'contract.ts'), 'utf8'));
+    const start = contract.indexOf('export interface ChatCapabilities');
+    const end = contract.indexOf('export const NO_CAPABILITIES');
+    expect(start, 'ChatCapabilities moved; fix this slice').toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const flags = contract.slice(start, end);
+    expect(offendingLines('contract.ts', flags)).toEqual([]);
+    // Every field is a plain boolean. A string here would be somewhere to put
+    // a backend name, and a component would eventually read it.
+    const fields = flags.split('\n').filter((line) => line.includes('readonly '));
+    expect(fields.length).toBeGreaterThan(4);
+    for (const field of fields) expect(field.trim()).toMatch(/: boolean;$/);
+  });
+
   it('the scan actually catches a leak', () => {
     // A guard whose pattern silently stopped matching is worse than no guard.
     expect(offendingLines('x.tsx', "if (provider.id === 'ollama') return <OllamaPanel />;")).toEqual(

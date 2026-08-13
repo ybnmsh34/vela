@@ -1,0 +1,123 @@
+.row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--vela-radius-md);
+}
+
+.row:hover {
+  background: var(--vela-row-hover);
+}
+
+.selected,
+.selected:hover {
+  background: var(--vela-row-selected);
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  text-align: left;
+  color: var(--vela-text);
+  font: inherit;
+  cursor: default;
+}
+
+.main:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -2px;
+}
+
+.selected .main {
+  color: var(--vela-row-selected-text);
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+/* Row actions stay out of the way until the row is engaged with. They are
+   never `display: none`, because that would take them out of the accessibility
+   tree entirely — a screen-reader user must be able to reach rename and delete
+   without a pointer. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--vela-space-1);
+  opacity: 0;
+  transition: opacity var(--vela-duration) var(--vela-ease);
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+  opacity: 1;
+}
+
+.action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+.action:hover {
+  background: var(--vela-surface);
+  color: var(--vela-text);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -2px;
+}
+
+.renaming {
+  background: var(--vela-surface);
+}
+
+.renameForm {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--vela-space-1);
+}
+
+.renameInput {
+  width: 100%;
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: var(--vela-bg);
+  border: 1px solid var(--vela-accent);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+}
+
+.renameInput:focus {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -1px;
+}

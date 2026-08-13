@@ -1,0 +1,16 @@
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  background: var(--vela-bg);
+  user-select: text;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--vela-space-6);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+}

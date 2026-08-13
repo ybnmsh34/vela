@@ -76,6 +76,15 @@
 
   --vela-shadow-sm: 0 1px 2px rgb(16 20 38 / 8%);
   --vela-shadow-md: 0 6px 20px -6px rgb(16 20 38 / 18%);
+  --vela-shadow-lg: 0 24px 64px -16px rgb(16 20 38 / 30%);
+
+  /* ---- list rows and overlays -------------------------------------------- */
+  /* Row states are their own tokens because a list row is the single most
+     repeated surface in the app; deriving them per-component guarantees drift. */
+  --vela-row-hover: rgb(16 20 38 / 5%);
+  --vela-row-selected: var(--vela-signal-50);
+  --vela-row-selected-text: var(--vela-signal-700);
+  --vela-scrim: rgb(16 20 38 / 32%);
 
   /* ---- type -------------------------------------------------------------- */
   --vela-font-sans:
@@ -115,6 +124,34 @@
   --vela-duration: 140ms;
   --vela-ease: cubic-bezier(0.2, 0, 0.1, 1);
 
+  /* ---- conversation surface ---------------------------------------------- *
+   * Owned by src/features/conversation. Defined in the light block first, then
+   * overridden in both dark blocks, per the rule at the top of this file.     */
+  --vela-measure: 46rem;
+
+  --vela-turn-user-bg: var(--vela-night-50);
+  --vela-turn-user-border: var(--vela-night-100);
+  --vela-turn-rule: var(--vela-night-100);
+
+  --vela-code-bg: var(--vela-night-950);
+  --vela-code-surface: var(--vela-night-900);
+  --vela-code-text: var(--vela-night-100);
+  --vela-code-border: var(--vela-night-800);
+
+  --vela-syntax-comment: var(--vela-night-400);
+  --vela-syntax-string: var(--vela-signal-200);
+  --vela-syntax-number: var(--vela-amber-400);
+  --vela-syntax-keyword: var(--vela-signal-300);
+  --vela-syntax-punct: var(--vela-night-300);
+
+  --vela-thinking-bg: var(--vela-night-25);
+  --vela-thinking-border: var(--vela-night-100);
+  --vela-thinking-text: var(--vela-night-500);
+
+  --vela-notice-bg: var(--vela-night-50);
+  --vela-warning-bg: #fdf4e0;
+  --vela-danger-bg: #fdeef2;
+
   color-scheme: light dark;
 }
 
@@ -145,6 +182,35 @@
 
     --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
     --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+    --vela-shadow-lg: 0 28px 72px -20px rgb(0 0 0 / 72%);
+
+    --vela-row-hover: rgb(255 255 255 / 6%);
+    --vela-row-selected: rgb(20 168 158 / 16%);
+    --vela-row-selected-text: var(--vela-signal-200);
+    --vela-scrim: rgb(2 4 10 / 62%);
+
+    --vela-turn-user-bg: var(--vela-night-800);
+    --vela-turn-user-border: var(--vela-night-700);
+    --vela-turn-rule: var(--vela-night-800);
+
+    --vela-code-bg: var(--vela-night-950);
+    --vela-code-surface: var(--vela-night-900);
+    --vela-code-text: var(--vela-night-100);
+    --vela-code-border: var(--vela-night-700);
+
+    --vela-syntax-comment: var(--vela-night-400);
+    --vela-syntax-string: var(--vela-signal-200);
+    --vela-syntax-number: var(--vela-amber-400);
+    --vela-syntax-keyword: var(--vela-signal-300);
+    --vela-syntax-punct: var(--vela-night-300);
+
+    --vela-thinking-bg: var(--vela-night-900);
+    --vela-thinking-border: var(--vela-night-700);
+    --vela-thinking-text: var(--vela-night-300);
+
+    --vela-notice-bg: var(--vela-night-800);
+    --vela-warning-bg: #2a2109;
+    --vela-danger-bg: #2e1420;
   }
 }
 
@@ -174,4 +240,33 @@
 
   --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+  --vela-shadow-lg: 0 28px 72px -20px rgb(0 0 0 / 72%);
+
+  --vela-row-hover: rgb(255 255 255 / 6%);
+  --vela-row-selected: rgb(20 168 158 / 16%);
+  --vela-row-selected-text: var(--vela-signal-200);
+  --vela-scrim: rgb(2 4 10 / 62%);
+
+  --vela-turn-user-bg: var(--vela-night-800);
+  --vela-turn-user-border: var(--vela-night-700);
+  --vela-turn-rule: var(--vela-night-800);
+
+  --vela-code-bg: var(--vela-night-950);
+  --vela-code-surface: var(--vela-night-900);
+  --vela-code-text: var(--vela-night-100);
+  --vela-code-border: var(--vela-night-700);
+
+  --vela-syntax-comment: var(--vela-night-400);
+  --vela-syntax-string: var(--vela-signal-200);
+  --vela-syntax-number: var(--vela-amber-400);
+  --vela-syntax-keyword: var(--vela-signal-300);
+  --vela-syntax-punct: var(--vela-night-300);
+
+  --vela-thinking-bg: var(--vela-night-900);
+  --vela-thinking-border: var(--vela-night-700);
+  --vela-thinking-text: var(--vela-night-300);
+
+  --vela-notice-bg: var(--vela-night-800);
+  --vela-warning-bg: #2a2109;
+  --vela-danger-bg: #2e1420;
 }

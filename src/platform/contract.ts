@@ -400,6 +400,112 @@ export interface TokenUsage {
   readonly cachedInputTokens: number | null;
 }
 
+/* -- the diagnosis an error carries ------------------------------------- */
+
+/**
+ * Mirrors `vela_providers::diagnostic::Cause`.
+ *
+ * The closed vocabulary of *why* something failed. The endpoint chooses which
+ * of these is reported; it has no say in what any of them means, and there is
+ * no variant that can carry endpoint-supplied text. The renderer owns the
+ * wording, exactly as it does for {@link Concern}.
+ *
+ * The Rust enum is `#[non_exhaustive]`, so this type is open on purpose: a host
+ * newer than this renderer must produce a fallback sentence, never a blank.
+ */
+export type KnownCause =
+  | 'credential_rejected'
+  | 'credential_missing'
+  | 'credential_store_unreadable'
+  | 'credential_store_failed'
+  | 'model_not_served'
+  | 'model_list_malformed'
+  | 'context_window_exceeded'
+  | 'pinned_turns_exceed_window'
+  | 'request_too_large'
+  | 'too_many_requests'
+  | 'endpoint_overloaded'
+  | 'endpoint_failed_to_answer'
+  | 'endpoint_rejected_request'
+  | 'endpoint_timed_out'
+  | 'endpoint_cancelled_request'
+  | 'endpoint_reported_an_error'
+  | 'content_filter_refused_the_turn'
+  | 'capability_refused_by_endpoint'
+  | 'capability_absent_on_this_model'
+  | 'capability_not_offered_by_backend'
+  | 'connection_failed'
+  | 'request_timed_out'
+  | 'stream_stalled'
+  | 'connection_reset'
+  | 'redirect_refused_cross_authority'
+  | 'redirect_loop'
+  | 'no_endpoint_answered'
+  | 'response_was_not_json'
+  | 'response_shape_unrecognised'
+  | 'stream_ended_without_answer'
+  | 'request_could_not_be_encoded'
+  | 'no_provider_configured'
+  | 'no_candidate_answered'
+  | 'caller_cancelled'
+  | 'synthetic_test_failure';
+
+export type Cause = KnownCause | (string & {});
+
+/**
+ * Mirrors `vela_providers::diagnostic::EndpointIdentity`.
+ *
+ * Scheme, host, port and path of the endpoint **the user configured** — never
+ * userinfo, never a query string. Present so a user with three candidates set
+ * up can tell which one failed.
+ */
+export interface EndpointIdentity {
+  readonly authority: string;
+  /** Empty means `/`. */
+  readonly path: string;
+}
+
+/** Mirrors `vela_providers::diagnostic::{FilterStage, FilterKind}`. */
+export type FilterStage = 'prompt' | 'answer';
+export type FilterKind =
+  | 'safety'
+  | 'prohibited_content'
+  | 'blocklist'
+  | 'personal_information'
+  | 'recitation'
+  | 'image_safety'
+  | 'unsupported_language'
+  | 'other';
+
+/**
+ * Mirrors `vela_providers::diagnostic::FilterVerdict`. `categories` is a
+ * bitset, not a list of strings — five bits cannot spell a credential.
+ */
+export interface FilterVerdict {
+  readonly stage: FilterStage;
+  readonly kind: FilterKind;
+  readonly categories: number;
+  readonly generatedChars: number;
+}
+
+/**
+ * Mirrors `vela_providers::diagnostic::Diagnosis`.
+ *
+ * **This type is the reason there is no `detail: string` anywhere near an
+ * error.** A cause from a closed set, some integers, the endpoint the user
+ * configured, and a correlation id that links to the raw exchange in the
+ * user's own opt-in local debug log. Nothing the endpoint wrote travels.
+ */
+export interface Diagnosis {
+  readonly cause: Cause;
+  /** The HTTP status, when there was a response to have one. */
+  readonly status?: number;
+  readonly endpoint?: EndpointIdentity;
+  readonly filter?: FilterVerdict;
+  /** `0` means "never correlated with an exchange" — Vela's own refusal. */
+  readonly correlation: number;
+}
+
 /** Mirrors `vela_providers::error::TransportFailure` (externally tagged). */
 export type TransportFailure =
   | 'connect'
@@ -411,26 +517,41 @@ export type TransportFailure =
 
 /**
  * Mirrors `vela_providers::error::ProviderError` (`#[serde(tag = "kind")]`) —
- * the one error taxonomy. `detail` is host-sanitised and bounded; it is never a
- * raw upstream body.
+ * the one error taxonomy.
+ *
+ * **There is no free-text field here, and that is the design.** Four rounds of
+ * Phase B tried carrying an endpoint's own error text and laundering it; each
+ * round closed one spelling and the next found another. What crosses now is a
+ * {@link Diagnosis}: a cause from a closed set, some integers, the endpoint the
+ * *user* configured, and a correlation id pointing at the user's own local
+ * debug log. The renderer writes every sentence a user reads.
  */
 export type ChatError =
   | {
       readonly kind: 'contextLengthExceeded';
       readonly limitTokens: number | null;
       readonly requestedTokens: number | null;
-      readonly detail: string;
+      readonly diagnosis: Diagnosis;
     }
-  | { readonly kind: 'authFailed'; readonly detail: string }
-  | { readonly kind: 'rateLimited'; readonly retryAfterMs: number | null; readonly detail: string }
-  | { readonly kind: 'modelNotFound'; readonly modelId: string; readonly detail: string }
+  | { readonly kind: 'authFailed'; readonly diagnosis: Diagnosis }
+  | {
+      readonly kind: 'rateLimited';
+      readonly retryAfterMs: number | null;
+      readonly diagnosis: Diagnosis;
+    }
+  | {
+      readonly kind: 'modelNotFound';
+      /** The id **Vela sent**, read back off the request — never off the reply. */
+      readonly modelId: string;
+      readonly diagnosis: Diagnosis;
+    }
   | {
       readonly kind: 'capabilityUnsupported';
       readonly capability: CapabilityName;
-      readonly detail: string;
+      readonly diagnosis: Diagnosis;
     }
-  | { readonly kind: 'transport'; readonly failure: TransportFailure; readonly detail: string }
-  | { readonly kind: 'malformedResponse'; readonly detail: string }
+  | { readonly kind: 'transport'; readonly failure: TransportFailure; readonly diagnosis: Diagnosis }
+  | { readonly kind: 'malformedResponse'; readonly diagnosis: Diagnosis }
   | { readonly kind: 'cancelled' };
 
 /** Mirrors `vela_providers::model::SchemaMismatch`. */

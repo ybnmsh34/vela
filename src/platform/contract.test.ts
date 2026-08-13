@@ -13,6 +13,8 @@ describe('IPC contract', () => {
     // allowlist would be unreachable from the renderer.
     const contractKeys: (keyof IpcContract)[] = [
       'app_info',
+      'chat_cancel',
+      'chat_send',
       'diagnostics_echo',
       'secrets_delete',
       'secrets_set',
@@ -21,6 +23,14 @@ describe('IPC contract', () => {
       'settings_get',
       'settings_put_provider',
       'settings_set_theme',
+      'store_autotitle_conversation',
+      'store_create_conversation',
+      'store_delete_conversation',
+      'store_list_conversations',
+      'store_rename_conversation',
+      'store_search',
+      'ui_get_layout',
+      'ui_set_layout',
     ];
     expect([...COMMAND_ALLOWLIST].sort()).toEqual([...contractKeys].sort());
   });

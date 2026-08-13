@@ -947,6 +947,72 @@ model explicitly declined to make.
 **Two independent critics named the same root cause I did** — the redaction strategy is a list, not
 a structural guarantee. The stop decision is corroborated, not merely defensible.
 
+## Phase B2 — `fix:reasoning-becomes-executed-tool-call` (FINDING 3) — ✅ CLOSED
+
+Not round 5. A different kind of work: the round-4 panel's **highest-severity defect**, which is
+about tool execution rather than redaction, and which the stop rule does not cover.
+
+**The defect.** `CompletionAssembler::finish` flushed `ReasoningFinish::recovered_answer` with
+`append_text` plus a direct `sink.emit(TextDelta)`, bypassing `emit_answer` and therefore the
+`ToolCallStripper`. The text then sat in `parts` as `Text`, where the `found_tagged == false`
+fallback ran `parse_calls` over it. On the OpenAI-compatible adapter — the path every local
+runtime uses — a model that emitted `<think>I could call <tool_call>{"name":"delete_everything",
+"arguments":{"path":"/"}}</tool_call> but that would be destructive, so I will not.` and was cut
+off before closing the tag produced an **executable** `delete_everything`, `stop_reason = ToolUse`,
+and raw `<tool_call>` markup on the delta stream. Both transports. Google did the same thing
+correctly at `google/stream.rs:541`; it was a straight asymmetry, not a design choice.
+
+**The decision, made explicitly.** *May a call recovered from a never-closed reasoning block be
+executable at all?* **No.** MEASURED-3 rescues that text for one reason — a turn whose every
+character landed inside an unterminated `<think>` would render empty, and showing nothing is worse.
+That is a salvage heuristic, not a claim the model meant it. The model was cut off
+mid-deliberation and never committed to anything inside the block; in the recorded turn it was in
+the middle of *refusing* the call. **Showing salvaged text is reversible; running a tool is not** —
+that asymmetry of consequence is the argument. Silently dropping it is what MEASURED-4 forbids, so
+it surfaces as `MalformedToolCall::RecoveredFromUnterminatedReasoning` with the arguments as
+evidence, the same visible non-executable state a malformed call gets.
+
+**The fix is structural, not a point fix.** Routing through `emit_answer` closes the leak and not
+the executability, and leaves the invariant where it was: three private methods every adapter has
+to remember to call. `answer::AnswerChannel` now owns the accumulated parts and the text a tool
+parser may see, behind private fields, in all three adapters — the same move `BodyStream` got in
+round 2 and `ResponseHeaders` in round 4. Appending a `Text` part directly does not compile
+(`E0616`); there is no `push_salvaged` back door (`E0599`); `executable_text()` excludes salvaged
+text by construction and is what the untagged-shape fallback reads.
+
+**The audit the brief asked for.** Anthropic had the same shape at `anthropic/stream.rs:568`
+(inert — native tools, no stripper — now asserted rather than assumed). Google was correct and
+gains the quarantine, which it needs because it emulates tools too.
+`tests/answer_chokepoint.rs` states the property over the tree: a `TextDelta` is built in exactly
+one file plus three named exceptions with reasons; no wire assembler owns a path to the user or its
+own parts vector. All four assertions go red on the pre-fix tree.
+
+| Evidence | Result |
+|---|---|
+| `tests/deliberation_is_not_an_instruction.rs` pre-fix (scratch copy of HEAD) | **3 failed / 7** — `deliberation became an EXECUTABLE call: [Ok { call_id: "call_emulated_0", name: "delete_everything", arguments: {"path": "/"}, emulated: true }]`, identically for `streamed=true` and `streamed=false` |
+| the same file post-fix | 7 / 7 |
+| `tests/answer_chokepoint.rs` pre-fix / post-fix | **4 failed / 4** → 5 / 5 |
+| compile-fail doctests | 2 / 2 |
+| **GATE M Part 1 (Phase B), case 14 added** | **539 assertions (was 471), 8 failures — the same 8 as round 4, all case 13.** Case 14: 0 failures on all four profiles |
+
+**Positive control.** `the_pre_fix_pipeline_really_did_execute_it` rebuilds the deleted path out of
+the crate's *public* API and asserts it really did yield an executable call, so the suite cannot go
+vacuously green. No defect was injected into the shared tree — the red run was done in a scratch
+copy of HEAD, per the incident below.
+
+**Missing gate coverage, now permanent.** Case 14, `14-reasoning-meets-tool-calling`: the
+intersection of case 06 (reasoning) and case 02 (tool calling). Four rounds drove them separately.
+An unterminated `<think>` on a token limit is routine on small local models; emulated tool calling
+is the only way tools work on a runtime that refuses a `tools` array. The defect lived exactly in
+the overlap. 17 assertions per profile, both transports, emulation entered legitimately through the
+peer's own `400 tools_not_supported`.
+
+**IPC type change, stated loudly.** `MalformedToolCall` gained a variant, so
+`src/platform/contract.ts` gains `'recoveredFromUnterminatedReasoning'` in
+`MalformedToolCallReason`. Additive, and the only `src/` change this piece forces. Reusing
+`unparseableArguments` was rejected: the call parsed perfectly, and saying otherwise would be a lie
+in the one place the UI reads to explain itself.
+
 ## 🛑 PHASE B STOPPED — no-thrash rule fired. Architectural decision needed.
 
 **Round 5 has NOT been launched, and will not be as another point fix.** Four consecutive rounds

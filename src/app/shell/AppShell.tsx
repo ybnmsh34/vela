@@ -1,19 +1,33 @@
 /**
- * The application shell: title bar, navigation rail, content region, status bar.
+ * The application shell: title bar, navigation surface, status bar.
  *
- * The shell is layout only. It must never import a feature, hold feature state,
- * or know which provider is configured — features are mounted into the content
- * region by the router when that lands.
+ * The shell is layout only. It holds no feature state and knows nothing about
+ * which provider is configured; it mounts exactly one feature component —
+ * `NavigationSurface` — which owns the sidebar, the content region and the
+ * command bar, and takes the transcript surface as a slot.
+ *
+ * The Phase A `PlaceholderRegion` used to fill the content region. The honesty
+ * readout it carried (conventions §10 — which adapter, which credential store)
+ * moved to the home screen with it, so a screenshot still cannot be mistaken
+ * for evidence about a real keychain.
  */
 
+import type { ReactNode } from 'react';
+
+import { NavigationSurface } from '@/features/navigation/NavigationSurface';
+
 import { useHostStatus } from './use-host-status';
-import { PlaceholderRegion } from './PlaceholderRegion';
 import { TitleBar } from './TitleBar';
 import styles from './AppShell.module.css';
 
-const RAIL_SLOTS = 4;
+interface AppShellProps {
+  /** The transcript surface, mounted into the content region when one is open. */
+  readonly children?: ReactNode;
+  /** Injectable clock, passed to recency grouping so tests are deterministic. */
+  readonly now?: () => number;
+}
 
-export function AppShell() {
+export function AppShell({ children, now }: AppShellProps) {
   const status = useHostStatus();
 
   const dotClass =
@@ -28,15 +42,12 @@ export function AppShell() {
       <TitleBar context="Untitled workspace" />
 
       <div className={styles.body}>
-        <nav className={styles.rail} aria-label="Primary">
-          {Array.from({ length: RAIL_SLOTS }, (_, index) => (
-            <span key={index} className={styles.railSlot} aria-hidden="true" />
-          ))}
-        </nav>
-
-        <main className={styles.main}>
-          <PlaceholderRegion status={status} />
-        </main>
+        <NavigationSurface
+          secretBackend={status.state === 'ready' ? status.info.secretBackend : null}
+          {...(now === undefined ? {} : { now })}
+        >
+          {children}
+        </NavigationSurface>
       </div>
 
       <footer className={styles.statusBar}>

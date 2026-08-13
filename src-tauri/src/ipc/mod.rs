@@ -45,10 +45,13 @@
 //!   returns secret material, and adding one is a review-blocking change.
 
 pub mod app;
+pub mod chat;
 pub mod diagnostics;
 pub mod error;
 pub mod secrets;
 pub mod settings;
+pub mod store;
+pub mod ui;
 
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +69,8 @@ pub const IPC_CONTRACT_VERSION: u32 = 1;
 /// order, but sorted order keeps diffs honest.
 pub const COMMAND_ALLOWLIST: &[&str] = &[
     "app_info",
+    "chat_cancel",
+    "chat_send",
     "diagnostics_echo",
     "secrets_delete",
     "secrets_set",
@@ -74,6 +79,14 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "settings_get",
     "settings_put_provider",
     "settings_set_theme",
+    "store_autotitle_conversation",
+    "store_create_conversation",
+    "store_delete_conversation",
+    "store_list_conversations",
+    "store_rename_conversation",
+    "store_search",
+    "ui_get_layout",
+    "ui_set_layout",
 ];
 
 /// Payload type for commands that take no input. Present so that *every*

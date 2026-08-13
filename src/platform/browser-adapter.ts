@@ -15,6 +15,13 @@
  * keychain, about a real model endpoint, or about a packaged binary.
  */
 
+import {
+  deriveTitle,
+  isPlaceholderTitle,
+  searchTerms,
+  UNTITLED_TITLE,
+} from '@/lib/navigation-text';
+
 import type { EventContract, EventName, PlatformAdapter, Unsubscribe } from './adapter';
 import {
   IPC_CONTRACT_VERSION,
@@ -22,12 +29,21 @@ import {
   type Ack,
   type AppInfo,
   type AuthMode,
+  type ChatCancelReq,
+  type ChatCancelRes,
+  type ChatSendReq,
+  type ChatSendRes,
+  type ChatStreamEvent,
   type CommandName,
   type CommandReq,
   type CommandRes,
   type Concern,
+  type ConversationListRes,
+  type ConversationRes,
+  type ConversationSummary,
   type EchoReq,
   type EchoRes,
+  type MessageHit,
   type NetworkScope,
   type ProviderAuth,
   type ProviderView,
@@ -41,7 +57,14 @@ import {
   type SettingsSetThemeReq,
   type SettingsSetThemeRes,
   type SettingsSnapshot,
+  type StoreConversationRefReq,
+  type StoreCreateConversationReq,
+  type StoreListConversationsReq,
+  type StoreRenameConversationReq,
+  type StoreSearchReq,
+  type StoreSearchRes,
   type ThemePreference,
+  type UiLayout,
 } from './contract';
 import { PlatformError } from './errors';
 
@@ -51,12 +74,36 @@ const MAX_ECHO_BYTES = 4096;
 const MAX_SECRET_BYTES = 8192;
 /** Mirrors `MAX_LABEL_LEN` in `vela-settings/src/provider_config.rs`. */
 const MAX_LABEL_LEN = 200;
+/** Mirrors `MAX_MESSAGE_BYTES` in `src-tauri/src/ipc/chat.rs`. */
+const MAX_MESSAGE_BYTES = 1_048_576;
+/** Mirrors `MAX_MESSAGES` in `src-tauri/src/ipc/chat.rs`. */
+const MAX_MESSAGES = 4_096;
+/** Mirrors `MAX_SUPPLIED_TITLE` in `src-tauri/src/ipc/store.rs`. */
+const MAX_SUPPLIED_TITLE = 200;
+/** Mirrors `DEFAULT_LIST_LIMIT` in `src-tauri/src/ipc/store.rs`. */
+const DEFAULT_LIST_LIMIT = 500;
+/** Mirrors `DEFAULT_SEARCH_LIMIT` / `MAX_SEARCH_LIMIT` in the same module. */
+const DEFAULT_SEARCH_LIMIT = 50;
+const MAX_SEARCH_LIMIT = 200;
+/** Mirrors the sidebar bounds in `src-tauri/src/ipc/ui.rs`. */
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 480;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+/** Mirrors the `snippet(…, 12)` token budget the host asks FTS5 for. */
+const SNIPPET_TOKENS = 12;
 
 export interface BrowserAdapterOptions {
   /** Injectable clock so tests are deterministic. */
   readonly now?: () => number;
   /** Artificial latency in ms, to eyeball loading states. Default 0. */
   readonly latencyMs?: number;
+  /**
+   * How the fake spaces out stream frames. Defaults to `queueMicrotask`, which
+   * keeps tests deterministic and fast while still making the deltas *arrive*
+   * asynchronously — a synchronous fake would let a renderer that never
+   * subscribes appear to work.
+   */
+  readonly scheduleFrame?: (run: () => void) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -257,6 +304,19 @@ function credentialFieldLabel(mode: AuthMode): string | null {
   }
 }
 
+/**
+ * Chops text into stream frames on word boundaries.
+ *
+ * Deliberately *not* on character boundaries: a frame splitter that never cuts
+ * mid-token would let a renderer with a broken accumulator look correct, and
+ * one that cuts inside a UTF-16 surrogate pair would test the fake rather than
+ * the UI.
+ */
+function splitIntoFrames(text: string): string[] {
+  if (text === '') return [];
+  return text.match(/\S+\s*/g) ?? [text];
+}
+
 function storageKey(reference: SecretsRefReq): string {
   const providerId = reference.providerId;
   if (providerId.trim() === '') {
@@ -264,6 +324,59 @@ function storageKey(reference: SecretsRefReq): string {
   }
   const field = reference.field === undefined || reference.field === '' ? 'primary' : reference.field;
   return `${providerId}/${field}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* store — the fake's stand-in for the SQLite tables                          */
+/* -------------------------------------------------------------------------- */
+
+interface FakeMessage {
+  readonly id: string;
+  /** The answer text. Never contains reasoning — the same separation the store keeps. */
+  readonly text: string;
+  /** Reasoning, stored beside the answer rather than inside it. */
+  readonly reasoning?: string;
+  readonly createdAtMs: number;
+}
+
+interface FakeConversation {
+  readonly id: string;
+  title: string;
+  readonly createdAtMs: number;
+  updatedAtMs: number;
+  readonly messages: FakeMessage[];
+}
+
+/**
+ * Stands in for FTS5's `MATCH`: every term but the last must appear as a whole
+ * token, and the last as a token prefix, which is what the host's rewrite asks
+ * the index for.
+ */
+function matchesTerms(text: string, terms: readonly string[]): boolean {
+  const tokens = searchTerms(text);
+  return terms.every((term, index) =>
+    index === terms.length - 1
+      ? tokens.some((token) => token.startsWith(term))
+      : tokens.includes(term),
+  );
+}
+
+/**
+ * Stands in for `snippet(message_search, 0, '[', ']', '…', 12)`: the matched
+ * token in brackets, with a bounded window of context either side.
+ */
+function snippetOf(text: string, terms: readonly string[]): string {
+  const last = terms[terms.length - 1] ?? '';
+  const words = text.split(/(\s+)/u).filter((part) => part !== '');
+  const hit = words.findIndex((word) => searchTerms(word).some((token) => token.startsWith(last)));
+  if (hit === -1) return text;
+
+  const before = Math.max(0, hit - SNIPPET_TOKENS);
+  const after = Math.min(words.length, hit + SNIPPET_TOKENS + 1);
+  const window = words.slice(before, after).map((word, index) => {
+    return before + index === hit ? `[${word}]` : word;
+  });
+  return `${before > 0 ? '…' : ''}${window.join('')}${after < words.length ? '…' : ''}`;
 }
 
 export class BrowserAdapter implements PlatformAdapter {
@@ -279,12 +392,23 @@ export class BrowserAdapter implements PlatformAdapter {
   readonly #providers = new Map<string, SettingsPutProviderReq>();
   #theme: ThemePreference = 'system';
   readonly #listeners = new Map<string, Set<(payload: unknown) => void>>();
+  /** Mirrors `ChatTurns` in the host: id -> "has been cancelled". */
+  readonly #turns = new Map<string, { cancelled: boolean }>();
+  /** Stands in for the SQLite `conversations` and `messages` tables. */
+  readonly #conversations = new Map<string, FakeConversation>();
+  #conversationSeq = 0;
+  #layout: UiLayout = {
+    sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+    sidebarCollapsed: false,
+  };
   readonly #now: () => number;
   readonly #latencyMs: number;
+  readonly #scheduleFrame: (run: () => void) => void;
 
   constructor(options: BrowserAdapterOptions = {}) {
     this.#now = options.now ?? (() => Date.now());
     this.#latencyMs = options.latencyMs ?? 0;
+    this.#scheduleFrame = options.scheduleFrame ?? ((run) => queueMicrotask(run));
   }
 
   async invoke<C extends CommandName>(command: C, payload: CommandReq<C>): Promise<CommandRes<C>> {
@@ -303,6 +427,10 @@ export class BrowserAdapter implements PlatformAdapter {
     switch (command) {
       case 'app_info':
         return this.#appInfo();
+      case 'chat_send':
+        return this.#chatSend(payload as ChatSendReq);
+      case 'chat_cancel':
+        return this.#chatCancel(payload as ChatCancelReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
       case 'secrets_set':
@@ -319,6 +447,22 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#settingsPutProvider(payload as SettingsPutProviderReq);
       case 'settings_delete_provider':
         return this.#settingsDeleteProvider(payload as SettingsProviderRefReq);
+      case 'store_list_conversations':
+        return this.#storeListConversations(payload as StoreListConversationsReq);
+      case 'store_create_conversation':
+        return this.#storeCreateConversation(payload as StoreCreateConversationReq);
+      case 'store_rename_conversation':
+        return this.#storeRenameConversation(payload as StoreRenameConversationReq);
+      case 'store_delete_conversation':
+        return this.#storeDeleteConversation(payload as StoreConversationRefReq);
+      case 'store_autotitle_conversation':
+        return this.#storeAutotitleConversation(payload as StoreConversationRefReq);
+      case 'store_search':
+        return this.#storeSearch(payload as StoreSearchReq);
+      case 'ui_get_layout':
+        return this.#layout;
+      case 'ui_set_layout':
+        return this.#uiSetLayout(payload as UiLayout);
       default: {
         const exhaustive: never = command;
         throw new PlatformError('UNKNOWN_COMMAND', `unhandled command \`${String(exhaustive)}\``);
@@ -510,6 +654,341 @@ export class BrowserAdapter implements PlatformAdapter {
       credentialFieldLabel: credentialFieldLabel(mode),
       security: assessSecurity(url, auth, credentialPresent, requirement === 'required'),
     };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* chat — mirrors `src-tauri/src/ipc/chat.rs`                             */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Accepts a turn and streams it back, exactly as the host does: the invoke
+   * resolves immediately and the tokens arrive on `chat:event` afterwards.
+   *
+   * The reply mirrors the host's in-process fake (`EchoProvider`) — it echoes
+   * the last user message. The *framing* is not part of the contract, so this
+   * one splits the echo across several frames where the host's emits one: a
+   * renderer that can only draw a whole answer at once must not be able to look
+   * correct here.
+   */
+  #chatSend(request: ChatSendReq): ChatSendRes {
+    if (request.turnId.trim() === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid turnId: must not be blank', 'chat_send');
+    }
+    if (request.providerId.trim() === '') {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid providerId: must not be blank',
+        'chat_send',
+      );
+    }
+    if (request.modelId.trim() === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid modelId: must not be blank', 'chat_send');
+    }
+    if (request.messages.length === 0) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid messages: a turn needs at least one message',
+        'chat_send',
+      );
+    }
+    if (request.messages.length > MAX_MESSAGES) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid messages: at most ${MAX_MESSAGES} messages per turn`,
+        'chat_send',
+      );
+    }
+    const oversized = request.messages.findIndex((m) => m.text.length > MAX_MESSAGE_BYTES);
+    if (oversized !== -1) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid messages[${oversized}]: exceeds ${MAX_MESSAGE_BYTES} bytes`,
+        'chat_send',
+      );
+    }
+    // Mirrors `resolve_provider`: an id that is not configured is NOT_FOUND,
+    // never a quiet fallback to whatever else happens to be set up.
+    if (!this.#providers.has(request.providerId)) {
+      throw new PlatformError(
+        'NOT_FOUND',
+        `no provider configured with id \`${request.providerId}\``,
+        'chat_send',
+      );
+    }
+    if (this.#turns.has(request.turnId)) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid turnId: \`${request.turnId}\` is already streaming`,
+        'chat_send',
+      );
+    }
+
+    const turn = { cancelled: false };
+    this.#turns.set(request.turnId, turn);
+
+    const echoed = [...request.messages].reverse().find((m) => m.role === 'user')?.text ?? '';
+    const frames = splitIntoFrames(echoed);
+    let index = 0;
+
+    const step = () => {
+      if (turn.cancelled) {
+        // What a real backend produces when the caller cancels: a terminal
+        // `Error` of kind `cancelled`, not a `Done` pretending the turn ran.
+        this.#turns.delete(request.turnId);
+        this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
+        return;
+      }
+      if (index < frames.length) {
+        this.#emitChat(request.turnId, { type: 'textDelta', text: frames[index] ?? '' });
+        index += 1;
+        this.#scheduleFrame(step);
+        return;
+      }
+      this.#turns.delete(request.turnId);
+      this.#emitChat(request.turnId, {
+        type: 'done',
+        response: {
+          parts: echoed === '' ? [] : [{ kind: 'text', text: echoed }],
+          toolCalls: [],
+          stopReason: 'endTurn',
+          usage: {
+            inputTokens: null,
+            outputTokens: null,
+            reasoningTokens: null,
+            cachedInputTokens: null,
+          },
+          structured: null,
+          // Honest: this fake reports no usage, so it says so, exactly as a
+          // local runtime that never sends a usage block does.
+          degradations: [{ kind: 'usageNotReported' }],
+        },
+      });
+    };
+
+    this.#scheduleFrame(step);
+    return { turnId: request.turnId, accepted: true };
+  }
+
+  #chatCancel(request: ChatCancelReq): ChatCancelRes {
+    if (request.turnId.trim() === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid turnId: must not be blank', 'chat_cancel');
+    }
+    const turn = this.#turns.get(request.turnId);
+    if (turn === undefined) {
+      // A race, not an error: the user pressed stop as the last token landed.
+      return { cancelled: false };
+    }
+    turn.cancelled = true;
+    return { cancelled: true };
+  }
+
+  #emitChat(turnId: string, event: ChatStreamEvent): void {
+    this.emit('chat:event', { turnId, event });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* store — mirrors `src-tauri/src/ipc/store.rs`                           */
+  /*                                                                        */
+  /* The title rules (`deriveTitle`) and the query rewrite are shared code,  */
+  /* pinned against the host by `tests/parity/navigation.json`. The content  */
+  /* MATCH is not: the host asks SQLite's FTS5 index, and this fake matches  */
+  /* the same tokens against the same text in JavaScript. It agrees on the   */
+  /* cases a sidebar exercises and is an approximation elsewhere — which is  */
+  /* what a fake is. VERIFIED-BY-FAKE.                                       */
+  /* ---------------------------------------------------------------------- */
+
+  /** Mirrors `validate_title`: collapse, refuse blank, cap the length. */
+  #validTitle(raw: string, command: CommandName): string {
+    const title = raw.split(/\s+/u).filter((part) => part !== '').join(' ');
+    if (title === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid title: must not be blank', command);
+    }
+    if ([...title].length > MAX_SUPPLIED_TITLE) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid title: must be at most ${MAX_SUPPLIED_TITLE} characters`,
+        command,
+      );
+    }
+    return title;
+  }
+
+  #requireConversation(id: string, command: CommandName): FakeConversation {
+    const found = this.#conversations.get(id.trim());
+    if (found === undefined) {
+      throw new PlatformError('NOT_FOUND', `no conversation with id \`${id}\``, command);
+    }
+    return found;
+  }
+
+  #summarise(conversation: FakeConversation): ConversationSummary {
+    const last = conversation.messages.at(-1);
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      createdAtMs: conversation.createdAtMs,
+      updatedAtMs: conversation.updatedAtMs,
+      lastMessageAtMs: last === undefined ? null : last.createdAtMs,
+      messageCount: conversation.messages.length,
+      titleIsPlaceholder: isPlaceholderTitle(conversation.title),
+    };
+  }
+
+  #storeListConversations(request: StoreListConversationsReq): ConversationListRes {
+    const limit = request.limit ?? DEFAULT_LIST_LIMIT;
+    const conversations = [...this.#conversations.values()]
+      // Mirrors `ORDER BY c.updated_at DESC, c.id DESC`.
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs || (a.id < b.id ? 1 : -1))
+      .slice(0, limit)
+      .map((conversation) => this.#summarise(conversation));
+    return { conversations };
+  }
+
+  #storeCreateConversation(request: StoreCreateConversationReq): ConversationRes {
+    const title =
+      request.title === undefined
+        ? UNTITLED_TITLE
+        : this.#validTitle(request.title, 'store_create_conversation');
+
+    this.#conversationSeq += 1;
+    const now = this.#now();
+    const conversation: FakeConversation = {
+      id: `conv_${this.#conversationSeq}`,
+      title,
+      createdAtMs: now,
+      updatedAtMs: now,
+      messages: [],
+    };
+    this.#conversations.set(conversation.id, conversation);
+    return { conversation: this.#summarise(conversation) };
+  }
+
+  #storeRenameConversation(request: StoreRenameConversationReq): ConversationRes {
+    const conversation = this.#requireConversation(
+      request.conversationId,
+      'store_rename_conversation',
+    );
+    conversation.title = this.#validTitle(request.title, 'store_rename_conversation');
+    conversation.updatedAtMs = this.#now();
+    return { conversation: this.#summarise(conversation) };
+  }
+
+  #storeDeleteConversation(request: StoreConversationRefReq): Ack {
+    // NOT_FOUND rather than a silent success, exactly as the host: the sidebar
+    // just asked to destroy something, and "it was already gone" is information.
+    const conversation = this.#requireConversation(
+      request.conversationId,
+      'store_delete_conversation',
+    );
+    this.#conversations.delete(conversation.id);
+    return { ok: true };
+  }
+
+  #storeAutotitleConversation(request: StoreConversationRefReq): ConversationRes {
+    const conversation = this.#requireConversation(
+      request.conversationId,
+      'store_autotitle_conversation',
+    );
+    if (!isPlaceholderTitle(conversation.title)) {
+      return { conversation: this.#summarise(conversation) };
+    }
+    // Reasoning is excluded, as in the host: naming a conversation after the
+    // model's private thinking would put words in the sidebar the user never saw.
+    for (const message of conversation.messages.slice(0, 8)) {
+      const derived = deriveTitle(message.text);
+      if (derived !== null) {
+        conversation.title = derived;
+        conversation.updatedAtMs = this.#now();
+        break;
+      }
+    }
+    return { conversation: this.#summarise(conversation) };
+  }
+
+  #storeSearch(request: StoreSearchReq): StoreSearchRes {
+    const raw = request.query.trim();
+    const limit = Math.min(request.limit ?? DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
+    if (raw === '') {
+      // An empty box is not a failed search, and never an error.
+      return { conversations: [], messages: [] };
+    }
+
+    const needle = raw.toLowerCase();
+    const conversations = [...this.#conversations.values()]
+      .filter((conversation) => conversation.title.toLowerCase().includes(needle))
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs || (a.id < b.id ? 1 : -1))
+      .slice(0, limit)
+      .map((conversation) => this.#summarise(conversation));
+
+    const terms = searchTerms(raw);
+    const messages: MessageHit[] = [];
+    if (terms.length > 0) {
+      for (const conversation of this.#conversations.values()) {
+        for (const message of conversation.messages) {
+          for (const field of ['reasoning', 'text'] as const) {
+            const text = message[field];
+            if (text === undefined || !matchesTerms(text, terms)) continue;
+            messages.push({
+              messageId: message.id,
+              conversationId: conversation.id,
+              conversationTitle: conversation.title,
+              kind: field === 'reasoning' ? 'reasoning' : 'answer',
+              snippet: snippetOf(text, terms),
+              createdAtMs: message.createdAtMs,
+            });
+          }
+        }
+      }
+    }
+
+    return { conversations, messages: messages.slice(0, limit) };
+  }
+
+  #uiSetLayout(request: UiLayout): UiLayout {
+    // Clamped, never rejected — mirrors `UiLayout::clamped`.
+    this.#layout = {
+      sidebarWidth: Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, Math.round(request.sidebarWidth)),
+      ),
+      sidebarCollapsed: request.sidebarCollapsed,
+    };
+    return this.#layout;
+  }
+
+  /**
+   * Test hook: put a conversation and its transcript into the fake.
+   *
+   * The navigation commands can create and rename conversations but cannot
+   * append messages — that is the transcript surface's boundary, not this one.
+   * Without this hook there would be no way to exercise content search against
+   * the fake at all, and a search box tested only against an empty index proves
+   * nothing. Like `emit`, it is a hook on the fake, not a command: it is
+   * unreachable from `invoke`, so no renderer code can call it.
+   */
+  seedConversation(input: {
+    readonly title: string;
+    readonly messages?: readonly { readonly text: string; readonly reasoning?: string }[];
+    readonly createdAtMs?: number;
+    readonly updatedAtMs?: number;
+  }): ConversationSummary {
+    this.#conversationSeq += 1;
+    const now = this.#now();
+    const id = `conv_${this.#conversationSeq}`;
+    const conversation: FakeConversation = {
+      id,
+      title: input.title,
+      createdAtMs: input.createdAtMs ?? now,
+      updatedAtMs: input.updatedAtMs ?? input.createdAtMs ?? now,
+      messages: (input.messages ?? []).map((message, index) => ({
+        id: `${id}_msg_${index + 1}`,
+        text: message.text,
+        ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }),
+        createdAtMs: input.createdAtMs ?? now,
+      })),
+    };
+    this.#conversations.set(id, conversation);
+    return this.#summarise(conversation);
   }
 
   async listen<E extends EventName>(

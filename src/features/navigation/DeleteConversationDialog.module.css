@@ -1,0 +1,79 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  width: min(420px, 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.title {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.body {
+  margin: 0 0 var(--vela-space-5);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: 1.5;
+}
+
+.name {
+  color: var(--vela-text);
+  font-weight: var(--vela-weight-medium);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--vela-space-2);
+}
+
+.cancel,
+.confirm {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border-radius: var(--vela-radius-md);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: default;
+}
+
+.cancel {
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.cancel:hover {
+  background: var(--vela-bg-inset);
+}
+
+.confirm {
+  background: var(--vela-danger);
+  border: 1px solid var(--vela-danger);
+  color: var(--vela-night-0);
+}
+
+.confirm:hover {
+  filter: brightness(0.94);
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 2px;
+}

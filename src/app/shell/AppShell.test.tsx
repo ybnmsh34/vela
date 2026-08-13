@@ -11,12 +11,16 @@ import { BrowserAdapter } from '@/platform/browser-adapter';
  * headless machine.
  */
 describe('AppShell', () => {
-  it('renders the Vela identity and the reserved regions', async () => {
+  it('renders the Vela identity, the sidebar and the home surface', async () => {
     render(<App adapter={new BrowserAdapter()} />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Vela' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
-    expect(screen.getByText('src/features/chat')).toBeInTheDocument();
+    // The home screen states the proposition rather than the file layout: the
+    // Phase A placeholder listed the regions still to be built, and this is
+    // what replaced it.
+    expect(screen.getByRole('heading', { name: 'You bring the model' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start a conversation' })).toBeInTheDocument();
 
     expect(await screen.findByText(/Bridge ready/)).toBeInTheDocument();
   });

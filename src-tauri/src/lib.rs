@@ -25,6 +25,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AppState::for_runtime())
+        // In-flight turn bookkeeping. Separate from `AppState` because it is
+        // host-process state, not domain state.
+        .manage(ipc::chat::ChatTurns::new())
         // The system of record. Opened here rather than in `AppState` because
         // the OS application-data directory is only resolvable once the app
         // handle exists. Migrations run inside this call; if it fails, startup
@@ -37,6 +40,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_info,
+            ipc::chat::chat_cancel,
+            ipc::chat::chat_send,
             ipc::diagnostics::diagnostics_echo,
             ipc::secrets::secrets_delete,
             ipc::secrets::secrets_set,
@@ -45,6 +50,14 @@ pub fn run() {
             ipc::settings::settings_get,
             ipc::settings::settings_put_provider,
             ipc::settings::settings_set_theme,
+            ipc::store::store_autotitle_conversation,
+            ipc::store::store_create_conversation,
+            ipc::store::store_delete_conversation,
+            ipc::store::store_list_conversations,
+            ipc::store::store_rename_conversation,
+            ipc::store::store_search,
+            ipc::ui::ui_get_layout,
+            ipc::ui::ui_set_layout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vela");

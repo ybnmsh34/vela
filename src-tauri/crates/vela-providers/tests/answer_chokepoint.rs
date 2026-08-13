@@ -44,6 +44,8 @@
 
 use std::path::{Path, PathBuf};
 
+use vela_providers::MalformedToolCall;
+
 /// The one builder of user-visible answer text, and the files allowed to build
 /// a `TextDelta` for a reason that is not "assembling a response".
 const PERMITTED: [(&str, &str); 4] = [
@@ -211,5 +213,28 @@ fn the_untagged_fallback_parses_only_executable_text() {
         "the untagged-shape fallback is being fed something other than \
          `executable_text()`, so salvaged deliberation could become a call \
          again: {call:?}"
+    );
+}
+/// The refusal has to be legible on the other side of the IPC bridge, or it is
+/// a silent drop with extra steps. `src/platform/contract.ts` declares
+/// `'recoveredFromUnterminatedReasoning'` as a member of
+/// `MalformedToolCallReason`; this is the Rust half of that agreement.
+#[test]
+fn the_new_reason_serialises_as_the_typescript_contract_declares() {
+    let json = serde_json::to_string(&MalformedToolCall::RecoveredFromUnterminatedReasoning)
+        .expect("a fieldless variant serialises");
+    assert_eq!(json, "\"recoveredFromUnterminatedReasoning\"");
+
+    let contract = std::fs::read_to_string(
+        crate_dir()
+            .ancestors()
+            .nth(3)
+            .expect("crates/<name> sits three levels below the repo root")
+            .join("src/platform/contract.ts"),
+    )
+    .expect("readable contract");
+    assert!(
+        contract.contains("'recoveredFromUnterminatedReasoning'"),
+        "the TypeScript mirror of MalformedToolCallReason is missing the variant"
     );
 }

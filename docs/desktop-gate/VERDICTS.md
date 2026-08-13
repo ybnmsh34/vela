@@ -185,7 +185,13 @@ Raw bytes in `docs/regression-baseline/local-smoke/`, request bodies in `00-requ
 - environment: Windows 11 Home 10.0.26200 · WebView2 Runtime 151.0.4129.78 ·
   Intel i7-11700K · 63.8 GB RAM · rustc 1.97.1 / cargo 1.97.1 (MSVC) · node v24.15.0 · pnpm 10.33.0 ·
   llama.cpp b8833-45cac7ca7 on Tesla V100 32GB, unmodified and not restarted
+- staleness: tested at `51b5e16`; `origin` was at `11c46d1` when this was pushed. The five
+  intervening commits (`e3cd67a`, `18ba572`, `a3b8b18`, `ec6f068`, `11c46d1`) are evidence
+  snapshots only — `git diff 51b5e16 11c46d1 -- src-tauri/src/state.rs src-tauri/src/ipc/chat.rs
+  src-tauri/icons/ src-tauri/crates/vela-providers/src/openai_compatible/mod.rs
+  src-tauri/crates/vela-providers/src/stream.rs` is **empty**. Every surface this verdict rests on
+  is byte-identical at `11c46d1`. **This verdict is NOT stale and does not need re-requesting.**
 - limits of this run: the GUI could not be driven — screen-control access was denied — so the
-  `NOT_FOUND` path was confirmed from code and from the bridge's `--no-register` design intent,
-  not from a screenshot of the running window. `visual`, `interaction` and `performance` were not
-  requested and are not judged here.
+  `NOT_FOUND` path was confirmed from code, not from a screenshot of the running window. The app
+  itself was built and launched successfully (PID 8252) once a local `icon.ico` was supplied.
+  `visual`, `interaction` and `performance` were not requested and are not judged here.

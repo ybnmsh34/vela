@@ -558,6 +558,70 @@ bodies. Rounds 1 and 2 each died on a path the previous canary suite did not dri
 **Thrash tripwire is armed:** a third *unscrubbed path* stops the piece for a decision rather than
 triggering round 4.
 
+## Phase B round 3 — ✅ GATE PASSES. 373 assertions, 0 failures.
+
+Fresh executor: ran neither prior round, wrote none of the fixes. Round 1: 265/5 failures.
+Round 2: 361/16. **Round 3: 373/0.** Every round-2 case re-run **live**, not carried forward.
+
+### The claim tested was the strong one
+
+Not *"the leak is patched"* but **"an unscrubbed read is not expressible."** Checked three ways:
+
+- **Live, byte-level.** The raw TCP peer's own send buffer carries the canary; the bytes Vela's
+  SSE parser consumes carry `<redacted>`. Nine forced failure paths × four profiles × five
+  renderings × the `StreamEvent` sink, plus a bare `ReqwestTransport` with nothing wrapping it —
+  and three adapters × two bindings × two transports, audited rather than trusted.
+- **Compile time.** The executor wrote **five bypasses**, all rejected with their predicted error
+  codes (E0308/E0407/E0616/E0599/E0277). Three of them go *past* the builder's own two doctests —
+  the sealed field, an `into_inner`, and passing a `BodyStream` where `impl ByteStream` is wanted:
+  "the three ways a decorator author would actually reach for raw bytes."
+- **Runtime.** `LaunderingTransport` — **round 2's recorder bug written on purpose** — forwards
+  nothing and re-wraps with an origin claiming no credential. Output is string-identical to no
+  decorator at all, on all three adapters.
+
+### Over-redaction closed too — both directions hold at once
+
+Three rounds of the same failover line are now on the record:
+
+| Round | What the transport error said |
+|---|---|
+| 1 | named the endpoint — **and leaked** |
+| 2 | **deleted** the endpoint |
+| 3 | names it **redacted** |
+
+Three dead ports produce three **pairwise distinct** errors, each naming its own authority and
+target — the user-facing form of the requirement, asserted rather than inferred.
+
+### The controls prove the two directions are independently tested
+
+**32 experiments, 36 expected FAILs** (round 2: 24/15). The two defect injections are **disjoint**:
+
+- **DEFECT 1** (re-open the leak) turns **17 tests red across four suites** and leaves every
+  endpoint-identity test **green**.
+- **DEFECT 2** (re-break redaction of the URL) turns **exactly 2** red, both endpoint-identity,
+  and leaves every leak assertion **green**.
+
+That disjointness is the evidence that fixing one direction did not quietly buy off the other —
+the failure mode that produced round 2.
+
+### The executor's instrumentation was wrong twice; it fixed it rather than filing it
+
+1. The recorder's premise guard read the endpoint's echo off **its own body tee** — but the round-3
+   fix scrubs *before any decorator can see a byte*, so the tee went blind and the guard went red
+   **against a clean tree**. The premise now comes from each `RawPeer`'s send buffer, upstream of
+   everything Vela does. One broken guard replaced by three working ones, one stronger than
+   anything either prior round had. Case 11: 37 → 49 assertions.
+2. The compile probes **bundled three bypasses in one file**, so unsealing `BodyStream::inner` left
+   the file failing on the *other two* — and the probe reported "rejected" against a tree that
+   still had the hole. One hatch per file now.
+
+The second is the more dangerous of the two: a false *negative* in a probe would have passed a
+broken tree. It found it by injecting the hole and checking the probe noticed for the right reason.
+
+**This is the third consecutive round in which the gate executor caught its own tooling lying and
+repaired it instead of filing the finding.** That habit is why these gate results are worth
+believing.
+
 ## Run incidents
 
 **2026-08-12 ~23:19Z — Phase B workflow stalled at the integration stage and was resumed.**

@@ -16,7 +16,12 @@
  */
 
 import type { PlatformAdapter } from '@/platform/adapter';
-import { IPC_CONTRACT_VERSION, type AppInfo, type EchoRes } from '@/platform/contract';
+import {
+  IPC_CONTRACT_VERSION,
+  type AppInfo,
+  type DebugLogStatus,
+  type EchoRes,
+} from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
 
 export interface HostRepository {
@@ -24,6 +29,16 @@ export interface HostRepository {
   getAppInfo(): Promise<AppInfo>;
   /** Round-trips a message through the bridge. Used as a liveness probe. */
   probeBridge(message: string): Promise<EchoRes>;
+  /** Whether the local debug log is recording, and where it writes. */
+  getDebugLog(): Promise<DebugLogStatus>;
+  /**
+   * Turn the local debug log on or off.
+   *
+   * The host answers with the state it actually reached, not with what was
+   * asked for — enabling has to create a directory and can fail, and a switch
+   * that draws itself from its own optimism is a switch that lies.
+   */
+  setDebugLog(enabled: boolean): Promise<DebugLogStatus>;
 }
 
 export function createHostRepository(adapter: PlatformAdapter): HostRepository {
@@ -42,6 +57,14 @@ export function createHostRepository(adapter: PlatformAdapter): HostRepository {
 
     probeBridge(message: string): Promise<EchoRes> {
       return adapter.invoke('diagnostics_echo', { message });
+    },
+
+    getDebugLog(): Promise<DebugLogStatus> {
+      return adapter.invoke('diagnostics_debug_log_get', {});
+    },
+
+    setDebugLog(enabled: boolean): Promise<DebugLogStatus> {
+      return adapter.invoke('diagnostics_debug_log_set', { enabled });
     },
   };
 }

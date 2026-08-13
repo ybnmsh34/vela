@@ -42,6 +42,8 @@ import {
   type ConversationListRes,
   type ConversationRes,
   type ConversationSummary,
+  type DebugLogSetReq,
+  type DebugLogStatus,
   type EchoReq,
   type EchoRes,
   type ContentPartInput,
@@ -488,6 +490,12 @@ export class BrowserAdapter implements PlatformAdapter {
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
   };
+  /**
+   * Mirrors `DebugLogHandle` plus `vela_providers::debuglog`'s slot. Starts
+   * off, exactly as the host does at every launch, and is not persisted — a
+   * reload of `pnpm dev` puts it back off for the same reason a restart does.
+   */
+  #debugLogEnabled = false;
   readonly #now: () => number;
   readonly #latencyMs: number;
   readonly #scheduleFrame: (run: () => void) => void;
@@ -518,6 +526,10 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#chatSend(payload as ChatSendReq);
       case 'chat_cancel':
         return this.#chatCancel(payload as ChatCancelReq);
+      case 'diagnostics_debug_log_get':
+        return this.#debugLogStatus();
+      case 'diagnostics_debug_log_set':
+        return this.#debugLogSet(payload as DebugLogSetReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
       case 'models_capabilities':
@@ -581,6 +593,23 @@ export class BrowserAdapter implements PlatformAdapter {
       // Honest: no keychain exists in a browser tab.
       secretBackend: 'memory-fake',
     };
+  }
+
+  /**
+   * The fake has no disk, so it reports a path shaped like the host's and
+   * labelled as what it is. A screenshot of this screen must not be mistakable
+   * for evidence that anything was written anywhere.
+   */
+  #debugLogStatus(): DebugLogStatus {
+    return {
+      enabled: this.#debugLogEnabled,
+      path: '(browser fake — no file is written) diagnostics/exchanges.jsonl',
+    };
+  }
+
+  #debugLogSet(request: DebugLogSetReq): DebugLogStatus {
+    this.#debugLogEnabled = request.enabled;
+    return this.#debugLogStatus();
   }
 
   #echo(request: EchoReq): EchoRes {

@@ -15,6 +15,8 @@ describe('IPC contract', () => {
       'app_info',
       'chat_cancel',
       'chat_send',
+      'diagnostics_debug_log_get',
+      'diagnostics_debug_log_set',
       'diagnostics_echo',
       'models_capabilities',
       'models_list',

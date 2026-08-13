@@ -35,6 +35,7 @@ import type {
 } from '@/platform/contract';
 import { NO_CAPABILITIES } from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
+import { resetDebugLogStore, useDebugLogStore } from '@/state/debug-log-store';
 
 import { ConversationSurface } from './ConversationSurface';
 import { ConversationView } from './ConversationView';
@@ -578,10 +579,24 @@ describe('the conversation surface: failure and cancellation', () => {
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('The endpoint rejected the credential');
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-    // The endpoint the *user* configured, so three candidates can be told
-    // apart — and the join key into their own local debug log.
+    // The endpoint the *user* configured, so three candidates can be told apart.
     expect(alert).toHaveTextContent('https://gpu.example.test/v1');
-    expect(alert).toHaveTextContent('trace 000000000000002a');
+
+    // The trace id is a *reference into the local debug log*, and the log is
+    // off. It used to be printed regardless, into a file nothing in the
+    // application could create — a pointer to nothing, which reads to a user as
+    // something they failed to find rather than something that is not there.
+    expect(alert).not.toHaveTextContent('trace');
+
+    act(() => {
+      useDebugLogStore.getState().report({ enabled: true, path: '/tmp/exchanges.jsonl' });
+    });
+    // With the log recording, the id is the most useful thing on the screen:
+    // it is what the user greps that file for.
+    expect(screen.getByRole('alert')).toHaveTextContent('trace 000000000000002a');
+    act(() => {
+      resetDebugLogStore();
+    });
   });
 
   it('cancels on Escape and reads the result as stopped, not failed', async () => {

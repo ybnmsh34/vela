@@ -67,6 +67,31 @@ export interface EchoRes {
   readonly receivedAtMs: number;
 }
 
+/**
+ * The local, opt-in debug log: whether it is recording, and where it writes.
+ *
+ * **What is deliberately absent is the point.** There is no command that
+ * returns what the log recorded. Vela takes endpoint-supplied text out of every
+ * error it renders and keeps the raw bytes in this file instead; a command that
+ * handed those bytes back to the renderer would undo that in one step. What
+ * crosses the bridge is a flag and a path on the user's own disk — the user
+ * opens the file with their own tools, and the `trace` id on a failed turn is
+ * what they search it for.
+ *
+ * The log is **off at every launch** and is not persisted. A debug log that
+ * survives a restart is a file that grows for months after the session that
+ * needed it, which is not what offline-first with no telemetry looks like.
+ */
+export interface DebugLogStatus {
+  readonly enabled: boolean;
+  /** Absolute path, shown to the user. Never fetched, never read by the UI. */
+  readonly path: string;
+}
+
+export interface DebugLogSetReq {
+  readonly enabled: boolean;
+}
+
 /* -------------------------------------------------------------------------- */
 /* secrets                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -1016,6 +1041,8 @@ export interface IpcContract {
   app_info: { req: EmptyPayload; res: AppInfo };
   chat_cancel: { req: ChatCancelReq; res: ChatCancelRes };
   chat_send: { req: ChatSendReq; res: ChatSendRes };
+  diagnostics_debug_log_get: { req: EmptyPayload; res: DebugLogStatus };
+  diagnostics_debug_log_set: { req: DebugLogSetReq; res: DebugLogStatus };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
@@ -1053,6 +1080,8 @@ export const COMMAND_ALLOWLIST = [
   'app_info',
   'chat_cancel',
   'chat_send',
+  'diagnostics_debug_log_get',
+  'diagnostics_debug_log_set',
   'diagnostics_echo',
   'models_capabilities',
   'models_list',

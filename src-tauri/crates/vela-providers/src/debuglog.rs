@@ -15,10 +15,19 @@
 //!   default state of the process is off. Vela's posture is offline-first with
 //!   no telemetry; a debug log that defaults to on is a log that gets shipped
 //!   somewhere by accident;
-//! * **never across the IPC boundary** — this module has no serde surface that
-//!   the bridge carries, no Tauri command, and nothing on [`ProviderError`]
-//!   points at its contents. What crosses the bridge is a
-//!   [`CorrelationId`](crate::diagnostic::CorrelationId), which is a `u64`;
+//! * **never across the IPC boundary** — nothing this module records has a
+//!   serde surface the bridge carries, and nothing on [`ProviderError`] points
+//!   at its contents. What crosses the bridge is a
+//!   [`CorrelationId`](crate::diagnostic::CorrelationId), which is a `u64`.
+//!
+//!   The *switch* does cross it, and must: `vela-app`'s
+//!   `ipc::diagnostics::diagnostics_debug_log_set` calls [`enable`] and
+//!   [`disable`], and its sibling reports `{enabled, path}`. Nothing else about
+//!   this module is reachable from the renderer, and there is deliberately no
+//!   command that returns a recorded entry. Before that pair existed [`enable`]
+//!   had no caller outside this workspace's own tests while the UI printed a
+//!   correlation id on every failed turn — a pointer into a log the user had no
+//!   way to switch on, which is worse than no pointer;
 //! * **linked** — that id is the join key. A user who opens the log finds the
 //!   entry whose `ref` matches the one the error showed them.
 //!

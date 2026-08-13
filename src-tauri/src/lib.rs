@@ -61,6 +61,16 @@ pub fn run() {
                 eprintln!("vela: provider `{id}` is configured but unusable: {error}");
             }
 
+            // Where the opt-in debug log would write, resolved here for the
+            // same reason the database is. The log itself stays **off** — this
+            // only makes the switch addressable, and `diagnostics_debug_log_set`
+            // is the only thing that turns it on. Before this line the switch
+            // had no caller anywhere in the application, while every failed turn
+            // in the UI printed a `trace` id pointing into it.
+            app.manage(ipc::diagnostics::DebugLogHandle::under_data_dir(
+                app.path().app_data_dir()?,
+            ));
+
             app.manage(store);
             Ok(())
         })
@@ -68,6 +78,8 @@ pub fn run() {
             ipc::app::app_info,
             ipc::chat::chat_cancel,
             ipc::chat::chat_send,
+            ipc::diagnostics::diagnostics_debug_log_get,
+            ipc::diagnostics::diagnostics_debug_log_set,
             ipc::diagnostics::diagnostics_echo,
             ipc::models::models_capabilities,
             ipc::models::models_list,

@@ -15,6 +15,7 @@
 
 import { useState } from 'react';
 
+import { DebugLogSwitch } from '@/features/diagnostics';
 import type { ProviderView, SettingsPutProviderReq } from '@/platform/contract';
 
 import { EndpointForm } from './EndpointForm';
@@ -109,6 +110,11 @@ export function EndpointsPanel({
               Add an endpoint
             </button>
           )}
+
+          {/* This panel is where a user comes when an endpoint is misbehaving,
+              which is exactly when the debug log is worth turning on and the
+              only moment its `trace` ids mean anything. */}
+          <DebugLogSwitch />
         </>
       )}
     </section>

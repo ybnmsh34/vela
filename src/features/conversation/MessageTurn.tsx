@@ -8,6 +8,8 @@
  * each other would waste half the width on the half nobody re-reads.
  */
 
+import { isDebugLogRecording, useDebugLogStore } from '@/state/debug-log-store';
+
 import { CopyButton } from './CopyButton';
 import { Markdown } from './Markdown';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -37,6 +39,14 @@ export function AssistantTurn({ turn, id, onRetry }: AssistantTurnProps) {
   const streaming = turn.phase === 'streaming' || turn.phase === 'awaiting';
   const error = turn.error === null ? null : describeChatError(turn.error);
   const showThinkingOnly = turn.answer === '' && turn.reasoning !== '';
+
+  // The `trace` id is a reference into the local debug log, and it is shown
+  // only while that log is recording. It used to be shown unconditionally —
+  // pointing into a file nothing in the application could create, since
+  // `debuglog::enable` had no caller outside tests. A pointer to nothing is
+  // worse than no pointer: it reads as something the user failed to find.
+  const traceIsUseful = useDebugLogStore((store) => isDebugLogRecording(store.state));
+  const correlation = traceIsUseful ? error?.correlation ?? null : null;
 
   return (
     <article className={styles.turn} data-role="assistant" aria-label="Model reply">
@@ -88,14 +98,14 @@ export function AssistantTurn({ turn, id, onRetry }: AssistantTurnProps) {
         >
           <p className={styles.errorTitle}>{error.title}</p>
           <p className={styles.errorDetail}>{error.detail}</p>
-          {error.endpoint === null && error.correlation === null ? null : (
+          {error.endpoint === null && correlation === null ? null : (
             <p className={styles.errorTrace}>
               {/* The endpoint the *user* configured, so somebody with three
-                  candidates set up can tell which one failed — and the id that
-                  joins this error to the raw exchange in their own local debug
-                  log, if they turned it on. */}
+                  candidates set up can tell which one failed — and, when the
+                  local debug log is on, the id that joins this error to the raw
+                  exchange sitting in it. */}
               {error.endpoint === null ? null : <span>{error.endpoint}</span>}
-              {error.correlation === null ? null : <span>trace {error.correlation}</span>}
+              {correlation === null ? null : <span>trace {correlation}</span>}
             </p>
           )}
           {error.retryable && onRetry !== undefined ? (

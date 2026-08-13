@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the raw stream ----------------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:42593/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41597/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -80,7 +80,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   ReasoningDelta events                  "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
   content parts                          ["reasoning", "text"]
   degradations                           (none)
-  wall clock                             7.334512ms
+  wall clock                             7.695431ms
 
 ---- baseline — every `content` delta concatenated, no state machine -------
     "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
@@ -104,7 +104,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   squeezed until the answer channel is cut short of the markup while the reasoning
   channel — which is not budgeted by the harness — still carries all of it.
 
-  >>> exchange 1 — POST http://127.0.0.1:42593/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41597/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

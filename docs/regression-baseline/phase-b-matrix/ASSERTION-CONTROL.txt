@@ -13,8 +13,8 @@ CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
 --------------------------------------------------------------------------------
 The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
 `data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
-  hostile      finished=false wall clock=5.001348548s chars=0   → FAIL (HUNG)
-  frontier     finished=true  wall clock=12.542072ms chars=16   → PASS
+  hostile      finished=false wall clock=5.001207012s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=15.757824ms chars=16   → PASS
   EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
   Vela's own consumer finishes both in single-digit milliseconds — see each profile's
   07-stream-termination.txt. The assertion discriminates.
@@ -64,11 +64,12 @@ CONTROL 5 — "the vision affordance is absent" applied to the profile that has 
 CONTROL 6 — "the tool call is executable" applied to the profile that breaks them
 --------------------------------------------------------------------------------
   frontier     exactly one executable call=true  → PASS   (1 call(s) reported)
-  hostile      exactly one executable call=false → FAIL   (1 call(s) reported)
+  hostile      exactly one executable call=false → FAIL   (2 call(s) reported)
   EXPECTED: frontier PASSES, hostile FAILS — and hostile failing is the desired
   behaviour: what comes back is surfaced and nothing is executable.
-  NOTE: hostile sends TWO broken calls and this non-streamed path reports only ONE.
-  That is FINDING 1 in RESULTS.md, not part of this control.
+  NOTE: hostile sends TWO broken calls and this non-streamed path now reports BOTH.
+  Round 1 reported one spliced call here — that was FINDING 1 in RESULTS.md, fixed in
+  round 2. The control itself is unchanged: neither call is executable either way.
 
 --------------------------------------------------------------------------------
 CONTROL 7 — "the turn overflows the context window" applied to a prompt that fits

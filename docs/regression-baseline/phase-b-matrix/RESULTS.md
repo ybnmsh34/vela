@@ -1,9 +1,19 @@
 # GATE M Part 1 (Phase B) — does Vela degrade gracefully?
 
 **Recorded:** 2026-08-13 · **Executor:** GATE M Part 1 Phase B evidence run
+**Re-recorded:** 2026-08-13, round 2 integration — **265 assertions, 0 failures**
 **Subject:** `src-tauri/crates/vela-providers` — Vela's own provider stack
 **Raw evidence:** `<profile>/00-…10-*.txt`, `verdicts.tsv`, `ASSERTION-CONTROL.txt`
 **Companion:** `../mock-matrix/RESULTS.md` — what the endpoints did
+
+> **Round 1 → round 2.** The first execution of this gate FAILED: five assertions,
+> all one defect — FINDING 1, non-streamed tool calls collapsing into one. Round 2
+> fixed it and the transcripts in this directory are a re-record against the fixed
+> tree, so every file here now reads PASS. **FINDING 1's round-1 red is preserved
+> verbatim in §3 below**, which is the before/after and is not rewritten: the
+> defect was real, it was measured, and the quotes are what the recorder printed.
+> Everything else in this document is the round-1 text, unchanged — the numbers it
+> reports were re-measured and still hold.
 
 ---
 
@@ -34,14 +44,15 @@ something the builders' suite does not cover — see FINDING 1.
 
 ## 1. The ledger
 
-**265 gate assertions across four profiles. 5 failures. All five are one defect.**
+**265 gate assertions across four profiles. Round 1: 5 failures, all one defect.
+Round 2, after the fix: 0.**
 
-| | |
-|---|---|
-| gate assertions | 265 |
-| failures | **5** (FINDING 1, one root cause) |
-| controls | 15, of which 10 FAIL — and every one of those FAILs is the expected one |
-| wall clock, whole run | ~17 s |
+| | round 1 | round 2 (this directory) |
+|---|---|---|
+| gate assertions | 265 | 265 |
+| failures | **5** (FINDING 1, one root cause) | **0** |
+| controls | 15, of which 10 FAIL — every one the expected one | unchanged |
+| wall clock, whole run | ~17 s | ~17 s |
 
 `verdicts.tsv` carries every line. `SUMMARY.txt` carries the failure list.
 
@@ -53,7 +64,7 @@ something the builders' suite does not cover — see FINDING 1.
 |---|---|---|---|---|
 | **00** capability probe | ✅ 200k · tools/vision/schema all Supported | ✅ 32k · schema **Degraded**, vision Unsupported | ✅ 8k · tools **Unsupported**, schema Degraded | ✅ 4k · tools **Degraded**, schema Degraded |
 | **01** plain chat, streamed ≡ whole | ✅ identical, deltas sum to the answer | ✅ identical | ✅ identical | ✅ identical |
-| **02** tool calling | ✅ native · ⛔ **FAIL on parallel calls, non-streamed** | ✅ native | ✅ **emulation works end to end** | ⚠️ 2 broken calls surfaced streamed · ⛔ **1 of 2 lost non-streamed** |
+| **02** tool calling | ✅ native · parallel calls now agree on both transports (round 1: ⛔ non-streamed) | ✅ native | ✅ **emulation works end to end** | ✅ 2 broken calls surfaced on **both** transports (round 1: ⛔ 1 of 2 lost non-streamed) |
 | **03** vision | ✅ offered, image answered | ✅ affordance absent, image refused locally | ✅ same | ✅ same |
 | **04** structured output | ✅ honoured and validated | ✅ **mismatch reported**, affordance withdrawn | ✅ same | ✅ same |
 | **05** context overflow | ✅ clean error, `200000`/`250004` | ✅ `32768`/`40964` | ✅ `8192`/`10244` | ✅ `4096`/`5124` |
@@ -67,9 +78,21 @@ something the builders' suite does not cover — see FINDING 1.
 
 ---
 
-## 3. FINDING 1 — GATE FAIL: non-streamed tool calls collapse into one
+## 3. FINDING 1 — non-streamed tool calls collapse into one — **CLOSED in round 2**
 
 **Severity: high. This is data loss on the ordinary path, not only the hostile one.**
+
+> **Status: FIXED.** `2e4a4fc` gave the accumulator an explicit
+> [`ToolCallShape`](../../../src-tauri/crates/vela-providers/src/tool_accum.rs) —
+> stated by the caller that read the response, never guessed — so a
+> `message.tool_calls[]` element opens its own slot and a `delta.tool_calls[]`
+> element still joins its siblings by `index`. The three-part regression recipe
+> named at the end of this section is implemented in
+> `tests/parallel_tool_calls.rs`; the same three cases now also run **live, over
+> real HTTP, against the mock matrix** in
+> `tests/mock_matrix_live.rs::parallel_tool_calls_survive_both_transports_on_a_live_endpoint`
+> and `::a_partly_broken_parallel_batch_loses_neither_the_good_calls_nor_the_bad_one`.
+> Everything below is the round-1 report, kept verbatim as the before picture.
 
 `ToolCallAccumulator::push` (`src/tool_accum.rs`) keys a delta by its wire
 `index`, and when there is none it continues *the slot it last touched*:
@@ -143,7 +166,7 @@ uses `provider.stream(…)`; `a_well_formed_native_tool_call_is_executable` uses
 cannot collide with itself. The unit tests in `tool_accum.rs` feed streaming
 deltas. Nothing in the tree feeds the accumulator two unindexed whole calls.
 
-### Not fixed here
+### Not fixed here *(round 1; fixed in round 2 — see the status note above)*
 
 This run produces evidence; the fix belongs to the crate's owner, following the
 precedent of Phase A FINDING 1. The regression test it needs is exact:
@@ -156,7 +179,9 @@ precedent of Phase A FINDING 1. The regression test it needs is exact:
   `UnknownDiscriminator`, arguments **not** concatenated.
 
 All three fail against the tree as it stands; the transcripts above are the
-verbatim red.
+verbatim red. **Round 2: all three exist and pass, and each was proven red first
+by reverting the one-line shape decision in `stream.rs` — that revert reproduces
+the spliced `raw_arguments` quoted above.**
 
 The likely shape of the fix — for the owner to judge, not the executor — is that
 "continue the last slot" must apply only to the streaming path. A whole-call
@@ -325,12 +350,12 @@ measuring the harness, not the code.
 
 ## 6. Gate verdict
 
-**Nine of the ten pieces PASS. One FAILS.**
+**Round 1: nine of the ten pieces PASS, one FAILS. Round 2: ten of ten PASS.**
 
 | piece | verdict |
 |---|---|
 | 1. plain chat, streamed and not | **PASS** — identical on all four |
-| 2. tool calling | **FAIL** — native and emulated paths work; non-streamed accumulation loses calls (FINDING 1) |
+| 2. tool calling | **PASS in round 2** — native, emulated and parallel; streamed and non-streamed agree. Round 1 **FAILED** here (FINDING 1) |
 | 3. vision | **PASS** — offered only where probed, refused locally elsewhere |
 | 4. structured output | **PASS** — never silently conformant, on either transport |
 | 5. context overflow | **PASS** — clean error, and visible reduction when the window is known |
@@ -340,12 +365,17 @@ measuring the harness, not the code.
 | 9. no credential | **PASS** — nothing on the wire, positively controlled |
 | 10. failover | **PASS** — routes past a dead peer, refuses to replay a killed one |
 
-**Overall: GATE M Part 1 (Phase B) does not pass.** One piece fails the criterion,
-and a gate with a known failure is a failed gate. The failure is narrow, precisely
-located, has a reproduction and a regression-test recipe, and does not touch the
-degradation behaviours the gate exists to protect — but it is a real defect on the
-most ordinary tool-calling shape there is, and calling this a pass would be the
-kind of reporting this gate exists to prevent.
+**Round 1 overall: GATE M Part 1 (Phase B) does not pass.** One piece fails the
+criterion, and a gate with a known failure is a failed gate. The failure is narrow,
+precisely located, has a reproduction and a regression-test recipe, and does not
+touch the degradation behaviours the gate exists to protect — but it is a real
+defect on the most ordinary tool-calling shape there is, and calling this a pass
+would be the kind of reporting this gate exists to prevent.
+
+**Round 2 overall: GATE M Part 1 (Phase B) passes — 265 assertions, 0 failures**,
+with the ten controls that are supposed to fail still failing. That is a pass of
+*Part 1 only*. **GATE M Part 2 — a real llama.cpp endpoint — was not attempted and
+remains deferred**, so nothing here has moved on the question of a real model.
 
 ---
 
@@ -373,7 +403,7 @@ kind of reporting this gate exists to prevent.
 ## 8. Reproducing
 
 ```bash
-bash docs/regression-baseline/phase-b-matrix/record.sh   # exits non-zero: FINDING 1
+bash docs/regression-baseline/phase-b-matrix/record.sh   # round 2: exits 0
 cd src-tauri && cargo test -p vela-providers             # the builders' own suite
 ```
 

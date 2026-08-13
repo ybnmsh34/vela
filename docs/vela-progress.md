@@ -528,11 +528,69 @@ so CI stays quiet while it is a draft and gates every push once marked ready for
 run on half-written code is noise, not signal. It can be run on demand at any time via
 `workflow_dispatch`.
 
+## Phase B round 2 — the panel's three defects, and the assembled tree
+
+Phase B round 1 failed its panel 3/4. Three fresh builders each took one piece, in parallel, on
+one tree; this section is the integration pass over the result.
+
+**The three fixes, as landed.**
+
+- **`2e4a4fc` — the tool-call accumulator (GATE M FINDING 1).** The two OpenAI-compatible wire
+  shapes are now told apart by an explicit `ToolCallShape` that the caller *states* rather than
+  the accumulator guessing: a `message.tool_calls[]` element is a whole call and opens its own
+  slot; a `delta.tool_calls[]` element is a fragment and still joins its siblings by `index`.
+  The shape is decided in `stream.rs::apply_choice`, the only place that still knows which of
+  `delta` or `message` the payload came from.
+- **`e7fe3dc` — credential redaction.** Structural, not textual: a URL that carries a key
+  cannot print it, because the type that holds it has no `Display`/`Debug` path to the secret.
+  Eight canary tests, including a detector-catches-the-leak control so the canary is not vacuous.
+- **`35bfb16` — the harness's parallel-tool-call case.** Written against the OpenAI wire
+  specification, deliberately not against Vela: two offered tools yield one complete call each
+  in both transports, and `hostile` answers with three calls of which only the middle one is
+  broken. One offered tool still yields exactly one call, so no committed transcript byte moved.
+
+**No conflicts.** The three commits touch disjoint file sets — verified by `git show --name-only`
+across all three. No merge conflict, duplicate definition, or broken import survived into the
+assembled tree.
+
+**The one gap integration found, and closed.** The harness gained a two-transport parallel case
+and the accumulator gained a fix for exactly that shape — and *nothing joined them*. The new
+harness cases are TypeScript tests of the mock's own bytes; the new Rust cases are hand-scripted
+bytes through `ScriptedTransport`. The live matrix suite offered only one tool, so the batch
+shape never reached Vela over a socket. Two builders solved two halves of one defect and neither
+half proved the other. Closed by two tests in `tests/mock_matrix_live.rs` that offer two tools to
+a real mock process and assert the reports agree across `complete()` and `stream()` on id, name
+and arguments — everything but the wire `index`, which is a streaming-only field and the one
+place they may legitimately differ. **Proven red first**: reverting the single `ToolCallShape`
+decision in `stream.rs` makes both fail, reproducing FINDING 1's signature verbatim —
+`raw_arguments: "{\"city\":\"alpha\"}{\"timezone\":\"{\"timezone\":\"alpha\"}"`, three calls
+spliced into one string that was never on the wire.
+
+**The wire-spec cases were right and the accumulator fix was complete.** That was the question
+integration had to answer, and it is worth stating which way it went: the harness's new cases
+encode the wire shape correctly, and Vela agrees with them on both transports without a single
+case being relaxed.
+
+**GATE M Part 1 (Phase B) now passes: 265 assertions, 0 failures** (round 1: 5 failures, all
+FINDING 1), with the ten controls that are supposed to fail still failing. The transcripts under
+`docs/regression-baseline/phase-b-matrix/` were re-recorded against the fixed tree;
+`RESULTS.md` keeps FINDING 1's round-1 red verbatim as the before picture rather than erasing it.
+One stale line in the recorder — a hard-coded note asserting the non-streamed path reports one of
+two broken calls — was corrected, because it was prose that the fix had made false.
+
+**VERIFIED-BY-FAKE**, per conventions §10: deterministic mocks, scripted bytes, `MemoryStore`.
+No real model, no real keychain, no packaged binary.
+
 ## Open blockers
 
-**One, and it is a gate failure, not an operator decision.** GATE M Part 1 does not pass for
-Phase B: `ToolCallAccumulator` loses tool calls on the non-streamed path (see the gate section
-above and `docs/regression-baseline/phase-b-matrix/RESULTS.md` FINDING 1). It needs an owner, a
-fix, and the three-part regression test named there. Everything else in the gate is green.
+**None in the Phase B gate.** GATE M Part 1 passes; the round-1 blocker
+(`ToolCallAccumulator` losing tool calls on the non-streamed path) is closed, with the three-part
+regression recipe implemented both as scripted units and live over HTTP.
 
-GATE M Part 2 is reassigned to the desktop session, not blocked.
+GATE M Part 2 — a real llama.cpp at :8033 — is reassigned to the desktop session, not blocked,
+and remains the largest hole in the evidence base for the whole project. Nothing in round 2
+changed that.
+
+**Known gap, unchanged from round 1:** the Anthropic and Google adapters still have no evidence
+document of their own under `docs/regression-baseline/phase-b/`. Their behaviour is pinned by
+fixture replay in code, but the written trail is uneven.

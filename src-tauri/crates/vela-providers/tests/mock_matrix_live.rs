@@ -479,6 +479,221 @@ async fn a_well_formed_native_tool_call_is_executable() {
 }
 
 // ---------------------------------------------------------------------------
+// Parallel tool calls, live, on both transports (GATE M Part 1 Phase B FINDING 1)
+// ---------------------------------------------------------------------------
+
+/// The second offered tool. Deliberately a different name and a different
+/// parameter shape from `weather_tool`: if a batch collapses into one slot, the
+/// survivor is missing a name an assertion can point at. Two calls to the *same*
+/// tool would collapse into something that still looks plausible, which is how
+/// FINDING 1 stayed hidden through a green suite.
+fn time_tool() -> ToolDefinition {
+    ToolDefinition::new(
+        "get_local_time",
+        "Current local time for a timezone",
+        serde_json::json!({
+            "type": "object",
+            "properties": {"timezone": {"type": "string"}},
+            "required": ["timezone"]
+        }),
+    )
+}
+
+/// Everything about a reported call **except** the wire index: id, name, and
+/// the arguments (or, for a malformed call, its reason and the raw evidence
+/// string). The index is excluded on purpose — it is a streaming-only field, so
+/// the two transports legitimately differ there and nowhere else.
+fn without_wire_index(calls: &[ToolCallOutcome]) -> Vec<String> {
+    calls
+        .iter()
+        .map(|call| match call {
+            ToolCallOutcome::Ok {
+                call_id,
+                name,
+                arguments,
+                emulated,
+            } => format!("ok id={call_id} name={name} args={arguments} emulated={emulated}"),
+            ToolCallOutcome::Malformed {
+                call_id,
+                name,
+                raw_arguments,
+                reason,
+                ..
+            } => format!(
+                "malformed id={} name={} reason={reason:?} raw={raw_arguments}",
+                call_id.as_deref().unwrap_or("-"),
+                name.as_deref().unwrap_or("-")
+            ),
+        })
+        .collect()
+}
+
+/// Two tools offered, so the endpoint answers with a *batch* — the commonest
+/// tool-calling shape in the wild, and the one no profile could emit until the
+/// harness grew case 13/14.
+///
+/// This is the test that joins the two halves of the FINDING 1 fix: the harness
+/// emits the batch in both wire shapes (`message.tool_calls[]` with no `index`
+/// anywhere, `delta.tool_calls[]` keyed by one), and the accumulator has to tell
+/// them apart. Before the fix the non-streamed side came back as a single
+/// `Malformed` call whose evidence string was two calls' arguments spliced
+/// together.
+#[tokio::test]
+async fn parallel_tool_calls_survive_both_transports_on_a_live_endpoint() {
+    for profile in ["frontier", "mid-local"] {
+        let server = MockServer::start(profile, &[]).await;
+        let provider = provider_for(&server.url);
+        let ask = || {
+            user("what is the weather in Berlin and what time is it there")
+                .with_tools([weather_tool(), time_tool()])
+                .with_tool_choice(ToolChoice::Required)
+        };
+
+        let whole = provider.complete(ask(), &context()).await.unwrap();
+        let mut sink = CollectingSink::new();
+        let streamed = provider.stream(ask(), &mut sink, &context()).await.unwrap();
+
+        for (transport, response) in [("non-streamed", &whole), ("streamed", &streamed)] {
+            let executable: Vec<&ToolCallOutcome> = response.executable_tool_calls().collect();
+            assert_eq!(
+                executable.len(),
+                2,
+                "{profile}/{transport}: two offered tools must yield two executable calls, \
+                 not a batch collapsed into one: {:#?}",
+                response.tool_calls
+            );
+            let names: Vec<&str> = executable
+                .iter()
+                .filter_map(|call| match call {
+                    ToolCallOutcome::Ok { name, .. } => Some(name.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                names,
+                vec!["get_weather", "get_local_time"],
+                "{profile}/{transport}: both calls keep their own name"
+            );
+            let ids: Vec<&str> = executable
+                .iter()
+                .filter_map(|call| match call {
+                    ToolCallOutcome::Ok { call_id, .. } => Some(call_id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_ne!(ids[0], ids[1], "{profile}/{transport}: ids must stay apart");
+            assert!(
+                !response
+                    .degradations
+                    .iter()
+                    .any(|d| matches!(d, Degradation::MalformedToolCalls { .. })),
+                "{profile}/{transport}: a well-formed batch is not a degradation: {:#?}",
+                response.degradations
+            );
+            assert_eq!(
+                response.stop_reason,
+                StopReason::ToolUse,
+                "{profile}/{transport}"
+            );
+        }
+
+        assert_eq!(
+            without_wire_index(&whole.tool_calls),
+            without_wire_index(&streamed.tool_calls),
+            "{profile}: one endpoint answer, two transports, two different reports"
+        );
+        server.stop().await;
+    }
+}
+
+/// `hostile` answers a two-tool request with *three* calls of which only the
+/// middle one is broken. That mixture is what makes a lost call detectable: a
+/// consumer that merges the batch reports one malformed call and the two good
+/// ones have visibly vanished, rather than never having existed.
+#[tokio::test]
+async fn a_partly_broken_parallel_batch_loses_neither_the_good_calls_nor_the_bad_one() {
+    let server = MockServer::start("hostile", &[]).await;
+    let provider = provider_for(&server.url);
+    let ask = || {
+        user("what is the weather in Berlin and what time is it there")
+            .with_tools([weather_tool(), time_tool()])
+            .with_tool_choice(ToolChoice::Required)
+    };
+
+    let whole = provider.complete(ask(), &context()).await.unwrap();
+    let mut sink = CollectingSink::new();
+    let streamed = provider.stream(ask(), &mut sink, &context()).await.unwrap();
+
+    for (transport, response) in [("non-streamed", &whole), ("streamed", &streamed)] {
+        assert_eq!(
+            response.tool_calls.len(),
+            3,
+            "{profile}/{transport}: the socket carried three calls: {:#?}",
+            response.tool_calls,
+            profile = "hostile"
+        );
+        assert_eq!(
+            response.executable_tool_calls().count(),
+            2,
+            "hostile/{transport}: the two well-formed calls stay executable: {:#?}",
+            response.tool_calls
+        );
+        let broken: Vec<&ToolCallOutcome> = response
+            .tool_calls
+            .iter()
+            .filter(|call| matches!(call, ToolCallOutcome::Malformed { .. }))
+            .collect();
+        assert_eq!(broken.len(), 1, "hostile/{transport}: {broken:#?}");
+        match broken[0] {
+            ToolCallOutcome::Malformed {
+                reason,
+                raw_arguments,
+                name,
+                ..
+            } => {
+                assert_eq!(
+                    *reason,
+                    MalformedToolCall::UnknownDiscriminator,
+                    "hostile/{transport}: `funktion` is the reported reason"
+                );
+                assert_eq!(
+                    name.as_deref(),
+                    Some("get_local_time"),
+                    "hostile/{transport}"
+                );
+                // The evidence string is this call's own bytes and nothing
+                // else. The exact text is a function of the request (the mock
+                // samples arguments from the schema and truncates them), so it
+                // is characterised rather than hard-coded: a truncated prefix of
+                // *this* call's arguments, carrying nothing from either
+                // neighbour. `city`/`unit` belong to `get_weather`, and their
+                // presence here would be the splice FINDING 1 reported.
+                assert!(
+                    raw_arguments.starts_with("{\"timezone\":"),
+                    "hostile/{transport}: raw evidence is this call's own prefix: {raw_arguments:?}"
+                );
+                assert!(
+                    !raw_arguments.contains("city") && !raw_arguments.contains("unit"),
+                    "hostile/{transport}: a neighbour's arguments were spliced in: {raw_arguments:?}"
+                );
+                assert!(
+                    serde_json::from_str::<serde_json::Value>(raw_arguments).is_err(),
+                    "hostile/{transport}: this call really is truncated: {raw_arguments:?}"
+                );
+            }
+            other => panic!("hostile/{transport}: {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        without_wire_index(&whole.tool_calls),
+        without_wire_index(&streamed.tool_calls),
+        "hostile: one endpoint answer, two transports, two different reports"
+    );
+    server.stop().await;
+}
+
+// ---------------------------------------------------------------------------
 // Degradation: tool-call emulation, end to end against small-local
 // ---------------------------------------------------------------------------
 

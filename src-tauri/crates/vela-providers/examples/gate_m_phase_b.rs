@@ -3102,8 +3102,9 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
         out,
         "  EXPECTED: frontier PASSES, hostile FAILS — and hostile failing is the desired\n  \
          behaviour: what comes back is surfaced and nothing is executable.\n  \
-         NOTE: hostile sends TWO broken calls and this non-streamed path reports only ONE.\n  \
-         That is FINDING 1 in RESULTS.md, not part of this control."
+         NOTE: hostile sends TWO broken calls and this non-streamed path now reports BOTH.\n  \
+         Round 1 reported one spliced call here — that was FINDING 1 in RESULTS.md, fixed in\n  \
+         round 2. The control itself is unchanged: neither call is executable either way."
     );
 
     // C7 — the overflow assertion.

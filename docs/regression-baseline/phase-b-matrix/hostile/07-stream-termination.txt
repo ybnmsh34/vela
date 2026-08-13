@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the stream --------------------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:35549/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:43493/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -87,7 +87,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       
 
 ---- timing — the number this case exists for ------------------------------
-  WALL CLOCK for the whole turn          3.363706ms
+  WALL CLOCK for the whole turn          3.676249ms
   recorded naive [DONE] consumer         5003 ms (TIMED OUT)
   recorded naive usage consumer          5006 ms (TIMED OUT)
   `data: [DONE]` present in the body     false
@@ -100,7 +100,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- assertions --------------------------------------------------------------
   [PASS] VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang
-        wall clock 3.363706ms
+        wall clock 3.676249ms
   [PASS] the answer arrives whole regardless of how the stream ended
         160 characters
   [PASS] a missing [DONE] sentinel is reported, not silently absorbed

@@ -257,6 +257,12 @@ propagate through git on a case-insensitive checkout; the stem must actually dif
 A sweep of `src/` for same-directory, case-insensitively-identical module stems found **exactly one**
 collision — this one. There is no second instance to fix.
 
+**The rename should be sufficient — the fix is de-risked.** Across the whole `pnpm build`, the only
+TypeScript errors are `TS1149` ×2, `TS1261` ×2, `TS2305` ×2, in exactly two files
+(`MessageTurn.tsx`, `markdown.test.ts`), all arising from this single collision. There is no second,
+hidden compile failure waiting behind it, so a desktop re-run after the rename should not stall on
+another one. (Fix `icon.ico` in the same pass or `tauri-build` still blocks the Windows app.)
+
 **Second, independent Windows blocker** (from the GATE-M2 run above, repeated here because they
 must be fixed together or the next desktop run stalls again): `src-tauri/icons/icon.ico` is absent
 and nothing generates it, so `tauri-build` fails before compiling. Fixing the casing alone still

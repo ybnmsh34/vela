@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | ❌ | ❌ | ❌ | ✅ | ❌ **FAIL** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL 3/4 — round 2 building** | 2 |
+| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | ❌ **FAIL r2** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **GATE FAIL r2 — round 3 required** | 2→3 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -439,6 +439,73 @@ segments only, so `src/tests_helper.rs` and a crate called `examples-core` still
 **VERIFIED-BY-FAKE**, per conventions §10. Four deterministic mocks; not one byte came from a
 model. GATE M Part 2 (a real llama.cpp at :8033) was not attempted, remains unreachable from this
 container, and is still the largest hole in the project's evidence base.
+
+## Phase B round 2 — FINDING 1 closed, FINDING 2 opened. ❌ Gate fails again.
+
+Fresh executor who wrote neither fix. **361 assertions** (round 1: 265), **16 failures, all one
+defect**. **24 controls, 15 of them the expected FAIL** (round 1: 15 / 10).
+
+### ✅ FINDING 1 (parallel tool calls) — CLOSED, and closed properly
+
+Not merely "the test passes now". The evidence base itself was repaired:
+
+- The harness answers a multi-tool request with a real batch, so case `02p` drives **three
+  parallel calls LIVE over real TCP**, on all four profiles, on **both transports** — no longer
+  the scripted bytes round 1 had to improvise.
+- Compared **call by call** — id, name, arguments, failure reason — **not by count**. A count
+  check would have passed the original bug in some shapes.
+- An explicit **anti-splice assertion** checks every reported arguments string against the set the
+  endpoint actually sent.
+- `hostile`'s partially-broken batch (only the *middle* call broken) is included, so "N−1 calls
+  vanish" is detectable rather than invisible.
+- **CONTROL 8 restores round 1's rule at the accumulator boundary and reproduces the spliced
+  `{"city":"berlin"}{"city":"paris"}{"city":"rome"}` verbatim** — so the new assertions are
+  demonstrably able to fail. 43 assertions, 0 failures.
+
+Also re-confirmed: small-local prompt emulation still works end to end, including a two-call
+emulated batch — with the harness's 120-character echo cap **recorded as a stated limit rather
+than worked around silently**. Termination latency now has its own case: five samples, median
+asserted under 10 ms, measured at **1.9–3.3 ms** across the four profiles.
+
+### 🔴 FINDING 2 — the credential redaction is incomplete. Gate FAIL.
+
+`Auth::ApiKeyQuery` with a canary, driven through **seven** forced failures, is clean on six:
+connection refused, first-byte timeout, TLS handshake failure, mid-stream reset (both transports),
+and a 400 whose error body quotes the request URL.
+
+**It leaks on the seventh** — a **200 SSE stream** carrying `{"error":{"message":"… ?key=<canary>"}}`.
+The credential reaches `ProviderError`'s Display, Debug, **both** serde renderings (the shape that
+crosses the IPC bridge), **and the `StreamEvent` sink the UI is handed** — on all four profiles.
+
+**Cause:** the `Scrubber` is applied in `map_reqwest_error` and in `HttpResponse::read_to_end`, but
+the streamed path reads frames through **`ByteStream::next_chunk`, which does not scrub**. All
+three adapters share the shape; Google is most exposed, since `?key=` is its only binding.
+Confirmed on a bare `ReqwestTransport` with nothing wrapping it, so it is not a recorder artifact.
+
+### The executor caught its own false positive — and named the root cause
+
+Its first run reported a leak **Vela does not have**. The recorder's `Tee` implements `ByteStream`
+but did not forward `scrubber()`, whose **trait default is `Scrubber::none()`** — so the wire
+recorder silently disabled the redaction it was measuring. It found this, fixed the recorder, and
+re-ran rather than filing the false finding.
+
+Then it named the underlying footgun, which is the more valuable output:
+
+> **a security property carried by an overridable method that defaults to no protection.**
+
+That default is almost certainly *why* FINDING 2 exists at all. Round 3 must invert it rather than
+patch `next_chunk` — a fix that leaves `Scrubber::none()` as the default will simply be rediscovered
+at the next unscrubbed call site.
+
+### Is this thrash? No — and here is the test I applied
+
+The no-thrash rule stops a piece when **the same critic FAILs twice on the same evidence**. This is
+not that. Round 1's finding was the URL appended to an error *string*; round 2 fixed that path and
+six others, and the gate then found a **different code path** — streamed frames — with **new
+evidence** (a 200 SSE body, not a transport error). The fix is landing incrementally and the
+evidence base is getting stronger each round: 265 → 361 assertions, 10 → 15 controls that actually
+fail. Round 3 is justified. If round 3 fails on a *third* unscrubbed path, that becomes thrash and
+the piece stops for a decision.
 
 ## Run incidents
 

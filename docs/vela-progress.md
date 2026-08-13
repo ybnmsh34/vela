@@ -1719,6 +1719,51 @@ and it could only be taken once the app could complete a turn, which is exactly 
 **Visual remains FAIL** — the platform-defaults class: no bundled typeface, the white Windows
 scrollbar in dark mode, and 150% DPI layout breakage. That is the platform-polish wave's job.
 
+## Composition-root wave — panel FAIL 2/4. The same class, one layer up.
+
+The gate PASSED against the real assembled app (14 host assertions, 19 production-bundle, 98 Phase C,
+1455 B2, 92 controls, zero failures). Two binding critics then failed it — on the wave's own class.
+
+### ❌ Vision is unreachable through the assembled `<App/>`
+
+> *"The renderer never puts a staged image into the `chat_send` payload, so the shipping attach
+> affordance silently discards the user's picture."*
+
+Proved by driving the real composition root, not by reading code — and **found independently by the
+regression critic too**, which is what makes it credible.
+
+**This does not contradict the desktop session's GATE-M2 PASS, and the distinction matters.** That
+verdict constructed the IPC payload itself and proved the *backend* path: a red/blue PNG went in and
+came back correctly described. This critic drove the *UI*. Both are true — **the IPC can carry an
+image, and the attach button doesn't use it.** The layer that was fixed and the layer that was
+tested were not the same layer, which is precisely this project's recurring failure mode.
+
+### ❌ The one list that decides what ships is bound to nothing
+
+> *"The composition root's `generate_handler!` list — the ONLY list that decides what is actually
+> reachable in the packaged binary — is bound to nothing."*
+
+`lib.rs:33` **claims** *"The `generate_handler!` list and `ipc::COMMAND_ALLOWLIST` must agree —
+`cargo test` enforces it."* No test enforces it. A command can sit in the allowlist, satisfy the
+cross-language parity fixture, and still be **unreachable in the packaged binary**.
+
+A comment asserting an enforcement that does not exist is worse than no comment: every subsequent
+builder reads it and believes the invariant is held.
+
+### The wave found this class in its own output, unprompted
+
+The gate reported: `81b1b12` added controls **K25–K28 that had never been executed** — the script
+died before reaching them and the committed ledger stopped at K21. Its words: *"This wave's defect
+class in this wave's own output."* Harness fixed, controls now 28/28. It also declined to edit a
+now-redundant guard in `provider_host.rs` because *"an executor who edits what he grades is
+manufacturing agreement."*
+
+### Non-blocking, from the passing critics
+
+- **Security PASS**, but: the debug log this wave newly made reachable is created **world-readable**
+  — `exchanges.jsonl` 0644, `diagnostics/` 0755, measured with a real probe. Fix to 0600/0700.
+- Renderer reload drops the open conversation.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

@@ -899,3 +899,44 @@ succeeds with `secretBackend: os-keychain`.
 The explanation is benign and mildly reassuring: WebView2 had restored the previous session URL from
 the shared user-data folder, and **Tauri correctly refused IPC from that non-app origin.** Commands
 being rejected from an origin that is not the app is the ACL doing its job.
+
+---
+
+## CONV-1 interaction — all four focus moments now MEASURED on WebView2
+
+The interaction PASS rested on one of the cloud's four focus moments being verified and three being
+*unmeasured*. Two were unmeasurable because of a flaw in my harness, which the interaction critic
+diagnosed precisely: CDP `Input.dispatchKeyEvent` with no `text` field produces `rawKeyDown` only,
+so no `keypress` fires and Chromium's **implicit form submission** never runs — which is how the
+rename field commits.
+
+**The critic's hypothesis was correct.** Re-dispatching Enter with `text: "\r"` plus a `char` event,
+on the **release build**, committed the rename immediately. All four moments are now driven end to
+end, and **none of them drops focus to `<body>`**:
+
+| # | Moment | Focus lands on | Body? |
+|---|---|---|---|
+| 1 | Escape out of the command bar | `textarea` (the composer) — 0 Tabs to recover, against 11 pre-fix | no |
+| 2 | **Committing an F2 rename** | the renamed row itself (`button :: RENAME COMMIT PROOF`) | no |
+| 3 | **Confirming a delete** | `button :: Start a conversation` | no |
+| 4 | **Choosing a model in the switcher** | the switcher trigger button — restore-to-trigger, as `ModelSwitcher.tsx:77-81` intends | no |
+
+Moment 2 also confirms the rename genuinely commits and persists, and moment 3 confirms the delete
+genuinely removes the row — the confirmation opens focused on **Cancel**, the safe control, and only
+acts when Delete is chosen.
+
+**The fix at `81b1b12` is fully verified on WebView2.** The cloud's provisional finding — focus
+dropping to `<body>` at four moments, costing 7–11 Tab presses — is refuted on all four, on the
+engine where the cloud could only guess.
+
+This does not change the CONV-1 interaction verdict, which was already **PASS**. It removes the
+caveat that three quarters of it was unmeasured.
+
+**Consequence for the withdrawn section 7b.** My earlier "a leaked background control does not
+activate on Enter" result was withdrawn because it used the same text-less dispatch. That withdrawal
+was correct and stands: the harness flaw is now positively confirmed, so 7b measured the harness, not
+the app. Whether a leaked control activates through the palette remains genuinely unknown, and the
+already-filed `aria-modal` finding must not be softened by it.
+
+- evidence: `evidence/CONV-1-conversation-surface/focus-ownership.txt` (final section)
+- environment: **release build** · Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78

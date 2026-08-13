@@ -849,3 +849,53 @@ asterisks at the user.
 `h1`, `h3`, `h4`, `h5` or `h6`, so finding 7 is source-read rather than observed. That is the same
 gap that let the original markdown defect survive a full cloud review. A prompt that emits every
 heading level should be part of the re-test.
+
+---
+
+## CONV-1 visual — evidence gap CLOSED: the heading scale is now observed, not inferred
+
+The CONV-1 visual verdict flagged finding 7 (heading scale collapses below h3) as **source-read
+only**, because no artifact in the set exercised `h1` or `h3`–`h6` — the same gap that let the
+original markdown defect survive a full cloud review. That gap is now closed by measurement on the
+**release build**, from real model output.
+
+| markdown | rendered | size | weight | note |
+|---|---|---|---|---|
+| `#` | `<h2>` | 24px | 600 | |
+| `##` | `<h3>` | 18px | 600 | |
+| `###` | `<h4>` | 16px | 600 | |
+| `####` | `<h5>` | **15px** | 600 | same size as body |
+| `#####` | `<h6>` | **13px** | 600 | |
+| `######` | `<h6>` | **13px** | 600 | identical to h5 except `text-transform: uppercase` |
+| body paragraph | | 15px | 400 | |
+| `**bold**` | `<strong>` | 15px | **700** | |
+
+**Both halves of the finding are confirmed observationally:**
+
+1. **Markdown h5 and h6 are typographically identical** — same 13px, same weight 600, same element.
+   They differ only by `text-transform`. That is five distinguishable levels, not six.
+2. **Bold body text outweighs a markdown h4.** `<strong>` renders at 700 while every heading renders
+   at 600, and markdown h4 sits at the same 15px as body. A bolded run is therefore heavier than the
+   heading above it.
+
+**One correction in the app's favour, which the source read did not surface.** Markdown levels are
+**demoted by one** — `#` renders as `<h2>`, not `<h1>` — so the document keeps a single `<h1>` for
+the page itself. That is correct accessibility practice and deserves recording alongside the defect.
+
+This does not change the CONV-1 visual verdict, which remains **FAIL** on the thinking block and the
+reading measure. It upgrades finding 7 from inferred to measured.
+
+- evidence: `evidence/CONV-1-conversation-surface/heading-scale-observed.txt`,
+  `evidence/CONV-1-conversation-surface/30-heading-scale.png`
+
+### Incidental: the release bundle is sound, and a near-miss worth recording
+
+While setting this up I observed the release binary loading `http://localhost:1420` with its IPC
+returning `Command app_info not allowed by ACL`, which looked like a serious packaging defect. **It
+is not, and I nearly filed it as one.** Relaunched with no dev server running, the release binary
+loads `http://tauri.localhost/` — its own bundled assets — renders correctly, and `app_info`
+succeeds with `secretBackend: os-keychain`.
+
+The explanation is benign and mildly reassuring: WebView2 had restored the previous session URL from
+the shared user-data folder, and **Tauri correctly refused IPC from that non-app origin.** Commands
+being rejected from an origin that is not the app is the ACL doing its job.

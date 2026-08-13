@@ -30,8 +30,16 @@ use state::AppState;
 /// on `tauri::test::mock_runtime` and drive the real commands through the real
 /// `invoke_handler`.
 ///
-/// The `generate_handler!` list and [`ipc::COMMAND_ALLOWLIST`] must agree —
-/// `cargo test` enforces it.
+/// **The `generate_handler!` list below is the only list that decides what the
+/// packaged binary will answer.** [`ipc::COMMAND_ALLOWLIST`] is a declaration;
+/// this is the dispatch table. A command in one and not the other is either
+/// unreachable in the shipped app or reachable without ever being declared.
+///
+/// `tests/handler_binding.rs` enforces that they agree, and does it by building
+/// **this** function on the mock runtime and asking the assembled
+/// `invoke_handler` about each command by name — not by reading this file for
+/// the answer. Until that file existed, this comment claimed an enforcement
+/// that did not exist, and was believed.
 pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     // Scoped to this function so the module's import list stays as the scaffold
     // left it; `manage` needs the trait in scope.

@@ -160,10 +160,20 @@ Every command, without exception:
 
 - **Exactly one argument, always named `payload`.** The TS adapter invokes as
   `invoke(name, { payload })`. A Rust parameter with a different name silently receives
-  `undefined`. There is no exception to this rule.
+  `undefined`. There is no exception to this rule, and per this document's own preamble
+  that sentence has to be backed by a test — it is:
+  `src-tauri/tests/handler_binding.rs::every_command_takes_exactly_one_argument_and_it_is_named_payload`
+  parses every `#[tauri::command]` in the host crate and rejects any other shape. Until
+  that test existed the rule was stated three times and enforced nowhere.
 - Commands with no input take `EmptyPayload` (`{}`); commands with no output return
   `Ack` (`{ ok: true }`). Never `()`, never a bare scalar.
 - Wire fields are camelCase in both directions.
+- **Registered in `COMMAND_ALLOWLIST` *and* in `generate_handler!`.** They are not the
+  same list and only the second one ships: `generate_handler!` in `src-tauri/src/lib.rs`
+  is the dispatch table the packaged binary consults, and the allowlist is the reviewed
+  declaration of what that table is allowed to contain. `handler_binding.rs` builds the
+  real app on the mock runtime and invokes every allowlisted name against the real
+  handler, so drift in either direction fails `cargo test` instead of shipping.
 
 Rust:
 

@@ -10,11 +10,17 @@
  *  1. Add the request/response interfaces below.
  *  2. Add the entry to {@link IpcContract}.
  *  3. Add the name to {@link COMMAND_ALLOWLIST} (keep it sorted).
- *  4. Implement it in `src-tauri/src/ipc/<domain>.rs` and register it in both
- *     `COMMAND_ALLOWLIST` (Rust) and `generate_handler!` in `lib.rs`.
+ *  4. Implement it in `src-tauri/src/ipc/<domain>.rs`, take its one argument as
+ *     `payload`, and register it in both `COMMAND_ALLOWLIST` (Rust) and
+ *     `generate_handler!` in `lib.rs`. Those last two are different things:
+ *     the allowlist is the declaration, `generate_handler!` is the dispatch
+ *     table the packaged app consults.
  *  5. Implement it in `BrowserAdapter` so the UI still runs headlessly.
  * Miss any of these and either `cargo test` or `pnpm test` fails. That is the
- * point.
+ * point — and step 4's `generate_handler!` half only became true when
+ * `src-tauri/tests/handler_binding.rs` was written, which is why that file
+ * exists. Step 5 is `tsc`'s doing: `BrowserAdapter.#handle` ends in a
+ * `const exhaustive: never = command`, so an unhandled command fails the build.
  *
  * ## Rules
  *  - Every command takes exactly one payload object and returns one object.

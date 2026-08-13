@@ -34,13 +34,20 @@
 //!   prefix is mandatory so the allowlist stays readable as it grows.
 //! * **One argument, always named `payload`.** The TS adapter wraps every call
 //!   as `invoke(name, { payload })`, so a differently-named argument silently
-//!   arrives as `undefined`. There is no exception to this rule.
+//!   arrives as `undefined`. There is no exception to this rule, and
+//!   `tests/handler_binding.rs::every_command_takes_exactly_one_argument_and_it_is_named_payload`
+//!   is what makes that sentence true rather than aspirational.
 //! * **Commands with no input still take a payload** (`EmptyPayload`) and
 //!   commands with no output still return one ([`Ack`]). Never `()`.
-//! * **Register in [`COMMAND_ALLOWLIST`] and in `generate_handler!`.** A test
-//!   asserts those two agree with each other *and* with the TypeScript
-//!   `COMMAND_ALLOWLIST` in `src/platform/contract.ts`. Adding a command in one
-//!   place only will fail `cargo test`.
+//! * **Register in [`COMMAND_ALLOWLIST`] and in `generate_handler!`.** Those
+//!   are two different things: the allowlist is the declaration, and
+//!   `generate_handler!` in `lib.rs` is the dispatch table the packaged binary
+//!   actually consults. `tests/handler_binding.rs` drives the assembled app and
+//!   fails if either list has an entry the other lacks;
+//!   [`tests::rust_and_typescript_allowlists_are_identical`] below covers the
+//!   TypeScript `COMMAND_ALLOWLIST` in `src/platform/contract.ts`. Adding a
+//!   command in one place only will fail `cargo test` — which was not true
+//!   before `tests/handler_binding.rs`, though this file said it was.
 //! * **Secret values move in one direction only.** There is no command that
 //!   returns secret material, and adding one is a review-blocking change.
 
@@ -65,8 +72,14 @@ pub use error::{IpcError, IpcErrorCode, IpcResult};
 /// host advertising a different major version.
 pub const IPC_CONTRACT_VERSION: u32 = 1;
 
-/// The explicit allowlist. **This is the security boundary.** A command absent
-/// from this list is not reachable from the renderer.
+/// The explicit allowlist. **This is the security boundary** — the reviewed,
+/// declared statement of what the renderer may reach.
+///
+/// It is not, on its own, what makes a command reachable: `generate_handler!`
+/// in `lib.rs` is. `tests/handler_binding.rs` binds the two together by
+/// invoking every name here against the real assembled `invoke_handler`, so an
+/// entry added here and nowhere else fails as loudly as it deserves instead of
+/// shipping as a command that answers `not found`.
 ///
 /// Keep alphabetically sorted; the parity test depends on set equality, not
 /// order, but sorted order keeps diffs honest.

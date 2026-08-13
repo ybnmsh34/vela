@@ -59,6 +59,15 @@ tempfile = "3"
 # with no window and no display server. `tauri`'s `test` feature is `[]`: it
 # pulls in no additional dependency, it only un-gates `tauri::test`.
 tauri = { version = "2", features = ["test"] }
+# `tests/handler_binding.rs` needs the *registered* command list, and
+# `generate_handler!` leaves no runtime trace of its argument list. Reachability
+# itself is decided by invoking the assembled app (no source reading); `syn`
+# only supplies the two source-derived sets that make the reverse direction
+# decidable — the paths inside `generate_handler!` and every `#[tauri::command]`
+# in the crate. A real Rust parser rather than a substring scan, because the
+# substring answer is wrong on this very tree: `ipc/mod.rs` documents a
+# `thing_do` command inside a doc comment, which any grep counts as real.
+syn = { version = "2", features = ["full", "visit"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

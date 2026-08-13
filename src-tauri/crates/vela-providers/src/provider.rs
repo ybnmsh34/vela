@@ -7,18 +7,28 @@
 //! the streaming one into a collector, so a backend cannot end up with two
 //! implementations that disagree.
 //!
-//! Rules that are not negotiable, because a test enforces each one:
+//! Rules that are not negotiable, because a test enforces each one — each rule
+//! names the test that makes it real, so the claim can be checked rather than
+//! believed:
 //!
 //! * Start at [`ModelCapabilities::unknown`](crate::capability::ModelCapabilities::unknown)
-//!   and raise a flag only on evidence from a probe.
+//!   and raise a flag only on evidence from a probe —
+//!   `capability::tests::nothing_is_believed_until_it_is_probed`.
 //! * Every error you return is a [`ProviderError`]; never invent a second
-//!   taxonomy and never let an HTTP status escape.
+//!   taxonomy and never let an HTTP status escape —
+//!   `http::tests::a_transport_error_normalises_into_the_one_taxonomy` and,
+//!   per adapter, `an_unknown_code_falls_back_to_the_status_rather_than_being_invented`.
 //! * Honour `context.cancel` between reads, and honour
-//!   `context.timeouts.stall` on every read.
+//!   `context.timeouts.stall` on every read — per adapter,
+//!   `a_cancelled_context_stops_before_the_request_is_sent` and
+//!   `a_stalled_body_is_abandoned_rather_than_awaited_forever`.
 //! * Never touch the OS keychain. Take a `&dyn SecretStore` and let
 //!   `vela_secrets::resolve_auth` turn an `Auth` binding into request material:
 //!   it is the function that guarantees `Auth::None` sends **no**
-//!   `Authorization` header rather than an empty one.
+//!   `Authorization` header rather than an empty one. This was the one rule of
+//!   the four with no test behind it — true only because nobody had yet added
+//!   the dependency — until
+//!   `vela-settings/tests/capability_matrix_endpoints.rs::a_keychain_binding_exists_in_exactly_one_crate`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

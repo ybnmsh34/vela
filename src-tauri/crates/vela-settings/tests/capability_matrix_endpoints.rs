@@ -208,6 +208,73 @@ fn an_http_client_exists_in_exactly_one_crate() {
     );
 }
 
+/// The credential boundary, machine-checked — the twin of the test above, and
+/// added because it was missing.
+///
+/// `vela-providers/src/provider.rs` opens with *"Rules that are not negotiable,
+/// because a test enforces each one"*, and the fourth of those rules is **never
+/// touch the OS keychain**. Three of the four had tests. This one did not: it
+/// was true only because nobody had yet written `keyring = "3"` into the
+/// provider crate's manifest, and nothing would have objected if they had.
+///
+/// A provider adapter that reached the keychain directly would bypass
+/// `vela_secrets::resolve_auth` — the single function that turns an `Auth`
+/// binding into request material, and the one that guarantees `Auth::None`
+/// sends no `Authorization` header rather than an empty one.
+#[test]
+fn a_keychain_binding_exists_in_exactly_one_crate() {
+    // Crates that would let Rust code read an OS credential store directly.
+    const KEYCHAINS: [&str; 5] = [
+        "keyring",
+        "security-framework",
+        "secret-service",
+        "windows-credentials",
+        "keytar",
+    ];
+
+    let manifests = workspace_manifests();
+    assert!(
+        manifests.len() >= 6,
+        "expected the host crate plus every domain crate; found {manifests:?}"
+    );
+
+    let mut declaring: Vec<String> = Vec::new();
+    for manifest in &manifests {
+        let text = std::fs::read_to_string(manifest).expect("readable manifest");
+        let declares_keychain = text.lines().any(|line| {
+            let line = line.trim();
+            // Dependency declarations only — the prose in these manifests names
+            // the keychain repeatedly, and a substring scan would flag itself.
+            !line.starts_with('#')
+                && KEYCHAINS.iter().any(|crate_name| {
+                    line.starts_with(crate_name)
+                        && line[crate_name.len()..]
+                            .trim_start()
+                            .starts_with(['=', '.'])
+                })
+        });
+        if declares_keychain {
+            declaring.push(
+                manifest
+                    .parent()
+                    .and_then(|dir| dir.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            );
+        }
+    }
+    declaring.sort();
+
+    assert_eq!(
+        declaring,
+        vec!["vela-secrets".to_string()],
+        "the OS keychain must be reachable from vela-secrets and nowhere else; \
+         a provider adapter that opened it directly would route around \
+         `resolve_auth`, which is what keeps `Auth::None` from sending an empty \
+         `Authorization` header"
+    );
+}
+
 /// GATE M FINDING 8, enforced rather than narrated: the renderer never opens a
 /// connection of its own. It could not usefully do so — there are no CORS
 /// headers on any matrix endpoint and `OPTIONS` is answered `405` — and it must

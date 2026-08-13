@@ -2719,3 +2719,133 @@ clean, `cargo build`/`cargo test --workspace --locked` green.
 
 **VERIFIED-BY-FAKE** per conventions §10 in the ordinary sense — but note this piece is a *static*
 guarantee about the source tree, so no endpoint, keychain or webview is implicated either way.
+
+---
+
+## Integration wave — the typeface, the platform chrome and the false-enforcement sweep, reconciled
+
+Three builders, one integrator. The two that both edit `tokens.css` — the typeface and the platform
+chrome — were expected to collide there. **They did not.** The reconciliation was already done in
+the tree: the typeface owns the two `--vela-font-*` stacks and the comment block above them, the
+platform chrome owns the four `--vela-scrollbar-*` tokens, the `color-scheme` declaration in each of
+the three theme blocks and the per-theme `--vela-text-subtle`, and the two sets are disjoint. The
+merge with the desktop session's two pushed commits touched `docs/desktop-gate/VERDICTS.md` only.
+**No conflict, real or textual, in any file.** Recording that plainly rather than manufacturing one.
+
+### The gate, in an isolated worktree with a fresh cargo target dir
+
+Run at the integrated tree, `pnpm install --frozen-lockfile` first, `CARGO_TARGET_DIR` outside the
+repo and empty at the start:
+
+| step | result |
+|---|---|
+| `pnpm typecheck` | clean |
+| `pnpm test` | **68 files, 1489 tests, 0 failures** |
+| `pnpm test:harness` | **12 files, 142 tests, 0 failures** |
+| `pnpm build` | clean |
+| `cargo fmt --all --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo build --workspace --locked` | clean |
+| `cargo test --workspace --locked` | **44 binaries, 929 passed, 0 failed, 4 ignored** |
+| `./scripts/check-transcripts.sh` | `mock-matrix` **byte-identical after regeneration** |
+| `./scripts/secret-scan.sh` | no credential material in tracked files |
+
+One honest note about the run: the first attempt failed on `cargo test` with `No space left on
+device` after `cargo build` had already passed. That was the container, not the tree — two stale
+4+ GB target directories from earlier mutation controls. Deleted, re-run from the same worktree,
+green. A disk failure reported as a code failure would have been worse than useless.
+
+### Verified rather than accepted
+
+Each of the three builders' central claims was re-measured here instead of being read.
+
+**The typeface, by width control, on the integrated tree.** `drive-app-root.mjs` against the built
+`dist/` in real Chromium: **28 assertions, 0 failures.**
+
+```
+P17a  Inter Variable         requested=2009   absent-font control=1725.91   (document.fonts.check said true, which is not evidence)
+P17b  applied=2009 == requested=2009
+P18a  JetBrains Mono Variable requested=2356  absent-font control=1725.91
+P19a  sans=2009 != mono=2356 — two faces, not one stack shadowing the other
+P20   68.3 characters per line at --vela-measure=30rem
+```
+
+**No font leaves the origin — asserted, not assumed.** `P19b` records four font requests, all of
+them `/assets/*.woff2` on the page's own origin; `P6b` and `P6c` independently report zero
+fetch/XHR/WebSocket/beacon calls and zero requests off-origin across the whole session, and `P11`
+holds through an endpoint configuration and an 880,000-character draft. Statically,
+`typeface.test.ts` fails on any `@font-face` `url()` or `@import` with a scheme, and
+`tauri.conf.json` declares `font-src 'self' data:` behind it. Three layers, all present.
+
+**`color-scheme` in all three theme states.** Narrowed to `dark` in **both** dark blocks —
+`@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) }` and
+`:root[data-theme='dark']` — with `light` on bare `:root`. `drive-display-scaling.mjs` measures the
+*used* value in a real engine for all six theme × OS states and the palette agrees with the widgets
+in every one: **86 assertions, 0 failures.**
+
+**Every colour role clears AA in both themes.** `contrast.test.ts` resolves the token graph and
+measures **181 pairs per theme**. Worst text pair: **4.76:1** light (`--vela-text-subtle` on a
+hovered row), **4.55:1** dark (`--vela-text-subtle` on a selected row) — both over 4.5. Worst
+non-text pair: **3.84:1** light and **3.74:1** dark, both the scrollbar thumb, over 3. Completeness
+is mechanical: a token used as a `color:` that no pair mentions fails the suite by name.
+
+**The ninth false enforcement, controlled by hand rather than by its own table.** The claim in
+`src/platform/contract.ts` is now backed by `chat-contract-parity.test.ts`, and both directions were
+mutated in the isolated worktree by the integrator, not taken on trust:
+
+| mutation | expected | observed |
+|---|---|---|
+| add `StopReason::IntegrationAgentWasHere` to `model.rs` | `pnpm test` red | **1 failed, 30 passed** — `model.rs::StopReason vs StopReason`, diff naming `integrationAgentWasHere` |
+| add `'integrationAgentWasHere'` to `contract.ts` only | `pnpm typecheck` red | **red** — `Type '"endTurn"' is not assignable to type '"this list is missing a variant"'`, and the store's own `StoredStopReason` refuses it too |
+
+The ledger of all eleven retired claims is in this file, above, and `claimed-guards.test.ts` resolves
+the whole class on every run.
+
+### Bundle size — the delta, measured against the pre-typeface tree
+
+Both trees built with the same toolchain; `b9c2b11` is the commit before the typeface landed.
+
+| | before | after | delta |
+|---|---|---|---|
+| shipped bytes (`dist/`, source maps excluded) | 406,052 | 592,626 | **+186,574 (+46%)** |
+| of which the four `.woff2` files | 0 | 183,456 | +183,456 |
+| CSS | 65.22 kB | 68.22 kB | +3.00 kB (gzip 10.01 → 10.52) |
+| JS | 336.45 kB | 336.58 kB | +0.13 kB |
+
+**A webfont is real weight and this is what it cost: 179 KiB, and 98.3% of the whole increase.**
+Nothing else ballooned — the remaining 3.1 kB is the `@font-face` block, the scrollbar rules and the
+per-theme tokens. `typeface.test.ts` caps the font budget at 256 KiB so the cheap wrong fix
+(importing a package's top-level stylesheet, which drags in cyrillic, greek and vietnamese) fails the
+suite. Worth noting separately: `dist/` also carries **1.6 MB of source maps**, which dwarf the
+fonts and ship to users; that is a pre-existing choice, unrelated to this wave, and is left alone
+rather than changed in an integration commit.
+
+### One correction to a file that defines an invariant, and one finding filed
+
+**`platform-defaults.test.ts` said the widened `color-scheme` was declared "once, on bare `:root`".
+It was declared twice.** `index.html` still carries `<meta name="color-scheme" content="light dark">`
+— the exact value the narrowing exists to remove, at document level, in a file nothing under
+`src/styles/` reads. The six-case cascade model in that test does not include it.
+
+Measured rather than argued: the same bundle served twice, once verbatim and once with the meta
+deleted from the served HTML, across both OS preferences and all three theme states — **twelve
+readings, pairwise identical.** The meta is inert, because an author declaration on the root element
+outranks document metadata and there is now one in every state. That inertness is *conditional*, so
+the condition is asserted: `an author declaration outranks the metadata in index.html` fails if the
+`:root` declaration is ever removed, naming the meta and the consequence. Controlled both ways —
+green as shipped, red with that one line deleted. Evidence and the script that produced it:
+`docs/regression-baseline/platform-defaults/meta-color-scheme-control.txt`.
+
+**Filed, not fixed: the stored theme is applied after the first paint.** `useTheme()` awaits
+`settings_get` in an effect, so at the first render commit `data-theme` is `null` and the page
+resolves through `prefers-color-scheme` — the OS preference, not the stored choice. For the default
+`system` preference they agree; for a user whose choice differs from their OS the first frames are
+the wrong palette. In this container the adapter answers in a microtask, so this is an ordering fact
+and not a duration, and whether it is visible is a WebView2 judgement. Written up for the desktop
+session in `docs/desktop-gate/REQUESTS.md`. **The boot path was deliberately not touched**: changing
+where the app decides its own appearance, on evidence this container cannot produce, is precisely
+the move that has cost this project two rounds already.
+
+**VERIFIED-BY-FAKE** per conventions §10 for everything above that runs in a browser: Chromium on
+Linux, no WebView2, no packaged binary, no keychain, no real model. The desktop session's
+`A1-scaffold-shell` and `CONV-1` PASSes remain the binding visual verdicts.

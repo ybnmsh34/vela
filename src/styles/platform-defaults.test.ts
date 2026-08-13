@@ -10,7 +10,7 @@
  *
  * ## 1. The white scrollbar
  *
- * `color-scheme: light dark` was declared once, on bare `:root`, and narrowed in
+ * `color-scheme: light dark` was declared on bare `:root` and narrowed in
  * neither dark block; there was no scrollbar styling anywhere in `src/`. So the
  * palette followed the user's choice and the user agent's widgets followed the
  * OS, and on a machine whose OS is light with Vela set to dark they disagreed:
@@ -19,6 +19,35 @@
  * somewhere". It is: **for all three theme states and both OS preferences, the
  * scheme the UA paints is the scheme the palette selected.** That is six cases,
  * and the old sheet failed two of them.
+ *
+ * ### The fourth declaration site, which this file used to say did not exist
+ *
+ * This comment said the widened value was declared *once*. It is declared in two
+ * places, and the integration wave found the second: `index.html` still carries
+ * `<meta name="color-scheme" content="light dark">`, which is a document-level
+ * declaration of the very value the token sheet exists to overrule, in a file
+ * nothing under `src/styles/` reads.
+ *
+ * **It is inert, and that was measured rather than reasoned.** Two independent
+ * readings in real Chromium against the built bundle:
+ *
+ * - `tests/harness/production-bundle/drive-display-scaling.mjs` already reports
+ *   the *used* `color-scheme` for all six states with that meta in the page:
+ *   system/light-OS `light`, system/dark-OS `dark`, forced-light/dark-OS
+ *   `light`, forced-dark/light-OS `dark`. The palette and the widgets agree in
+ *   every one.
+ * - A counterfactual, run twice over the same bundle with the meta present and
+ *   with it deleted from the served HTML: all twelve readings are pairwise
+ *   identical. Transcript:
+ *   `docs/regression-baseline/platform-defaults/meta-color-scheme-control.txt`.
+ *
+ * The reason is the cascade: an author declaration on the root element outranks
+ * the metadata, and after this fix there is one in every state. So the meta is
+ * overruled *because* the rule below holds — which is exactly why the assertion
+ * that ties them together lives here, in the file that holds the rule. Delete
+ * the `:root` declaration and the meta silently takes over, restoring the
+ * defect; the assertion `an author declaration outranks the metadata in
+ * index.html` fails first.
  *
  * ## 2. 150% display scaling
  *
@@ -160,6 +189,24 @@ describe('the OS never paints a widget in the theme the app is not in', () => {
     expect(lastDeclaration([base], 'color-scheme')).toBe('light');
     expect(lastDeclaration([byPreference], 'color-scheme')).toBe('dark');
     expect(lastDeclaration([byChoice], 'color-scheme')).toBe('dark');
+  });
+
+  it('an author declaration outranks the metadata in index.html', () => {
+    // `index.html` declares `color-scheme: light dark` as document metadata. It
+    // is overruled in every state — measured, see the header — but only because
+    // an author declaration on the root element exists to overrule it. That is
+    // a *conditional* inertness, and this is the condition, asserted rather
+    // than trusted: bare `:root` must carry the declaration, since that is the
+    // one block that applies in all six states.
+    const html = read('index.html');
+    const meta = /<meta\s+name=["']color-scheme["']\s+content=["']([^"']+)["']/u.exec(html);
+    if (meta === null) return; // Removing it is also a fix; nothing to hold down.
+    expect(
+      lastDeclaration([themeBlocks().base], 'color-scheme'),
+      `index.html declares color-scheme "${meta[1] ?? ''}" at document level. With no author ` +
+        'declaration on :root to outrank it, the user agent picks its widget scheme by the OS ' +
+        'preference again and the white scrollbar comes back on a dark app.',
+    ).toBe('light');
   });
 
   it('reads the cascade rather than the file', () => {

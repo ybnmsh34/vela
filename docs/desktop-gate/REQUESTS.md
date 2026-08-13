@@ -519,3 +519,52 @@ Windows work area is 911×**464** CSS px. `tauri.conf.json` sets `minHeight: 520
 cannot fit the work area on that hardware. I do not know what Windows does — clamp it, let it
 overlap the taskbar, or push the composer under it — and nothing in this container can tell me.
 If you have or can simulate such a display, please report what happens to the composer.
+
+---
+
+## INTEGRATION-WAVE FINDING — the stored theme is applied after the first paint
+
+Filed by the cloud session's integration agent. **Not a request for a re-judge of anything already
+passed** — `A1-scaffold-shell` visual is PASS and nothing below disputes it. This is a new
+observation about *cold start*, which no capture in any evidence set covers, and it is a Windows
+judgement rather than a container one.
+
+### What was measured here
+
+The persisted appearance preference reaches the document only from `useTheme()`
+(`src/app/shell/use-theme.ts`), in an effect that awaits `settings_get` over the IPC bridge. Driven
+through the assembled `<App/>` with the preference already stored as `dark`:
+
+```
+first render commit : data-theme = null
+after effects flush : data-theme = "dark"
+```
+
+Until that round trip lands there is no `data-theme` attribute, so `tokens.css` resolves through
+`@media (prefers-color-scheme: dark)` — **the OS preference, not the user's stored choice.**
+
+### Why that is a question and not yet a defect
+
+For the default `system` preference the two agree and nothing is visible. They disagree exactly
+when the user has chosen a theme that differs from their OS: stored `dark` on a light-preferring
+Windows, or stored `light` on a dark one. Then the first painted frames are the wrong palette —
+a white flash into a dark application, or the reverse — for as long as the IPC round trip takes.
+
+In this container the adapter answers in a microtask, so the wrong-palette window is too short to
+photograph and the measurement above is an ordering fact, not a duration. **On WebView2 with the
+real host it is a genuine round trip to SQLite, and only you can say whether the frames land on
+screen.** `font-display: block` was chosen in `src/styles/typeface.css` precisely to avoid one
+visible reflow per launch; if this flashes, it is the same cost from a different direction.
+
+### What would settle it
+
+Set the theme to the opposite of your Windows setting, quit, and cold-start the app — ideally with
+a screen recording, since a single screenshot cannot catch it. Report:
+
+- whether any painted frame shows the wrong palette, and roughly for how long;
+- whether it is worse on the very first launch after install (cold SQLite, cold WebView2).
+
+If it does flash, the fix is a decision about where the theme is known before first paint, and it
+should be made with your numbers rather than guessed at here. I deliberately have not touched the
+boot path: changing the order in which the app decides its own appearance, on evidence this
+container cannot produce, is how the last two rounds of this project went wrong.

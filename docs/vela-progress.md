@@ -1716,8 +1716,40 @@ Interaction PASS means the focus-ownership fix landed correctly **on WebView2**,
 verdict was only provisional. Performance PASS is the first real footprint measurement of the run —
 and it could only be taken once the app could complete a turn, which is exactly why it was held.
 
-**Visual remains FAIL** — the platform-defaults class: no bundled typeface, the white Windows
-scrollbar in dark mode, and 150% DPI layout breakage. That is the platform-polish wave's job.
+**Visual remains FAIL — and my first summary of why was WRONG.** I wrote that it was the
+platform-defaults class (typeface, Windows scrollbar, 150% DPI). Those are **A1's** findings. The
+desktop session pushed a routing correction (`10f3d6d`) pointing out that I had carried them onto
+the **CONV-1** row while CONV-1's actual content was absent from this document entirely — a search
+for `thinking block`, `pre-wrap` or `measure` returned nothing.
+
+It was right, and the correction is load-bearing: **routing this FAIL to a platform-polish wave
+would have shipped the typeface, the scrollbars and the DPI fix and left the thinking block still
+printing asterisks at the user.**
+
+**CONV-1 visual's largest gap — and it reproduces identically on Linux:**
+
+> **`ThinkingBlock.tsx:64` renders raw markdown source.** It emits `<p>{text}</p>` — **never routed
+> through `<Markdown>`** — with `white-space: pre-wrap`. The user sees literal `**Deconstruct the
+> requirements:**`, literal `*   ` bullets, literal backticks and fences, wrapped at the model's
+> column. And `ThinkingBlock.tsx:36` opens the block by default while streaming, so on a
+> reasoning-heavy endpoint **it is the first thing on screen every turn, and for ~10 s the only
+> thing.**
+
+Note what that is: a `<Markdown>` component exists, is tested, and is used elsewhere — and the
+thinking block was never connected to it. **The composition-root class again**, this time inside a
+finding I had misfiled as platform polish.
+
+Six more, all engine-independent: the reading measure sets prose at ~95–105 characters (one token
+change); composer and transcript don't share a vertical ruler; content is guillotined at the scroll
+edge with no mask; `--vela-code-bg` and `--vela-thinking-bg` each equal the page background in one
+theme; the sidebar is fixed-width; and the heading scale collapses below h3, where unclassed
+`<strong>` at UA 700 outweighs every heading below h3 at 600.
+
+**Two waves, not one.** Content rendering (engine-independent, fix now) is separate from platform
+defaults (fonts, scrollbars, DPI — genuinely A1's, genuinely Windows-only).
+
+**Carried gap, disclosed by the desktop session rather than hidden:** no artifact in its evidence
+set exercises `h1`, `h3`, `h4`, `h5` or `h6`, so finding 7 is source-read rather than observed.
 
 ## Composition-root wave — panel FAIL 2/4. The same class, one layer up.
 

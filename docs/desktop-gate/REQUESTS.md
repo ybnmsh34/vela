@@ -144,6 +144,46 @@ invisible from a Linux container **by construction** — case-insensitivity and 
 step do not exist here. Keep reporting outside the request when you find something that makes the
 request meaningless.
 
+## 🎨 `CONV-1-conversation-surface` — visual + interaction, on the assembled app
+
+**This REPLACES A1's visual/interaction request.** A1 described a Phase A diagnostic shell — a
+bridge-status panel and a placeholder region — which no longer exists. Judging that would tell us
+nothing. Judge the real product surface instead.
+
+- **status:** AWAITING_DESKTOP
+- **deferred critics:** `visual`, `interaction`
+- **hold `performance`** until the registry lands (see the status block above); a cold-start or
+  streaming number from a build that cannot complete a turn is not a measurement.
+
+**What to exercise.** `pnpm tauri dev`, then: the empty/home state; starting a conversation;
+switching between conversations in the sidebar; the command palette (open, filter, Escape); rename
+(F2) and delete, including their confirmations; the composer at rest, focused, and mid-stream; a
+long rendered answer with headings, lists, code blocks and quotes; a collapsed and expanded
+thinking block; a tool call shown as run, as malformed, and as emulated; both light and dark; and a
+window narrow enough to force the sidebar to collapse.
+
+**What "good" looks like.** A quality **tier**, not a clone: at or above Claude Desktop, Linear,
+Raycast, and Zed. Type scale and hierarchy, spacing rhythm, radii, elevation discipline, a coherent
+colour-role system, motion that reads as intentional, and empty/loading/streaming states that were
+designed rather than defaulted. **Vela keeps its OWN visual identity — resemblance to Anthropic's
+trade dress is a defect, not a goal.** Compare blind where you can: put a Vela screenshot beside a
+reference with labels stripped and pick the better one, then say which you picked and why.
+
+**Two things the cloud already flagged as PROVISIONAL, which are yours to rule on:**
+
+1. **Focus ownership.** The app was observed dropping focus to `<body>` at four moments — Escape
+   out of the command bar (11 Tab presses to recover), confirming a delete (7), committing an F2
+   rename (7), and one more. A fix landed at `81b1b12`; verify it on **WebView2**, where focus
+   behaviour genuinely differs from Chromium.
+2. **The reading surface.** Rendered markdown was found to have no typographic hierarchy and to
+   mis-set wrapped prose — and *no screenshot in the entire evidence set exercised it*, which is
+   why it survived. A type scale landed at `81b1b12`. This is the product's primary reading
+   surface; judge it hard.
+
+> **Calibration:** this is a conversation surface with real streaming, thinking blocks and tool
+> calls — but Projects, artifacts, MCP, skills and the code sandbox are **later phases and are not
+> built**. Do not fail it for their absence. Fail it for the tier of what is there.
+
 ## ⚠️ STALE — do not action as written
 
 Both requests below were filed at `cb38535` and are **stale by this run's own rule**: a verdict

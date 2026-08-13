@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- a json_schema request, non-streaming ------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:33677/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:40527/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -46,7 +46,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   answer text                            "\nMock mid-local reply to: give me the weather in Berlin as JSON. yardarm fathom north rudder windward north ember keel orbit beacon tiller windward beacon jetty gauge meridian."
   structured verdict                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   degradations                           StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
-  wall clock                             1.866075ms
+  wall clock                             2.18138ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] a structured request always comes back with an explicit verdict
@@ -60,7 +60,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same request, STREAMED, on a provider that has learned nothing yet --
 
-  >>> exchange 1 — POST http://127.0.0.1:33677/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:40527/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)

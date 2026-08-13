@@ -11,7 +11,7 @@ frontier	01-plain-chat	PASS	the turn produces an answer	226 characters
 frontier	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 226 chars / whole 226 chars
 frontier	01-plain-chat	PASS	the deltas add up to the answer	delta sum 226 chars
 frontier	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
-frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.698625ms
+frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.958912ms
 frontier	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -38,7 +38,7 @@ frontier	06-reasoning	PASS	and never in the answer channel	"Mock frontier reply 
 frontier	06-reasoning	PASS	precondition — the markup is in the reasoning channel and not in the answer channel	answer="Mock frontier re" reasoning="Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
 frontier	06-reasoning	PASS	NO tool call is recovered from reasoning text	Ok("(none)")
 frontier	06-reasoning	PASS	control — the parser DOES recover a call when the markup is in the answer	if this fails, the assertion above proves nothing
-frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.879306ms
+frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.925512ms
 frontier	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	222 characters
 frontier	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 frontier	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
@@ -48,19 +48,19 @@ frontier	08-malformed-frames	PASS	one bad frame never aborts the turn	226 charac
 frontier	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 frontier	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 frontier	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:41597/v1/chat/completions
+frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:44599/v1/chat/completions
 frontier	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 frontier	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 frontier	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.694448ms
+frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.190439ms
 frontier	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 frontier	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
 frontier	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
 frontier	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 frontier	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
 frontier	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-frontier	10-failover	PASS	failover does not hang	10.564673ms
-frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	207.304193ms
+frontier	10-failover	PASS	failover does not hang	10.896548ms
+frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.288152ms
 frontier	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
 frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
 mid-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 32768, probe reported Some(32768)
@@ -75,7 +75,7 @@ mid-local	01-plain-chat	PASS	the turn produces an answer	170 characters
 mid-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 170 chars / whole 170 chars
 mid-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 170 chars
 mid-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
-mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.990833ms
+mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.250567ms
 mid-local	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -102,7 +102,7 @@ mid-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	1
 mid-local	06-reasoning	PASS	reasoning is captured, not discarded	"Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
 mid-local	06-reasoning	PASS	reasoning is stored as its own content part (vela-store models it separately)	["reasoning", "text"]
 mid-local	06-reasoning	PASS	the closing tag is in NO single frame — a frame-local stripper cannot work	confirmed against the recorded frames
-mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.348395ms
+mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.534108ms
 mid-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	165 characters
 mid-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 mid-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }
@@ -112,19 +112,19 @@ mid-local	08-malformed-frames	PASS	one bad frame never aborts the turn	170 chara
 mid-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 mid-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 mid-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:33677/v1/chat/completions
+mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:40527/v1/chat/completions
 mid-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 mid-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 mid-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.158684ms
+mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	811.152999ms
 mid-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 mid-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
 mid-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
 mid-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 mid-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
 mid-local	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-mid-local	10-failover	PASS	failover does not hang	13.313657ms
-mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.304133ms
+mid-local	10-failover	PASS	failover does not hang	11.545731ms
+mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	209.14182ms
 mid-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
 mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
 small-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 8192, probe reported Some(8192)
@@ -139,7 +139,7 @@ small-local	01-plain-chat	PASS	the turn produces an answer	129 characters
 small-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 129 chars / whole 129 chars
 small-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 129 chars
 small-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
-small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	3.915954ms
+small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.652864ms
 small-local	02-tool-calling	PASS	an endpoint with no tools is refused explicitly, never silently	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(142), output_tokens: Some(32), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ToolCallingEmulated { tool_count: 1 }] })
 small-local	02-tool-calling	PASS	the turn is degraded into emulation rather than failed	ToolCallingEmulated { tool_count: 1 }
 small-local	02-tool-calling	PASS	control — this endpoint really does refuse a native tools request	if this passes, the emulation result below is not an artefact
@@ -169,7 +169,7 @@ small-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answe
 small-local	06-reasoning	PASS	the answer itself survives	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
 small-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	129 vs 129 chars
 small-local	06-reasoning	PASS	an endpoint that emits no reasoning produces no reasoning part	""
-small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.366255ms
+small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.835169ms
 small-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	130 characters
 small-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	UsageNotReported
 small-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
@@ -180,19 +180,19 @@ small-local	08-malformed-frames	PASS	one bad frame never aborts the turn	129 cha
 small-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 small-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 small-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:37371/v1/chat/completions
+small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:33577/v1/chat/completions
 small-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 small-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 small-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.578706ms
+small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.10279ms
 small-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 small-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
 small-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
 small-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 small-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UsageNotReported, FailedOver { attempts: 2 }] }))
 small-local	10-failover	PASS	the failover is declared to the caller	UsageNotReported, FailedOver { attempts: 2 }
-small-local	10-failover	PASS	failover does not hang	10.033533ms
-small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.177614ms
+small-local	10-failover	PASS	failover does not hang	10.762256ms
+small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.122967ms
 small-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
 small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
 hostile	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 4096, probe reported Some(4096)
@@ -207,7 +207,7 @@ hostile	01-plain-chat	PASS	the turn produces an answer	166 characters
 hostile	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 166 chars / whole 166 chars
 hostile	01-plain-chat	PASS	the deltas add up to the answer	delta sum 166 chars
 hostile	01-plain-chat	PASS	no wire-format remnant reaches the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
-hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.521244ms
+hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.132121ms
 hostile	02-tool-calling	PASS	both broken calls are reported, neither is dropped	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnparseableArguments raw="{\"city\":\"del"                                     MALFORMED index=None id=MISSING name=get_weather reason=UnknownDiscriminator raw="not-json-at-all"
 hostile	02-tool-calling	PASS	NOTHING from a broken stream is executable	0 executable
 hostile	02-tool-calling	PASS	truncated arguments are reported as unparseable, not guessed at	[UnparseableArguments, UnknownDiscriminator]
@@ -237,7 +237,7 @@ hostile	06-reasoning	PASS	the answer itself survives	"nested Mock hostile reply 
 hostile	06-reasoning	PASS	the deltas the consumer saw equal the final answer	166 vs 166 chars
 hostile	06-reasoning	PASS	an unterminated <think> does not swallow the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
 hostile	06-reasoning	PASS	the recovery is declared, not silent	UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
-hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.676249ms
+hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.980153ms
 hostile	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	160 characters
 hostile	07-stream-termination	PASS	a missing [DONE] sentinel is reported, not silently absorbed	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
 hostile	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
@@ -249,23 +249,23 @@ hostile	08-malformed-frames	PASS	one bad frame never aborts the turn	166 charact
 hostile	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 hostile	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 hostile	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:43493/v1/chat/completions
+hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:43535/v1/chat/completions
 hostile	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 hostile	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 hostile	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.92235ms
+hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.870183ms
 hostile	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 hostile	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { detail: "incorrect API key provided" })
 hostile	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "incorrect API key provided" })
 hostile	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 hostile	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }] }))
 hostile	10-failover	PASS	the failover is declared to the caller	UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
-hostile	10-failover	PASS	failover does not hang	11.910821ms
-hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	209.439964ms
+hostile	10-failover	PASS	failover does not hang	11.607846ms
+hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	207.643276ms
 hostile	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
 hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body" }))
-hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001207012s, 0 chars
-frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	15.757824ms, 16 chars
+hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001468898s, 0 chars
+frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	14.629521ms, 16 chars
 mid-local	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think> Mock mid-local reply to: what is the weather in Berlin. penn … [elided: 309 characters total]
 hostile	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what i … [elided: 330 characters total]
 frontier	control-2-raw-content-channel	PASS	the raw content channel is free of reasoning markup	Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u … [elided: 226 characters total]

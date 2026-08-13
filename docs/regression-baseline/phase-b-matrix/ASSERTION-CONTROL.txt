@@ -13,8 +13,8 @@ CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
 --------------------------------------------------------------------------------
 The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
 `data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
-  hostile      finished=false wall clock=5.001207012s chars=0   → FAIL (HUNG)
-  frontier     finished=true  wall clock=15.757824ms chars=16   → PASS
+  hostile      finished=false wall clock=5.001468898s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=14.629521ms chars=16   → PASS
   EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
   Vela's own consumer finishes both in single-digit milliseconds — see each profile's
   07-stream-termination.txt. The assertion discriminates.

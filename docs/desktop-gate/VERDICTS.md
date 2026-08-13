@@ -1305,3 +1305,95 @@ touch `scrollbar-gutter`. Correct, and I have not pre-photographed it: captures 
 current broken ruler would have to be retaken anyway, and a stale scrollbar image in the record is
 exactly the kind of artifact that gets cited later as if it were current. Ping me when the fix lands
 and I will capture both themes.
+
+---
+
+## GUTTER REGRESSION — FIXED, verified at a width where the column actually clamps
+
+- commit: `352742b`
+- environment: real WebView2 151.0.4129.78 · Windows 11 · classic space-taking scrollbars ·
+  conversation open · sidebar driven to maximum through the separator's `ArrowRight` path
+
+`Composer.module.css:37` now carries the same `scrollbar-gutter: stable both-edges` as the scroller,
+so both boxes are laid out against the same available width.
+
+Verified **the way my last check failed to** — edges not centres, sidebar at maximum, and at widths
+where the column is genuinely clamped:
+
+| window | sidebar | text content box | composer field | ΔL | ΔR | ΔW | column clamped? |
+|---|---|---|---|---|---|---|---|
+| 1400 | 480 | 480 | 480 | 0 | 0 | 0 | no |
+| 880 | 312 | 480 | 480 | 0 | 0 | 0 | no |
+| 760 | 192 | 480 | 480 | 0 | 0 | 0 | no |
+| 700 | 132 | 480 | 480 | 0 | 0 | 0 | no |
+| 640 | 72 | 480 | 480 | 0 | 0 | 0 | no |
+| **580** | 56 | **424** | **424** | **0** | **0** | **0** | **yes** |
+
+The 880px case you asked for now reads 480/480 rather than 456/480, because the composer clamps with
+the column instead of staying at full measure. **The decisive row is 580px**, where the column is
+forced below `--vela-measure` to 424 and the composer follows it exactly — that is the condition the
+old code failed, and it now holds.
+
+Worth stating plainly: at 1400, 880, 760, 700 and 640 the column still reaches its full 480, so
+**five of those six rows could not have detected the original defect either.** A regression test for
+this must assert at a width where the column is clamped, or it asserts nothing.
+
+---
+
+## WINDOW CONTROLS — implemented and verified on the OS window
+
+- commit: `352742b`
+
+`TitleBar.tsx` now renders `CaptionGlyph` minimise / maximise-restore / close in Windows order,
+driven by `useWindowControls()`, and `tauri-adapter.ts:29` imports `@tauri-apps/api/window` behind
+the platform seam. Verified against the **real** window handle:
+
+| action | OS window state | control label |
+|---|---|---|
+| at rest | `iconic=false zoomed=false rect=(120,80)-(1520,980)` | Maximise |
+| click Maximise | **`zoomed=true`** `rect=(-8,-8)-(2568,1400)` | **Restore** |
+| click Restore | `zoomed=false` `rect=(120,80)-(1520,980)` — exact original rect | **Maximise** |
+| click Minimise | **`iconic=true`** `rect=(-32000,-32000)` | — |
+| click Close | process **EXITED** | — |
+
+The maximise label and glyph track the real window state rather than a click count — restoring
+returns the window to its exact prior rect, and the label follows.
+
+Also checked, because these are the ways caption buttons usually go wrong:
+
+- **The buttons sit OUTSIDE `data-tauri-drag-region`** (`insideDragRegion: false` for all three), so
+  they receive clicks rather than being swallowed by the drag surface — and the drag region is still
+  present.
+- **Tab order reaches them** and they are last in the caption group, so Close is not reachable early
+  by accident.
+- **Focus ring is real**: `outline: solid 2px rgb(95,226,214)` on a focused caption button.
+
+### An instrument error I nearly filed as a defect
+
+My first pass reported **"minimise does not work"** — real mouse click at the button's centre, no
+console error, `IsIconic` false for five seconds. That was wrong, and the cause was my measurement:
+`Get-Process vela | MainWindowHandle` returns a **16×16 untitled helper window**, not Vela's UI
+window. Enumerating every top-level window of the process found the real one (`title 'V'`) sitting at
+`iconic=true rect=(-32000,-32000)` — it had minimised correctly on the first click, and I was
+watching a different window the whole time.
+
+What caught it was a control: minimising via Win32 `ShowWindow` directly and finding that the handle
+I was reading reported a `16×16` rect. An instrument that cannot be made to fail on a known-good
+input is not evidence. Had I filed it, a builder would have spent a cycle chasing working code.
+
+---
+
+## Item 3 — the painted scrollbar, re-photographed after the gutter fix
+
+As agreed, deferred until the fix landed rather than shipping captures that would need retaking.
+Both themes re-captured on the fixed build, with `scrollbar-gutter: stable both-edges` and a measured
+`offsetWidth − clientWidth` of **24px** in each:
+
+- `evidence/A1-retest/60-scrollbar-after-gutterfix-light.png`
+- `evidence/A1-retest/60-scrollbar-after-gutterfix-dark.png`
+- `evidence/A1-retest/manifest-scrollbar-refresh.json`
+
+The dark capture still shows the themed pill with no trough and no arrow buttons — the A1 scrollbar
+fix survives the gutter change.
+
+- evidence: `evidence/ruler-and-window-controls.txt` (raw readings for everything above)

@@ -2626,3 +2626,96 @@ the new `#[ignore]`d debug-log evidence driver).
 read with `stat`. **The Tauri webview, WebView2, the Windows build, real case-insensitive
 resolution, cold start, idle RAM and any real model remain unjudged here and belong to the desktop
 session.** GATE M Part 2 was not attempted and is not extended by this report.
+
+---
+
+## The ninth false enforcement — and the sweep, made mechanical
+
+`src/platform/contract.ts` said a Rust-to-TypeScript parity test read the provider crate's
+`serde` shapes and failed if a variant was added on one side only. **`git log --all` shows that
+file was never written, in any commit.** It is the ninth instance of this project's central defect
+class and the second in the "claimed enforcement" shape specifically — the previous wave closed the
+identical claim in `src-tauri/src/lib.rs` and was asked to sweep for siblings. The sweep missed the
+file that *defines* the IPC contract.
+
+A missing guard is a hole. A **claimed** guard is a trap: every later builder reads the sentence,
+believes the invariant is held, and builds on it.
+
+### The claim was made true, not softened
+
+`src/platform/chat-contract-parity.test.ts` pairs 17 Rust enums and 7 Rust structs across
+`{model,event,error,capability,diagnostic}.rs` with their wire twins here. Both directions are
+closed, by different halves of the gate:
+
+- **Rust-only change → `pnpm test` red.** The test reads the Rust sources off disk, applies each
+  item's own `#[serde(rename_all = …)]`, and set-compares.
+- **TypeScript-only change → `pnpm typecheck` red.** Every list goes through `everyVariantOf`,
+  which is assignable only when the list covers its union exactly.
+
+Mutation controls, run in a scratch worktree so the shared tree never held a defect:
+
+| mutation | expected | observed |
+|---|---|---|
+| add `Cause::SolarFlareCorruptedTheReply`, `ContentPart::Hologram`, `StreamEvent::Heartbeat`, `TokenUsage::tokens_per_second` | vitest red, 4 named | **4 failed, 27 passed**, each naming its pair |
+| delete `Capability::PromptCaching`, `Evidence::Cached` | vitest red, 2 named | **2 failed, 29 passed** |
+| add `'dropMiddle'` to `ContextStrategy` and `'imageDownscaled'` to `Degradation`, TS only | typecheck red | **red, naming both missing variants** |
+| …then add them to the test's lists too | vitest red | **2 failed, 29 passed** |
+
+### The sweep, done properly and then turned into a test
+
+Search terms across every tracked source and doc file: `enforc|guarante`, and comment lines
+matching `fails? if|fails? the build|will fail|would fail|is asserted|asserted by|a test
+(asserts|enforces|proves|checks|pins)|checked by|verified by|guarded by|pinned by|is enforced|cargo
+test|pnpm (test|verify|typecheck)|review-blocking|tripwire|scans every|reads this file` — 116 hits,
+each read. Then three mechanical resolvers over every backticked artifact reference: file paths,
+rustdoc intra-doc links (569 resolved), and sentence-shaped test names (202 resolved).
+
+**Ledger.** Eleven sites carried a claim with nothing behind it; the rest of the 116 were verified
+true and left alone. Names that do not exist are quoted with straight quotes rather than
+backticks below — this table is where they are *reported*, and `claimed-guards.test.ts` reads this
+file, so a backtick here would be a fresh claim of the very thing being retired.
+
+| # | location | the claim | verdict | action |
+|---|---|---|---|---|
+| 1 | `src/platform/contract.ts:277` | `chat-contract-parity.test.ts` reads the Rust files and fails if a variant is added on one side only | **FALSE** — file never existed | made true: the test is written, both directions mutation-controlled |
+| 2 | `vela-providers/src/diagnostic.rs:66` | `audit_closed_vocabulary` walks an error's serde rendering and rejects unexplained strings | **FALSE name, TRUE enforcement** | renamed to the real one: `tests/typed_closed_error_surface.rs::no_error_in_the_whole_taxonomy_carries_an_unexplained_string`, plus its control |
+| 3 | `vela-providers/src/answer.rs:169` | salvaged text is held out of `parts` until `Self::into_parts` | **FALSE name** | the method is `into_answer` |
+| 4 | `tests/streamed_credential_canary.rs:36` | "with_no_credential_configured_nothing_is_redacted_at_all" is the redacted-vs-deleted control | **FALSE name** | pointed at `a_body_answering_a_credential_free_request_is_untouched`, and the sentence now describes what that test actually asserts |
+| 5 | `tests/encoded_credential_canary.rs:75` | "redaction_removes_the_secret_and_not_the_diagnosis" keeps the endpoint's message alive | **FALSE name and stale semantics** — the redesign stopped carrying the endpoint's words at all | pointed at `a_diagnosis_survives_even_though_the_endpoints_words_do_not`; the sentence now says cause, endpoint and correlation id survive |
+| 6 | `tests/zz_gate_m_round3_executor_probe.rs:32` | `streamed_credential_canary.rs` proves the echo premise via "a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret" | **FALSE** | rewritten to name `the_credential_is_still_on_the_url_that_goes_to_the_socket` and scoped to the query binding, which is what it actually covers |
+| 7–8 | same file, lines 485 and 541 | "every_adapter_really_was_sent_a_credential" carries the premise | **FALSE name** | `every_adapter_really_was_echoed_a_credential_and_really_redacted_it` |
+| 9 | `tests/encoded_credential_canary.rs:915` | the gate recorder is "examples/gate_m_phase_b.rs" | **FALSE path** — `record.sh` runs `gate_m_phase_b2` | corrected |
+| 10 | `docs/vela-progress.md:424` and `phase-b-matrix/README.md:125` | same recorder path | **FALSE path** | corrected |
+| 11 | `tests/harness/mock-provider/src/record-transcripts.ts:322` | "transcripts.test.ts" imports the capture list | **FALSE name, TRUE mechanism** | the file is `record-transcripts.test.ts`, and it does import `captures` |
+
+Verified TRUE and untouched (spot-checked, not assumed): the two allowlist parity tests, the
+`generate_handler!` binding and its payload-name rule, `secrets_get`'s asserted absence, the
+telemetry tripwire, `an_http_client_exists_in_exactly_one_crate` and its keychain twin, all six
+tests named in `provider.rs`'s rule list, `validate_sequence`, `every_variant_is_listed_in_all`,
+`the_answer_text_never_contains_reasoning`, `store_model_parity.rs`, the `tests/parity/` fixtures,
+`design-system.test.ts`, `verify-covers-ci.test.ts`, `adapter.test.ts`'s source scan, and the two
+shell labels in `secret-scan.test.sh`.
+
+### So the tenth is caught by a test, not by a sweep
+
+`src/platform/claimed-guards.test.ts` resolves the whole class on every run: every rustdoc
+intra-doc link, every backticked repo path, every sentence-shaped test name, across `src/`,
+`src-tauri/`, `tests/`, `scripts/`, `.github/`, `docs/architecture/` and this file. Excluded, with
+reasons in the file: `docs/regression-baseline/` and `docs/desktop-gate/` are records of what was
+true at a past commit, and `docs/spec-parts/` is an unbuilt spec whose backticks are other vendors'
+API fields. Its allowlist holds naming *shapes* and the deliberately-named-because-it-is-gone half
+of the `markdown.ts` case collision — never a guard.
+
+**Shown red before green.** On pristine `410936b` the guard reports 11 sites including
+`src/platform/contract.ts:277` itself; its own control feeds a fabricated corpus through the same
+resolver and asserts all three shapes are reported.
+
+Nothing here was rustdoc's doing: `cargo doc`'s broken-link lint is not part of `pnpm verify`, and
+`cargo test` never reads a doc link, so all eleven were invisible to every gate the project had.
+
+**Gate:** `pnpm verify` green at `205b6a8` in an isolated worktree — 68 vitest files / 1489 tests,
+harness 12 / 142, transcripts byte-identical, secret scan clean, `cargo fmt`/`clippy -D warnings`
+clean, `cargo build`/`cargo test --workspace --locked` green.
+
+**VERIFIED-BY-FAKE** per conventions §10 in the ordinary sense — but note this piece is a *static*
+guarantee about the source tree, so no endpoint, keychain or webview is implicated either way.

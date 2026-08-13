@@ -16,6 +16,7 @@
   align-items: center;
   gap: var(--vela-space-2);
   width: 100%;
+  min-width: 0;
   appearance: none;
   background: none;
   border: 0;
@@ -51,6 +52,7 @@
 }
 
 .summary {
+  flex: 0 0 auto;
   font-weight: var(--vela-weight-medium);
   letter-spacing: var(--vela-tracking-label);
 }
@@ -79,18 +81,29 @@
   }
 }
 
-.body {
-  padding: 0 var(--vela-space-3) var(--vela-space-3);
+/* The live edge of the thought, on the collapsed row. It takes whatever space
+   the summary and the pulse leave and then stops: a peek that wraps is not a
+   peek. `min-width: 0` because a flex item will otherwise refuse to shrink
+   below its text and push the row wider than the card. */
+.peek {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vela-text-subtle);
 }
 
-.text {
-  margin: 0;
-  font-size: var(--vela-text-sm);
-  line-height: var(--vela-leading-prose);
+/* The colour is set here rather than inside the rendered markdown, so the whole
+   channel is one voice and `Markdown` keeps deciding only structure. */
+.body {
+  padding: 0 var(--vela-space-3) var(--vela-space-3);
   color: var(--vela-thinking-text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
+
+/* `.text` and its `white-space: pre-wrap` are gone, and that absence is the
+   fix: this block renders `<Markdown scale="aside">` now, so the model's source
+   line endings stopped being the reader's line endings. */
 
 .notice {
   margin: 0 0 var(--vela-space-2);

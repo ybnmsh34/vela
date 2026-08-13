@@ -72,6 +72,41 @@ the same reason `tests/parity/` does.
 six headings with six correct tags and one shared font size is a well-formed document that
 cannot be read as one, and no amount of `innerText` will say so.
 
+## Two more the endpoint does on request: `#headings` and `#thinkmd`
+
+Both exist because the previous pass closed one evidence gap and disclosed two others.
+
+`#headings` answers with `tests/fixtures/heading-scale-answer.md`, which exercises **all six
+heading levels** with a bold run beside each. `#markdown` reaches `h4` and stops, so no artifact
+in the set ever rendered `h1`, `h3`, `h4`, `h5` or `h6` — which is why "the scale collapses below
+`h3`, and an unclassed `<strong>` at 700 outweighs every heading under it at 600" had to be read
+out of a stylesheet instead of seen. `headingsOutrankEmphasis()` now measures that comparison
+from the engine's own computed weights.
+
+`#thinkmd` puts markdown in the **reasoning** channel. Every profile's narration was plain
+prose, so no run here had ever painted a thinking block containing a bold lead-in, a bulleted
+plan or a fence — and the block that printed `**Deconstruct the requirements:**` at the user,
+verbatim, with `white-space: pre-wrap`, was therefore invisible from this matrix and had to be
+found on a real machine. `reasoningSurface()` reads what came out the other end.
+
+Like `#tools` and `#markdown`, both fire only when asked for, so every recorded transcript and
+every pre-existing case stays byte-identical.
+
+## What `layoutRuler()` is for
+
+Three findings that are properties of the *assembled layout at a particular window size*, and
+so can only be read from a browser: the transcript's text and the composer's box stood on two
+different rulers (688px of text under a 736px box); the sidebar was a constant, so a 480px
+choice took half of a 1000px window; and the reading column set prose at ~95–105 characters per
+line. `drive-matrix.mjs` reads it at **two** viewports with the sidebar dragged to its maximum —
+a single reading cannot tell a responsive width from a constant that happens to look right where
+you measured, and a sidebar left at its default is under the cap at both sizes and would prove
+nothing.
+
+The characters-per-line figure is measured through `Range.getClientRects()` rather than
+"characters ÷ line boxes": the last line of every paragraph is partial, and that bias is about
+8% on a document this length — enough to move the number out of the band it is judged against.
+
 ## Running it
 
 ```bash
@@ -106,7 +141,7 @@ node tests/harness/ui-bridge/server.mjs --profile hostile --port 8420 --chunk-de
 | `relay-adapter.ts` | `PlatformAdapter` over HTTP + SSE. Transport only |
 | `server.mjs` | Starts the mock and the Rust bridge; serves `/invoke`, `/events`, `/health` |
 | `checks.mjs` | The DOM readers and the assertions — shared by the driver and the controls |
-| `drive-matrix.mjs` | One profile, eighteen screenshots, twenty-five assertions — twenty-three on `hostile`, which has no answer channel for the reading surface to be judged in |
+| `drive-matrix.mjs` | One profile, twenty-three screenshots, thirty-five assertions — thirty on `hostile`, which has no answer channel for the reading surface to be judged in, and thirty-three on `small-local`, which has no reasoning channel |
 | `controls.mjs` | The same assertions applied where they must fail |
 
 `checks.mjs` is shared on purpose: a control that re-implements the assertion it is controlling

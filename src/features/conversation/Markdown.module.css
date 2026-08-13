@@ -30,10 +30,23 @@
  * sub-sub-section, which on a long answer is the difference between something
  * you can skim and a wall.
  *
- * Size carries levels 1–3, where model output actually lives. Levels 4–6 are
- * rare enough that separating them on size alone would need steps too fine to
- * see, so they are separated by weight, colour, case and vertical rhythm as
- * well — which is how a type scale is supposed to work anyway.
+ * The first repair fixed levels 1–3 and left 4–6 where the *interface* scale
+ * happened to put them: `h4` at body size, `h5` and `h6` **smaller than the
+ * prose they head**. A heading set smaller than its own paragraphs is not a
+ * quiet heading, it is a caption. And all six sat at `--vela-weight-semibold`
+ * while an unclassed `<strong>` inherits the user agent's 700, so `**a bold
+ * run**` in a paragraph outranked every heading below `h3`: the document's own
+ * emphasis outweighed the document's own structure.
+ *
+ * The rule now: **no heading is smaller than body text, and no heading is
+ * lighter than emphasis.** Four sizes sit at or above body text, and four sizes
+ * cannot express six levels — steps fine enough to try would be steps nobody
+ * can see — so levels that share a size are separated by colour and case
+ * instead. One device changes per step, which is how a type scale is supposed
+ * to work anyway:
+ *
+ *     1  xl                     2  lg                3  md
+ *     4  base                   5  base + muted      6  base + muted + caps
  *
  * The *rhythm* is half of it: space above a heading binds it to what follows
  * and separates it from what came before. Equal margins on every level make a
@@ -41,7 +54,9 @@
 .heading {
   margin: var(--vela-space-5) 0 var(--vela-space-2);
   font-size: var(--vela-text-base);
-  font-weight: var(--vela-weight-semibold);
+  /* One step above `strong`. Not decoration — this is the comparison that
+     decides whether structure or emphasis is the loudest thing on the line. */
+  font-weight: var(--vela-weight-bold);
   line-height: var(--vela-leading-tight);
   letter-spacing: var(--vela-tracking-tight);
   color: var(--vela-text);
@@ -66,16 +81,19 @@
   font-size: var(--vela-text-base);
 }
 
+/* From here down the levels are too rare to justify a size step and too real to
+   flatten. Colour first, then case. */
 .heading[data-level='5'] {
   margin-top: var(--vela-space-4);
-  font-size: var(--vela-text-sm);
+  font-size: var(--vela-text-base);
+  color: var(--vela-text-muted);
 }
 
 /* The deepest level stops being a heading-by-size and becomes a label. It is
    the only one that could otherwise be mistaken for the level above it. */
 .heading[data-level='6'] {
   margin-top: var(--vela-space-4);
-  font-size: var(--vela-text-sm);
+  font-size: var(--vela-text-base);
   letter-spacing: var(--vela-tracking-caps);
   text-transform: uppercase;
   color: var(--vela-text-muted);
@@ -85,6 +103,22 @@
    under it, and two headings in a row are one unit, not two. */
 .heading + .heading {
   margin-top: var(--vela-space-3);
+}
+
+/* ---- emphasis, ranked below structure ------------------------------------ *
+ * `Markdown.tsx` renders `<strong>` as the element with no class, on purpose —
+ * the parser decides what is emphasised, not the stylesheet. That left it on
+ * the user agent's 700, one step *above* every heading below `h3`, so a phrase
+ * somebody bolded in passing read as more structural than the section it was
+ * in. Emphasis is `semibold`; headings are `bold`; the gap is the ranking.      */
+.prose strong {
+  font-weight: var(--vela-weight-semibold);
+}
+
+/* The same correction pointed the other way. Inside a heading, `## a **bold**
+   word` must not set that one word lighter than the rest of its own line. */
+.heading strong {
+  font-weight: inherit;
 }
 
 .list {
@@ -221,4 +255,28 @@
     animation: none;
     opacity: 0.6;
   }
+}
+
+/* ---- the subordinate scale ----------------------------------------------- *
+ * A channel that is *about* the answer cannot borrow the answer's voice. The
+ * thinking block routes its markdown through this component — that is the whole
+ * point, and it is why the model's `**Deconstruct the requirements:**` stopped
+ * being printed at the reader — but reasoning is deliberation, not output, and
+ * a model that writes `# Plan` in its own reasoning must not get a 24px heading
+ * over the answer it is reasoning about.
+ *
+ * Two rules, and the ceiling is the interesting one: **nothing in an aside sets
+ * larger than the answer's body text.** Every heading level lands on
+ * `--vela-text-base`, one step above the aside's own `--vela-text-sm` body, and
+ * the level devices that are not size — the muted colour at 5, the caps at 6 —
+ * carry through from the rules above and go on doing the separating.           */
+.prose[data-scale='aside'] {
+  font-size: var(--vela-text-sm);
+  /* The block that contains it owns the colour; see ThinkingBlock.module.css. */
+  color: inherit;
+}
+
+.prose[data-scale='aside'] .heading {
+  margin-top: var(--vela-space-3);
+  font-size: var(--vela-text-base);
 }

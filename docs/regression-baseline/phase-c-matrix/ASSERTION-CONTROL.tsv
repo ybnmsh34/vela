@@ -15,15 +15,32 @@ K13	FAIL	FAIL	yes	the error-state assertion, applied to a turn that succeeded	(n
 K14	FAIL	FAIL	yes	the no-credential assertion, applied to an endpoint that genuinely requires one	usable=false check=missingRequired complaintOnScreen=false
 K15	PASS	PASS	yes	the console assertion on the run as it stood (it was clean)	clean
 K16	FAIL	FAIL	yes	the same assertion, after one deliberate console.error	error: control: a deliberate console error
-K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:45659/v1/models
-K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 33 ms
-K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3692 ms
+K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:36619/v1/models
+K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 20 ms
+K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3646 ms
 K20	FAIL	FAIL	yes	the "turn is settled" assertion, applied while the turn is still in flight	still says "Waiting for the first token…"
 K22	PASS	PASS	yes	the hierarchy assertion on the surface as it ships (it held in the matrix run)	h1=24px h2=18px h3=16px h4=15px | body=15px | distinct=4 monotonic=true outranksBody=true
 K23	FAIL	FAIL	yes	the same assertion once every heading level is set at one size — the defect as found	h1=15px h2=15px h3=15px h4=15px | body=15px | distinct=1 monotonic=true outranksBody=false
 K24	FAIL	FAIL	yes	the same assertion against a scale that grows as the level deepens	h1=12px h2=16px h3=20px h4=24px | body=15px | distinct=4 monotonic=false outranksBody=false
 K25	PASS	PASS	yes	the reflow assertion on the surface as it ships	9 paragraphs; white-space=normal; 0 still carry a source newline
 K26	FAIL	FAIL	yes	the same assertion once paragraphs preserve the source line endings again	9 paragraphs; white-space=pre-wrap; 0 still carry a source newline
-K27	PASS	PASS	yes	the sideways-scroll assertion on the surface as it ships	column 688px wide, content 688px
-K28	FAIL	FAIL	yes	the same assertion with content four thousand pixels wide in the column	column 688px wide, content 4000px
+K27	PASS	PASS	yes	the sideways-scroll assertion on the surface as it ships	column 480px wide, content 480px
+K28	FAIL	FAIL	yes	the same assertion with content four thousand pixels wide in the column	column 480px wide, content 4000px
+K29	PASS	PASS	yes	structure-outranks-emphasis on the surface as it ships	strong=600 body=15px | outweighed=[] undersized=[]
+K30	FAIL	FAIL	yes	the same assertion with a bold run at 700 over headings at 600 — the inversion as found	strong=700 body=15px | outweighed=[h1@600 h2@600 h3@600 h4@600 h5@600 h6@600 h2@600] undersized=[]
+K31	FAIL	FAIL	yes	the same assertion with h5 and h6 set smaller than body text — the other half as found	strong=600 body=15px | outweighed=[] undersized=[h5@13px h6@13px]
+K32	PASS	PASS	yes	the characters-per-line assertion on the column as it ships	60.6 characters per line at 480px, set in Inter
+K33	FAIL	FAIL	yes	the same assertion with the column back at the 688px it shipped with	86.5 characters per line at 688px, set in Inter
+K34	PASS	PASS	yes	the settled-thought-is-closed assertion on the block as it ships	summary="Thought process" expanded=false (unterminated=false)
+K35	FAIL	FAIL	yes	the same assertion against a settled block that is open — the pre-fix default	summary="Thought process" expanded=true (unterminated=false)
+K36	PASS	PASS	yes	the thinking block renders markdown, on the block as it ships	leaked=[] strong=1 items=2 white-space=normal
+K37	FAIL	FAIL	yes	the same assertion against `<p>{text}</p>` with pre-wrap — the defect as it shipped	leaked=[** * ] strong=0 items=0 white-space=pre-wrap
+K38	PASS	PASS	yes	the aside-stays-subordinate assertion on the block as it ships	scale=aside largest in aside=13px, answer body=15px
+K39	FAIL	FAIL	yes	the same assertion with a 24px heading inside the aside	scale=aside largest in aside=24px, answer body=15px
+K40	PASS	PASS	yes	the one-ruler assertion on the layout as it ships	text 620–1100 (480px), composer 620–1100 (480px)
+K41	FAIL	FAIL	yes	the same assertion with the composer back on its own ruler	text 620–1100 (480px), composer 492–1228 (736px)
+K42	PASS	PASS	yes	the sidebar-gives-way assertion on the layout as it ships	1440px → sidebar 480px, column 480px; 880px → sidebar 352px, column 480px
+K43	FAIL	FAIL	yes	the same assertion with the sidebar pinned at 480px — the constant as it shipped	1440px → sidebar 480px, column 480px; 880px → sidebar 480px, column 352px
+K44	PASS	PASS	yes	the scroll-edge assertion on the transcript as it ships	atTop=false atBottom=false mask=linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), r
+K45	FAIL	FAIL	yes	the same assertion with the mask removed while content is still hidden above the edge	atTop=false atBottom=false mask=none
 K21	PASS	PASS	yes	FINDING 1 reproduced: settings has the endpoint, and chat_send still cannot find it	providers=1 chat_send={"code":"NOT_FOUND","message":"no provider configured with id `matrix`"}

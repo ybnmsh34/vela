@@ -207,10 +207,20 @@ export function readingSurface(page) {
     if (turn === undefined) return null;
 
     const px = (value) => Math.round(Number.parseFloat(value) * 100) / 100;
-    const firstHeading = turn.querySelector('[data-level]');
-    // The prose container is whatever holds the headings. Found structurally
-    // rather than by class name, because the class name is a build hash.
-    const prose = firstHeading?.parentElement ?? turn.querySelector('p')?.parentElement ?? null;
+    // THE ANSWER CHANNEL, NAMED.
+    //
+    // This used to be "whatever element holds the first `[data-level]`", which
+    // was true right up until the thinking block started rendering markdown
+    // too. From that commit on, a model that wrote a heading in its *reasoning*
+    // would have redirected this whole reader at the subordinate channel and
+    // reported the aside's type scale as the answer's — a gate measuring the
+    // wrong document and saying nothing. `data-scale` is on the container for
+    // exactly this: the answer says which one it is.
+    const prose =
+      turn.querySelector('[data-scale="answer"]') ??
+      turn.querySelector('[data-level]')?.parentElement ??
+      turn.querySelector('p')?.parentElement ??
+      null;
     if (prose === null) return { headings: [], paragraphs: [], counts: {}, prose: null };
 
     const headings = [...prose.querySelectorAll('[data-level]')].map((node) => {
@@ -246,14 +256,57 @@ export function readingSurface(page) {
     });
 
     const bodyStyle = getComputedStyle(prose);
+    // Emphasis, measured beside the structure it must not outrank. The defect
+    // is a *comparison* — `<strong>` at the user agent's 700 against a heading
+    // at 600 — so a reading of either number alone says nothing.
+    const strong = [...prose.querySelectorAll('strong')]
+      .filter((node) => node.closest('[data-level]') === null)
+      .map((node) => ({
+        text: (node.textContent ?? '').trim().slice(0, 40),
+        fontWeight: getComputedStyle(node).fontWeight,
+        fontSizePx: px(getComputedStyle(node).fontSize),
+      }));
+
     return {
       headings,
       paragraphs,
+      strong,
       prose: {
         fontSizePx: px(bodyStyle.fontSize),
         lineHeightPx: px(bodyStyle.lineHeight),
         clientWidthPx: prose.clientWidth,
         scrollWidthPx: prose.scrollWidth,
+        // What the engine *actually* resolved, not what the stack asked for.
+        // A characters-per-line figure is uninterpretable without it: Vela does
+        // not bundle a typeface yet, so the same column measures differently on
+        // WebView2/Segoe UI than it does here.
+        fontFamily: bodyStyle.fontFamily.split(',')[0].replaceAll(/["']/gu, ''),
+        // The measurement the whole reading-measure decision rests on.
+        //
+        // Not "characters ÷ line boxes": the last line of every paragraph is
+        // partial, so that under-reports by half a line per paragraph — about
+        // 8% on a document like this one, which is enough to move the number
+        // out of the band it is being judged against. Instead the engine is
+        // asked for the line boxes themselves. A `Range` over a paragraph's
+        // contents returns one rect per rendered line, so the summed rect width
+        // is the *inked* width of the text and dividing by its character count
+        // gives the average advance directly — a property of the face and the
+        // words, with no partial-line bias in it at all.
+        charsPerLine: (() => {
+          let inkedPx = 0;
+          let characters = 0;
+          for (const node of prose.querySelectorAll(':scope > p')) {
+            const text = (node.textContent ?? '').length;
+            if (text === 0) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            for (const rect of range.getClientRects()) inkedPx += rect.width;
+            characters += text;
+            range.detach();
+          }
+          if (characters === 0 || inkedPx === 0) return null;
+          return Math.round((prose.clientWidth / (inkedPx / characters)) * 10) / 10;
+        })(),
       },
       counts: {
         headings: headings.length,
@@ -271,6 +324,115 @@ export function readingSurface(page) {
         links: prose.querySelectorAll('a[href]').length,
         rules: prose.querySelectorAll('hr').length,
       },
+    };
+  });
+}
+
+/**
+ * THE OTHER READING SURFACE — the thinking block.
+ *
+ * It is a reading surface and nothing here ever treated it as one. It rendered
+ * `<p>{text}</p>` with `white-space: pre-wrap`, so a reasoning-heavy endpoint
+ * printed literal `**Deconstruct the requirements:**`, literal `*   ` bullets
+ * and literal fences at the user — and this matrix could not see it, because
+ * every profile's reasoning narration was plain prose with no markdown in it to
+ * render wrongly. `#thinkmd` puts markdown in the channel; this reads what came
+ * out the other end.
+ *
+ * The block is collapsed by default now, so the caller must open it first.
+ */
+export function reasoningSurface(page) {
+  return page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    const body = turn?.querySelector('section [id$="-reasoning"]') ?? null;
+    if (body === null) return null;
+
+    const prose = body.querySelector('[data-scale]');
+    const style = prose === null ? null : getComputedStyle(prose);
+    const answer = turn?.querySelector('[data-scale="answer"]') ?? null;
+    return {
+      scale: prose?.getAttribute('data-scale') ?? null,
+      text: body.textContent ?? '',
+      whiteSpace: style === null ? null : style.whiteSpace,
+      fontSizePx: style === null ? null : Math.round(Number.parseFloat(style.fontSize) * 100) / 100,
+      answerFontSizePx:
+        answer === null
+          ? null
+          : Math.round(Number.parseFloat(getComputedStyle(answer).fontSize) * 100) / 100,
+      // The biggest thing the aside sets. An `h1` the model wrote inside its own
+      // reasoning must not out-shout the answer it is reasoning about.
+      largestPx: Math.max(
+        0,
+        ...[...body.querySelectorAll('*')].map((node) =>
+          Number.parseFloat(getComputedStyle(node).fontSize),
+        ),
+      ),
+      counts: {
+        strong: body.querySelectorAll('strong').length,
+        listItems: body.querySelectorAll('li').length,
+        inlineCode: [...body.querySelectorAll('code')].filter((node) => node.closest('pre') === null)
+          .length,
+        codeBlocks: body.querySelectorAll('pre').length,
+        headings: body.querySelectorAll('[data-level]').length,
+      },
+    };
+  });
+}
+
+/**
+ * THE VERTICAL RULER, and the sidebar's share of the window.
+ *
+ * Three findings share one reader because they are one question: what does the
+ * app do with the width it is given? The transcript's text and the composer's
+ * box sat on two different rulers (688px over 736px); the sidebar was a
+ * constant, so at 1000px it took half the window; and the reading column set
+ * prose at ~95–105 characters. All three are properties of the assembled
+ * layout at a *particular* window size, which is why they can only be read from
+ * a browser and why this is called at more than one viewport.
+ */
+export function layoutRuler(page) {
+  return page.evaluate(() => {
+    const box = (node) => {
+      if (node === null) return null;
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      const left = Number.parseFloat(style.paddingLeft);
+      const right = Number.parseFloat(style.paddingRight);
+      return {
+        left: Math.round((rect.left + left) * 10) / 10,
+        right: Math.round((rect.right - right) * 10) / 10,
+        width: Math.round((rect.width - left - right) * 10) / 10,
+      };
+    };
+
+    const scroller = document.querySelector('section[aria-label="Conversation"] > div');
+    // The transcript's *text* edge: the column's content box, which is what a
+    // reader's eye actually lines up against.
+    const column = scroller?.firstElementChild ?? null;
+    const field = document.querySelector('#vela-composer')?.closest('div') ?? null;
+    const sidebar = document.querySelector('nav[aria-label="Primary"]');
+
+    return {
+      viewportWidth: window.innerWidth,
+      transcript: box(column),
+      composer: field === null ? null : (() => {
+        const rect = field.getBoundingClientRect();
+        return {
+          left: Math.round(rect.left * 10) / 10,
+          right: Math.round(rect.right * 10) / 10,
+          width: Math.round(rect.width * 10) / 10,
+        };
+      })(),
+      sidebarWidth:
+        sidebar === null ? null : Math.round(sidebar.getBoundingClientRect().width * 10) / 10,
+      scrollerMask: scroller === null ? null : getComputedStyle(scroller).maskImage,
+      scrollerEdges:
+        scroller === null
+          ? null
+          : {
+              atTop: scroller.getAttribute('data-at-top'),
+              atBottom: scroller.getAttribute('data-at-bottom'),
+            },
     };
   });
 }
@@ -523,6 +685,193 @@ export function readingSurfaceFitsItsColumn(reading) {
   // One pixel of slack: sub-pixel layout rounds against you on some engines.
   const fits = prose.scrollWidthPx <= prose.clientWidthPx + 1;
   return ok(fits, `column ${String(prose.clientWidthPx)}px wide, content ${String(prose.scrollWidthPx)}px`);
+}
+
+/* ---- the reading surface, second pass ------------------------------------ *
+ * Everything below was added because a human, on a real machine, saw six things
+ * this matrix could not. Each one is now measured from the engine's own
+ * computed values, so the next run reports them whether or not anybody looks.  */
+
+/**
+ * A19. The thinking block renders markdown rather than printing it.
+ *
+ * The largest single item in the CONV-1 visual FAIL, and engine-independent: it
+ * reproduced identically on Linux. `<Markdown>` existed, was tested, and was
+ * used by the answer channel two lines away in the same component — and the
+ * reasoning channel never reached it.
+ */
+export function reasoningRendersAsMarkdown(reasoning) {
+  if (reasoning === null) return ok(false, 'no thinking block to read');
+  const literals = ['**', '*   ', '```'].filter((literal) => reasoning.text.includes(literal));
+  const built = reasoning.counts.strong > 0 && reasoning.counts.listItems > 0;
+  const preserving = /^pre/u.test(reasoning.whiteSpace ?? '');
+  return ok(
+    literals.length === 0 && built && !preserving,
+    `leaked=[${literals.join(' ')}] strong=${String(reasoning.counts.strong)} items=${String(reasoning.counts.listItems)} white-space=${String(reasoning.whiteSpace)}`,
+  );
+}
+
+/**
+ * A19b. A settled thought is closed, unless closing it would hide the turn.
+ *
+ * The block used to open itself while streaming, which on a real reasoning
+ * endpoint meant it was the first thing on screen every turn and — on a short
+ * prompt — the only thing for about ten seconds. It is a peek now.
+ *
+ * The exception is not an exception to be sorry about: when the stream ended
+ * mid-thought the reasoning channel is the only text the turn produced, and
+ * collapsing it would hide the whole answer. The block says so in its own
+ * summary, so that is what this reads rather than a profile name — the rule is
+ * about the state, not about which endpoint happened to produce it.
+ */
+export function settledThoughtIsClosed(turn) {
+  const reasoning = turn?.reasoning ?? null;
+  if (reasoning === null) return ok(false, 'no thinking block to judge');
+  const unterminated = /never closed/iu.test(reasoning.summary);
+  return ok(
+    reasoning.expanded === unterminated,
+    `summary="${reasoning.summary}" expanded=${String(reasoning.expanded)} (unterminated=${String(unterminated)})`,
+  );
+}
+
+/**
+ * A20. The aside stays subordinate to the answer it is about.
+ *
+ * The question routing reasoning through the answer's renderer creates: the
+ * display sizes belong to the answer, so a model that writes `# Plan` inside
+ * its own reasoning must not get a 24px heading over the reply.
+ */
+export function asideStaysSubordinate(reasoning) {
+  if (reasoning === null) return ok(false, 'no thinking block to read');
+  const answer = reasoning.answerFontSizePx ?? 0;
+  return ok(
+    reasoning.scale === 'aside' && answer > 0 && reasoning.largestPx <= answer,
+    `scale=${String(reasoning.scale)} largest in aside=${String(reasoning.largestPx)}px, answer body=${String(answer)}px`,
+  );
+}
+
+/**
+ * A21. Structure outranks emphasis.
+ *
+ * `<strong>` is unclassed by design, so without a rule it inherits the user
+ * agent's 700 — one step above every heading at 600. A phrase somebody bolded
+ * in passing then read as more structural than the section containing it. Two
+ * halves: no heading lighter than a bold run, and no heading smaller than the
+ * prose it heads.
+ */
+export function headingsOutrankEmphasis(reading) {
+  const headings = reading?.headings ?? [];
+  const strong = reading?.strong ?? [];
+  if (headings.length === 0) return ok(false, 'no heading in the answer channel to judge');
+  if (strong.length === 0) return ok(false, 'no bold run in the answer channel to compare against');
+
+  const boldest = Math.max(...strong.map((run) => Number(run.fontWeight)));
+  const body = reading?.prose?.fontSizePx ?? 0;
+  const outweighed = headings
+    .filter((heading) => Number(heading.fontWeight) < boldest)
+    .map((heading) => `h${String(heading.level)}@${heading.fontWeight}`);
+  const undersized = headings
+    .filter((heading) => heading.fontSizePx < body)
+    .map((heading) => `h${String(heading.level)}@${String(heading.fontSizePx)}px`);
+
+  return ok(
+    outweighed.length === 0 && undersized.length === 0,
+    `strong=${String(boldest)} body=${String(body)}px | outweighed=[${outweighed.join(' ')}] undersized=[${undersized.join(' ')}]`,
+  );
+}
+
+/**
+ * A22. The reading column sets a comfortable number of characters per line.
+ *
+ * 46rem put prose at ~95–105 characters on the operator's Windows machine;
+ * comfortable sustained reading is 65–75.
+ *
+ * The band accepted here is 55–78, wider than the target, and the reason is
+ * printed alongside every reading: **Vela does not bundle a typeface yet** — an
+ * A1 platform finding — so the same column measures differently depending on
+ * what the host resolved the stack to. This container has no Inter installed
+ * and falls back to a wider face, where 30rem measures ~61; the same column on
+ * Segoe UI measures ~70. A band tight enough to encode one engine's face would
+ * fail honestly on the other.
+ *
+ * It is still falsifiable on the engine that runs it, which is the property
+ * that matters: the pre-fix 46rem column measures ~88 here and ~100 there, and
+ * both are outside it. When the face ships, tighten this to 65–75 and delete
+ * this paragraph.
+ */
+export function readingMeasureIsComfortable(reading) {
+  const measured = reading?.prose?.charsPerLine ?? null;
+  if (measured === null) return ok(false, 'no multi-line paragraph in the answer to measure');
+  const face = reading?.prose?.fontFamily ?? 'unknown';
+  return ok(
+    measured >= 55 && measured <= 78,
+    `${String(measured)} characters per line at ${String(reading?.prose?.clientWidthPx)}px, set in ${face}`,
+  );
+}
+
+/**
+ * A23. The transcript and the composer stand on one vertical ruler.
+ *
+ * They were 688px of text over a 736px box — near enough to read as a
+ * misalignment rather than as a decision, which is the worst width to be off by.
+ */
+export function oneVerticalRuler(ruler) {
+  const text = ruler?.transcript ?? null;
+  const box = ruler?.composer ?? null;
+  if (text === null || box === null) return ok(false, 'transcript or composer not on screen');
+  const left = Math.abs(text.left - box.left);
+  const right = Math.abs(text.right - box.right);
+  // One pixel of slack for sub-pixel centring of an odd-width viewport.
+  return ok(
+    left <= 1 && right <= 1,
+    `text ${String(text.left)}–${String(text.right)} (${String(text.width)}px), composer ${String(box.left)}–${String(box.right)} (${String(box.width)}px)`,
+  );
+}
+
+/**
+ * A24. The sidebar gives way to the reading column, rather than the other way
+ * round.
+ *
+ * A 480px sidebar is a third of a 1440px window and half of a 1000px one, and
+ * the sidebar was a constant. Read at two viewports with the sidebar dragged to
+ * its maximum, because a single reading cannot tell a responsive width from a
+ * constant that happens to look right at the size you measured — and a sidebar
+ * left at its default is under the cap at both sizes and would prove nothing.
+ *
+ * The property is not "the sidebar is small". It is: **the reader's column
+ * keeps its measure, and the sidebar is what shrinks.**
+ */
+export function sidebarTracksTheWindow(wide, narrow) {
+  const a = wide?.sidebarWidth ?? null;
+  const b = narrow?.sidebarWidth ?? null;
+  if (a === null || b === null) return ok(false, 'the sidebar was not on screen at both sizes');
+  const gave = b < a;
+  // One pixel of slack: a border and sub-pixel centring both land here.
+  const keptMeasure = (wide?.transcript?.width ?? 0) - (narrow?.transcript?.width ?? 0) <= 1;
+  return ok(
+    gave && keptMeasure,
+    `${String(wide.viewportWidth)}px → sidebar ${String(a)}px, column ${String(wide?.transcript?.width)}px; ${String(narrow.viewportWidth)}px → sidebar ${String(b)}px, column ${String(narrow?.transcript?.width)}px`,
+  );
+}
+
+/**
+ * A25. The transcript fades into a scroll edge that hides content, and only
+ * into one that does.
+ *
+ * Both failures are the same defect: a hard cut through a line of text at the
+ * top of the viewport reads as a paint bug, and a permanent gradient dims the
+ * first turn of a conversation you have scrolled to the top of.
+ */
+export function scrollEdgeIsMasked(ruler) {
+  const mask = ruler?.scrollerMask ?? null;
+  const edges = ruler?.scrollerEdges ?? null;
+  if (mask === null || edges === null) return ok(false, 'no transcript scroll container found');
+  const faded = mask !== 'none';
+  const hidesContent = edges.atTop === 'false' || edges.atBottom === 'false';
+  return ok(
+    faded === hidesContent,
+    `atTop=${String(edges.atTop)} atBottom=${String(edges.atBottom)} mask=${faded ? mask.slice(0, 90) : 'none'}`,
+  );
 }
 
 /** A14. Usage claimed only where the endpoint reported it. */

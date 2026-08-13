@@ -1,5 +1,62 @@
 # GATE M Part 1 — Phase C — the conversation surface meets the capability matrix
 
+> **RE-RUN FOR THE CONV-1 VISUAL FAIL — the reading surface wave.** The evidence files in this
+> directory are now a run of **35 assertions per profile** (35 / 35 / 33 / 30 — `small-local` has
+> no reasoning channel to judge, `hostile` no answer channel), all passing, with **45 assertion
+> controls behaving as expected**. Eleven assertions and eleven controls are new, and every one of
+> them exists because a human on a real Windows machine saw something this matrix could not:
+>
+> | new | what it measures | the defect it exists for |
+> |---|---|---|
+> | C22b, C22c | all six heading levels rendered; none smaller or lighter than a bold run | the scale collapsed below `h3`, and unclassed `<strong>` at 700 outweighed every heading at 600 |
+> | C25 | characters per line, measured through `Range.getClientRects()` | `--vela-measure: 46rem` set prose at ~95–105 characters |
+> | C26 | a settled thought is closed, unless closing it would hide the turn | the block opened itself while streaming — first on screen every turn, and the *only* thing for ~10 s |
+> | C27, C28 | the thinking block renders markdown; nothing in the aside outshouts the answer | `ThinkingBlock.tsx:64` emitted `<p>{text}</p>` with `pre-wrap` and never reached `<Markdown>` |
+> | C29, C29b | the transcript's text and the composer's box share one left and right edge | 688px of text under a 736px box |
+> | C30 | the sidebar gives way to the reading column as the window narrows | a fixed-width sidebar took half of a 1000px window |
+> | C31 | the transcript fades into a scroll edge that hides content, and only into one that does | content guillotined at the scroll edge with no mask |
+>
+> Two evidence gaps are closed with them. `#headings` makes the endpoint answer with
+> `tests/fixtures/heading-scale-answer.md`, which exercises **h1 through h6 with a bold run beside
+> each** — `#markdown` reaches `h4` and stops, which is why finding 7 above had to be read out of a
+> stylesheet rather than seen. `#thinkmd` puts markdown in the **reasoning** channel, which no
+> profile's narration had ever done, which is why the thinking block printing
+> `**Deconstruct the requirements:**` at the user was invisible from here.
+>
+> **The pre-fix tree, measured through the same readers.** Every one of the new browser
+> assertions was run against HEAD's renderer with the new controls script, and seven baselines
+> that must hold on the fixed tree came back red on the unfixed one — which is what makes the
+> green run above mean something:
+>
+> ```
+> UNEXPECTED  K29  wanted PASS, got FAIL — structure-outranks-emphasis on the surface as it ships
+> UNEXPECTED  K32  wanted PASS, got FAIL — the characters-per-line assertion on the column as it ships
+> UNEXPECTED  K36  wanted PASS, got FAIL — the thinking block renders markdown, on the block as it ships
+> UNEXPECTED  K38  wanted PASS, got FAIL — the aside-stays-subordinate assertion on the block as it ships
+> UNEXPECTED  K40  wanted PASS, got FAIL — the one-ruler assertion on the layout as it ships
+> UNEXPECTED  K42  wanted PASS, got FAIL — the sidebar-gives-way assertion on the layout as it ships
+> UNEXPECTED  K45  wanted FAIL, got PASS — the mask-removed control (there was no mask to remove)
+> ```
+>
+> **A harness limitation found while doing this, disclosed rather than left for the next reader.**
+> The controls script intermittently stalls — a `send()` that never settles, roughly one run in
+> three — and it was worth isolating rather than retrying past. Running **HEAD's renderer with the
+> new 45-experiment script** stalls at the same rate, while **HEAD's renderer with HEAD's
+> 28-experiment script** completed 3/3 cleanly. So the stall belongs to the length of the script
+> — more pages and more relays alive in one process — and not to anything in this wave's renderer
+> change. It is a flake in the evidence *machinery*, it fails loudly rather than silently, and a
+> re-run clears it; the numbers above are from runs that completed. Worth fixing (close each page
+> when its controls are done) and not worth blocking on.
+>
+> **Measured, on this container, at `--vela-measure: 30rem`:** 60.6 characters per line in a 480px
+> column; heading sizes 24 / 18 / 16 / 15 / 15 / 15 px all at weight 700 against `<strong>` at 600;
+> transcript text and composer box both spanning 720–1200 at a 1440px window and 376–856 at 880px;
+> sidebar 480px → 352px across those two widths with the reading column holding 480px in both.
+> The characters-per-line band is 55–78 rather than the comfortable 65–75, and the reason is
+> recorded with the assertion: **Vela does not bundle a typeface yet**, so this container's wider
+> fallback face reads ~61 where Segoe UI reads ~70. The pre-fix 46rem column measures ~88 here and
+> ~100 there, so the band is still falsifiable on the engine that runs it.
+
 > **SUPERSEDED ON THE CONTEXT AXIS — the FAIL below is closed.** The composition-root wave wired
 > `turnTexts` from the conversation surface through `App.tsx` to the meter, and the GATE M
 > composition-root executor re-ran this matrix on the result. **C5 now PASSES on all four

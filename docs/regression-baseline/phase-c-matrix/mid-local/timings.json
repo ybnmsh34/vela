@@ -1,8 +1,8 @@
 {
   "profile": "mid-local",
-  "endpoint": "http://127.0.0.1:39253",
-  "ttftAnyMs": 25.8,
-  "ttftAnswerMs": 39.6,
+  "endpoint": "http://127.0.0.1:40275",
+  "ttftAnyMs": 27.9,
+  "ttftAnswerMs": 27.9,
   "paints": 2,
-  "turnMs": 40
+  "turnMs": 28
 }

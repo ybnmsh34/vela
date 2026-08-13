@@ -273,25 +273,35 @@ describe('the conversation surface: streaming', () => {
       );
     });
 
-    // Live: expanded while it streams.
+    // Live: collapsed, with the live edge of the thought on the row.
+    //
+    // This used to assert `true`, and that was the CONV-1 visual FAIL: on a
+    // real reasoning endpoint the first reasoning delta arrives ~10s before the
+    // first answer delta, so a block that opens itself is the whole screen for
+    // ten seconds of every turn — and on a short prompt it is the only thing
+    // there. The wait still has evidence; it is one line, not a transcript.
     expect(screen.getByRole('button', { name: /Thinking…/ })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'false',
     );
-    expect(screen.getByText('weighing it up')).toBeVisible();
+    expect(screen.getByTestId('thinking-peek')).toHaveTextContent('weighing it up');
 
     act(() => {
       host.push(done({ parts: [{ kind: 'text', text: 'Forty-two.' }] }));
     });
 
-    // Settled: collapsed by default, but still there.
+    // Settled: collapsed, the peek gone, the thought still there behind a click.
     const toggle = screen.getByRole('button', { name: /Thought process/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('thinking-peek')).toBeNull();
     expect(screen.getByText('weighing it up')).not.toBeVisible();
     expect(screen.getByText('Forty-two.')).toBeVisible();
+
+    await userEvent.setup().click(toggle);
+    expect(screen.getByText('weighing it up')).toBeVisible();
   });
 
-  it('respects an explicit collapse while the block is still streaming', async () => {
+  it('respects an explicit expand while the block is still streaming', async () => {
     const host = new ScriptedHost();
     const user = userEvent.setup();
     mount(host);
@@ -303,17 +313,17 @@ describe('the conversation surface: streaming', () => {
     await user.click(screen.getByRole('button', { name: /Thinking…/ }));
     expect(screen.getByRole('button', { name: /Thinking…/ })).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'true',
     );
 
     act(() => {
       host.push({ type: 'reasoningDelta', text: ' step two' });
     });
-    // Still closed: the user's choice outranks the default.
-    expect(screen.getByRole('button', { name: /Thinking…/ })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    // Still open, and now carrying both deltas: a reader who asked to watch the
+    // thought does not get the panel shut under their cursor by the next frame.
+    const toggle = screen.getByRole('button', { name: /Thinking…/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('step one step two')).toBeVisible();
   });
 
   it('keeps an unterminated thinking block open and says why', async () => {

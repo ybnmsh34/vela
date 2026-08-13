@@ -110,6 +110,12 @@
   --vela-weight-regular: 400;
   --vela-weight-medium: 500;
   --vela-weight-semibold: 600;
+  /* The step above emphasis. It exists because a rendered document has two
+     kinds of loud text — a heading and a bold run — and they must not be the
+     same weight: `<strong>` is unclassed by design, so without a step above it
+     the user agent's 700 outranked every heading below `h3` at 600, and the
+     document's own emphasis outweighed its own structure. */
+  --vela-weight-bold: 700;
 
   /* ---- leading: one step per job, not one per author --------------------- *
    * Four Phase C builders each answered "how tall is a line?" separately and
@@ -195,6 +201,11 @@
   --vela-titlebar-height: 40px;
   --vela-statusbar-height: 28px;
   --vela-rail-width: 56px;
+  /* The width before the host has said what the user chose. `Sidebar.tsx`
+     overwrites this per element from `navigation-store.ts`, which is where the
+     live value and its 200–480 clamp live; this is only what the first paint
+     uses. Kept in step with `DEFAULT_SIDEBAR_WIDTH` there. */
+  --vela-sidebar-width: 280px;
 
   /* ---- motion: one duration, one easing. Respect reduced motion. --------- */
   --vela-duration: 140ms;
@@ -203,7 +214,36 @@
   /* ---- conversation surface ---------------------------------------------- *
    * Owned by src/features/conversation. Defined in the light block first, then
    * overridden in both dark blocks, per the rule at the top of this file.     */
-  --vela-measure: 46rem;
+  /* THE READING MEASURE — a character count, expressed as a length.
+     It was 46rem, which is 736px of box and 688px of text at --vela-text-base,
+     and on the operator's Windows machine that set prose at ~95–105 characters
+     per line. Comfortable sustained reading is 65–75. Scaling that measurement
+     linearly, ~70 characters is ~480px, so 30rem.
+     Two things this is *not*: it is not the width of the transcript's box (the
+     column adds --vela-gutter on each side and the composer's field is exactly
+     this wide, which is what puts them on one ruler), and it is not a width for
+     anything that is not prose — a settings form reads --vela-panel-measure.
+     The characters-per-line figure itself is measured, not asserted, by
+     tests/harness/ui-bridge: the average advance depends on a typeface Vela
+     does not yet bundle, so only the engine that painted it can report it. */
+  --vela-measure: 30rem;
+  /* The gap between the reading column and the window. One token, because the
+     transcript and the composer share it — that shared value *is* the vertical
+     ruler both of them stand on. */
+  --vela-gutter: var(--vela-space-5);
+  /* The transcript's column: the measure plus a gutter on each side. It is one
+     token rather than an expression repeated in two files because two things
+     read it, and the second one is the interesting one — the sidebar is capped
+     at `100vw` minus *this*, so as the window narrows the sidebar gives way and
+     the reader's column does not. "How wide may the sidebar be?" has no answer
+     of its own; a share of the viewport is a guess, and this is the thing that
+     was actually being protected. */
+  --vela-reading-column: calc(var(--vela-measure) + 2 * var(--vela-gutter));
+  /* A form of side-by-side fields is not prose and does not want a prose
+     measure. This is the width the reading column used to have. */
+  --vela-panel-measure: 46rem;
+  /* How deep content fades into a scroll edge instead of being cut off at it. */
+  --vela-scroll-fade: var(--vela-space-6);
 
   --vela-turn-user-bg: var(--vela-night-50);
   --vela-turn-user-border: var(--vela-night-100);
@@ -220,7 +260,10 @@
   --vela-syntax-keyword: var(--vela-signal-300);
   --vela-syntax-punct: var(--vela-night-300);
 
-  --vela-thinking-bg: var(--vela-night-25);
+  /* One step *in* from the page, not equal to it. This token used to be
+     --vela-night-25, which is exactly what --vela-bg is in light: the block had
+     a border, a heading and a body, and painted nothing. */
+  --vela-thinking-bg: var(--vela-night-50);
   --vela-thinking-border: var(--vela-night-100);
   --vela-thinking-text: var(--vela-night-500);
 
@@ -269,8 +312,11 @@
     --vela-turn-user-border: var(--vela-night-700);
     --vela-turn-rule: var(--vela-night-800);
 
-    --vela-code-bg: var(--vela-night-950);
-    --vela-code-surface: var(--vela-night-900);
+    /* In dark the page is already --vela-night-950, so a code block painted
+       --vela-night-950 was a 1px border around nothing. The block steps *up*
+       out of the page and its language bar steps up again. */
+    --vela-code-bg: var(--vela-night-900);
+    --vela-code-surface: var(--vela-night-800);
     --vela-code-text: var(--vela-night-100);
     --vela-code-border: var(--vela-night-700);
 
@@ -327,8 +373,9 @@
   --vela-turn-user-border: var(--vela-night-700);
   --vela-turn-rule: var(--vela-night-800);
 
-  --vela-code-bg: var(--vela-night-950);
-  --vela-code-surface: var(--vela-night-900);
+  /* Same correction as the block above; see the note there. */
+  --vela-code-bg: var(--vela-night-900);
+  --vela-code-surface: var(--vela-night-800);
   --vela-code-text: var(--vela-night-100);
   --vela-code-border: var(--vela-night-700);
 

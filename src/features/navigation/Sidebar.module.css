@@ -1,13 +1,36 @@
+/* The width the user dragged to arrives as `--vela-sidebar-width` from
+   `Sidebar.tsx`, and it is a ceiling rather than the answer: a 480px sidebar is
+   a third of a 1440px window and half of a 1000px one. Only CSS knows which
+   window it is in, so the cap is applied here.
+
+   What it is capped *against* is the interesting part. Not a share of the
+   viewport — that is a guess with a percentage on it — but the width the
+   reading surface needs: `--vela-reading-column` is the transcript's column at
+   its full measure. As the window narrows, the sidebar gives way and the
+   reader's column does not. That is the whole rule, and it is why the number is
+   defined next to the measure rather than here.
+
+   `min()`/`max()` and not `clamp()`: the lower bound on the *stored* width is
+   `clampSidebarWidth`'s job, in both the renderer and the host. Repeating it
+   here would fight the viewport at the one size where giving way is the right
+   answer, and the rail is what a genuinely narrow window has left. */
 .sidebar {
   position: relative;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  width: min(
+    var(--vela-sidebar-width),
+    max(var(--vela-rail-width), calc(100vw - var(--vela-reading-column)))
+  );
   background: var(--vela-chrome);
   border-right: 1px solid var(--vela-border);
 }
 
+/* Declared after `.sidebar` and at equal specificity, so the rail wins on
+   source order. A collapsed sidebar is a fixed rail of icon buttons and has no
+   business tracking the viewport. */
 .collapsed {
   width: var(--vela-rail-width);
   align-items: center;

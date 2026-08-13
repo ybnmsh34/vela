@@ -505,6 +505,267 @@ try {
   );
   await r.page.close();
 
+  /* ---- the reading surface, second pass ---------------------------------- *
+   * Eight more assertions, each against the DOM the CONV-1 visual FAIL
+   * described. The breakages are not inventions: every one of them reproduces
+   * the state the operator actually saw on a real machine, applied to the live
+   * page so the reader under test is the reader that ran in the matrix.       */
+  const s = await session(browser, frontier);
+
+  /* the type scale below h3, and the emphasis that outranked it */
+  await send(s.page, '#headings show me every heading level');
+  const scaleBefore = await check.readingSurface(s.page);
+  control(
+    'K29',
+    'structure-outranks-emphasis on the surface as it ships',
+    'PASS',
+    check.headingsOutrankEmphasis(scaleBefore).pass,
+    check.headingsOutrankEmphasis(scaleBefore).detail,
+  );
+
+  // The defect exactly as found: `<strong>` back on the user agent's 700 while
+  // every heading sits at 600.
+  await s.page.evaluate(() => {
+    const prose = document.querySelector('[data-scale="answer"]');
+    for (const run of prose?.querySelectorAll('strong') ?? []) run.style.fontWeight = '700';
+    for (const heading of prose?.querySelectorAll('[data-level]') ?? []) heading.style.fontWeight = '600';
+  });
+  const outweighed = await check.readingSurface(s.page);
+  control(
+    'K30',
+    'the same assertion with a bold run at 700 over headings at 600 — the inversion as found',
+    'FAIL',
+    check.headingsOutrankEmphasis(outweighed).pass,
+    check.headingsOutrankEmphasis(outweighed).detail,
+  );
+
+  // The other half: h5 and h6 set smaller than the prose they head.
+  await s.page.evaluate(() => {
+    const prose = document.querySelector('[data-scale="answer"]');
+    for (const run of prose?.querySelectorAll('strong') ?? []) run.style.fontWeight = '';
+    for (const heading of prose?.querySelectorAll('[data-level="5"], [data-level="6"]') ?? []) {
+      heading.style.fontSize = '13px';
+      heading.style.fontWeight = '';
+    }
+  });
+  const undersized = await check.readingSurface(s.page);
+  control(
+    'K31',
+    'the same assertion with h5 and h6 set smaller than body text — the other half as found',
+    'FAIL',
+    check.headingsOutrankEmphasis(undersized).pass,
+    check.headingsOutrankEmphasis(undersized).detail,
+  );
+
+  /* the reading measure */
+  control(
+    'K32',
+    'the characters-per-line assertion on the column as it ships',
+    'PASS',
+    check.readingMeasureIsComfortable(scaleBefore).pass,
+    check.readingMeasureIsComfortable(scaleBefore).detail,
+  );
+  // 46rem, restored: the column as the operator measured it, where the same
+  // document sets ~95–105 characters per line on Windows and ~88 here.
+  await s.page.evaluate(() => {
+    const prose = document.querySelector('[data-scale="answer"]');
+    if (prose !== null) prose.style.width = '688px';
+  });
+  await s.page.waitForTimeout(100);
+  const tooWide = await check.readingSurface(s.page);
+  control(
+    'K33',
+    'the same assertion with the column back at the 688px it shipped with',
+    'FAIL',
+    check.readingMeasureIsComfortable(tooWide).pass,
+    check.readingMeasureIsComfortable(tooWide).detail,
+  );
+
+  /* the thinking block */
+  await s.page.reload();
+  await s.page.waitForSelector('[data-testid="status-line"]');
+  await s.page.getByRole('button', { name: 'Start a conversation' }).click();
+  await s.page.waitForSelector('#vela-composer');
+  await send(s.page, '#thinkmd which local model should I run?');
+
+  const settled = await check.lastAssistantTurn(s.page);
+  control(
+    'K34',
+    'the settled-thought-is-closed assertion on the block as it ships',
+    'PASS',
+    check.settledThoughtIsClosed(settled).pass,
+    check.settledThoughtIsClosed(settled).detail,
+  );
+
+  const thinkToggle = s.page.locator('article[data-role="assistant"]').last().locator('section h3 button').first();
+  await thinkToggle.click();
+  await s.page.waitForTimeout(150);
+  const opened = await check.lastAssistantTurn(s.page);
+  control(
+    'K35',
+    'the same assertion against a settled block that is open — the pre-fix default',
+    'FAIL',
+    check.settledThoughtIsClosed(opened).pass,
+    check.settledThoughtIsClosed(opened).detail,
+  );
+
+  const asideBefore = await check.reasoningSurface(s.page);
+  control(
+    'K36',
+    'the thinking block renders markdown, on the block as it ships',
+    'PASS',
+    check.reasoningRendersAsMarkdown(asideBefore).pass,
+    check.reasoningRendersAsMarkdown(asideBefore).detail,
+  );
+
+  // `<p>{text}</p>` with `white-space: pre-wrap` — the shipped renderer, put
+  // back byte for byte, with the same reasoning text flowing into it.
+  await s.page.evaluate(() => {
+    const body = document.querySelector('section [id$="-reasoning"]');
+    const source = [
+      '**Deconstruct the requirements:**',
+      '',
+      '*   The user wants a *model-agnostic* client, so the answer',
+      '    cannot name a vendor.',
+      '*   They mentioned `llama-server`, which means the endpoint is',
+      '    OpenAI-compatible.',
+    ].join('\n');
+    if (body === null) return;
+    body.replaceChildren();
+    const paragraph = document.createElement('p');
+    paragraph.setAttribute('data-scale', 'aside');
+    paragraph.style.whiteSpace = 'pre-wrap';
+    paragraph.textContent = source;
+    body.append(paragraph);
+  });
+  const printedRaw = await check.reasoningSurface(s.page);
+  control(
+    'K37',
+    'the same assertion against `<p>{text}</p>` with pre-wrap — the defect as it shipped',
+    'FAIL',
+    check.reasoningRendersAsMarkdown(printedRaw).pass,
+    check.reasoningRendersAsMarkdown(printedRaw).detail,
+  );
+
+  control(
+    'K38',
+    'the aside-stays-subordinate assertion on the block as it ships',
+    'PASS',
+    check.asideStaysSubordinate(asideBefore).pass,
+    check.asideStaysSubordinate(asideBefore).detail,
+  );
+  // The question routing reasoning through the answer's renderer creates: an
+  // `h1` the model wrote inside its own reasoning, at the answer's display size.
+  await s.page.evaluate(() => {
+    const body = document.querySelector('section [id$="-reasoning"]');
+    const prose = body?.querySelector('[data-scale]') ?? body?.firstElementChild ?? null;
+    if (prose === null) return;
+    prose.setAttribute('data-scale', 'aside');
+    const heading = document.createElement('h2');
+    heading.setAttribute('data-level', '1');
+    heading.style.fontSize = '24px';
+    heading.textContent = 'control: an answer-sized heading inside the aside';
+    prose.append(heading);
+  });
+  const loudAside = await check.reasoningSurface(s.page);
+  control(
+    'K39',
+    'the same assertion with a 24px heading inside the aside',
+    'FAIL',
+    check.asideStaysSubordinate(loudAside).pass,
+    check.asideStaysSubordinate(loudAside).detail,
+  );
+
+  /* the vertical ruler, the sidebar and the scroll edge */
+  await s.page.reload();
+  await s.page.waitForSelector('[data-testid="status-line"]');
+  await s.page.getByRole('button', { name: 'Start a conversation' }).click();
+  await s.page.waitForSelector('#vela-composer');
+  await send(s.page, '#markdown which model should I run?');
+
+  const rulerShipped = await check.layoutRuler(s.page);
+  control(
+    'K40',
+    'the one-ruler assertion on the layout as it ships',
+    'PASS',
+    check.oneVerticalRuler(rulerShipped).pass,
+    check.oneVerticalRuler(rulerShipped).detail,
+  );
+  // 736px of composer box under 688px of text: the two rulers, restored.
+  await s.page.evaluate(() => {
+    const field = document.querySelector('#vela-composer')?.closest('div');
+    if (field !== null && field !== undefined) field.style.maxWidth = '736px';
+  });
+  await s.page.waitForTimeout(100);
+  const twoRulers = await check.layoutRuler(s.page);
+  control(
+    'K41',
+    'the same assertion with the composer back on its own ruler',
+    'FAIL',
+    check.oneVerticalRuler(twoRulers).pass,
+    check.oneVerticalRuler(twoRulers).detail,
+  );
+
+  const separator = s.page.getByRole('separator', { name: /Resize sidebar/u });
+  await separator.focus();
+  for (let press = 0; press < 20; press += 1) await separator.press('ArrowRight');
+  await s.page.waitForTimeout(200);
+  const wideWindow = await check.layoutRuler(s.page);
+  await s.page.setViewportSize({ width: 880, height: 800 });
+  await s.page.waitForTimeout(250);
+  const narrowWindow = await check.layoutRuler(s.page);
+  control(
+    'K42',
+    'the sidebar-gives-way assertion on the layout as it ships',
+    'PASS',
+    check.sidebarTracksTheWindow(wideWindow, narrowWindow).pass,
+    check.sidebarTracksTheWindow(wideWindow, narrowWindow).detail,
+  );
+  // The constant it used to be, pinned inline so no rule can respond.
+  await s.page.evaluate(() => {
+    const sidebar = document.querySelector('nav[aria-label="Primary"]');
+    if (sidebar !== null) sidebar.style.width = '480px';
+  });
+  await s.page.waitForTimeout(150);
+  const pinnedNarrow = await check.layoutRuler(s.page);
+  control(
+    'K43',
+    'the same assertion with the sidebar pinned at 480px — the constant as it shipped',
+    'FAIL',
+    check.sidebarTracksTheWindow(wideWindow, pinnedNarrow).pass,
+    check.sidebarTracksTheWindow(wideWindow, pinnedNarrow).detail,
+  );
+  await s.page.evaluate(() => {
+    const sidebar = document.querySelector('nav[aria-label="Primary"]');
+    if (sidebar !== null) sidebar.style.width = '';
+  });
+  await s.page.setViewportSize({ width: 1440, height: 900 });
+  await s.page.waitForTimeout(250);
+
+  const maskShipped = await check.layoutRuler(s.page);
+  control(
+    'K44',
+    'the scroll-edge assertion on the transcript as it ships',
+    'PASS',
+    check.scrollEdgeIsMasked(maskShipped).pass,
+    check.scrollEdgeIsMasked(maskShipped).detail,
+  );
+  // The guillotine: content hidden above the edge and no fade towards it.
+  await s.page.evaluate(() => {
+    const scroller = document.querySelector('section[aria-label="Conversation"] > div');
+    if (scroller !== null) scroller.style.maskImage = 'none';
+  });
+  await s.page.waitForTimeout(100);
+  const guillotined = await check.layoutRuler(s.page);
+  control(
+    'K45',
+    'the same assertion with the mask removed while content is still hidden above the edge',
+    'FAIL',
+    check.scrollEdgeIsMasked(guillotined).pass,
+    check.scrollEdgeIsMasked(guillotined).detail,
+  );
+  await s.page.close();
+
   /* ---- the finding, demonstrated rather than argued ---------------------- */
   // With `--no-register` the bridge behaves exactly as the shipping host does:
   // a provider row in settings, and nothing in the ProviderRegistry.

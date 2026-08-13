@@ -102,7 +102,55 @@ const DEFAULT_CREATED = 1_700_000_000;
  */
 const MARKDOWN_SENTINEL = '#markdown';
 
+/**
+ * Prompt directive: answer with a document that exercises **all six heading
+ * levels** and puts a bold run beside each one.
+ *
+ * `#markdown` gets to `h4` and stops, which is what let the next defect through:
+ * the scale collapsed below `h3` — `h4` at body size, `h5` and `h6` *smaller*
+ * than the prose they head, all six lighter than an unclassed `<strong>` — and
+ * no artifact in the evidence set rendered `h1`, `h3`, `h4`, `h5` or `h6` at
+ * all, so it had to be read out of a stylesheet instead of seen. That is the
+ * same shape of gap that let the raw-markdown thinking block survive a full
+ * cloud review. A prompt that emits every level closes it.
+ *
+ * The two documents are separate rather than merged because they are looked at
+ * for different reasons: `#markdown` is the long, block-rich reading case, and
+ * this is the type-scale case, short enough that all six levels and their bold
+ * runs fit in a frame a human can compare.
+ */
+const HEADINGS_SENTINEL = '#headings';
+
+/**
+ * Prompt directive: put markdown in the **reasoning** channel.
+ *
+ * Reasoning narration was plain prose, so no run in this matrix had ever
+ * rendered a thinking block containing a bold lead-in, a bulleted plan or a
+ * fence — which is why the block printing `**Deconstruct the requirements:**`
+ * at the user was invisible here and had to be found on a real machine. Real
+ * reasoning models write markdown in the reasoning channel; now so does this
+ * one, on request.
+ */
+const REASONING_MARKDOWN_SENTINEL = '#thinkmd';
+
+/**
+ * A reasoning channel shaped the way reasoning models actually shape one: a
+ * bold lead-in, a plan hard-wrapped in the source, and inline code. Every
+ * character of syntax here is a character the reader must never see.
+ */
+const REASONING_MARKDOWN = [
+  '**Deconstruct the requirements:**',
+  '',
+  '*   The user wants a *model-agnostic* client, so the answer',
+  '    cannot name a vendor.',
+  '*   They mentioned `llama-server`, which means the endpoint is',
+  '    OpenAI-compatible.',
+  '',
+  'Answering now.',
+].join('\n');
+
 let richMarkdown: string | null = null;
+let headingScale: string | null = null;
 
 function richMarkdownAnswer(): string {
   richMarkdown ??= readFileSync(
@@ -110,6 +158,14 @@ function richMarkdownAnswer(): string {
     'utf8',
   ).trimEnd();
   return richMarkdown;
+}
+
+function headingScaleAnswer(): string {
+  headingScale ??= readFileSync(
+    new URL('../../../fixtures/heading-scale-answer.md', import.meta.url),
+    'utf8',
+  ).trimEnd();
+  return headingScale;
 }
 
 function firstWords(text: string, count: number): string {
@@ -194,6 +250,9 @@ function proseReply(profile: CapabilityProfile, rng: Rng, prompt: string): strin
 }
 
 function reasoningNarration(profile: CapabilityProfile, prompt: string): string {
+  // Asked for explicitly, so every existing case and every recorded transcript
+  // stays byte-identical. See REASONING_MARKDOWN_SENTINEL.
+  if (prompt.includes(REASONING_MARKDOWN_SENTINEL)) return REASONING_MARKDOWN;
   const echo = firstWords(prompt, 6);
   return (
     `Considering the request${echo.length > 0 ? ` about ${echo}` : ''}. ` +
@@ -444,7 +503,11 @@ export function buildReplyPlan(
   // the prompt says. The directive replaces *prose*, which is what it is for.
   const body =
     structured ??
-    (prompt.includes(MARKDOWN_SENTINEL) ? richMarkdownAnswer() : proseReply(profile, rng, prompt));
+    (prompt.includes(HEADINGS_SENTINEL)
+      ? headingScaleAnswer()
+      : prompt.includes(MARKDOWN_SENTINEL)
+        ? richMarkdownAnswer()
+        : proseReply(profile, rng, prompt));
 
   const narration = reasoningNarration(profile, prompt);
   const reasoningText = profile.reasoning === 'reasoning-content-field' ? narration : '';

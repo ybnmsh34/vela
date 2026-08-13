@@ -12,10 +12,26 @@ import { CodeBlock } from './CodeBlock';
 import { parseMarkdown, type Block, type Span } from './markdown-parser';
 import styles from './Markdown.module.css';
 
+/**
+ * Which voice this document speaks in.
+ *
+ * `answer` is the primary reading surface. `aside` is a subordinate channel —
+ * today the thinking block — and it exists because routing reasoning through
+ * this component raised a question the answer channel never had to answer: the
+ * display sizes belong to the answer, so an `h1` the model wrote *inside* its
+ * own reasoning would set larger than the answer it is reasoning about.
+ *
+ * It is also how a reader tells the channels apart. `data-scale` is on the
+ * container, so the gate's reading-surface reader can measure the answer
+ * without a thinking block flattering the numbers.
+ */
+export type MarkdownScale = 'answer' | 'aside';
+
 interface MarkdownProps {
   readonly source: string;
   /** Marks the last block as the live edge of a stream, for the caret. */
   readonly streaming?: boolean;
+  readonly scale?: MarkdownScale;
 }
 
 /**
@@ -24,10 +40,18 @@ interface MarkdownProps {
  * does — that is the difference between a smooth stream and a list that stalls
  * as the conversation grows.
  */
-export const Markdown = memo(function Markdown({ source, streaming = false }: MarkdownProps) {
+export const Markdown = memo(function Markdown({
+  source,
+  streaming = false,
+  scale = 'answer',
+}: MarkdownProps) {
   const blocks = parseMarkdown(source);
   return (
-    <div className={styles.prose} data-streaming={streaming ? 'true' : undefined}>
+    <div
+      className={styles.prose}
+      data-scale={scale}
+      data-streaming={streaming ? 'true' : undefined}
+    >
       {blocks.map((block, index) => (
         <BlockNode key={index} block={block} last={index === blocks.length - 1} />
       ))}

@@ -18,7 +18,15 @@
  * drag that leaves the element does not drop the gesture.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
 import type { ConversationSummary } from '@/platform/contract';
@@ -175,7 +183,13 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
     <nav
       className={styles.sidebar}
       aria-label="Primary"
-      style={{ width: `${clampSidebarWidth(width)}px` }}
+      // The width the user dragged to is a *ceiling*, not the answer: 480px is
+      // a third of a 1440px window and half of a 1000px one, and this component
+      // does not know which it is in. So the number is handed to CSS as a
+      // custom property and `Sidebar.module.css` caps it against the viewport.
+      // Setting `width` here instead — which is what this used to do — puts an
+      // inline declaration above every stylesheet rule that could respond.
+      style={{ '--vela-sidebar-width': `${clampSidebarWidth(width)}px` } as CSSProperties}
     >
       <div className={styles.head}>
         <div className={styles.headRow}>

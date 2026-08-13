@@ -298,3 +298,63 @@ describe('the #markdown directive', () => {
     expect(plan('mid-local', rich)).toEqual(plan('mid-local', rich));
   });
 });
+
+describe('the #headings directive', () => {
+  const ladder = { messages: [{ role: 'user', content: '#headings show me the type scale' }] };
+
+  it('emits all six heading levels, which #markdown does not', () => {
+    // The evidence gap this closes: no artifact in the set rendered h1, h3, h4,
+    // h5 or h6, so "the scale collapses below h3" was a source reading rather
+    // than an observation — the same gap that let the raw-markdown thinking
+    // block survive a full cloud review.
+    const built = plan('frontier', ladder);
+    for (const hashes of ['# ', '## ', '### ', '#### ', '##### ', '###### ']) {
+      expect(built.content.split('\n').some((line) => line.startsWith(hashes)), hashes).toBe(true);
+    }
+    expect(plan('frontier', { messages: [{ role: 'user', content: '#markdown x' }] }).content).not.toContain('\n##### ');
+  });
+
+  it('puts a bold run beside the deepest levels, which is the comparison', () => {
+    const lines = plan('frontier', ladder).content.split('\n');
+    for (const marker of ['##### ', '###### ']) {
+      const at = lines.findIndex((line) => line.startsWith(marker));
+      expect(at, marker).toBeGreaterThan(-1);
+      expect(lines.slice(at + 1, at + 8).join(' '), marker).toContain('**');
+    }
+  });
+
+  it('changes nothing for a prompt that did not ask for it', () => {
+    expect(plan('frontier', ask).content).toContain('Mock frontier reply to:');
+  });
+});
+
+describe('the #thinkmd directive', () => {
+  const thinking = { messages: [{ role: 'user', content: '#thinkmd weigh the options' }] };
+
+  it('puts markdown in the reasoning channel, where real models put it', () => {
+    // Narration was plain prose, so no run here had ever rendered a thinking
+    // block containing a bold lead-in or a bullet — which is exactly why the
+    // block printing `**Deconstruct the requirements:**` at the user could not
+    // be seen from this matrix and had to be found on a real machine.
+    // `frontier` carries reasoning in its own field, so the markdown lands
+    // there and never touches the answer channel.
+    const built = plan('frontier', thinking);
+    expect(built.reasoningText).toContain('**Deconstruct the requirements:**');
+    expect(built.reasoningText).toContain('*   The user wants');
+    expect(built.content).not.toContain('**Deconstruct');
+  });
+
+  it('reaches the inline-tag profiles through their own markup', () => {
+    // `mid-local` narrates inside <think>…</think> rather than in a field, so
+    // the same markdown has to survive the core's tag-stripping salvage path
+    // before it can reach the block. Reaching the block by a second route is
+    // the point: that is where the renderer used to print it as source.
+    const built = plan('mid-local', thinking);
+    expect(built.reasoningText).toBe('');
+    expect(built.content).toContain('**Deconstruct the requirements:**');
+  });
+
+  it('changes nothing for a prompt that did not ask for it', () => {
+    expect(plan('frontier', ask).reasoningText).toContain('Considering the request');
+  });
+});

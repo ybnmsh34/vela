@@ -1751,6 +1751,31 @@ defaults (fonts, scrollbars, DPI — genuinely A1's, genuinely Windows-only).
 **Carried gap, disclosed by the desktop session rather than hidden:** no artifact in its evidence
 set exercises `h1`, `h3`, `h4`, `h5` or `h6`, so finding 7 is source-read rather than observed.
 
+### The reading-surface wave — all seven closed, and the evidence gap with them
+
+Every one of the seven reproduced on Linux, was made to fail a test first, and then passed.
+
+| # | What it was | What it is |
+|---|---|---|
+| 1 | `ThinkingBlock` emitted `<p>{text}</p>` with `pre-wrap` | `<Markdown scale="aside">`. A `scale` prop exists because reasoning must not borrow the answer's display sizes; a live block now shows a **one-line peek** and does not open itself — the same answer the sibling `ToolCallCard` already gave to the same question |
+| 2 | `--vela-measure: 46rem` → ~95–105 characters | `30rem` of *text*. Measured, not asserted: 60.6 chars/line here, ~70 on Segoe UI. A settings form got its own `--vela-panel-measure` rather than being silently narrowed |
+| 3 | 688px of text under a 736px composer box | one `--vela-gutter`; both edges land on 720–1200 at 1440px and 376–856 at 880px |
+| 4 | content guillotined at the scroll edge | a `mask-image` switched by `data-at-top`/`data-at-bottom`, so an edge with nothing beyond it is not dimmed |
+| 5 | `--vela-thinking-bg` = page in light, `--vela-code-bg` = page in dark | fixed, and **generalised**: `src/styles/surfaces.test.ts` resolves the token graph per theme and fails on any of eleven (surface, ground) pairs that collapse |
+| 6 | a fixed-width sidebar | capped against `--vela-reading-column` — the width the *reader's column* needs. The sidebar gives way; the measure does not |
+| 7 | `h4` = body, `h5`/`h6` smaller, `<strong>` at 700 over headings at 600 | no heading below body size, all six at `--vela-weight-bold`, `.prose strong` at semibold, levels that share a size separated by colour and case |
+
+**The class, not the instance.** `MessageTurn.test.tsx` is table-driven over every model-authored
+prose channel of a turn, and its last test *reads `TurnState` from disk* to find them — a third
+prose channel added to that interface fails the file until it is rendered like the other two.
+
+**The evidence gap is closed.** `tests/fixtures/heading-scale-answer.md` renders h1–h6 with a bold
+run beside each and is exercised by both `Markdown.test.tsx` and the gate (`#headings`); `#thinkmd`
+puts markdown in the reasoning channel, which no profile's narration had ever done — which is
+precisely why the raw-markdown thinking block was invisible from the matrix and had to be found on
+a real machine. Phase C now runs **35 assertions per profile with 45 assertion controls**, eleven of
+each new. `docs/regression-baseline/phase-c-matrix/RESULTS.md` carries the measured numbers.
+
 ## Composition-root wave — panel FAIL 2/4. The same class, one layer up.
 
 The gate PASSED against the real assembled app (14 host assertions, 19 production-bundle, 98 Phase C,

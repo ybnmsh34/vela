@@ -5,7 +5,7 @@
       "tag": "h3",
       "text": "What decides the answer",
       "fontSizePx": 18,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 23.4,
       "marginTopPx": 32,
       "textTransform": "none",
@@ -16,7 +16,7 @@
       "tag": "h4",
       "text": "The arithmetic",
       "fontSizePx": 16,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 20.8,
       "marginTopPx": 24,
       "textTransform": "none",
@@ -27,7 +27,7 @@
       "tag": "h3",
       "text": "Reading the quantisation labels",
       "fontSizePx": 18,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 23.4,
       "marginTopPx": 32,
       "textTransform": "none",
@@ -38,7 +38,7 @@
       "tag": "h3",
       "text": "Wiring it into Vela",
       "fontSizePx": 18,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 23.4,
       "marginTopPx": 32,
       "textTransform": "none",
@@ -49,7 +49,7 @@
       "tag": "h4",
       "text": "If the probe disagrees with the model card",
       "fontSizePx": 16,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 20.8,
       "marginTopPx": 24,
       "textTransform": "none",
@@ -60,7 +60,7 @@
       "tag": "h5",
       "text": "One last thing",
       "fontSizePx": 15,
-      "fontWeight": "600",
+      "fontWeight": "700",
       "lineHeightPx": 19.5,
       "marginTopPx": 24,
       "textTransform": "none",
@@ -84,7 +84,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 3
+      "renderedLines": 4
     },
     {
       "text": "The paragraph above is deliberately hard-wrapped at seventy-odd columns, the way almost every model writes prose, and it",
@@ -93,7 +93,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 3
+      "renderedLines": 4
     },
     {
       "text": "Three quantities, in the order they bind:",
@@ -129,7 +129,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 3
+      "renderedLines": 4
     },
     {
       "text": "Then add http://127.0.0.1:8033/v1 as an endpoint and press Check to probe what it can do. The capability row that matter",
@@ -138,7 +138,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 4
+      "renderedLines": 5
     },
     {
       "text": "Believe the probe. A card describes a model; the probe describes the server in front of it, and that is the thing you ar",
@@ -147,7 +147,7 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 3
+      "renderedLines": 4
     },
     {
       "text": "Run the thing you intend to run, on the machine you intend to run it on, before you decide what it is worth. Every numbe",
@@ -156,14 +156,53 @@
       "lineHeightPx": 24,
       "carriesSourceNewline": false,
       "hardBreaks": 0,
-      "renderedLines": 3
+      "renderedLines": 4
+    }
+  ],
+  "strong": [
+    {
+      "text": "one paragraph",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "VRAM.",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "Context length.",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "What you are actually asking for.",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "4.5 GB",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "Check",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "server",
+      "fontWeight": "600",
+      "fontSizePx": 15
     }
   ],
   "prose": {
     "fontSizePx": 15,
     "lineHeightPx": 24,
-    "clientWidthPx": 688,
-    "scrollWidthPx": 688
+    "clientWidthPx": 480,
+    "scrollWidthPx": 480,
+    "fontFamily": "Inter",
+    "charsPerLine": 57.4
   },
   "counts": {
     "headings": 6,

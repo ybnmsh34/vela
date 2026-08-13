@@ -3,7 +3,9 @@
   flex-direction: column;
   gap: var(--vela-space-4);
   width: 100%;
-  max-width: var(--vela-measure);
+  /* A form of side-by-side fields, not prose: it keeps the width the reading
+     column used to have, and does not follow the reading measure down. */
+  max-width: var(--vela-panel-measure);
   margin: 0 auto;
   padding: var(--vela-space-5);
 }

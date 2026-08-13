@@ -1,0 +1,221 @@
+{
+  "headings": [
+    {
+      "level": 1,
+      "tag": "h2",
+      "text": "Reading a capability report end to end",
+      "fontSizePx": 24,
+      "fontWeight": "700",
+      "lineHeightPx": 31.2,
+      "marginTopPx": 32,
+      "textTransform": "none",
+      "color": "rgb(16, 20, 38)"
+    },
+    {
+      "level": 2,
+      "tag": "h3",
+      "text": "Two — a section",
+      "fontSizePx": 18,
+      "fontWeight": "700",
+      "lineHeightPx": 23.4,
+      "marginTopPx": 32,
+      "textTransform": "none",
+      "color": "rgb(16, 20, 38)"
+    },
+    {
+      "level": 3,
+      "tag": "h4",
+      "text": "Three — a sub-section",
+      "fontSizePx": 16,
+      "fontWeight": "700",
+      "lineHeightPx": 20.8,
+      "marginTopPx": 24,
+      "textTransform": "none",
+      "color": "rgb(16, 20, 38)"
+    },
+    {
+      "level": 4,
+      "tag": "h5",
+      "text": "Four — a sub-sub-section",
+      "fontSizePx": 15,
+      "fontWeight": "700",
+      "lineHeightPx": 19.5,
+      "marginTopPx": 24,
+      "textTransform": "none",
+      "color": "rgb(16, 20, 38)"
+    },
+    {
+      "level": 5,
+      "tag": "h6",
+      "text": "Five — a labelled group",
+      "fontSizePx": 15,
+      "fontWeight": "700",
+      "lineHeightPx": 19.5,
+      "marginTopPx": 16,
+      "textTransform": "none",
+      "color": "rgb(77, 86, 117)"
+    },
+    {
+      "level": 6,
+      "tag": "h6",
+      "text": "Six — the deepest label",
+      "fontSizePx": 15,
+      "fontWeight": "700",
+      "lineHeightPx": 19.5,
+      "marginTopPx": 16,
+      "textTransform": "uppercase",
+      "color": "rgb(77, 86, 117)"
+    },
+    {
+      "level": 2,
+      "tag": "h3",
+      "text": "Back up to two, to prove the rhythm resets",
+      "fontSizePx": 18,
+      "fontWeight": "700",
+      "lineHeightPx": 23.4,
+      "marginTopPx": 32,
+      "textTransform": "none",
+      "color": "rgb(16, 20, 38)"
+    }
+  ],
+  "paragraphs": [
+    {
+      "text": "This document exists to be looked at. Every heading level from one to six appears below, each one immediately followed b",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 7
+    },
+    {
+      "text": "That gap is not hypothetical. No artifact in the previous evidence set rendered an h1, h3, h4, h5 or h6 at all, so the f",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 6
+    },
+    {
+      "text": "A section heading opens a part of the answer, and a reader skimming for the part they need should be able to find this l",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 5
+    },
+    {
+      "text": "Three levels down is where model output actually lives: a numbered plan, a comparison, a set of options. The size step f",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 5
+    },
+    {
+      "text": "This is the level the scale used to lose. It sat at exactly body size, at a weight an unclassed bold run beat outright, ",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 6
+    },
+    {
+      "text": "Rare in real answers and common in generated outlines. It has to remain recognisable as a heading while being unmistakab",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 4
+    },
+    {
+      "text": "The last level stops being a heading-by-size and becomes a label. It is the one that could otherwise be mistaken for the",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 5
+    },
+    {
+      "text": "Vertical rhythm is half of a heading scale: space above a heading binds it to what follows and separates it from what ca",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 7
+    },
+    {
+      "text": "Below the fold there is ordinary prose, long enough to measure a line against: a comfortable reading measure is sixty-fi",
+      "whiteSpace": "normal",
+      "fontSizePx": 15,
+      "lineHeightPx": 24,
+      "carriesSourceNewline": false,
+      "hardBreaks": 0,
+      "renderedLines": 9
+    }
+  ],
+  "strong": [
+    {
+      "text": "bold run",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "bold run",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "This bold run sits in the same paragraph",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "a bold run at body size",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "bold run",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "a bold run",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    },
+    {
+      "text": "a bold run",
+      "fontWeight": "600",
+      "fontSizePx": 15
+    }
+  ],
+  "prose": {
+    "fontSizePx": 15,
+    "lineHeightPx": 24,
+    "clientWidthPx": 480,
+    "scrollWidthPx": 480,
+    "fontFamily": "Inter",
+    "charsPerLine": 60.6
+  },
+  "counts": {
+    "headings": 7,
+    "paragraphs": 9,
+    "listItems": 0,
+    "nestedLists": 0,
+    "quotes": 0,
+    "codeBlocks": 0,
+    "inlineCode": 6,
+    "tables": 0,
+    "links": 0,
+    "rules": 0
+  }
+}

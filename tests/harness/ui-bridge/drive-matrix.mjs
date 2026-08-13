@@ -414,6 +414,131 @@ try {
     record('C22', 'reading surface', 'a long document from an endpoint with no answer channel still settles readably', check.turnSettled(await check.lastAssistantTurn(page)));
   }
 
+  /* ---- STEP 6c — THE TYPE SCALE, ALL SIX LEVELS ------------------------- *
+   * The gap the previous pass disclosed and could not close: **no artifact in
+   * the evidence set rendered h1, h3, h4, h5 or h6**, so "the scale collapses
+   * below h3 — h4 at body size, h5 and h6 smaller than the prose they head,
+   * and an unclassed `<strong>` at 700 outweighing every one of them" was a
+   * reading of a stylesheet rather than an observation of a screen. That is the
+   * same shape of gap that let the raw-markdown thinking block survive a full
+   * cloud review.
+   *
+   * `#headings` answers with `tests/fixtures/heading-scale-answer.md`, which
+   * puts every level and a bold run beside it in one frame.                    */
+  await sendAndSettle(page, '#headings show me every heading level', { timeout: 60_000 });
+  const scale = await check.readingSurface(page);
+  writeFileSync(join(outDir, 'heading-scale.json'), `${JSON.stringify(scale, null, 2)}\n`);
+  await page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    (turn?.querySelector('[data-level="4"]') ?? turn)?.scrollIntoView({ block: 'center' });
+  });
+  await page.waitForTimeout(200);
+  await shot(page, 'heading-scale-deep-levels');
+
+  if (expected.answerChannelIsClean) {
+    record(
+      'C22b',
+      'reading surface',
+      'all six heading levels are rendered, and none is smaller or lighter than a bold run',
+      check.headingsOutrankEmphasis(scale),
+    );
+    record(
+      'C22c',
+      'reading surface',
+      'every heading level from one to six reached the answer channel',
+      {
+        pass: new Set((scale?.headings ?? []).map((heading) => heading.level)).size === 6,
+        detail: `levels present: ${[...new Set((scale?.headings ?? []).map((h) => h.level))].sort().join(',')}`,
+      },
+    );
+    record(
+      'C25',
+      'reading surface',
+      'the reading column sets a comfortable number of characters per line',
+      check.readingMeasureIsComfortable(scale),
+    );
+  }
+
+  /* ---- STEP 6d — THE THINKING BLOCK AS A READING SURFACE ---------------- *
+   * It is one, and nothing here ever treated it as one. `#thinkmd` puts a bold
+   * lead-in, a bulleted plan and inline code in the *reasoning* channel — which
+   * is what real reasoning models put there and what the narration in this
+   * harness never did, which is why the block printing
+   * `**Deconstruct the requirements:**` at the user was invisible from here.   */
+  if (expected.reasoning !== false) {
+    await sendAndSettle(page, '#thinkmd which local model should I run?', { timeout: 60_000 });
+    // Measured on the settled turn, which is the state this screenshot shows;
+    // the streaming default is pinned by `ConversationSurface.test.tsx`, which
+    // can hold a turn mid-stream and this driver cannot.
+    record(
+      'C26',
+      'reasoning',
+      'a settled thought is closed, unless closing it would hide the only text the turn produced',
+      check.settledThoughtIsClosed(await check.lastAssistantTurn(page)),
+    );
+    await shot(page, 'thinking-markdown-collapsed');
+
+    // Open it if it is not already: the unterminated case starts open on
+    // purpose, and clicking there would close the one block that must not be.
+    const toggle = page.locator('article[data-role="assistant"]').last().locator('section h3 button').first();
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      await toggle.click();
+      await page.waitForTimeout(150);
+    }
+    const reasoning = await check.reasoningSurface(page);
+    writeFileSync(join(outDir, 'reasoning-surface.json'), `${JSON.stringify(reasoning, null, 2)}\n`);
+    await page.evaluate(() => {
+      const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+      turn?.querySelector('section')?.scrollIntoView({ block: 'center' });
+    });
+    await page.waitForTimeout(200);
+    await shot(page, 'thinking-markdown-expanded');
+
+    record('C27', 'reasoning', 'the thinking block renders markdown instead of printing its source', check.reasoningRendersAsMarkdown(reasoning));
+    record('C28', 'reasoning', 'nothing inside the aside sets larger than the answer it is about', check.asideStaysSubordinate(reasoning));
+  } else {
+    record('C27', 'reasoning', 'a profile with no reasoning channel renders no thinking block to judge', {
+      pass: (await check.lastAssistantTurn(page)).reasoning === null,
+      detail: 'no reasoning channel on this endpoint',
+    });
+  }
+
+  /* ---- STEP 6e — THE RULER, AT TWO WINDOW SIZES ------------------------- *
+   * The transcript's text and the composer's box sat on two rulers (688px over
+   * 736px), and the sidebar was a constant that took half of a 1000px window.
+   * Both are properties of the assembled layout at a particular size, so both
+   * are read at two — a single reading cannot tell a responsive width from a
+   * constant that happens to look right where you measured.                    */
+  // Dragged to its maximum first, through the separator a keyboard user would
+  // use. At the stored default the sidebar is under the cap at every window
+  // size this run visits, so measuring it there would prove nothing at all —
+  // which is exactly how a constant width survives a responsive check.
+  const separator = page.getByRole('separator', { name: /Resize sidebar/u });
+  await separator.focus();
+  for (let press = 0; press < 20; press += 1) await separator.press('ArrowRight');
+  await page.waitForTimeout(200);
+  const draggedTo = await separator.getAttribute('aria-valuenow');
+
+  const rulerWide = await check.layoutRuler(page);
+  await shot(page, 'layout-ruler-1440');
+  await page.setViewportSize({ width: 880, height: 800 });
+  await page.waitForTimeout(250);
+  const rulerNarrow = await check.layoutRuler(page);
+  await shot(page, 'layout-ruler-880');
+  writeFileSync(
+    join(outDir, 'layout-ruler.json'),
+    `${JSON.stringify({ sidebarDraggedTo: Number(draggedTo), wide: rulerWide, narrow: rulerNarrow }, null, 2)}\n`,
+  );
+
+  record('C29', 'layout', 'the transcript and the composer stand on one vertical ruler', check.oneVerticalRuler(rulerWide));
+  record('C29b', 'layout', 'they stay on it when the window narrows', check.oneVerticalRuler(rulerNarrow));
+  record('C30', 'layout', 'the sidebar gives way to the reading column as the window narrows', check.sidebarTracksTheWindow(rulerWide, rulerNarrow));
+  record('C31', 'layout', 'the transcript fades into a scroll edge that hides content, and only into one that does', check.scrollEdgeIsMasked(rulerNarrow));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (let press = 0; press < 20; press += 1) await separator.press('ArrowLeft');
+  await page.waitForTimeout(250);
+
   /* ---- STEP 7 — TOOL CALLS ---------------------------------------------- */
   await sendAndSettle(page, '#tools What is the weather in Lisbon?');
   const toolTurn = await check.lastAssistantTurn(page);

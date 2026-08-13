@@ -1,111 +1,111 @@
 [
   {
-    "t": 1464,
+    "t": 1390,
     "answer": 0,
     "whole": 0
   },
   {
-    "t": 1666,
+    "t": 1592,
     "answer": 0,
-    "whole": 34
+    "whole": 33
   },
   {
-    "t": 1716,
+    "t": 1656,
     "answer": 0,
-    "whole": 59
+    "whole": 58
   },
   {
-    "t": 1785,
+    "t": 1704,
     "answer": 0,
-    "whole": 83
+    "whole": 82
   },
   {
-    "t": 1854,
+    "t": 1771,
     "answer": 0,
-    "whole": 107
+    "whole": 106
   },
   {
-    "t": 1900,
+    "t": 1838,
     "answer": 0,
-    "whole": 130
+    "whole": 129
   },
   {
-    "t": 1967,
+    "t": 1887,
     "answer": 0,
-    "whole": 140
+    "whole": 139
   },
   {
-    "t": 2152,
+    "t": 2073,
     "answer": 0,
-    "whole": 146
+    "whole": 144
   },
   {
-    "t": 2209,
+    "t": 2138,
     "answer": 16,
-    "whole": 164
+    "whole": 163
   },
   {
-    "t": 2269,
+    "t": 2189,
     "answer": 31,
-    "whole": 179
+    "whole": 178
   },
   {
-    "t": 2336,
+    "t": 2254,
     "answer": 48,
-    "whole": 196
+    "whole": 195
   },
   {
-    "t": 2384,
+    "t": 2322,
     "answer": 63,
-    "whole": 211
+    "whole": 210
   },
   {
-    "t": 2453,
+    "t": 2371,
     "answer": 80,
-    "whole": 228
+    "whole": 227
   },
   {
-    "t": 2520,
+    "t": 2437,
     "answer": 96,
-    "whole": 244
+    "whole": 243
   },
   {
-    "t": 2568,
+    "t": 2505,
     "answer": 112,
-    "whole": 260
+    "whole": 259
   },
   {
-    "t": 2634,
+    "t": 2554,
     "answer": 128,
-    "whole": 276
+    "whole": 275
   },
   {
-    "t": 2701,
+    "t": 2621,
     "answer": 143,
-    "whole": 291
+    "whole": 290
   },
   {
-    "t": 2751,
+    "t": 2671,
     "answer": 160,
-    "whole": 308
+    "whole": 307
   },
   {
-    "t": 2818,
+    "t": 2739,
     "answer": 176,
-    "whole": 324
+    "whole": 323
   },
   {
-    "t": 2869,
+    "t": 2804,
     "answer": 181,
-    "whole": 329
+    "whole": 328
   },
   {
-    "t": 3004,
+    "t": 2922,
     "answer": 181,
-    "whole": 351
+    "whole": 350
   },
   {
-    "t": 3112,
+    "t": 3033,
     "answer": 181,
     "whole": 226
   }

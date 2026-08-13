@@ -1,6 +1,6 @@
 # Assertion controls — GATE M Part 1, Phase C
 
-Twenty-one experiments. **21/21 behaved as expected.** Machine-readable results in
+Forty-five experiments. **45/45 behaved as expected.** Machine-readable results in
 `ASSERTION-CONTROL.tsv`; the script is `tests/harness/ui-bridge/controls.mjs`.
 
 A gate run that prints twenty-two green lines proves nothing unless those lines could have been
@@ -37,6 +37,32 @@ endpoint, a credentialled endpoint is really configured through `settings_put_pr
 | K19 | C18 | and against a 120 ms endpoint, where it must hold | PASS | PASS |
 | K20 | C6/C15 | the "turn is settled" assertion, applied while the turn is still in flight | FAIL | FAIL |
 | K21 | FINDING 1 | the bridge run with `--no-register`, i.e. the shipping wiring | PASS | PASS |
+| K22–K28 | C22–C24 | the first reading-surface set: a flattened heading scale, one that runs backwards, paragraphs put back on `pre-wrap`, and four thousand pixels of content in the column | PASS/FAIL | as wanted |
+| K29 | C22b | baseline: structure-outranks-emphasis on the surface as it ships | PASS | PASS |
+| K30 | C22b | `<strong>` put back on the user agent's 700 with every heading at 600 — **the inversion exactly as found** | FAIL | FAIL |
+| K31 | C22b | `h5` and `h6` set at 13px under 15px of body text — the other half as found | FAIL | FAIL |
+| K32 | C25 | baseline: the characters-per-line reading on the column as it ships | PASS | PASS |
+| K33 | C25 | the column put back to the 688px it shipped with | FAIL | FAIL |
+| K34 | C26 | baseline: a settled thinking block, closed | PASS | PASS |
+| K35 | C26 | the same block opened — the pre-fix default | FAIL | FAIL |
+| K36 | C27 | baseline: the thinking block rendering markdown | PASS | PASS |
+| K37 | C27 | `<p>{text}</p>` with `pre-wrap` and the same reasoning text — **the defect exactly as it shipped** | FAIL | FAIL |
+| K38 | C28 | baseline: nothing in the aside louder than the answer | PASS | PASS |
+| K39 | C28 | a 24px heading inserted inside the aside | FAIL | FAIL |
+| K40 | C29 | baseline: the transcript and the composer on one ruler | PASS | PASS |
+| K41 | C29 | the composer's box put back to 736px over 688px of text | FAIL | FAIL |
+| K42 | C30 | baseline: the sidebar giving way as the window narrows | PASS | PASS |
+| K43 | C30 | the sidebar pinned inline at 480px — **the constant as it shipped** | FAIL | FAIL |
+| K44 | C31 | baseline: the transcript faded into an edge that hides content | PASS | PASS |
+| K45 | C31 | the mask removed while content is still hidden above the edge | FAIL | FAIL |
+
+## Why the second set breaks the live page rather than a fixture
+
+Every K29–K45 breakage is applied to the **running application**, through `page.evaluate`, and each
+one reproduces a state the operator actually saw on a real machine rather than a state invented to
+be red. K37 in particular rebuilds the shipped renderer byte for byte — `<p>{text}</p>`, `pre-wrap`,
+the same reasoning text flowing into it — so what the control proves is not "the reader can return
+FAIL" but "the reader returns FAIL *on the defect it was written for*".
 
 ## The three that carry the most weight
 

@@ -57,6 +57,8 @@ const SHEET = readFileSync(
   'utf8',
 );
 
+const TOKEN_SHEET = readFileSync(join(REPO_ROOT, 'src/styles/tokens.css'), 'utf8');
+
 /** The declarations of every rule whose selector matches. Comments stripped. */
 function declarationsOf(selector: RegExp): string[] {
   const withoutComments = SHEET.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -80,6 +82,53 @@ function valueOf(selector: RegExp, property: string): string | null {
   return found?.[2] ?? null;
 }
 
+/**
+ * The canonical rule for a heading level — anchored, so it reads the scale
+ * itself and not a later, narrower override. `valueOf` takes the last matching
+ * declaration; without the anchor, adding `.prose[data-scale='aside']
+ * .heading[data-level='1']` would silently redirect this whole describe block
+ * at the subordinate scale and assert the wrong document.
+ */
+function headingLevelRule(level: number): RegExp {
+  return new RegExp(`^\\.heading\\[data-level=['"]${String(level)}['"]\\]$`);
+}
+
+function headingSize(level: number): string | null {
+  return valueOf(headingLevelRule(level), 'font-size') ?? valueOf(/^\.heading$/, 'font-size');
+}
+
+/** `--vela-text-*` in px, at the 16px root the app actually runs at. */
+function typeScale(): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const match of TOKEN_SHEET.matchAll(/^\s*(--vela-text-[a-z0-9-]+):\s*([0-9.]+)rem;/gm)) {
+    out.set(match[1] ?? '', Number.parseFloat(match[2] ?? '0') * 16);
+  }
+  return out;
+}
+
+function sizePx(value: string | null): number {
+  const token = /^var\((--vela-text-[a-z0-9-]+)\)$/.exec(value ?? '')?.[1] ?? '';
+  const px = typeScale().get(token);
+  expect(px, `${String(value)} is not a step on the type scale`).toBeDefined();
+  return px ?? 0;
+}
+
+/** `--vela-weight-*` as numbers, for the one comparison that decides rank. */
+function weightScale(): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const match of TOKEN_SHEET.matchAll(/^\s*(--vela-weight-[a-z]+):\s*([0-9]+);/gm)) {
+    out.set(match[1] ?? '', Number.parseInt(match[2] ?? '0', 10));
+  }
+  return out;
+}
+
+function weightOf(value: string | null): number {
+  const token = /^var\((--vela-weight-[a-z]+)\)$/.exec(value ?? '')?.[1] ?? '';
+  const weight = weightScale().get(token);
+  expect(weight, `${String(value)} is not a step on the weight scale`).toBeDefined();
+  return weight ?? 0;
+}
+
 function prose(): HTMLElement {
   const node = document.querySelector('[data-testid="markdown"], .prose') ?? document.body;
   return node as HTMLElement;
@@ -90,9 +139,7 @@ describe('the rendered answer has a typographic hierarchy', () => {
     // The defect in one assertion. Six levels sharing one `font-size` is a
     // document with no shape: the reader cannot tell a section from a
     // sub-sub-section, and a long answer becomes a wall.
-    const sizes = [1, 2, 3, 4, 5, 6].map((level) =>
-      valueOf(new RegExp(`\\.heading\\[data-level=['"]${String(level)}['"]\\]`), 'font-size'),
-    );
+    const sizes = [1, 2, 3, 4, 5, 6].map((level) => headingSize(level));
 
     expect(sizes, 'every heading level needs its own rule in Markdown.module.css').not.toContain(
       null,
@@ -299,5 +346,130 @@ describe('the reading surface is typed end to end', () => {
     render(<Markdown source={'<img src=x onerror="alert(1)"> **after**'} />);
     expect(within(prose()).queryByRole('img')).toBeNull();
     expect(document.body.textContent).toContain('<img src=x onerror="alert(1)">');
+  });
+});
+
+
+/**
+ * THE SCALE BELOW h3 — the half of the hierarchy the first pass got wrong.
+ *
+ * Levels 1–3 were given real size steps and levels 4–6 were left where the
+ * interface scale happened to put them: `h4` at body size, `h5` and `h6`
+ * *smaller* than the prose they head. A heading set smaller than its own body
+ * text is not a quiet heading, it is a caption — and every one of them was
+ * `--vela-weight-semibold` (600) while an unclassed `<strong>` inherits the
+ * user agent's 700, so `**a bold run**` in a paragraph outranked every heading
+ * below `h3`. The document's own emphasis outweighed its structure.
+ *
+ * No screenshot in the evidence set rendered `h1`, `h3`, `h4`, `h5` or `h6`, so
+ * the finding had to be read out of the source. `tests/fixtures/
+ * heading-scale-answer.md` exists so that is never true again: it is rendered
+ * here and screenshotted by the gate.
+ */
+describe('the scale does not collapse below h3', () => {
+  const LEVELS = [1, 2, 3, 4, 5, 6] as const;
+
+  it('never sets a heading smaller than the text it heads', () => {
+    const body = sizePx(valueOf(/^\.prose$/, 'font-size'));
+    const undersized = LEVELS.map((level) => ({ level, px: sizePx(headingSize(level)) }))
+      .filter(({ px }) => px < body)
+      .map(({ level, px }) => `h${String(level)} at ${String(px)}px under ${String(body)}px of body text`);
+    expect(undersized, 'a heading smaller than its own paragraphs is a caption').toEqual([]);
+  });
+
+  it('descends — a deeper level is never larger than a shallower one', () => {
+    const sizes = LEVELS.map((level) => sizePx(headingSize(level)));
+    const inversions = sizes
+      .map((px, index) => ({ px, index }))
+      .filter(({ px, index }) => index > 0 && px > (sizes[index - 1] ?? 0))
+      .map(({ index }) => `h${String(index + 1)} is larger than h${String(index)}`);
+    expect(inversions).toEqual([]);
+  });
+
+  it('separates levels that share a size by something a reader can see', () => {
+    // Four sizes at or above body text cannot express six levels, and steps
+    // fine enough to try would be steps nobody can see. Levels that share a
+    // size must differ in weight, colour, case or rhythm instead — which is how
+    // a type scale is supposed to work anyway. What is forbidden is two levels
+    // that are identical in every respect.
+    const DEVICES = ['font-size', 'font-weight', 'color', 'text-transform', 'letter-spacing', 'margin-top'] as const;
+    const fingerprint = (level: number): string =>
+      DEVICES.map((device) => valueOf(headingLevelRule(level), device) ?? `inherit:${device}`).join('|');
+
+    const collisions = LEVELS.slice(1)
+      .filter((level) => fingerprint(level) === fingerprint(level - 1))
+      .map((level) => `h${String(level)} is indistinguishable from h${String(level - 1)}`);
+    expect(collisions).toEqual([]);
+  });
+
+  it('outranks the emphasis inside it — a bold run never beats a heading', () => {
+    // The inversion, stated as the comparison that produces it. `<strong>` is
+    // unclassed by design (`Markdown.tsx` renders the element, not a class), so
+    // without a rule it inherits the user agent's 700 and wins.
+    const strong = weightOf(valueOf(/\.prose\s+strong\b/, 'font-weight'));
+    const heading = weightOf(valueOf(/^\.heading$/, 'font-weight'));
+    expect(
+      heading,
+      `a bold run sets at ${String(strong)} and the weakest heading at ${String(heading)}`,
+    ).toBeGreaterThan(strong);
+  });
+
+  it('does not then weaken a bold run inside a heading', () => {
+    // The correction pointed the wrong way: if `strong` is lighter than a
+    // heading, `## a **bold** word` would set that word lighter than the rest
+    // of its own heading. Inside a heading, emphasis inherits.
+    expect(valueOf(/\.heading\s+strong\b/, 'font-weight')).toBe('inherit');
+  });
+
+  it('renders all six levels and a bold run from the shared fixture', () => {
+    const source = readFileSync(join(REPO_ROOT, 'tests/fixtures/heading-scale-answer.md'), 'utf8');
+    render(<Markdown source={source} />);
+    for (const level of LEVELS) {
+      expect(
+        document.querySelector(`[data-level="${String(level)}"]`),
+        `the fixture must exercise h${String(level)}; that gap is why this defect was source-read`,
+      ).not.toBeNull();
+    }
+    expect(document.querySelectorAll('strong').length).toBeGreaterThan(0);
+    // A bold run must sit *beside* a deep heading in the document, or the
+    // screenshot cannot show the comparison this whole block is about.
+    for (const level of [5, 6] as const) {
+      const deep = document.querySelector(`[data-level="${String(level)}"]`);
+      expect(
+        deep?.nextElementSibling?.querySelectorAll('strong').length ?? 0,
+        `h${String(level)} needs a bold run directly beneath it, or the screenshot cannot show the comparison`,
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * THE SUBORDINATE SCALE.
+ *
+ * Routing the thinking block through `<Markdown>` raised a question the answer
+ * channel never had to answer: reasoning is *subordinate*, so it cannot simply
+ * borrow the answer's display sizes — an `h1` inside a collapsed aside would
+ * set larger than the answer it is reasoning about. One prop, two scales.
+ */
+describe('an aside renders markdown without borrowing the answer’s voice', () => {
+  it('offers a scale, and defaults to the answer’s', () => {
+    render(<Markdown source={'# Heading\n\ntext'} />);
+    expect(document.querySelector('[data-scale]')).toHaveAttribute('data-scale', 'answer');
+  });
+
+  it('marks the aside so a reader — human or gate — can tell the channels apart', () => {
+    render(<Markdown source={'# Heading\n\ntext'} scale="aside" />);
+    expect(document.querySelector('[data-scale]')).toHaveAttribute('data-scale', 'aside');
+  });
+
+  it('never lets anything in an aside set larger than the answer’s body text', () => {
+    const body = sizePx(valueOf(/^\.prose$/, 'font-size'));
+    const asideSizes = declarationsOf(/\[data-scale=['"]aside['"]\]/)
+      .map((declaration) => /^font-size\s*:\s*(.+)$/.exec(declaration)?.[1] ?? null)
+      .filter((value): value is string => value !== null);
+    expect(asideSizes.length, 'the aside scale must actually resize something').toBeGreaterThan(0);
+    for (const size of asideSizes) {
+      expect(sizePx(size), `${size} is louder than the answer`).toBeLessThanOrEqual(body);
+    }
   });
 });

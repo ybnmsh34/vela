@@ -1,0 +1,38 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 07c-termination-latency: stream termination latency, five samples
+================================================================================
+
+PURPOSE   MEASURED-1 sharpened: the turn must end in single-digit milliseconds, not merely inside the 5 s a naive [DONE]-driven consumer hung for.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  Five identical streamed turns. The endpoint is the same OS process throughout, so
+  the spread below is this container's scheduling noise and nothing else. `hostile`
+  never sends [DONE] and `small-local` never sends usage though it accepted
+  `include_usage`: both are the shapes that hung the recorded consumers for 5 s.
+
+---- the samples -------------------------------------------------------------
+  run 1                                  4.22666ms   (165 answer characters)
+  run 2                                  3.584776ms   (165 answer characters)
+  run 3                                  3.797742ms   (165 answer characters)
+  run 4                                  3.855406ms   (165 answer characters)
+  run 5                                  3.270366ms   (165 answer characters)
+  MEDIAN                                 3.797742ms
+  worst sample                           4.22666ms
+  recorded naive [DONE] consumer         5003 ms (TIMED OUT)
+
+---- assertions --------------------------------------------------------------
+  [PASS] every sampled turn completed without error
+        5 samples
+  [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms
+        median 3.797742ms, samples [4.22666ms, 3.584776ms, 3.797742ms, 3.855406ms, 3.270366ms]
+  [PASS] no sample came anywhere near the recorded 5003 ms hang
+        worst 4.22666ms
+  [PASS] every sample returned the same answer length — timing did not truncate anything
+        [165, 165, 165, 165, 165]
+
+================================================================================
+VERDICT  4 assertion(s), 0 failure(s)
+================================================================================

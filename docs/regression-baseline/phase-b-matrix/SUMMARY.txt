@@ -1,9 +1,85 @@
 GATE M Part 1 (Phase B) — run summary
 =====================================
 
-gate assertions   265
-failures          0
-controls          15 (their FAILs are expected)
-wall clock        17.522201983s
+gate assertions   361
+failures          16
+controls          24 (their FAILs are expected)
+wall clock        22.507657111s
 
-No gate assertion failed.
+FAILURES:
+  frontier / 11-credential-leak / NO CREDENTIAL in an error produced with no recorder anywhere in the path
+      5 leaking rendering(s): ["Display", "Debug", "Debug (alternate)", "serde_json (THE IPC WIRE SHAPE)", "serde_json (pretty)"]
+  frontier / 11-credential-leak / NO CREDENTIAL in any Display, Debug or serde rendering of any error
+      5 leaking rendering(s):
+        the endpoint echoes the URL back (200 + error frame): the `Display` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — the endpoint returned a response Vela could not read: upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK
+        the endpoint echoes the URL back (200 + error frame): the `Debug` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse { detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" }
+        the endpoint echoes the URL back (200 + error frame): the `Debug (alternate)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse {
+    detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK",
+}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (THE IPC WIRE SHAPE)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {"kind":"malformedResponse","detail":"upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (pretty)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {
+  "kind": "malformedResponse",
+  "detail": "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+}
+  frontier / 11-credential-leak / NO CREDENTIAL in the serde JSON specifically — the IPC wire shape
+      the endpoint echoes the URL back (200 + error frame): serde_json (THE IPC WIRE SHAPE)
+        the endpoint echoes the URL back (200 + error frame): serde_json (pretty)
+  frontier / 11-credential-leak / NO CREDENTIAL in the streamed event sink the UI is handed
+      the endpoint echoes the URL back (200 + error frame): event sink contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+  mid-local / 11-credential-leak / NO CREDENTIAL in an error produced with no recorder anywhere in the path
+      5 leaking rendering(s): ["Display", "Debug", "Debug (alternate)", "serde_json (THE IPC WIRE SHAPE)", "serde_json (pretty)"]
+  mid-local / 11-credential-leak / NO CREDENTIAL in any Display, Debug or serde rendering of any error
+      5 leaking rendering(s):
+        the endpoint echoes the URL back (200 + error frame): the `Display` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — the endpoint returned a response Vela could not read: upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK
+        the endpoint echoes the URL back (200 + error frame): the `Debug` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse { detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" }
+        the endpoint echoes the URL back (200 + error frame): the `Debug (alternate)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse {
+    detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK",
+}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (THE IPC WIRE SHAPE)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {"kind":"malformedResponse","detail":"upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (pretty)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {
+  "kind": "malformedResponse",
+  "detail": "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+}
+  mid-local / 11-credential-leak / NO CREDENTIAL in the serde JSON specifically — the IPC wire shape
+      the endpoint echoes the URL back (200 + error frame): serde_json (THE IPC WIRE SHAPE)
+        the endpoint echoes the URL back (200 + error frame): serde_json (pretty)
+  mid-local / 11-credential-leak / NO CREDENTIAL in the streamed event sink the UI is handed
+      the endpoint echoes the URL back (200 + error frame): event sink contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+  small-local / 11-credential-leak / NO CREDENTIAL in an error produced with no recorder anywhere in the path
+      5 leaking rendering(s): ["Display", "Debug", "Debug (alternate)", "serde_json (THE IPC WIRE SHAPE)", "serde_json (pretty)"]
+  small-local / 11-credential-leak / NO CREDENTIAL in any Display, Debug or serde rendering of any error
+      5 leaking rendering(s):
+        the endpoint echoes the URL back (200 + error frame): the `Display` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — the endpoint returned a response Vela could not read: upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK
+        the endpoint echoes the URL back (200 + error frame): the `Debug` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse { detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" }
+        the endpoint echoes the URL back (200 + error frame): the `Debug (alternate)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse {
+    detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK",
+}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (THE IPC WIRE SHAPE)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {"kind":"malformedResponse","detail":"upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (pretty)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {
+  "kind": "malformedResponse",
+  "detail": "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+}
+  small-local / 11-credential-leak / NO CREDENTIAL in the serde JSON specifically — the IPC wire shape
+      the endpoint echoes the URL back (200 + error frame): serde_json (THE IPC WIRE SHAPE)
+        the endpoint echoes the URL back (200 + error frame): serde_json (pretty)
+  small-local / 11-credential-leak / NO CREDENTIAL in the streamed event sink the UI is handed
+      the endpoint echoes the URL back (200 + error frame): event sink contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+  hostile / 11-credential-leak / NO CREDENTIAL in an error produced with no recorder anywhere in the path
+      5 leaking rendering(s): ["Display", "Debug", "Debug (alternate)", "serde_json (THE IPC WIRE SHAPE)", "serde_json (pretty)"]
+  hostile / 11-credential-leak / NO CREDENTIAL in any Display, Debug or serde rendering of any error
+      5 leaking rendering(s):
+        the endpoint echoes the URL back (200 + error frame): the `Display` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — the endpoint returned a response Vela could not read: upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK
+        the endpoint echoes the URL back (200 + error frame): the `Debug` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse { detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" }
+        the endpoint echoes the URL back (200 + error frame): the `Debug (alternate)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — MalformedResponse {
+    detail: "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK",
+}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (THE IPC WIRE SHAPE)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {"kind":"malformedResponse","detail":"upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"}
+        the endpoint echoes the URL back (200 + error frame): the `serde_json (pretty)` rendering contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK" — {
+  "kind": "malformedResponse",
+  "detail": "upstream request failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+}
+  hostile / 11-credential-leak / NO CREDENTIAL in the serde JSON specifically — the IPC wire shape
+      the endpoint echoes the URL back (200 + error frame): serde_json (THE IPC WIRE SHAPE)
+        the endpoint echoes the URL back (200 + error frame): serde_json (pretty)
+  hostile / 11-credential-leak / NO CREDENTIAL in the streamed event sink the UI is handed
+      the endpoint echoes the URL back (200 + error frame): event sink contains "vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"

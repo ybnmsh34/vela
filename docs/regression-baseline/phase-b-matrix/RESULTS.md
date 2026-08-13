@@ -1,19 +1,18 @@
 # GATE M Part 1 (Phase B) — does Vela degrade gracefully?
 
 **Recorded:** 2026-08-13 · **Executor:** GATE M Part 1 Phase B evidence run
-**Re-recorded:** 2026-08-13, round 2 integration — **265 assertions, 0 failures**
+**Round 2 re-execution:** 2026-08-13 — **361 assertions, 16 failures, one defect**
 **Subject:** `src-tauri/crates/vela-providers` — Vela's own provider stack
-**Raw evidence:** `<profile>/00-…10-*.txt`, `verdicts.tsv`, `ASSERTION-CONTROL.txt`
+**Raw evidence:** `<profile>/00-…11-*.txt`, `verdicts.tsv`, `ASSERTION-CONTROL.txt`
 **Companion:** `../mock-matrix/RESULTS.md` — what the endpoints did
 
-> **Round 1 → round 2.** The first execution of this gate FAILED: five assertions,
-> all one defect — FINDING 1, non-streamed tool calls collapsing into one. Round 2
-> fixed it and the transcripts in this directory are a re-record against the fixed
-> tree, so every file here now reads PASS. **FINDING 1's round-1 red is preserved
-> verbatim in §3 below**, which is the before/after and is not rewritten: the
-> defect was real, it was measured, and the quotes are what the recorder printed.
-> Everything else in this document is the round-1 text, unchanged — the numbers it
-> reports were re-measured and still hold.
+> **Round 1 → round 2.** Round 1 FAILED on FINDING 1: parallel tool calls collapsing
+> into one on the non-streamed path. Round 2 shipped a fix for that and a fix for a
+> credential leak in provider errors. This document is a **fresh, independent
+> re-execution** by an executor who wrote neither fix. It re-ran every round-1 case
+> and added four new ones. **FINDING 1 is closed and now proved live rather than
+> scripted. FINDING 2 is new: the credential fix does not cover the streaming path,
+> and the gate fails on it.**
 
 ---
 
@@ -28,31 +27,44 @@ layer — but they are mocks. **Not one byte came from a language model.**
 unreachable from this container. It was not attempted and remains unverified.**
 Nothing in this file is evidence about a real model.
 
-**What is new since Phase A.** Phase A shipped no HTTP client anywhere, so the
-gate could only characterise the harness. The gate criterion — *a piece FAILS if
-under any profile it crashes, hangs, silently produces wrong output, or offers an
-affordance the profile cannot support* — is applied to Vela's runtime behaviour
-here for the first time.
-
-**This run does not inherit Phase A's pass.** It is an independent execution: its
-own recorder, its own wire-tapping transport, its own assertions. Where it
-overlaps `crates/vela-providers/tests/mock_matrix_live.rs` (the builders' own
-suite, 24/24 green) it agrees with it. Where it does not overlap, it found
-something the builders' suite does not cover — see FINDING 1.
-
 ---
 
 ## 1. The ledger
 
-**265 gate assertions across four profiles. Round 1: 5 failures, all one defect.
-Round 2, after the fix: 0.**
-
 | | round 1 | round 2 (this directory) |
 |---|---|---|
-| gate assertions | 265 | 265 |
-| failures | **5** (FINDING 1, one root cause) | **0** |
-| controls | 15, of which 10 FAIL — every one the expected one | unchanged |
-| wall clock, whole run | ~17 s | ~17 s |
+| gate assertions | 265 | **361** |
+| failures | **5** — FINDING 1, one root cause | **16** — FINDING 2, one root cause |
+| controls | 15, of which 10 FAIL | **24, of which 15 FAIL** — every one the expected one |
+| wall clock, whole run | ~17 s | ~22 s |
+
+```
+gate assertions   361
+failures          16
+controls          24 (their FAILs are expected)
+wall clock        21.762975632s
+```
+
+Per case, gate assertions across all four profiles:
+
+| case | assertions | failures |
+|---|---:|---:|
+| 00 capability probe | 32 | 0 |
+| 01 plain chat | 20 | 0 |
+| 02 tool calling | 24 | 0 |
+| **02p parallel tool calls** *(new)* | **43** | **0** |
+| 03 vision | 17 | 0 |
+| 04 structured output | 22 | 0 |
+| 05 context overflow | 24 | 0 |
+| 06 reasoning | 23 | 0 |
+| 07 stream termination | 18 | 0 |
+| 07b stalled socket | 8 | 0 |
+| **07c termination latency** *(new)* | **16** | **0** |
+| 08 malformed frames | 13 | 0 |
+| 09 no credential | 28 | 0 |
+| 09b endpoint requires a key | 12 | 0 |
+| 10 failover | 24 | 0 |
+| **11 credential leak** *(new)* | **37** | **16** |
 
 `verdicts.tsv` carries every line. `SUMMARY.txt` carries the failure list.
 
@@ -62,274 +74,348 @@ Round 2, after the fix: 0.**
 
 | case | frontier | mid-local | small-local | hostile |
 |---|---|---|---|---|
-| **00** capability probe | ✅ 200k · tools/vision/schema all Supported | ✅ 32k · schema **Degraded**, vision Unsupported | ✅ 8k · tools **Unsupported**, schema Degraded | ✅ 4k · tools **Degraded**, schema Degraded |
-| **01** plain chat, streamed ≡ whole | ✅ identical, deltas sum to the answer | ✅ identical | ✅ identical | ✅ identical |
-| **02** tool calling | ✅ native · parallel calls now agree on both transports (round 1: ⛔ non-streamed) | ✅ native | ✅ **emulation works end to end** | ✅ 2 broken calls surfaced on **both** transports (round 1: ⛔ 1 of 2 lost non-streamed) |
+| **00** capability probe | ✅ 200k · tools/vision/schema Supported | ✅ 32k · schema **Degraded**, vision Unsupported | ✅ 8k · tools **Unsupported**, schema Degraded | ✅ 4k · tools **Degraded**, schema Degraded |
+| **01** plain chat, streamed ≡ whole | ✅ identical | ✅ identical | ✅ identical | ✅ identical |
+| **02** tool calling | ✅ native | ✅ native | ✅ **emulation works end to end** | ✅ 2 broken calls on **both** transports |
+| **02p** parallel tool calls | ✅ **3 calls, live, both transports agree** | ✅ same | ✅ **2 emulated calls, both transports agree** | ✅ **3 calls, middle one broken, both transports agree** |
 | **03** vision | ✅ offered, image answered | ✅ affordance absent, image refused locally | ✅ same | ✅ same |
 | **04** structured output | ✅ honoured and validated | ✅ **mismatch reported**, affordance withdrawn | ✅ same | ✅ same |
 | **05** context overflow | ✅ clean error, `200000`/`250004` | ✅ `32768`/`40964` | ✅ `8192`/`10244` | ✅ `4096`/`5124` |
 | **06** reasoning | ✅ separate field, never in the answer | ✅ split `</think>` never leaks | ✅ none emitted, none invented | ✅ unterminated block does not swallow the answer |
-| **07** stream termination | ✅ **3.0 ms** | ✅ **3.4 ms** | ✅ **2.8 ms**, usage-absence declared | ✅ **3.6 ms**, missing sentinel declared |
+| **07** stream termination | ✅ terminates | ✅ | ✅ usage-absence declared | ✅ missing sentinel declared |
+| **07c** termination latency | ✅ **median 2.4 ms** | ✅ **median 3.1 ms** | ✅ **median 3.3 ms** | ✅ **median 1.9 ms** |
 | **08** malformed frames | ✅ no bad frames, none claimed | ✅ same | ✅ same | ✅ **166 chars delivered vs 31 for a strict consumer** |
 | **09** no credential | ✅ nothing on the wire | ✅ same | ✅ same | ✅ same |
 | **10** failover / mid-request kill | ✅ routed past a dead peer; killed stream **not** replayed | ✅ same | ✅ same | ✅ same |
+| **11** credential leak | ⛔ **leaks on the streamed error-frame path** | ⛔ same | ⛔ same | ⛔ same |
 
 ✅ passes every assertion · ⚠️ degrades, explicitly · ⛔ **gate failure**
 
 ---
 
-## 3. FINDING 1 — non-streamed tool calls collapse into one — **CLOSED in round 2**
+## 3. FINDING 1 — parallel tool calls collapse — **CLOSED, and now proved live**
 
-**Severity: high. This is data loss on the ordinary path, not only the hostile one.**
+Round 1's report is preserved in `git log` and in `tool_accum.rs`'s module docs.
+The fix (`2e4a4fc`) gave the accumulator an explicit `ToolCallShape`, stated by
+the caller that read the response and never guessed: a `message.tool_calls[]`
+element opens its own slot, a `delta.tool_calls[]` element still joins its
+siblings by `index`.
 
-> **Status: FIXED.** `2e4a4fc` gave the accumulator an explicit
-> [`ToolCallShape`](../../../src-tauri/crates/vela-providers/src/tool_accum.rs) —
-> stated by the caller that read the response, never guessed — so a
-> `message.tool_calls[]` element opens its own slot and a `delta.tool_calls[]`
-> element still joins its siblings by `index`. The three-part regression recipe
-> named at the end of this section is implemented in
-> `tests/parallel_tool_calls.rs`; the same three cases now also run **live, over
-> real HTTP, against the mock matrix** in
-> `tests/mock_matrix_live.rs::parallel_tool_calls_survive_both_transports_on_a_live_endpoint`
-> and `::a_partly_broken_parallel_batch_loses_neither_the_good_calls_nor_the_bad_one`.
-> Everything below is the round-1 report, kept verbatim as the before picture.
+**This executor did not take that on trust, and did not re-use round 1's
+evidence.** Round 1 could only *script* the parallel shape, and said so: the
+mock harness answered every tool request with exactly one call, and one call
+cannot collide with itself. That blindness is why the defect reached a gate.
 
-`ToolCallAccumulator::push` (`src/tool_accum.rs`) keys a delta by its wire
-`index`, and when there is none it continues *the slot it last touched*:
+The harness now answers a multi-tool request with a **batch**
+(`tests/harness/mock-provider/src/reply-plan.ts::planToolCalls`), so case **02p**
+offers three tools and drives the batch **live, over real TCP, on all four
+profiles, on both transports** — 43 assertions, 0 failures.
 
-```rust
-// No index: continue the slot we were last working on, or open one.
-None => match self.last_touched { Some(slot) => slot, … }
-```
-
-That rule is right for **streaming**, where an element of `delta.tool_calls` is a
-*fragment* of a call and an unindexed fragment continues the previous one. It is
-wrong for **non-streaming**, where every element of `message.tool_calls` is a
-*whole, distinct call* and **none of them carries an `index` at all** — that field
-does not exist in the non-streamed OpenAI shape.
-
-So on the non-streamed path every tool call in the answer lands in slot 0, the
-first `id` and `name` win, and the `arguments` strings are **concatenated**.
-
-The file's own doc comment asserts the opposite, which is how this survived:
-
-> ``raw`` is one element of `delta.tool_calls` (streaming) or of
-> `message.tool_calls` (non-streaming) — the same shape, deliberately handled by
-> the same code so the two paths cannot diverge.
-
-The two shapes are not the same, and the two paths do diverge.
-
-### Measured, live, on `hostile`
-
-`hostile/02-tool-calling.txt`. The endpoint sent two calls in one non-streamed
-body. Vela reported one:
+What the wire actually carried, from `frontier/02p-parallel-tool-calls.txt`:
 
 ```
-tool calls   MALFORMED index=None id=call_c16f5968 name=get_weather
-             reason=UnknownDiscriminator raw="{\"city\":\"delnot-json-at-all"
+  non-streamed elements                  3
+  any element carried `index`            false      <-- the FINDING 1 shape
+    element 0 arguments                  "{\"city\":\"celsius\"}"
+    element 1 arguments                  "{\"timezone\":\"fixture\"}"
+    element 2 arguments                  "{\"ticker\":\"eastward\"}"
+  streamed tool-call elements            20
+  every streamed element carried `index` true
+    wire index slot 0 arguments          "{\"city\":\"celsius\"}"
+    wire index slot 1 arguments          "{\"timezone\":\"fixture\"}"
+    wire index slot 2 arguments          "{\"ticker\":\"eastward\"}"
 ```
 
-`{"city":"del` is the first call's truncated arguments; `not-json-at-all` is the
-second call's. They have been spliced into a single string that never existed on
-the wire, and shown to the user as evidence. The same request **streamed**, to
-the same server, in the same file, reports both calls correctly. Two paths, one
-endpoint, different answers.
+The two shapes genuinely differ — that is asserted, not assumed — and Vela
+reports the same three calls from both. The comparison is **call by call**, not
+by count: id, name, arguments and failure reason must match. `index` is
+deliberately excluded and the transcript says why: it exists only in the
+streamed shape, and demanding it match would be demanding the two shapes be the
+same shape, which is the mistake FINDING 1 was.
 
-### Measured on the shape that matters more
+Round 1's `hostile` case is also stronger now. The harness's parallel hostile
+batch breaks **only the middle call**, which is what makes a lost call visible:
 
-No matrix profile ever emits two *well-formed* calls, so the commonest
-tool-calling shape in the wild — parallel tool calls — is invisible to the live
-harness. `frontier/02-tool-calling.txt` therefore scripts it, in the OpenAI
-shape, through the same accumulator (**scripted bytes, clearly labelled as such
-in the transcript**):
+```
+  non-streamed calls  OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                      MALFORMED index=None    id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                      OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+  streamed calls      OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                      MALFORMED index=Some(1) id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                      OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+```
 
-| transport | sent | Vela reported |
-|---|---|---|
-| streamed (`index` 0 and 1) | `get_weather{"city":"berlin"}`, `get_weather{"city":"paris"}` | **2 executable calls** ✅ |
-| non-streamed (no `index`) | the same two calls | **1 malformed call**, `raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}"` ⛔ |
+Two good calls survive, the broken one is reported and is not executable, the
+`MalformedToolCalls { count: 1 }` degradation is raised on **both** transports,
+and no arguments string is a splice of two calls (asserted explicitly against
+the set of strings the endpoint actually sent).
 
-Two valid tool calls become one unusable one. Nothing is executed on a bad
-reconstruction — `executable_tool_calls()` is empty and a
-`MalformedToolCalls { count: 1 }` degradation is raised, so the user is not
-silently given a *wrong* action. But **one entire call disappears with nothing
-saying so**, and the surviving report is a splice of two different calls.
+**Can this assertion still fail?** CONTROL 8 feeds the same three whole calls to
+the same accumulator with round 1's rule restored and records the verbatim red:
 
-Against the gate criterion this is a **FAIL on "silently produces wrong output"**:
-the count is wrong, the `raw_arguments` shown as evidence is fabricated, and a
-turn that would have worked streamed fails non-streamed.
+```
+  WholeCall (today)    calls reported=3  → PASS
+  Fragment  (round 1)  calls reported=1  → FAIL
+        MALFORMED id=call_a name=get_weather reason=UnparseableArguments
+        raw="{\"city\":\"berlin\"}{\"city\":\"paris\"}{\"city\":\"rome\"}"
+```
 
-### Why the existing suite is green
-
-`tests/mock_matrix_live.rs::malformed_tool_calls_are_surfaced_as_failed_calls`
-uses `provider.stream(…)`; `a_well_formed_native_tool_call_is_executable` uses
-`complete(…)` but every profile returns exactly one call there, and one call
-cannot collide with itself. The unit tests in `tool_accum.rs` feed streaming
-deltas. Nothing in the tree feeds the accumulator two unindexed whole calls.
-
-### Not fixed here *(round 1; fixed in round 2 — see the status note above)*
-
-This run produces evidence; the fix belongs to the crate's owner, following the
-precedent of Phase A FINDING 1. The regression test it needs is exact:
-
-* two elements, each with `id`, `type: "function"`, a `name` and complete
-  `arguments`, **no `index` on either**, through `complete(…)` → two
-  `ToolCallOutcome::Ok`;
-* the streamed equivalent → the same two calls;
-* `hostile` non-streamed → two `Malformed`, one `UnparseableArguments` and one
-  `UnknownDiscriminator`, arguments **not** concatenated.
-
-All three fail against the tree as it stands; the transcripts above are the
-verbatim red. **Round 2: all three exist and pass, and each was proven red first
-by reverting the one-line shape decision in `stream.rs` — that revert reproduces
-the spliced `raw_arguments` quoted above.**
-
-The likely shape of the fix — for the owner to judge, not the executor — is that
-"continue the last slot" must apply only to the streaming path. A whole-call
-element (one that carries `id` **or** a complete `function.name`, and no `index`)
-opens its own slot.
+That spliced string never existed on any wire. FINDING 1 is reproducible on
+demand, and case 02p is measuring something.
 
 ---
 
-## 4. What passed, and what the numbers were
+## 4. FINDING 2 — a query-string credential leaks through a mid-stream error frame — **GATE FAILURE**
 
-Recorded because the absence of a failure is evidence too, and because several of
-these are the exact hangs and losses the Phase A gate measured.
+**Severity: high. It fires on the default path (streaming), it reaches the shape
+that crosses the IPC bridge, and it affects the one auth binding Vela's Google
+adapter always uses.**
 
-### No hangs anywhere (MEASURED-1)
+### What was configured, and what came back
 
-| profile | `[DONE]` sent? | usage sent? | Vela's turn |
-|---|---|---|---|
-| frontier | yes | yes | **3.0 ms** |
-| mid-local | yes | yes | **3.4 ms** |
-| small-local | yes | **never** (it accepted `include_usage`) | **2.8 ms** |
-| hostile | **never** | **never** | **3.6 ms** |
+`Auth::ApiKeyQuery { param: "key" }` with a distinctive canary in `MemoryStore`.
+Seven failure paths were forced on every profile: connection refused (both
+transports), first-byte timeout, TLS handshake failure, mid-stream reset (both
+transports), a 400 whose error body quotes the request target, and a **200 SSE
+stream whose only frame is `{"error":{"message": …}}` quoting the request
+target**. Every rendering of every resulting `ProviderError` was grepped.
+
+Six of the seven are clean. The seventh is not — verbatim from
+`frontier/11-credential-leak.txt`:
+
+```
+---- forced failure — the endpoint echoes the URL back (200 + error frame) -
+  variant                                malformed_response
+  Display        "the endpoint returned a response Vela could not read: upstream request
+                  failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+  Debug          "MalformedResponse { detail: \"upstream request failed: POST
+                  /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK\" }"
+  serde_json (THE IPC WIRE SHAPE)
+                 "{\"kind\":\"malformedResponse\",\"detail\":\"upstream request failed: POST
+                  /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK\"}"
+```
+
+The credential is in **all five** renderings, and in the **`CollectingSink` event
+stream** the UI is handed (`StreamEvent::Error`). Four gate assertions fail on
+each of the four profiles: the rendering check, the serde check, the sink check,
+and the bare-transport confirmation below.
+
+### Why, precisely
+
+`redact.rs`'s module doc states the rule the fix was built on:
+
+> **[`Scrubber`] is the belt to that pair of braces.** Any text derived from a
+> request — a `reqwest` error string, an error body an endpoint echoed back at
+> us — is passed through the needles the request itself carries before it
+> becomes a `detail`.
+
+For **streamed** error bodies that is not true. The scrubber is applied in
+exactly two places:
+
+* `http.rs::map_reqwest_error` — the `reqwest` error string. ✅
+* `http.rs::HttpResponse::read_to_end` — `Ok(self.body.scrubber().scrub_bytes(out))`. ✅
+
+`read_to_end` is the **non-streamed** body path. The streamed path reads frames
+through `ByteStream::next_chunk`, and `ReqwestBody::next_chunk` returns the
+bytes unmodified:
+
+```rust
+async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, TransportError> {
+    match self.response.chunk().await {
+        Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),   // <-- not scrubbed
+        Ok(None) => Ok(None),
+        Err(error) => Err(map_reqwest_error(error, &self.scrubber)),
+    }
+}
+```
+
+so `stream.rs::error_from_body` → `openai_compatible::map_error_code` →
+`ProviderError::malformed(message)` carries the endpoint's text — credential
+included — straight into `detail`. `detail()` truncates and strips control
+characters; it does not redact, which is the exact observation the round-2 fix
+was written on.
+
+**All three adapters share the shape.** `openai_compatible/../stream.rs:123`,
+`google/stream.rs:193` and `anthropic/stream.rs:208` each take an `{"error": …}`
+object out of an otherwise-200 stream and hand its `message` to a mapper that
+builds a `detail`. Google is the most exposed: `?key=` is the only binding it
+has (`google/provider.rs:1061`).
+
+### It is not the recorder
+
+An earlier draft of this run reported a leak on the **non-streamed** echo too.
+That one was the recorder's fault: `RecordingTransport`'s `Tee` body implements
+`ByteStream` but did not forward `scrubber()`, and the trait defaults it to
+`Scrubber::none()`, so wrapping the real body silently disabled the redaction.
+The recorder was fixed (`Tee::scrubber` now forwards, with a comment saying
+why), the non-streamed echo went clean, and the streamed one did not.
+
+Because a decorator is exactly the sort of thing that can invent a leak, the
+streamed echo is repeated in the same transcript on a **bare `ReqwestTransport`
+with nothing wrapping it**:
+
+```
+---- the same streamed echo on a BARE ReqwestTransport (no recorder in the path)
+  bare Display   "the endpoint returned a response Vela could not read: upstream request
+                  failed: POST /v1/chat/completions?key=vela%2Bgate%2Fm1-7Q2Xz9f3a-DO-NOT-LEAK"
+  [FAIL] NO CREDENTIAL in an error produced with no recorder anywhere in the path
+```
+
+The defect is Vela's.
+
+**This is a finding about the recorder worth keeping too:** `ByteStream::scrubber()`
+is a security property carried by an overridable method whose default is "no
+protection". Any future decorating body — a rate limiter, a cache, a replayer —
+disables the redaction by omission and nothing complains.
+
+### Why the builders' own canary suite is green
+
+`crates/vela-providers/tests/credential_canary.rs` passes, and so does the whole
+crate — **438 passed, 0 failed, 1 ignored**. The canary suite covers:
+
+* `assert_every_endpoint_is_clean` — five endpoints, **both** transports, but all
+  five are *transport* failures. No endpoint in that list echoes anything.
+* `an_endpoint_that_echoes_the_key_back_does_not_get_it_into_an_error` — a real
+  echo, but a **400** driven through **`complete()` only**, which is the
+  `read_to_end` path that is correctly scrubbed.
+
+Nothing in the tree drives an echoed credential through a **200 + in-stream error
+object**. That is the shape, and it is the same class of blind spot as round 1's:
+the suite tests the path the author was thinking about.
+
+### The regression recipe
+
+Exact, and each part fails against the tree as it stands:
+
+1. A 200 SSE body whose only frame is `{"error":{"message":"… ?key=<canary> …"}}`,
+   through `provider.stream(…)`, on `OpenAiCompatibleProvider` with
+   `Auth::ApiKeyQuery` → the canary must appear in **none** of `Display`,
+   `Debug`, `serde_json`, or any `StreamEvent` reaching the sink.
+2. The same, on `GoogleProvider` (whose only binding is `?key=`) and on
+   `AnthropicProvider` with `Auth::ApiKeyHeader` — the header binding puts
+   needles in the scrubber too, so it should be covered by the same fix.
+3. A positive control on the identical path with `Auth::None`, asserting the
+   error still carries the endpoint's message, so the fix is a redaction and not
+   a blanket "drop the detail".
+
+The likely shape of the fix — for the crate's owner to judge, not the executor —
+is that the scrubber belongs where the frame text becomes a `detail`, or that
+`next_chunk` should scrub the way `read_to_end` does. The second is the smaller
+change and the harder one to forget, but it scrubs every streamed byte rather
+than only error text, which is a cost worth weighing.
+
+---
+
+## 5. What passed, and what the numbers were
+
+### Termination is single-digit milliseconds (MEASURED-1, sharpened)
+
+Case **07c** takes five samples per profile and asserts the **median**, printing
+every sample so the spread is visible rather than summarised away.
+
+| profile | median | worst of five | `[DONE]` sent? | usage sent? |
+|---|---|---|---|---|
+| frontier | **2.42 ms** | 3.46 ms | yes | yes |
+| mid-local | **3.07 ms** | 3.79 ms | yes | yes |
+| small-local | **3.33 ms** | 15.79 ms | yes | **never** (it accepted `include_usage`) |
+| hostile | **1.90 ms** | 2.75 ms | **never** | **never** |
 
 Against the recorded naive consumers: **5003 ms** and **5006 ms**, both timeouts.
-`ASSERTION-CONTROL.txt` CONTROL 1 rebuilds the `[DONE]`-driven consumer on Vela's
-own transport and runs it live: **hostile hung for 5.001 s** and delivered 0
-characters, frontier finished in 13 ms. Vela finished hostile in 3.6 ms and
-declared `NoTerminationSentinel` and `UsageNotReported` rather than pretending
-either had arrived. Usage is never invented: `small-local` and `hostile` come
-back with every token count `None`.
+CONTROL 1 rebuilds the `[DONE]`-driven consumer on Vela's own transport and runs
+it live: **hostile hung for 5.001 s** and delivered 0 characters; frontier
+finished in 12.6 ms. The one
+outlier — small-local's 15.79 ms worst sample — is container scheduling noise
+and is printed rather than hidden; the median assertion is what the gate reads,
+and CONTROL 11 shows the same assertion failing at 810 ms on a stalled socket, so
+it is not satisfied by every code path being fast.
 
-A socket that goes quiet is also abandoned rather than awaited: `07b`, with the
+A socket that goes quiet is still abandoned rather than awaited: `07b`, with the
 endpoint on a 4 s inter-frame delay and an 800 ms stall budget, ends in an
 explicit error after **~810 ms** on all four profiles.
 
+### Prompt-emulated tool calling still works end to end, and now in parallel
+
+`small-local` has no native tools and 400s even with `tool_choice: "none"`. Case
+02 shows the single-call emulation round trip unchanged: catalogue into a system
+message, `tools` array dropped, textual call parsed back out, markup never shown,
+`ToolCallingEmulated` declared, turn ends in `ToolUse`. The control with
+emulation disabled confirms the refusal is real.
+
+Case 02p adds the **parallel** emulated batch: two `<tool_call>` blocks in one
+answer, recovered as two executable calls with their own arguments, **identical
+on both transports**, markup never reaching the user.
+
+**A harness limit, stated rather than papered over.** `small-local` echoes back
+only the first eight whitespace-delimited words of the prompt, hard-capped at 120
+characters (`reply-plan.ts::firstWords`). The ordinary spelling of a two-call
+prompt is cut off mid-way through the second call, and the first draft of this
+case failed for that reason — Vela correctly reported one good call and one
+`UnparseableArguments`, on both transports, which was the mock truncating, not
+Vela losing anything. The prompt was shortened to fit inside 120 characters.
+**What this proves is the parser and the round trip; it does not prove that two
+emulated calls survive an answer longer than 120 characters, because this harness
+cannot produce one.**
+
 ### No data loss from malformed frames (MEASURED-2)
 
-`hostile/08-malformed-frames.txt`: 31 frames. Two are not valid JSON at all — a
-frame truncated mid-`content` with a raw newline in it, and the literal
-`not-json-at-all`. A third is valid JSON whose `choices` is the *string*
-`"not-an-array"`, which is why Vela's count is one higher than the census's.
-
-| consumer | delivered |
-|---|---|
-| strict `JSON.parse` on every frame (recomputed from the recorded bytes) | **31 characters** |
-| Vela | **166 characters** — byte-identical to the non-streamed ground truth |
-
-`MalformedFramesSkipped { count: 3 }` is raised, so the skip is declared rather
-than absorbed. The tail of the answer, which arrives *after* the bad frames, is
-present — that is the proof one bad frame did not end the stream.
+`hostile/08-malformed-frames.txt`: 31 frames, three unusable. Strict `JSON.parse`
+on every frame delivers **31 characters**; Vela delivers **166** — byte-identical
+to the non-streamed ground truth — and raises `MalformedFramesSkipped { count: 3 }`.
 
 ### Reasoning never leaks, and never reaches the tool parser (MEASURED-3)
 
-`mid-local` splits `</think>` across two frames — asserted directly against the
-recorded frames: **no single frame contains the closing tag**. `hostile` opens
-`<think>` twice, never closes it, and the answer inside it is recovered
-(`UnterminatedReasoning { recovered_answer_chars: 166 }`) rather than swallowed.
-`frontier`'s `reasoning_content` lands in the reasoning channel and nowhere else.
-CONTROL 2 applies the same "no markup" assertion to the raw `content` channel —
-what a frame-local stripper would have shown — and it FAILS on `mid-local` and
-`hostile` while passing on `frontier`, which never touches that code path.
-
-The stronger claim in the brief — *reasoning never reaches tool-call parsing* —
-is proved live on `frontier` (`06-reasoning.txt`). With emulation active, so the
-textual `<tool_call>` parser is running, `max_output_tokens: 4` cuts the answer
-channel to `"Mock frontier re"` while the unbudgeted `reasoning_content` still
-carries a complete `<tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>`.
-Vela recovers **no** tool call. The positive control immediately below it — the
-same markup, unsqueezed, in the answer channel — recovers the call, so the
-assertion is not passing for the trivial reason that nothing is parsing.
-
-On `mid-local` this probe is **not constructible** and the transcript says so
-rather than omitting it: that profile carries reasoning inline in the same
-budgeted `content` string, so no `max_output_tokens` separates the two channels.
+Unchanged from round 1 and re-measured: `mid-local` splits `</think>` across two
+frames (asserted against the recorded frames), `hostile` opens `<think>` twice and
+never closes it and the answer is recovered rather than swallowed, `frontier`'s
+`reasoning_content` lands in the reasoning channel and nowhere else. CONTROL 2
+applies "no markup" to the raw `content` channel and FAILS on exactly the two
+profiles that carry reasoning inline.
 
 ### Structured output is never silently trusted (MEASURED-5)
 
-All four profiles answer **200 OK**. `frontier` conforms; the other three return
-prose. CONTROL 3 applies the conformance assertion directly to each answer and
-records **1 PASS, 3 FAIL** — that is the danger, and nothing in any response says
-so. Vela returns `structured: Some(Err(SchemaMismatch))` on the three, raises
-`StructuredOutputMismatch`, and **remembers**: the model's `structured_output`
-moves to `Degraded`, `honours_structured_output()` goes false, and the affordance
-is not offered again. The streaming path validates identically. Under the default
-`StructuredOutputPolicy::Refuse` a probed-bad model is refused **with zero HTTP
-requests sent**.
+All four profiles answer **200 OK**; `frontier` conforms, the other three return
+prose. CONTROL 3 records **1 PASS, 3 FAIL** applying conformance directly. Vela
+returns `structured: Some(Err(SchemaMismatch))`, raises
+`StructuredOutputMismatch`, moves the model's `structured_output` to `Degraded`,
+and refuses the affordance thereafter with zero HTTP requests sent.
 
-### Explicit refusals, and the affordance follows the probe
+### Explicit refusals, context overflow, failover
 
-An image to a probed vision-less model is `CapabilityUnsupported { Vision }`,
-raised **locally with no request on the wire**, and `allows_failover()` is false.
-`to_descriptor().vision` is false on those three profiles and true on `frontier` —
-CONTROL 5 applies "the affordance is absent" to `frontier` and it correctly FAILS.
-No profile name or backend identity appears anywhere in the flag set the renderer
-receives.
+Unchanged from round 1 and re-measured green: vision refused locally with no
+request on the wire where unprobed; a clean `ContextLengthExceeded` carrying each
+profile's own two numbers; `ContextReduced { dropped_messages: 17 }` when the
+window is known; a dead peer routed past in ~10 ms with `FailedOver { attempts: 2 }`;
+and a provider `SIGKILL`ed mid-request surfacing as `Transport { failure: Reset }`
+in ~205 ms with **zero requests reaching the backup**, because output had already
+been committed.
 
-`small-local` has no native tools and 400s even with `tool_choice: "none"`
-(FINDING 6 of the Phase A gate). The control with emulation disabled confirms the
-refusal is real; with emulation on, the catalogue moves into a system message, the
-`tools` array is dropped, the textual call is parsed back out, the markup never
-reaches the user, and `ToolCallingEmulated { tool_count: 1 }` is declared. The
-turn ends in `ToolUse` exactly as a native one would.
+### Credentials, other than FINDING 2
 
-### Context overflow, both directions
+With `Auth::None`: no `authorization` header, no api-key-shaped header of any
+other name, no credential in the query string, across every exchange of every
+case. CONTROL 4 configures a bearer token on the same path and the header
+appears. An empty keychain produces `AuthFailed` with **zero requests sent**. An
+endpoint that demands a key (`09b`) yields `AuthFailed`, never retried, never
+failed over.
 
-Every profile returns a clean `ContextLengthExceeded` carrying **its own two
-numbers**, never failed over. When the window is known instead, a
-three-windows-long conversation is reduced — `ContextReduced { dropped_messages: 17 }`
-— and answered, rather than refused. CONTROL 7 applies the overflow assertion to a
-5-character prompt and FAILS, so the assertion is not satisfied by accident.
+For `Auth::ApiKeyQuery` specifically, case 11 records what **is** safe:
+connection refused, first-byte timeout, TLS handshake failure and mid-stream
+reset are clean on both transports, and so is a 400 whose error body quotes the
+key. `RequestUrl`'s `Display` and `Debug` render `?key=<redacted>`. Only the
+streamed error-frame path leaks.
 
-### Credentials
-
-Across every exchange in every case, with `Auth::None`: **no `authorization`
-header, no api-key-shaped header of any other name, no credential in the query
-string.** CONTROL 4 configures a bearer token on the same code path and the header
-appears — the check is not vacuous. A binding that points at an empty keychain
-produces `AuthFailed` with **zero requests sent**: an empty `Bearer` is never
-constructed, which matters because the harness answers that with a 401
-`empty_authorization_header` precisely to make the bug loud. An endpoint that does
-demand a key (`09b`) yields `AuthFailed`, never retried, never failed over, with no
-HTTP status or upstream body leaking into the error.
-
-### Failover, including a provider killed mid-request
-
-A candidate that refuses the connection is routed past in ~10 ms and the failover
-is declared (`FailedOver { attempts: 2 }`).
-
-The harder case the brief asks for — **kill a provider mid-request** — is `10`'s
-second half: the primary streams with a 40 ms inter-frame delay and is `SIGKILL`ed
-200 ms in, with a healthy second candidate configured behind it. On all four
-profiles output had already been committed, the socket death surfaced as
-`Transport { failure: Reset }` in ~205 ms, **zero requests reached the backup**,
-and the turn was never reported as normally finished. That is router Rule 2
-holding on a real killed process: once the user has seen output, replaying the
-answer from another backend is worse than surfacing the error.
-
-Worth stating precisely, because it is a design choice a critic should see: on
-`frontier`, `mid-local` and `hostile` the only thing the user had seen at 200 ms
-was **reasoning**, not answer text — and reasoning counts as committed, because it
-is rendered. `small-local`, which emits no reasoning, had committed answer text.
-Either way no replay happened.
+**The IPC boundary, recorded rather than assumed:** there is no `provider_*`
+command on the Rust allowlist and none in `contract.ts`, so no `ProviderError`
+crosses the bridge today. FINDING 2's leak surface is **latent, not live** — but
+the leaking value is the `serde` rendering, which is precisely what a future
+`provider_stream` command would serialise into the WebView.
 
 ---
 
-## 5. The controls
+## 6. The controls
 
-`ASSERTION-CONTROL.txt` runs seven controls, 15 recorded verdicts, **10 of them
-FAIL — every one the expected one**:
+`ASSERTION-CONTROL.txt` runs eleven controls, **24 recorded verdicts, 15 of them
+FAIL — every one the expected one** (round 1: 15 verdicts, 10 FAIL).
 
 | control | applied where it should not hold | result |
 |---|---|---|
@@ -340,74 +426,96 @@ FAIL — every one the expected one**:
 | 5 | "the vision affordance is absent" against `frontier` | **FAIL** |
 | 6 | "exactly one executable tool call" against `hostile` | **FAIL** |
 | 7 | "the turn overflows the window" against a 5-character prompt | **FAIL** |
+| **8** | "every parallel call comes back" with round 1's rule restored | **FAIL** — one spliced call, verbatim |
+| **9** | "the credential is not in this text" against `expose()` and the pre-fix detail string | **FAIL** on both; PASS on the two redacted renderings |
+| **10** | "the two transports agree" against a deliberately truncated batch | **FAIL** |
+| **11** | "termination in single-digit ms" against a stalled socket | **FAIL, 810 ms** |
 
-Control 2's discrimination is the interesting one: disabling reasoning separation
-would break exactly the two profiles that carry it inline and **not** `frontier`,
-which uses a separate field. An assertion that failed everywhere would be
-measuring the harness, not the code.
+Controls 8 and 10 are the ones that matter for round 2's central claim: they show
+that if the parallel-tool-call fix were reverted, or if the two transports
+disagreed, **this run would go red**. Round 1's tool-call comparison checked only
+the *count*, which on the three profiles that emit a single call compares 1 to 1
+and can never fail.
 
 ---
 
-## 6. Gate verdict
+## 7. Gate verdict
 
-**Round 1: nine of the ten pieces PASS, one FAILS. Round 2: ten of ten PASS.**
+**Round 2: ten of the eleven pieces PASS, one FAILS.**
 
 | piece | verdict |
 |---|---|
 | 1. plain chat, streamed and not | **PASS** — identical on all four |
-| 2. tool calling | **PASS in round 2** — native, emulated and parallel; streamed and non-streamed agree. Round 1 **FAILED** here (FINDING 1) |
+| 2. tool calling, including **parallel** | **PASS** — native, emulated and parallel; live on all four profiles; both transports agree call by call. Round 1's FINDING 1 is closed and reproducible on demand |
 | 3. vision | **PASS** — offered only where probed, refused locally elsewhere |
 | 4. structured output | **PASS** — never silently conformant, on either transport |
 | 5. context overflow | **PASS** — clean error, and visible reduction when the window is known |
 | 6. reasoning | **PASS** — no leak, no swallow, excluded from tool parsing |
-| 7. stream termination | **PASS** — 2.8–3.6 ms where a naive consumer hangs 5 s |
+| 7. stream termination | **PASS** — medians 1.9–3.3 ms where a naive consumer hangs 5 s |
 | 8. malformed frames | **PASS** — 166 characters against a strict consumer's 31 |
 | 9. no credential | **PASS** — nothing on the wire, positively controlled |
 | 10. failover | **PASS** — routes past a dead peer, refuses to replay a killed one |
+| **11. credentials in errors** | ⛔ **FAIL** — a query-string credential reaches `Display`, `Debug`, the serde JSON and the event sink through a mid-stream error frame, on all four profiles |
 
-**Round 1 overall: GATE M Part 1 (Phase B) does not pass.** One piece fails the
-criterion, and a gate with a known failure is a failed gate. The failure is narrow,
-precisely located, has a reproduction and a regression-test recipe, and does not
-touch the degradation behaviours the gate exists to protect — but it is a real
-defect on the most ordinary tool-calling shape there is, and calling this a pass
-would be the kind of reporting this gate exists to prevent.
+**GATE M Part 1 (Phase B) does not pass.**
 
-**Round 2 overall: GATE M Part 1 (Phase B) passes — 265 assertions, 0 failures**,
-with the ten controls that are supposed to fail still failing. That is a pass of
-*Part 1 only*. **GATE M Part 2 — a real llama.cpp endpoint — was not attempted and
-remains deferred**, so nothing here has moved on the question of a real model.
+The gate criterion asks whether any piece crashes, hangs, silently produces wrong
+output, or offers an affordance the profile cannot support. FINDING 2 is none of
+those four literally — and it is a gate failure anyway, because the thing it
+produces silently and wrongly is a *credential in a place credentials must never
+be*, in the one binding whose entire risk model (`Concern::QueryParamCredentialIsLogged`,
+`RiskLevel::Elevated`) is built on that value being handled carefully. A gate that
+watched a fix land for exactly this leak, in exactly this crate, and then passed
+the tree while the same leak survives one path over, would be the kind of
+reporting this gate exists to prevent.
+
+The failure is narrow, precisely located, has a live reproduction, a bare-transport
+confirmation that rules out the instrumentation, and a three-part regression recipe.
+It does not touch the degradation behaviours the gate exists to protect, and it does
+not reopen FINDING 1.
+
+**Nothing here has moved on GATE M Part 2** — a real llama.cpp endpoint — which was
+not attempted and remains deferred to the desktop session.
 
 ---
 
-## 7. What this run does NOT prove
+## 8. What this run does NOT prove
 
 * **Nothing about a real model.** Every endpoint is a mock. GATE M Part 2 stays
-  deferred to the desktop session and is still the largest hole in the evidence
-  base for the whole project.
+  deferred and is still the largest hole in the evidence base for the project.
 * **Nothing about the OS keychain.** Exercised against `MemoryStore`.
 * **Nothing about the packaged binary or the running app.** `conventions.md` §11.
-* **Nothing about the Anthropic or Google adapters.** This run drives
-  `OpenAiCompatibleProvider`, the backend all four matrix profiles speak. Those two
-  adapters are pinned by fixture replay only and have no evidence document of
-  their own — a gap the Phase B integration pass already recorded.
+* **Nothing about the Anthropic or Google adapters' runtime behaviour.** This run
+  drives `OpenAiCompatibleProvider`. FINDING 2's reach into those two is argued
+  from their source (`google/stream.rs:193`, `anthropic/stream.rs:208`), not
+  measured — which is why the regression recipe asks for them explicitly.
+* **Nothing about emulated tool calls in a long answer.** The `small-local` mock
+  echoes at most 120 characters, so a two-call emulated batch had to be written
+  to fit inside that. §5 states the limit.
 * **Nothing about sampling knobs.** `temperature`, `top_p`, `stop` and `seed` are
-  sent and silently discarded by all four profiles, so no assertion here claims an
-  effect that cannot be observed.
+  sent and silently discarded by all four profiles.
 * **Nothing about prompt caching.** No matrix endpoint implements it; the
-  capability stays `Unknown` on all four, and `Unknown` is not offerable.
+  capability stays `Unknown`, and `Unknown` is not offerable.
 * **Nothing about multi-call tool conversations.** Emulation's `render_results`
-  round trip is not exercised here.
+  round trip is still not exercised here.
 
 ---
 
-## 8. Reproducing
+## 9. Reproducing
 
 ```bash
-bash docs/regression-baseline/phase-b-matrix/record.sh   # round 2: exits 0
-cd src-tauri && cargo test -p vela-providers             # the builders' own suite
+bash docs/regression-baseline/phase-b-matrix/record.sh   # round 2: exits 1, see FINDING 2
+cd src-tauri && cargo test -p vela-providers             # the builders' own suite: 438 passed, 0 failed
 ```
 
 Needs Node 22+ on `PATH`. The recorder is
 `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs`; it starts and stops
-its own servers on OS-assigned ports. Wall-clock lines and ephemeral port numbers
-differ between runs; everything else is byte-stable.
+its own servers on OS-assigned ports, including four raw TCP peers of its own for
+case 11. Wall-clock lines and ephemeral port numbers differ between runs;
+everything else is byte-stable.
+
+The credential canary `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK` is a fake string that
+was never a credential for anything. The recorder asserts it appears in no
+per-profile transcript except `11-credential-leak.txt`, so a future run that
+leaked it into another case's evidence would fail the gate rather than sit here
+unnoticed.

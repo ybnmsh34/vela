@@ -1,0 +1,203 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 02p-parallel-tool-calls: parallel tool calls, both transports
+================================================================================
+
+PURPOSE   GATE M FINDING 1 (round 1): N parallel calls collapsed into one on the non-streamed path. Driven LIVE here, on every profile, and compared call by call — not by count.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  WHY THIS CASE EXISTS
+  Round 1 could only SCRIPT this shape: the harness answered every tool request with
+  exactly one call, and one call cannot collide with itself. That blindness is why the
+  defect reached a gate. Three tools are offered below, so the endpoint answers with a
+  BATCH — native profiles well-formed, hostile with the middle call broken — and every
+  byte below came off a real socket from the profile's own OS process.
+
+  The two shapes are NOT the same shape, and that is the whole point:
+  streamed      `delta.tool_calls[]`   — FRAGMENTS, joined by `index`
+  non-streamed  `message.tool_calls[]` — WHOLE CALLS, and no `index` exists
+  The assertions below therefore compare identity/name/arguments/reason, and record
+  the `index` difference as the legitimate wire difference it is.
+
+---- transport A — complete(): one whole body ------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:40221/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (724 bytes) ---
+      {"messages":[{"content":"the weather in Berlin, the time in Berlin, and the ACME quote","role":"user"}],"model":"mock-mid-local","stream":false,"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"},{"function":{"description":"Latest quote for a ticker","name":"get_quote","parameters":{"properties":{"ticker":{"type":"string"}},"required":["ticker"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (1083 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-23070c96",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-mid-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"fixture\"}"
+                  },
+                  "id": "call_23070c96"
+                },
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_time",
+                    "arguments": "{\"timezone\":\"alpha\"}"
+                  },
+                  "id": "call_23070c96_1"
+                },
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_quote",
+                    "arguments": "{\"ticker\":\"fixture\"}"
+                  },
+                  "id": "call_23070c96_2"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20,
+          "completion_tokens": 23,
+          "total_tokens": 43
+        }
+      }
+
+---- transport B — stream(): the identical request, frame by frame ---------
+
+  >>> exchange 1 — POST http://127.0.0.1:40221/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (763 bytes) ---
+      {"messages":[{"content":"the weather in Berlin, the time in Berlin, and the ACME quote","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true},"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"},{"function":{"description":"Latest quote for a ticker","name":"get_quote","parameters":{"properties":{"ticker":{"type":"string"}},"required":["ticker"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (4942 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_23070c96","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"fix"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ture"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_23070c96_1","type":"function","function":{"name":"get_time","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"ti"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"mezo"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"ne\":"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"alp"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"ha\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"id":"call_23070c96_2","type":"function","function":{"name":"get_quote","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"{\"ti"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"cker"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"\":\"f"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"ixtu"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"re\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+      
+      data: {"id":"chatcmpl-mock-23070c96","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":20,"completion_tokens":23,"total_tokens":43}}
+      
+      data: [DONE]
+      
+
+---- what Vela produced from each --------------------------------------------
+  non-streamed calls                     OK id=call_23070c96 name=get_weather emulated=false args={"city":"fixture"}
+                                    OK id=call_23070c96_1 name=get_time emulated=false args={"timezone":"alpha"}
+                                    OK id=call_23070c96_2 name=get_quote emulated=false args={"ticker":"fixture"}
+  streamed calls                         OK id=call_23070c96 name=get_weather emulated=false args={"city":"fixture"}
+                                    OK id=call_23070c96_1 name=get_time emulated=false args={"timezone":"alpha"}
+                                    OK id=call_23070c96_2 name=get_quote emulated=false args={"ticker":"fixture"}
+  non-streamed executable                3
+  streamed executable                    3
+  non-streamed degradations              (none)
+  streamed degradations                  (none)
+
+---- the two wire shapes, as recorded ----------------------------------------
+  non-streamed elements                  3
+  any element carried `index`            false
+    element 0 arguments                  "{\"city\":\"fixture\"}"
+    element 1 arguments                  "{\"timezone\":\"alpha\"}"
+    element 2 arguments                  "{\"ticker\":\"fixture\"}"
+  streamed tool-call elements            18
+  every streamed element carried `index` true
+    wire index slot 0 arguments          "{\"city\":\"fixture\"}"
+    wire index slot 1 arguments          "{\"timezone\":\"alpha\"}"
+    wire index slot 2 arguments          "{\"ticker\":\"fixture\"}"
+
+---- assertions --------------------------------------------------------------
+  [PASS] the endpoint really did answer with a BATCH — otherwise nothing below discriminates
+        expected 3 elements on the wire, saw Some(3)
+  [PASS] the non-streamed body carries NO `index` on any element (the FINDING 1 shape)
+        any_index=Some(false)
+  [PASS] the streamed frames DO carry `index` — the two shapes genuinely differ
+        18 element(s), all indexed=true
+  [PASS] non-streamed: every call in the batch is reported, none collapsed
+        3 reported, 3 expected
+  [PASS] streamed: every call in the batch is reported
+        3 reported, 3 expected
+  [PASS] THE TWO TRANSPORTS AGREE, call by call — id, name, arguments, reason
+        non-streamed [
+    "OK|id=call_23070c96|name=get_weather|emulated=false|args={\"city\":\"fixture\"}",
+    "OK|id=call_23070c96_1|name=get_time|emulated=false|args={\"timezone\":\"alpha\"}",
+    "OK|id=call_23070c96_2|name=get_quote|emulated=false|args={\"ticker\":\"fixture\"}",
+]
+        streamed     [
+    "OK|id=call_23070c96|name=get_weather|emulated=false|args={\"city\":\"fixture\"}",
+    "OK|id=call_23070c96_1|name=get_time|emulated=false|args={\"timezone\":\"alpha\"}",
+    "OK|id=call_23070c96_2|name=get_quote|emulated=false|args={\"ticker\":\"fixture\"}",
+]
+  [PASS] the two transports agree on how many calls are EXECUTABLE
+        non-streamed Ok(3), streamed Ok(3)
+  [PASS] NO SPLICING — every arguments string reported is one the endpoint sent
+        sent ["{\"city\":\"fixture\"}", "{\"timezone\":\"alpha\"}", "{\"ticker\":\"fixture\"}"]
+        reported ["{\"city\":\"fixture\"}", "{\"timezone\":\"alpha\"}", "{\"ticker\":\"fixture\"}"]
+        not-on-the-wire []
+  [PASS] the correlation ids in the batch are distinct — a result cannot be misrouted
+        ["call_23070c96", "call_23070c96_1", "call_23070c96_2"]
+  [PASS] each offered tool appears in the batch — no call was replaced by its neighbour
+        ["get_weather", "get_time", "get_quote"]
+  [PASS] a well-formed batch is fully executable on both transports
+        non-streamed Ok(3), streamed Ok(3)
+  [PASS] a well-formed batch raises no malformed-tool-call degradation
+        (none)
+
+================================================================================
+VERDICT  12 assertion(s), 0 failure(s)
+================================================================================

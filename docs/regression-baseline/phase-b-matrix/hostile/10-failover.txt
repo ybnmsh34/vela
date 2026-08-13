@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       {"messages":[{"content":"hello","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
       <<< NO RESPONSE — Connect: error sending request
 
-  >>> exchange 2 — POST http://127.0.0.1:38671/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:39281/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -88,7 +88,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: {"id":"chatcmpl-mock-c734be66","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
       
   outcome                                Ok(true)
-  wall clock                             11.607846ms
+  wall clock                             11.700543ms
   answer                                 Some("nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ")
   degradations                           UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
 
@@ -98,7 +98,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] the failover is declared to the caller
         UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
   [PASS] failover does not hang
-        11.607846ms
+        11.700543ms
 
 ---- the endpoint is KILLED mid-stream, after output has already been shown --
   The primary is started with a 40 ms inter-frame delay so the turn is still running
@@ -106,7 +106,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   Rule 2 of the router: once a character has reached the user, moving to another
   candidate would restart the answer in front of them.
 
-  >>> exchange 1 — POST http://127.0.0.1:39675/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45485/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -130,7 +130,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       <<< body read failed: Reset error decoding response body >>>
 
 ---- what Vela produced ------------------------------------------------------
-  wall clock                             207.643276ms
+  wall clock                             207.862123ms
   answer text the user saw               ""
   reasoning text the user saw            " ▒▒ � "
   TextDelta events                       0
@@ -140,7 +140,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- assertions --------------------------------------------------------------
   [PASS] killing the endpoint mid-stream does not hang the app
-        207.643276ms
+        207.862123ms
   output had already been committed      true
   [PASS] after visible output, the turn is NOT replayed from another candidate
         0 request(s) reached the backup

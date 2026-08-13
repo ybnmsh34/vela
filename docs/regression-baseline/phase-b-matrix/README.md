@@ -29,10 +29,24 @@ unverified.** Nothing here may be cited as a real-model result.
 | `record.sh` | Regenerates all of the above |
 
 The case numbers follow the gate brief: `00` capability probe, `01` plain chat,
-`02` tool calling, `03` vision, `04` structured output, `05` context overflow,
-`06` reasoning, `07` stream termination (`07b` a stalled socket), `08` malformed
-frames, `09` no credential (`09b` an endpoint that demands one), `10` failover
-including an endpoint killed mid-request.
+`02` tool calling (`02p` **parallel** tool calls, both transports), `03` vision,
+`04` structured output, `05` context overflow, `06` reasoning, `07` stream
+termination (`07b` a stalled socket, `07c` termination latency over five
+samples), `08` malformed frames, `09` no credential (`09b` an endpoint that
+demands one), `10` failover including an endpoint killed mid-request, `11` the
+**credential canary** — `Auth::ApiKeyQuery` driven through seven real failure
+paths with every rendering of every error grepped.
+
+`02p`, `07c` and `11` are round-2 additions. `02p` exists because round 1 could
+only *script* the parallel shape and the defect it missed lived exactly there;
+the harness now answers a multi-tool request with a batch, so it is driven live.
+`11` exists because round 2 shipped a credential-redaction fix, and a fix is not
+evidence.
+
+`11-credential-leak.txt` is the one file in this directory permitted to contain
+the canary string `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK`. It is a fake that was
+never a credential for anything, and the recorder fails the gate if it appears in
+any other per-profile transcript.
 
 ## Reproducing
 
@@ -41,8 +55,10 @@ bash docs/regression-baseline/phase-b-matrix/record.sh
 ```
 
 Needs Node 22+ on `PATH`; the recorder starts and stops its own servers on ports
-the OS assigns. It exits non-zero if any gate assertion fails — and **it currently
-does**, see FINDING 1 in `RESULTS.md`.
+the OS assigns — the four mock profiles as Node processes, plus four raw TCP
+peers of its own for case 11. It exits non-zero if any gate assertion fails — and
+**it currently does**, see FINDING 2 in `RESULTS.md`. (FINDING 1, round 1's
+failure, is closed.)
 
 The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs`. It
 is an example rather than a test on purpose: it writes into `docs/`, and a

@@ -70,6 +70,52 @@ the binding one.
 
 ---
 
+## ▶ START HERE — `GATE-M2-real-model` (ready now, nothing else blocks it)
+
+- **commit:** any current HEAD of `claude/new-session-tgl1ut`
+- **status:** AWAITING_DESKTOP
+- **deferred critics:** `real-model`
+- **cloud verdicts already passed:** n/a — this is evidence the cloud is structurally incapable of
+  producing, not a re-judgement of cloud work.
+
+**Why this one first.** Every result in this repository is **VERIFIED-BY-FAKE** — four
+deterministic mock profiles, and not one byte from a language model. That is the **largest hole in
+the project's evidence base**, it is stated plainly in every gate report, and it is the one thing
+no amount of cloud work can close. It is also completely independent of what the cloud is currently
+building, so it cannot be invalidated by work in flight.
+
+**What to exercise** — the full procedure, including the interpretation limit and the `--jinja`
+caveat, is in [`VERDICTS.md`](./VERDICTS.md) under "Specific guidance for `real-model`". In short:
+`GET /props` and `/v1/models` to characterise the server; a `tools[]` payload to see whether real
+`tool_calls` come back or plain text; an image input to prove the vision path; a prompt exceeding
+`n_ctx`; and confirmation that Vela separates `<think>` reasoning from the answer **and excludes it
+from tool-call parsing**. Save raw transcripts to `docs/regression-baseline/local-smoke/`.
+
+**Run serially, max 2 in flight** (`n_slots = 4`, `kv_unified = true`). **Do not restart or
+reconfigure the server.**
+
+> **Binding interpretation limit:** Qwen3.6-27B is a strong model — 27B, vision-capable,
+> 131k-context, reasoning-enabled. Passing against it proves the **happy path only**. It is never
+> evidence of graceful degradation or model-agnosticism; that evidence comes exclusively from the
+> mock matrix. A report that overstates this is worse than no report.
+
+---
+
+## ⚠️ STALE — do not action as written
+
+Both requests below were filed at `cb38535` and are **stale by this run's own rule**: a verdict
+against a piece whose files have since changed does not count, and the same applies to a request
+whose subject has changed underneath it.
+
+| Piece | Commits touching its surface since `cb38535` | Why the steps are wrong now |
+|---|---|---|
+| **A1-scaffold-shell** | **13** | It tells you to judge a *diagnostic shell* — a bridge-status panel and a placeholder region. Phase C has since built the real conversation UI on top. Judging the old steps would either fail the app unfairly or pass it meaninglessly. |
+| **A3-keychain-settings** | **2** (`36d13fe` security findings, `a59b96e` provider core) | The credential model gained `Concern::QueryParamCredentialIsLogged` and the risk ladder is now derived from `Concern::severity()`. The canary steps still hold, but the risk-signal expectations are out of date. |
+
+**Both will be re-filed with fresh shas and corrected steps when Phase C clears its cloud panel** —
+which is also when the *first real* visual and interaction verdicts become worth your time. Judging
+UI that may still be sent back to its builders wastes the effort.
+
 ## Open requests
 
 Phase A cleared its full cloud panel on 2026-08-12 — functionality, architecture, and security

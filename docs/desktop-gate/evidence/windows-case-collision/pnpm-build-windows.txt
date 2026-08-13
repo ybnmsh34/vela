@@ -1,0 +1,31 @@
+# pnpm build on Windows @ 884e40e29c96da43b865829abbf3bce3dd98ee51
+# Windows 11 26200 (NTFS, case-insensitive) - node v24.15.0, pnpm 10.33.0, tsc via tsconfig.app.json
+# Reproduce: git clone && pnpm install && pnpm build
+
+
+> vela@0.1.0 build C:\Users\User\vela-tmp
+> tsc --build --force && vite build
+
+src/features/conversation/markdown.test.ts(3,81): error TS1149: File name 'C:/Users/User/vela-tmp/src/features/conversation/markdown.ts' differs from already included file name 'C:/Users/User/vela-tmp/src/features/conversation/Markdown.ts' only in casing.
+  The file is in the program because:
+    Imported via './Markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/MessageTurn.tsx'
+    Imported via './markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/markdown.test.ts'
+    Matched by include pattern 'src' in 'C:/Users/User/vela-tmp/tsconfig.app.json'
+src/features/conversation/MessageTurn.tsx(12,10): error TS2305: Module '"./Markdown"' has no exported member 'Markdown'.
+src/features/conversation/MessageTurn.tsx(12,26): error TS1261: Already included file name 'C:/Users/User/vela-tmp/src/features/conversation/Markdown.ts' differs from file name 'C:/Users/User/vela-tmp/src/features/conversation/markdown.ts' only in casing.
+  The file is in the program because:
+    Imported via './Markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/MessageTurn.tsx'
+    Imported via './markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/markdown.test.ts'
+    Matched by include pattern 'src' in 'C:/Users/User/vela-tmp/tsconfig.app.json'
+src/features/conversation/markdown.test.ts(3,81): error TS1149: File name 'C:/Users/User/vela-tmp/src/features/conversation/markdown.ts' differs from already included file name 'C:/Users/User/vela-tmp/src/features/conversation/Markdown.ts' only in casing.
+  The file is in the program because:
+    Imported via './Markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/MessageTurn.tsx'
+    Imported via './markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/markdown.test.ts'
+    Matched by include pattern 'src' in 'C:/Users/User/vela-tmp/tsconfig.uibridge.json'
+src/features/conversation/MessageTurn.tsx(12,10): error TS2305: Module '"./Markdown"' has no exported member 'Markdown'.
+src/features/conversation/MessageTurn.tsx(12,26): error TS1261: Already included file name 'C:/Users/User/vela-tmp/src/features/conversation/Markdown.ts' differs from file name 'C:/Users/User/vela-tmp/src/features/conversation/markdown.ts' only in casing.
+  The file is in the program because:
+    Imported via './Markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/MessageTurn.tsx'
+    Imported via './markdown' from file 'C:/Users/User/vela-tmp/src/features/conversation/markdown.test.ts'
+    Matched by include pattern 'src' in 'C:/Users/User/vela-tmp/tsconfig.uibridge.json'
+ ELIFECYCLE  Command failed with exit code 2.

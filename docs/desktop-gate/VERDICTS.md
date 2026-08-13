@@ -191,7 +191,61 @@ Raw bytes in `docs/regression-baseline/local-smoke/`, request bodies in `00-requ
   src-tauri/icons/ src-tauri/crates/vela-providers/src/openai_compatible/mod.rs
   src-tauri/crates/vela-providers/src/stream.rs` is **empty**. Every surface this verdict rests on
   is byte-identical at `11c46d1`. **This verdict is NOT stale and does not need re-requesting.**
-- limits of this run: the GUI could not be driven — screen-control access was denied — so the
-  `NOT_FOUND` path was confirmed from code, not from a screenshot of the running window. The app
-  itself was built and launched successfully (PID 8252) once a local `icon.ico` was supplied.
+- limits of this run: the GUI could not be driven at the time — screen-control access was denied —
+  so the `NOT_FOUND` path was confirmed from code, not from the running window. The app compiled and
+  launched once a local `icon.ico` was supplied, but **it renders a blank window** — see the
+  standalone finding below, which supersedes the earlier note that it "launched successfully".
   `visual`, `interaction` and `performance` were not requested and are not judged here.
+
+---
+
+## UNREQUESTED DESKTOP FINDING — the app cannot boot on Windows
+
+Filed outside the request queue because it blocks every future desktop critic, and because no
+cloud run can ever see it. Not a verdict on a piece; a defect report with a reproduction.
+
+- commit: `884e40e29c96da43b865829abbf3bce3dd98ee51` (also present at `51b5e163`, and at every
+  commit since `fd7b5a5`, where both files were added together)
+- environment: Windows 11 Home 10.0.26200, NTFS (**case-insensitive**), node v24.15.0, pnpm 10.33.0
+
+**Two files in one directory differ only in case:**
+
+```
+src/features/conversation/Markdown.tsx   <- the React component, exports `Markdown`
+src/features/conversation/markdown.ts    <- the parser, exports parseMarkdown/parseInline/...
+```
+
+`MessageTurn.tsx:12` does `import { Markdown } from './Markdown'`. Vite's default
+`resolve.extensions` tries **`.ts` before `.tsx`**, and `vite.config.ts` does not override it. On a
+case-insensitive filesystem `./Markdown` + `.ts` matches **`markdown.ts`** — the parser — which has
+no `Markdown` export. The renderer throws at module-evaluation time and React never mounts.
+
+**Observed, both engines:**
+
+- `pnpm tauri dev` → window opens, **fully blank white**, no UI at all.
+  Evidence: `evidence/windows-case-collision/vela-window-blank-webview2.png`
+- Same dev server (`http://localhost:1420`) in Chromium → also blank, console:
+  `SyntaxError: The requested module '/src/features/conversation/markdown.ts' does not provide an
+  export named 'Markdown'`
+  **So this is NOT a WebView2 defect** — it is filesystem case-sensitivity, and it fails in every
+  browser on Windows.
+- `pnpm build` → **fails**, exit 2, with TypeScript naming the collision explicitly:
+  `TS1149: File name '.../markdown.ts' differs from already included file name '.../Markdown.ts'
+  only in casing`, plus `TS2305: Module './Markdown' has no exported member 'Markdown'`.
+  `pnpm typecheck` is inside `pnpm verify`, so **`pnpm verify` cannot pass on Windows.**
+  Evidence: `evidence/windows-case-collision/pnpm-build-windows.txt`
+
+This is invisible on Linux: a case-sensitive filesystem resolves `./Markdown` to `Markdown.tsx`
+correctly, so CI and every cloud critic see a working app.
+
+**Smallest fix:** rename one of the two — e.g. `markdown.ts` → `markdown-parser.ts` (3 importers:
+`Markdown.tsx:12`, `markdown.test.ts:3`, and the barrel if any). Renaming only by case will not
+propagate through git on a case-insensitive checkout; the stem must actually differ.
+
+A sweep of `src/` for same-directory, case-insensitively-identical module stems found **exactly one**
+collision — this one. There is no second instance to fix.
+
+**Second, independent Windows blocker** (from the GATE-M2 run above, repeated here because they
+must be fixed together or the next desktop run stalls again): `src-tauri/icons/icon.ico` is absent
+and nothing generates it, so `tauri-build` fails before compiling. Fixing the casing alone still
+leaves the app unbuildable on Windows.

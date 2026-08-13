@@ -20,7 +20,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- openai-compatible / 400 read whole — the raw exchange (variant `marker`) 
 
-  >>> exchange 1 — POST http://127.0.0.1:33565/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:37301/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -30,25 +30,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       content-type: application/json
       --- response body (137 bytes, read to end) ---
       {"error":{"message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so","type":"invalid_request_error","code":"cross_probe"}}
-  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:33565/v1/chat/completions] [http 400] [ref 00000000000000f5]
-  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33565", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(245) } }
-  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:33565","path":"/v1/chat/completions"},"correlation":245}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37301/v1/chat/completions] [http 400] [ref 00000000000000f5]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37301", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(245) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:37301","path":"/v1/chat/completions"},"correlation":245}}
 
 ---- openai-compatible / 400 read whole — invariance across the four peer answers 
-  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:33565/v1/chat/completions] [http 400] [ref <n>]
-  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:33565/v1/chat/completions] [http 400] [ref <n>]
-  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:33565/v1/chat/completions] [http 400] [ref <n>]
-  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:33565/v1/chat/completions] [http 400] [ref <n>]
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37301/v1/chat/completions] [http 400] [ref <n>]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37301/v1/chat/completions] [http 400] [ref <n>]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37301/v1/chat/completions] [http 400] [ref <n>]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37301/v1/chat/completions] [http 400] [ref <n>]
 
 ---- openai-compatible / 400 read whole — assertions -----------------------
   [PASS] openai-compatible / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
         4 rendering(s) compared per variant
 
 ---- openai-compatible / 200 + in-stream error object — invariance across the four peer answers 
-  `empty` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:43359/v1/chat/completions] [ref <n>]
-  `prose` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:43359/v1/chat/completions] [ref <n>]
-  `marker` Display                       the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:43359/v1/chat/completions] [ref <n>]
-  `escaped` Display                      the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:43359/v1/chat/completions] [ref <n>]
+  `empty` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:42071/v1/chat/completions] [ref <n>]
+  `prose` Display                        the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:42071/v1/chat/completions] [ref <n>]
+  `marker` Display                       the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:42071/v1/chat/completions] [ref <n>]
+  `escaped` Display                      the endpoint returned a response Vela could not read: the endpoint reported an error [endpoint http://127.0.0.1:42071/v1/chat/completions] [ref <n>]
 
 ---- openai-compatible / 200 + in-stream error object — assertions ---------
   [PASS] openai-compatible / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
@@ -56,7 +56,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- anthropic / 400 read whole — the raw exchange (variant `marker`) ------
 
-  >>> exchange 1 — POST http://127.0.0.1:45143/v1/messages
+  >>> exchange 1 — POST http://127.0.0.1:37961/v1/messages
       content-type: application/json
       accept: application/json
       anthropic-version: 2023-06-01
@@ -67,25 +67,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       content-type: application/json
       --- response body (131 bytes, read to end) ---
       {"type":"error","error":{"type":"invalid_request_error","message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so"}}
-  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:45143/v1/messages] [http 400] [ref 00000000000000fd]
-  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45143", path: "/v1/messages" }), filter: None, correlation: CorrelationId(253) } }
-  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:45143","path":"/v1/messages"},"correlation":253}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37961/v1/messages] [http 400] [ref 00000000000000fd]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37961", path: "/v1/messages" }), filter: None, correlation: CorrelationId(253) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:37961","path":"/v1/messages"},"correlation":253}}
 
 ---- anthropic / 400 read whole — invariance across the four peer answers --
-  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:45143/v1/messages] [http 400] [ref <n>]
-  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:45143/v1/messages] [http 400] [ref <n>]
-  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:45143/v1/messages] [http 400] [ref <n>]
-  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:45143/v1/messages] [http 400] [ref <n>]
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37961/v1/messages] [http 400] [ref <n>]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37961/v1/messages] [http 400] [ref <n>]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37961/v1/messages] [http 400] [ref <n>]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:37961/v1/messages] [http 400] [ref <n>]
 
 ---- anthropic / 400 read whole — assertions -------------------------------
   [PASS] anthropic / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
         4 rendering(s) compared per variant
 
 ---- anthropic / 200 + in-stream error object — invariance across the four peer answers 
-  `empty` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:41953/v1/messages] [http 529] [ref <n>]
-  `prose` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:41953/v1/messages] [http 529] [ref <n>]
-  `marker` Display                       could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:41953/v1/messages] [http 529] [ref <n>]
-  `escaped` Display                      could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:41953/v1/messages] [http 529] [ref <n>]
+  `empty` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44661/v1/messages] [http 529] [ref <n>]
+  `prose` Display                        could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44661/v1/messages] [http 529] [ref <n>]
+  `marker` Display                       could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44661/v1/messages] [http 529] [ref <n>]
+  `escaped` Display                      could not reach the endpoint (server): the endpoint is overloaded [endpoint http://127.0.0.1:44661/v1/messages] [http 529] [ref <n>]
 
 ---- anthropic / 200 + in-stream error object — assertions -----------------
   [PASS] anthropic / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
@@ -93,7 +93,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- google / 400 read whole — the raw exchange (variant `marker`) ---------
 
-  >>> exchange 1 — POST http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent
+  >>> exchange 1 — POST http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -103,25 +103,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       content-type: application/json
       --- response body (124 bytes, read to end) ---
       {"error":{"code":400,"message":"VELA-B2-ECHO-MARKER-Qp7Xn: rejected because 127.0.0.1 said so","status":"INVALID_ARGUMENT"}}
-  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000105]
-  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38439", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(261) } }
-  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:38439","path":"/v1beta/models/gemini-cross:generateContent"},"correlation":261}}
+  Display                                could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent] [http 400] [ref 0000000000000105]
+  Debug                                  Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38183", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(261) } }
+  serde (the IPC wire shape)             {"kind":"transport","failure":{"request":{"status":400}},"diagnosis":{"cause":"endpoint_rejected_request","status":400,"endpoint":{"authority":"http://127.0.0.1:38183","path":"/v1beta/models/gemini-cross:generateContent"},"correlation":261}}
 
 ---- google / 400 read whole — invariance across the four peer answers -----
-  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
-  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
-  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
-  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38439/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
+  `empty` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
+  `prose` Display                        could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
+  `marker` Display                       could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
+  `escaped` Display                      could not reach the endpoint (request): the endpoint rejected the request [endpoint http://127.0.0.1:38183/v1beta/models/gemini-cross:generateContent] [http 400] [ref <n>]
 
 ---- google / 400 read whole — assertions ----------------------------------
   [PASS] google / 400 read whole: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel
         4 rendering(s) compared per variant
 
 ---- google / 200 + in-stream error object — invariance across the four peer answers 
-  `empty` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:33931/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
-  `prose` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:33931/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
-  `marker` Display                       could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:33931/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
-  `escaped` Display                      could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:33931/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
+  `empty` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:41769/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
+  `prose` Display                        could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:41769/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
+  `marker` Display                       could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:41769/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
+  `escaped` Display                      could not reach the endpoint (server): the endpoint failed to answer [endpoint http://127.0.0.1:41769/v1beta/models/gemini-cross:streamGenerateContent] [http 503] [ref <n>]
 
 ---- google / 200 + in-stream error object — assertions --------------------
   [PASS] google / 200 + in-stream error object: THE FOUR ERRORS ARE BYTE-IDENTICAL on Display, Debug, the serde IPC shape and every StreamEvent — the endpoint's message is not a channel

@@ -1,0 +1,55 @@
+{
+  "capabilities": {
+    "modelListing": true,
+    "promptCaching": false,
+    "reasoning": false,
+    "streaming": true,
+    "toolCalls": false,
+    "usageReporting": false,
+    "vision": false
+  },
+  "contextWindowTokens": 8192,
+  "findings": [
+    {
+      "capability": "streaming",
+      "evidence": "declared",
+      "support": "unknown"
+    },
+    {
+      "capability": "modelListing",
+      "evidence": "probed",
+      "support": "supported"
+    },
+    {
+      "capability": "streaming",
+      "evidence": "probed",
+      "support": "supported"
+    },
+    {
+      "capability": "usageReporting",
+      "evidence": "probed",
+      "support": "unsupported"
+    },
+    {
+      "capability": "toolCalling",
+      "evidence": "probed",
+      "support": "unsupported"
+    },
+    {
+      "capability": "vision",
+      "evidence": "probed",
+      "support": "unsupported"
+    },
+    {
+      "capability": "structuredOutput",
+      "evidence": "probed",
+      "support": "degraded"
+    }
+  ],
+  "maxOutputTokens": null,
+  "modelId": "mock-small-local",
+  "probed": true,
+  "providerId": "matrix",
+  "structuredOutput": false,
+  "toolCallsEmulated": true
+}

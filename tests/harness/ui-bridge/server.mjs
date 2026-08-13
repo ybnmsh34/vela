@@ -208,6 +208,16 @@ const server = createServer((request, response) => {
     return;
   }
 
+  // Takes the endpoint away, the way a user's local runtime does when they
+  // close the terminal it was running in. The next turn meets a real refused
+  // connection — no stubbed error, no injected failure.
+  if (url.pathname === '/control/stop-endpoint') {
+    mock.kill('SIGKILL');
+    response.writeHead(200, { ...CORS, 'content-type': 'application/json' });
+    response.end(JSON.stringify({ stopped: true }));
+    return;
+  }
+
   if (url.pathname === '/events') {
     response.writeHead(200, {
       ...CORS,

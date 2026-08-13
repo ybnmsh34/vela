@@ -1,3 +1,19 @@
+# `phase-b-matrix/` — FROZEN. Round 4's record, kept verbatim.
+
+> **This directory is history and is no longer regenerated.** It is the record of
+> GATE M Part 1 **round 4** — a run that exits 1 and names FINDING 3 open. Phase B2
+> closed FINDING 3 and rebuilt the error surface, and overwriting round 4's evidence
+> with a run that disagrees with it would destroy the only account of what the four
+> rounds actually found.
+>
+> **The live recorder is now `../phase-b2-matrix/`.** `record.sh` in this directory
+> is kept only so the command in round 4's own text still resolves; it points at the
+> B2 recorder, which writes next door.
+>
+> Five assertions in here read as FAILs against the B2 tree and are **inverted, not
+> deleted**, in the B2 recorder — each argued at its site. The table is in
+> `../phase-b2-matrix/RESULTS.md` §2.
+
 # `phase-b-matrix/` — what Vela does when the endpoint misbehaves
 
 This directory is the **Phase B** half of GATE M Part 1. Its sibling,

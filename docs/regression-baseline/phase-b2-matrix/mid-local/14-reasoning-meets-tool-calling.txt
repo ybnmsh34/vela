@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- streamed — the raw exchange -------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:33953/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:35461/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -30,7 +30,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       --- response body (117 bytes, read to end) ---
       {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
 
-  >>> exchange 2 — POST http://127.0.0.1:33953/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:35461/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -100,7 +100,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- non-streamed — the raw exchange ---------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:34739/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:43409/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -111,7 +111,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       --- response body (117 bytes, read to end) ---
       {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
 
-  >>> exchange 2 — POST http://127.0.0.1:34739/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:43409/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

@@ -1,0 +1,545 @@
+[
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Considering the requ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "est about Summarise ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "what this endpoint c",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "an do.. Profile fron",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "tier has a 200000-to",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ken window. Answerin",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076827,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "g directly.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076828,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Mock frontier re",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076828,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ply to: Summaris",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076828,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e what this endp",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076828,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "oint can do.. wi",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076828,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ndward keel rudd",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "er lantern lante",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rn beacon umber ",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "pennant zenith h",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "arbor tiller umb",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "er sextant yarda",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076829,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rm north alpha d",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "elta rudder umbe",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "r tiller keel ha",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rbor beacon jett",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "y.",
+        "type": "textDelta"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "type": "usage",
+        "usage": {
+          "cachedInputTokens": null,
+          "inputTokens": 13,
+          "outputTokens": 90,
+          "reasoningTokens": null
+        }
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616076830,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [],
+          "parts": [
+            {
+              "kind": "reasoning",
+              "redacted": false,
+              "signature": null,
+              "text": "Considering the request about Summarise what this endpoint can do.. Profile frontier has a 200000-token window. Answering directly."
+            },
+            {
+              "kind": "text",
+              "text": "Mock frontier reply to: Summarise what this endpoint can do.. windward keel rudder lantern lantern beacon umber pennant zenith harbor tiller umber sextant yardarm north alpha delta rudder umber tiller keel harbor beacon jetty."
+            }
+          ],
+          "stopReason": "endTurn",
+          "structured": null,
+          "toolCalls": [],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": 13,
+            "outputTokens": 90,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+    }
+  },
+  {
+    "at": 1786616077503,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Considering the requ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077503,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "est about #tools Wha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077503,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t is the weather in.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077503,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " Profile frontier ha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077503,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s a 200000-token win",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "dow. Answering direc",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "tly.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "{\"ci",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "ty\":",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "\"fix",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "ture",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "\"}",
+          "callId": "call_6edab7e2",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "type": "usage",
+        "usage": {
+          "cachedInputTokens": null,
+          "inputTokens": 88,
+          "outputTokens": 39,
+          "reasoningTokens": null
+        }
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616077504,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [],
+          "parts": [
+            {
+              "kind": "reasoning",
+              "redacted": false,
+              "signature": null,
+              "text": "Considering the request about #tools What is the weather in. Profile frontier has a 200000-token window. Answering directly."
+            }
+          ],
+          "stopReason": "toolUse",
+          "structured": null,
+          "toolCalls": [
+            {
+              "arguments": {
+                "city": "fixture"
+              },
+              "callId": "call_6edab7e2",
+              "emulated": false,
+              "name": "get_weather",
+              "status": "ok"
+            }
+          ],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": 88,
+            "outputTokens": 39,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+    }
+  },
+  {
+    "at": 1786616079068,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "error": {
+          "diagnosis": {
+            "cause": "connection_failed",
+            "correlation": 1,
+            "endpoint": {
+              "authority": "http://127.0.0.1:33103",
+              "path": "/v1/chat/completions"
+            }
+          },
+          "failure": "connect",
+          "kind": "transport"
+        },
+        "type": "error"
+      },
+      "turnId": "a947696d-06ac-4192-9ed5-f7c91ed0a43f"
+    }
+  }
+]

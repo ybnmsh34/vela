@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- a native tools request --------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:42193/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36767/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -29,7 +29,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         }
       }
 
-  >>> exchange 2 — POST http://127.0.0.1:42193/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:36767/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -66,7 +66,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   tool calls                             (none)
   executable calls                       0
   degradations                           ToolCallingEmulated { tool_count: 1 }
-  wall clock                             3.851408ms
+  wall clock                             3.77697ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] an endpoint with no tools is refused explicitly, never silently
@@ -76,7 +76,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- control: the same request with emulation switched OFF -------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:42193/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36767/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -93,7 +93,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
           "code": "tools_not_supported"
         }
       }
-  outcome                                Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42193", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(277) } })
+  outcome                                Err(CapabilityUnsupported { capability: ToolCalling, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36767", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(277) } })
   [PASS] control — this endpoint really does refuse a native tools request
         if this passes, the emulation result below is not an artefact
 
@@ -103,7 +103,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   proves the request rewriting, the round trip and the parser — not that any model
   would choose to emit a call.
 
-  >>> exchange 1 — POST http://127.0.0.1:42193/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36767/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -137,7 +137,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   tool calls                             OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
   stop reason                            ToolUse
   degradations                           ToolCallingEmulated { tool_count: 1 }
-  wall clock                             1.189931ms
+  wall clock                             1.312618ms
   [PASS] the textual call is recovered into an executable call
         OK id=call_emulated_0 name=echo_tool emulated=true args={"text":"ok"}
   [PASS] arguments survive the round trip and the call is marked emulated

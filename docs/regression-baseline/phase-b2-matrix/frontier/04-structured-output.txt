@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- a json_schema request, non-streaming ------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:36845/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45873/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -47,7 +47,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   answer text                            "{\"celsius\":69,\"city\":\"eastward\"}"
   structured verdict                     Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
   degradations                           (none)
-  wall clock                             3.563807ms
+  wall clock                             1.663822ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] a structured request always comes back with an explicit verdict
@@ -57,7 +57,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same request, STREAMED, on a provider that has learned nothing yet --
 
-  >>> exchange 1 — POST http://127.0.0.1:36845/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45873/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -101,7 +101,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same request under StructuredOutputPolicy::Refuse, after probing ----
 
-  >>> exchange 1 — POST http://127.0.0.1:36845/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45873/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

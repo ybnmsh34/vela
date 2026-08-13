@@ -172,7 +172,11 @@ fn main() {
     }
 }
 
-fn build_provider(provider_id: &str, endpoint: &str, api_key: Option<&str>) -> OpenAiCompatibleProvider {
+fn build_provider(
+    provider_id: &str,
+    endpoint: &str,
+    api_key: Option<&str>,
+) -> OpenAiCompatibleProvider {
     let secrets = Arc::new(MemoryStore::new());
     let auth = match api_key {
         // The credentialled case is not what the matrix is about, but the
@@ -187,8 +191,12 @@ fn build_provider(provider_id: &str, endpoint: &str, api_key: Option<&str>) -> O
         None => Auth::None,
     };
     OpenAiCompatibleProvider::new(
-        ProviderDescriptor::new(provider_id, "Capability matrix endpoint", ProviderKind::Local)
-            .expect("descriptor"),
+        ProviderDescriptor::new(
+            provider_id,
+            "Capability matrix endpoint",
+            ProviderKind::Local,
+        )
+        .expect("descriptor"),
         endpoint.to_owned(),
         auth,
         secrets,
@@ -242,7 +250,11 @@ fn dispatch(
         "secrets_delete" => encode(secrets::delete(state.secrets.as_ref(), decode(payload)?)?),
         "secrets_status" => encode(secrets::status(state.secrets.as_ref(), decode(payload)?)?),
 
-        "settings_get" => encode(settings::get(store, state.secrets.as_ref(), decode(payload)?)?),
+        "settings_get" => encode(settings::get(
+            store,
+            state.secrets.as_ref(),
+            decode(payload)?,
+        )?),
         "settings_set_theme" => encode(settings::set_theme(
             store,
             state.secrets.as_ref(),
@@ -272,7 +284,8 @@ fn dispatch(
         "models_capabilities" => encode(models::capabilities(cache, decode(payload)?)?),
         "models_list" => {
             let reference: models::ModelsProviderRefReq = decode(payload)?;
-            let provider = chat::resolve_provider(state.providers.as_ref(), &reference.provider_id)?;
+            let provider =
+                chat::resolve_provider(state.providers.as_ref(), &reference.provider_id)?;
             let context = RequestContext::new().with_timeouts(Timeouts::probing());
             let outcome =
                 tauri::async_runtime::block_on(async move { provider.list_models(&context).await });
@@ -280,7 +293,8 @@ fn dispatch(
         }
         "models_probe" => {
             let reference: models::ModelsRefReq = decode(payload)?;
-            let provider = chat::resolve_provider(state.providers.as_ref(), &reference.provider_id)?;
+            let provider =
+                chat::resolve_provider(state.providers.as_ref(), &reference.provider_id)?;
             let context = RequestContext::new().with_timeouts(Timeouts::probing());
             let model_id = reference.model_id.trim().to_owned();
             let provider_id = reference.provider_id.trim().to_owned();
@@ -317,25 +331,21 @@ fn dispatch(
                 .messages
                 .iter()
                 .rev()
-                .find(|message| {
-                    matches!(message.role, vela_providers::model::MessageRole::User)
-                })
+                .find(|message| matches!(message.role, vela_providers::model::MessageRole::User))
                 .is_some_and(|message| message.text.trim_start().starts_with(TOOLS_SENTINEL));
 
             let mut built = chat::build_request(&send)?;
             if wants_tools {
                 built = built
-                    .with_tools([
-                        ToolDefinition::new(
-                            "get_weather",
-                            "Current conditions for a place",
-                            json!({
-                                "type": "object",
-                                "properties": { "city": { "type": "string" } },
-                                "required": ["city"],
-                            }),
-                        ),
-                    ])
+                    .with_tools([ToolDefinition::new(
+                        "get_weather",
+                        "Current conditions for a place",
+                        json!({
+                            "type": "object",
+                            "properties": { "city": { "type": "string" } },
+                            "required": ["city"],
+                        }),
+                    )])
                     .with_tool_choice(ToolChoice::Auto);
             }
             let provider = chat::resolve_provider(state.providers.as_ref(), &send.provider_id)?;

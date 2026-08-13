@@ -12,4 +12,8 @@
 # Exits non-zero if any gate assertion fails.
 set -euo pipefail
 cd "$(dirname "$0")/../../../src-tauri"
-exec cargo run -q -p vela-providers --example gate_m_phase_b
+# FROZEN: this directory is round 4's record and is no longer regenerated.
+# The live recorder writes to ../phase-b2-matrix/. Running it here would
+# overwrite history with a run that disagrees with it.
+echo "phase-b-matrix/ is frozen — see README.md. Running the B2 recorder instead." >&2
+exec cargo run -q -p vela-providers --example gate_m_phase_b2

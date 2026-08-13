@@ -1,0 +1,18 @@
+{
+  "answer": "nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �",
+  "whole": "Thinking (never closed)\n\nThe stream ended while this block was still open. It is shown in full so nothing is lost — but the model never marked where its answer was meant to begin.\n\n <|im_start|> </s> Considering the request about Summarise what this endpoint can do.. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �\n\nnested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �\n\nThe thinking block was never closed\nThe stream ended mid-thought. 163 characters of answer were recovered from inside the block.\nPart of the stream was unreadable\n3 frames could not be parsed and were skipped. Everything either side of them was kept.\nThe stream ended without a sentinel\nThe endpoint closed the connection instead of marking the end. The reply is complete.\nNo token counts\nThis endpoint does not report token usage.\nCopy",
+  "reasoning": {
+    "text": "The stream ended while this block was still open. It is shown in full so nothing is lost — but the model never marked where its answer was meant to begin. <|im_start|> </s> Considering the request about Summarise what this endpoint can do.. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �",
+    "hiddenAttribute": false,
+    "summary": "Thinking (never closed)",
+    "expanded": true
+  },
+  "tools": null,
+  "degradations": [
+    "The thinking block was never closed\nThe stream ended mid-thought. 163 characters of answer were recovered from inside the block.",
+    "Part of the stream was unreadable\n3 frames could not be parsed and were skipped. Everything either side of them was kept.",
+    "The stream ended without a sentinel\nThe endpoint closed the connection instead of marking the end. The reply is complete.",
+    "No token counts\nThis endpoint does not report token usage."
+  ],
+  "error": null
+}

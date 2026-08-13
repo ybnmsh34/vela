@@ -161,7 +161,11 @@ experiment() {
   record "  red cases:"
   red_cases "$summary" | sed 's/^/    /' >>"$out"
   local flipped
-  flipped="$(control_lines | diff "$baseline_controls" - | grep -E '^[<>]' || true)"
+  # `grep -v 'wall clock'` because two control lines carry a measured duration
+  # that differs every run. Leaving them in would put four lines of scheduling
+  # noise in front of every real flip, which is how a real flip gets skipped.
+  flipped="$(control_lines | diff "$baseline_controls" - | grep -E '^[<>]' \
+             | grep -v 'wall clock' || true)"
   if [ -n "$flipped" ]; then
     record "  recorder CONTROL lines that changed:"
     printf '%s\n' "$flipped" | sed 's/^/    /' >>"$out"
@@ -181,7 +185,8 @@ experiment() {
 experiment 1 \
   "the FINDING 3 quarantine removed from the answer channel" \
   "cases 14 and 15 — 'a call recovered from a never-closed <think> is NOT executable'" \
-  "cases 14 and 15 go red on every adapter that emulates; nothing else moves" \
+  "cases 14, 15 and 20 go red — 20 because its second-bound arm salvages a call out of \
+deliberation and so depends on the same quarantine" \
   's/let \(visible, quarantined\) = if self\.emulated \{/let (visible, quarantined) = if false {/' \
   "$src/answer.rs"
 
@@ -226,11 +231,13 @@ where the user's stop would have STARTED a turn on a second endpoint" \
   "$src/error.rs"
 
 experiment 7 \
-  "the closed-vocabulary audit given a 'close enough' exemption" \
+  "the closed-vocabulary audit given the 'looks like an identifier' exemption" \
   "case 18 — 'NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE'" \
-  "control 15's round-4-shape line flips from FAIL to PASS — the audit goes blind. \
-diagnostic.rs refuses this exemption in a comment; this is what refusing it buys" \
-  's/            if allowed\.iter\(\)\.any\(\|candidate\| candidate == text\) \{/            if allowed.iter().any(|candidate| candidate.contains(text.as_str()) || text.contains(candidate.as_str())) {/' \
+  "control 15's BARE IDENTIFIER line flips from FAIL to PASS — the audit goes blind to \
+exactly the leak diagnostic.rs's comment says this exemption would wave through. The gate \
+count does NOT move, because B2 carries no endpoint text for the audit to miss; the \
+control is the only place this is visible, which is why the control channel exists" \
+  's/            if allowed\.iter\(\)\.any\(\|candidate\| candidate == text\) \{/            if text.chars().all(|c| c.is_ascii_alphanumeric()) {\n                return;\n            }\n            if allowed.iter().any(|candidate| candidate == text) {/' \
   "$src/diagnostic.rs"
 
 record "================================================================================"

@@ -1,0 +1,17 @@
+{
+  "imageAffordances": [],
+  "everyAttachControl": [
+    {
+      "tag": "input",
+      "testid": "attachment-picker-text-only",
+      "label": "",
+      "accept": ".txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.yaml,.yml,.toml,.ini,.cfg,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.go,.java,.kt,.rb,.php,.c,.h,.cc,.cpp,.hpp,.cs,.swift,.sh,.bash,.zsh,.sql,.diff,.patch"
+    },
+    {
+      "tag": "button",
+      "testid": null,
+      "label": "Attach a text file",
+      "accept": null
+    }
+  ]
+}

@@ -1,0 +1,290 @@
+[
+  {
+    "at": 1786616095509,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Mock small-local",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095509,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " reply to: Summa",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095509,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rise what this e",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095509,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ndpoint can do..",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095510,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " jetty beacon ru",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095510,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "dder rudder umbe",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095511,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "r jetty ember or",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095511,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "bit sextant sext",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095511,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ant.",
+        "type": "textDelta"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095512,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [
+            {
+              "kind": "usageNotReported"
+            }
+          ],
+          "parts": [
+            {
+              "kind": "text",
+              "text": "Mock small-local reply to: Summarise what this endpoint can do.. jetty beacon rudder rudder umber jetty ember orbit sextant sextant."
+            }
+          ],
+          "stopReason": "endTurn",
+          "structured": null,
+          "toolCalls": [],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": null,
+            "outputTokens": null,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "b5ddc9b9-9595-4384-9c2a-be94b2330cba"
+    }
+  },
+  {
+    "at": 1786616095850,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Mock small-local",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095850,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " reply to: #tool",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095850,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s What is the we",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095850,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ather in Lisbon?",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095850,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ". orbit keel qua",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095851,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rtz ivory tiller",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095851,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " ivory sextant p",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095851,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ennant fathom ya",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095851,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rdarm.",
+        "type": "textDelta"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616095852,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [
+            {
+              "kind": "toolCallingEmulated",
+              "toolCount": 1
+            },
+            {
+              "kind": "usageNotReported"
+            }
+          ],
+          "parts": [
+            {
+              "kind": "text",
+              "text": "Mock small-local reply to: #tools What is the weather in Lisbon?. orbit keel quartz ivory tiller ivory sextant pennant fathom yardarm."
+            }
+          ],
+          "stopReason": "endTurn",
+          "structured": null,
+          "toolCalls": [],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": null,
+            "outputTokens": null,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "5cea3890-f042-468b-8f8a-b9f8982fe8ae"
+    }
+  },
+  {
+    "at": 1786616097376,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "error": {
+          "diagnosis": {
+            "cause": "connection_failed",
+            "correlation": 3,
+            "endpoint": {
+              "authority": "http://127.0.0.1:44187",
+              "path": "/v1/chat/completions"
+            }
+          },
+          "failure": "connect",
+          "kind": "transport"
+        },
+        "type": "error"
+      },
+      "turnId": "24e9b44a-6464-4d51-b7cc-d0b21b5fe081"
+    }
+  }
+]

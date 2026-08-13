@@ -1,0 +1,13 @@
+{
+  "answer": "Mock frontier reply to: Summarise what this endpoint can do.. windward keel rudder lantern lantern beacon umber pennant zenith harbor tiller umber sextant yardarm north alpha delta rudder umber tiller keel harbor beacon jetty.",
+  "whole": "Thought process\n\nMock frontier reply to: Summarise what this endpoint can do.. windward keel rudder lantern lantern beacon umber pennant zenith harbor tiller umber sextant yardarm north alpha delta rudder umber tiller keel harbor beacon jetty.\n\nCopy\n13 in · 90 out tokens",
+  "reasoning": {
+    "text": "Considering the request about Summarise what this endpoint can do.. Profile frontier has a 200000-token window. Answering directly.",
+    "hiddenAttribute": true,
+    "summary": "Thought process",
+    "expanded": false
+  },
+  "tools": null,
+  "degradations": [],
+  "error": null
+}

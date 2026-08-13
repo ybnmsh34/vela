@@ -13,8 +13,8 @@ CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
 --------------------------------------------------------------------------------
 The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
 `data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
-  hostile      finished=false wall clock=5.001491359s chars=0   → FAIL (HUNG)
-  frontier     finished=true  wall clock=11.622534ms chars=16   → PASS
+  hostile      finished=false wall clock=5.000958001s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=12.483493ms chars=16   → PASS
   EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
   Vela's own consumer finishes both in single-digit milliseconds — see each profile's
   07-stream-termination.txt. The assertion discriminates.
@@ -133,7 +133,7 @@ CONTROL 11 — "the turn ends in single-digit milliseconds" applied to a stalled
 --------------------------------------------------------------------------------
 Case 07c asserts a median under 10 ms. Applied to the endpoint of case 07b — 4 s
 between frames, 800 ms stall budget — the same assertion must fail.
-  stalled socket        wall clock=809.641141ms outcome=transport → FAIL
+  stalled socket        wall clock=809.28955ms outcome=transport → FAIL
   EXPECTED: FAIL, at roughly the 800 ms stall budget. The single-digit-millisecond
   claim in case 07c is a measurement of Vela ending a stream promptly, not an artefact
   of every code path in this recorder being fast.
@@ -191,6 +191,7 @@ Case 18's strongest assertion is that `unexplained_strings` finds nothing. An au
 that finds nothing because it cannot see is worthless, so it is run here over the
 shape B2 DELETED — a diagnosis with the endpoint's message in a `detail` field.
   round-4 error shape   1 unexplained string(s): ["VELA-B2-ECHO-MARKER-Qp7Xn: rejected credential for /v1/chat/completions"]   → FAIL
+  bare identifier leak  1 unexplained string(s): ["sk7Q2Xz9f3aDONOTLEAK"]   → FAIL
   B2 error shape        0 unexplained string(s)   → PASS
   EXPECTED: the first FAILS (the audit sees the marker AND the path), the second
   PASSES. So case 18's green is a green from an audit with its eyes open.
@@ -264,6 +265,46 @@ green and case 15's Anthropic arm becomes a lie that nobody would otherwise noti
   EXPECTED: the Anthropic line FAILS (it does not emulate, which is why case 15
   asserts a refusal there) and the Google line PASSES (it does, which is why case 15
   can drive FINDING 3's shape down that adapter at all).
+
+--------------------------------------------------------------------------------
+CONTROL 22 — "emulation was entered" applied to a turn with no tool catalogue
+--------------------------------------------------------------------------------
+Case 15's first assertion is a PREMISE: the turn really did go through emulation.
+Applied to a turn that offers no tools, it must fail — otherwise the premise would
+be satisfied by any turn at all, and the case would be measuring nothing.
+  no tools offered      emulation entered=false   → FAIL
+  EXPECTED: FAIL on both lines. Emulation is not entered, so case 15's premise is a
+  real precondition; and the `<tool_call>` markup is still inert, which is why the
+  premise and the claim are asserted separately.
+
+--------------------------------------------------------------------------------
+CONTROL 23 — "the marker really did arrive on the wire" applied to the EMPTY variant
+--------------------------------------------------------------------------------
+Case 18 checks its own premise by reading the recorded response bytes. Applied to
+the peer answer that carries an empty message, the same check must fail.
+  `empty` variant body  carries the marker=false   → FAIL
+  EXPECTED: FAIL. The premise check reads bytes rather than assuming them, and it
+  can tell the difference between a body that carries the marker and one that does not.
+
+--------------------------------------------------------------------------------
+CONTROL 24 — "the sink is never told the turn finished" applied to a turn that DID
+--------------------------------------------------------------------------------
+Case 19 asserts a cancelled turn emits no `Done`. Applied to an ordinary completed
+turn, the same assertion must fail — otherwise it would be asserting that Vela
+never signals completion, which would be a much worse property than the one meant.
+  a completed turn      Done emitted=true   → FAIL
+  EXPECTED: FAIL. A turn that finishes says so. Case 19's assertion is about what
+  cancellation does NOT say, and this is the difference measured.
+
+--------------------------------------------------------------------------------
+CONTROL 25 — "all three calls survive, unspliced" applied to a SPLICED batch
+--------------------------------------------------------------------------------
+Round 1's FINDING 1 was a batch of N collapsing into one spliced call. Case 17's
+comparison is by fingerprint, so it is applied here to the spliced shape itself.
+  spliced batch         ["get_weather({\"city\":\"BerlinParis\",\"zone\":\"CET\"})"]
+  matches expected      false   → FAIL
+  EXPECTED: FAIL. One call carrying two cities and a timezone is exactly FINDING 1,
+  and case 17's comparison says so.
 
 ================================================================================
 Controls are recorded in verdicts.tsv under case names beginning `control-`. Their

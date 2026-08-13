@@ -6743,7 +6743,7 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
             .iter()
             .map(|call| match call {
                 ToolCallOutcome::Ok { name, .. } => format!("EXECUTABLE {name}"),
-                other => format!("{}", describe_calls(std::slice::from_ref(other))),
+                other => describe_calls(std::slice::from_ref(other)),
             })
             .collect();
         let _ = writeln!(
@@ -6795,7 +6795,11 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
             out,
             "  over answer_text()    {:?}   → {}",
             over_visible,
-            if over_visible.is_err() { "PASS" } else { "FAIL" }
+            if over_visible.is_err() {
+                "PASS"
+            } else {
+                "FAIL"
+            }
         );
         let _ = writeln!(
             out,
@@ -6909,6 +6913,34 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
             name: "0 unexplained strings".into(),
             pass: found.is_empty(),
             detail: format!("{found:?}"),
+        });
+        // And the shape the "looks like an identifier" exemption would wave
+        // through. `diagnostic.rs` refuses that exemption in a comment —
+        // "an 'it looks like an identifier' exemption would have let a purely
+        // alphanumeric credential straight through" — and this is that
+        // credential, so the refusal has something to be measured against.
+        let identifier_shape = json!({
+            "kind": "authFailed",
+            "diagnosis": {"cause": "credential_rejected", "detail": "sk7Q2Xz9f3aDONOTLEAK"}
+        });
+        let identifier_found =
+            vela_providers::diagnostic::unexplained_strings(&identifier_shape, &[]);
+        let _ = writeln!(
+            out,
+            "  bare identifier leak  {} unexplained string(s): {identifier_found:?}   → {}",
+            identifier_found.len(),
+            if identifier_found.is_empty() {
+                "PASS"
+            } else {
+                "FAIL"
+            }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-15-audit-sees-a-bare-identifier".into(),
+            name: "0 unexplained strings when the leak looks like an identifier".into(),
+            pass: identifier_found.is_empty(),
+            detail: format!("{identifier_found:?}"),
         });
         // And the same audit over B2's shape, which must be clean.
         let b2_shape = json!({
@@ -7245,6 +7277,195 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
         "  EXPECTED: the Anthropic line FAILS (it does not emulate, which is why case 15\n  \
          asserts a refusal there) and the Google line PASSES (it does, which is why case 15\n  \
          can drive FINDING 3's shape down that adapter at all)."
+    );
+
+    // C22 — case 15's premise, applied to a turn that offers no tools.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 22 — \"emulation was entered\" applied to a turn with no tool catalogue\n\
+         --------------------------------------------------------------------------------\n\
+         Case 15's first assertion is a PREMISE: the turn really did go through emulation.\n\
+         Applied to a turn that offers no tools, it must fail — otherwise the premise would\n\
+         be satisfied by any turn at all, and the case would be measuring nothing."
+    );
+    {
+        let peer = CrossPeer::start(deliberation_script(Adapter::Compat)).await;
+        let log = WireLog::default();
+        let provider = Adapter::Compat.provider(&peer.url, &log);
+        let mut sink = CollectingSink::new();
+        let outcome = provider
+            .stream(
+                ChatRequest::new(Adapter::Compat.model())
+                    .with_message(ChatMessage::user("tidy up the disk")),
+                &mut sink,
+                &context(),
+            )
+            .await;
+        let emulated = outcome.as_ref().is_ok_and(|response| {
+            response
+                .degradations
+                .iter()
+                .any(|d| matches!(d, Degradation::ToolCallingEmulated { .. }))
+        });
+        let _ = writeln!(
+            out,
+            "  no tools offered      emulation entered={emulated}   → {}",
+            if emulated { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-22-emulation-premise".into(),
+            name: "emulation was entered".into(),
+            pass: emulated,
+            detail: format!("emulated={emulated}"),
+        });
+        // …and the markup is still not executable, which is the point of the
+        // premise being separate from the claim.
+        let executable = outcome
+            .as_ref()
+            .is_ok_and(|response| response.tool_calls.iter().any(ToolCallOutcome::is_ok));
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-22-no-tools-still-inert".into(),
+            name: "with no catalogue, tool markup in the answer is executable".into(),
+            pass: executable,
+            detail: format!("executable={executable}"),
+        });
+        peer.stop();
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL on both lines. Emulation is not entered, so case 15's premise is a\n  \
+         real precondition; and the `<tool_call>` markup is still inert, which is why the\n  \
+         premise and the claim are asserted separately."
+    );
+
+    // C23 — case 18's wire premise, applied to the variant that carries nothing.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 23 — \"the marker really did arrive on the wire\" applied to the EMPTY variant\n\
+         --------------------------------------------------------------------------------\n\
+         Case 18 checks its own premise by reading the recorded response bytes. Applied to\n\
+         the peer answer that carries an empty message, the same check must fail."
+    );
+    {
+        let empty_body = Adapter::Compat.error_body_raw("");
+        let carries = empty_body.contains(ECHO_MARKER);
+        let _ = writeln!(
+            out,
+            "  `empty` variant body  carries the marker={carries}   → {}",
+            if carries { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-23-wire-premise".into(),
+            name: "the marker is on the wire".into(),
+            pass: carries,
+            detail: elide(&empty_body, 120),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL. The premise check reads bytes rather than assuming them, and it\n  \
+         can tell the difference between a body that carries the marker and one that does not."
+    );
+
+    // C24 — case 19's "no Done event", applied to a turn that completes.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 24 — \"the sink is never told the turn finished\" applied to a turn that DID\n\
+         --------------------------------------------------------------------------------\n\
+         Case 19 asserts a cancelled turn emits no `Done`. Applied to an ordinary completed\n\
+         turn, the same assertion must fail — otherwise it would be asserting that Vela\n\
+         never signals completion, which would be a much worse property than the one meant."
+    );
+    {
+        let server = MockServer::start("frontier", &[]).await;
+        let log = WireLog::default();
+        let provider = provider_for(&server.url, &log);
+        let mut sink = CollectingSink::new();
+        let _ = provider
+            .stream(user("frontier", "hello"), &mut sink, &context())
+            .await;
+        let done = sink.events.iter().any(|event| {
+            serde_json::to_value(event)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("type")
+                        .and_then(|kind| kind.as_str())
+                        .map(|kind| kind == "done")
+                })
+                .unwrap_or(false)
+        });
+        let _ = writeln!(
+            out,
+            "  a completed turn      Done emitted={done}   → {}",
+            if done { "FAIL" } else { "PASS" }
+        );
+        ledger.push(Verdict {
+            profile: "frontier".into(),
+            case: "control-24-done-on-a-finished-turn".into(),
+            name: "the sink is never told the turn finished".into(),
+            pass: !done,
+            detail: format!("{} event(s)", sink.events.len()),
+        });
+        server.stop().await;
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL. A turn that finishes says so. Case 19's assertion is about what\n  \
+         cancellation does NOT say, and this is the difference measured."
+    );
+
+    // C25 — case 17's fingerprint equality, applied to a spliced batch.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 25 — \"all three calls survive, unspliced\" applied to a SPLICED batch\n\
+         --------------------------------------------------------------------------------\n\
+         Round 1's FINDING 1 was a batch of N collapsing into one spliced call. Case 17's\n\
+         comparison is by fingerprint, so it is applied here to the spliced shape itself."
+    );
+    {
+        let spliced = vec![ToolCallOutcome::Ok {
+            call_id: "call_a".into(),
+            name: "get_weather".into(),
+            arguments: json!({"city": "BerlinParis", "zone": "CET"}),
+            emulated: false,
+        }];
+        let produced = ok_fingerprints(&spliced);
+        let expected: Vec<String> = EXPECTED_CALLS
+            .iter()
+            .map(|(name, args)| {
+                let value: Value = serde_json::from_str(args).expect("fixture args parse");
+                format!(
+                    "{name}({})",
+                    serde_json::to_string(&value).unwrap_or_default()
+                )
+            })
+            .collect();
+        let agrees = produced == expected;
+        let _ = writeln!(
+            out,
+            "  spliced batch         {produced:?}\n  matches expected      {agrees}   → {}",
+            if agrees { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-25-spliced-batch".into(),
+            name: "all three calls survive, unspliced".into(),
+            pass: agrees,
+            detail: format!("{produced:?}"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL. One call carrying two cities and a timezone is exactly FINDING 1,\n  \
+         and case 17's comparison says so."
     );
 
     let _ = writeln!(
@@ -9619,8 +9840,7 @@ const SIBLING_MARKER: &str = "VELA-B2-SIBLING-MARKER-Wm4Zt";
 /// "explain the mismatch" implementation would interpolate: the offending
 /// VALUE. `/city` is declared `string` and arrives as an object.
 fn hostile_structured_answer() -> String {
-    let long: String = std::iter::repeat(format!("{SIBLING_MARKER} "))
-        .take(120)
+    let long: String = std::iter::repeat_n(format!("{SIBLING_MARKER} "), 120)
         .collect::<Vec<String>>()
         .join("");
     format!("{{\"city\":{{\"nested\":\"{long}\"}},\"celsius\":\"{SIBLING_MARKER}-not-a-number\"}}")
@@ -9630,8 +9850,7 @@ fn hostile_structured_answer() -> String {
 /// it lands in `ToolCallOutcome::Malformed { raw_arguments }` — the field that
 /// carries endpoint text deliberately.
 fn hostile_tool_arguments() -> String {
-    let long: String = std::iter::repeat(format!("{SIBLING_MARKER}/"))
-        .take(400)
+    let long: String = std::iter::repeat_n(format!("{SIBLING_MARKER}/"), 400)
         .collect::<Vec<String>>()
         .join("");
     format!("{{\"city\": \"{long}")
@@ -9730,15 +9949,13 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
         "all three shipping adapters",
         "one purpose-built loopback peer per adapter, real TCP",
     );
-    doc.p(
-        "  THE THREE FIELDS:\n    \
+    doc.p("  THE THREE FIELDS:\n    \
          Degradation::StructuredOutputMismatch { detail }   documented as Vela's own words\n    \
          SchemaMismatch { path, detail }                    path from the USER's schema\n    \
          ToolCallOutcome::Malformed { raw_arguments }       endpoint text, ON PURPOSE\n  \
          The third one is not a defect and this case does not treat it as one. It asks\n  \
          whether the deliberate carry is BOUNDED, whether it stayed in its own field, and\n  \
-         whether any of it reached the error surface.",
-    );
+         whether any of it reached the error surface.");
 
     // ---- arm 1: a schema mismatch whose offending VALUE is hostile --------
     for adapter in Adapter::ALL {
@@ -9785,7 +10002,10 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
             doc.check(
                 &format!("{arm}: the marker really was on the wire — nothing below is vacuous"),
                 on_the_wire,
-                format!("{} response byte(s) recorded", joined_bodies(&entries).len()),
+                format!(
+                    "{} response byte(s) recorded",
+                    joined_bodies(&entries).len()
+                ),
             );
             doc.check(
                 &format!("{arm}: the mismatch is REPORTED, not passed through as conforming"),
@@ -9808,11 +10028,11 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
                 match &response.structured {
                     Some(Err(mismatch)) => {
                         mismatch.path.is_empty()
-                            || weather_schema()["properties"]
-                                .as_object()
-                                .is_some_and(|properties| {
+                            || weather_schema()["properties"].as_object().is_some_and(
+                                |properties| {
                                     properties.keys().any(|key| mismatch.path.contains(key))
-                                })
+                                },
+                            )
                     }
                     _ => false,
                 },
@@ -9833,8 +10053,7 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
                 ),
                 match &response.structured {
                     Some(Err(mismatch)) => {
-                        mismatch.detail.chars().count() <= 201
-                            && !mismatch.detail.contains('\n')
+                        mismatch.detail.chars().count() <= 201 && !mismatch.detail.contains('\n')
                     }
                     _ => false,
                 },
@@ -9846,7 +10065,10 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
                      answer is the model's answer; this case is about the METADATA"
                 ),
                 response.answer_text().contains(SIBLING_MARKER),
-                format!("{} answer character(s)", response.answer_text().chars().count()),
+                format!(
+                    "{} answer character(s)",
+                    response.answer_text().chars().count()
+                ),
             );
 
             peer.stop();
@@ -9906,13 +10128,13 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
 
             doc.kv(
                 &format!("{arm}: marker occurrences sent / kept"),
-                format!(
-                    "{sent} / {}",
-                    calls_json.matches(SIBLING_MARKER).count()
-                ),
+                format!("{sent} / {}", calls_json.matches(SIBLING_MARKER).count()),
             );
             doc.kv(&format!("{arm}: longest raw_arguments"), longest_raw);
-            doc.kv(&format!("{arm}: calls"), describe_calls(&response.tool_calls));
+            doc.kv(
+                &format!("{arm}: calls"),
+                describe_calls(&response.tool_calls),
+            );
 
             doc.check(
                 &format!("{arm}: the hostile payload really was sent — nothing here is vacuous"),
@@ -9963,8 +10185,7 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
     // control that caught it has something to turn red.
     doc.h("the SECOND bound — a call salvaged out of deliberation, in answer.rs");
     {
-        let huge: String = std::iter::repeat("Wm4Zt")
-            .take(400)
+        let huge: String = std::iter::repeat_n("Wm4Zt", 400)
             .collect::<Vec<&str>>()
             .join("");
         let deliberation = format!(
@@ -10061,10 +10282,7 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
             .await;
         let on_the_wire = joined_bodies(&log.drain()).contains(SIBLING_MARKER);
         let error = outcome.err();
-        doc.kv(
-            &format!("{} error", adapter.label()),
-            format!("{error:?}"),
-        );
+        doc.kv(&format!("{} error", adapter.label()), format!("{error:?}"));
         doc.check(
             &format!(
                 "{}: the identical hostile bytes reached the error path too — the comparison \
@@ -10166,7 +10384,10 @@ fn adversarial_latency_payload() -> String {
 
 /// Five streamed turns against a peer that answers with
 /// [`adversarial_latency_payload`], through a CREDENTIALED provider.
-async fn adversarial_latency_arm(peer_url: &str, log: &WireLog) -> (LatencyArm, usize, usize, usize) {
+async fn adversarial_latency_arm(
+    peer_url: &str,
+    log: &WireLog,
+) -> (LatencyArm, usize, usize, usize) {
     let provider = credentialed_provider_for(peer_url, log);
     let mut arm = LatencyArm {
         samples: Vec::new(),
@@ -10230,8 +10451,7 @@ async fn case_07c_arm_c(profile: &str, doc: &mut Doc) {
     }))
     .await;
     let log = WireLog::default();
-    let (arm, backslashes, escapes, near_misses) =
-        adversarial_latency_arm(&peer.url, &log).await;
+    let (arm, backslashes, escapes, near_misses) = adversarial_latency_arm(&peer.url, &log).await;
 
     doc.h("arm C — a CREDENTIALED provider against a payload that exercises the scrubber");
     doc.p(
@@ -10288,7 +10508,8 @@ async fn case_07c_arm_c(profile: &str, doc: &mut Doc) {
     );
     doc.check(
         "and the credential is still absent from the answer the scrubber produced",
-        !arm.failed.is_some_and(|failed| failed.contains(LATENCY_KEY)),
+        !arm.failed
+            .is_some_and(|failed| failed.contains(LATENCY_KEY)),
         "checked".to_owned(),
     );
 

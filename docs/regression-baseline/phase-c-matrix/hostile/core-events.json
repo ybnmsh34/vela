@@ -1,0 +1,816 @@
+[
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " <|im_start|> </s> ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Considering the req",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "uest about Summaris",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e what this endpoin",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t can do.. Profile ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "hostile has a 4096-",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "token window. Answe",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ring directly.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103437,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " ▒▒ ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " nested ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Mock hostil",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e reply to:",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " Summarise ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "what this e",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ndpoint can",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " do.. windw",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ard jetty c",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "areful orbi",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103438,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t zenith la",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ntern alpha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " lantern la",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ntern tille",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "r north mer",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "idian.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " </s> �",
+        "type": "reasoningDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �",
+        "type": "textDelta"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616103439,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [
+            {
+              "kind": "unterminatedReasoning",
+              "recoveredAnswerChars": 163
+            },
+            {
+              "count": 3,
+              "kind": "malformedFramesSkipped"
+            },
+            {
+              "kind": "noTerminationSentinel"
+            },
+            {
+              "kind": "usageNotReported"
+            }
+          ],
+          "parts": [
+            {
+              "kind": "reasoning",
+              "redacted": false,
+              "signature": null,
+              "text": " <|im_start|> </s> Considering the request about Summarise what this endpoint can do.. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �"
+            },
+            {
+              "kind": "text",
+              "text": "nested Mock hostile reply to: Summarise what this endpoint can do.. windward jetty careful orbit zenith lantern alpha lantern lantern tiller north meridian. </s> �"
+            }
+          ],
+          "stopReason": "endTurn",
+          "structured": null,
+          "toolCalls": [],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": null,
+            "outputTokens": null,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "5eb62d9c-0801-4561-86f7-cf5b18cd4968"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " </s> ЖЖЖ ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Considering the req",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "uest about #tools W",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "hat is the weather ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "",
+          "callId": null,
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104173,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "",
+          "callId": "call_358c1965",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104174,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "{\"ci",
+          "callId": "call_358c1965",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104174,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "ty\":",
+          "callId": "call_358c1965",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104174,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "\"",
+          "callId": "call_358c1965",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104174,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "",
+          "callId": "call_358c1965",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104176,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "not-json-at-all",
+          "callId": null,
+          "name": "get_weather",
+          "slot": 1
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104176,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "in. Profile hostile",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104176,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " has a 4096-token w",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104176,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "indow. Answering di",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104176,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rectly.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104177,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " <|im_start|> ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104177,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " nested ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104177,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Mock hostil",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e reply to:",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " #tools Wha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t is the we",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ather in Li",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "sbon?. zeni",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "th keel pen",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "nant lanter",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104178,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "n umber orb",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104179,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "it beacon z",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104179,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "enith yarda",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104179,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rm ember ti",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104180,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ller delta.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104180,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " ▒▒ <|im_start|>",
+        "type": "reasoningDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104180,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "nested Mock hostile reply to: #tools What is the weather in Lisbon?. zenith keel pennant lantern umber orbit beacon zenith yardarm ember tiller delta. ▒▒ <|im_start|>",
+        "type": "textDelta"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616104181,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [
+            {
+              "kind": "unterminatedReasoning",
+              "recoveredAnswerChars": 166
+            },
+            {
+              "count": 2,
+              "kind": "malformedToolCalls"
+            },
+            {
+              "count": 3,
+              "kind": "malformedFramesSkipped"
+            },
+            {
+              "kind": "noTerminationSentinel"
+            },
+            {
+              "kind": "usageNotReported"
+            }
+          ],
+          "parts": [
+            {
+              "kind": "reasoning",
+              "redacted": false,
+              "signature": null,
+              "text": " </s> ЖЖЖ Considering the request about #tools What is the weather in. Profile hostile has a 4096-token window. Answering directly. <|im_start|>  nested Mock hostile reply to: #tools What is the weather in Lisbon?. zenith keel pennant lantern umber orbit beacon zenith yardarm ember tiller delta. ▒▒ <|im_start|>"
+            },
+            {
+              "kind": "text",
+              "text": "nested Mock hostile reply to: #tools What is the weather in Lisbon?. zenith keel pennant lantern umber orbit beacon zenith yardarm ember tiller delta. ▒▒ <|im_start|>"
+            }
+          ],
+          "stopReason": "toolUse",
+          "structured": null,
+          "toolCalls": [
+            {
+              "callId": "call_358c1965",
+              "index": 0,
+              "name": "get_weather",
+              "rawArguments": "{\"city\":\"",
+              "reason": "unparseableArguments",
+              "status": "malformed"
+            },
+            {
+              "callId": null,
+              "index": 7,
+              "name": "get_weather",
+              "rawArguments": "not-json-at-all",
+              "reason": "unknownDiscriminator",
+              "status": "malformed"
+            }
+          ],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": null,
+            "outputTokens": null,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "761b7ff4-9466-49a4-a180-154f0ea2a951"
+    }
+  },
+  {
+    "at": 1786616105776,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "error": {
+          "diagnosis": {
+            "cause": "connection_failed",
+            "correlation": 2,
+            "endpoint": {
+              "authority": "http://127.0.0.1:41633",
+              "path": "/v1/chat/completions"
+            }
+          },
+          "failure": "connect",
+          "kind": "transport"
+        },
+        "type": "error"
+      },
+      "turnId": "da661789-ba59-4046-a5f1-976ddf570b7c"
+    }
+  }
+]

@@ -965,6 +965,7 @@ const ONE_PIXEL_PNG: [u8; 67] = [
 mod tests {
     use super::*;
     use crate::http::testing::{CannedResponse, ScriptedTransport};
+    use crate::http::ResponseHeaders;
     use crate::model::{ReasoningRequest, StopReason};
     use crate::provider::Timeouts;
     use vela_core::auth::{AuthMode, AuthPolicy};
@@ -1606,7 +1607,10 @@ mod tests {
             ) -> Result<crate::http::HttpResponse, TransportError> {
                 Ok(crate::http::HttpResponse {
                     status: 200,
-                    headers: vec![("content-type".into(), "text/event-stream".into())],
+                    headers: ResponseHeaders::carries_no_credential([(
+                        "content-type".to_owned(),
+                        "text/event-stream".to_owned(),
+                    )]),
                     body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }

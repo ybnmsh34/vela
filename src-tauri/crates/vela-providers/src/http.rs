@@ -214,16 +214,16 @@ impl std::fmt::Debug for HttpRequest {
 /// buffering it would defeat streaming entirely.
 pub struct HttpResponse {
     pub status: u16,
-    pub headers: Vec<(String, String)>,
+    /// Not a `Vec<(String, String)>`: header *values* are endpoint-supplied text
+    /// exactly like a body is, and [`ResponseHeaders`] is the type that cannot
+    /// hold an unscrubbed one. See its docs for why this changed in round 4.
+    pub headers: ResponseHeaders,
     pub body: BodyStream,
 }
 
 impl HttpResponse {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
+        self.headers.get(name)
     }
 
     /// Read the whole body. Used for non-streaming calls and error bodies.
@@ -255,6 +255,133 @@ impl HttpResponse {
             scrubber: self.body.origin().scrubber().clone(),
         })
     }
+}
+
+/// Response header names whose *value* is credential material by convention,
+/// whoever sent them.
+///
+/// These are the response-side counterparts of [`CREDENTIAL_HEADERS`]. Vela
+/// reads none of them, and the day something does — a Phase C diagnostics panel,
+/// a bug report exporter — it must not be the day a session cookie or a
+/// `WWW-Authenticate` challenge carrying the offered key starts appearing in a
+/// support attachment.
+const CREDENTIAL_RESPONSE_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "www-authenticate",
+    "proxy-authenticate",
+    "set-cookie",
+    "set-cookie2",
+    "x-api-key",
+    "api-key",
+    "x-goog-api-key",
+];
+
+/// The headers an endpoint sent, **scrubbed**.
+///
+/// # Why this is not a `Vec<(String, String)>` (round 4)
+///
+/// Round 3 made three things true: a URL that carries a credential cannot print
+/// it ([`RequestUrl`]), a request's credential headers cannot be `Debug`-printed
+/// ([`HttpRequest::redacted_headers`]), and a response *body* cannot be read
+/// unscrubbed ([`BodyStream::next_chunk`]). Response **headers** were the one
+/// endpoint-supplied surface with no chokepoint at all: a public
+/// `Vec<(String, String)>`, copied verbatim through every decorator and through
+/// the gate's own recorder, scrubbed by nothing.
+///
+/// That was latent rather than live — the only header Vela consumes is
+/// `retry-after`, parsed numerically — and "nobody currently does the wrong
+/// thing" is exactly the kind of guarantee this crate has already been burned
+/// by twice. A header value is endpoint-supplied text in precisely the way a
+/// body is: an endpoint that echoes the rejected credential into
+/// `WWW-Authenticate` (which is what that header is *for*) or into a
+/// `X-Request-Id` is doing something ordinary, and a Phase C diagnostics panel
+/// that printed response headers would reopen FINDING 2's whole class.
+///
+/// So the values are scrubbed once, at the one place headers enter this crate,
+/// and an unscrubbed one is not expressible:
+///
+/// ```compile_fail,E0308
+/// use vela_providers::http::ResponseHeaders;
+///
+/// // error[E0308]: `ResponseHeaders` is not an alias for a `Vec` of pairs.
+/// let _headers: ResponseHeaders = vec![("x-echo".to_owned(), "sk-secret".to_owned())];
+/// ```
+///
+/// [`ResponseHeaders::new`] demands the [`BodyOrigin`] of the request being
+/// answered, exactly as [`BodyStream::new`] does, so "forgot to attach the
+/// scrubber" is not expressible either. The only way to skip it is
+/// [`ResponseHeaders::carries_no_credential`], which — like
+/// [`BodyOrigin::carries_no_credential`] — is a claim a caller has to type out.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ResponseHeaders {
+    /// Lowercased names, scrubbed values. Private: the invariant is that no
+    /// entry in here has ever held credential material.
+    entries: Vec<(String, String)>,
+}
+
+impl ResponseHeaders {
+    /// The one constructor that takes endpoint bytes. Names are lowercased and
+    /// values are scrubbed against the credentials of the request being
+    /// answered.
+    pub fn new(entries: impl IntoIterator<Item = (String, String)>, origin: &BodyOrigin) -> Self {
+        let scrubber = origin.scrubber();
+        Self {
+            entries: entries
+                .into_iter()
+                .map(|(name, value)| {
+                    let name = name.to_ascii_lowercase();
+                    let value = if is_credential_response_header(&name) {
+                        // Not scrubbed — replaced. The needles only cover
+                        // credentials *Vela* sent; a `Set-Cookie` or a
+                        // `WWW-Authenticate` may carry one it never saw, and
+                        // there is nothing in this crate that needs to read it.
+                        format!("{REDACTED} ({} bytes)", value.len())
+                    } else {
+                        scrubber.scrub(value)
+                    };
+                    (name, value)
+                })
+                .collect(),
+        }
+    }
+
+    /// For headers that answer no request of the user's — a fixture, a fake, a
+    /// response built in memory. Named rather than defaulted: "there is no
+    /// credential in here" is a claim, and a claim should be typed out.
+    pub fn carries_no_credential(entries: impl IntoIterator<Item = (String, String)>) -> Self {
+        Self::new(entries, &BodyOrigin::carries_no_credential())
+    }
+
+    /// The value of `name`, case-insensitively. Already scrubbed.
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// Every header, in order. Safe to print, log, record or export — which is
+    /// the entire point of the type.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.entries
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+fn is_credential_response_header(name: &str) -> bool {
+    CREDENTIAL_RESPONSE_HEADERS
+        .iter()
+        .any(|known| name.eq_ignore_ascii_case(known))
 }
 
 /// A body an endpoint sent, in full, **with the credential material of the
@@ -826,16 +953,17 @@ impl HttpTransport for ReqwestTransport {
             .map_err(|error| map_reqwest_error(error, &origin))?;
 
         let status = response.status().as_u16();
-        let headers = response
-            .headers()
-            .iter()
-            .map(|(name, value)| {
+        // The one place response headers enter this crate, and therefore the
+        // one place they are scrubbed. See [`ResponseHeaders`].
+        let headers = ResponseHeaders::new(
+            response.headers().iter().map(|(name, value)| {
                 (
                     name.as_str().to_ascii_lowercase(),
                     value.to_str().unwrap_or_default().to_owned(),
                 )
-            })
-            .collect();
+            }),
+            &origin,
+        );
 
         Ok(HttpResponse {
             status,
@@ -1109,7 +1237,11 @@ pub mod testing {
             match next {
                 Some(Ok(canned)) => Ok(HttpResponse {
                     status: canned.status,
-                    headers: canned.headers,
+                    // Through the same chokepoint the real transport uses, for
+                    // the same reason: a scripted endpoint that echoes a
+                    // credential in a header must be redacted here too, or the
+                    // fake teaches the tests something untrue (conventions §4).
+                    headers: ResponseHeaders::new(canned.headers, &origin),
                     body: BodyStream::new(ScriptedBody::new(canned.body), origin),
                 }),
                 Some(Err(error)) => Err(error),
@@ -1150,11 +1282,121 @@ mod tests {
         assert_eq!(recorded[0].header("content-type"), Some("application/json"));
     }
 
+    // -----------------------------------------------------------------
+    // Response headers — the third endpoint-supplied surface (round 4)
+    // -----------------------------------------------------------------
+
+    const HEADER_CANARY: &str = "sk/hdr/CANARY-1a2b3c4d";
+
+    /// A request carrying `HEADER_CANARY` in its query string, and a scripted
+    /// endpoint that echoes whatever `headers` says back.
+    async fn echo_headers(headers: Vec<(&str, &str)>) -> HttpResponse {
+        let mut canned = CannedResponse::error(401, "{}");
+        for (name, value) in headers {
+            canned = canned.with_header(name, value);
+        }
+        let transport = ScriptedTransport::new(vec![Ok(canned)]);
+        let request = HttpRequest::post_json("http://127.0.0.1:1/v1/chat", b"{}".to_vec())
+            .with_auth(&AppliedAuth::QueryParam {
+                name: "api_key".into(),
+                value: SecretValue::new(HEADER_CANARY),
+            });
+        transport
+            .send(request, &Timeouts::default())
+            .await
+            .expect("the script answers")
+    }
+
+    #[tokio::test]
+    async fn a_response_header_that_echoes_the_credential_is_scrubbed() {
+        // `x-request-id` is not a credential header by name. It is an ordinary
+        // diagnostic header — which is exactly the kind a gateway echoes the
+        // rejected request into, and exactly the kind a Phase C diagnostics
+        // panel would print.
+        let response = echo_headers(vec![
+            (
+                "x-request-id",
+                &format!("rejected key {HEADER_CANARY} at gw"),
+            ),
+            ("retry-after", "30"),
+        ])
+        .await;
+
+        let echoed = response
+            .header("x-request-id")
+            .expect("the header is there");
+        assert!(
+            !echoed.contains(HEADER_CANARY),
+            "the credential survived into a response header: {echoed}"
+        );
+        assert!(
+            echoed.contains("rejected key") && echoed.contains(REDACTED),
+            "redaction removes the secret, not the diagnosis: {echoed}"
+        );
+        // …and nothing anywhere in the collection, however it is walked.
+        for (name, value) in response.headers.iter() {
+            assert!(
+                !value.contains(HEADER_CANARY),
+                "the credential survived in {name}: {value}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_credential_shaped_response_header_is_replaced_rather_than_scrubbed() {
+        // The value here is a credential Vela never sent, so no needle matches
+        // it and scrubbing could not remove it. Replacing by *name* is what
+        // covers the material this crate cannot know about — a session cookie,
+        // a challenge quoting somebody else's token.
+        let response = echo_headers(vec![
+            (
+                "www-authenticate",
+                "Bearer realm=\"api\", token=\"sk-someone-elses\"",
+            ),
+            ("set-cookie", "session=abcdef; HttpOnly"),
+        ])
+        .await;
+
+        for name in ["www-authenticate", "set-cookie"] {
+            let value = response.header(name).expect("the header is there");
+            assert!(
+                value.starts_with(REDACTED),
+                "{name} must be replaced wholesale, got {value}"
+            );
+            assert!(
+                !value.contains("sk-someone-elses") && !value.contains("abcdef"),
+                "{name} still carries its material: {value}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_one_header_vela_actually_reads_is_untouched() {
+        // The control: if scrubbing headers broke `retry-after`, this type
+        // would have cost a real behaviour to close a latent hole.
+        let response = echo_headers(vec![("Retry-After", "2.5")]).await;
+        assert_eq!(response.header("retry-after"), Some("2.5"));
+        assert_eq!(response.header("Retry-After"), Some("2.5"));
+        // The fake sets `content-type` itself, so this also pins that an
+        // ordinary header with nothing to remove passes through byte for byte.
+        assert_eq!(response.header("content-type"), Some("application/json"));
+        assert_eq!(response.headers.len(), 2);
+    }
+
+    #[test]
+    fn response_headers_are_indexed_case_insensitively_and_stored_lowercased() {
+        let headers =
+            ResponseHeaders::carries_no_credential([("Retry-After".to_owned(), "7".to_owned())]);
+        assert_eq!(headers.get("retry-after"), Some("7"));
+        assert_eq!(headers.get("RETRY-AFTER"), Some("7"));
+        assert_eq!(headers.iter().next(), Some(("retry-after", "7")));
+    }
+
     #[tokio::test]
     async fn reading_a_body_to_end_respects_the_limit() {
         let mut response = HttpResponse {
             status: 200,
-            headers: Vec::new(),
+            headers: ResponseHeaders::default(),
             body: fake_body(ScriptedBody::fragmented(&"x".repeat(100), 7)),
         };
         let body = response.read_to_end(10).await.unwrap();

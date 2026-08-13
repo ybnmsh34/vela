@@ -301,10 +301,17 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn body(kind: &str, message: &str) -> Vec<u8> {
-        json!({"type": "error", "error": {"type": kind, "message": message}})
-            .to_string()
-            .into_bytes()
+    /// An error body that answers no request of ours, so there is no credential
+    /// in it to remove. The credentialed path — where the decode has needles to
+    /// apply — is driven end to end in `tests/encoded_credential_canary.rs`.
+    fn body(kind: &str, message: &str) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(
+            json!({"type": "error", "error": {"type": kind, "message": message}}).to_string(),
+        )
+    }
+
+    fn raw(body: &str) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(body)
     }
 
     #[test]
@@ -472,7 +479,7 @@ mod tests {
             )),
             None
         );
-        assert_eq!(concession_for(b"<html>gateway</html>"), None);
+        assert_eq!(concession_for(&raw("<html>gateway</html>")), None);
     }
 
     #[test]
@@ -498,14 +505,14 @@ mod tests {
     #[test]
     fn a_body_with_no_error_object_still_maps_by_status() {
         assert!(matches!(
-            map_error_response(503, b"<html>gateway</html>", "m", None),
+            map_error_response(503, &raw("<html>gateway</html>"), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Server { status: 503 },
                 ..
             }
         ));
         assert!(matches!(
-            map_error_response(422, b"", "m", None),
+            map_error_response(422, &raw(""), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 422 },
                 ..

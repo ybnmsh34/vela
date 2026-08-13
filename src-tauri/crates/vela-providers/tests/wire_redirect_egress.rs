@@ -70,7 +70,7 @@ use vela_providers::event::CollectingSink;
 use vela_providers::google::GoogleProvider;
 use vela_providers::http::{
     BodyStream, ByteStream, HttpMethod, HttpRequest, HttpResponse, HttpTransport, ReqwestTransport,
-    TransportError,
+    ResponseHeaders, TransportError,
 };
 use vela_providers::openai_compatible::OpenAiCompatibleProvider;
 use vela_providers::redact::percent_encode;
@@ -827,16 +827,17 @@ impl HttpTransport for PreFixTransport {
             )
         })?;
         let status = response.status().as_u16();
-        let headers = response
-            .headers()
-            .iter()
-            .map(|(name, value)| {
+        // Through `ResponseHeaders`, as the real transport does: this control
+        // deliberately drops the *redirect* policy, not the redaction one.
+        let headers = ResponseHeaders::new(
+            response.headers().iter().map(|(name, value)| {
                 (
                     name.as_str().to_ascii_lowercase(),
                     value.to_str().unwrap_or_default().to_owned(),
                 )
-            })
-            .collect();
+            }),
+            &origin,
+        );
         Ok(HttpResponse {
             status,
             headers,

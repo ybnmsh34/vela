@@ -625,7 +625,7 @@ fn decode_unicode_escape(bytes: &[u8], at: usize) -> Escape {
     let unit = match hex_quad(bytes, at + 2) {
         Hex::Value(unit) => unit,
         Hex::Short => return Escape::Incomplete,
-        Hex::NotHex => return Escape::Invalid,
+        Hex::Invalid => return Escape::Invalid,
     };
     // A lone high surrogate is only half a character: the low half follows as a
     // second `\uXXXX`, and without it there is nothing to decode.
@@ -640,7 +640,7 @@ fn decode_unicode_escape(bytes: &[u8], at: usize) -> Escape {
         let low = match hex_quad(bytes, at + 8) {
             Hex::Value(low) => low,
             Hex::Short => return Escape::Incomplete,
-            Hex::NotHex => return Escape::Invalid,
+            Hex::Invalid => return Escape::Invalid,
         };
         if !(0xDC00..0xE000).contains(&low) {
             return Escape::Invalid;
@@ -661,7 +661,8 @@ enum Hex {
     Value(u16),
     /// The source ends before the four digits do.
     Short,
-    NotHex,
+    /// A character that is not a hex digit at all.
+    Invalid,
 }
 
 fn hex_quad(bytes: &[u8], at: usize) -> Hex {
@@ -674,7 +675,7 @@ fn hex_quad(bytes: &[u8], at: usize) -> Hex {
             b'0'..=b'9' => byte - b'0',
             b'a'..=b'f' => byte - b'a' + 10,
             b'A'..=b'F' => byte - b'A' + 10,
-            _ => return Hex::NotHex,
+            _ => return Hex::Invalid,
         };
         value = value * 16 + u16::from(digit);
     }
@@ -847,7 +848,10 @@ mod tests {
         // No `/`, no `\"`, nothing the escaping test above covers — every byte
         // spelled `\u00XX`. One mechanism has to answer both.
         let needle = "AKIA-abc123";
-        let spelled: String = needle.chars().map(|ch| format!("\\u{:04x}", ch as u32)).collect();
+        let spelled: String = needle
+            .chars()
+            .map(|ch| format!("\\u{:04x}", ch as u32))
+            .collect();
         let scrubber = Scrubber::new(vec![needle.to_owned()]);
         let scrubbed = scrubber.scrub(format!("rejected key {spelled} at gateway"));
         assert_eq!(scrubbed, format!("rejected key {REDACTED} at gateway"));
@@ -859,7 +863,10 @@ mod tests {
         // `/` escaped as `\/`, `"` escaped as `\"`, `b` spelled `\u0062`.
         let spelled = "a\\/\\u0062\\\"c";
         let scrubber = Scrubber::new(vec![needle.to_owned()]);
-        assert_eq!(scrubber.scrub(format!("<{spelled}>")), format!("<{REDACTED}>"));
+        assert_eq!(
+            scrubber.scrub(format!("<{spelled}>")),
+            format!("<{REDACTED}>")
+        );
     }
 
     #[test]
@@ -924,7 +931,8 @@ mod tests {
         // Every assertion above is a negative. This one asserts the hole is
         // real: the literal-only scrub round 3 shipped releases the escaped
         // form verbatim, and `serde_json` puts the credential back together.
-        let literal_only = |bytes: Vec<u8>| replace_bytes(&bytes, SLASHED.as_bytes(), REDACTED.as_bytes());
+        let literal_only =
+            |bytes: Vec<u8>| replace_bytes(&bytes, SLASHED.as_bytes(), REDACTED.as_bytes());
         let body = format!(r#"{{"m":"bad key {}"}}"#, php_escaped(SLASHED));
 
         let released = literal_only(body.into_bytes());

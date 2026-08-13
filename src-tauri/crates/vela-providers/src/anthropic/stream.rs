@@ -55,8 +55,8 @@ use crate::event::{EventSink, StreamEvent};
 use crate::model::{
     ChatResponse, ContentPart, Degradation, StopReason, TokenUsage, ToolCallOutcome,
 };
-use crate::redact::Scrubber;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
+use crate::redact::Scrubber;
 use crate::sse::SseDecoder;
 use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};
 
@@ -151,7 +151,6 @@ impl MessageAssembler {
         self.scrubber = scrubber;
         self
     }
-
 
     /// Consume a call to the named tool as structured output instead of
     /// reporting it as a tool call.

@@ -12,7 +12,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- an oversized prompt, with no local planning (max_context_tokens unset) --
   prompt length: 20480 characters
 
-  >>> exchange 1 — POST http://127.0.0.1:46143/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:35099/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -33,7 +33,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- what Vela produced ------------------------------------------------------
   outcome                                Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), detail: "this model's maximum context length is 4096 tokens, however you requested 5124 tokens (5124 in the messages, 0 in the completion)" })
-  wall clock                             2.749237ms
+  wall clock                             1.986697ms
 
 ---- assertions --------------------------------------------------------------
   limit reported by the endpoint         Some(4096)
@@ -49,7 +49,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same conversation when the window is known — reduce, visibly ------
 
-  >>> exchange 1 — POST http://127.0.0.1:46143/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:35099/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

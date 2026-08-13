@@ -41,7 +41,7 @@ use vela_providers::capability::{ModelCapabilities, Support};
 use vela_providers::event::CollectingSink;
 use vela_providers::http::{
     BodyStream, ByteStream, HttpRequest, HttpResponse, HttpTransport, ReqwestTransport,
-    TransportError,
+    ResponseHeaders, TransportError,
 };
 use vela_providers::openai_compatible::{OpenAiCompatibleProvider, ProviderOptions};
 use vela_providers::redact::RequestUrl;
@@ -144,7 +144,12 @@ struct WireEntry {
 enum WireOutcome {
     Response {
         status: u16,
-        headers: Vec<(String, String)>,
+        /// The response headers **as the type hands them out**: values already
+        /// scrubbed. This field used to be a bare `Vec<(String, String)>`
+        /// copied verbatim out of the response, which made this recorder the
+        /// worked example of the one endpoint-supplied surface with no
+        /// chokepoint. See `http::ResponseHeaders`.
+        headers: ResponseHeaders,
         body: Arc<Mutex<Vec<u8>>>,
     },
     Failed(String),
@@ -400,8 +405,8 @@ impl Doc {
                     body,
                 } => {
                     let _ = writeln!(self.body, "      <<< HTTP {status}");
-                    for (name, value) in headers {
-                        if matches!(name.as_str(), "content-type" | "transfer-encoding") {
+                    for (name, value) in headers.iter() {
+                        if matches!(name, "content-type" | "transfer-encoding") {
                             let _ = writeln!(self.body, "      {name}: {value}");
                         }
                     }
@@ -498,6 +503,46 @@ fn provider_for(url: &str, log: &WireLog) -> OpenAiCompatibleProvider {
         // The state most local runtimes are in, and a first-class one in Vela.
         Auth::None,
         Arc::new(MemoryStore::new()),
+        Arc::new(RecordingTransport::new(log.clone())),
+    )
+}
+
+/// The credential the latency case measures the shipped path with.
+///
+/// It contains `/` on purpose: percent-encoded it becomes `%2F`, so the
+/// scrubber carries **two** needles of different lengths for one key, which is
+/// the shape `Scrubber::hold_back_len` has the most work to do with.
+const LATENCY_KEY: &str = "sk/matrix-latency/Ky-0f19c7/probe";
+
+/// The same provider, with the credential **in the query string**.
+///
+/// # Why this exists (round 4)
+///
+/// Case 07c used to build its provider with [`Auth::None`], which means an
+/// empty [`Scrubber`], which means `BodyStream::next_chunk` takes its
+/// short-circuit and returns the endpoint's bytes with no copy, no buffering
+/// and no scan. The medians it recorded were therefore medians of a path that
+/// does not run when a user has configured a key — offered as evidence for
+/// redaction that they never exercised.
+///
+/// `Auth::ApiKeyQuery` is the binding that makes the scrubber non-empty for
+/// *every* chunk of *every* response, so the numbers below are numbers about
+/// `scrub_bytes` and `hold_back_len` actually running.
+fn credentialed_provider_for(url: &str, log: &WireLog) -> OpenAiCompatibleProvider {
+    let store = Arc::new(MemoryStore::new());
+    let secret = SecretRef::primary("matrix").expect("static id is valid");
+    store
+        .set(&secret, &SecretValue::new(LATENCY_KEY))
+        .expect("MemoryStore accepts a non-empty value");
+    OpenAiCompatibleProvider::new(
+        ProviderDescriptor::new("matrix", "Capability matrix", ProviderKind::Local)
+            .expect("static id is valid"),
+        format!("{url}/v1"),
+        Auth::ApiKeyQuery {
+            param: "api_key".into(),
+            secret,
+        },
+        store,
         Arc::new(RecordingTransport::new(log.clone())),
     )
 }
@@ -3433,27 +3478,52 @@ async fn case_02p(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
 // with every sample printed, so a reader can see the spread rather than trust
 // the summary.
 
-async fn case_07c(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
-    let log = WireLog::default();
-    let provider = provider_for(url, &log);
-    let mut doc = Doc::new(
-        profile,
-        "07c-termination-latency",
-        "stream termination latency, five samples",
-        "MEASURED-1 sharpened: the turn must end in single-digit milliseconds, not merely \
-         inside the 5 s a naive [DONE]-driven consumer hung for.",
-    );
+/// One arm of the latency case: five identical streamed turns through one
+/// provider.
+struct LatencyArm {
+    samples: Vec<Duration>,
+    answers: Vec<usize>,
+    failed: Option<String>,
+    /// Whether the requests this arm sent actually carried a credential. The
+    /// vacuity guard for the whole round-4 point of this case.
+    credential_on_the_wire: bool,
+}
 
-    doc.p(
-        "  Five identical streamed turns. The endpoint is the same OS process throughout, so\n  \
-         the spread below is this container's scheduling noise and nothing else. `hostile`\n  \
-         never sends [DONE] and `small-local` never sends usage though it accepted\n  \
-         `include_usage`: both are the shapes that hung the recorded consumers for 5 s.",
-    );
+impl LatencyArm {
+    fn median(&self) -> Duration {
+        let mut sorted = self.samples.clone();
+        sorted.sort();
+        sorted
+            .get(sorted.len() / 2)
+            .copied()
+            .unwrap_or(Duration::MAX)
+    }
 
-    let mut samples: Vec<Duration> = Vec::new();
-    let mut answers: Vec<usize> = Vec::new();
-    let mut failed: Option<String> = None;
+    fn worst(&self) -> Duration {
+        self.samples.iter().copied().max().unwrap_or(Duration::MAX)
+    }
+
+    fn complete(&self) -> bool {
+        self.failed.is_none() && self.samples.len() == 5
+    }
+
+    fn answers_agree(&self) -> bool {
+        self.answers.windows(2).all(|pair| pair[0] == pair[1])
+            && self.answers.first().is_some_and(|n| *n > 0)
+    }
+}
+
+async fn latency_arm(
+    profile: &str,
+    provider: &OpenAiCompatibleProvider,
+    log: &WireLog,
+) -> LatencyArm {
+    let mut arm = LatencyArm {
+        samples: Vec::new(),
+        answers: Vec::new(),
+        failed: None,
+        credential_on_the_wire: false,
+    };
     for _ in 0..5 {
         let mut sink = CollectingSink::new();
         let started = Instant::now();
@@ -3467,64 +3537,185 @@ async fn case_07c(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
         )
         .await;
         let elapsed = started.elapsed();
-        let _ = log.drain();
+        // Read the wire before draining it: whether a credential was attached
+        // is the fact this case now turns on.
+        for entry in log.drain() {
+            if entry.url.carries_credential()
+                || entry
+                    .request_headers
+                    .iter()
+                    .any(|(name, _)| name == "authorization")
+            {
+                arm.credential_on_the_wire = true;
+            }
+        }
         match outcome {
             Ok(Ok(response)) => {
-                samples.push(elapsed);
-                answers.push(response.answer_text().chars().count());
+                arm.samples.push(elapsed);
+                arm.answers.push(response.answer_text().chars().count());
             }
             Ok(Err(error)) => {
-                failed = Some(format!("{error:?}"));
+                arm.failed = Some(format!("{error:?}"));
                 break;
             }
             Err(_) => {
-                failed = Some("HUNG: 20 s outer deadline".into());
+                arm.failed = Some("HUNG: 20 s outer deadline".into());
                 break;
             }
         }
     }
+    arm
+}
 
-    doc.h("the samples");
-    for (run, sample) in samples.iter().enumerate() {
+fn record_arm(doc: &mut Doc, title: &str, arm: &LatencyArm) {
+    doc.h(title);
+    for (run, sample) in arm.samples.iter().enumerate() {
         doc.kv(
             &format!("run {}", run + 1),
-            format!("{sample:?}   ({} answer characters)", answers[run]),
+            format!("{sample:?}   ({} answer characters)", arm.answers[run]),
         );
     }
-    let mut sorted = samples.clone();
-    sorted.sort();
-    let median = sorted
-        .get(sorted.len() / 2)
-        .copied()
-        .unwrap_or(Duration::MAX);
-    let worst = sorted.last().copied().unwrap_or(Duration::MAX);
-    doc.kv("MEDIAN", format!("{median:?}"));
-    doc.kv("worst sample", format!("{worst:?}"));
+    doc.kv("MEDIAN", format!("{:?}", arm.median()));
+    doc.kv("worst sample", format!("{:?}", arm.worst()));
+    doc.kv(
+        "credential on the wire",
+        format!("{}", arm.credential_on_the_wire),
+    );
+}
+
+async fn case_07c(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
+    let log = WireLog::default();
+    let mut doc = Doc::new(
+        profile,
+        "07c-termination-latency",
+        "stream termination latency, five samples per arm, credentialed and not",
+        "MEASURED-1 sharpened: the turn must end in single-digit milliseconds, not merely \
+         inside the 5 s a naive [DONE]-driven consumer hung for — and it must do so on the \
+         path a configured user actually runs.",
+    );
+
+    doc.p(
+        "  Five identical streamed turns per arm. The endpoint is the same OS process\n  \
+         throughout, so the spread below is this container's scheduling noise and nothing\n  \
+         else. `hostile` never sends [DONE] and `small-local` never sends usage though it\n  \
+         accepted `include_usage`: both are the shapes that hung the recorded consumers\n  \
+         for 5 s.",
+    );
+    doc.p(
+        "  ROUND 4. This case used to have one arm, built with `Auth::None`. An empty\n  \
+         credential set means an empty `Scrubber`, and `BodyStream::next_chunk` takes a\n  \
+         short-circuit when the scrubber is empty: no copy, no carry buffer, no scan. The\n  \
+         medians it published were therefore medians of a path that does not run once a\n  \
+         user configures a key — offered, implicitly, as the latency evidence for the\n  \
+         redaction they never touched. The CREDENTIALED arm below is the one the\n  \
+         single-digit claim is now made about; the uncredentialed arm is kept beside it so\n  \
+         the cost of redaction is visible rather than asserted.",
+    );
+
+    let uncredentialed = latency_arm(profile, &provider_for(url, &log), &log).await;
+    let credentialed = latency_arm(profile, &credentialed_provider_for(url, &log), &log).await;
+
+    record_arm(
+        &mut doc,
+        "arm A — Auth::None (empty scrubber, fast path)",
+        &uncredentialed,
+    );
+    record_arm(
+        &mut doc,
+        "arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len)",
+        &credentialed,
+    );
+
+    doc.h("the comparison");
+    doc.kv(
+        "median, uncredentialed",
+        format!("{:?}", uncredentialed.median()),
+    );
+    doc.kv(
+        "MEDIAN, CREDENTIALED",
+        format!("{:?}", credentialed.median()),
+    );
+    doc.kv(
+        "cost of redaction (median delta)",
+        format!(
+            "{:?}",
+            credentialed
+                .median()
+                .checked_sub(uncredentialed.median())
+                .unwrap_or_default()
+        ),
+    );
     doc.kv("recorded naive [DONE] consumer", "5003 ms (TIMED OUT)");
 
     doc.h("assertions");
     doc.check(
-        "every sampled turn completed without error",
-        failed.is_none() && samples.len() == 5,
-        failed
-            .clone()
-            .unwrap_or_else(|| format!("{} samples", samples.len())),
+        "the credentialed arm really did put a credential on the wire",
+        credentialed.credential_on_the_wire,
+        format!(
+            "credentialed arm: {}, uncredentialed arm: {}",
+            credentialed.credential_on_the_wire, uncredentialed.credential_on_the_wire
+        ),
     );
     doc.check(
-        "TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms",
-        median < Duration::from_millis(10),
-        format!("median {median:?}, samples {samples:?}"),
+        "the uncredentialed arm really did not — the two arms are different paths",
+        !uncredentialed.credential_on_the_wire,
+        format!("{}", uncredentialed.credential_on_the_wire),
     );
     doc.check(
-        "no sample came anywhere near the recorded 5003 ms hang",
-        worst < Duration::from_millis(500),
-        format!("worst {worst:?}"),
+        "every sampled turn completed without error, both arms",
+        uncredentialed.complete() && credentialed.complete(),
+        format!(
+            "uncredentialed: {}, credentialed: {}",
+            uncredentialed
+                .failed
+                .clone()
+                .unwrap_or_else(|| format!("{} samples", uncredentialed.samples.len())),
+            credentialed
+                .failed
+                .clone()
+                .unwrap_or_else(|| format!("{} samples", credentialed.samples.len()))
+        ),
+    );
+    doc.check(
+        "TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms",
+        credentialed.median() < Duration::from_millis(10),
+        format!(
+            "median {:?}, samples {:?}",
+            credentialed.median(),
+            credentialed.samples
+        ),
+    );
+    doc.check(
+        "…and on the uncredentialed one, so redaction is not what makes or breaks it",
+        uncredentialed.median() < Duration::from_millis(10),
+        format!("median {:?}", uncredentialed.median()),
+    );
+    doc.check(
+        "no sample came anywhere near the recorded 5003 ms hang, either arm",
+        uncredentialed.worst() < Duration::from_millis(500)
+            && credentialed.worst() < Duration::from_millis(500),
+        format!(
+            "worst uncredentialed {:?}, worst credentialed {:?}",
+            uncredentialed.worst(),
+            credentialed.worst()
+        ),
     );
     doc.check(
         "every sample returned the same answer length — timing did not truncate anything",
-        answers.windows(2).all(|pair| pair[0] == pair[1])
-            && answers.first().is_some_and(|n| *n > 0),
-        format!("{answers:?}"),
+        uncredentialed.answers_agree() && credentialed.answers_agree(),
+        format!(
+            "uncredentialed {:?}, credentialed {:?}",
+            uncredentialed.answers, credentialed.answers
+        ),
+    );
+    doc.check(
+        "redaction did not change the answer — both arms delivered the same text length",
+        uncredentialed.answers.first() == credentialed.answers.first(),
+        format!(
+            "uncredentialed {:?}, credentialed {:?}",
+            uncredentialed.answers.first(),
+            credentialed.answers.first()
+        ),
     );
 
     doc.write(ledger);
@@ -3629,6 +3820,62 @@ enum Misbehaviour {
     /// different code path from the one above: `stream.rs::error_from_body`,
     /// reading frames through `next_chunk` rather than `read_to_end`.
     EchoesTheUrlInAStreamFrame,
+    /// **ROUND 4.** Parses the `key` query parameter, percent-**decodes** it —
+    /// which is what any gateway does before deciding the key is invalid — and
+    /// echoes the raw credential back inside a 400, with the JSON string
+    /// escaped the way PHP's `json_encode` escapes it: `/` becomes `\/`.
+    ///
+    /// The canary contains `/`, so the bytes on the wire contain **no literal
+    /// copy** of it. A byte-literal scrub matches nothing, releases the frame
+    /// verbatim, and `serde_json` reassembles the credential downstream of every
+    /// scrub point. That is the whole of the round-4 defect, on the wire.
+    EchoesTheDecodedKeyEscaped,
+    /// The same, delivered in a 200 SSE error frame — FINDING 2's shape carrying
+    /// round 4's spelling, which is the intersection the gate had never driven.
+    EchoesTheDecodedKeyEscapedInAStreamFrame,
+}
+
+/// Undo `%XX`, the way a gateway's query parser does before it looks at the
+/// value it was given.
+fn percent_decode_bytes(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or(""),
+                16,
+            ) {
+                out.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// PHP's `json_encode` with default flags, for the contents of a JSON string.
+fn php_json_escape(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('/', "\\/")
+}
+
+/// The `key` query parameter of a request target, decoded. Empty when absent.
+fn decoded_key_of(target: &str) -> String {
+    target
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or("")
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(name, _)| *name == "key" || *name == "api_key")
+        .map(|(_, value)| percent_decode_bytes(value))
+        .unwrap_or_default()
 }
 
 struct RawPeer {
@@ -3716,6 +3963,69 @@ impl RawPeer {
                              content-type: text/event-stream\r\n\
                              content-length: {}\r\n\r\n{frame}",
                             frame.len()
+                        );
+                        record(payload.as_bytes());
+                        let _ = socket.write_all(payload.as_bytes()).await;
+                        let _ = socket.flush().await;
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                    Misbehaviour::EchoesTheDecodedKeyEscaped
+                    | Misbehaviour::EchoesTheDecodedKeyEscapedInAStreamFrame => {
+                        let streamed =
+                            matches!(mode, Misbehaviour::EchoesTheDecodedKeyEscapedInAStreamFrame);
+                        let mut scratch = vec![0u8; 16384];
+                        let read = socket.read(&mut scratch).await.unwrap_or(0);
+                        let text = String::from_utf8_lossy(&scratch[..read]).into_owned();
+                        let target = text
+                            .lines()
+                            .next()
+                            .and_then(|line| line.split_whitespace().nth(1))
+                            .unwrap_or("/")
+                            .to_owned();
+                        // The credential, percent-decoded — raw `/` and all —
+                        // and then JSON-escaped by an encoder that escapes `/`.
+                        // Built by hand rather than with `serde_json::to_string`
+                        // precisely because serde does *not* escape the solidus:
+                        // this peer is imitating PHP, not Rust.
+                        // The PATH only, deliberately: the query string carries
+                        // the *percent-encoded* credential, which `json_encode`
+                        // does not touch and a byte-literal scrub therefore does
+                        // catch. Quoting it here would leave a matchable form on
+                        // the wire and blunt the premise this peer exists to
+                        // establish — that the ONLY spelling present is one no
+                        // needle matches and only a decoder can resolve.
+                        let path = target.split('?').next().unwrap_or("/");
+                        let message = php_json_escape(&format!(
+                            "invalid api key {} for POST {path}",
+                            decoded_key_of(&target)
+                        ));
+                        let (content_type, body) = if streamed {
+                            (
+                                "text/event-stream",
+                                format!(
+                                    "data: {{\"error\":{{\"message\":\"{message}\",\
+                                     \"code\":\"invalid_api_key\"}}}}\n\ndata: [DONE]\n\n"
+                                ),
+                            )
+                        } else {
+                            (
+                                "application/json",
+                                format!(
+                                    "{{\"error\":{{\"message\":\"{message}\",\
+                                     \"code\":\"invalid_api_key\"}}}}"
+                                ),
+                            )
+                        };
+                        let status = if streamed {
+                            "200 OK"
+                        } else {
+                            "400 Bad Request"
+                        };
+                        let payload = format!(
+                            "HTTP/1.1 {status}\r\n\
+                             content-type: {content_type}\r\n\
+                             content-length: {}\r\n\r\n{body}",
+                            body.len()
                         );
                         record(payload.as_bytes());
                         let _ = socket.write_all(payload.as_bytes()).await;
@@ -3837,6 +4147,13 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     let echo = RawPeer::start(Misbehaviour::EchoesTheUrlBack).await;
     let stream_echo = RawPeer::start(Misbehaviour::EchoesTheUrlInAStreamFrame).await;
     let stream_echo_bare = RawPeer::start(Misbehaviour::EchoesTheUrlInAStreamFrame).await;
+    // ROUND 4: the same two echoes, spelled the way an endpoint that JSON-
+    // escapes `/` spells them. No literal copy of the canary reaches the wire,
+    // so a byte-literal scrub has nothing to match — and Vela's own decoder is
+    // what would put the credential back together.
+    let escaped_echo = RawPeer::start(Misbehaviour::EchoesTheDecodedKeyEscaped).await;
+    let escaped_stream_echo =
+        RawPeer::start(Misbehaviour::EchoesTheDecodedKeyEscapedInAStreamFrame).await;
     // TLS to a plain-text peer: the handshake cannot complete.
     let tls_url = silent.https_url();
 
@@ -3902,6 +4219,27 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
             label: "the endpoint echoes the URL back (error frame, non-streamed)",
             why: "the same peer read through complete()",
             url: stream_echo.url.clone(),
+            streamed: false,
+        },
+        Forced {
+            label: "the endpoint echoes the key back JSON-ESCAPED (400 body)",
+            why: "a 400 whose error body quotes the DECODED key with `/` written `\\/` — \
+                  PHP json_encode's default. No literal copy of the canary is on the wire, \
+                  so a byte-literal scrub matches nothing and serde_json reassembles it",
+            url: escaped_echo.url.clone(),
+            streamed: false,
+        },
+        Forced {
+            label: "the endpoint echoes the key back JSON-ESCAPED (200 + error frame)",
+            why: "the same spelling in FINDING 2's shape — a 200 SSE error frame read \
+                  through next_chunk, which is the intersection this gate had never driven",
+            url: escaped_stream_echo.url.clone(),
+            streamed: true,
+        },
+        Forced {
+            label: "the endpoint echoes the key back JSON-ESCAPED (error frame, non-streamed)",
+            why: "the same escaping peer read through complete()",
+            url: escaped_stream_echo.url.clone(),
             streamed: false,
         },
     ];
@@ -4016,11 +4354,15 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     // premise of the echo cases, taken upstream of every byte Vela touches.
     let echo_sent = echo.sent_text();
     let stream_echo_sent = stream_echo.sent_text();
+    let escaped_echo_sent = escaped_echo.sent_text();
+    let escaped_stream_echo_sent = escaped_stream_echo.sent_text();
 
     silent.stop();
     reset.stop();
     echo.stop();
     stream_echo.stop();
+    escaped_echo.stop();
+    escaped_stream_echo.stop();
 
     // The IPC boundary. `ProviderError` is the shape that would cross it; today
     // nothing carries it across, and that is worth recording rather than
@@ -4126,6 +4468,67 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
         "ALL THREE echo peers echoed it — no echo case is vacuous",
         echoing_peers.len() == 3,
         format!("{} of 3 peers echoed the credential", echoing_peers.len()),
+    );
+
+    doc.h("ROUND 4 — the ESCAPING peers, whose bytes contain no literal canary at all");
+    doc.p(
+        "  These two peers percent-decode the `key` parameter and echo the raw credential\n  \
+         back with `/` written `\\/`, which is what PHP's `json_encode` does by default.\n  \
+         The assertion below is the PREMISE of the round-4 cases and it is the opposite of\n  \
+         the one above: the canary must NOT appear literally in what these peers wrote, or\n  \
+         a byte-literal scrub would have caught it and the cases would prove nothing. What\n  \
+         must appear is the ESCAPED spelling — the one Vela's own decoder turns back into\n  \
+         a credential.",
+    );
+    let escaped_needle = CANARY.replace('/', "\\/");
+    // What the *scrubber* carries — the credential as configured and as written
+    // into the query string. Deliberately NOT `canary_needles()`, which also
+    // holds a short core fragment for leak *detection*: the question here is
+    // what a byte-literal scrub had to match on, and it only ever had these two.
+    let scrubber_needles = |text: &str| -> bool {
+        text.contains(CANARY)
+            || text.contains(
+                &CANARY
+                    .replace('+', "%2B")
+                    .replace('/', "%2F")
+                    .replace('=', "%3D"),
+            )
+    };
+    for (label, sent) in &[
+        ("400 body, JSON-escaped", &escaped_echo_sent),
+        ("200 + error frame, JSON-escaped", &escaped_stream_echo_sent),
+    ] {
+        doc.kv(
+            &format!("peer `{label}` wrote the ESCAPED credential"),
+            sent.contains(&escaped_needle),
+        );
+        doc.kv(
+            &format!("peer `{label}` wrote a form a byte-literal scrub could match"),
+            scrubber_needles(sent),
+        );
+        doc.kv(
+            &format!("  bytes peer `{label}` wrote"),
+            format!("{} bytes", sent.len()),
+        );
+    }
+    doc.check(
+        "both escaping peers put the ESCAPED credential on the wire — the cases are real",
+        escaped_echo_sent.contains(&escaped_needle)
+            && escaped_stream_echo_sent.contains(&escaped_needle),
+        format!(
+            "400 body: {}, error frame: {}",
+            escaped_echo_sent.contains(&escaped_needle),
+            escaped_stream_echo_sent.contains(&escaped_needle)
+        ),
+    );
+    doc.check(
+        "…and NEITHER wrote a form the byte-literal scrub could match — that is the hole",
+        !scrubber_needles(&escaped_echo_sent) && !scrubber_needles(&escaped_stream_echo_sent),
+        format!(
+            "400 body: {}, error frame: {}",
+            scrubber_needles(&escaped_echo_sent),
+            scrubber_needles(&escaped_stream_echo_sent)
+        ),
     );
 
     doc.h("what VELA read (the same bytes, one layer further in)");

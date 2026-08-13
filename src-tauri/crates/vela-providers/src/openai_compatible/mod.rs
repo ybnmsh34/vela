@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn an_unknown_code_falls_back_to_the_status_rather_than_being_invented() {
         let body = r#"{"error":{"message":"something new","code":"never_seen_before"}}"#;
-        let error = map_error_response(400, &fake(&body), "m", None);
+        let error = map_error_response(400, &fake(body), "m", None);
         assert!(matches!(error, ProviderError::Transport { .. }));
         assert!(format!("{error}").contains("something new"));
     }

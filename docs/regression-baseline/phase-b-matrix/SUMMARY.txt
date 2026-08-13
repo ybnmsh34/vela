@@ -1,9 +1,9 @@
 GATE M Part 1 (Phase B) — run summary
 =====================================
 
-gate assertions   373
+gate assertions   397
 failures          0
 controls          24 (their FAILs are expected)
-wall clock        21.940479445s
+wall clock        20.581980662s
 
 No gate assertion failed.

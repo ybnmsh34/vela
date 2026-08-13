@@ -571,10 +571,17 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn body(code: u16, status: &str, message: &str) -> Vec<u8> {
-        json!({"error": {"code": code, "message": message, "status": status}})
-            .to_string()
-            .into_bytes()
+    /// An error body that answers no request of ours, so there is no credential
+    /// in it to remove. The credentialed path — where the decode has needles to
+    /// apply — is driven end to end in `tests/encoded_credential_canary.rs`.
+    fn body(code: u16, status: &str, message: &str) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(
+            json!({"error": {"code": code, "message": message, "status": status}}).to_string(),
+        )
+    }
+
+    fn upstream(body: &str) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(body)
     }
 
     #[test]
@@ -655,7 +662,7 @@ mod tests {
             ],
         }})
         .to_string();
-        let error = map_error_response(429, raw.as_bytes(), "m", None);
+        let error = map_error_response(429, &upstream(&raw), "m", None);
         assert_eq!(
             error.retry_after(),
             Some(std::time::Duration::from_millis(27_000))
@@ -768,7 +775,7 @@ mod tests {
             )),
             None
         );
-        assert_eq!(concession_for(b"<html>gateway</html>"), None);
+        assert_eq!(concession_for(&upstream("<html>gateway</html>")), None);
     }
 
     #[test]
@@ -842,7 +849,7 @@ mod tests {
         let raw = json!([{"error": {"code": 400, "message": "bad", "status": "INVALID_ARGUMENT"}}])
             .to_string();
         assert!(matches!(
-            map_error_response(400, raw.as_bytes(), "m", None),
+            map_error_response(400, &upstream(&raw), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 400 },
                 ..
@@ -853,14 +860,14 @@ mod tests {
     #[test]
     fn a_body_with_no_error_object_still_maps_by_status() {
         assert!(matches!(
-            map_error_response(503, b"<html>gateway</html>", "m", None),
+            map_error_response(503, &upstream("<html>gateway</html>"), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Server { status: 503 },
                 ..
             }
         ));
         assert!(matches!(
-            map_error_response(422, b"", "m", None),
+            map_error_response(422, &upstream(""), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 422 },
                 ..

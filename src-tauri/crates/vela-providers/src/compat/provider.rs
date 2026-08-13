@@ -462,6 +462,7 @@ mod tests {
     use crate::error::TransportFailure;
     use crate::event::CollectingSink;
     use crate::http::testing::{CannedResponse, ScriptedTransport};
+    use crate::http::ResponseHeaders;
     use crate::http::{HttpRequest, HttpResponse, TransportError};
     use crate::model::{ChatMessage, MessageRole};
     use crate::provider::Timeouts;
@@ -879,7 +880,10 @@ mod tests {
             ) -> Result<HttpResponse, TransportError> {
                 Ok(HttpResponse {
                     status: 200,
-                    headers: vec![("content-type".into(), "text/event-stream".into())],
+                    headers: ResponseHeaders::carries_no_credential([(
+                        "content-type".to_owned(),
+                        "text/event-stream".to_owned(),
+                    )]),
                     body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }

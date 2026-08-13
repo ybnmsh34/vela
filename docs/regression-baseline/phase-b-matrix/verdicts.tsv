@@ -11,7 +11,7 @@ frontier	01-plain-chat	PASS	the turn produces an answer	226 characters
 frontier	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 226 chars / whole 226 chars
 frontier	01-plain-chat	PASS	the deltas add up to the answer	delta sum 226 chars
 frontier	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
-frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.412211ms
+frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	3.696114ms
 frontier	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -50,35 +50,41 @@ frontier	06-reasoning	PASS	and never in the answer channel	"Mock frontier reply 
 frontier	06-reasoning	PASS	precondition — the markup is in the reasoning channel and not in the answer channel	answer="Mock frontier re" reasoning="Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
 frontier	06-reasoning	PASS	NO tool call is recovered from reasoning text	Ok("(none)")
 frontier	06-reasoning	PASS	control — the parser DOES recover a call when the markup is in the answer	if this fails, the assertion above proves nothing
-frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.962253ms
+frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.341291ms
 frontier	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	222 characters
 frontier	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 frontier	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
-frontier	07c-termination-latency	PASS	every sampled turn completed without error	5 samples
-frontier	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms	median 3.344384ms, samples [3.694199ms, 3.172569ms, 2.989422ms, 3.488883ms, 3.344384ms]
-frontier	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang	worst 3.694199ms
-frontier	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	[222, 222, 222, 222, 222]
+frontier	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
+frontier	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
+frontier	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
+frontier	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 2.935671ms, samples [3.079581ms, 2.935671ms, 2.709745ms, 2.508675ms, 2.941209ms]
+frontier	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 2.216147ms
+frontier	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 2.669016ms, worst credentialed 3.079581ms
+frontier	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [222, 222, 222, 222, 222], credentialed [222, 222, 222, 222, 222]
+frontier	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(222), credentialed Some(222)
 frontier	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
 frontier	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
 frontier	08-malformed-frames	PASS	one bad frame never aborts the turn	226 characters delivered
 frontier	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 frontier	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 frontier	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:37353/v1/chat/completions
+frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:36109/v1/chat/completions
 frontier	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 frontier	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 frontier	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.120642ms
+frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.094792ms
 frontier	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 frontier	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 frontier	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
 frontier	11-credential-leak	PASS	ALL THREE echo peers echoed it — no echo case is vacuous	3 of 3 peers echoed the credential
-frontier	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	3 echo body/bodies checked
-frontier	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	3 of 3 echo bodies carry `<redacted>`
-frontier	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	9 of 9 produced an error
-frontier	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	9 error(s) rendered 5 ways each, all clean
-frontier	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	18 serialisation(s) checked
-frontier	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	9 exchange log(s) checked
+frontier	11-credential-leak	PASS	both escaping peers put the ESCAPED credential on the wire — the cases are real	400 body: true, error frame: true
+frontier	11-credential-leak	PASS	…and NEITHER wrote a form the byte-literal scrub could match — that is the hole	400 body: false, error frame: false
+frontier	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	6 echo body/bodies checked
+frontier	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	6 of 6 echo bodies carry `<redacted>`
+frontier	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	12 of 12 produced an error
+frontier	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	12 error(s) rendered 5 ways each, all clean
+frontier	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	24 serialisation(s) checked
+frontier	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	12 exchange log(s) checked
 frontier	11-credential-leak	PASS	NO CREDENTIAL in the streamed event sink the UI is handed	checked on every streamed case
 frontier	11-credential-leak	PASS	the URL the recorder prints is the redacted form	http://127.0.0.1/v1?key=<redacted>
 frontier	11-credential-leak	PASS	no ProviderError crosses the IPC bridge today (recorded, not assumed)	rust=false, ts=false
@@ -87,10 +93,10 @@ frontier	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and n
 frontier	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 frontier	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
 frontier	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-frontier	10-failover	PASS	failover does not hang	12.300225ms
-frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	207.509608ms
+frontier	10-failover	PASS	failover does not hang	7.879776ms
+frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	205.995299ms
 frontier	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:39733/v1/chat/completions)" }))
+frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:46821/v1/chat/completions)" }))
 mid-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 32768, probe reported Some(32768)
 mid-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Supported, probed Supported
 mid-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -103,7 +109,7 @@ mid-local	01-plain-chat	PASS	the turn produces an answer	170 characters
 mid-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 170 chars / whole 170 chars
 mid-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 170 chars
 mid-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
-mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.179438ms
+mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.43046ms
 mid-local	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -142,35 +148,41 @@ mid-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	1
 mid-local	06-reasoning	PASS	reasoning is captured, not discarded	"Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
 mid-local	06-reasoning	PASS	reasoning is stored as its own content part (vela-store models it separately)	["reasoning", "text"]
 mid-local	06-reasoning	PASS	the closing tag is in NO single frame — a frame-local stripper cannot work	confirmed against the recorded frames
-mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.470572ms
+mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.673621ms
 mid-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	165 characters
 mid-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 mid-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }
-mid-local	07c-termination-latency	PASS	every sampled turn completed without error	5 samples
-mid-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms	median 3.50706ms, samples [3.402129ms, 2.88971ms, 4.411546ms, 3.50706ms, 3.591137ms]
-mid-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang	worst 4.411546ms
-mid-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	[165, 165, 165, 165, 165]
+mid-local	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
+mid-local	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
+mid-local	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
+mid-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 4.224711ms, samples [4.589527ms, 4.562925ms, 4.224711ms, 3.945828ms, 3.32894ms]
+mid-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 3.35695ms
+mid-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 3.498314ms, worst credentialed 4.589527ms
+mid-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [165, 165, 165, 165, 165], credentialed [165, 165, 165, 165, 165]
+mid-local	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(165), credentialed Some(165)
 mid-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
 mid-local	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
 mid-local	08-malformed-frames	PASS	one bad frame never aborts the turn	170 characters delivered
 mid-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 mid-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 mid-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:44343/v1/chat/completions
+mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:37833/v1/chat/completions
 mid-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 mid-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 mid-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	808.99838ms
+mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	808.612598ms
 mid-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 mid-local	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 mid-local	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
 mid-local	11-credential-leak	PASS	ALL THREE echo peers echoed it — no echo case is vacuous	3 of 3 peers echoed the credential
-mid-local	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	3 echo body/bodies checked
-mid-local	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	3 of 3 echo bodies carry `<redacted>`
-mid-local	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	9 of 9 produced an error
-mid-local	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	9 error(s) rendered 5 ways each, all clean
-mid-local	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	18 serialisation(s) checked
-mid-local	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	9 exchange log(s) checked
+mid-local	11-credential-leak	PASS	both escaping peers put the ESCAPED credential on the wire — the cases are real	400 body: true, error frame: true
+mid-local	11-credential-leak	PASS	…and NEITHER wrote a form the byte-literal scrub could match — that is the hole	400 body: false, error frame: false
+mid-local	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	6 echo body/bodies checked
+mid-local	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	6 of 6 echo bodies carry `<redacted>`
+mid-local	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	12 of 12 produced an error
+mid-local	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	12 error(s) rendered 5 ways each, all clean
+mid-local	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	24 serialisation(s) checked
+mid-local	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	12 exchange log(s) checked
 mid-local	11-credential-leak	PASS	NO CREDENTIAL in the streamed event sink the UI is handed	checked on every streamed case
 mid-local	11-credential-leak	PASS	the URL the recorder prints is the redacted form	http://127.0.0.1/v1?key=<redacted>
 mid-local	11-credential-leak	PASS	no ProviderError crosses the IPC bridge today (recorded, not assumed)	rust=false, ts=false
@@ -179,10 +191,10 @@ mid-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and 
 mid-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 mid-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
 mid-local	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-mid-local	10-failover	PASS	failover does not hang	10.939584ms
-mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.711804ms
+mid-local	10-failover	PASS	failover does not hang	9.255105ms
+mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	205.151684ms
 mid-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:44573/v1/chat/completions)" }))
+mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:41511/v1/chat/completions)" }))
 small-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 8192, probe reported Some(8192)
 small-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Unsupported, probed Unsupported
 small-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -195,7 +207,7 @@ small-local	01-plain-chat	PASS	the turn produces an answer	129 characters
 small-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 129 chars / whole 129 chars
 small-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 129 chars
 small-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
-small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.537131ms
+small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	3.736031ms
 small-local	02-tool-calling	PASS	an endpoint with no tools is refused explicitly, never silently	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(142), output_tokens: Some(32), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ToolCallingEmulated { tool_count: 1 }] })
 small-local	02-tool-calling	PASS	the turn is degraded into emulation rather than failed	ToolCallingEmulated { tool_count: 1 }
 small-local	02-tool-calling	PASS	control — this endpoint really does refuse a native tools request	if this passes, the emulation result below is not an artefact
@@ -231,36 +243,42 @@ small-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answe
 small-local	06-reasoning	PASS	the answer itself survives	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
 small-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	129 vs 129 chars
 small-local	06-reasoning	PASS	an endpoint that emits no reasoning produces no reasoning part	""
-small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.4092ms
+small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 2.722052ms
 small-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	130 characters
 small-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	UsageNotReported
 small-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
 small-local	07-stream-termination	PASS	requested-but-absent usage is declared as a degradation	UsageNotReported
-small-local	07c-termination-latency	PASS	every sampled turn completed without error	5 samples
-small-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms	median 1.738611ms, samples [2.189233ms, 1.665466ms, 1.738611ms, 1.902216ms, 1.546201ms]
-small-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang	worst 2.189233ms
-small-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	[130, 130, 130, 130, 130]
+small-local	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
+small-local	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
+small-local	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
+small-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 1.998605ms, samples [2.541085ms, 1.998605ms, 1.991962ms, 1.914247ms, 2.069179ms]
+small-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 1.91189ms
+small-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 2.193021ms, worst credentialed 2.541085ms
+small-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [130, 130, 130, 130, 130], credentialed [130, 130, 130, 130, 130]
+small-local	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(130), credentialed Some(130)
 small-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	UsageNotReported
 small-local	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
 small-local	08-malformed-frames	PASS	one bad frame never aborts the turn	129 characters delivered
 small-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 small-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 small-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:42177/v1/chat/completions
+small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:33431/v1/chat/completions
 small-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 small-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 small-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.774857ms
+small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	808.457084ms
 small-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 small-local	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 small-local	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
 small-local	11-credential-leak	PASS	ALL THREE echo peers echoed it — no echo case is vacuous	3 of 3 peers echoed the credential
-small-local	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	3 echo body/bodies checked
-small-local	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	3 of 3 echo bodies carry `<redacted>`
-small-local	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	9 of 9 produced an error
-small-local	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	9 error(s) rendered 5 ways each, all clean
-small-local	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	18 serialisation(s) checked
-small-local	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	9 exchange log(s) checked
+small-local	11-credential-leak	PASS	both escaping peers put the ESCAPED credential on the wire — the cases are real	400 body: true, error frame: true
+small-local	11-credential-leak	PASS	…and NEITHER wrote a form the byte-literal scrub could match — that is the hole	400 body: false, error frame: false
+small-local	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	6 echo body/bodies checked
+small-local	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	6 of 6 echo bodies carry `<redacted>`
+small-local	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	12 of 12 produced an error
+small-local	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	12 error(s) rendered 5 ways each, all clean
+small-local	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	24 serialisation(s) checked
+small-local	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	12 exchange log(s) checked
 small-local	11-credential-leak	PASS	NO CREDENTIAL in the streamed event sink the UI is handed	checked on every streamed case
 small-local	11-credential-leak	PASS	the URL the recorder prints is the redacted form	http://127.0.0.1/v1?key=<redacted>
 small-local	11-credential-leak	PASS	no ProviderError crosses the IPC bridge today (recorded, not assumed)	rust=false, ts=false
@@ -269,10 +287,10 @@ small-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried an
 small-local	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 small-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UsageNotReported, FailedOver { attempts: 2 }] }))
 small-local	10-failover	PASS	the failover is declared to the caller	UsageNotReported, FailedOver { attempts: 2 }
-small-local	10-failover	PASS	failover does not hang	9.856093ms
-small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.210241ms
+small-local	10-failover	PASS	failover does not hang	8.181665ms
+small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	205.03801ms
 small-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:44795/v1/chat/completions)" }))
+small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:33581/v1/chat/completions)" }))
 hostile	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 4096, probe reported Some(4096)
 hostile	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Degraded, probed Degraded
 hostile	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -285,7 +303,7 @@ hostile	01-plain-chat	PASS	the turn produces an answer	166 characters
 hostile	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 166 chars / whole 166 chars
 hostile	01-plain-chat	PASS	the deltas add up to the answer	delta sum 166 chars
 hostile	01-plain-chat	PASS	no wire-format remnant reaches the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
-hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.135988ms
+hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.383458ms
 hostile	02-tool-calling	PASS	both broken calls are reported, neither is dropped	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnparseableArguments raw="{\"city\":\"del"                                     MALFORMED index=None id=MISSING name=get_weather reason=UnknownDiscriminator raw="not-json-at-all"
 hostile	02-tool-calling	PASS	NOTHING from a broken stream is executable	0 executable
 hostile	02-tool-calling	PASS	truncated arguments are reported as unparseable, not guessed at	[UnparseableArguments, UnknownDiscriminator]
@@ -328,15 +346,19 @@ hostile	06-reasoning	PASS	the answer itself survives	"nested Mock hostile reply 
 hostile	06-reasoning	PASS	the deltas the consumer saw equal the final answer	166 vs 166 chars
 hostile	06-reasoning	PASS	an unterminated <think> does not swallow the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
 hostile	06-reasoning	PASS	the recovery is declared, not silent	UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
-hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.026231ms
+hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.498372ms
 hostile	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	160 characters
 hostile	07-stream-termination	PASS	a missing [DONE] sentinel is reported, not silently absorbed	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
 hostile	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
 hostile	07-stream-termination	PASS	requested-but-absent usage is declared as a degradation	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
-hostile	07c-termination-latency	PASS	every sampled turn completed without error	5 samples
-hostile	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms	median 3.356413ms, samples [3.804905ms, 3.356413ms, 3.402946ms, 3.09026ms, 3.172238ms]
-hostile	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang	worst 3.804905ms
-hostile	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	[160, 160, 160, 160, 160]
+hostile	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
+hostile	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
+hostile	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
+hostile	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 3.58869ms, samples [3.653953ms, 3.58869ms, 3.678643ms, 3.51197ms, 3.394557ms]
+hostile	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 2.861651ms
+hostile	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 3.157237ms, worst credentialed 3.678643ms
+hostile	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [160, 160, 160, 160, 160], credentialed [160, 160, 160, 160, 160]
+hostile	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(160), credentialed Some(160)
 hostile	08-malformed-frames	PASS	skipping bad frames is reported, not silent	reported 3 skipped, body contains 2 bad frames
 hostile	08-malformed-frames	PASS	NO DATA LOSS — the stream delivers what a strict consumer would have lost	Vela 166 chars vs strict-JSON consumer 31 chars
 hostile	08-malformed-frames	PASS	content that arrives AFTER the bad frames still reaches the user	the tail of the ground truth is present in the streamed answer
@@ -344,21 +366,23 @@ hostile	08-malformed-frames	PASS	one bad frame never aborts the turn	166 charact
 hostile	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 hostile	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 hostile	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:46143/v1/chat/completions
+hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:35099/v1/chat/completions
 hostile	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 hostile	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 hostile	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { detail: "this provider is configured to send a credential, but none is stored" })
-hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.844111ms
+hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	808.676972ms
 hostile	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 hostile	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 hostile	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
 hostile	11-credential-leak	PASS	ALL THREE echo peers echoed it — no echo case is vacuous	3 of 3 peers echoed the credential
-hostile	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	3 echo body/bodies checked
-hostile	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	3 of 3 echo bodies carry `<redacted>`
-hostile	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	9 of 9 produced an error
-hostile	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	9 error(s) rendered 5 ways each, all clean
-hostile	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	18 serialisation(s) checked
-hostile	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	9 exchange log(s) checked
+hostile	11-credential-leak	PASS	both escaping peers put the ESCAPED credential on the wire — the cases are real	400 body: true, error frame: true
+hostile	11-credential-leak	PASS	…and NEITHER wrote a form the byte-literal scrub could match — that is the hole	400 body: false, error frame: false
+hostile	11-credential-leak	PASS	the credential is ALREADY GONE from the bytes Vela's parser reads	6 echo body/bodies checked
+hostile	11-credential-leak	PASS	and the redaction marker IS there — the body was not merely empty	6 of 6 echo bodies carry `<redacted>`
+hostile	11-credential-leak	PASS	the forced failures ARE failures — otherwise every assertion below is vacuous	12 of 12 produced an error
+hostile	11-credential-leak	PASS	NO CREDENTIAL in any Display, Debug or serde rendering of any error	12 error(s) rendered 5 ways each, all clean
+hostile	11-credential-leak	PASS	NO CREDENTIAL in the serde JSON specifically — the IPC wire shape	24 serialisation(s) checked
+hostile	11-credential-leak	PASS	NO CREDENTIAL in the transport's own normalised failure detail	12 exchange log(s) checked
 hostile	11-credential-leak	PASS	NO CREDENTIAL in the streamed event sink the UI is handed	checked on every streamed case
 hostile	11-credential-leak	PASS	the URL the recorder prints is the redacted form	http://127.0.0.1/v1?key=<redacted>
 hostile	11-credential-leak	PASS	no ProviderError crosses the IPC bridge today (recorded, not assumed)	rust=false, ts=false
@@ -367,12 +391,12 @@ hostile	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and ne
 hostile	09b-endpoint-requires-a-key	PASS	no upstream body or HTTP status escapes into the error	Err(AuthFailed { detail: "incorrect API key provided" })
 hostile	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }] }))
 hostile	10-failover	PASS	the failover is declared to the caller	UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
-hostile	10-failover	PASS	failover does not hang	11.709274ms
-hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	207.794646ms
+hostile	10-failover	PASS	failover does not hang	9.318007ms
+hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	206.003523ms
 hostile	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:35549/v1/chat/completions)" }))
-hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001462999s, 0 chars
-frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	14.531262ms, 16 chars
+hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:33365/v1/chat/completions)" }))
+hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001870321s, 0 chars
+frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	10.138737ms, 16 chars
 mid-local	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think> Mock mid-local reply to: what is the weather in Berlin. penn … [elided: 309 characters total]
 hostile	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what i … [elided: 330 characters total]
 frontier	control-2-raw-content-channel	PASS	the raw content channel is free of reasoning markup	Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u … [elided: 226 characters total]
@@ -394,5 +418,5 @@ scripted	control-9-credential-grep	PASS	the credential is absent from: RequestUr
 scripted	control-9-credential-grep	PASS	the credential is absent from: RequestUrl Debug — the redacted form	RequestUrl Debug — the redacted form
 scripted	control-10-transport-agreement	PASS	the two transports agree: the same two calls, streamed	["OK|id=call_a|name=get_weather|emulated=false|args={\"city\":\"berlin\"}", "OK|id=call_b|name=get_time|emulated=false|args={\"timezone\":\"CET\"}"]
 scripted	control-10-transport-agreement	FAIL	the two transports agree: only the first call, streamed	["OK|id=call_a|name=get_weather|emulated=false|args={\"city\":\"berlin\"}"]
-hostile	control-11-termination-budget	FAIL	the turn ends in single-digit milliseconds	809.656638ms against a 4 s inter-frame delay
+hostile	control-11-termination-budget	FAIL	the turn ends in single-digit milliseconds	808.871658ms against a 4 s inter-frame delay
 all	11-credential-leak	PASS	the canary appears in no evidence file but case 11's own transcript	4 case-11 transcript(s) carry it, nothing else does

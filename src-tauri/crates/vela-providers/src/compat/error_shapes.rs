@@ -225,12 +225,21 @@ mod tests {
     use super::*;
     use crate::error::{Capability, ProviderError};
     use crate::http::testing::{CannedResponse, ScriptedTransport};
+    use crate::http::ResponseHeaders;
+    use crate::http::UpstreamBytes;
     use crate::openai_compatible::map_error_response;
+
+    /// Bodies built in the test answer no request of ours, so there is no
+    /// credential in them to remove. The credentialed path through this
+    /// decorator is driven in `tests/encoded_credential_canary.rs`.
+    fn upstream(bytes: Vec<u8>) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(bytes)
+    }
 
     fn mapped(status: u16, body: &str) -> ProviderError {
         let normalised = normalise_error_body(status, body.as_bytes());
         let bytes = normalised.unwrap_or_else(|| body.as_bytes().to_vec());
-        map_error_response(status, &bytes, "m", None)
+        map_error_response(status, &upstream(bytes), "m", None)
     }
 
     #[test]
@@ -247,7 +256,7 @@ mod tests {
         // What the core does on its own: `code` is not a string, so it falls
         // through to the status.
         assert!(matches!(
-            map_error_response(400, body.as_bytes(), "m", None),
+            map_error_response(400, &upstream(body.as_bytes().to_vec()), "m", None),
             ProviderError::Transport { .. }
         ));
         // What it does once the shape is normalised.
@@ -354,7 +363,7 @@ mod tests {
             ) -> Result<HttpResponse, TransportError> {
                 Ok(HttpResponse {
                     status: 503,
-                    headers: Vec::new(),
+                    headers: ResponseHeaders::default(),
                     body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }

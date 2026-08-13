@@ -204,10 +204,19 @@ enum Forced {
     /// whose body carries an error object quoting the request back. Read
     /// through `next_chunk`, frame by frame.
     EchoedInA200Stream,
+    /// **ROUND 4.** The same 400 echo, from a peer that percent-decodes the key
+    /// it was given and writes `/` as `\/` — PHP `json_encode`'s default. No
+    /// literal copy of the credential is on the wire, so the byte scrub this
+    /// file was written to prove has nothing to match; what removes it is that
+    /// the scrub reads a *decoded view* of the bytes, and that the decode is
+    /// scrubbed again on the other side.
+    EchoedIn400JsonEscaped,
+    /// The same spelling in FINDING 2's shape: a 200 SSE error frame.
+    EchoedInA200StreamJsonEscaped,
 }
 
 impl Forced {
-    const ALL: [Forced; 7] = [
+    const ALL: [Forced; 9] = [
         Forced::ConnectionRefused,
         Forced::NoRoute,
         Forced::TlsHandshakeFailure,
@@ -215,6 +224,8 @@ impl Forced {
         Forced::DiesMidBody,
         Forced::EchoedIn400,
         Forced::EchoedInA200Stream,
+        Forced::EchoedIn400JsonEscaped,
+        Forced::EchoedInA200StreamJsonEscaped,
     ];
 
     const fn label(self) -> &'static str {
@@ -227,6 +238,12 @@ impl Forced {
             Forced::EchoedIn400 => "the endpoint echoes the request back (400)",
             Forced::EchoedInA200Stream => {
                 "the endpoint echoes the request back (200 + error frame)"
+            }
+            Forced::EchoedIn400JsonEscaped => {
+                "the endpoint echoes the decoded key back JSON-escaped (400)"
+            }
+            Forced::EchoedInA200StreamJsonEscaped => {
+                "the endpoint echoes the decoded key back JSON-escaped (200 + error frame)"
             }
         }
     }
@@ -253,6 +270,8 @@ impl Forced {
             Forced::DiesMidBody => dies_mid_body().await,
             Forced::EchoedIn400 => echo_server(400).await,
             Forced::EchoedInA200Stream => echo_server(200).await,
+            Forced::EchoedIn400JsonEscaped => escaping_echo_server(400).await,
+            Forced::EchoedInA200StreamJsonEscaped => escaping_echo_server(200).await,
         }
     }
 }
@@ -447,6 +466,121 @@ async fn echo_server(status: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+/// **The round-4 peer.** The same echo, spelled the way an endpoint that
+/// escapes the solidus spells it — and quoting the **decoded** query key, which
+/// is what a gateway echoes once it has parsed the parameter rather than the
+/// percent-encoded target it received.
+///
+/// Both halves matter. Without the decode, `Auth::ApiKeyQuery`'s credential
+/// reaches the peer as `%2F`-encoded text that contains no `/` for `json_encode`
+/// to rewrite; without the escaping, this is just [`echo_server`] again.
+async fn escaping_echo_server(status: u16) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+    let port = listener.local_addr().expect("bound").port();
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            let mut scratch = vec![0u8; 16384];
+            let read = socket.read(&mut scratch).await.unwrap_or(0);
+            let raw = String::from_utf8_lossy(&scratch[..read]).into_owned();
+            let seen = parse_request(&raw);
+            let mut quoted = seen.credentials.clone();
+            if let Some(key) = decoded_query_key(&seen.target) {
+                quoted.push(key);
+            }
+            let message = format!(
+                "{MARKER}: invalid credential [{}] for request {}",
+                if quoted.is_empty() {
+                    "none".to_owned()
+                } else {
+                    quoted.join(" ")
+                },
+                seen.target
+            );
+            // PHP `json_encode`, default flags. Built by hand rather than with
+            // `serde_json::to_string`, because serde deliberately does **not**
+            // escape `/` — the point of this peer is to be something other than
+            // a Rust encoder.
+            let escaped = message
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('/', "\\/");
+
+            let (content_type, body) = if status == 200 && seen.streaming {
+                let frame = if seen.anthropic {
+                    format!(
+                        "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"authentication_error\",\"message\":\"{escaped}\"}}}}\n\n"
+                    )
+                } else if seen.google {
+                    format!(
+                        "data: {{\"error\":{{\"code\":400,\"status\":\"INVALID_ARGUMENT\",\"message\":\"{escaped}\"}}}}\n\n"
+                    )
+                } else {
+                    format!(
+                        "data: {{\"error\":{{\"code\":\"invalid_api_key\",\"type\":\"invalid_request_error\",\"message\":\"{escaped}\"}}}}\n\n"
+                    )
+                };
+                ("text/event-stream", frame)
+            } else {
+                let object = if seen.anthropic {
+                    format!(
+                        "{{\"type\":\"error\",\"error\":{{\"type\":\"authentication_error\",\"message\":\"{escaped}\"}}}}"
+                    )
+                } else if seen.google {
+                    format!(
+                        "{{\"error\":{{\"code\":400,\"status\":\"INVALID_ARGUMENT\",\"message\":\"{escaped}\"}}}}"
+                    )
+                } else {
+                    format!(
+                        "{{\"error\":{{\"code\":\"invalid_api_key\",\"type\":\"invalid_request_error\",\"message\":\"{escaped}\"}}}}"
+                    )
+                };
+                ("application/json", object)
+            };
+
+            let reason = if status == 200 { "OK" } else { "Bad Request" };
+            let _ = socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 {status} {reason}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await;
+            let _ = socket.flush().await;
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+/// The `key`/`api_key` query parameter of a request target, percent-decoded —
+/// what a gateway's own parser hands its error path.
+fn decoded_query_key(target: &str) -> Option<String> {
+    let (_, query) = target.split_once('?')?;
+    let (_, value) = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(name, _)| matches!(*name, "key" | "api_key"))?;
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or(""),
+                16,
+            ) {
+                out.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
 // ---------------------------------------------------------------------------
 // Three adapters, two bindings
 // ---------------------------------------------------------------------------
@@ -621,9 +755,9 @@ async fn assert_every_forced_failure_is_clean(adapter: Adapter, binding: Binding
         "the matrix did not run: {cases} cases"
     );
     assert_eq!(
-        echoed_cases, 4,
-        "the two echoing endpoints must contribute four cases, or the shape \
-         this file exists for was not driven"
+        echoed_cases, 8,
+        "the four echoing endpoints must contribute eight cases, or the shapes \
+         this file exists for were not driven"
     );
 }
 

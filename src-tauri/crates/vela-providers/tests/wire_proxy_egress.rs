@@ -69,7 +69,7 @@ use vela_providers::anthropic::AnthropicProvider;
 use vela_providers::event::CollectingSink;
 use vela_providers::http::{
     BodyStream, ByteStream, HttpMethod, HttpRequest, HttpResponse, HttpTransport, ReqwestTransport,
-    TransportError,
+    ResponseHeaders, TransportError,
 };
 use vela_providers::{
     ChatMessage, ChatRequest, Provider, RequestContext, Timeouts, TransportFailure,
@@ -453,16 +453,18 @@ impl HttpTransport for NoNoProxyTransport {
             )
         })?;
         let status = response.status().as_u16();
-        let headers = response
-            .headers()
-            .iter()
-            .map(|(name, value)| {
+        // Through `ResponseHeaders`, as the real transport does: this control
+        // deliberately drops `no_proxy` and nothing else — least of all the
+        // redaction the type carries.
+        let headers = ResponseHeaders::new(
+            response.headers().iter().map(|(name, value)| {
                 (
                     name.as_str().to_ascii_lowercase(),
                     value.to_str().unwrap_or_default().to_owned(),
                 )
-            })
-            .collect();
+            }),
+            &origin,
+        );
         Ok(HttpResponse {
             status,
             headers,

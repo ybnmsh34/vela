@@ -1543,6 +1543,55 @@ nothing has happened on yet.
 VERIFIED-BY-FAKE (conventions §10): `BrowserAdapter` is an in-memory host. The renderer reaches
 the store commands; nothing here proves SQLite holds a byte.
 
+## 🔴 A1 visual + interaction: FAIL — and a THIRD cloud-blind class
+
+The app renders on Windows now (the rename worked), so the desktop session captured real WebView2
+evidence and returned binding verdicts. Both FAIL. **Every finding is something a Linux container
+cannot observe**, which makes this a class of its own: **platform defaults and conventions.**
+
+### visual — FAIL
+
+| # | Finding |
+|---|---|
+| 1 | **Vela ships no typeface**, so on Windows it renders in **Segoe UI and Consolas** — the design was authored against Linux/Chromium defaults and never sees the fonts users actually get |
+| 2 | **Dark mode renders a pure-white legacy Windows scrollbar** (`color-scheme` not carrying) |
+| 3 | **At 150% — the default scale on most Windows 11 laptops** — the conversation empty state breaks |
+| 4 | Model-picker popover misalignment: empty message insets 20px, footer action does not |
+| 5 | `--vela-text-subtle` (`#6f7896`) is the **one colour role never re-authored for dark** |
+| 6 | At 150% the header toolbar wraps and strands the attach button mid-pane |
+
+**It also checked the thing I most wanted checked, and cleared it:** *"No Anthropic trade dress.
+The palette is teal-cyan on night-indigo; there is no clay, terracotta…"* Vela has its own identity.
+
+### interaction — FAIL
+
+- **The command palette declares `aria-modal="true"`, does not enforce it, and never traps focus.**
+  Declaring a contract you don't keep is worse than not declaring it — a screen reader believes it.
+- **Every keyboard hint shows Mac glyphs on Windows** — `⌘N`, `⌘K` rendered on a machine with no
+  Command key. The session was careful here: *"This is mislabelling, not breakage, and the
+  distinction is load-bearing"* — the handlers work, the labels lie.
+- **Theme does not survive a real process restart** — comes back as `Theme: system`. Only a genuine
+  restart shows this; a page reload does not.
+
+### The third class, named
+
+| Class | Why the cloud cannot see it |
+|---|---|
+| Composition root never wired | Every gate drove a bridge or a component, never the assembled app |
+| Filesystem case sensitivity | Linux is case-sensitive; Windows is not |
+| **Platform defaults and conventions** | **Fonts, scrollbars, DPI scale, modifier glyphs, and process restart are properties of the host OS — a Linux container renders none of them** |
+
+Six of nine findings above are pure platform-default defects. No amount of cloud rigour reaches
+them; they are only visible from the machine a user actually runs.
+
+**And it withdrew one of its own conclusions** (`c2eeda5`): *"Withdraw an unsafe conclusion: Ctrl+P/F
+suppression is UNVERIFIED."* It had inferred a finding it could not actually demonstrate, and
+retracted it rather than leave it standing. That is what makes the other eight believable.
+
+**Disposition:** these feed a platform-polish wave AFTER the composition-root wave lands — they are
+real and binding, but the app cannot complete a turn yet, and fixing fonts before the app can chat
+would be optimising the wrong thing. `performance` stays held for the same reason.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

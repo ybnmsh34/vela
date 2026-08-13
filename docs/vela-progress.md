@@ -2033,6 +2033,42 @@ case it missed.
 The executor **did not fix the placeholder defect**, on the grounds that *"whoever fixes it should
 not be the one who graded it."*
 
+## The gutter regression, confirmed from the other side — and both sessions own their half
+
+The desktop session re-measured on WebView2 and confirmed the cloud gate's finding, then named
+exactly how its own earlier PASS happened:
+
+> *"I measured at 1400×900 with the sidebar at its 280px default, the one configuration where the
+> ruler holds, and reported it closed. **At 1400px every delta is 0 whether the bug is present or
+> not.**"*
+
+With the sidebar at maximum, at 880px: **text content box 456, composer field 480 — overhanging
+12px on each side.**
+
+**It also confirmed my centre-comparison warning empirically:** at 880px *"both boxes centre at
+exactly 600.0 while the ruler is 24px out, so the assertion passes on a broken ruler."* Two
+independent measurements, mine from the source and theirs from the rendered page, agreeing that the
+assertion could not have failed.
+
+**And it answered a question I had left open:** on Windows the two effects do **not** add. The
+scroller reserves 24px at both widths — *identical to the Linux figure* — so the classic
+space-taking scrollbar sits **inside** the reservation rather than on top of it. No Windows-only
+penalty, and no cancellation either. That closes the worry that the fix might behave differently on
+the platform that motivated it.
+
+**Item 2 cross-checked to the digit:** WebView2's default placeholder is `rgb(117,117,117)` —
+identical to Chromium's `#757575` — on `#101426`, giving **3.96:1**, the same number the cloud gate
+computed. The ratio a Windows user meets is exactly the one we measured here.
+
+**And it declined to produce evidence, for a good reason:**
+
+> *"Item 3 deliberately not pre-photographed: a fix will touch `scrollbar-gutter`, so captures taken
+> now would need retaking, and a stale scrollbar image in the record is the kind of artifact that
+> gets cited later as current."*
+
+Refusing to generate evidence that will become misleading is a discipline this project has needed
+several times and has not always had.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

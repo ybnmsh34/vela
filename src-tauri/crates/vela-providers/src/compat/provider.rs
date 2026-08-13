@@ -880,7 +880,7 @@ mod tests {
                 Ok(HttpResponse {
                     status: 200,
                     headers: vec![("content-type".into(), "text/event-stream".into())],
-                    body: Box::new(crate::http::testing::StalledBody),
+                    body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }
         }

@@ -270,6 +270,37 @@ impl Scrubber {
         text
     }
 
+    /// How many bytes at the end of `bytes` must be held back before the rest
+    /// can be released, because they may be the front half of a needle.
+    ///
+    /// # Why a streamed body needs this and a buffered one does not
+    ///
+    /// [`Scrubber::scrub_bytes`] can only remove a needle it can see whole. A
+    /// body read in chunks hands out `…"message":"bad key vela-can` and then
+    /// `ary-9f3a…` — two chunks, neither containing the credential, the
+    /// credential nonetheless delivered. Scrubbing per chunk without this would
+    /// be a redaction that a TCP segment boundary defeats.
+    ///
+    /// Returns the longest suffix of `bytes` that is a *proper prefix* of some
+    /// needle — normally 0, so the ordinary chunk is released whole and
+    /// streaming latency is unchanged.
+    pub fn hold_back_len(&self, bytes: &[u8]) -> usize {
+        let mut hold = 0usize;
+        for needle in self.needles.iter() {
+            let needle = needle.as_bytes();
+            // A *proper* prefix: a whole needle would already have been
+            // replaced by `scrub_bytes`, so it is not a reason to wait.
+            let longest = (needle.len() - 1).min(bytes.len());
+            for length in (hold + 1..=longest).rev() {
+                if bytes[bytes.len() - length..] == needle[..length] {
+                    hold = length;
+                    break;
+                }
+            }
+        }
+        hold
+    }
+
     /// The same, over bytes — an error body an endpoint echoed back at us is
     /// not necessarily UTF-8, and must not be mangled into being.
     pub fn scrub_bytes(&self, bytes: Vec<u8>) -> Vec<u8> {

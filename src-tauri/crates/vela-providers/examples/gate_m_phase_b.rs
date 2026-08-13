@@ -199,13 +199,22 @@ impl HttpTransport for RecordingTransport {
                         body: Arc::clone(&sink),
                     },
                 });
+                // The recorder wraps a `BodyStream` and reads *through* it,
+                // so every byte it tees has already been scrubbed. Forwarding
+                // the origin keeps the endpoint identity on the rewrapped body;
+                // it is no longer load-bearing for redaction, and that is the
+                // round-3 fix — see the comment on `Tee`.
+                let origin = response.body.origin().clone();
                 Ok(HttpResponse {
                     status: response.status,
                     headers: response.headers,
-                    body: Box::new(Tee {
-                        inner: response.body,
-                        sink,
-                    }),
+                    body: BodyStream::new(
+                        Tee {
+                            inner: response.body,
+                            sink,
+                        },
+                        origin,
+                    ),
                 })
             }
             Err(error) => {
@@ -222,6 +231,18 @@ impl HttpTransport for RecordingTransport {
     }
 }
 
+/// The recorder's body decorator.
+///
+/// **It used to be able to disable Vela's credential redaction by omission**,
+/// and briefly did: `ByteStream::scrubber()` was an overridable method
+/// defaulting to `Scrubber::none()`, so wrapping the real body with a `Tee`
+/// that did not forward it made the round-2 gate run report a leak Vela did
+/// not have. That was the finding that produced the round-3 fix.
+///
+/// It cannot happen now. `inner` is a [`BodyStream`], whose `next_chunk` is the
+/// only door bytes leave a body by and scrubs on the way out, so this decorator
+/// sees cleaned bytes and has nothing to forward. The property no longer
+/// depends on this file being careful.
 struct Tee {
     inner: BodyStream,
     sink: Arc<Mutex<Vec<u8>>>,
@@ -243,18 +264,6 @@ impl ByteStream for Tee {
             Ok(None) => {}
         }
         out
-    }
-
-    /// **Forwarded, and it must be.** The scrubber is what strips this
-    /// request's own credential out of a body the endpoint echoed it into
-    /// (`http.rs::read_to_end`). `ByteStream` defaults this method to
-    /// `Scrubber::none()`, so a decorating body that forgets to forward it
-    /// silently disables the redaction — which is exactly what this recorder
-    /// did until the round-2 gate run caught its own instrumentation reporting
-    /// a leak Vela does not have. A wrapper that drops a security property is
-    /// worth a comment this long.
-    fn scrubber(&self) -> vela_providers::Scrubber {
-        self.inner.scrubber()
     }
 }
 

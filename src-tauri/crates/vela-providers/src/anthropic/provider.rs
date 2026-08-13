@@ -390,6 +390,9 @@ impl AnthropicProvider {
             // end-of-body is the terminator, every read is bounded by the stall
             // timeout, and cancellation abandons a read in flight (MEASURED-1).
             let mut body = response.body;
+            // Grabbed before the loop borrows the body: a stall must still say
+            // which endpoint went quiet, and the redacted form is safe to.
+            let endpoint = body.endpoint().to_owned();
             loop {
                 context.cancel.err_if_cancelled()?;
                 let read = tokio::select! {
@@ -401,7 +404,10 @@ impl AnthropicProvider {
                     Err(_elapsed) => {
                         return Err(ProviderError::transport(
                             TransportFailure::Stalled,
-                            format!("no data for {} ms", context.timeouts.stall.as_millis()),
+                            format!(
+                                "no data for {} ms for url ({endpoint})",
+                                context.timeouts.stall.as_millis()
+                            ),
                         )
                         .into())
                     }
@@ -1435,7 +1441,7 @@ mod tests {
                 Ok(crate::http::HttpResponse {
                     status: 200,
                     headers: vec![("content-type".into(), "text/event-stream".into())],
-                    body: Box::new(crate::http::testing::StalledBody),
+                    body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }
         }

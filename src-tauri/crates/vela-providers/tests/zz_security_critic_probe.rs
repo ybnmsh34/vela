@@ -103,9 +103,7 @@ fn turn() -> ChatRequest {
 fn store(id: &str) -> (Arc<MemoryStore>, SecretRef) {
     let secrets = Arc::new(MemoryStore::new());
     let reference = SecretRef::primary(id).unwrap();
-    secrets
-        .set(&reference, &SecretValue::new(CANARY))
-        .unwrap();
+    secrets.set(&reference, &SecretValue::new(CANARY)).unwrap();
     (secrets, reference)
 }
 
@@ -191,7 +189,7 @@ async fn control_non_streaming_400_echo_is_clean() {
     let (secrets, secret) = store("probe-google-control");
     let provider = GoogleProvider::new(
         descriptor("probe-google-control"),
-        &format!("http://127.0.0.1:{port}"),
+        format!("http://127.0.0.1:{port}"),
         Auth::ApiKeyQuery {
             param: "key".into(),
             secret,
@@ -224,7 +222,10 @@ async fn dns_failure_does_not_leak_the_query_credential() {
     assert_clean("dns failure", &error);
 
     let mut sink = CollectingSink::new();
-    let streamed = provider.stream(turn(), &mut sink, &context()).await.unwrap_err();
+    let streamed = provider
+        .stream(turn(), &mut sink, &context())
+        .await
+        .unwrap_err();
     println!("dns failure (stream) => {streamed:?}");
     assert_clean("dns failure / stream", &streamed);
 }

@@ -384,6 +384,18 @@ taxonomy, one event stream. An adapter is a thin thing on top of it. Read
 8. All HTTP goes through the `HttpTransport` seam. Adapter tests script bytes
    with `http::testing::{ScriptedTransport, ScriptedBody, StalledBody}`; results
    from those are **VERIFIED-BY-FAKE**.
+9. **Read a response body only through `BodyStream::next_chunk`.** It is the one
+   exit bytes have, and it is where this crate's credential redaction happens —
+   a body cannot be constructed without a `BodyOrigin` stating what request it
+   answers, and `ByteStream` deliberately has no `scrubber()` to forward or
+   forget. If you write a decorating body, wrap a `BodyStream` and read through
+   it; the bytes you see are already clean. This is not style: redaction used to
+   hang off an overridable trait method defaulting to no protection, the
+   streaming path never called it, and a credential reached the IPC bridge
+   (GATE M Part 1, Phase B, FINDING 2). Errors derived from a request carry
+   `BodyOrigin::endpoint()` — the **redacted** URL — because a user with three
+   configured candidates has to be told which one failed. Redaction removes the
+   secret, not the diagnosis.
 
 Every degradation path needs an asserting test against the mock profile that
 triggers it — see `crates/vela-providers/tests/mock_matrix_live.rs`, which runs

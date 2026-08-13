@@ -439,6 +439,9 @@ pub async fn drive_stream(
     sink: &mut dyn EventSink,
     context: &RequestContext,
 ) -> ProviderResult<ChatResponse> {
+    // Grabbed before the loop borrows the body: a stall must still say which
+    // endpoint went quiet, and the redacted form is safe to say it with.
+    let endpoint = body.endpoint().to_owned();
     loop {
         context.cancel.err_if_cancelled()?;
         let read = tokio::select! {
@@ -453,7 +456,10 @@ pub async fn drive_stream(
             Err(_elapsed) => {
                 return Err(ProviderError::transport(
                     TransportFailure::Stalled,
-                    format!("no data for {} ms", context.timeouts.stall.as_millis()),
+                    format!(
+                        "no data for {} ms for url ({endpoint})",
+                        context.timeouts.stall.as_millis()
+                    ),
                 ))
             }
             Ok(Err(error)) => return Err(ProviderError::from(error)),

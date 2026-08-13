@@ -81,10 +81,15 @@ impl HttpTransport for NormalisingTransport {
         // discarding the status, which is still enough to map the failure.
         let raw = read_bounded(&mut response.body, MAX_ERROR_BODY_BYTES, timeouts.stall).await;
         let body = normalise_error_body(response.status, &raw).unwrap_or(raw);
+        // `raw` came out of `BodyStream::next_chunk` and is therefore already
+        // scrubbed — a decorator cannot undo that, which is the point of the
+        // type. The origin is forwarded anyway so the rewrapped body still
+        // knows which endpoint it answers.
+        let origin = response.body.origin().clone();
         Ok(HttpResponse {
             status: response.status,
             headers: response.headers,
-            body: Box::new(BufferedBody::new(body)),
+            body: BodyStream::new(BufferedBody::new(body), origin),
         })
     }
 }
@@ -350,7 +355,7 @@ mod tests {
                 Ok(HttpResponse {
                     status: 503,
                     headers: Vec::new(),
-                    body: Box::new(crate::http::testing::StalledBody),
+                    body: crate::http::testing::fake_body(crate::http::testing::StalledBody),
                 })
             }
         }

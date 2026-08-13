@@ -304,6 +304,131 @@ is that the scrubber belongs where the frame text becomes a `detail`, or that
 change and the harder one to forget, but it scrubs every streamed byte rather
 than only error text, which is a cost worth weighing.
 
+### Round 3 — the fix, and what it is *not*
+
+**Written by the round-3 builder, who executed no gate.** The numbers in §1 and
+the matrix in §2 are still round 2's and are **not** restated as passing here.
+FINDING 2 needs an independent re-execution before this document's verdict
+changes; what follows is the change, and the evidence that the recipe above
+turns from red to green against it.
+
+**Neither of the two options the executor floated was taken, because both leave
+the same hole.** Scrubbing inside `next_chunk`, or scrubbing where frame text
+becomes a `detail`, each fixes today's call sites and leaves redaction hanging
+off an *overridable method that defaults to no protection* — the executor's own
+sharper observation, and the brief for this round:
+
+> `ByteStream::scrubber()` is a security property carried by an overridable
+> method whose default is "no protection". Any future decorating body — a rate
+> limiter, a cache, a replayer — disables the redaction by omission and nothing
+> complains.
+
+So `ByteStream::scrubber()` is **gone**, and `BodyStream` is no longer an alias
+for `Box<dyn ByteStream>`. It is a struct that seals the raw stream, cannot be
+constructed without a `BodyOrigin`, and scrubs in `BodyStream::next_chunk` —
+the one exit bytes have. `read_to_end` no longer scrubs at all, because
+everything it reads has already come through that door. A decorator now wraps a
+`BodyStream` and reads *through* it, so the bytes it sees are already clean and
+omission cannot re-expose anything. The recorder's `Tee` lost its
+`scrubber()` forwarder in this change and is still safe — which is the property
+the round-2 recorder bug was asking for.
+
+Two things that are easy to miss and are covered:
+
+* **Chunk boundaries.** A per-chunk scrub still leaks a credential split across
+  two reads. `Scrubber::hold_back_len` withholds only the tail that is a proper
+  prefix of a needle — normally nothing, so streaming latency is unchanged —
+  and `positive_control_a_credential_split_across_two_chunks_leaks` drives the
+  frame one byte at a time and asserts the split key is found and replaced
+  exactly once.
+* **`ScriptedTransport` now derives the origin from the request it was given**,
+  the way `ReqwestTransport` does, so a scripted endpoint that echoes a key is
+  redacted in tests too (conventions §4: a fake that only mirrors the happy path
+  teaches nothing).
+
+**The over-redaction is fixed in the same change.** `map_reqwest_error` still
+calls `without_url()`, and now re-attaches `RequestUrl::redacted()` itself. The
+tool the critic pointed at was the right one:
+
+```
+round 1   Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+round 2   Connect: error sending request
+round 3   Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+round 3   Connect: error sending request for url (…/v1beta/models/m:generateContent?key=<redacted>)
+```
+
+The stall error in all four streaming loops names the endpoint too, from
+`BodyStream::endpoint()`.
+
+#### The recipe, red then green
+
+`crates/vela-providers/tests/finding_two_recipe.rs` is §4's three parts and
+nothing else, written against **only the API round 2 already had**, so it
+compiles unchanged on either side of the fix. Against the round-2 tree
+(`git stash` of `src/`), verbatim:
+
+```
+part 1 (openai-compatible, ?api_key=) => MalformedResponse { detail: "VELA-RECIPE-MARKER: API key
+    not valid for request /v1/chat/completions?api_key=vela%2Brecipe%2FKx-1d4f90ac7e35b28c-DO-NOT-LEAK …" }
+part 2a (google, ?key=) => Transport { failure: Request { status: 400 }, detail: "… ?alt=sse&
+    key=vela%2Brecipe%2FKx-1d4f90ac7e35b28c-DO-NOT-LEAK (headers: none)" }
+part 2b (anthropic, x-api-key) => Transport { failure: Request { status: 400 }, detail: "… for
+    request /v1/messages (headers: vela+recipe/Kx-1d4f90ac7e35b28c-DO-NOT-LEAK)" }
+test result: FAILED. 1 passed; 3 failed
+```
+
+Part 2b is a leak this document did not record: the **header** binding, echoed
+back inside the same 200 stream. Against the fixed tree:
+
+```
+part 1  => MalformedResponse { detail: "…/v1/chat/completions?api_key=<redacted> (headers: none)" }
+part 2a => Transport { … detail: "…:streamGenerateContent?alt=sse&key=<redacted> (headers: none)" }
+part 2b => Transport { … detail: "… for request /v1/messages (headers: <redacted>)" }
+part 3  => MalformedResponse { detail: "VELA-RECIPE-MARKER: API key not valid for request
+           /v1/chat/completions (headers: none)" }
+test result: ok. 4 passed; 0 failed
+```
+
+Part 3 — `Auth::None` — is byte-identical on both trees. That is the point of
+it: the fix is a redaction, not a "drop the detail".
+
+#### The controls, and what each one separates
+
+`crates/vela-providers/tests/streamed_credential_canary.rs` carries the wide
+matrix: **seven** forced failures × **three** adapters × **two** bindings ×
+**two** transports, checking `Display`, `Debug`, serde JSON and every
+`StreamEvent` that reached the sink, with counters asserting the loops ran and
+that the sink was non-empty rather than vacuously clean.
+
+Re-introducing each defect in `http.rs` and re-running:
+
+| defect re-introduced | `streamed_credential_canary` | `finding_two_recipe` | `credential_canary` (round 2's) |
+|---|---|---|---|
+| **1** — `next_chunk` hands bytes back unmodified | **10 of 15 FAIL** | **3 of 4 FAIL** | 8 pass |
+| **2** — `without_url()` and nothing re-attached | **1 of 15 FAIL** | 4 pass | 8 pass |
+
+The two rows are disjoint, which is what a gate needs in order to tell the two
+directions apart. Under defect 1 the `Auth::None` control and the
+endpoint-identity test stay green; under defect 2 every leak assertion stays
+green and only `transport_failures_still_name_the_endpoint_they_failed_on`
+fails, on `"error sending request"` with no endpoint in it. **Round 2's own
+canary suite passes under both** — which is why it shipped them.
+
+#### The durable half
+
+A new `ByteStream` that forgets the scrubber now **fails to compile**, pinned by
+two `compile_fail` doctests on `http::BodyStream` with their error codes
+asserted, not just their failure:
+
+* `let _body: BodyStream = Box::new(Forgetful);` → **E0308** — the round-2 shape.
+* declaring `fn scrubber(&self) -> Scrubber` on the impl → **E0407**, "not a
+  member of trait" — the exact line the recorder omitted.
+
+And at runtime, `a_new_body_that_forwards_nothing_still_cannot_leak_the_credential`
+builds a decorator that forwards nothing, wraps it again with an origin that
+knows nothing, and asserts the canary still reaches none of the four surfaces
+while the endpoint's diagnosis still does.
+
 ---
 
 ## 5. What passed, and what the numbers were

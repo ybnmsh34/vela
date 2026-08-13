@@ -712,3 +712,73 @@ changed that.
 **Known gap, unchanged from round 1:** the Anthropic and Google adapters still have no evidence
 document of their own under `docs/regression-baseline/phase-b/`. Their behaviour is pinned by
 fixture replay in code, but the written trail is uneven.
+
+---
+
+## Phase B round 3 — the credential fix, in both directions
+
+**Builder's entry. No gate was executed in this round**; the round-2 verdict in
+`docs/regression-baseline/phase-b-matrix/RESULTS.md` §1–§2 stands until a fresh
+executor re-runs it. What changed is the code and the tests, and §4 of that
+document now carries the red-then-green.
+
+**Two defects, opposite directions, one owner, one change.**
+
+**FINDING 2 (under-redaction) is closed structurally, not locally.** The
+`Scrubber` was consumed in exactly one place — `HttpResponse::read_to_end`, the
+*non-streamed* path — so a 200 whose SSE frame is an error object echoing the
+request carried the user's key into `Display`, `Debug`, the serde shape that
+crosses the IPC bridge, and the `StreamEvent::Error` handed to the UI, on all
+three adapters and on **both** the query-string and the header binding. Patching
+`next_chunk` would have fixed today's four call sites and left the real cause:
+redaction hung off `ByteStream::scrubber()`, an overridable method **defaulting
+to `Scrubber::none()`**, so any decorating body disabled it by omission — which
+is exactly what happened to the gate's own recorder mid-run.
+
+So the method is gone and `BodyStream` is no longer `Box<dyn ByteStream>`: it is
+a struct that seals the raw stream, cannot be built without a `BodyOrigin`, and
+scrubs in `next_chunk`, the single exit for bytes. `read_to_end` no longer
+scrubs because everything it reads already came through that door. A decorator
+wraps a `BodyStream` and reads through it, so it sees clean bytes and cannot
+re-expose anything; the recorder's `Tee` lost its forwarder in this change and
+is still safe. A credential split across two chunk boundaries is handled by
+`Scrubber::hold_back_len`, which withholds only a tail that is a proper prefix
+of a needle — normally nothing, so streaming latency is unchanged.
+
+**The over-redaction the regression critic flagged is fixed in the same
+change.** Round 2's unconditional `reqwest::Error::without_url()` deleted the
+endpoint from every transport error, including requests carrying no credential
+at all — `Connect: error sending request`, with three candidates configured and
+no way to tell which was down. `map_reqwest_error` now re-attaches
+`RequestUrl::redacted()`, the tool the tree already owned and used two match
+arms later; the stall error in all four streaming loops names the endpoint too.
+
+**Evidence.** `tests/finding_two_recipe.rs` is RESULTS.md §4's three-part recipe
+verbatim, written against only the API round 2 had so it compiles on either side
+of the fix: **3 of 4 red** against the round-2 tree, **4 of 4 green** against
+this one, with `Auth::None` byte-identical on both — that control is what makes
+this a redaction and not a deleted detail. `tests/streamed_credential_canary.rs`
+is the wide matrix: seven forced failures × three adapters × two bindings × two
+transports over real TCP, four surfaces each, with counters so no loop passes
+vacuously. Re-introducing defect 1 turns 10 of its 15 tests red; re-introducing
+defect 2 turns exactly 1 red, and a different one — the two directions are
+separable, which is what the gate needs. Round 2's own `credential_canary.rs`
+passes under **both** re-introduced defects, which is why it shipped them.
+
+A new `ByteStream` that forgets the scrubber now **fails to compile** — two
+`compile_fail` doctests on `http::BodyStream` with the error codes asserted
+(E0308 for the old `Box::new(...)` shape, E0407 for declaring `scrubber()` at
+all) — plus a runtime test driving a decorator that forwards nothing.
+
+Also fixed in passing: `tests/zz_security_critic_probe.rs`, committed by a critic
+at the end of round 2, failed `cargo clippy --all-targets -- -D warnings` and had
+never been formatted. The gate was red on lint before this round started.
+
+**Full gate green**, `pnpm verify` exit 0 — typecheck, rustfmt, clippy, vitest
+(163), harness (130), frontend build, transcript reproducibility, secret
+tripwire, `cargo build --locked`, `cargo test --workspace --locked` (all crates,
+doctests included).
+
+**VERIFIED-BY-FAKE**, per conventions §10: `MemoryStore`, deliberately broken
+loopback sockets, deterministic mock endpoints. No real model, no real keychain,
+no packaged binary. **GATE M Part 2 remains untouched and unverified.**

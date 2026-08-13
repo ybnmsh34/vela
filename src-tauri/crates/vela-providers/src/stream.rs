@@ -143,10 +143,21 @@ impl CompletionAssembler {
             return;
         };
         // Streaming puts the payload in `delta`; non-streaming in `message`.
-        let payload = object
-            .get("delta")
-            .or_else(|| object.get("message"))
-            .and_then(Value::as_object);
+        //
+        // Which of the two it was is load-bearing and is not recoverable later:
+        // an element of `delta.tool_calls` is a FRAGMENT keyed by `index`, while
+        // an element of `message.tool_calls` is a WHOLE CALL that carries no
+        // `index` — that field is a streaming-only concept. Reading both into
+        // one shape is what made parallel tool calls collapse into one on the
+        // non-streamed path (GATE M Part 1, Phase B, FINDING 1), so the shape is
+        // decided here, at the only place that knows it, and passed on.
+        let (payload, shape) = match object.get("delta") {
+            Some(delta) => (delta.as_object(), ToolCallShape::Fragment),
+            None => (
+                object.get("message").and_then(Value::as_object),
+                ToolCallShape::WholeCall,
+            ),
+        };
 
         if let Some(payload) = payload {
             if let Some(reasoning) = payload

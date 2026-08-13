@@ -61,6 +61,21 @@ use crate::model::{MalformedToolCall, ToolCallOutcome};
 /// user as evidence, so it is bounded like any other detail string.
 const MAX_RAW_ARGUMENTS: usize = 400;
 
+/// Which of the two wire shapes an element came from. Not inferred: the two are
+/// indistinguishable element-by-element — `{"id":…,"type":"function","function":
+/// {"name":…,"arguments":…}}` is a legal fragment *and* a legal whole call — so
+/// only the code that read the response knows, and it has to say. There is no
+/// default, on purpose: guessing is what FINDING 1 was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolCallShape {
+    /// `delta.tool_calls[]`: a fragment, joined to its siblings by `index`, and
+    /// continuing the last-touched call when it carries no index of its own.
+    Fragment,
+    /// `message.tool_calls[]`: a complete call, carrying no `index`, which
+    /// always occupies a slot of its own.
+    WholeCall,
+}
+
 #[derive(Debug, Default)]
 struct Slot {
     wire_index: Option<u32>,
@@ -74,8 +89,11 @@ struct Slot {
 #[derive(Debug, Default)]
 pub struct ToolCallAccumulator {
     slots: Vec<Slot>,
+    /// Streaming only: the fragment index → slot mapping. A whole call never
+    /// enters here, because the non-streamed shape has no `index`.
     by_wire_index: BTreeMap<u32, usize>,
-    /// The slot the last delta touched — where an unindexed continuation goes.
+    /// The slot the last *fragment* touched — where an unindexed continuation
+    /// goes. Cleared by a whole call, which nothing may continue.
     last_touched: Option<usize>,
 }
 
@@ -88,18 +106,32 @@ impl ToolCallAccumulator {
         self.slots.is_empty()
     }
 
-    /// Merge one wire delta. Returns a UI-facing delta when anything changed.
+    /// Merge one element of a **streaming** `delta.tool_calls` array — a
+    /// *fragment*, keyed by `index`, which may carry any subset of the call and
+    /// may continue a fragment that arrived earlier.
     ///
-    /// `raw` is one element of `delta.tool_calls` (streaming) or of
-    /// `message.tool_calls` (non-streaming) — the same shape, deliberately
-    /// handled by the same code so the two paths cannot diverge.
-    pub fn push(&mut self, raw: &Value) -> Option<ToolCallDelta> {
+    /// Returns a UI-facing delta when anything changed.
+    pub fn push_fragment(&mut self, raw: &Value) -> Option<ToolCallDelta> {
+        self.merge(raw, Shape::Fragment)
+    }
+
+    /// Merge one element of a **non-streamed** `message.tool_calls` array — a
+    /// *whole* call, which gets its own slot no matter what it does or does not
+    /// carry. It is never a continuation of anything, because in this shape
+    /// there is nothing to continue: the response arrived in one piece.
+    ///
+    /// Returns a UI-facing delta when anything changed.
+    pub fn push_whole_call(&mut self, raw: &Value) -> Option<ToolCallDelta> {
+        self.merge(raw, Shape::WholeCall)
+    }
+
+    fn merge(&mut self, raw: &Value, shape: Shape) -> Option<ToolCallDelta> {
         let object = raw.as_object()?;
         let wire_index = object
             .get("index")
             .and_then(Value::as_u64)
             .map(|i| i as u32);
-        let slot_index = self.slot_for(wire_index);
+        let slot_index = self.slot_for(shape, wire_index);
 
         let id = object.get("id").and_then(Value::as_str);
         let type_field = object.get("type").and_then(Value::as_str);
@@ -135,8 +167,23 @@ impl ToolCallAccumulator {
         })
     }
 
-    /// Which slot does a delta with this wire index belong to?
-    fn slot_for(&mut self, wire_index: Option<u32>) -> usize {
+    /// Which slot does this element belong to?
+    fn slot_for(&mut self, shape: Shape, wire_index: Option<u32>) -> usize {
+        if shape == Shape::WholeCall {
+            // A whole call opens its own slot, always — even when a sibling
+            // shares its id, its name, or its (absent) index. `wire_index` is
+            // recorded so a report can echo an index a proxy happened to add,
+            // and deliberately *not* entered in `by_wire_index`: in this shape
+            // the field keys nothing, so letting it key a slot would recreate
+            // the collapse it caused before.
+            self.slots.push(Slot {
+                wire_index,
+                ..Slot::default()
+            });
+            // Nothing may be appended to a call that already arrived whole.
+            self.last_touched = None;
+            return self.slots.len() - 1;
+        }
         match wire_index {
             Some(index) => {
                 if let Some(existing) = self.by_wire_index.get(&index) {

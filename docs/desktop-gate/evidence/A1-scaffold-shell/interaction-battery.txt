@@ -1,0 +1,61 @@
+Vela interaction battery — real WebView2, keys via CDP Input.dispatchKeyEvent
+(Ctrl+K additionally confirmed with a genuine OS-level keystroke.)
+
+== 1. keyboard shortcuts ==
+  start state           : dialog=False heading='Vela'
+  Ctrl+K                : dialog=True  focus='input :: Go to conversation'
+  Escape                : dialog=False  focus='body :: VELA\nUntitled workspace\nTheme: system\nNe'
+  Ctrl+N                : heading='No model chosen yet'
+
+== 2. label vs behaviour ==
+  sidebar new-conv label: '⌘N'
+  all kbd glyphs        : ["\u2318N", "\u2318K", "Enter", "Shift", "Enter"]
+  platform              : 'Win32'
+  NOTE: handler accepts metaKey||ctrlKey (use-navigation-shortcuts.ts:47) so Ctrl works;
+        the LABELS are hardcoded Mac glyphs.
+
+== 3. focus visibility and tab order ==
+  tab 1 -> button :: Theme: system
+  tab 2 -> button :: New conversation
+⌘N
+  tab 3 -> button :: Collapse sidebar
+  tab 4 -> button :: Search conversations
+⌘K
+  tab 5 -> button :: New conversation
+Nothing said yet
+  tab 6 -> div :: Resize sidebar
+  tab 7 -> button :: Start a conversation
+  tab 8 -> button :: Search everything
+⌘K
+  tab 9 -> button :: New conversation
+Nothing said yet
+  focus ring on last    : {"outline":"solid 2px rgb(20, 168, 158)","boxShadow":"none"}
+
+== 4. dialog focus trap ==
+  opened, focus         : 'input :: Go to conversation'
+  tabbing inside dialog :
+     body :: VELA
+Untitled workspace
+Theme: system
+Ne
+     button :: Theme: system
+     button :: New conversation
+⌘N
+     button :: Collapse sidebar
+     button :: Search conversations
+⌘K
+     button :: New conversation
+Nothing said yet
+  dialog still open     : True
+  after Escape          : dialog=False focus='button :: New conversation\nNothing said yet'
+
+== 5. dialog modal semantics ==
+  role/aria on dialog   : {"role":"dialog","ariaModal":"true","tag":"div","isNativeDialog":false,"open":false}
+  background inert?     : {"mainInert":false,"navInert":false,"mainAriaHidden":null}
+  focusable count outside dialog: 15
+
+== 6. window resize behaviour ==
+  window 1400x900 -> cssW=1384  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 1000x700 -> cssW=984  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 760x620 -> cssW=744  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 560x560 -> cssW=544  hasHorizontalScrollbar=False  sidebarVisible=True

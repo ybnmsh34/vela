@@ -267,3 +267,97 @@ another one. (Fix `icon.ico` in the same pass or `tauri-build` still blocks the 
 must be fixed together or the next desktop run stalls again): `src-tauri/icons/icon.ico` is absent
 and nothing generates it, so `tauri-build` fails before compiling. Fixing the casing alone still
 leaves the app unbuildable on Windows.
+
+---
+
+## A3-keychain-settings — keychain-runtime
+
+- commit: `9540d6c600316d63ebbd27ac6f833f4440d8762a`
+- critic: keychain-runtime
+- verdict: **PASS**
+- evidence: `evidence/A3-keychain-settings/ipc-session-transcript.txt`,
+  `evidence/A3-keychain-settings/wire-authnone-headers.txt`
+- environment: Windows 11 Home 10.0.26200 · WebView2 Runtime 151.0.4129.78 · Intel i7-11700K ·
+  63.8 GB RAM · `vela.exe` built `--no-default-features --features os-keychain`, so
+  `app_info.secretBackend` reports **`os-keychain`** on every call below — the real `KeyringStore`,
+  which the cloud correctly noted **had never been executed anywhere**.
+
+**How it was driven, since this matters for how much the PASS is worth.** The renderer does not
+mount (see the case-collision finding), so the settings form could not be used. Tauri injects its
+IPC bridge before the app bundle evaluates, so I enabled WebView2 remote debugging via the
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` environment variable — **no code, config or build change** —
+and invoked commands from inside the app's own webview. Every call therefore runs the real
+`AppState::for_runtime()` → `KeyringStore` → Windows Credential Manager. `MemoryStore` is not
+involved anywhere in this verdict.
+
+| # | Step | Result |
+|---|---|---|
+| 1 | Store a key, confirm it reaches Credential Manager | **PASS** — `cmdkey /list` shows `LegacyGeneric:target=<providerId>/primary.dev.vela.desktop`, matching the documented `storage_key()` format exactly |
+| 2 | Round-trip: read back, update, delete | **PASS** — set → `present:true`; update → ok; delete → `present:false` **and the OS entry is genuinely gone**; a second delete is idempotent, not an error |
+| 3 | Canary scan | **PASS** — see below |
+| 4 | `Auth::None` first-class + no `Authorization` header | **PASS** — see below |
+| 5 | Non-loopback no-auth raises a risk signal | **PASS** — `level: elevated`, `concerns: ["plaintextTrafficLeavesDevice","remoteEndpointIsUnauthenticated"]` |
+| 6 | Restart: credentials survive, settings reload | **PASS** — after a full process restart the stored credential is still `present:true`, the deleted one is still absent, and all three provider rows reload with correct `baseUrl`, `usable` and risk level |
+| 7 | Telemetry off with no enable path | **PASS** — `telemetryEnabled:false`; `settings_set_telemetry`, `telemetry_set` and `settings_put_telemetry` all return "Command not found". The absence is also structurally asserted at `src-tauri/src/ipc/settings.rs:456` |
+
+**Step 3, canary scan — with controls in both directions, because a scan that cannot fail proves
+nothing.** Three distinct canary values were stored and then searched for as UTF-8 *and* UTF-16LE
+across `vela.db`, `vela.db-wal`, `vela.db-shm` (read with `FileShare.ReadWrite`, since the running
+app holds them open) and the whole WebView2 profile — 226 files.
+
+- **0 hits.**
+- *Negative control:* an in-memory positive probe confirmed the matcher detects the canary string.
+- *Positive control:* the WAL **does** contain the non-secret `providerId` (`queryauth`), proving the
+  scan reads real database content rather than failing to see anything at all.
+- Read directly out of Credential Manager via `CredRead`, the blob is the exact canary,
+  UTF-16LE, 88 bytes, `persist = 3`.
+
+**Step 4, `Auth::None` — the load-bearing case, and it is clean.** `http://localhost:8033/v1` with
+no credential returns `usable: true`, `credentialCheck: "satisfiedWithoutCredential"`,
+`credentialFieldLabel: null` (so the UI renders no credential field at all, rather than an empty
+one), `security.level: "none"`, `concerns: []`. Not an error, no ceremony.
+
+The wire capture is the proof that matters. Vela's real `OpenAiCompatibleProvider` +
+`ReqwestTransport`, provider built with no key, recorded by a loopback listener that echoes exactly
+what arrived — **the complete set of headers sent, nothing omitted**:
+
+```
+POST /v1/chat/completions HTTP/1.1
+content-type: application/json
+accept: text/event-stream
+user-agent: vela/0.1.0
+host: 127.0.0.1:8099
+content-length: 111
+```
+
+No `authorization` — not present, not empty. No `x-api-key`, `x-goog-api-key`, `api-key` or
+`proxy-authorization`. No `key=` in the query string.
+
+### The "known cloud-side gap" does not reproduce
+
+The request warns that `Auth::ApiKeyQuery` has no `Concern` variant and reports `RiskLevel::None`.
+Tested live at this sha, it does **not**: an HTTPS remote bound to `apiKeyQuery` returns
+`credentialInQueryString: true`, `level: "elevated"`, `concerns: ["queryParamCredentialIsLogged"]`.
+The gap was closed by the very commit that made this request stale. No action needed; I am not
+raising it as worse than reported, because it is no longer there.
+
+### Limits of this PASS — read before treating it as complete
+
+- **The credential UI was never exercised.** `EndpointForm.tsx` was not run, because nothing renders.
+  What is proven is the IPC → `KeyringStore` → Credential Manager path and the security posture the
+  host returns. Whether the *form* stores, clears and re-reads correctly is unproven and belongs to
+  `interaction` once the app boots.
+- Step 4's wire capture uses `ui_matrix_bridge` for the outbound request, because the shipping host
+  registers no provider and cannot originate one (GATE-M2 finding 1). The provider, transport and
+  auth-application code are the real ones; only the process hosting them differs.
+- This says nothing about macOS Keychain or libsecret. Windows Credential Manager only.
+- Test artifacts were cleaned up: all credentials created here are deleted, all provider rows
+  removed, and `cmdkey /list` shows no residual `dev.vela.desktop` entries.
+
+### Incidental: the `icon.ico` fix is verified
+
+`a50ee9f` resolves the Windows build blocker — `cargo build --no-default-features --features
+os-keychain` now completes (exit 0) where it previously failed at `tauri-build`. The ICO parses as a
+valid 3-entry file. One cosmetic wrinkle, already disclosed by the author: entry 3 declares 256×256
+via the 0-marker but carries a **512×512** PNG. It builds and it is not blocking; `pnpm tauri icon`
+would produce a true 256px rendition.

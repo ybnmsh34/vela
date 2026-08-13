@@ -1,0 +1,23 @@
+A3 step 4 - Auth::None outbound wire capture
+Vela's real OpenAiCompatibleProvider + ReqwestTransport, provider built with NO api key.
+Recorded by a loopback listener that echoes back exactly what arrived.
+
+REQUEST LINE: POST /v1/chat/completions HTTP/1.1
+
+HEADERS AS SENT (complete, nothing omitted):
+  content-type: application/json
+  accept: text/event-stream
+  user-agent: vela/0.1.0
+  host: 127.0.0.1:8099
+  content-length: 111
+
+ABSENCE CHECKS:
+  authorization          present: False
+  x-api-key              present: False
+  x-goog-api-key         present: False
+  api-key                present: False
+  proxy-authorization    present: False
+  query string contains 'key=': False
+
+BODY:
+{"messages":[{"content":"hi","role":"user"}],"model":"m","stream":true,"stream_options":{"include_usage":true}}

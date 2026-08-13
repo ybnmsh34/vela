@@ -866,9 +866,18 @@ const MAX_SAME_AUTHORITY_REDIRECTS: usize = 4;
 /// configured. The rule this transport is built on is not "do not leak the key";
 /// it is the one stated on `with_connect_timeout`: *Vela talks to the endpoint
 /// the user configured and to nothing else*. A prompt is user data too. So a
-/// cross-authority redirect is refused outright and surfaces as an error naming
-/// **both** authorities, which is actionable — the user can see who redirected
-/// them and where — where a silent follow is not.
+/// cross-authority redirect is refused outright.
+///
+/// What the refusal *says* narrowed in Phase B2, and the earlier wording is kept
+/// here as a correction rather than quietly replaced: this used to surface as an
+/// error naming **both** authorities, on the argument that seeing who redirected
+/// you and where is actionable. The destination is a host the *endpoint* chose,
+/// so under the typed, closed error surface it is endpoint-supplied text and
+/// does not cross the IPC boundary. The error names the authority the user
+/// configured and carries [`Cause::RedirectRefusedCrossAuthority`]; where the
+/// endpoint pointed is filed in the local debug log under the same correlation
+/// id. See [`RefusedRedirect::cause`], and `wire_redirect_egress.rs`, which
+/// asserts both halves.
 ///
 /// # Why not `Policy::none()`
 ///

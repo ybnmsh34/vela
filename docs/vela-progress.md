@@ -1649,3 +1649,93 @@ protocol shape and UI behaviour, and nothing about SQLite, FTS5, a real database
 packaged binary. The visual and interaction judgements are **provisional** — Linux Chromium is
 not Windows WebView2, and the binding verdicts belong to a desktop session via
 `docs/desktop-gate/`.
+
+---
+
+## Phase B2 — integration: the two builders reconciled
+
+**Integration agent's entry.** Two B2 builders ran in parallel — the reasoning-to-tool-execution
+fix (FINDING 3) and the typed, closed error surface — and both were briefed to touch `stream.rs`
+and `error.rs`. Conflicts were expected. **There were none in code**, for a reason worth recording
+rather than celebrating.
+
+### Why there was nothing to merge
+
+The two workflows shared **one working tree and one git index** — the incident already recorded
+above. So they did not diverge and re-converge; they landed *sequentially* on the same files, each
+reading what the other had just written. That is why `a73afa0` (FINDING 3) and `b508a6f` (typed
+error surface) compose cleanly: not because the merge was easy, but because there was never a
+merge. **This is luck, not method.** The same mechanism that ate the Phase C navigation surface in
+`3e43e81` is the one that happened to serialise these two builders correctly. The lesson stands as
+already written: decoupled parallel work belongs in worktrees.
+
+Verified rather than assumed. The seam the two builders share is `CompletionAssembler::finish`, and
+it holds both properties at once:
+
+* the recovered answer enters through `AnswerChannel::close` — the FINDING 3 chokepoint — so
+  salvaged calls arrive `quarantined`, and `stop_reason` becomes `ToolUse` only when some call
+  `is_ok()`, which a quarantined call never is;
+* the untagged-shape fallback parses `executable_text()`, which excludes salvaged text by
+  construction rather than by remembering to exclude it.
+
+All three adapters (`stream.rs`, `anthropic/stream.rs`, `google/stream.rs`) route salvage through
+the same `close()` and extend their call list from `closed.quarantined`. `compat/provider.rs` is a
+delegating wrapper, not a fourth assembler. The only `TextDelta` emitted outside `AnswerChannel` is
+`EchoProvider`'s, which echoes the *user's own* message and emulates no tools.
+
+### The one real conflict, and it was a claim, not a line
+
+`http.rs`'s `redirect_policy` doc argued the refusal *"surfaces as an error naming **both**
+authorities, which is actionable — the user can see who redirected them and where."* Eighty lines
+below, `RefusedRedirect::cause` — rewritten by the error-surface builder — states the opposite and
+correct thing: the destination is a host the *endpoint* chose, so it does not cross the IPC
+boundary, and it is filed in the debug log under the correlation id.
+
+Both statements were true when written. After B2 only the second one is. The first was left in
+place describing a property the redesign deliberately gave up, in the file whose job is to be the
+argument for the egress rules — which is where a stale claim does the most damage: the next builder
+reads the module doc, not the private method's.
+
+Corrected in place, and the superseded wording is **kept and marked as superseded** rather than
+silently overwritten, because the earlier argument was a real one and a reader deserves to know it
+was weighed and traded rather than forgotten. `wire_redirect_egress.rs` already asserted the new
+behaviour — its helper is named `assert_the_error_names_the_endpoint_and_files_the_destination` —
+so the code and the tests were never in disagreement. Only the prose was.
+
+### Invariants re-verified, not inherited
+
+| Invariant | How it was checked here |
+|---|---|
+| Never-closed reasoning ⇒ no executable call, either transport, any adapter | `deliberation_is_not_an_instruction.rs` + call-site audit of all three assemblers |
+| No raw markup on a `TextDelta` | every `StreamEvent::TextDelta` construction outside `AnswerChannel` enumerated and accounted for |
+| No endpoint text on `ProviderError`'s Display/Debug/serde/IPC | no `String` on any variant; `EndpointIdentity::of(&RequestUrl)` is the only constructor and takes a URL *Vela built* |
+| Accumulator, inexpressible unscrubbed reads, redirect refusal, redacted identity | 40 test binaries, 808 assertions, 12 compile-fail doctests |
+| `mock-matrix/` regenerates byte-identical | `./scripts/check-transcripts.sh` ✅ |
+
+### Measured — the full gate, as CI runs it
+
+Run against an **isolated `git worktree` at HEAD**, deliberately, because the Phase C workflow was
+mid-write in the shared tree throughout this session and a gate run over another session's
+half-written files measures nothing.
+
+`pnpm install` ✅ · `pnpm typecheck` ✅ · `pnpm test` ✅ 466/466 in 32 files ·
+`pnpm test:harness` ✅ 130/130 · `pnpm build` ✅ ·
+`cargo fmt --all --check` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅
+(forced off the cache by touching every `.rs` first) ·
+`cargo build --workspace --locked` ✅ · `cargo test --workspace --locked` ✅
+**40 binaries, 808 passed, 0 failed, 3 ignored** ·
+`./scripts/check-transcripts.sh` ✅ byte-identical ·
+`./scripts/secret-scan.test.sh` ✅ 12/12 · `./scripts/secret-scan.sh` ✅.
+
+**One failure was observed and is NOT ours:** `src/platform/contract.test.ts` fails in the shared
+working tree because the Phase C session is mid-write on a `models_*` IPC surface — `contract.ts`
+had gained `models_list`, `models_probe`, `models_capabilities` while the test's hard-coded list
+had not. At HEAD, in isolation, that suite is green. Reported to the Phase C integration rather
+than fixed here: editing another session's half-written file is how the last incident started.
+
+**No `src/` file was touched by this integration.** The only change is a doc comment in
+`src-tauri/crates/vela-providers/src/http.rs`; no public type moved, so nothing was forced on the
+frontend.
+
+**VERIFIED-BY-FAKE**, per conventions §10. **GATE M Part 2 remains deferred to the desktop
+session and was not attempted.**

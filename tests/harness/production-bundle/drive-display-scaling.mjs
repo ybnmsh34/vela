@@ -45,7 +45,7 @@
  */
 
 import { createServer } from 'node:http';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -78,8 +78,13 @@ const baselineDist = flag('--baseline');
 const outDir = flag('--out') ?? join(repoRoot, 'docs/regression-baseline/platform-defaults');
 const runControls = argv.includes('--controls');
 
-rmSync(outDir, { recursive: true, force: true });
+// Only this run's own artefacts are cleared. The directory also holds a
+// hand-written RESULTS.md, and a driver that deletes the write-up explaining it
+// is a driver that quietly loses the reasoning every time it is re-run.
 mkdirSync(outDir, { recursive: true });
+for (const stale of readdirSync(outDir)) {
+  if (stale.endsWith('.png') || stale === 'ASSERTION-LEDGER.tsv') rmSync(join(outDir, stale));
+}
 
 /* -------------------------------------------------------------------------- */
 /* the effective viewports                                                    */
@@ -194,6 +199,25 @@ const MEASURE_EMPTY_STATE = () => {
   const scrollTopAsPainted = scroller.scrollTop;
   scroller.scrollTop = 0;
 
+  // The reading ruler: the centre of the transcript's column against the centre
+  // of the composer's field. They are centred in the same window, so the two
+  // centres are the same line — unless the scroller's scrollbar has taken width
+  // out of one of them.
+  const column = heading.closest('div')?.parentElement ?? null;
+  const field = document.querySelector('#vela-composer');
+  const centre = (node) => {
+    const r = node.getBoundingClientRect();
+    return r.left + r.width / 2;
+  };
+  const ruler =
+    column === null || field === null
+      ? null
+      : {
+          columnCentre: centre(column),
+          fieldCentre: centre(field.parentElement ?? field),
+          scrollerGutter: scroller.offsetWidth - scroller.clientWidth,
+        };
+
   const composer = document.querySelector('#vela-composer');
   const statusLine = document.querySelector('[data-testid="status-line"]');
 
@@ -216,6 +240,7 @@ const MEASURE_EMPTY_STATE = () => {
     composer: composer === null ? null : box(composer),
     statusLine: statusLine === null ? null : box(statusLine),
     viewport: { width: window.innerWidth, height: window.innerHeight },
+    ruler,
     documentScrollWidth: document.documentElement.scrollWidth,
   };
 };
@@ -404,6 +429,25 @@ async function measureLayout(browser, origin, prefix, expectFailure = false) {
       assert(`${id}-f`, 'the window does not scroll sideways',
         expectFailure ? true : noSideways,
         `document ${m.documentScrollWidth} vs viewport ${m.viewport.width}`);
+
+      // (h) THE READING RULER, with the scrollbar in it. The stylesheet check in
+      //     surfaces.test.ts computes this from declarations and has no
+      //     scrollbar in its arithmetic; this measures it with one.
+      //     **Honesty:** Linux Chromium overlays its scrollbars, so this cannot
+      //     reproduce the Windows offset — `scrollbar-gutter: stable both-edges`
+      //     reserves the gutter here anyway, which is what makes the ruler the
+      //     same object on every platform. This is a guard on Linux and the real
+      //     measurement on WebView2.
+      const ruler = m.ruler;
+      const rulerTrue = ruler !== null && Math.abs(ruler.columnCentre - ruler.fieldCentre) <= 0.6;
+      assert(
+        `${id}-h`,
+        'the transcript column and the composer field share one centre line',
+        expectFailure ? true : rulerTrue,
+        ruler === null
+          ? 'could not find both'
+          : `column ${ruler.columnCentre.toFixed(1)} vs field ${ruler.fieldCentre.toFixed(1)}, scrollbar gutter ${ruler.scrollerGutter}px`,
+      );
 
       assert(`${id}-g`, 'no uncaught exception at this size',
         expectFailure ? true : pageErrors.length === 0, pageErrors.join(' | '));

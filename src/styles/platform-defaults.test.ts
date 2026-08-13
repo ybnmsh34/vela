@@ -397,6 +397,24 @@ describe('the layout survives 150% display scaling', () => {
     expect(offenders, 'clamp it against the viewport: min(<length>, <n>vh)').toEqual([]);
   });
 
+  it('keeps the reading ruler true when a scrollbar appears', () => {
+    // `surfaces.test.ts` computes, from the stylesheet, that the transcript's
+    // text and the composer's box share one vertical ruler. That computation
+    // has no scrollbar in it, and on Windows there is one: a classic scrollbar
+    // takes its width out of the scroller's content box, the centred column
+    // re-centres in what is left, and the ruler bends by half a scrollbar —
+    // the 7px composer offset the desktop session measured. The two other
+    // platforms overlay their scrollbars, so nothing here or on macOS shows it.
+    //
+    // Reserving the gutter on *both* edges is what keeps the centre line true;
+    // plain `stable` reserves one side and moves the centre by half a bar.
+    const scroller = rule(read('src/features/conversation/ConversationView.module.css'), '.scroller');
+    expect(
+      scroller.get('scrollbar-gutter'),
+      'a scroller whose content is centred against a sibling that is not must reserve both edges',
+    ).toBe('stable both-edges');
+  });
+
   it('lets the transcript scroll rather than clip', () => {
     // The other half: safe centring only helps if the overflow lands somewhere
     // scrollable. This is the container the empty state lives in.
@@ -425,6 +443,20 @@ describe('the layout survives 150% display scaling', () => {
 /* -------------------------------------------------------------------------- */
 /* 3. one inset in the model picker                                            */
 /* -------------------------------------------------------------------------- */
+
+/** The declarations of the first rule whose selector list contains `selector`. */
+function rule(sheet: string, selector: string): Map<string, string> {
+  const stripped = sheet.replace(/\/\*[\s\S]*?\*\//gu, '');
+  const pattern = new RegExp(`(^|,|\\})\\s*${selector.replace('.', '\\.')}\\s*(,[^{]*)?\\{([^}]*)\\}`, 'mu');
+  const body = pattern.exec(stripped)?.[3];
+  expect(body, `no rule for ${selector}`).toBeDefined();
+  const out = new Map<string, string>();
+  for (const line of (body ?? '').split(';')) {
+    const at = line.indexOf(':');
+    if (at > 0) out.set(line.slice(0, at).trim(), line.slice(at + 1).trim());
+  }
+  return out;
+}
 
 /** `padding: a b c d` → the inline (left/right) component, in px. */
 function inlinePadding(shorthand: string): number {

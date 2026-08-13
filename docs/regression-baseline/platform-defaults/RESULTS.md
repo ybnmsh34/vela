@@ -85,6 +85,24 @@ follow when there are no entries, and an introduction is read from its first lin
 
 Screenshots: `<viewport>-<theme>.png`, eight of them.
 
+## The 7px composer offset — taken, because the scrollbar caused it
+
+The desktop session's re-measurement notes: *"scrollbar-gutter is still auto, so the 7px composer
+offset filed under CONV-1 is expected to remain."* It is answered here rather than left to CONV-1,
+because the scrollbar causes it and the scrollbar is this piece.
+
+`surfaces.test.ts` proves from the stylesheet that the transcript's text and the composer's box
+stand on one vertical ruler. That arithmetic has no scrollbar in it. On Windows there is one: a
+classic scrollbar takes its width out of the scroller's content box, the centred column re-centres
+inside what is left, and the ruler bends by half a scrollbar. Linux and macOS *overlay* their
+scrollbars, so the defect is invisible on both machines that could have caught it and plain on the
+platform most users are on — a guarantee asserted in one place and delivered in none.
+
+`.scroller` now sets `scrollbar-gutter: stable both-edges`. `both-edges` rather than plain
+`stable`: reserving one side stops the column moving as content grows but still puts its centre
+half a scrollbar off the window's. Measured after the change, at every viewport: **24px reserved,
+column centre and field centre identical to 0.0px** (assertion `-h`).
+
 ## What is guarded but was not broken
 
 `safe center` on every centred column, and the viewport-aware `max-height` caps, are neighbouring

@@ -40,7 +40,7 @@
  * in which case fix the sentence.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -69,7 +69,18 @@ const CLAIM_ROOTS = [
   join('docs', 'vela-progress.md'),
 ];
 
-const SCANNED_EXTENSIONS = ['.rs', '.ts', '.tsx', '.css', '.md', '.sh', '.mjs', '.js', '.yml', '.toml'];
+const SCANNED_EXTENSIONS = [
+  '.rs',
+  '.ts',
+  '.tsx',
+  '.css',
+  '.md',
+  '.sh',
+  '.mjs',
+  '.js',
+  '.yml',
+  '.toml',
+];
 
 /**
  * Backticked tokens that are deliberately not files.
@@ -123,7 +134,17 @@ const EXTERNAL_CRATES = new Set([
 ]);
 
 /** Trait and derive names that resolve in rustdoc via the prelude, not this tree. */
-const PRELUDE_ITEMS = new Set(['Default', 'Ord', 'Eq', 'Serialize', 'Deserialize', 'Debug', 'Display', 'From', 'Into']);
+const PRELUDE_ITEMS = new Set([
+  'Default',
+  'Ord',
+  'Eq',
+  'Serialize',
+  'Deserialize',
+  'Debug',
+  'Display',
+  'From',
+  'Into',
+]);
 
 /* -------------------------------------------------------------------------- */
 /* the tree                                                                   */
@@ -177,20 +198,30 @@ const CONTENTS = new Map(SCANNED.map((path) => [path, readFileSync(join(REPO, pa
 /* what actually exists                                                       */
 /* -------------------------------------------------------------------------- */
 
+/** First capture group of every match. `matchAll` types groups as optional. */
+function* captured(text: string, pattern: RegExp): Generator<string> {
+  for (const match of text.matchAll(pattern)) {
+    const value = match[1];
+    if (value !== undefined) yield value;
+  }
+}
+
 /** Every Rust item a doc link could legitimately point at. */
 function rustItems(): ReadonlySet<string> {
   const items = new Set<string>();
   for (const [path, text] of CONTENTS) {
     if (!path.endsWith('.rs')) continue;
-    for (const [, name] of text.matchAll(/\bfn\s+([A-Za-z_][A-Za-z0-9_]*)/g)) items.add(name);
-    for (const [, name] of text.matchAll(
+    for (const name of captured(text, /\bfn\s+([A-Za-z_][A-Za-z0-9_]*)/g)) items.add(name);
+    for (const name of captured(
+      text,
       /\b(?:struct|enum|trait|type|const|static|union|mod)\s+([A-Za-z_][A-Za-z0-9_]*)/g,
     )) {
       items.add(name);
     }
     // Enum variants and struct fields: both are things a doc comment names.
-    for (const [, name] of text.matchAll(/^\s{4,}([A-Z][A-Za-z0-9]*)\s*[,({]/gm)) items.add(name);
-    for (const [, name] of text.matchAll(
+    for (const name of captured(text, /^\s{4,}([A-Z][A-Za-z0-9]*)\s*[,({]/gm)) items.add(name);
+    for (const name of captured(
+      text,
       /^\s{4,}(?:pub(?:\([a-z]+\))?\s+)?([a-z_][a-z0-9_]*)\s*:/gm,
     )) {
       items.add(name);
@@ -208,8 +239,9 @@ function rustItems(): ReadonlySet<string> {
 function wireTokensAndMethods(): ReadonlySet<string> {
   const names = new Set<string>();
   for (const text of CONTENTS.values()) {
-    for (const [, name] of text.matchAll(/"([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})"/g)) names.add(name);
-    for (const [, name] of text.matchAll(/\.([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})\s*\(/g)) names.add(name);
+    for (const name of captured(text, /"([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})"/g)) names.add(name);
+    for (const name of captured(text, /\.([a-z][a-z0-9]*(?:_[a-z0-9]+){3,})\s*\(/g))
+      names.add(name);
   }
   return names;
 }
@@ -219,7 +251,7 @@ function shellLabels(): ReadonlySet<string> {
   const labels = new Set<string>();
   for (const [path, text] of CONTENTS) {
     if (!path.endsWith('.sh')) continue;
-    for (const [, name] of text.matchAll(/\b(?:pass|fail)\s+"([a-z_][a-z0-9_]*)/g)) labels.add(name);
+    for (const name of captured(text, /\b(?:pass|fail)\s+"([a-z_][a-z0-9_]*)/g)) labels.add(name);
   }
   return labels;
 }
@@ -229,12 +261,13 @@ function typescriptNames(): ReadonlySet<string> {
   const names = new Set<string>();
   for (const [path, text] of CONTENTS) {
     if (!/\.(ts|tsx|mjs|js)$/.test(path)) continue;
-    for (const [, name] of text.matchAll(
+    for (const name of captured(
+      text,
       /\b(?:function|const|let|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g,
     )) {
       names.add(name);
     }
-    for (const [, name] of text.matchAll(/\b(?:it|test|describe)\(\s*['"]([^'"]+)/g)) names.add(name);
+    for (const name of captured(text, /\b(?:it|test|describe)\(\s*['"]([^'"]+)/g)) names.add(name);
   }
   return names;
 }
@@ -269,11 +302,16 @@ export function claimsIn(path: string, text: string): readonly Claim[] {
   for (const [index, line] of lines.entries()) {
     const at = index + 1;
     if (path.endsWith('.rs') && COMMENT_LINE.test(line)) {
-      for (const [, token] of line.matchAll(DOC_LINK)) {
-        claims.push({ kind: 'doc-link', file: path, line: at, token: token.split('(')[0].trim() });
+      for (const token of captured(line, DOC_LINK)) {
+        claims.push({
+          kind: 'doc-link',
+          file: path,
+          line: at,
+          token: (token.split('(')[0] ?? token).trim(),
+        });
       }
     }
-    for (const [, raw] of line.matchAll(BACKTICKED)) {
+    for (const raw of captured(line, BACKTICKED)) {
       const token = raw.trim();
       if (PATH_TOKEN.test(token)) {
         claims.push({ kind: 'path', file: path, line: at, token });
@@ -370,7 +408,9 @@ describe('this guard is not vacuous', () => {
       true,
     );
     expect(RUST_ITEMS.has('rust_and_typescript_allowlists_are_identical')).toBe(true);
-    expect(RUST_ITEMS.has('no_error_in_the_whole_taxonomy_carries_an_unexplained_string')).toBe(true);
+    expect(RUST_ITEMS.has('no_error_in_the_whole_taxonomy_carries_an_unexplained_string')).toBe(
+      true,
+    );
     expect(SHELL_LABELS.has('scan_scans_itself_and_stays_clean')).toBe(true);
     expect(FILE_SET.has('src/platform/chat-contract-parity.test.ts')).toBe(true);
   });

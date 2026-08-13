@@ -88,11 +88,8 @@ function everyVariantOf<U extends string>() {
 }
 
 /** The discriminant values of a tagged union, as the wire spells them. */
-type TagsOf<U, T extends PropertyKey> = U extends Record<T, infer V>
-  ? V extends string
-    ? V
-    : never
-  : never;
+type TagsOf<U, T extends PropertyKey> =
+  U extends Record<T, infer V> ? (V extends string ? V : never) : never;
 
 const MESSAGE_ROLE = everyVariantOf<MessageRole>()(['system', 'user', 'assistant', 'tool']);
 
@@ -203,12 +200,7 @@ const SUPPORT = everyVariantOf<CapabilitySupport>()([
   'degraded',
 ]);
 
-const EVIDENCE = everyVariantOf<CapabilityEvidence>()([
-  'probed',
-  'declared',
-  'cached',
-  'unprobed',
-]);
+const EVIDENCE = everyVariantOf<CapabilityEvidence>()(['probed', 'declared', 'cached', 'unprobed']);
 
 /**
  * `Cause` is `#[non_exhaustive]` in Rust and open in TypeScript
@@ -426,9 +418,27 @@ interface Pairing {
 }
 
 const ENUMS: readonly Pairing[] = [
-  { rust: 'MessageRole', file: 'model.rs', keyword: 'enum', ts: 'MessageRole', listed: MESSAGE_ROLE },
-  { rust: 'StopReason', file: 'model.rs', keyword: 'enum', ts: 'StopReason', listed: STOP_REASON },
-  { rust: 'ContentPart', file: 'model.rs', keyword: 'enum', ts: 'ContentPart', listed: CONTENT_PART },
+  {
+    rust: 'MessageRole',
+    file: 'model.rs',
+    keyword: 'enum',
+    ts: 'MessageRole',
+    listed: MESSAGE_ROLE,
+  },
+  {
+    rust: 'StopReason',
+    file: 'model.rs',
+    keyword: 'enum',
+    ts: 'StopReason',
+    listed: STOP_REASON,
+  },
+  {
+    rust: 'ContentPart',
+    file: 'model.rs',
+    keyword: 'enum',
+    ts: 'ContentPart',
+    listed: CONTENT_PART,
+  },
   {
     rust: 'MalformedToolCall',
     file: 'model.rs',
@@ -443,7 +453,13 @@ const ENUMS: readonly Pairing[] = [
     ts: 'ToolCallOutcome',
     listed: TOOL_CALL_OUTCOME,
   },
-  { rust: 'Degradation', file: 'model.rs', keyword: 'enum', ts: 'Degradation', listed: DEGRADATION },
+  {
+    rust: 'Degradation',
+    file: 'model.rs',
+    keyword: 'enum',
+    ts: 'Degradation',
+    listed: DEGRADATION,
+  },
   {
     rust: 'ContextStrategy',
     file: 'model.rs',
@@ -465,7 +481,13 @@ const ENUMS: readonly Pairing[] = [
     ts: 'ChatStreamEvent',
     listed: STREAM_EVENT,
   },
-  { rust: 'Capability', file: 'error.rs', keyword: 'enum', ts: 'CapabilityName', listed: CAPABILITY },
+  {
+    rust: 'Capability',
+    file: 'error.rs',
+    keyword: 'enum',
+    ts: 'CapabilityName',
+    listed: CAPABILITY,
+  },
   {
     rust: 'TransportFailure',
     file: 'error.rs',
@@ -494,7 +516,13 @@ const ENUMS: readonly Pairing[] = [
     ts: 'CapabilityEvidence',
     listed: EVIDENCE,
   },
-  { rust: 'Cause', file: 'diagnostic.rs', keyword: 'enum', ts: 'KnownCause', listed: CAUSE },
+  {
+    rust: 'Cause',
+    file: 'diagnostic.rs',
+    keyword: 'enum',
+    ts: 'KnownCause',
+    listed: CAUSE,
+  },
   {
     rust: 'FilterStage',
     file: 'diagnostic.rs',
@@ -612,7 +640,9 @@ describe('the parity parser itself', () => {
   // pass vacuously.
 
   it('fails loudly when an item it was told to read is gone', () => {
-    expect(() => readRustItem('model.rs', 'enum', 'NoSuchEnum')).toThrow(/no `pub enum NoSuchEnum`/);
+    expect(() => readRustItem('model.rs', 'enum', 'NoSuchEnum')).toThrow(
+      /no `pub enum NoSuchEnum`/,
+    );
   });
 
   it('reads the variant names, not the doc comments or attributes around them', () => {

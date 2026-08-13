@@ -27,6 +27,23 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* THE SCROLLBAR IS PART OF THE RULER.
+     `surfaces.test.ts` proves from the stylesheet that the transcript's text
+     and the composer's box stand on one vertical ruler — and on Windows they
+     did not, by ~7px, because this container is a scroller and the composer is
+     not: a classic (non-overlay) scrollbar takes its width out of the content
+     box, the centred column re-centres inside what is left, and the ruler bends
+     by half a scrollbar. That is engine-dependent in the worst way — Linux and
+     macOS overlay their scrollbars, so it is invisible here and plain on the
+     platform most users are on. It was filed by the desktop session as a 7px
+     composer offset and predicted to survive the scrollbar work; this is that
+     prediction answered.
+     `both-edges` rather than plain `stable`: reserving the gutter on one side
+     stops the column *moving* as content grows, but still shifts its centre off
+     the window's by half a scrollbar. Reserving both keeps the centre true, and
+     costs the same 12px twice on every platform, which is the point — the
+     ruler is now the same object everywhere. */
+  scrollbar-gutter: stable both-edges;
   /* Keeps the last turn from being glued to the composer as it grows. */
   overscroll-behavior: contain;
   display: flex;

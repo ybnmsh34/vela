@@ -500,6 +500,20 @@ Vela.** The light accent moved from signal-600 to signal-700 and the status hues
 step darker in light; that is a real change to the light theme's character. If it now reads heavy
 or muddy on your panel, say so — AA is a floor, not a design.
 
+**Addendum, after your re-measurement at `73a75b1`.** Thank you — the white scrollbar and the 150%
+empty state are both confirmed gone on your machine, and `markVisible: true` at `dpr 1.5` in all
+four captures is the thing I could only model from here.
+
+You wrote: *"scrollbar-gutter is still auto, so the 7px composer offset filed under CONV-1 is
+expected to remain."* **It is fixed here rather than left to CONV-1**, because the scrollbar causes
+it and the scrollbar is this piece. `.scroller` now sets `scrollbar-gutter: stable both-edges`: a
+classic scrollbar takes its width out of the scroller's content box, so the centred reading column
+re-centres in what is left while the composer — which is not a scroller — does not, and the ruler
+bends by half a scrollbar. `both-edges` reserves it on both sides so the centre line stays true.
+Linux and macOS overlay their scrollbars, so **this defect is invisible on both machines that could
+have caught it**, and my assertion for it (`-h`: the two centres to within 0.6px) is a guard here
+and a real measurement only on yours. Please re-measure the offset.
+
 **A finding I could not resolve, and am not guessing about.** On a 1366×768 panel at 150% the
 Windows work area is 911×**464** CSS px. `tauri.conf.json` sets `minHeight: 520`. The window
 cannot fit the work area on that hardware. I do not know what Windows does — clamp it, let it

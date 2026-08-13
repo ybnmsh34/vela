@@ -34,6 +34,7 @@ pub use provider::{AnthropicOptions, AnthropicProvider, DEFAULT_BASE_URL};
 use serde_json::Value;
 
 use crate::error::{detail, Capability, ProviderError, TransportFailure};
+use crate::http::UpstreamBytes;
 
 /// Longest error body this adapter will read. `conventions.md` §3.2 forbids raw
 /// upstream bodies reaching the renderer, and this bounds what a broken
@@ -63,11 +64,13 @@ pub enum Concession {
 /// depend on an endpoint's copywriting.
 pub fn map_error_response(
     status: u16,
-    body: &[u8],
+    body: &UpstreamBytes,
     model_id: &str,
     retry_after_header: Option<&str>,
 ) -> ProviderError {
-    let parsed: Option<Value> = serde_json::from_slice(body).ok();
+    // Decoded through the body's scrubber: whatever encoding the endpoint used
+    // for the credential, it has been undone by now and the needles match.
+    let parsed: Option<Value> = body.json_or_none();
     match parsed.as_ref().and_then(|value| value.get("error")) {
         Some(error) => {
             let mapped = map_error_object(Some(status), error);
@@ -191,8 +194,8 @@ fn map_status(
 /// Read from the body directly rather than from the mapped error: the mapping
 /// deliberately throws wire detail away, and this is the one decision that
 /// needs it.
-pub fn concession_for(body: &[u8]) -> Option<Concession> {
-    let parsed: Value = serde_json::from_slice(body).ok()?;
+pub fn concession_for(body: &UpstreamBytes) -> Option<Concession> {
+    let parsed: Value = body.json_or_none()?;
     let message = parsed
         .get("error")?
         .get("message")?

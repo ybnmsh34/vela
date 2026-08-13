@@ -230,12 +230,18 @@ impl HttpResponse {
     ///
     /// `limit` bounds what a hostile or broken endpoint can make Vela allocate.
     ///
-    /// No scrubbing happens here, and that is the point: every byte already
-    /// came out of [`BodyStream::next_chunk`], which is the one door bytes can
-    /// leave a body by, and it scrubs. This function used to be the *only*
-    /// scrubbed read, which is precisely how the streaming path went unredacted
-    /// (GATE M Part 1, Phase B, FINDING 2).
-    pub async fn read_to_end(&mut self, limit: usize) -> Result<Vec<u8>, TransportError> {
+    /// No *byte* scrubbing happens here, and that is the point: every byte
+    /// already came out of [`BodyStream::next_chunk`], which is the one door
+    /// bytes can leave a body by, and it scrubs. This function used to be the
+    /// *only* scrubbed read, which is precisely how the streaming path went
+    /// unredacted (GATE M Part 1, Phase B, FINDING 2).
+    ///
+    /// It returns [`UpstreamBytes`] rather than `Vec<u8>` because a byte scrub
+    /// is not the end of the story: bytes get **decoded**, and a decoder undoes
+    /// whatever encoding the endpoint applied. The returned value carries the
+    /// scrubber so that the decode can scrub again on the other side — see
+    /// [`UpstreamBytes`].
+    pub async fn read_to_end(&mut self, limit: usize) -> Result<UpstreamBytes, TransportError> {
         let mut out = Vec::new();
         while let Some(chunk) = self.body.next_chunk().await? {
             out.extend_from_slice(&chunk);
@@ -244,7 +250,77 @@ impl HttpResponse {
                 break;
             }
         }
-        Ok(out)
+        Ok(UpstreamBytes {
+            bytes: out,
+            scrubber: self.body.origin().scrubber().clone(),
+        })
+    }
+}
+
+/// A body an endpoint sent, in full, **with the credential material of the
+/// request it answers still attached**.
+///
+/// # Why this is not a `Vec<u8>` (round 4)
+///
+/// Round 3 established that bytes leave a body only through
+/// [`BodyStream::next_chunk`], and that that door scrubs. That held. What it
+/// could not do is survive a *decode*: an endpoint that JSON-escapes the
+/// credential — `sk\/x\/KEY`, the default spelling of PHP's `json_encode` —
+/// matches no needle as bytes, and `serde_json` then hands the raw secret back
+/// to code that sits downstream of every scrub point. The leak had been moved
+/// one decode step, not closed.
+///
+/// So the decode is a method here, and there is no accessor for the raw bytes.
+/// `serde_json::from_slice(&body)` does not compile against this type; the way
+/// to read a body is [`UpstreamBytes::json`], which scrubs the *decoded*
+/// strings — where every encoding the decoder understands has already been
+/// undone, so no list of encodings is involved.
+pub struct UpstreamBytes {
+    bytes: Vec<u8>,
+    scrubber: Scrubber,
+}
+
+impl UpstreamBytes {
+    /// For bytes that answer no request of the user's — a fixture, a fake, a
+    /// buffer built in memory. Named rather than defaulted, like
+    /// [`BodyOrigin::carries_no_credential`]: "there is no credential in here"
+    /// is a claim, and a claim should be typed out.
+    pub fn carries_no_credential(bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            bytes: bytes.into(),
+            scrubber: Scrubber::none(),
+        }
+    }
+
+    /// Decode as JSON, then scrub every string in the result.
+    pub fn json(&self) -> Result<serde_json::Value, serde_json::Error> {
+        self.scrubber.decode_json(&self.bytes)
+    }
+
+    /// The same, for the callers that treat "not JSON" as "nothing to say".
+    pub fn json_or_none(&self) -> Option<serde_json::Value> {
+        self.json().ok()
+    }
+
+    /// The body as text, scrubbed. Lossy on purpose: an error body is not
+    /// necessarily UTF-8 and must not be rejected for it.
+    pub fn text(&self) -> String {
+        self.scrubber
+            .scrub(String::from_utf8_lossy(&self.bytes).into_owned())
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    /// The needles these bytes must not carry, for a caller that has to scrub
+    /// something derived from them by hand.
+    pub fn scrubber(&self) -> &Scrubber {
+        &self.scrubber
     }
 }
 
@@ -519,6 +595,16 @@ impl ReqwestTransport {
             // through a third party.
             // TODO(phase-D, providers): explicit, user-configured proxy support.
             .no_proxy()
+            // The *other* way a request reaches a host the user never named:
+            // the endpoint asks it to. See [`redirect_policy`].
+            .redirect(redirect_policy())
+            // `reqwest` defaults this to `true`, and `make_referer` clears
+            // username, password and fragment but **keeps the query string** —
+            // so with `Auth::ApiKeyQuery` the credential travels to the next hop
+            // inside a `Referer` header even when no credential header does.
+            // Vela has no use for a referer at all: there is no page here, only
+            // an API call the user configured.
+            .referer(false)
             .user_agent(concat!("vela/", env!("CARGO_PKG_VERSION")))
             .build()
             // No request exists yet, so there is no endpoint to name and no
@@ -531,6 +617,171 @@ impl ReqwestTransport {
             })?;
         Ok(Self { client })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Redirects — the second implicit-egress channel
+// ---------------------------------------------------------------------------
+
+/// How many *same-authority* hops Vela will follow before calling it a loop.
+///
+/// `reqwest::redirect::Policy::custom` does no loop detection of its own — its
+/// own documentation says so — so this replaces the cap `Policy::limited` would
+/// have provided. Four is generous for the only legitimate case there is: a
+/// reverse proxy normalising a path, which takes one.
+const MAX_SAME_AUTHORITY_REDIRECTS: usize = 4;
+
+/// **Vela follows a redirect only back to the authority the user configured.**
+///
+/// # The defect this exists to close
+///
+/// `reqwest`'s default is `Policy::limited(10)` with `referer: true`, and its
+/// cross-host protection (`redirect::remove_sensitive_headers`) strips exactly
+/// five headers: `authorization`, `cookie`, `cookie2`, `proxy-authorization`,
+/// `www-authenticate`. `x-api-key` is not on that list. Neither is
+/// `x-goog-api-key`, nor any header an `Auth::ApiKeyHeader` binding names. Those
+/// are precisely the two non-`Bearer` bindings Vela ships: a `302` from the
+/// configured endpoint handed the user's Anthropic or Google key to whatever
+/// host the `Location` named, on the first request of a healthy turn, with no
+/// error involved. `Auth::ApiKeyQuery` leaked by a second route: the credential
+/// is *in the URL*, and `make_referer` keeps the query string, so it rode to the
+/// next hop in a `Referer` header (suppressed only on an https→http downgrade).
+///
+/// # Why refusing, rather than following-with-the-credential-stripped
+///
+/// Stripping the credential and following anyway would still send the request —
+/// the prompt, the conversation, the tool catalogue — to a host the user never
+/// configured. The rule this transport is built on is not "do not leak the key";
+/// it is the one stated on `with_connect_timeout`: *Vela talks to the endpoint
+/// the user configured and to nothing else*. A prompt is user data too. So a
+/// cross-authority redirect is refused outright and surfaces as an error naming
+/// **both** authorities, which is actionable — the user can see who redirected
+/// them and where — where a silent follow is not.
+///
+/// # Why not `Policy::none()`
+///
+/// `Policy::none()` is the safest thing available off the shelf, and it would
+/// also close this. It refuses one case that is real and harmless, though: a
+/// reverse proxy in front of a local runtime answering `301` to normalise a
+/// trailing slash, on the same host and port the user typed. Following that hop
+/// sends the request to exactly the authority the user configured, so it egresses
+/// nowhere new — and every credential channel above is a *cross*-authority
+/// channel, which this never becomes. Same authority means an identical scheme,
+/// host and port; an `http`→`https` "upgrade" on the same host is therefore
+/// **not** same-authority and is refused, because a redirect is not evidence
+/// about who is listening on the other port.
+fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let from = attempt.previous().first().map_or_else(
+            // `reqwest` pushes the original request URL before consulting the
+            // policy, so this arm is unreachable today. If that ever changes
+            // there is nothing to compare against — and "no basis for
+            // comparison" must refuse, not follow. The placeholder can never
+            // equal a real authority, so the check below rejects it.
+            || "the configured endpoint".to_owned(),
+            authority_of,
+        );
+        let to = authority_of(attempt.url());
+        let status = attempt.status().as_u16();
+
+        if to != from {
+            return attempt.error(RefusedRedirect::OffAuthority { status, from, to });
+        }
+        if attempt.previous().len() > MAX_SAME_AUTHORITY_REDIRECTS {
+            return attempt.error(RefusedRedirect::Looping {
+                status,
+                authority: from,
+                hops: MAX_SAME_AUTHORITY_REDIRECTS,
+            });
+        }
+        attempt.follow()
+    })
+}
+
+/// `scheme://host[:port]`, and **nothing else**.
+///
+/// Deliberately not `Url::authority()`, which includes any `user:pass@`
+/// userinfo — credential material, and the whole reason this returns a hand-built
+/// string. There is no query string in an authority either, so an
+/// `Auth::ApiKeyQuery` credential cannot ride out in one.
+///
+/// `port_or_known_default` is what makes `http://h` and `http://h:80` the same
+/// authority and `http://h` and `https://h` different ones.
+fn authority_of(url: &reqwest::Url) -> String {
+    match (url.host_str(), url.port_or_known_default()) {
+        (Some(host), Some(port)) => format!("{}://{host}:{port}", url.scheme()),
+        (Some(host), None) => format!("{}://{host}", url.scheme()),
+        (None, _) => format!("{}://", url.scheme()),
+    }
+}
+
+/// A redirect this transport would not follow, and why.
+///
+/// Travels through `reqwest` as the *source* of a `Kind::Redirect` error and is
+/// recovered by downcast in [`map_reqwest_error`] — not by parsing a string —
+/// because `reqwest`'s `Display` for that kind is the fixed text "error
+/// following redirect" and never prints its source. Every field is built from a
+/// scheme, a host and a port, so nothing that could be a credential is
+/// expressible in one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RefusedRedirect {
+    OffAuthority {
+        status: u16,
+        from: String,
+        to: String,
+    },
+    Looping {
+        status: u16,
+        authority: String,
+        hops: usize,
+    },
+}
+
+impl RefusedRedirect {
+    /// The 3xx the endpoint actually sent. A refused redirect is a *response*
+    /// about this request, not a network failure: it is not transient (the same
+    /// request gets the same `Location` back), so it must never be retried —
+    /// which is exactly what [`TransportFailure::Request`] encodes.
+    const fn status(&self) -> u16 {
+        match self {
+            RefusedRedirect::OffAuthority { status, .. }
+            | RefusedRedirect::Looping { status, .. } => *status,
+        }
+    }
+}
+
+impl std::fmt::Display for RefusedRedirect {
+    /// Kept short on purpose: [`detail`] truncates at
+    /// [`crate::error::MAX_DETAIL_CHARS`], and the two authorities are the part
+    /// that must survive.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RefusedRedirect::OffAuthority { status, from, to } => write!(
+                f,
+                "refused the endpoint's {status} redirect to a different host \
+                 ({from} -> {to}): Vela sends a request only where you configured it"
+            ),
+            RefusedRedirect::Looping {
+                status,
+                authority,
+                hops,
+            } => write!(
+                f,
+                "refused the endpoint's {status} redirect: more than {hops} hops \
+                 within {authority} is a redirect loop"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RefusedRedirect {}
+
+/// The [`RefusedRedirect`] behind a `reqwest` error, if this is one of ours.
+fn refused_redirect(error: &reqwest::Error) -> Option<&RefusedRedirect> {
+    if !error.is_redirect() {
+        return None;
+    }
+    std::error::Error::source(error)?.downcast_ref::<RefusedRedirect>()
 }
 
 #[async_trait]
@@ -648,7 +899,29 @@ impl ByteStream for ReqwestBody {
 ///
 /// Scrubbing happens **before** `detail()` truncates, because truncating first
 /// can cut a credential in half and keep the half.
+///
+/// # The redirect case is handled first and separately
+///
+/// A redirect [`redirect_policy`] refused is not a network failure, and its
+/// whole diagnosis — which authority pointed where — lives in the error's
+/// *source*, which `reqwest`'s `Display` does not print. It is also the one
+/// error whose reqwest-side URL is the **previous** hop's, credential and all;
+/// nothing here formats it. The message is rebuilt from the authorities
+/// [`RefusedRedirect`] carries, which cannot contain a query string or userinfo,
+/// and the scrubber still runs over the result.
 fn map_reqwest_error(error: reqwest::Error, origin: &BodyOrigin) -> TransportError {
+    if let Some(refused) = refused_redirect(&error) {
+        return TransportError::new(
+            TransportFailure::Request {
+                status: refused.status(),
+            },
+            // No `for url (…)` suffix: the `from` authority already names the
+            // endpoint that answered, which is what a user with three
+            // configured candidates needs, and the message is long enough that
+            // appending the path would truncate an authority instead.
+            origin.scrubber().scrub(refused.to_string()),
+        );
+    }
     let failure = if error.is_connect() {
         TransportFailure::Connect
     } else if error.is_timeout() {
@@ -884,6 +1157,75 @@ mod tests {
         };
         let body = response.read_to_end(10).await.unwrap();
         assert_eq!(body.len(), 10, "a hostile body cannot make Vela allocate");
+    }
+
+    #[test]
+    fn an_authority_is_scheme_host_and_port_and_never_the_userinfo() {
+        let with_userinfo =
+            reqwest::Url::parse("https://user:sk-ant-secret@api.example/v1/messages").unwrap();
+        let authority = authority_of(&with_userinfo);
+        assert_eq!(authority, "https://api.example:443");
+        assert!(
+            !authority.contains("sk-ant-secret") && !authority.contains("user"),
+            "`Url::authority()` would have included the userinfo: {authority}"
+        );
+
+        let with_query =
+            reqwest::Url::parse("https://g.example/v1beta/m:generateContent?key=AIza-secret")
+                .unwrap();
+        assert_eq!(authority_of(&with_query), "https://g.example:443");
+    }
+
+    #[test]
+    fn the_default_port_is_what_makes_two_spellings_of_one_authority_equal() {
+        let bare = reqwest::Url::parse("http://127.0.0.1/v1").unwrap();
+        let explicit = reqwest::Url::parse("http://127.0.0.1:80/v1/").unwrap();
+        assert_eq!(authority_of(&bare), authority_of(&explicit));
+
+        // …and an http→https "upgrade" on the same host is a *different*
+        // authority: a redirect is not evidence about who is on the other port.
+        let upgraded = reqwest::Url::parse("https://127.0.0.1/v1").unwrap();
+        assert_ne!(authority_of(&bare), authority_of(&upgraded));
+    }
+
+    #[test]
+    fn a_refused_redirect_names_both_authorities_and_survives_truncation() {
+        let refused = RefusedRedirect::OffAuthority {
+            status: 302,
+            from: "http://127.0.0.1:11434".into(),
+            to: "https://collector.invalid:443".into(),
+        };
+        assert_eq!(refused.status(), 302);
+
+        let rendered = detail(refused.to_string());
+        assert!(
+            rendered.contains("http://127.0.0.1:11434")
+                && rendered.contains("https://collector.invalid:443"),
+            "both authorities must survive `detail`'s bound: {rendered}"
+        );
+        assert!(!rendered.ends_with('…'), "must not truncate: {rendered}");
+    }
+
+    #[test]
+    fn a_refused_redirect_is_never_retried_at_the_same_endpoint() {
+        let error: ProviderError = TransportError::new(
+            TransportFailure::Request { status: 307 },
+            RefusedRedirect::Looping {
+                status: 307,
+                authority: "http://127.0.0.1:8080".into(),
+                hops: MAX_SAME_AUTHORITY_REDIRECTS,
+            }
+            .to_string(),
+        )
+        .into();
+        assert!(
+            !error.allows_retry(),
+            "the same request earns the same Location back"
+        );
+        assert!(
+            error.allows_failover(),
+            "another configured candidate may be fine"
+        );
     }
 
     #[test]

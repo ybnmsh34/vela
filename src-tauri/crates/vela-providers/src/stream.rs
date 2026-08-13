@@ -30,6 +30,7 @@ use crate::model::{
 };
 use crate::provider::RequestContext;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
+use crate::redact::Scrubber;
 use crate::sse::SseDecoder;
 use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};
 
@@ -63,6 +64,15 @@ pub struct CompletionAssembler {
     /// through it so `<tool_call>` markup never reaches the user, even when the
     /// tag is split across frames.
     stripper: Option<ToolCallStripper>,
+    /// The credential material of the request this stream answers.
+    ///
+    /// The bytes arriving here have already been scrubbed by
+    /// [`BodyStream::next_chunk`] — but a scrub over bytes only removes the
+    /// spelling it was shown, and this is the point where the bytes stop being
+    /// bytes. Every frame is decoded through this, so whatever encoding the
+    /// endpoint used, the strings the rest of this file reads are clean. It is
+    /// attached by [`drive_stream`], which is where the body is.
+    scrubber: Scrubber,
 }
 
 impl CompletionAssembler {
@@ -85,7 +95,15 @@ impl CompletionAssembler {
             streamed,
             stream_error: None,
             stripper: None,
+            scrubber: Scrubber::none(),
         }
+    }
+
+    /// Attach the credential material of the request this stream answers, so
+    /// the decode of every frame can scrub what the decoder reconstitutes.
+    pub fn with_scrubber(mut self, scrubber: Scrubber) -> Self {
+        self.scrubber = scrubber;
+        self
     }
 
     /// Route answer text through the emulated-tool-call stripper.
@@ -107,7 +125,7 @@ impl CompletionAssembler {
             self.saw_done_hint = true;
             return;
         }
-        match serde_json::from_str::<Value>(data) {
+        match self.scrubber.decode_json_str(data) {
             Ok(value) => self.apply_chunk(&value, sink),
             Err(_) => self.malformed_frames += 1,
         }
@@ -435,13 +453,18 @@ fn error_from_body(error: &Value) -> ProviderError {
 /// This function is where "the stream ends when the body ends" actually lives.
 pub async fn drive_stream(
     mut body: BodyStream,
-    mut assembler: CompletionAssembler,
+    assembler: CompletionAssembler,
     sink: &mut dyn EventSink,
     context: &RequestContext,
 ) -> ProviderResult<ChatResponse> {
     // Grabbed before the loop borrows the body: a stall must still say which
     // endpoint went quiet, and the redacted form is safe to say it with.
     let endpoint = body.endpoint().to_owned();
+    // The body knows what request it answers; the assembler is what decodes.
+    // Joining them here — rather than at the assembler's construction, three
+    // call sites away — is what stops the second barrier being something an
+    // adapter has to remember.
+    let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
     loop {
         context.cancel.err_if_cancelled()?;
         let read = tokio::select! {

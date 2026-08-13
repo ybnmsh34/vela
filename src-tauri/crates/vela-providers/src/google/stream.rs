@@ -116,6 +116,15 @@ pub struct CandidateAssembler {
     /// then does not make (`model::ChatMessage::tool_parse_text`).
     emulation: Option<ToolCallStripper>,
     emulated_calls: Vec<ToolCallOutcome>,
+    /// The credential material of the request this stream answers.
+    ///
+    /// The bytes arriving here have already been scrubbed by
+    /// `BodyStream::next_chunk` — but that removes only the spelling it was
+    /// shown, and this is the point where the bytes stop being bytes. Frames
+    /// are decoded through this, so whatever encoding the endpoint used, the
+    /// strings read out of a frame are clean. Attached by the drive loop,
+    /// which is where the body is.
+    scrubber: Scrubber,
 }
 
 impl CandidateAssembler {
@@ -141,8 +150,17 @@ impl CandidateAssembler {
             next_call_slot: 0,
             emulation: None,
             emulated_calls: Vec::new(),
+            scrubber: Scrubber::none(),
         }
     }
+
+    /// Attach the credential material of the request this stream answers, so
+    /// the decode of every frame can scrub what the decoder reconstitutes.
+    pub fn with_scrubber(mut self, scrubber: Scrubber) -> Self {
+        self.scrubber = scrubber;
+        self
+    }
+
 
     /// Parse tool calls out of the answer text as well.
     ///
@@ -167,7 +185,7 @@ impl CandidateAssembler {
         if data.trim() == "[DONE]" {
             return;
         }
-        let Ok(value) = serde_json::from_str::<Value>(data) else {
+        let Ok(value) = self.scrubber.decode_json_str(data) else {
             self.malformed_frames += 1;
             return;
         };

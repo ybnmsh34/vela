@@ -174,7 +174,7 @@ impl Endpoint {
                 response.header("retry-after"),
             ));
         }
-        serde_json::from_slice(&body)
+        body.json()
             .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
     }
 

@@ -52,6 +52,7 @@ pub use wire::{Concessions, HarmCategory, SafetySetting, SafetyThreshold};
 use serde_json::Value;
 
 use crate::error::{detail, Capability, ProviderError, TransportFailure};
+use crate::http::UpstreamBytes;
 
 /// Longest error body this adapter will read. `conventions.md` §3.2 forbids raw
 /// upstream bodies reaching the renderer, and this bounds what a broken
@@ -233,7 +234,7 @@ fn describe_category(category: &str) -> Option<&'static str> {
 /// make Vela's behaviour depend on an endpoint's copywriting.
 pub fn map_error_response(
     status: u16,
-    body: &[u8],
+    body: &UpstreamBytes,
     model_id: &str,
     retry_after_header: Option<&str>,
 ) -> ProviderError {
@@ -269,8 +270,10 @@ pub fn map_error_response(
 /// This API answers a batch endpoint with a **JSON array** whose first element
 /// carries the error, and the single-shot endpoints with a bare object. Both
 /// are read, because a caller pointing at a gateway can get either.
-fn error_object(body: &[u8]) -> Option<Value> {
-    let parsed: Value = serde_json::from_slice(body).ok()?;
+fn error_object(body: &UpstreamBytes) -> Option<Value> {
+    // Decoded through the body's scrubber: whatever encoding the endpoint used
+    // for the credential, it has been undone by now and the needles match.
+    let parsed: Value = body.json_or_none()?;
     let candidate = match &parsed {
         Value::Array(items) => items.first()?,
         other => other,
@@ -395,7 +398,7 @@ fn map_status(
 /// Read from the body directly rather than from the mapped error: the mapping
 /// deliberately throws wire detail away, and this is the one decision that
 /// needs it.
-pub fn concession_for(body: &[u8]) -> Option<Concession> {
+pub fn concession_for(body: &UpstreamBytes) -> Option<Concession> {
     let message = error_object(body)?
         .get("message")?
         .as_str()?

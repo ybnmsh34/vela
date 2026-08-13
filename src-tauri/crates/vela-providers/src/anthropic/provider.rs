@@ -252,7 +252,7 @@ impl AnthropicProvider {
                 response.header("retry-after"),
             ));
         }
-        serde_json::from_slice(&body)
+        body.json()
             .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
     }
 
@@ -420,7 +420,10 @@ impl AnthropicProvider {
             Ok(assembler.finish(sink)?)
         } else {
             let body = response.read_to_end(MAX_RESPONSE_BYTES).await?;
-            let value: Value = serde_json::from_slice(&body).map_err(|error| {
+            // Decoded through the body's own scrubber: the non-streamed path
+            // reconstitutes an escaped credential just as readily as the
+            // streamed one.
+            let value: Value = body.json().map_err(|error| {
                 ProviderError::malformed(format!("response was not JSON: {error}"))
             })?;
             assembler.apply_message(&value, sink);

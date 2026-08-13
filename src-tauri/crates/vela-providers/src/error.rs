@@ -90,7 +90,10 @@ pub enum TransportFailure {
     Reset,
     /// A 5xx, or a response Vela could not use at the HTTP level.
     Server { status: u16 },
-    /// A 4xx that is not one of the modelled cases.
+    /// A 4xx that is not one of the modelled cases — or a **3xx the transport
+    /// refused to follow**, which is likewise a response about this request
+    /// rather than a sick network: the same request earns the same `Location`
+    /// back, so it must never be retried. See `http::redirect_policy`.
     Request { status: u16 },
 }
 

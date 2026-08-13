@@ -111,6 +111,15 @@ pub struct MessageAssembler {
     schema_tool: Option<&'static str>,
     /// A thinking block that never got its `content_block_stop`.
     unterminated_reasoning: bool,
+    /// The credential material of the request this stream answers.
+    ///
+    /// The bytes arriving here have already been scrubbed by
+    /// `BodyStream::next_chunk` — but that removes only the spelling it was
+    /// shown, and this is the point where the bytes stop being bytes. Frames
+    /// are decoded through this, so whatever encoding the endpoint used, the
+    /// strings read out of a frame are clean. Attached by the drive loop,
+    /// which is where the body is.
+    scrubber: Scrubber,
 }
 
 impl MessageAssembler {
@@ -131,8 +140,17 @@ impl MessageAssembler {
             stream_error: None,
             schema_tool: None,
             unterminated_reasoning: false,
+            scrubber: Scrubber::none(),
         }
     }
+
+    /// Attach the credential material of the request this stream answers, so
+    /// the decode of every frame can scrub what the decoder reconstitutes.
+    pub fn with_scrubber(mut self, scrubber: Scrubber) -> Self {
+        self.scrubber = scrubber;
+        self
+    }
+
 
     /// Consume a call to the named tool as structured output instead of
     /// reporting it as a tool call.
@@ -156,7 +174,7 @@ impl MessageAssembler {
             self.saw_message_stop = true;
             return;
         }
-        let Ok(value) = serde_json::from_str::<Value>(data) else {
+        let Ok(value) = self.scrubber.decode_json_str(data) else {
             self.malformed_frames += 1;
             return;
         };

@@ -14,6 +14,7 @@ pub use provider::{OpenAiCompatibleProvider, ProviderOptions};
 use serde_json::Value;
 
 use crate::error::{detail, Capability, ProviderError, TransportFailure};
+use crate::http::UpstreamBytes;
 
 /// Longest error body Vela will read. `conventions.md` §3.2 forbids raw
 /// upstream bodies reaching the renderer, and this bounds what a broken
@@ -27,11 +28,15 @@ pub const MAX_ERROR_BODY_BYTES: usize = 16 * 1024;
 /// Vela's behaviour depend on an endpoint's copywriting.
 pub fn map_error_response(
     status: u16,
-    body: &[u8],
+    body: &UpstreamBytes,
     model_id: &str,
     retry_after_header: Option<&str>,
 ) -> ProviderError {
-    let parsed: Option<Value> = serde_json::from_slice(body).ok();
+    // `UpstreamBytes::json` scrubs the decoded strings, so everything read out
+    // of `parsed` below is already clean however the endpoint spelled it. The
+    // byte scrub upstream of here removes what it can see; this removes what a
+    // decoder would have put back. See `crate::redact`.
+    let parsed: Option<Value> = body.json_or_none();
     let error_object = parsed.as_ref().and_then(|value| value.get("error"));
     let code = error_object
         .and_then(|error| error.get("code"))
@@ -157,12 +162,19 @@ fn fallback<'a>(message: &'a str, default: &'a str) -> &'a str {
 mod tests {
     use super::*;
 
+    /// An error body that answers no request of ours, so there is no credential
+    /// in it to remove. The credentialed path is driven end to end in
+    /// `tests/encoded_credential_canary.rs`.
+    fn fake(body: &str) -> UpstreamBytes {
+        UpstreamBytes::carries_no_credential(body)
+    }
+
     const OVERFLOW_BODY: &str = r#"{"error":{"message":"this model's maximum context length is 8192 tokens, however you requested 8212 tokens (8212 in the messages, 0 in the completion)","type":"invalid_request_error","param":"messages","code":"context_length_exceeded"}}"#;
 
     #[test]
     fn the_recorded_overflow_body_yields_both_token_counts() {
         // Verbatim from small-local/06-context-overflow.txt.
-        let error = map_error_response(400, OVERFLOW_BODY.as_bytes(), "mock-small-local", None);
+        let error = map_error_response(400, &fake(OVERFLOW_BODY), "mock-small-local", None);
         match error {
             ProviderError::ContextLengthExceeded {
                 limit_tokens,
@@ -188,7 +200,7 @@ mod tests {
             ("model_listing_not_supported", Capability::ModelListing),
         ] {
             let body = format!(r#"{{"error":{{"message":"nope","code":"{code}"}}}}"#);
-            let error = map_error_response(400, body.as_bytes(), "m", None);
+            let error = map_error_response(400, &fake(&body), "m", None);
             assert_eq!(
                 error,
                 ProviderError::unsupported(capability, "nope"),
@@ -206,14 +218,14 @@ mod tests {
         // The harness answers this 401 precisely so the "empty Bearer" bug is
         // loud rather than silent.
         let body = r#"{"error":{"message":"an Authorization header was sent with no credential in it","type":"authentication_error","code":"empty_authorization_header"}}"#;
-        let error = map_error_response(401, body.as_bytes(), "m", None);
+        let error = map_error_response(401, &fake(body), "m", None);
         assert!(matches!(error, ProviderError::AuthFailed { .. }));
         assert!(!error.allows_failover(), "never spray a credential failure");
     }
 
     #[test]
     fn a_429_carries_the_endpoints_own_retry_advice() {
-        let error = map_error_response(429, b"{}", "m", Some("2.5"));
+        let error = map_error_response(429, &fake("{}"), "m", Some("2.5"));
         assert_eq!(
             error.retry_after(),
             Some(std::time::Duration::from_millis(2_500))
@@ -223,14 +235,14 @@ mod tests {
     #[test]
     fn a_body_with_no_error_object_still_maps_by_status() {
         assert!(matches!(
-            map_error_response(503, b"<html>gateway</html>", "m", None),
+            map_error_response(503, &fake("<html>gateway</html>"), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Server { status: 503 },
                 ..
             }
         ));
         assert!(matches!(
-            map_error_response(422, b"", "m", None),
+            map_error_response(422, &fake(""), "m", None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 422 },
                 ..
@@ -241,7 +253,7 @@ mod tests {
     #[test]
     fn an_unknown_code_falls_back_to_the_status_rather_than_being_invented() {
         let body = r#"{"error":{"message":"something new","code":"never_seen_before"}}"#;
-        let error = map_error_response(400, body.as_bytes(), "m", None);
+        let error = map_error_response(400, &fake(&body), "m", None);
         assert!(matches!(error, ProviderError::Transport { .. }));
         assert!(format!("{error}").contains("something new"));
     }

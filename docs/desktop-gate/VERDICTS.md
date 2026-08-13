@@ -125,6 +125,13 @@ is the browser transport, not the core:
   so the history was not merely clean but semantically usable. Top-level keys are exactly
   `messages`, `model`, `stream`, `stream_options`.
   Evidence: `docs/regression-baseline/local-smoke/13-vela-multiturn-history.json`
+- **Cancellation actually reaches the GPU**, verified against llama.cpp's own `/slots`, which is
+  the only way to tell a real abort from a client that merely stops listening while the server keeps
+  generating. Before the turn: 0 slots processing. Mid-generation: **1 slot processing**. On
+  `chat_cancel` the stream terminated in **0.00 s** with the typed `{"error":{"kind":"cancelled"}}`,
+  and one second later `/slots` reported **0 processing** — the upstream request was genuinely
+  aborted and the slot freed.
+  Evidence: `docs/regression-baseline/local-smoke/14-vela-cancel.jsonl`
 
 ### Blocking findings
 

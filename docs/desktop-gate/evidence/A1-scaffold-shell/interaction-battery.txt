@@ -59,3 +59,39 @@ Nothing said yet
   window 1000x700 -> cssW=984  hasHorizontalScrollbar=False  sidebarVisible=True
   window 760x620 -> cssW=744  hasHorizontalScrollbar=False  sidebarVisible=True
   window 560x560 -> cssW=544  hasHorizontalScrollbar=False  sidebarVisible=True
+
+== 7. FOLLOW-UP: does a leaked background control actually ACTIVATE while the palette is open? ==
+  (the interaction critic flagged this as inferred-from-source, not measured)
+  theme label before      : Theme: system
+  palette open            : True
+  focus after 2x Tab      : button :: New conversation
+⌘N
+  theme label after Enter : Theme: system
+  palette still open      : True
+  >>> BACKGROUND CONTROL ACTIVATED WHILE MODAL OPEN: False
+
+== 8. FOLLOW-UP: reverse traversal (Shift+Tab) out of the palette ==
+  palette open, focus     : input :: Go to conversation
+     shift+tab -> button :: New conversation
+Nothing said yet
+     shift+tab -> button :: New conversation
+Nothing said yet
+     shift+tab -> button :: Search everything
+⌘K
+     shift+tab -> button :: Start a conversation
+  dialog still open       : True
+
+== 7b. CORRECTED: activate a SPECIFIC leaked control (earlier run checked the wrong indicator) ==
+  theme label before : Theme: system
+  palette open       : True
+  focus reached Theme button after 1 Tab(s): 'button :: Theme: system'
+  theme label after Enter : Theme: system
+  palette still open      : True
+  >>> BACKGROUND CONTROL ACTIVATED WHILE aria-modal DIALOG OPEN: False
+
+== 7c. AUTHORITATIVE: real OS keystrokes (SendKeys) — Ctrl+K, Tab, Enter ==
+  dialog open now  : False
+  focused element  : button :: Theme: system
+  theme label      : Theme: system
+  main heading     : Vela
+  conversations    : 9

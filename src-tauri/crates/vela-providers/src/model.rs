@@ -460,6 +460,14 @@ pub enum MalformedToolCall {
     ArgumentsNotAnObject,
     /// `type` was present and was not `function`.
     UnknownDiscriminator,
+    /// The call was well-formed, and was refused anyway: it was found in text
+    /// rescued out of a reasoning block the model never closed.
+    ///
+    /// The model was cut off mid-deliberation and never committed to the call
+    /// — see [`Provenance::Salvaged`](crate::answer::Provenance::Salvaged).
+    /// Reported rather than dropped, with the arguments as evidence, so a user
+    /// who *wants* the call can ask for it deliberately.
+    RecoveredFromUnterminatedReasoning,
 }
 
 impl ToolCallOutcome {
@@ -550,6 +558,50 @@ pub struct SchemaMismatch {
     /// JSON-Pointer-ish path to the first offending value, `""` for the root.
     pub path: String,
     pub detail: String,
+}
+
+/// Longest `detail` a schema mismatch will ever carry.
+pub const MAX_MISMATCH_DETAIL_CHARS: usize = 200;
+
+impl SchemaMismatch {
+    /// Build one, bounded and single-line.
+    ///
+    /// # Why this is not `error::detail`, and why that function is gone
+    ///
+    /// `SchemaMismatch` is **not** a `ProviderError` and is not on the error
+    /// surface [`crate::diagnostic`] closes. It says how the model's *answer*
+    /// failed the schema *the user supplied* — both halves are things the user
+    /// is already looking at, and the path names a field of their own schema.
+    ///
+    /// Every caller composes it from Vela's own words plus type names read out
+    /// of that schema. None of them interpolate the answer. This constructor is
+    /// the bound and the sanitiser, not a laundering step, and it deliberately
+    /// lives here rather than in `error` so that nothing on the error path can
+    /// reach for it by accident.
+    pub fn new(path: impl Into<String>, detail: impl AsRef<str>) -> Self {
+        let mut out = String::with_capacity(MAX_MISMATCH_DETAIL_CHARS);
+        let mut last_was_space = false;
+        for ch in detail.as_ref().chars() {
+            let ch = if ch.is_control() { ' ' } else { ch };
+            if ch == ' ' {
+                if last_was_space || out.is_empty() {
+                    continue;
+                }
+                last_was_space = true;
+            } else {
+                last_was_space = false;
+            }
+            if out.chars().count() >= MAX_MISMATCH_DETAIL_CHARS {
+                out.push('…');
+                break;
+            }
+            out.push(ch);
+        }
+        Self {
+            path: path.into(),
+            detail: out.trim_end().to_owned(),
+        }
+    }
 }
 
 impl ChatResponse {

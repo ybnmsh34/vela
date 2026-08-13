@@ -51,12 +51,12 @@
 
 use serde_json::Value;
 
-use crate::emulation::ToolCallStripper;
+use crate::answer::AnswerChannel;
+use crate::diagnostic::{Cause, EndpointIdentity};
 use crate::error::{ProviderError, ProviderResult};
 use crate::event::{EventSink, StreamEvent};
 use crate::model::{
-    ChatResponse, ContentPart, Degradation, MalformedToolCall, StopReason, TokenUsage,
-    ToolCallOutcome,
+    ChatResponse, Degradation, MalformedToolCall, StopReason, TokenUsage, ToolCallOutcome,
 };
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::redact::Scrubber;
@@ -87,7 +87,9 @@ pub struct CandidateAssembler {
     sse: SseDecoder,
     splitter: ReasoningSplitter,
     tools: ToolCallAccumulator,
-    parts: Vec<ContentPart>,
+    /// Everything the user is shown, and the only text a tool parser may see.
+    /// Not a `Vec<ContentPart>`: see [`crate::answer`].
+    answer: AnswerChannel,
     usage: TokenUsage,
     stop_reason: Option<StopReason>,
     /// Frames — and parts — that could not be read and were skipped.
@@ -99,23 +101,18 @@ pub struct CandidateAssembler {
     streamed: bool,
     /// An `error` object inside an otherwise-200 body.
     stream_error: Option<ProviderError>,
+    /// The endpoint this stream answers, for errors that arrive inside a 200.
+    endpoint: Option<EndpointIdentity>,
     /// The request was refused before the model ran.
     prompt_block: Option<Blocked>,
     /// The answer was cut off by a filter: `(reason, categories)`.
     answer_block: Option<(String, Vec<String>)>,
     /// The endpoint said it produced a function call it could not encode.
     malformed_function_call: bool,
-    /// Characters of *answer* that reached the user, for the block message.
-    answer_chars: usize,
     /// Vela's own tool-call slot counter. This API sends whole calls in
     /// separate parts with no index of their own, so consecutive calls would
     /// otherwise merge into one slot.
     next_call_slot: u32,
-    /// Recover tool calls from the model's *text*, for a model probed as having
-    /// no `functionDeclarations` support. Fed only answer text — never a
-    /// thought — because a model's deliberation routinely describes a call it
-    /// then does not make (`model::ChatMessage::tool_parse_text`).
-    emulation: Option<ToolCallStripper>,
     emulated_calls: Vec<ToolCallOutcome>,
     /// The credential material of the request this stream answers.
     ///
@@ -134,7 +131,7 @@ impl CandidateAssembler {
             sse: SseDecoder::new(),
             splitter: ReasoningSplitter::new(),
             tools: ToolCallAccumulator::new(),
-            parts: Vec::new(),
+            answer: AnswerChannel::new(),
             usage: TokenUsage::default(),
             stop_reason: None,
             malformed_frames: 0,
@@ -147,11 +144,10 @@ impl CandidateAssembler {
             prompt_block: None,
             answer_block: None,
             malformed_function_call: false,
-            answer_chars: 0,
             next_call_slot: 0,
-            emulation: None,
             emulated_calls: Vec::new(),
             scrubber: Scrubber::none(),
+            endpoint: None,
         }
     }
 
@@ -162,12 +158,35 @@ impl CandidateAssembler {
         self
     }
 
+    /// Attach the endpoint this stream answers, so an error frame inside an
+    /// otherwise-200 body still names the candidate that produced it.
+    pub fn with_endpoint(mut self, endpoint: Option<EndpointIdentity>) -> Self {
+        self.endpoint = endpoint;
+        self
+    }
+
+    /// Name the endpoint on an error that arrived inside a 200 body, and file
+    /// the frame that produced it in the local debug log.
+    ///
+    /// The frame is the *decoded and scrubbed* value, which is what the debug
+    /// log is for: the endpoint's own words, kept on the user's machine, never
+    /// carried into the error.
+    fn record(&self, error: ProviderError, frame: &Value) -> ProviderError {
+        let error = error.at(self.endpoint.clone());
+        crate::debuglog::record_for(&error, || frame.to_string().into_bytes());
+        error
+    }
+
+
     /// Parse tool calls out of the answer text as well.
     ///
     /// Set only when the catalogue was rendered into the prompt because the
-    /// model has no native function calling — see `emulation::emulate`.
+    /// model has no native function calling — see `emulation::emulate`. The
+    /// channel is fed only answer text — never a thought — because a model's
+    /// deliberation routinely describes a call it then does not make
+    /// (`model::ChatMessage::tool_parse_text`).
     pub fn with_tool_emulation(mut self) -> Self {
-        self.emulation = Some(ToolCallStripper::new());
+        self.answer = std::mem::take(&mut self.answer).with_tool_emulation();
         self
     }
 
@@ -209,7 +228,7 @@ impl CandidateAssembler {
 
     fn apply_response(&mut self, value: &Value, sink: &mut dyn EventSink) {
         if let Some(error) = value.get("error") {
-            self.stream_error = Some(map_error_object(None, error));
+            self.stream_error = Some(self.record(map_error_object(None, error), error));
             return;
         }
 
@@ -343,10 +362,7 @@ impl CandidateAssembler {
             .and_then(Value::as_str)
             .unwrap_or_default();
         match base64_decode(encoded) {
-            Some(data) if !data.is_empty() => self.parts.push(ContentPart::Image {
-                mime_type: mime_type.to_owned(),
-                data,
-            }),
+            Some(data) if !data.is_empty() => self.answer.push_image(mime_type.to_owned(), data),
             // Bytes that will not decode are damage. Counted rather than
             // dropped in silence, so the turn reports that something was lost.
             _ => self.malformed_frames += 1,
@@ -379,17 +395,12 @@ impl CandidateAssembler {
 
     /// A `"thought": true` part: reasoning the endpoint separated for us.
     fn push_thought(&mut self, text: &str, signature: Option<&str>, sink: &mut dyn EventSink) {
-        if !text.is_empty() {
-            self.append_reasoning(text);
-            sink.emit(StreamEvent::ReasoningDelta {
-                text: text.to_owned(),
-            });
-        }
+        self.answer.push_reasoning(text, sink);
         // The signature usually arrives on its own trailing part, after the
         // text. Round-tripping it is not optional: a later turn that replays
         // the thought without it is rejected.
         if let Some(signature) = signature.filter(|signature| !signature.is_empty()) {
-            self.set_last_signature(signature);
+            self.answer.sign_last_reasoning(signature);
         }
     }
 
@@ -398,67 +409,9 @@ impl CandidateAssembler {
     fn push_answer_text(&mut self, text: &str, sink: &mut dyn EventSink) {
         for piece in self.splitter.push(text) {
             match piece {
-                ReasoningPiece::Answer(text) => self.emit_answer(&text, sink),
-                ReasoningPiece::Reasoning(text) => {
-                    self.append_reasoning(&text);
-                    sink.emit(StreamEvent::ReasoningDelta { text });
-                }
+                ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
+                ReasoningPiece::Reasoning(text) => self.answer.push_reasoning(&text, sink),
             }
-        }
-    }
-
-    /// Text that has survived reasoning separation: the only text a tool parser
-    /// may see, and the only text the user is shown.
-    fn emit_answer(&mut self, text: &str, sink: &mut dyn EventSink) {
-        let visible = match self.emulation.as_mut() {
-            Some(stripper) => stripper.push(text),
-            None => text.to_owned(),
-        };
-        if visible.is_empty() {
-            return;
-        }
-        self.append_text(&visible);
-        sink.emit(StreamEvent::TextDelta { text: visible });
-    }
-
-    fn append_text(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        self.answer_chars += text.chars().count();
-        match self.parts.last_mut() {
-            Some(ContentPart::Text { text: existing }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::text(text)),
-        }
-    }
-
-    fn append_reasoning(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        match self.parts.last_mut() {
-            Some(ContentPart::Reasoning {
-                text: existing,
-                redacted: false,
-                ..
-            }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::reasoning(text)),
-        }
-    }
-
-    fn set_last_signature(&mut self, value: &str) {
-        match self.parts.last_mut() {
-            Some(ContentPart::Reasoning { signature, .. }) => {
-                signature.get_or_insert_with(|| value.to_owned());
-            }
-            // A signature with no thought before it. Kept as an empty signed
-            // block rather than discarded: it is the token a later turn has to
-            // send back, and losing it breaks that turn.
-            _ => self.parts.push(ContentPart::Reasoning {
-                text: String::new(),
-                signature: Some(value.to_owned()),
-                redacted: false,
-            }),
         }
     }
 
@@ -517,7 +470,7 @@ impl CandidateAssembler {
         // A refused prompt cannot have an answer behind it, so nothing else in
         // this function could change what the user is told.
         if let Some(blocked) = &self.prompt_block {
-            return Err(blocked_error(blocked));
+            return Err(blocked_error(blocked).at(self.endpoint.clone()));
         }
 
         let mut degradations = Vec::new();
@@ -525,29 +478,24 @@ impl CandidateAssembler {
         let finish = self.splitter.finish();
         for piece in finish.pieces {
             match piece {
-                ReasoningPiece::Answer(text) => self.emit_answer(&text, sink),
-                ReasoningPiece::Reasoning(text) => {
-                    self.append_reasoning(&text);
-                    sink.emit(StreamEvent::ReasoningDelta { text });
-                }
+                ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
+                ReasoningPiece::Reasoning(text) => self.answer.push_reasoning(&text, sink),
             }
         }
-        if let Some(recovered) = finish.recovered_answer {
-            // MEASURED-3: leaked markup that never closed must not swallow the
-            // answer.
+        // MEASURED-3: leaked markup that never closed must not swallow the
+        // answer — and MEASURED-3b: what is rescued out of it is shown, never
+        // run. The recovered text goes IN to the channel; it is never appended
+        // behind its back. See `crate::answer`.
+        let unterminated = finish.recovered_answer.is_some();
+        let closed = self.answer.close(finish.recovered_answer.as_deref(), sink);
+        if unterminated {
             degradations.push(Degradation::UnterminatedReasoning {
-                recovered_answer_chars: recovered.chars().count(),
+                recovered_answer_chars: closed.recovered_chars,
             });
-            self.emit_answer(&recovered, sink);
         }
-        if let Some(stripper) = self.emulation.take() {
-            let (tail, calls) = stripper.finish();
-            if !tail.is_empty() {
-                self.append_text(&tail);
-                sink.emit(StreamEvent::TextDelta { text: tail });
-            }
-            self.emulated_calls = calls;
-        }
+        self.emulated_calls = closed.calls;
+        // Reported, never run. See `answer::Provenance::Salvaged`.
+        self.emulated_calls.extend(closed.quarantined);
 
         // Now that every held-back character has been flushed, the count in the
         // block message is the number the user actually saw.
@@ -555,7 +503,7 @@ impl CandidateAssembler {
             return Err(blocked_error(&Blocked::answer(
                 reason.clone(),
                 categories.clone(),
-                self.answer_chars,
+                self.answer.answer_chars(),
             )));
         }
 
@@ -570,7 +518,7 @@ impl CandidateAssembler {
                 index: None,
                 call_id: None,
                 name: None,
-                raw_arguments: truncate(&answer_of(&self.parts)),
+                raw_arguments: truncate(&self.answer.visible_answer()),
                 reason: MalformedToolCall::MissingName,
             });
         }
@@ -609,16 +557,13 @@ impl CandidateAssembler {
         };
 
         // Nothing came back and nothing said why. That is not an answer.
-        if self.parts.is_empty() && tool_calls.is_empty() && self.malformed_frames > 0 {
-            return Err(ProviderError::malformed(format!(
-                "every frame in the response was unreadable ({} skipped)",
-                self.malformed_frames
-            )));
+        if self.answer.is_empty() && tool_calls.is_empty() && self.malformed_frames > 0 {
+            return Err(ProviderError::malformed(Cause::StreamEndedWithoutAnswer));
         }
 
         Ok(AssembledCandidate {
             response: ChatResponse {
-                parts: self.parts,
+                parts: self.answer.into_parts(),
                 tool_calls,
                 stop_reason,
                 usage: self.usage,
@@ -657,16 +602,6 @@ fn not_null(usage: &Value, name: &str) -> bool {
     usage.get(name).is_some_and(|value| !value.is_null())
 }
 
-fn answer_of(parts: &[ContentPart]) -> String {
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            ContentPart::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
-}
-
 fn truncate(raw: &str) -> String {
     if raw.chars().count() <= MAX_MALFORMED_EVIDENCE {
         return raw.to_owned();
@@ -680,6 +615,7 @@ fn truncate(raw: &str) -> String {
 mod tests {
     use super::*;
     use crate::event::CollectingSink;
+    use crate::model::ContentPart;
     use serde_json::json;
 
     fn frame(data: Value) -> String {

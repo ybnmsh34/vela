@@ -50,11 +50,11 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use crate::answer::AnswerChannel;
+use crate::diagnostic::{Cause, EndpointIdentity};
 use crate::error::{ProviderError, ProviderResult};
 use crate::event::{EventSink, StreamEvent};
-use crate::model::{
-    ChatResponse, ContentPart, Degradation, StopReason, TokenUsage, ToolCallOutcome,
-};
+use crate::model::{ChatResponse, Degradation, StopReason, TokenUsage, ToolCallOutcome};
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::redact::Scrubber;
 use crate::sse::SseDecoder;
@@ -98,7 +98,13 @@ pub struct MessageAssembler {
     splitter: ReasoningSplitter,
     tools: ToolCallAccumulator,
     blocks: BTreeMap<u64, OpenBlock>,
-    parts: Vec<ContentPart>,
+    /// Everything the user is shown, and the only text a tool parser may see.
+    /// Not a `Vec<ContentPart>`: see [`crate::answer`]. This API has no
+    /// emulated tool calling, so nothing here is stripped — but the channel is
+    /// what makes that a property of the *turn* rather than of whether this
+    /// file remembered to call the right private method, which is precisely
+    /// what the OpenAI-compatible assembler stopped doing.
+    answer: AnswerChannel,
     usage: TokenUsage,
     stop_reason: Option<StopReason>,
     malformed_frames: usize,
@@ -108,6 +114,8 @@ pub struct MessageAssembler {
     streamed: bool,
     /// An `error` event inside an otherwise-200 stream.
     stream_error: Option<ProviderError>,
+    /// The endpoint this stream answers, for errors that arrive inside a 200.
+    endpoint: Option<EndpointIdentity>,
     /// The internal structured-output tool, when one was injected.
     schema_tool: Option<&'static str>,
     /// A thinking block that never got its `content_block_stop`.
@@ -130,7 +138,7 @@ impl MessageAssembler {
             splitter: ReasoningSplitter::new(),
             tools: ToolCallAccumulator::new(),
             blocks: BTreeMap::new(),
-            parts: Vec::new(),
+            answer: AnswerChannel::new(),
             usage: TokenUsage::default(),
             stop_reason: None,
             malformed_frames: 0,
@@ -142,6 +150,7 @@ impl MessageAssembler {
             schema_tool: None,
             unterminated_reasoning: false,
             scrubber: Scrubber::none(),
+            endpoint: None,
         }
     }
 
@@ -151,6 +160,26 @@ impl MessageAssembler {
         self.scrubber = scrubber;
         self
     }
+
+    /// Attach the endpoint this stream answers, so an error frame inside an
+    /// otherwise-200 body still names the candidate that produced it.
+    pub fn with_endpoint(mut self, endpoint: Option<EndpointIdentity>) -> Self {
+        self.endpoint = endpoint;
+        self
+    }
+
+    /// Name the endpoint on an error that arrived inside a 200 body, and file
+    /// the frame that produced it in the local debug log.
+    ///
+    /// The frame is the *decoded and scrubbed* value, which is what the debug
+    /// log is for: the endpoint's own words, kept on the user's machine, never
+    /// carried into the error.
+    fn record(&self, error: ProviderError, frame: &Value) -> ProviderError {
+        let error = error.at(self.endpoint.clone());
+        crate::debuglog::record_for(&error, || frame.to_string().into_bytes());
+        error
+    }
+
 
     /// Consume a call to the named tool as structured output instead of
     /// reporting it as a tool call.
@@ -225,7 +254,8 @@ impl MessageAssembler {
             "message_stop" => self.saw_message_stop = true,
             "error" => {
                 if let Some(error) = value.get("error") {
-                    self.stream_error = Some(map_error_object(None, error));
+                    self.stream_error =
+                        Some(self.record(map_error_object(None, error), error));
                 }
             }
             // `ping`, and anything a later API version adds. Not damage.
@@ -237,7 +267,7 @@ impl MessageAssembler {
     /// the streaming path, so the two cannot drift.
     pub fn apply_message(&mut self, message: &Value, sink: &mut dyn EventSink) {
         if let Some(error) = message.get("error") {
-            self.stream_error = Some(map_error_object(None, error));
+            self.stream_error = Some(self.record(map_error_object(None, error), error));
             return;
         }
         self.read_usage(message.get("usage"), sink);
@@ -298,11 +328,8 @@ impl MessageAssembler {
                     .get("data")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                self.parts.push(ContentPart::Reasoning {
-                    text: data.to_owned(),
-                    signature: None,
-                    redacted: true,
-                });
+                self.answer
+                    .push_reasoning_block(data.to_owned(), None, true);
                 self.blocks.insert(index, OpenBlock::Ignored);
             }
             "tool_use" => {
@@ -417,13 +444,7 @@ impl MessageAssembler {
 
     fn stop_block(&mut self, index: u64) {
         if let Some(OpenBlock::Thinking { text, signature }) = self.blocks.remove(&index) {
-            if !text.is_empty() || signature.is_some() {
-                self.parts.push(ContentPart::Reasoning {
-                    text,
-                    signature,
-                    redacted: false,
-                });
-            }
+            self.answer.push_reasoning_block(text, signature, false);
         }
     }
 
@@ -432,39 +453,9 @@ impl MessageAssembler {
     fn push_answer_text(&mut self, text: &str, sink: &mut dyn EventSink) {
         for piece in self.splitter.push(text) {
             match piece {
-                ReasoningPiece::Answer(text) => {
-                    self.append_text(&text);
-                    sink.emit(StreamEvent::TextDelta { text });
-                }
-                ReasoningPiece::Reasoning(text) => {
-                    self.append_reasoning(&text);
-                    sink.emit(StreamEvent::ReasoningDelta { text });
-                }
+                ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
+                ReasoningPiece::Reasoning(text) => self.answer.push_reasoning(&text, sink),
             }
-        }
-    }
-
-    fn append_text(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        match self.parts.last_mut() {
-            Some(ContentPart::Text { text: existing }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::text(text)),
-        }
-    }
-
-    fn append_reasoning(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        match self.parts.last_mut() {
-            Some(ContentPart::Reasoning {
-                text: existing,
-                redacted: false,
-                ..
-            }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::reasoning(text)),
         }
     }
 
@@ -549,24 +540,25 @@ impl MessageAssembler {
         let finish = self.splitter.finish();
         for piece in finish.pieces {
             match piece {
-                ReasoningPiece::Answer(text) => {
-                    self.append_text(&text);
-                    sink.emit(StreamEvent::TextDelta { text });
-                }
-                ReasoningPiece::Reasoning(text) => {
-                    self.append_reasoning(&text);
-                    sink.emit(StreamEvent::ReasoningDelta { text });
-                }
+                ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
+                ReasoningPiece::Reasoning(text) => self.answer.push_reasoning(&text, sink),
             }
         }
-        if let Some(recovered) = finish.recovered_answer {
-            // MEASURED-3: leaked markup that never closed must not swallow the
-            // answer.
+        // MEASURED-3: leaked markup that never closed must not swallow the
+        // answer — and MEASURED-3b: the recovered text goes IN to the channel,
+        // never appended behind its back. See `crate::answer`.
+        let unterminated = finish.recovered_answer.is_some();
+        let closed = self.answer.close(finish.recovered_answer.as_deref(), sink);
+        // This API has native tool calling, so the channel is never given a
+        // stripper and these are always empty. Asserted rather than assumed:
+        // if emulation is ever attached here, the calls must not vanish.
+        debug_assert!(closed.calls.is_empty() && closed.quarantined.is_empty());
+        let mut text_calls = closed.calls;
+        text_calls.extend(closed.quarantined);
+        if unterminated {
             degradations.push(Degradation::UnterminatedReasoning {
-                recovered_answer_chars: recovered.chars().count(),
+                recovered_answer_chars: closed.recovered_chars,
             });
-            self.append_text(&recovered);
-            sink.emit(StreamEvent::TextDelta { text: recovered });
         } else if self.unterminated_reasoning {
             degradations.push(Degradation::UnterminatedReasoning {
                 recovered_answer_chars: 0,
@@ -574,6 +566,7 @@ impl MessageAssembler {
         }
 
         let mut tool_calls = self.tools.finish();
+        tool_calls.extend(text_calls);
         let mut schema_tool_input = None;
         let mut schema_tool_raw = None;
         if let Some(name) = self.schema_tool {
@@ -625,21 +618,18 @@ impl MessageAssembler {
         });
 
         // Nothing came back and nothing said why. That is not an answer.
-        if self.parts.is_empty()
+        if self.answer.is_empty()
             && tool_calls.is_empty()
             && schema_tool_input.is_none()
             && schema_tool_raw.is_none()
             && self.malformed_frames > 0
         {
-            return Err(ProviderError::malformed(format!(
-                "every frame in the response was unreadable ({} skipped)",
-                self.malformed_frames
-            )));
+            return Err(ProviderError::malformed(Cause::StreamEndedWithoutAnswer));
         }
 
         Ok(AssembledMessage {
             response: ChatResponse {
-                parts: self.parts,
+                parts: self.answer.into_parts(),
                 tool_calls,
                 stop_reason,
                 usage: self.usage,
@@ -673,7 +663,7 @@ fn map_stop_reason(reason: &str) -> StopReason {
 mod tests {
     use super::*;
     use crate::event::CollectingSink;
-    use crate::model::MalformedToolCall;
+    use crate::model::{ContentPart, MalformedToolCall};
     use serde_json::json;
 
     fn frame(event: &str, data: Value) -> String {

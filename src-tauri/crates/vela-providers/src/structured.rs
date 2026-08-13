@@ -127,11 +127,8 @@ fn type_name(value: &Value) -> &'static str {
     }
 }
 
-fn mismatch(path: &str, detail: impl Into<String>) -> SchemaMismatch {
-    SchemaMismatch {
-        path: path.to_owned(),
-        detail: crate::error::detail(detail.into()),
-    }
+fn mismatch(path: &str, detail: impl AsRef<str>) -> SchemaMismatch {
+    SchemaMismatch::new(path, detail)
 }
 
 /// Pull the JSON value out of an answer.

@@ -19,17 +19,35 @@
 //! * [`ProviderError::allows_retry`] — only failures that are plausibly
 //!   transient on the *same* endpoint.
 //!
-//! ## Detail strings
+//! # THE SECOND LOAD-BEARING RULE: an error carries no endpoint text
 //!
-//! `detail` is a short, sanitised diagnostic, never a raw upstream body:
-//! `conventions.md` §3.2 forbids raw response bodies reaching the renderer, and
-//! an unbounded body is also a fine place for a leaked credential to hide.
-//! Build every one with [`detail`], which truncates and strips control
-//! characters.
+//! There used to be a `detail: String` on every variant, built by a `detail()`
+//! function that truncated an upstream error message and stripped its control
+//! characters. Both are gone.
+//!
+//! `detail` was where the endpoint's own words lived, and four consecutive
+//! rounds of Phase B died trying to make that safe. The credential the user
+//! configured could be echoed back inside that message, so Vela scrubbed it —
+//! and scrubbing is a *blocklist over an encoding the endpoint chooses*. JSON
+//! escapes, then `%2F`, then `%2f`, then every byte percent-encoded, then
+//! `&#x2f;`. Each round closed one and the next found another.
+//!
+//! So the error stopped carrying the text. Every variant now carries a
+//! [`Diagnosis`], and a `Diagnosis` is a closed set of things **Vela
+//! constructs itself**: a [`Cause`] whose sentence is a `&'static str` in this
+//! crate's own source, an HTTP status, the endpoint's identity parsed out of
+//! the request URL Vela built, and a [`CorrelationId`] linking to the raw body
+//! in the local, opt-in debug log ([`crate::debuglog`]).
+//!
+//! The raw body still exists. It does not travel. See [`crate::diagnostic`] for
+//! the full argument and for the compile-fail doctests that make the property
+//! structural rather than a convention.
 
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+use crate::diagnostic::{Cause, ConfiguredModelId, CorrelationId, Diagnosis, EndpointIdentity};
 
 /// The capability vocabulary shared by errors, degradations and probes.
 ///
@@ -63,6 +81,17 @@ impl Capability {
             Capability::PromptCaching => "prompt_caching",
         }
     }
+
+    pub const ALL: &'static [Capability] = &[
+        Capability::Streaming,
+        Capability::Vision,
+        Capability::ToolCalling,
+        Capability::StructuredOutput,
+        Capability::Reasoning,
+        Capability::ModelListing,
+        Capability::UsageReporting,
+        Capability::PromptCaching,
+    ];
 }
 
 impl std::fmt::Display for Capability {
@@ -120,9 +149,24 @@ impl TransportFailure {
             TransportFailure::Request { .. } => false,
         }
     }
+
+    /// The status this failure is about, when there was a response at all.
+    pub const fn status(self) -> Option<u16> {
+        match self {
+            TransportFailure::Server { status } | TransportFailure::Request { status } => {
+                Some(status)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The normalised failure of any provider operation.
+///
+/// Every variant's payload is typed and closed. There is no `String` field on
+/// any of them, which is the property [`crate::diagnostic`] exists to hold:
+/// endpoint-supplied text is not carried here, not by `Display`, not by
+/// `Debug`, and not by the serde shape that crosses the IPC bridge.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -133,43 +177,50 @@ pub enum ProviderError {
     /// The prompt (plus requested completion) does not fit. All four matrix
     /// profiles answer this cleanly, so it is modelled precisely: the UI can
     /// say "this conversation is N tokens over the model's M-token window".
-    #[error("the request does not fit the model's context window: {detail}")]
+    ///
+    /// The two counts are the design's one deliberate channel for a value the
+    /// endpoint chose — and they are `u32`, so what arrives is a number and
+    /// can never be a sentence, an escape sequence or a credential.
+    #[error("the request does not fit the model's context window: {diagnosis}")]
     ContextLengthExceeded {
         limit_tokens: Option<u32>,
         requested_tokens: Option<u32>,
-        detail: String,
+        diagnosis: Diagnosis,
     },
     /// The credential was rejected — or an empty one was sent, which the
     /// harness answers 401 `empty_authorization_header` precisely so that bug
     /// is loud. Never produced by "no credential configured": that is a valid
     /// state, see [`vela_core::auth`].
-    #[error("the endpoint rejected the credential: {detail}")]
-    AuthFailed { detail: String },
-    #[error("the endpoint is rate limiting this client: {detail}")]
+    #[error("the endpoint rejected the credential: {diagnosis}")]
+    AuthFailed { diagnosis: Diagnosis },
+    #[error("the endpoint is rate limiting this client: {diagnosis}")]
     RateLimited {
         /// From `Retry-After`, when the endpoint sent one.
         retry_after_ms: Option<u64>,
-        detail: String,
+        diagnosis: Diagnosis,
     },
-    #[error("the endpoint does not serve the model `{model_id}`: {detail}")]
-    ModelNotFound { model_id: String, detail: String },
+    #[error("the endpoint does not serve the model `{model_id}`: {diagnosis}")]
+    ModelNotFound {
+        model_id: ConfiguredModelId,
+        diagnosis: Diagnosis,
+    },
     /// The affordance the caller asked for is not available on this model. This
     /// is how Vela refuses rather than silently producing wrong output.
-    #[error("this model does not support {capability}: {detail}")]
+    #[error("this model does not support {capability}: {diagnosis}")]
     CapabilityUnsupported {
         capability: Capability,
-        detail: String,
+        diagnosis: Diagnosis,
     },
-    #[error("could not reach the endpoint ({failure}): {detail}")]
+    #[error("could not reach the endpoint ({failure}): {diagnosis}")]
     Transport {
         failure: TransportFailure,
-        detail: String,
+        diagnosis: Diagnosis,
     },
     /// The endpoint answered, and the answer could not be understood at all.
     /// Note that a *single* malformed SSE frame never produces this — those are
     /// skipped, per MEASURED-2.
-    #[error("the endpoint returned a response Vela could not read: {detail}")]
-    MalformedResponse { detail: String },
+    #[error("the endpoint returned a response Vela could not read: {diagnosis}")]
+    MalformedResponse { diagnosis: Diagnosis },
     /// The caller cancelled. Not a failure of the endpoint; never retried,
     /// never failed over.
     #[error("cancelled")]
@@ -184,46 +235,56 @@ impl std::fmt::Display for TransportFailure {
 
 pub type ProviderResult<T> = Result<T, ProviderError>;
 
-/// Longest `detail` this crate will ever construct.
-///
-/// Long enough for an endpoint's own error message, short enough that a raw
-/// body, a stack trace or a pasted credential cannot ride along.
-pub const MAX_DETAIL_CHARS: usize = 200;
-
-/// Build a `detail` string: single-line, control-free, bounded.
-///
-/// Every construction site in this crate goes through here, so no path exists
-/// that copies an upstream body verbatim into an error the renderer will see.
-pub fn detail(raw: impl AsRef<str>) -> String {
-    let mut out = String::with_capacity(MAX_DETAIL_CHARS);
-    let mut last_was_space = false;
-    for ch in raw.as_ref().chars() {
-        let ch = if ch.is_control() { ' ' } else { ch };
-        if ch == ' ' {
-            if last_was_space || out.is_empty() {
-                continue;
-            }
-            last_was_space = true;
-        } else {
-            last_was_space = false;
-        }
-        if out.chars().count() >= MAX_DETAIL_CHARS {
-            out.push('…');
-            break;
-        }
-        out.push(ch);
+/// Every string this taxonomy can render, so [`crate::diagnostic`]'s audit can
+/// compute the closed vocabulary instead of trusting a hand-written list.
+pub fn closed_vocabulary() -> Vec<&'static str> {
+    let mut vocabulary = vec![
+        // `ProviderError`'s serde tag values.
+        "contextLengthExceeded",
+        "authFailed",
+        "rateLimited",
+        "modelNotFound",
+        "capabilityUnsupported",
+        "transport",
+        "malformedResponse",
+        "cancelled",
+        // `ProviderError::code()`.
+        "context_length_exceeded",
+        "auth_failed",
+        "rate_limited",
+        "model_not_found",
+        "capability_unsupported",
+        "transport",
+        "malformed_response",
+        "cancelled",
+        // `TransportFailure`'s serde tags and codes.
+        "connect",
+        "timeout",
+        "stalled",
+        "reset",
+        "server",
+        "request",
+    ];
+    for capability in Capability::ALL {
+        vocabulary.push(capability.code());
     }
-    let trimmed = out.trim_end();
-    if trimmed.len() == out.len() {
-        out
-    } else {
-        trimmed.to_owned()
-    }
+    // `Capability`'s serde renderings, which are camelCase and therefore not
+    // the same strings as `code()`.
+    vocabulary.extend([
+        "streaming",
+        "vision",
+        "toolCalling",
+        "structuredOutput",
+        "reasoning",
+        "modelListing",
+        "usageReporting",
+        "promptCaching",
+    ]);
+    vocabulary
 }
 
 impl ProviderError {
-    /// A stable machine code. The UI may switch on this; it may not parse
-    /// `detail`.
+    /// A stable machine code. The UI may switch on this.
     pub const fn code(&self) -> &'static str {
         match self {
             ProviderError::ContextLengthExceeded { .. } => "context_length_exceeded",
@@ -278,24 +339,147 @@ impl ProviderError {
         }
     }
 
-    pub fn transport(failure: TransportFailure, raw: impl AsRef<str>) -> Self {
-        ProviderError::Transport {
-            failure,
-            detail: detail(raw),
+    // -- the diagnosis ----------------------------------------------------
+
+    /// The typed diagnosis, for every variant that has one.
+    ///
+    /// `Cancelled` has none: it is Vela's own answer to the user's own action
+    /// and there is nothing about an endpoint to say.
+    pub fn diagnosis(&self) -> Option<&Diagnosis> {
+        match self {
+            ProviderError::ContextLengthExceeded { diagnosis, .. }
+            | ProviderError::AuthFailed { diagnosis }
+            | ProviderError::RateLimited { diagnosis, .. }
+            | ProviderError::ModelNotFound { diagnosis, .. }
+            | ProviderError::CapabilityUnsupported { diagnosis, .. }
+            | ProviderError::Transport { diagnosis, .. }
+            | ProviderError::MalformedResponse { diagnosis } => Some(diagnosis),
+            ProviderError::Cancelled => None,
         }
     }
 
-    pub fn malformed(raw: impl AsRef<str>) -> Self {
+    fn diagnosis_mut(&mut self) -> Option<&mut Diagnosis> {
+        match self {
+            ProviderError::ContextLengthExceeded { diagnosis, .. }
+            | ProviderError::AuthFailed { diagnosis }
+            | ProviderError::RateLimited { diagnosis, .. }
+            | ProviderError::ModelNotFound { diagnosis, .. }
+            | ProviderError::CapabilityUnsupported { diagnosis, .. }
+            | ProviderError::Transport { diagnosis, .. }
+            | ProviderError::MalformedResponse { diagnosis } => Some(diagnosis),
+            ProviderError::Cancelled => None,
+        }
+    }
+
+    pub fn cause(&self) -> Option<Cause> {
+        self.diagnosis().map(Diagnosis::cause)
+    }
+
+    /// Which endpoint this error is about — the answer a user with three
+    /// configured candidates needs.
+    pub fn endpoint(&self) -> Option<&EndpointIdentity> {
+        self.diagnosis().and_then(Diagnosis::endpoint)
+    }
+
+    pub fn status(&self) -> Option<u16> {
+        self.diagnosis().and_then(Diagnosis::status)
+    }
+
+    /// The key into the local debug log, for a user who deliberately opens it.
+    pub fn correlation(&self) -> Option<CorrelationId> {
+        self.diagnosis().map(Diagnosis::correlation)
+    }
+
+    /// Attach the endpoint late, at a chokepoint, rather than at every
+    /// construction site.
+    ///
+    /// Adapters call this once per request path, so a new error variant added
+    /// deep inside a mapper still comes out naming its endpoint. It takes an
+    /// [`EndpointIdentity`], which cannot be built from anything an endpoint
+    /// sent.
+    pub fn at(mut self, endpoint: Option<EndpointIdentity>) -> Self {
+        if endpoint.is_some() {
+            if let Some(diagnosis) = self.diagnosis_mut() {
+                let taken = std::mem::replace(diagnosis, Diagnosis::local(Cause::CallerCancelled));
+                *diagnosis = taken.at(endpoint);
+            }
+        }
+        self
+    }
+
+    /// Pin the correlation id — used when one exchange produces more than one
+    /// error, so they all point at the same debug-log entry.
+    pub fn with_correlation(mut self, correlation: CorrelationId) -> Self {
+        if let Some(diagnosis) = self.diagnosis_mut() {
+            let taken = std::mem::replace(diagnosis, Diagnosis::local(Cause::CallerCancelled));
+            *diagnosis = taken.with_correlation(correlation);
+        }
+        self
+    }
+
+    // -- constructors -----------------------------------------------------
+
+    pub fn transport(failure: TransportFailure, diagnosis: impl Into<Diagnosis>) -> Self {
+        let mut diagnosis = diagnosis.into();
+        if let Some(status) = failure.status() {
+            diagnosis = diagnosis.with_status(status);
+        }
+        ProviderError::Transport { failure, diagnosis }
+    }
+
+    pub fn malformed(diagnosis: impl Into<Diagnosis>) -> Self {
         ProviderError::MalformedResponse {
-            detail: detail(raw),
+            diagnosis: diagnosis.into(),
         }
     }
 
-    pub fn unsupported(capability: Capability, raw: impl AsRef<str>) -> Self {
+    pub fn unsupported(capability: Capability, diagnosis: impl Into<Diagnosis>) -> Self {
         ProviderError::CapabilityUnsupported {
             capability,
-            detail: detail(raw),
+            diagnosis: diagnosis.into(),
         }
+    }
+
+    pub fn auth_failed(diagnosis: impl Into<Diagnosis>) -> Self {
+        ProviderError::AuthFailed {
+            diagnosis: diagnosis.into(),
+        }
+    }
+
+    pub fn model_not_found(model_id: ConfiguredModelId, diagnosis: impl Into<Diagnosis>) -> Self {
+        ProviderError::ModelNotFound {
+            model_id,
+            diagnosis: diagnosis.into(),
+        }
+    }
+
+    pub fn rate_limited(retry_after_ms: Option<u64>, diagnosis: impl Into<Diagnosis>) -> Self {
+        ProviderError::RateLimited {
+            retry_after_ms,
+            diagnosis: diagnosis.into(),
+        }
+    }
+
+    /// The identifiers this error is entitled to carry, for
+    /// [`crate::diagnostic::unexplained_strings`].
+    ///
+    /// Deliberately derived from the error's own typed accessors: an audit that
+    /// built this list by scanning the rendering would excuse whatever it
+    /// found.
+    pub fn carried_identity(&self) -> Vec<String> {
+        let mut identity = Vec::new();
+        if let Some(endpoint) = self.endpoint() {
+            identity.push(endpoint.authority().to_owned());
+            identity.push(endpoint.path().to_owned());
+            identity.push(endpoint.to_string());
+        }
+        if let ProviderError::ModelNotFound { model_id, .. } = self {
+            identity.push(model_id.as_str().to_owned());
+        }
+        if let Some(correlation) = self.correlation() {
+            identity.push(correlation.to_string());
+        }
+        identity
     }
 }
 
@@ -305,10 +489,9 @@ mod tests {
 
     #[test]
     fn auth_and_capability_failures_are_never_failed_over_or_retried() {
-        let auth = ProviderError::AuthFailed {
-            detail: detail("401"),
-        };
-        let capability = ProviderError::unsupported(Capability::Vision, "no image input");
+        let auth = ProviderError::auth_failed(Cause::CredentialRejected);
+        let capability =
+            ProviderError::unsupported(Capability::Vision, Cause::CapabilityAbsentOnThisModel);
         for error in [&auth, &capability] {
             assert!(
                 !error.allows_failover(),
@@ -320,11 +503,9 @@ mod tests {
 
     #[test]
     fn transport_and_rate_limit_failures_are_the_failover_cases() {
-        let transport = ProviderError::transport(TransportFailure::Connect, "refused");
-        let limited = ProviderError::RateLimited {
-            retry_after_ms: Some(1_500),
-            detail: detail("slow down"),
-        };
+        let transport =
+            ProviderError::transport(TransportFailure::Connect, Cause::ConnectionFailed);
+        let limited = ProviderError::rate_limited(Some(1_500), Cause::TooManyRequests);
         assert!(transport.allows_failover() && transport.allows_retry());
         assert!(limited.allows_failover() && limited.allows_retry());
         assert_eq!(limited.retry_after(), Some(Duration::from_millis(1_500)));
@@ -332,32 +513,23 @@ mod tests {
 
     #[test]
     fn a_4xx_that_is_not_modelled_is_not_transient() {
-        let error = ProviderError::transport(TransportFailure::Request { status: 422 }, "no");
+        let error = ProviderError::transport(
+            TransportFailure::Request { status: 422 },
+            Cause::EndpointRejectedRequest,
+        );
         assert!(error.allows_failover(), "another endpoint may accept it");
         assert!(
             !error.allows_retry(),
             "repeating an identical rejected request is pointless"
         );
+        assert_eq!(error.status(), Some(422), "the status rides along, typed");
     }
 
     #[test]
     fn malformed_bytes_fail_over_but_are_never_repeated_at_the_same_endpoint() {
-        let error = ProviderError::malformed("not json");
+        let error = ProviderError::malformed(Cause::ResponseWasNotJson);
         assert!(error.allows_failover());
         assert!(!error.allows_retry());
-    }
-
-    #[test]
-    fn detail_is_bounded_single_line_and_control_free() {
-        let raw = format!("line one\nline\ttwo {}", "x".repeat(500));
-        let out = detail(&raw);
-        assert!(!out.contains('\n') && !out.contains('\t'));
-        assert!(
-            out.chars().count() <= MAX_DETAIL_CHARS + 1,
-            "got {} chars",
-            out.chars().count()
-        );
-        assert!(out.ends_with('…'), "truncation must be visible: {out}");
     }
 
     #[test]
@@ -366,26 +538,17 @@ mod tests {
             ProviderError::ContextLengthExceeded {
                 limit_tokens: Some(8_192),
                 requested_tokens: Some(9_000),
-                detail: String::new(),
+                diagnosis: Cause::ContextWindowExceeded.into(),
             }
             .code(),
-            ProviderError::AuthFailed {
-                detail: String::new(),
-            }
-            .code(),
-            ProviderError::RateLimited {
-                retry_after_ms: None,
-                detail: String::new(),
-            }
-            .code(),
-            ProviderError::ModelNotFound {
-                model_id: "m".into(),
-                detail: String::new(),
-            }
-            .code(),
-            ProviderError::unsupported(Capability::ToolCalling, "").code(),
-            ProviderError::transport(TransportFailure::Timeout, "").code(),
-            ProviderError::malformed("").code(),
+            ProviderError::auth_failed(Cause::CredentialRejected).code(),
+            ProviderError::rate_limited(None, Cause::TooManyRequests).code(),
+            ProviderError::model_not_found(ConfiguredModelId::unknown(), Cause::ModelNotServed)
+                .code(),
+            ProviderError::unsupported(Capability::ToolCalling, Cause::CapabilityAbsentOnThisModel)
+                .code(),
+            ProviderError::transport(TransportFailure::Timeout, Cause::RequestTimedOut).code(),
+            ProviderError::malformed(Cause::ResponseWasNotJson).code(),
             ProviderError::Cancelled.code(),
         ];
         let unique: std::collections::BTreeSet<_> = codes.iter().collect();
@@ -398,10 +561,41 @@ mod tests {
         let json = serde_json::to_value(ProviderError::ContextLengthExceeded {
             limit_tokens: Some(4_096),
             requested_tokens: Some(5_000),
-            detail: detail("too long"),
+            diagnosis: Cause::ContextWindowExceeded.into(),
         })
         .unwrap();
         assert_eq!(json["kind"], "contextLengthExceeded");
         assert_eq!(json["limitTokens"], 4_096);
+        assert_eq!(json["diagnosis"]["cause"], "context_window_exceeded");
+    }
+
+    #[test]
+    fn every_code_and_tag_is_in_the_closed_vocabulary() {
+        // The vocabulary is what the audit trusts. If a code is missing from
+        // it, the audit reports Vela's own text as a leak; if a tag is missing,
+        // it does the same. Both are checked against the types rather than
+        // against a copy of this list.
+        let vocabulary = closed_vocabulary();
+        for error in [
+            ProviderError::auth_failed(Cause::CredentialRejected),
+            ProviderError::rate_limited(None, Cause::TooManyRequests),
+            ProviderError::transport(
+                TransportFailure::Server { status: 500 },
+                Cause::EndpointFailedToAnswer,
+            ),
+            ProviderError::malformed(Cause::ResponseWasNotJson),
+            ProviderError::Cancelled,
+        ] {
+            assert!(
+                vocabulary.contains(&error.code()),
+                "{} is missing from the closed vocabulary",
+                error.code()
+            );
+        }
+        for capability in Capability::ALL {
+            let rendered = serde_json::to_value(capability).unwrap();
+            assert!(vocabulary.contains(&rendered.as_str().unwrap()));
+            assert!(vocabulary.contains(&capability.code()));
+        }
     }
 }

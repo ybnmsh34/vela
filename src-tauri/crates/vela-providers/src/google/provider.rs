@@ -35,8 +35,9 @@ use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
+use crate::diagnostic::{Cause, ConfiguredModelId, Diagnosis};
 use crate::emulation;
-use crate::error::{detail, Capability, ProviderError, ProviderResult, TransportFailure};
+use crate::error::{Capability, ProviderError, ProviderResult, TransportFailure};
 use crate::event::{CollectingSink, EventSink, NullSink, StreamEvent};
 use crate::http::{HttpRequest, HttpTransport, TransportError};
 use crate::model::{
@@ -232,22 +233,24 @@ impl GoogleProvider {
     fn prepare_http(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = match resolve_auth(self.secrets.as_ref(), &self.auth) {
             Ok(applied) => applied,
+            // `SecretError`'s own `Display` is not carried: it is Vela's text
+            // today, but it is text, and the whole point of the redesign is that
+            // an error's contents are a closed set rather than whatever a
+            // `Display` impl somewhere feels like producing.
             Err(SecretError::NotFound { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(
-                        "this provider is configured to send a credential, but none is stored",
-                    ),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialMissing,
+                )))
             }
             Err(SecretError::Unavailable { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail("the credential store could not be read"),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreUnreadable,
+                )))
             }
-            Err(error) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(error.to_string()),
-                })
+            Err(_) => {
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreFailed,
+                )))
             }
         };
         // The query-parameter form is this API's documented alternative to the
@@ -264,12 +267,11 @@ impl GoogleProvider {
             return Err(map_error_response(
                 response.status,
                 &body,
-                "",
+                &ConfiguredModelId::unknown(),
                 response.header("retry-after"),
             ));
         }
-        body.json()
-            .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
+        body.decode_json()
     }
 
     /// Everything that happens before a byte is sent.
@@ -283,7 +285,7 @@ impl GoogleProvider {
         if request.needs_vision() && capabilities.vision == Support::Unsupported {
             return Err(ProviderError::unsupported(
                 Capability::Vision,
-                "this model does not accept image input",
+                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
             ));
         }
 
@@ -296,7 +298,7 @@ impl GoogleProvider {
                         if self.options.structured_output == StructuredOutputPolicy::Refuse {
                             return Err(ProviderError::unsupported(
                                 Capability::StructuredOutput,
-                                "this model was probed and does not honour a response schema",
+                                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
                             ));
                         }
                         degradations.push(Degradation::StructuredOutputUnsupported);
@@ -351,8 +353,8 @@ impl GoogleProvider {
         context: &RequestContext,
     ) -> Result<AssembledCandidate, Refusal> {
         let encoded = wire::encode_request(&prepared.request, concessions, &self.options.safety);
-        let bytes = serde_json::to_vec(&encoded.body).map_err(|error| {
-            ProviderError::malformed(format!("could not encode request: {error}"))
+        let bytes = serde_json::to_vec(&encoded.body).map_err(|_| {
+            ProviderError::malformed(Diagnosis::local(Cause::RequestCouldNotBeEncoded))
         })?;
         let request = self.prepare_http(
             HttpRequest::post_json(
@@ -378,7 +380,7 @@ impl GoogleProvider {
                 error: map_error_response(
                     response.status,
                     &body,
-                    &prepared.request.model_id,
+                    &ConfiguredModelId::of(&prepared.request),
                     response.header("retry-after"),
                 ),
                 // Nothing has been emitted to the sink at this point, which is
@@ -387,7 +389,11 @@ impl GoogleProvider {
             });
         }
 
-        let mut assembler = CandidateAssembler::new(streaming);
+        // The endpoint goes on before the branch, not inside it: the
+        // non-streamed path reaches the same assembler, and an error frame
+        // inside a 200 must name its candidate whichever transport carried it.
+        let mut assembler = CandidateAssembler::new(streaming)
+            .with_endpoint(response.body.origin().endpoint().cloned());
         if prepared.emulate_tools {
             assembler = assembler.with_tool_emulation();
         }
@@ -404,7 +410,7 @@ impl GoogleProvider {
             let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
             // Grabbed before the loop borrows the body: a stall must still say
             // which endpoint went quiet, and the redacted form is safe to.
-            let endpoint = body.endpoint().to_owned();
+            let endpoint = body.endpoint().cloned();
             loop {
                 context.cancel.err_if_cancelled()?;
                 let read = tokio::select! {
@@ -416,10 +422,7 @@ impl GoogleProvider {
                     Err(_elapsed) => {
                         return Err(ProviderError::transport(
                             TransportFailure::Stalled,
-                            format!(
-                                "no data for {} ms for url ({endpoint})",
-                                context.timeouts.stall.as_millis()
-                            ),
+                            Diagnosis::new(Cause::StreamStalled).at(endpoint.clone()),
                         )
                         .into())
                     }
@@ -436,9 +439,7 @@ impl GoogleProvider {
             // Decoded through the body's own scrubber: the non-streamed path
             // reconstitutes an escaped credential just as readily as the
             // streamed one.
-            let value: Value = body.json().map_err(|error| {
-                ProviderError::malformed(format!("response was not JSON: {error}"))
-            })?;
+            let value: Value = body.decode_json()?;
             assembler.apply_body(&value, sink);
             Ok(assembler.finish(sink)?)
         }
@@ -635,7 +636,7 @@ impl Provider for GoogleProvider {
         let models = value
             .get("models")
             .and_then(Value::as_array)
-            .ok_or_else(|| ProviderError::malformed("model list had no `models` array"))?;
+            .ok_or_else(|| ProviderError::malformed(Cause::ModelListMalformed))?;
         Ok(models
             .iter()
             .filter(|entry| serves_completions(entry))

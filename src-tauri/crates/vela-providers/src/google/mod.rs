@@ -51,7 +51,10 @@ pub use wire::{Concessions, HarmCategory, SafetySetting, SafetyThreshold};
 
 use serde_json::Value;
 
-use crate::error::{detail, Capability, ProviderError, TransportFailure};
+use crate::diagnostic::{
+    Cause, ConfiguredModelId, Diagnosis, FilterKind, FilterStage, FilterVerdict, HarmCategories,
+};
+use crate::error::{Capability, ProviderError, TransportFailure};
 use crate::http::UpstreamBytes;
 
 /// Longest error body this adapter will read. `conventions.md` §3.2 forbids raw
@@ -150,78 +153,51 @@ impl Blocked {
 /// The status is `400` because that is what the refusal *means* — the endpoint
 /// rejected this request — even though it happened to say so inside a 200 body.
 ///
-/// What carries the truth is `detail`: a complete, provider-neutral sentence,
-/// so the user is told a filter refused the content rather than being shown an
-/// empty bubble or a connection error. `ProviderError`'s own `Display` prefix
-/// ("could not reach the endpoint") is wrong for this case and is the reason
-/// the gap is reported rather than papered over.
+/// # Where the sentence went
+///
+/// It used to be a `String` this module composed and handed to `detail`. The
+/// composition was already an allowlist — `describe_reason` and
+/// `describe_category` map a wire token to a `&'static str` and drop anything
+/// they do not recognise — but it arrived at the error as *text*, which is the
+/// shape the redesign removed. The provider core now owns the vocabulary:
+/// [`FilterVerdict`] carries the stage, the filter and the flagged categories
+/// as closed enums and a five-bit set, and renders the same sentence from them.
+/// The adapter's job is reduced to recognising tokens, which is the job it
+/// should have had.
 pub fn blocked_error(blocked: &Blocked) -> ProviderError {
-    ProviderError::Transport {
-        failure: TransportFailure::Request { status: 400 },
-        detail: detail(describe_block(blocked)),
-    }
+    ProviderError::transport(
+        TransportFailure::Request { status: 400 },
+        Diagnosis::new(Cause::ContentFilterRefusedTheTurn).with_filter(filter_verdict(blocked)),
+    )
+}
+
+/// The typed verdict for a block: token recognition, and nothing else.
+pub fn filter_verdict(blocked: &Blocked) -> FilterVerdict {
+    FilterVerdict::new(
+        match blocked.stage {
+            BlockStage::Prompt => FilterStage::Prompt,
+            BlockStage::Answer => FilterStage::Answer,
+        },
+        FilterKind::recognise(&blocked.reason),
+        HarmCategories::recognise(&blocked.categories),
+        u32::try_from(blocked.generated_chars).unwrap_or(u32::MAX),
+    )
 }
 
 /// The user-facing sentence for a block. Public so a test can assert on the
-/// words rather than on a formatting accident.
+/// words rather than on a formatting accident — and now a thin wrapper over
+/// [`FilterVerdict`]'s own `Display`, so there is exactly one place the
+/// sentence is written.
 pub fn describe_block(blocked: &Blocked) -> String {
-    let filter = describe_reason(&blocked.reason);
-    let flagged = describe_categories(&blocked.categories);
-    match (blocked.stage, blocked.generated_chars) {
-        (BlockStage::Prompt, _) => format!(
-            "the endpoint's {filter} blocked this request before the model saw it, \
-             so no answer was generated{flagged}"
-        ),
-        (BlockStage::Answer, 0) => {
-            format!("the endpoint's {filter} blocked the answer, so nothing was returned{flagged}")
-        }
-        (BlockStage::Answer, generated) => format!(
-            "the endpoint's {filter} stopped the answer after {generated} characters; \
-             the rest was withheld{flagged}"
-        ),
-    }
+    filter_verdict(blocked).to_string()
 }
 
-/// Translate a wire block reason into English. Unknown tokens become the
-/// generic phrase rather than being passed through: a raw enum name is backend
-/// vocabulary, and `conventions.md` §0.3 keeps that out of anything the UI can
-/// render.
-fn describe_reason(reason: &str) -> &'static str {
-    match reason {
-        "SAFETY" => "safety filter",
-        "PROHIBITED_CONTENT" => "prohibited-content filter",
-        "BLOCKLIST" => "blocked-terms list",
-        "SPII" => "personal-information filter",
-        "RECITATION" => "recitation filter (the answer was reproducing memorised text)",
-        "IMAGE_SAFETY" => "image safety filter",
-        "LANGUAGE" => "unsupported-language filter",
-        _ => "content filter",
-    }
-}
-
-fn describe_categories(categories: &[String]) -> String {
-    let named: Vec<&str> = categories
-        .iter()
-        .filter_map(|category| describe_category(category))
-        .collect();
-    if named.is_empty() {
-        return String::new();
-    }
-    format!(" (flagged: {})", named.join(", "))
-}
-
-fn describe_category(category: &str) -> Option<&'static str> {
-    match category {
-        "HARM_CATEGORY_HARASSMENT" => Some("harassment"),
-        "HARM_CATEGORY_HATE_SPEECH" => Some("hate speech"),
-        "HARM_CATEGORY_SEXUALLY_EXPLICIT" => Some("sexually explicit content"),
-        "HARM_CATEGORY_DANGEROUS_CONTENT" => Some("dangerous content"),
-        "HARM_CATEGORY_CIVIC_INTEGRITY" => Some("civic integrity"),
-        // An unmodelled category is dropped rather than printed: the sentence
-        // is still true without it, and printing a raw token is not.
-        _ => None,
-    }
-}
+// `describe_reason` / `describe_categories` / `describe_category` used to live
+// here: three allowlists mapping a wire token to a `&'static str`. The
+// allowlists were right and they were not deleted — they moved into
+// `crate::diagnostic` as `FilterKind::recognise` and `HarmCategory::recognise`,
+// where the *result* is a closed enum rather than a string, so the adapter can
+// no longer be the place a sentence is assembled.
 
 // ---------------------------------------------------------------------------
 // Error responses
@@ -235,10 +211,10 @@ fn describe_category(category: &str) -> Option<&'static str> {
 pub fn map_error_response(
     status: u16,
     body: &UpstreamBytes,
-    model_id: &str,
+    model_id: &ConfiguredModelId,
     retry_after_header: Option<&str>,
 ) -> ProviderError {
-    match error_object(body) {
+    let error = match error_object(body) {
         Some(error) => {
             let mapped = map_error_object(Some(status), &error);
             match (mapped, retry_after_header.and_then(parse_retry_after_ms)) {
@@ -247,22 +223,29 @@ pub fn map_error_response(
                 (
                     ProviderError::RateLimited {
                         retry_after_ms,
-                        detail,
+                        diagnosis,
                     },
                     header,
                 ) => ProviderError::RateLimited {
                     retry_after_ms: retry_after_ms.or(header),
-                    detail,
+                    diagnosis,
                 },
-                (ProviderError::ModelNotFound { detail, .. }, _) => ProviderError::ModelNotFound {
-                    model_id: model_id.to_owned(),
-                    detail,
-                },
+                (ProviderError::ModelNotFound { diagnosis, .. }, _) => {
+                    ProviderError::ModelNotFound {
+                        model_id: model_id.clone(),
+                        diagnosis,
+                    }
+                }
                 (other, _) => other,
             }
         }
-        None => map_status(status, "", retry_after_header, model_id),
+        None => map_status(status, retry_after_header, model_id),
+    };
+    let error = error.at(body.endpoint().cloned());
+    if let (Some(correlation), Some(cause)) = (error.correlation(), error.cause()) {
+        body.record_for_debugging(correlation, cause, Some(status));
     }
+    error
 }
 
 /// Pull the `error` object out of a body.
@@ -288,6 +271,9 @@ pub fn map_error_object(http_status: Option<u16>, error: &Value) -> ProviderErro
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    // Read to classify, never carried: `refused_capability`, `is_too_long` and
+    // `context_numbers` each turn the message into a typed decision or a pair
+    // of integers, and the message itself goes no further.
     let message = error
         .get("message")
         .and_then(Value::as_str)
@@ -299,39 +285,42 @@ pub fn map_error_object(http_status: Option<u16>, error: &Value) -> ProviderErro
         .or(http_status)
         .unwrap_or(400);
 
+    let diagnose = |cause: Cause| Diagnosis::new(cause).with_status(code);
+
     // A capability refusal is worth more than the status it arrived with: it
     // tells the UI to withdraw an affordance rather than to retry.
     if let Some(capability) = refused_capability(message) {
-        return ProviderError::unsupported(capability, message);
+        return ProviderError::unsupported(
+            capability,
+            diagnose(Cause::CapabilityRefusedByEndpoint),
+        );
     }
     if is_too_long(message) {
         let (limit, requested) = context_numbers(message);
         return ProviderError::ContextLengthExceeded {
             limit_tokens: limit,
             requested_tokens: requested,
-            detail: detail(message),
+            diagnosis: diagnose(Cause::ContextWindowExceeded),
         };
     }
 
     match status_token {
-        "UNAUTHENTICATED" | "PERMISSION_DENIED" => ProviderError::AuthFailed {
-            detail: detail(fallback(message, "the endpoint rejected the credential")),
-        },
-        "NOT_FOUND" => ProviderError::ModelNotFound {
-            model_id: String::new(),
-            detail: detail(fallback(message, "not found")),
-        },
-        "RESOURCE_EXHAUSTED" => ProviderError::RateLimited {
-            retry_after_ms: retry_info_ms(error),
-            detail: detail(fallback(message, "too many requests")),
-        },
-        "DEADLINE_EXCEEDED" => ProviderError::transport(
-            TransportFailure::Timeout,
-            fallback(message, "the endpoint timed out"),
+        "UNAUTHENTICATED" | "PERMISSION_DENIED" => {
+            ProviderError::auth_failed(diagnose(Cause::CredentialRejected))
+        }
+        "NOT_FOUND" => ProviderError::model_not_found(
+            ConfiguredModelId::unknown(),
+            diagnose(Cause::ModelNotServed),
         ),
+        "RESOURCE_EXHAUSTED" => {
+            ProviderError::rate_limited(retry_info_ms(error), diagnose(Cause::TooManyRequests))
+        }
+        "DEADLINE_EXCEEDED" => {
+            ProviderError::transport(TransportFailure::Timeout, diagnose(Cause::EndpointTimedOut))
+        }
         "UNAVAILABLE" => ProviderError::transport(
             TransportFailure::Server { status: 503 },
-            fallback(message, "the endpoint is unavailable"),
+            Diagnosis::new(Cause::EndpointFailedToAnswer),
         ),
         "INTERNAL" | "UNKNOWN" | "DATA_LOSS" => ProviderError::transport(
             TransportFailure::Server {
@@ -341,54 +330,46 @@ pub fn map_error_object(http_status: Option<u16>, error: &Value) -> ProviderErro
                     500
                 },
             },
-            fallback(message, "the endpoint failed to answer"),
+            Diagnosis::new(Cause::EndpointFailedToAnswer),
         ),
         // The server hung up on itself. Not a 5xx, and not something the user
         // configured wrongly, so it is reported as the transient failure it is.
         "CANCELLED" | "ABORTED" => ProviderError::transport(
             TransportFailure::Reset,
-            fallback(message, "the endpoint abandoned the request"),
+            diagnose(Cause::EndpointCancelledRequest),
         ),
         // `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, `OUT_OF_RANGE` and
         // anything a later API version adds fall through to the code, so an
         // unmodelled status is never invented into a diagnosis.
-        _ => map_status(code, message, None, ""),
+        _ => map_status(code, None, &ConfiguredModelId::unknown()),
     }
 }
 
 fn map_status(
     status: u16,
-    message: &str,
     retry_after_header: Option<&str>,
-    model_id: &str,
+    model_id: &ConfiguredModelId,
 ) -> ProviderError {
+    let diagnose = |cause: Cause| Diagnosis::new(cause).with_status(status);
     match status {
-        401 | 403 => ProviderError::AuthFailed {
-            detail: detail(fallback(message, "the endpoint rejected the credential")),
-        },
-        404 => ProviderError::ModelNotFound {
-            model_id: model_id.to_owned(),
-            detail: detail(fallback(message, "not found")),
-        },
+        401 | 403 => ProviderError::auth_failed(diagnose(Cause::CredentialRejected)),
+        404 => ProviderError::model_not_found(model_id.clone(), diagnose(Cause::ModelNotServed)),
         413 => ProviderError::ContextLengthExceeded {
             limit_tokens: None,
             requested_tokens: None,
-            detail: detail(fallback(
-                message,
-                "the endpoint refused the request as too large",
-            )),
+            diagnosis: diagnose(Cause::RequestTooLarge),
         },
-        429 => ProviderError::RateLimited {
-            retry_after_ms: retry_after_header.and_then(parse_retry_after_ms),
-            detail: detail(fallback(message, "too many requests")),
-        },
+        429 => ProviderError::rate_limited(
+            retry_after_header.and_then(parse_retry_after_ms),
+            diagnose(Cause::TooManyRequests),
+        ),
         500..=599 => ProviderError::transport(
             TransportFailure::Server { status },
-            fallback(message, "the endpoint failed to answer"),
+            Diagnosis::new(Cause::EndpointFailedToAnswer),
         ),
         _ => ProviderError::transport(
             TransportFailure::Request { status },
-            fallback(message, "the endpoint rejected the request"),
+            Diagnosis::new(Cause::EndpointRejectedRequest),
         ),
     }
 }
@@ -396,8 +377,9 @@ fn map_status(
 /// Which reduction, if any, this refusal justifies.
 ///
 /// Read from the body directly rather than from the mapped error: the mapping
-/// deliberately throws wire detail away, and this is the one decision that
-/// needs it.
+/// deliberately throws every wire detail away, and this is the one decision
+/// that needs to look at the words. It returns a `Concession` — a closed enum —
+/// so what leaves this function is a decision, never the text it read.
 pub fn concession_for(body: &UpstreamBytes) -> Option<Concession> {
     let message = error_object(body)?
         .get("message")?
@@ -558,17 +540,19 @@ fn parse_retry_after_ms(header: &str) -> Option<u64> {
         .map(|seconds| (seconds * 1000.0) as u64)
 }
 
-fn fallback<'a>(message: &'a str, default: &'a str) -> &'a str {
-    if message.trim().is_empty() {
-        default
-    } else {
-        message
-    }
-}
+// `fallback(message, default)` — "use the endpoint's own words if it sent any,
+// otherwise use ours" — used to live here. Deleted rather than left unused: it
+// was the exact expression of the strategy four rounds of Phase B failed on.
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The model id these tests pretend Vela asked for. Built the only way one
+    /// can be built — out of a request — which is the point.
+    fn model(id: &str) -> ConfiguredModelId {
+        ConfiguredModelId::of(&crate::model::ChatRequest::new(id))
+    }
     use serde_json::json;
 
     /// An error body that answers no request of ours, so there is no credential
@@ -594,7 +578,7 @@ mod tests {
                 "The input token count (1189440) exceeds the maximum number of tokens allowed \
                  (1048575).",
             ),
-            "gemini-test",
+            &model("gemini-test"),
             None,
         );
         match error {
@@ -619,7 +603,7 @@ mod tests {
                 "INVALID_ARGUMENT",
                 "Request payload size exceeds the limit: 20971520 bytes.",
             ),
-            "gemini-test",
+            &model("gemini-test"),
             None,
         );
         assert_eq!(
@@ -627,7 +611,7 @@ mod tests {
             ProviderError::ContextLengthExceeded {
                 limit_tokens: None,
                 requested_tokens: None,
-                detail: detail("Request payload size exceeds the limit: 20971520 bytes."),
+                diagnosis: Diagnosis::new(Cause::ContextWindowExceeded).with_status(400),
             },
             "bytes are not tokens, and a wrong number is worse than none"
         );
@@ -642,7 +626,7 @@ mod tests {
                 "UNAUTHENTICATED",
                 "API key not valid. Please pass a valid API key.",
             ),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(error, ProviderError::AuthFailed { .. }));
@@ -662,7 +646,7 @@ mod tests {
             ],
         }})
         .to_string();
-        let error = map_error_response(429, &upstream(&raw), "m", None);
+        let error = map_error_response(429, &upstream(&raw), &model("m"), None);
         assert_eq!(
             error.retry_after(),
             Some(std::time::Duration::from_millis(27_000))
@@ -675,7 +659,7 @@ mod tests {
         let error = map_error_response(
             429,
             &body(429, "RESOURCE_EXHAUSTED", "slow down"),
-            "m",
+            &model("m"),
             Some("2.5"),
         );
         assert_eq!(
@@ -693,12 +677,12 @@ mod tests {
                 "NOT_FOUND",
                 "models/gemini-does-not-exist is not found for API version v1beta",
             ),
-            "gemini-does-not-exist",
+            &model("gemini-does-not-exist"),
             None,
         );
         match error {
             ProviderError::ModelNotFound { model_id, .. } => {
-                assert_eq!(model_id, "gemini-does-not-exist")
+                assert_eq!(model_id.as_str(), "gemini-does-not-exist")
             }
             other => panic!("expected model_not_found, got {other:?}"),
         }
@@ -709,7 +693,7 @@ mod tests {
         let error = map_error_response(
             503,
             &body(503, "UNAVAILABLE", "The model is overloaded."),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(
@@ -730,7 +714,7 @@ mod tests {
             "Thinking config is not supported for models/gemini-1.0-pro",
         );
         assert!(matches!(
-            map_error_response(400, &raw, "m", None),
+            map_error_response(400, &raw, &model("m"), None),
             ProviderError::CapabilityUnsupported {
                 capability: Capability::Reasoning,
                 ..
@@ -787,7 +771,7 @@ mod tests {
                 "FAILED_PRECONDITION",
                 "User location is not supported for the API use.",
             ),
-            "m",
+            &model("m"),
             None,
         );
         assert!(
@@ -811,7 +795,7 @@ mod tests {
                 "INVALID_ARGUMENT",
                 "Function calling is not enabled for models/gemini-test",
             ),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(
@@ -832,7 +816,7 @@ mod tests {
                 "INVALID_ARGUMENT",
                 "Json mode is not enabled for models/gemini-test",
             ),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(
@@ -849,7 +833,7 @@ mod tests {
         let raw = json!([{"error": {"code": 400, "message": "bad", "status": "INVALID_ARGUMENT"}}])
             .to_string();
         assert!(matches!(
-            map_error_response(400, &upstream(&raw), "m", None),
+            map_error_response(400, &upstream(&raw), &model("m"), None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 400 },
                 ..
@@ -860,14 +844,14 @@ mod tests {
     #[test]
     fn a_body_with_no_error_object_still_maps_by_status() {
         assert!(matches!(
-            map_error_response(503, &upstream("<html>gateway</html>"), "m", None),
+            map_error_response(503, &upstream("<html>gateway</html>"), &model("m"), None),
             ProviderError::Transport {
                 failure: TransportFailure::Server { status: 503 },
                 ..
             }
         ));
         assert!(matches!(
-            map_error_response(422, &upstream(""), "m", None),
+            map_error_response(422, &upstream(""), &model("m"), None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 422 },
                 ..
@@ -878,7 +862,12 @@ mod tests {
     #[test]
     fn no_upstream_body_is_ever_copied_whole_into_an_error() {
         let huge = "x".repeat(4_000);
-        let error = map_error_response(400, &body(400, "INVALID_ARGUMENT", &huge), "m", None);
+        let error = map_error_response(
+            400,
+            &body(400, "INVALID_ARGUMENT", &huge),
+            &model("m"),
+            None,
+        );
         let rendered = format!("{error}");
         assert!(
             rendered.chars().count() < 300,
@@ -895,14 +884,15 @@ mod tests {
             "SAFETY",
             vec!["HARM_CATEGORY_HATE_SPEECH".into()],
         ));
-        let ProviderError::Transport { detail, .. } = &error else {
+        let ProviderError::Transport { diagnosis, .. } = &error else {
             panic!("expected a transport-shaped refusal, got {error:?}");
         };
+        let told = diagnosis.to_string();
         assert!(
-            detail.contains("safety filter")
-                && detail.contains("before the model saw it")
-                && detail.contains("hate speech"),
-            "the user must be told what happened: {detail}"
+            told.contains("safety filter")
+                && told.contains("before the model saw it")
+                && told.contains("hate speech"),
+            "the user must be told what happened: {told}"
         );
         assert!(
             !error.allows_retry(),

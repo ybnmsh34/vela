@@ -30,8 +30,9 @@ use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
+use crate::diagnostic::{Cause, ConfiguredModelId, Diagnosis};
 use crate::emulation;
-use crate::error::{detail, Capability, ProviderError, ProviderResult};
+use crate::error::{Capability, ProviderError, ProviderResult};
 use crate::event::EventSink;
 use crate::http::{HttpRequest, HttpTransport};
 use crate::model::{
@@ -178,22 +179,24 @@ impl OpenAiCompatibleProvider {
     fn authenticate(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = match resolve_auth(self.secrets.as_ref(), &self.auth) {
             Ok(applied) => applied,
+            // `SecretError`'s own `Display` is not carried: it is Vela's text
+            // today, but it is text, and the whole point of the redesign is that
+            // an error's contents are a closed set rather than whatever a
+            // `Display` impl somewhere feels like producing.
             Err(SecretError::NotFound { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(
-                        "this provider is configured to send a credential, but none is stored",
-                    ),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialMissing,
+                )))
             }
             Err(SecretError::Unavailable { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail("the credential store could not be read"),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreUnreadable,
+                )))
             }
-            Err(error) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(error.to_string()),
-                })
+            Err(_) => {
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreFailed,
+                )))
             }
         };
         Ok(request.with_auth(&applied))
@@ -207,12 +210,11 @@ impl OpenAiCompatibleProvider {
             return Err(map_error_response(
                 response.status,
                 &body,
-                "",
+                &ConfiguredModelId::unknown(),
                 response.header("retry-after"),
             ));
         }
-        body.json()
-            .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
+        body.decode_json()
     }
 
     /// Everything that happens before a byte is sent.
@@ -227,7 +229,7 @@ impl OpenAiCompatibleProvider {
         if request.needs_vision() && capabilities.vision == Support::Unsupported {
             return Err(ProviderError::unsupported(
                 Capability::Vision,
-                "this model does not accept image input",
+                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
             ));
         }
 
@@ -240,7 +242,7 @@ impl OpenAiCompatibleProvider {
                         if self.options.structured_output == StructuredOutputPolicy::Refuse {
                             return Err(ProviderError::unsupported(
                                 Capability::StructuredOutput,
-                                "this model was probed and does not honour a response schema",
+                                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
                             ));
                         }
                         degradations.push(Degradation::StructuredOutputUnsupported);
@@ -302,8 +304,8 @@ impl OpenAiCompatibleProvider {
             streaming,
             streaming && self.options.request_usage,
         );
-        let bytes = serde_json::to_vec(&body).map_err(|error| {
-            ProviderError::malformed(format!("could not encode request: {error}"))
+        let bytes = serde_json::to_vec(&body).map_err(|_| {
+            ProviderError::malformed(Diagnosis::local(Cause::RequestCouldNotBeEncoded))
         })?;
         let request = self.authenticate(
             HttpRequest::post_json(self.api_url("chat/completions"), bytes).with_header(
@@ -324,13 +326,18 @@ impl OpenAiCompatibleProvider {
             return Err(map_error_response(
                 response.status,
                 &body,
-                &prepared.request.model_id,
+                &ConfiguredModelId::of(&prepared.request),
                 response.header("retry-after"),
             ));
         }
 
+        // The endpoint goes on before the branch: `drive_stream` would attach
+        // it for the streaming path, but the non-streamed path reaches the same
+        // assembler through `apply_chunk`, and an error object inside a 200
+        // must name its candidate whichever transport carried it.
         let mut assembler =
-            CompletionAssembler::new(streaming, streaming && self.options.request_usage);
+            CompletionAssembler::new(streaming, streaming && self.options.request_usage)
+                .with_endpoint(response.body.origin().endpoint().cloned());
         if prepared.emulated {
             assembler = assembler.with_tool_emulation();
         }
@@ -342,9 +349,7 @@ impl OpenAiCompatibleProvider {
             // Decoded through the body's own scrubber: the non-streamed path
             // reconstitutes an escaped credential just as readily as the
             // streamed one, and `apply_chunk` feeds the sink the UI reads.
-            let value: Value = body.json().map_err(|error| {
-                ProviderError::malformed(format!("response was not JSON: {error}"))
-            })?;
+            let value: Value = body.decode_json()?;
             assembler.apply_chunk(&value, sink);
             assembler.finish(sink)
         }
@@ -440,7 +445,7 @@ impl Provider for OpenAiCompatibleProvider {
         let data = value
             .get("data")
             .and_then(Value::as_array)
-            .ok_or_else(|| ProviderError::malformed("model list had no `data` array"))?;
+            .ok_or_else(|| ProviderError::malformed(Cause::ModelListMalformed))?;
         Ok(data
             .iter()
             .filter_map(|entry| {

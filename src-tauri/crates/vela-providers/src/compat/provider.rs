@@ -458,6 +458,7 @@ impl Provider for CompatProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostic::Cause;
     use crate::capability::CapabilityFinding;
     use crate::error::TransportFailure;
     use crate::event::CollectingSink;
@@ -729,7 +730,7 @@ mod tests {
         let unreachable = || {
             Err(TransportError::new(
                 TransportFailure::Connect,
-                "connection refused",
+                Cause::ConnectionFailed,
             ))
         };
         let (provider, _) = build(vec![

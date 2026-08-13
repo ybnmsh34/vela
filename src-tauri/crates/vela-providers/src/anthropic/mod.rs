@@ -33,7 +33,8 @@ pub use provider::{AnthropicOptions, AnthropicProvider, DEFAULT_BASE_URL};
 
 use serde_json::Value;
 
-use crate::error::{detail, Capability, ProviderError, TransportFailure};
+use crate::diagnostic::{Cause, ConfiguredModelId, Diagnosis};
+use crate::error::{Capability, ProviderError, TransportFailure};
 use crate::http::UpstreamBytes;
 
 /// Longest error body this adapter will read. `conventions.md` §3.2 forbids raw
@@ -65,35 +66,50 @@ pub enum Concession {
 pub fn map_error_response(
     status: u16,
     body: &UpstreamBytes,
-    model_id: &str,
+    model_id: &ConfiguredModelId,
     retry_after_header: Option<&str>,
 ) -> ProviderError {
-    // Decoded through the body's scrubber: whatever encoding the endpoint used
-    // for the credential, it has been undone by now and the needles match.
+    // The body is *read* — its machine-readable `type`, its numbers, the
+    // phrases the capability allowlist recognises. It is never *carried*: what
+    // comes out of here is a `Cause` this crate wrote and integers.
     let parsed: Option<Value> = body.json_or_none();
-    match parsed.as_ref().and_then(|value| value.get("error")) {
+    let error = match parsed.as_ref().and_then(|value| value.get("error")) {
         Some(error) => {
             let mapped = map_error_object(Some(status), error);
             // A rate limit is the one case where the endpoint's own advice
             // beats ours, and it arrives in a header rather than the body.
             match (mapped, retry_after_header.and_then(parse_retry_after_ms)) {
-                (ProviderError::RateLimited { detail, .. }, retry) => ProviderError::RateLimited {
-                    retry_after_ms: retry,
-                    detail,
-                },
-                (ProviderError::ModelNotFound { detail, .. }, _) => ProviderError::ModelNotFound {
-                    model_id: model_id.to_owned(),
-                    detail,
-                },
+                (ProviderError::RateLimited { diagnosis, .. }, retry) => {
+                    ProviderError::RateLimited {
+                        retry_after_ms: retry,
+                        diagnosis,
+                    }
+                }
+                (ProviderError::ModelNotFound { diagnosis, .. }, _) => {
+                    ProviderError::ModelNotFound {
+                        model_id: model_id.clone(),
+                        diagnosis,
+                    }
+                }
                 (other, _) => other,
             }
         }
         None => map_status(status, "", retry_after_header, model_id),
+    };
+    // One chokepoint: the endpoint is named on the way out, and the raw body
+    // goes to the local debug log keyed by this error's correlation id.
+    let error = error.at(body.endpoint().cloned());
+    if let (Some(correlation), Some(cause)) = (error.correlation(), error.cause()) {
+        body.record_for_debugging(correlation, cause, Some(status));
     }
+    error
 }
 
 /// Map one `{"type": …, "message": …}` object, wherever it came from: an error
 /// response, or an `error` event inside an otherwise-200 stream.
+///
+/// The `message` is inspected and discarded. Nothing it contains reaches the
+/// returned error — not truncated, not escaped, not redacted. Not carried.
 pub fn map_error_object(status: Option<u16>, error: &Value) -> ProviderError {
     let kind = error
         .get("type")
@@ -104,51 +120,65 @@ pub fn map_error_object(status: Option<u16>, error: &Value) -> ProviderError {
         .and_then(Value::as_str)
         .unwrap_or_default();
 
+    let with_status = |cause: Cause| -> Diagnosis {
+        match status {
+            Some(status) => Diagnosis::new(cause).with_status(status),
+            None => Diagnosis::new(cause),
+        }
+    };
+
     // A capability refusal is worth more than the status it arrived with: it
     // tells the UI to withdraw an affordance rather than to retry.
     if let Some(capability) = refused_capability(message) {
-        return ProviderError::unsupported(capability, message);
+        return ProviderError::unsupported(
+            capability,
+            with_status(Cause::CapabilityRefusedByEndpoint),
+        );
     }
     if is_too_long(kind, message) {
         let (limit, requested) = context_numbers(message);
         return ProviderError::ContextLengthExceeded {
             limit_tokens: limit,
             requested_tokens: requested,
-            detail: detail(message),
+            diagnosis: with_status(Cause::ContextWindowExceeded),
         };
     }
 
     match kind {
-        "authentication_error" | "permission_error" => ProviderError::AuthFailed {
-            detail: detail(fallback(message, "the endpoint rejected the credential")),
-        },
-        "not_found_error" => ProviderError::ModelNotFound {
-            model_id: String::new(),
-            detail: detail(fallback(message, "not found")),
-        },
-        "rate_limit_error" => ProviderError::RateLimited {
-            retry_after_ms: None,
-            detail: detail(fallback(message, "too many requests")),
-        },
+        "authentication_error" | "permission_error" => {
+            ProviderError::auth_failed(with_status(Cause::CredentialRejected))
+        }
+        "not_found_error" => ProviderError::model_not_found(
+            ConfiguredModelId::unknown(),
+            with_status(Cause::ModelNotServed),
+        ),
+        "rate_limit_error" => {
+            ProviderError::rate_limited(None, with_status(Cause::TooManyRequests))
+        }
         "overloaded_error" => ProviderError::transport(
             TransportFailure::Server {
                 status: status.unwrap_or(529),
             },
-            fallback(message, "the endpoint is overloaded"),
+            Diagnosis::new(Cause::EndpointOverloaded),
         ),
         "api_error" => ProviderError::transport(
             TransportFailure::Server {
                 status: status.unwrap_or(500),
             },
-            fallback(message, "the endpoint failed to answer"),
+            Diagnosis::new(Cause::EndpointFailedToAnswer),
         ),
         "timeout_error" => ProviderError::transport(
             TransportFailure::Timeout,
-            fallback(message, "the endpoint timed out"),
+            with_status(Cause::EndpointTimedOut),
         ),
         // `invalid_request_error` and anything newer fall through to the
         // status, so an unmodelled type is never invented into a diagnosis.
-        _ => map_status(status.unwrap_or(400), message, None, ""),
+        _ => map_status(
+            status.unwrap_or(400),
+            message,
+            None,
+            &ConfiguredModelId::unknown(),
+        ),
     }
 }
 
@@ -156,35 +186,29 @@ fn map_status(
     status: u16,
     message: &str,
     retry_after_header: Option<&str>,
-    model_id: &str,
+    model_id: &ConfiguredModelId,
 ) -> ProviderError {
+    let _ = message;
+    let diagnose = |cause: Cause| Diagnosis::new(cause).with_status(status);
     match status {
-        401 | 403 => ProviderError::AuthFailed {
-            detail: detail(fallback(message, "the endpoint rejected the credential")),
-        },
-        404 => ProviderError::ModelNotFound {
-            model_id: model_id.to_owned(),
-            detail: detail(fallback(message, "not found")),
-        },
+        401 | 403 => ProviderError::auth_failed(diagnose(Cause::CredentialRejected)),
+        404 => ProviderError::model_not_found(model_id.clone(), diagnose(Cause::ModelNotServed)),
         413 => ProviderError::ContextLengthExceeded {
             limit_tokens: None,
             requested_tokens: None,
-            detail: detail(fallback(
-                message,
-                "the endpoint refused the request as too large",
-            )),
+            diagnosis: diagnose(Cause::RequestTooLarge),
         },
-        429 => ProviderError::RateLimited {
-            retry_after_ms: retry_after_header.and_then(parse_retry_after_ms),
-            detail: detail(fallback(message, "too many requests")),
-        },
+        429 => ProviderError::rate_limited(
+            retry_after_header.and_then(parse_retry_after_ms),
+            diagnose(Cause::TooManyRequests),
+        ),
         500..=599 => ProviderError::transport(
             TransportFailure::Server { status },
-            fallback(message, "the endpoint failed to answer"),
+            Diagnosis::new(Cause::EndpointFailedToAnswer),
         ),
         _ => ProviderError::transport(
             TransportFailure::Request { status },
-            fallback(message, "the endpoint rejected the request"),
+            Diagnosis::new(Cause::EndpointRejectedRequest),
         ),
     }
 }
@@ -288,17 +312,20 @@ fn parse_retry_after_ms(header: &str) -> Option<u64> {
         .map(|seconds| (seconds * 1000.0) as u64)
 }
 
-fn fallback<'a>(message: &'a str, default: &'a str) -> &'a str {
-    if message.trim().is_empty() {
-        default
-    } else {
-        message
-    }
-}
+// `fallback(message, default)` — "use the endpoint's own words if it sent any,
+// otherwise use ours" — used to live here. It is deleted rather than unused:
+// it was the exact expression of the strategy four rounds of Phase B failed on,
+// and leaving it in the file would leave the next contributor a way back to it.
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The model id these tests pretend Vela asked for. Built the only way one
+    /// can be built — out of a request — which is the point.
+    fn model(id: &str) -> ConfiguredModelId {
+        ConfiguredModelId::of(&crate::model::ChatRequest::new(id))
+    }
     use serde_json::json;
 
     /// An error body that answers no request of ours, so there is no credential
@@ -322,7 +349,7 @@ mod tests {
                 "invalid_request_error",
                 "prompt is too long: 205809 tokens > 200000 maximum",
             ),
-            "claude-test",
+            &model("claude-test"),
             None,
         );
         match error {
@@ -347,7 +374,7 @@ mod tests {
                 "input length and `max_tokens` exceed context limit: 200000 + 8192 > 200000, \
                  decrease input length or `max_tokens` and try again",
             ),
-            "claude-test",
+            &model("claude-test"),
             None,
         );
         match error {
@@ -373,7 +400,7 @@ mod tests {
         let error = map_error_response(
             401,
             &body("authentication_error", "invalid x-api-key"),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(error, ProviderError::AuthFailed { .. }));
@@ -383,7 +410,12 @@ mod tests {
 
     #[test]
     fn an_overload_is_a_transient_server_failure_that_may_be_retried() {
-        let error = map_error_response(529, &body("overloaded_error", "Overloaded"), "m", None);
+        let error = map_error_response(
+            529,
+            &body("overloaded_error", "Overloaded"),
+            &model("m"),
+            None,
+        );
         assert!(matches!(
             error,
             ProviderError::Transport {
@@ -399,7 +431,7 @@ mod tests {
         let error = map_error_response(
             429,
             &body("rate_limit_error", "slow down"),
-            "m",
+            &model("m"),
             Some("2.5"),
         );
         assert_eq!(
@@ -413,12 +445,12 @@ mod tests {
         let error = map_error_response(
             404,
             &body("not_found_error", "model: claude-does-not-exist"),
-            "claude-does-not-exist",
+            &model("claude-does-not-exist"),
             None,
         );
         match error {
             ProviderError::ModelNotFound { model_id, .. } => {
-                assert_eq!(model_id, "claude-does-not-exist")
+                assert_eq!(model_id.as_str(), "claude-does-not-exist")
             }
             other => panic!("expected model_not_found, got {other:?}"),
         }
@@ -432,11 +464,10 @@ mod tests {
              \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior.",
         );
         assert_eq!(
-            map_error_response(400, &raw, "m", None),
+            map_error_response(400, &raw, &model("m"), None),
             ProviderError::unsupported(
                 Capability::Reasoning,
-                "\"thinking.type.enabled\" is not supported for this model. Use \
-                 \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior."
+                Diagnosis::new(Cause::CapabilityRefusedByEndpoint).with_status(400)
             )
         );
         assert_eq!(concession_for(&raw), Some(Concession::ThinkingConfig));
@@ -451,7 +482,7 @@ mod tests {
         assert_eq!(concession_for(&raw), Some(Concession::PriorReasoning));
         assert!(
             matches!(
-                map_error_response(400, &raw, "m", None),
+                map_error_response(400, &raw, &model("m"), None),
                 ProviderError::Transport {
                     failure: TransportFailure::Request { status: 400 },
                     ..
@@ -490,7 +521,7 @@ mod tests {
                 "invalid_request_error",
                 "messages.0.content.1.image: image input is not supported by this model",
             ),
-            "m",
+            &model("m"),
             None,
         );
         assert!(matches!(
@@ -505,14 +536,14 @@ mod tests {
     #[test]
     fn a_body_with_no_error_object_still_maps_by_status() {
         assert!(matches!(
-            map_error_response(503, &raw("<html>gateway</html>"), "m", None),
+            map_error_response(503, &raw("<html>gateway</html>"), &model("m"), None),
             ProviderError::Transport {
                 failure: TransportFailure::Server { status: 503 },
                 ..
             }
         ));
         assert!(matches!(
-            map_error_response(422, &raw(""), "m", None),
+            map_error_response(422, &raw(""), &model("m"), None),
             ProviderError::Transport {
                 failure: TransportFailure::Request { status: 422 },
                 ..
@@ -523,7 +554,12 @@ mod tests {
     #[test]
     fn no_upstream_body_is_ever_copied_whole_into_an_error() {
         let huge = "x".repeat(4_000);
-        let error = map_error_response(400, &body("invalid_request_error", &huge), "m", None);
+        let error = map_error_response(
+            400,
+            &body("invalid_request_error", &huge),
+            &model("m"),
+            None,
+        );
         let rendered = format!("{error}");
         assert!(
             rendered.chars().count() < 300,

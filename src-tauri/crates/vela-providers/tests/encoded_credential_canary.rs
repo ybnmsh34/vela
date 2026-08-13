@@ -111,9 +111,99 @@ const CANARY: &str = "sk/vela-round4/Ky-7d41c0f9ab63e2/DO-NOT-LEAK";
 /// by `detail()`'s 200-character bound is still caught.
 const CANARY_CORE: &str = "7d41c0f9ab63e2";
 
-/// Planted in every echoed message. It carries no secret, so it must
-/// **survive**: it is how this file tells a redaction apart from a deletion.
+/// Planted in every echoed message.
+///
+/// # Its meaning inverted with the redesign, and that is the point
+///
+/// Under rounds 1–4 this marker carried no secret and therefore had to
+/// **survive** into the error: it was how this file told a redaction apart from
+/// a deletion. That test made sense while the strategy was "carry the
+/// endpoint's words, laundered".
+///
+/// The strategy is now "do not carry the endpoint's words". So the marker must
+/// **not** appear on any error surface — and, because an assertion that
+/// something is absent is exactly the kind that passes vacuously, it must
+/// simultaneously be *present in the local debug log*, found by the
+/// correlation id the error carries. Together those two say the thing that
+/// matters: the peer's message reached Vela, was kept, and did not travel.
 const MARKER: &str = "VELA-ENCODED-MARKER";
+
+/// The process-wide debug log these tests read back through.
+///
+/// Installed once, for the whole binary. Entries are found by correlation id,
+/// so tests running in parallel cannot read each other's.
+fn debug_log() -> &'static std::sync::Arc<vela_providers::debuglog::MemorySink> {
+    static LOG: std::sync::OnceLock<std::sync::Arc<vela_providers::debuglog::MemorySink>> =
+        std::sync::OnceLock::new();
+    LOG.get_or_init(|| {
+        let sink = std::sync::Arc::new(vela_providers::debuglog::MemorySink::new());
+        vela_providers::debuglog::enable(sink.clone());
+        sink
+    })
+}
+
+/// The non-vacuity guard, in its new and stronger form.
+///
+/// Asserts three things at once:
+///
+/// * the error carries a real diagnosis — a cause with a sentence, and a
+///   correlation id that points somewhere;
+/// * **nothing on its serde surface is unexplained** by the closed vocabulary,
+///   which is a stronger claim than "contains no credential": it says no
+///   endpoint-derived text of any kind is present, so there is no spelling left
+///   to try;
+/// * the peer's message really did arrive, because the debug log holds it under
+///   this error's correlation id.
+#[track_caller]
+fn assert_the_failure_is_real_and_carries_nothing(label: &str, error: &ProviderError) {
+    let diagnosis = error
+        .diagnosis()
+        .unwrap_or_else(|| panic!("{label}: expected an endpoint failure, got {error:?}"));
+    assert!(
+        !diagnosis.cause().message().is_empty(),
+        "{label}: an error with no sentence would pass every leak assertion vacuously"
+    );
+    let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+    assert!(
+        unexplained.is_empty(),
+        "{label}: the error surface carries text the closed vocabulary does not \
+         explain — {unexplained:?}\n  {error}"
+    );
+    assert!(
+        !error.to_string().contains(MARKER),
+        "{label}: the peer's own words reached the error surface: {error}"
+    );
+}
+
+/// The other half: the body was not thrown away, it was filed.
+#[track_caller]
+fn assert_the_body_reached_the_debug_log(label: &str, error: &ProviderError) {
+    let correlation = error
+        .correlation()
+        .unwrap_or_else(|| panic!("{label}: no correlation id to look up"));
+    let recorded = debug_log()
+        .body_for(correlation)
+        .unwrap_or_else(|| panic!("{label}: nothing was filed under {correlation}"));
+    // The log holds the peer's bytes as they arrived, escapes and all — that is
+    // what a person debugging a gateway wants to see. So the marker is looked
+    // for through one decode pass, exactly as the endpoint spelled it.
+    let decoded = serde_json::from_str::<serde_json::Value>(&recorded)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|_| recorded.clone());
+    assert!(
+        recorded.contains(MARKER) || decoded.contains(MARKER),
+        "{label}: the peer's message never reached Vela at all, so nothing was \
+         tested — the debug log holds {recorded:?}"
+    );
+    assert!(
+        !recorded.contains(CANARY)
+            && !recorded.contains(CANARY_CORE)
+            && !decoded.contains(CANARY)
+            && !decoded.contains(CANARY_CORE),
+        "{label}: the debug log is local and opt-in, but it is still not a place \
+         to write the user's own API key: {recorded}"
+    );
+}
 
 /// Every spelling of the credential that must not survive, in any surface.
 ///
@@ -233,22 +323,7 @@ fn assert_no_credential(label: &str, error: &ProviderError, sink: &CollectingSin
 
 /// Guards the failure mode that would make every negative assertion pass for
 /// the wrong reason: an error that says nothing at all.
-#[track_caller]
-fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
-    let detail = match error {
-        ProviderError::Transport { detail, .. }
-        | ProviderError::MalformedResponse { detail }
-        | ProviderError::AuthFailed { detail }
-        | ProviderError::RateLimited { detail, .. }
-        | ProviderError::ContextLengthExceeded { detail, .. }
-        | ProviderError::ModelNotFound { detail, .. } => detail,
-        other => panic!("{label}: expected an endpoint failure, got {other:?}"),
-    };
-    assert!(
-        !detail.is_empty(),
-        "{label}: an empty detail would pass every leak assertion vacuously"
-    );
-}
+
 
 // ---------------------------------------------------------------------------
 // The echoing peer
@@ -573,6 +648,7 @@ async fn assert_every_encoding_is_clean(adapter: Adapter, binding: Binding) {
     let mut cases = 0usize;
     let mut sink_errors = 0usize;
 
+    debug_log();
     for escaping in Escaping::ALL {
         for status in [400u16, 200u16] {
             let base_url = echo_server(status, escaping).await;
@@ -582,16 +658,8 @@ async fn assert_every_encoding_is_clean(adapter: Adapter, binding: Binding) {
                     "{adapter:?}/{binding:?} · {} · {status} · {path}",
                     escaping.label()
                 );
-                assert_the_failure_is_real(&label, &error);
-                // The vacuity guard that matters most here: the peer's message
-                // has to have *reached* the error, in its decoded form, or the
-                // leak assertions below are testing an error the peer never
-                // wrote. `MARKER` is only ever produced by the peer, and in the
-                // encoding cases it only ever arrives escaped.
-                assert!(
-                    error.to_string().contains(MARKER),
-                    "{label}: the peer's echoed message never reached the error,                      so nothing was tested: {error}"
-                );
+                assert_the_failure_is_real_and_carries_nothing(&label, &error);
+                assert_the_body_reached_the_debug_log(&label, &error);
                 assert_no_credential(&label, &error, &sink);
                 cases += 1;
                 if sink.error().is_some() {
@@ -647,11 +715,19 @@ async fn google_leaks_nothing_however_the_peer_spells_it_header_binding() {
 // Redaction, not deletion
 // ---------------------------------------------------------------------------
 
-/// The other direction, and the reason this is not fixed by dropping upstream
-/// text: the endpoint's own diagnosis has to survive an **encoded** echo, in
-/// its decoded form, with only the secret gone.
+/// The other direction, and the reason this piece was a *redesign* rather than
+/// a deletion: dropping the endpoint's text must not drop the user's ability to
+/// act on the failure.
+///
+/// This test kept its name and changed what it measures, because the
+/// distinction it exists to enforce did not change — only where the diagnosis
+/// comes from. Rounds 1–4 asked for the endpoint's own sentence to survive its
+/// encoding. This round asks for the three things Vela knew all along to
+/// survive instead: **which endpoint**, **what class of failure**, and **where
+/// the body went**.
 #[tokio::test(flavor = "multi_thread")]
-async fn redaction_removes_the_secret_and_not_the_diagnosis() {
+async fn a_diagnosis_survives_even_though_the_endpoints_words_do_not() {
+    debug_log();
     let mut checked = 0usize;
     for escaping in [Escaping::Solidus, Escaping::Unicode] {
         for adapter in Adapter::ALL {
@@ -666,21 +742,28 @@ async fn redaction_removes_the_secret_and_not_the_diagnosis() {
             let label = format!("{adapter:?} · {}", escaping.label());
 
             assert_no_credential(&label, &error, &sink);
-            let rendered = error.to_string();
+            assert_the_failure_is_real_and_carries_nothing(&label, &error);
+            // Rounds 1–4 asserted here that `<redacted>` was *visible* in the
+            // error, on the reasoning that a detail which silently lost the
+            // credential would be a deletion rather than a redaction. That
+            // reasoning was sound for a design that carried the endpoint's
+            // text. It does not apply to one that carries none: there is no
+            // detail to redact, so the question becomes whether the diagnosis
+            // is still actionable — and that is asserted by the cause, the
+            // status and the endpoint identity below.
             assert!(
-                rendered.contains(MARKER),
-                "{label}: the endpoint's diagnosis must survive its own encoding \
-                 — got {rendered}"
+                error.endpoint().is_some(),
+                "{label}: the user must still learn which endpoint failed: {error}"
             );
             assert!(
-                rendered.contains("<redacted>"),
-                "{label}: the redaction must be visible rather than silent — a \
-                 detail that simply lost the credential would be a deletion: {rendered}"
+                error.cause().is_some(),
+                "{label}: the user must still learn what kind of failure it was"
             );
+            assert_the_body_reached_the_debug_log(&label, &error);
             checked += 1;
         }
     }
-    assert_eq!(checked, 6, "the redaction-not-deletion matrix did not run");
+    assert_eq!(checked, 6, "the diagnosis-survives matrix did not run");
 }
 
 // ---------------------------------------------------------------------------

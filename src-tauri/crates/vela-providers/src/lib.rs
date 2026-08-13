@@ -90,10 +90,13 @@
 //! 5. Export nothing backend-specific. If the UI needs to know something, it
 //!    becomes a capability flag.
 
+pub mod answer;
 pub mod anthropic;
 pub mod capability;
 pub mod compat;
 pub mod context;
+pub mod debuglog;
+pub mod diagnostic;
 pub mod emulation;
 pub mod error;
 pub mod event;
@@ -125,6 +128,10 @@ use std::sync::Arc;
 pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use capability::{CapabilityFinding, Evidence, ModelCapabilities, Support};
 pub use compat::{CompatOptions, CompatProvider};
+pub use diagnostic::{
+    Cause, ConfiguredModelId, CorrelationId, Diagnosis, EndpointIdentity, FilterKind, FilterStage,
+    FilterVerdict, HarmCategories, HarmCategory,
+};
 pub use error::{Capability, ProviderError, ProviderResult, TransportFailure};
 pub use event::{EventSink, StreamEvent, ToolCallDelta};
 pub use google::{GoogleOptions, GoogleProvider};
@@ -226,7 +233,7 @@ impl Provider for EchoProvider {
         // Not an error state: the UI offers free-text model entry instead.
         Err(ProviderError::unsupported(
             Capability::ModelListing,
-            "this provider cannot enumerate models",
+            Diagnosis::local(Cause::CapabilityNotOfferedByBackend),
         ))
     }
 

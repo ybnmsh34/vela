@@ -6523,6 +6523,307 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
 // main
 // ===========================================================================
 
+// ===========================================================================
+// Case 14 — the intersection of reasoning and tool calling
+//
+// Four gate rounds drove case 06 (reasoning) and case 02 (tool calling) and
+// never drove them together. The round-4 panel's FINDING 3 lived exactly in
+// the overlap, and was the highest-severity defect of the run:
+//
+//   an unterminated <think> block turned deliberation into an EXECUTED tool
+//   call, and streamed raw <tool_call> markup to the UI.
+//
+// Both halves are routine, not exotic. An unterminated <think> is what a small
+// local model does when it hits its token budget mid-thought — `hostile` does
+// it in case 06. Emulated tool calling is the ONLY way tools work on an
+// endpoint that answers `400 tools_not_supported` — `small-local` does that in
+// case 02. Nothing put them in the same turn, so nothing saw what happened
+// when they met. This case is that turn, permanently.
+// ===========================================================================
+
+/// The turn, verbatim from the finding: the model deliberates about a
+/// destructive call, DECIDES AGAINST IT, and is cut off before closing the
+/// block.
+const DELIBERATION: &str = concat!(
+    "<think>I could call ",
+    "<tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call>",
+    " but that would be destructive, so I will not."
+);
+
+/// A peer that behaves like `small-local`: it refuses any request carrying
+/// `tools` with `400 tools_not_supported`, then answers the retry with
+/// [`DELIBERATION`].
+///
+/// The refusal is load-bearing. Emulation has to be entered the way it is
+/// entered in production — because the endpoint said so — or the scenario is a
+/// fiction dressed as a gate case.
+struct DeliberationPeer {
+    url: String,
+}
+
+impl DeliberationPeer {
+    async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a free port");
+        let port = listener.local_addr().expect("bound").port();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut raw = Vec::new();
+                    let mut scratch = vec![0u8; 16384];
+                    let (head_end, length) = loop {
+                        let read = match socket.read(&mut scratch).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(read) => read,
+                        };
+                        raw.extend_from_slice(&scratch[..read]);
+                        let text = String::from_utf8_lossy(&raw).into_owned();
+                        if let Some(at) = text.find("\r\n\r\n") {
+                            let length = text
+                                .to_ascii_lowercase()
+                                .split("\r\n")
+                                .find_map(|line| {
+                                    line.strip_prefix("content-length:")
+                                        .and_then(|value| value.trim().parse::<usize>().ok())
+                                })
+                                .unwrap_or(0);
+                            if raw.len() >= at + 4 + length {
+                                break (at + 4, length);
+                            }
+                        }
+                    };
+                    let body =
+                        String::from_utf8_lossy(&raw[head_end..head_end + length]).into_owned();
+
+                    let (status, kind, payload) = if body.contains("\"tools\":[{") {
+                        (
+                            "400 Bad Request",
+                            "application/json",
+                            "{\"error\":{\"message\":\"this model does not support tools\",\"code\":\"tools_not_supported\",\"type\":\"invalid_request_error\"}}".to_owned(),
+                        )
+                    } else if body.contains("\"stream\":true") {
+                        ("200 OK", "text/event-stream", deliberation_sse())
+                    } else {
+                        ("200 OK", "application/json", deliberation_json())
+                    };
+                    let _ = socket
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                                payload.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                    let _ = socket.flush().await;
+                });
+            }
+        });
+        Self {
+            url: format!("http://127.0.0.1:{port}"),
+        }
+    }
+}
+
+/// Fragmented eleven characters at a time, so no single frame contains
+/// `<think>`, `<tool_call>` or `</tool_call>` whole — MEASURED-3's recorded
+/// requirement, applied to the tool-call tag as well.
+fn deliberation_sse() -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = DELIBERATION.chars().collect();
+    for piece in chars.chunks(11) {
+        let text: String = piece.iter().collect();
+        let escaped = serde_json::to_string(&text).expect("a string serialises");
+        let _ = write!(
+            out,
+            "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{escaped}}},\"finish_reason\":null}}]}}\n\n"
+        );
+    }
+    // `length`: the model hit its token budget mid-thought. That is WHY the
+    // block never closed, and it is the commonest reason on a small model.
+    out.push_str("data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\n");
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
+fn deliberation_json() -> String {
+    json!({
+        "id": "c",
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": DELIBERATION},
+            "finish_reason": "length",
+        }],
+    })
+    .to_string()
+}
+
+fn destructive_tool() -> ToolDefinition {
+    ToolDefinition::new(
+        "delete_everything",
+        "Irreversibly delete a directory tree",
+        json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"]
+        }),
+    )
+}
+
+async fn case_14(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new(
+        profile,
+        "14-reasoning-meets-tool-calling",
+        "deliberation about a call is not a call",
+        "The intersection cases 06 and 02 never drove together. An unterminated <think> on a \
+         token limit is routine; emulated tool calling is the only way tools work on a runtime \
+         that refuses a `tools` array. Together they turned a model REFUSING to run \
+         `delete_everything` into a turn that would have run it.",
+    );
+    doc.p("  THE TURN, verbatim from the round-4 panel:\n    \
+         <think>I could call <tool_call>{\"name\":\"delete_everything\",\n    \
+         \"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive,\n    \
+         so I will not.\n  \
+         — and the stream ends there. The block never closes.");
+    doc.p(
+        "  THE PEER answers `400 tools_not_supported` to any request carrying `tools`,\n  \
+         exactly as `small-local` does (FINDING 6), so emulation is entered the way it\n  \
+         is entered in production rather than by a test flag.",
+    );
+
+    for streamed in [true, false] {
+        let peer = DeliberationPeer::start().await;
+        let log = WireLog::default();
+        let provider = provider_for(&peer.url, &log);
+        let request = ChatRequest::new(model_of(profile))
+            .with_message(ChatMessage::user("tidy up the disk"))
+            .with_tools([destructive_tool()])
+            .with_tool_choice(ToolChoice::Auto);
+
+        let mut sink = CollectingSink::new();
+        let outcome = if streamed {
+            provider.stream(request, &mut sink, &context()).await
+        } else {
+            provider.complete(request, &context()).await
+        };
+        let entries = log.drain();
+        let transport = if streamed { "streamed" } else { "non-streamed" };
+
+        doc.h(&format!("{transport} — the raw exchange"));
+        doc.wire(&entries);
+
+        let response = match outcome {
+            Ok(response) => response,
+            Err(error) => {
+                doc.check(
+                    &format!("{transport}: the turn completes"),
+                    false,
+                    format!("{error:?}"),
+                );
+                continue;
+            }
+        };
+
+        doc.h(&format!("{transport} — what Vela produced"));
+        doc.kv("answer", format!("{:?}", response.answer_text()));
+        doc.kv("reasoning", format!("{:?}", response.reasoning_text()));
+        doc.kv("tool calls", describe_calls(&response.tool_calls));
+        doc.kv("stop reason", format!("{:?}", response.stop_reason));
+        doc.kv(
+            "degradations",
+            describe_degradations(&response.degradations),
+        );
+        if streamed {
+            doc.kv("TextDelta events", format!("{:?}", sink.text()));
+        } else {
+            doc.p("  (`complete` sinks its events into a NullSink by construction — there is no");
+            doc.p("  user-visible delta stream on this transport to inspect.)");
+        }
+
+        doc.h(&format!("{transport} — assertions"));
+
+        // The premise. Everything below is worthless without it.
+        doc.check(
+            &format!("{transport}: emulation was entered through the endpoint's own 400"),
+            response
+                .degradations
+                .iter()
+                .any(|degradation| matches!(degradation, Degradation::ToolCallingEmulated { .. })),
+            describe_degradations(&response.degradations),
+        );
+        doc.check(
+            &format!("{transport}: the reasoning block really never closed"),
+            response.degradations.iter().any(|degradation| {
+                matches!(degradation, Degradation::UnterminatedReasoning { .. })
+            }),
+            describe_degradations(&response.degradations),
+        );
+
+        // The claim.
+        let executable: Vec<&ToolCallOutcome> = response
+            .tool_calls
+            .iter()
+            .filter(|call| call.is_ok())
+            .collect();
+        doc.check(
+            &format!("{transport}: a call recovered from a never-closed <think> is NOT executable"),
+            executable.is_empty(),
+            describe_calls(&response.tool_calls),
+        );
+        doc.check(
+            &format!("{transport}: the turn does not end in ToolUse"),
+            response.stop_reason != StopReason::ToolUse,
+            format!("{:?}", response.stop_reason),
+        );
+        doc.check(
+            &format!("{transport}: the refusal is REPORTED, not silently dropped"),
+            response.tool_calls.iter().any(|call| {
+                matches!(
+                    call,
+                    ToolCallOutcome::Malformed {
+                        reason: MalformedToolCall::RecoveredFromUnterminatedReasoning,
+                        ..
+                    }
+                )
+            }) && response
+                .degradations
+                .iter()
+                .any(|d| matches!(d, Degradation::MalformedToolCalls { .. })),
+            describe_calls(&response.tool_calls),
+        );
+        doc.check(
+            &format!("{transport}: no raw tool-call markup in the answer"),
+            !response.answer_text().contains("<tool_call>")
+                && !response.answer_text().contains("</tool_call>")
+                && !response.answer_text().contains("delete_everything"),
+            format!("{:?}", response.answer_text()),
+        );
+        if streamed {
+            doc.check(
+                "streamed: no raw tool-call markup on any TextDelta",
+                !sink.text().contains("<tool_call>") && !sink.text().contains("delete_everything"),
+                format!("{:?}", sink.text()),
+            );
+        }
+        doc.check(
+            &format!("{transport}: MEASURED-3 still holds — the answer is not swallowed"),
+            response
+                .answer_text()
+                .contains("but that would be destructive, so I will not."),
+            format!("{:?}", response.answer_text()),
+        );
+        doc.check(
+            &format!("{transport}: the deliberation is kept as reasoning"),
+            response.reasoning_text().contains("I could call"),
+            format!("{:?}", elide(&response.reasoning_text(), 200)),
+        );
+    }
+
+    doc.write(ledger);
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let started = Instant::now();
@@ -6554,6 +6855,7 @@ async fn main() -> ExitCode {
         case_11(profile, &mut ledger).await;
         case_12(profile, &mut ledger).await;
         case_13(profile, &mut ledger).await;
+        case_14(profile, &mut ledger).await;
         case_09b(profile, &mut ledger).await;
         case_10(profile, &mut ledger).await;
     }

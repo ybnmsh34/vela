@@ -20,7 +20,8 @@
 //! four matrix profiles return one cleanly. This planner exists to avoid the
 //! round trip in the common case, not to replace the endpoint's judgement.
 
-use crate::error::{detail, ProviderError, ProviderResult};
+use crate::diagnostic::{Cause, Diagnosis};
+use crate::error::{ProviderError, ProviderResult};
 use crate::model::{
     ChatMessage, ChatRequest, ContentPart, ContextStrategy, Degradation, MessageRole,
 };
@@ -165,9 +166,7 @@ pub fn fit_request(
         return Err(ProviderError::ContextLengthExceeded {
             limit_tokens: Some(budget.window_tokens),
             requested_tokens: Some(pinned_tokens + budget.reserve_output_tokens),
-            detail: detail(
-                "the system prompt and your message alone exceed this model's context window",
-            ),
+            diagnosis: Diagnosis::local(Cause::PinnedTurnsExceedWindow),
         });
     }
 

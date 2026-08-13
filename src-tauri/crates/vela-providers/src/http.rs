@@ -22,7 +22,8 @@ use async_trait::async_trait;
 use vela_core::secret::{SecretValue, REDACTED};
 use vela_secrets::AppliedAuth;
 
-use crate::error::{detail, ProviderError, TransportFailure};
+use crate::diagnostic::{Cause, Diagnosis, EndpointIdentity};
+use crate::error::{ProviderError, TransportFailure};
 use crate::provider::Timeouts;
 use crate::redact::{RequestUrl, Scrubber};
 
@@ -144,14 +145,14 @@ impl HttpRequest {
     }
 
     /// What a body answering this request needs to know: the credential
-    /// material that must never survive into an error, and the redacted
-    /// endpoint that must.
+    /// material that must never survive into an error, and the **typed**
+    /// identity of the endpoint, which must.
     ///
     /// Built before the request is consumed, because a mid-stream failure
     /// arrives long after `request` is gone and is just as capable of quoting
     /// the URL back at us.
     pub fn origin(&self) -> BodyOrigin {
-        BodyOrigin::new(self.scrubber(), self.url.redacted())
+        BodyOrigin::new(self.scrubber(), EndpointIdentity::of(&self.url))
     }
 
     /// Every literal this request's credentials consist of, so that text
@@ -252,7 +253,7 @@ impl HttpResponse {
         }
         Ok(UpstreamBytes {
             bytes: out,
-            scrubber: self.body.origin().scrubber().clone(),
+            origin: self.body.origin().clone(),
         })
     }
 }
@@ -404,7 +405,7 @@ fn is_credential_response_header(name: &str) -> bool {
 /// undone, so no list of encodings is involved.
 pub struct UpstreamBytes {
     bytes: Vec<u8>,
-    scrubber: Scrubber,
+    origin: BodyOrigin,
 }
 
 impl UpstreamBytes {
@@ -415,13 +416,41 @@ impl UpstreamBytes {
     pub fn carries_no_credential(bytes: impl Into<Vec<u8>>) -> Self {
         Self {
             bytes: bytes.into(),
-            scrubber: Scrubber::none(),
+            origin: BodyOrigin::carries_no_credential(),
         }
+    }
+
+    /// Which endpoint these bytes came from, typed. The error mappers read it
+    /// from here so that a diagnosis can name its endpoint without any call
+    /// site having to remember to thread one through.
+    pub fn endpoint(&self) -> Option<&EndpointIdentity> {
+        self.origin.endpoint()
+    }
+
+    /// Hand the raw bytes to the local, opt-in debug log — the one place they
+    /// are allowed to go. Bytes only; there is still no accessor that returns
+    /// them to a caller.
+    ///
+    /// They have already been through the byte scrubber, so this is not a way
+    /// to opt into writing your own API key to a file.
+    pub fn record_for_debugging(
+        &self,
+        correlation: crate::diagnostic::CorrelationId,
+        cause: Cause,
+        status: Option<u16>,
+    ) {
+        crate::debuglog::record(|| crate::debuglog::DebugEntryOwned {
+            correlation,
+            cause,
+            status,
+            endpoint: self.origin.endpoint().cloned(),
+            body: self.bytes.clone(),
+        });
     }
 
     /// Decode as JSON, then scrub every string in the result.
     pub fn json(&self) -> Result<serde_json::Value, serde_json::Error> {
-        self.scrubber.decode_json(&self.bytes)
+        self.origin.scrubber().decode_json(&self.bytes)
     }
 
     /// The same, for the callers that treat "not JSON" as "nothing to say".
@@ -429,10 +458,42 @@ impl UpstreamBytes {
         self.json().ok()
     }
 
+    /// Decode, or produce the taxonomy's answer for "that was not JSON".
+    ///
+    /// This is where six identical `map_err(|error| malformed(format!("response
+    /// was not JSON: {error}")))` call sites went. `serde_json`'s message
+    /// quotes the input — `invalid type: string \"…\"` — so every one of them
+    /// was an endpoint-text carrier hiding behind a library's `Display`. The
+    /// message is worth keeping and it is kept: it goes to the local debug log
+    /// with the body, keyed by this error's correlation id.
+    pub fn decode_json(&self) -> Result<serde_json::Value, ProviderError> {
+        match self.json() {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                let diagnosis =
+                    Diagnosis::new(Cause::ResponseWasNotJson).at(self.origin.endpoint().cloned());
+                let correlation = diagnosis.correlation();
+                let endpoint = self.origin.endpoint().cloned();
+                let mut body = self.bytes.clone();
+                body.extend_from_slice(b"\n-- serde_json --\n");
+                body.extend_from_slice(error.to_string().as_bytes());
+                crate::debuglog::record(move || crate::debuglog::DebugEntryOwned {
+                    correlation,
+                    cause: Cause::ResponseWasNotJson,
+                    status: None,
+                    endpoint,
+                    body,
+                });
+                Err(ProviderError::malformed(diagnosis))
+            }
+        }
+    }
+
     /// The body as text, scrubbed. Lossy on purpose: an error body is not
     /// necessarily UTF-8 and must not be rejected for it.
     pub fn text(&self) -> String {
-        self.scrubber
+        self.origin
+            .scrubber()
             .scrub(String::from_utf8_lossy(&self.bytes).into_owned())
     }
 
@@ -447,7 +508,7 @@ impl UpstreamBytes {
     /// The needles these bytes must not carry, for a caller that has to scrub
     /// something derived from them by hand.
     pub fn scrubber(&self) -> &Scrubber {
-        &self.scrubber
+        self.origin.scrubber()
     }
 }
 
@@ -458,22 +519,20 @@ impl UpstreamBytes {
 ///
 /// * the [`Scrubber`] — the credential material that must not survive into any
 ///   text derived from this exchange;
-/// * the **redacted** endpoint — which must survive, because a user with three
-///   configured candidates has to be able to tell which one failed. Redaction
-///   removes the secret, not the diagnosis.
+/// * the [`EndpointIdentity`] — which must survive, because a user with three
+///   configured candidates has to be able to tell which one failed. It is a
+///   *type*, not a redacted string: it carries scheme, host, port and path and
+///   drops the query string and userinfo whole, so the two places RFC 3986
+///   lets a secret live in a URL are not merely redacted but absent.
 #[derive(Clone, Debug, Default)]
 pub struct BodyOrigin {
     scrubber: Scrubber,
-    /// Already redacted: [`RequestUrl::redacted`], never `expose`.
-    endpoint: String,
+    endpoint: Option<EndpointIdentity>,
 }
 
 impl BodyOrigin {
-    pub fn new(scrubber: Scrubber, redacted_endpoint: impl Into<String>) -> Self {
-        Self {
-            scrubber,
-            endpoint: redacted_endpoint.into(),
-        }
+    pub fn new(scrubber: Scrubber, endpoint: Option<EndpointIdentity>) -> Self {
+        Self { scrubber, endpoint }
     }
 
     /// For a body that answers no request Vela sent — a fake, a replayer, a
@@ -487,9 +546,16 @@ impl BodyOrigin {
         &self.scrubber
     }
 
-    /// Safe to print. Empty when the body answers no request of ours.
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
+    /// Safe to print. `None` when the body answers no request of ours.
+    pub fn endpoint(&self) -> Option<&EndpointIdentity> {
+        self.endpoint.as_ref()
+    }
+
+    /// A [`Diagnosis`] of `cause` that already names this endpoint. The
+    /// chokepoint every transport-side error in this file goes through, so
+    /// "forgot to name the endpoint" is not a thing a call site can do.
+    pub fn diagnose(&self, cause: Cause) -> Diagnosis {
+        Diagnosis::new(cause).at(self.endpoint.clone())
     }
 }
 
@@ -572,8 +638,14 @@ impl BodyOrigin {
 ///     });
 ///
 /// let body = BodyStream::new(ScriptedBody::from_text("hi"), request.origin());
-/// assert_eq!(body.endpoint(), "https://api.invalid/v1/chat?key=<redacted>");
+/// let endpoint = body.endpoint().expect("an absolute url names an endpoint");
+/// assert_eq!(endpoint.to_string(), "https://api.invalid/v1/chat");
 /// ```
+///
+/// Note what the identity does *not* contain: the query string is gone whole,
+/// not redacted. Round 3 rendered `?key=<redacted>` here; the redesign drops
+/// the parameter, because the only thing a query string was contributing to a
+/// diagnosis was the name of the parameter the credential was hiding in.
 pub struct BodyStream {
     inner: Box<dyn ByteStream>,
     origin: BodyOrigin,
@@ -593,9 +665,9 @@ impl BodyStream {
         }
     }
 
-    /// The redacted endpoint this body came from, for diagnostics that must
-    /// name it — a stall, a reset — without naming the credential.
-    pub fn endpoint(&self) -> &str {
+    /// The endpoint this body came from, for diagnostics that must name it —
+    /// a stall, a reset — without naming the credential.
+    pub fn endpoint(&self) -> Option<&EndpointIdentity> {
         self.origin.endpoint()
     }
 
@@ -665,18 +737,29 @@ pub trait ByteStream: Send {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, TransportError>;
 }
 
+/// A transport-level failure, carrying the same typed diagnosis every other
+/// error in this crate carries.
+///
+/// It used to carry a `detail: String` built from `reqwest`'s `Display`, which
+/// appends `" for url ({url})"` — the whole URL, query string included. That
+/// string *was* the credential under `Auth::ApiKeyQuery`, and closing it took
+/// three separate mechanisms (`without_url`, a re-attached redacted URL, and a
+/// scrubber over what was left). None of them are needed now, because there is
+/// no string: the failure is classified into a [`Cause`] and the endpoint is an
+/// [`EndpointIdentity`] Vela parsed out of its own request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportError {
     pub failure: TransportFailure,
-    pub detail: String,
+    pub diagnosis: Diagnosis,
 }
 
 impl TransportError {
-    pub fn new(failure: TransportFailure, raw: impl AsRef<str>) -> Self {
-        Self {
-            failure,
-            detail: detail(raw),
+    pub fn new(failure: TransportFailure, diagnosis: impl Into<Diagnosis>) -> Self {
+        let mut diagnosis = diagnosis.into();
+        if let Some(status) = failure.status() {
+            diagnosis = diagnosis.with_status(status);
         }
+        Self { failure, diagnosis }
     }
 }
 
@@ -684,7 +767,7 @@ impl From<TransportError> for ProviderError {
     fn from(error: TransportError) -> Self {
         ProviderError::Transport {
             failure: error.failure,
-            detail: error.detail,
+            diagnosis: error.diagnosis,
         }
     }
 }
@@ -879,10 +962,24 @@ impl RefusedRedirect {
     }
 }
 
+impl RefusedRedirect {
+    /// Which [`Cause`] this refusal is. The *destination* authority is
+    /// endpoint-chosen text and is deliberately not part of the answer: it goes
+    /// to the local debug log, keyed by correlation id, and what the user is
+    /// told is that the endpoint they configured tried to send the request
+    /// somewhere else and Vela refused.
+    const fn cause(&self) -> Cause {
+        match self {
+            RefusedRedirect::OffAuthority { .. } => Cause::RedirectRefusedCrossAuthority,
+            RefusedRedirect::Looping { .. } => Cause::RedirectLoop,
+        }
+    }
+}
+
 impl std::fmt::Display for RefusedRedirect {
-    /// Kept short on purpose: [`detail`] truncates at
-    /// [`crate::error::MAX_DETAIL_CHARS`], and the two authorities are the part
-    /// that must survive.
+    /// Only ever rendered into the **local debug log**, never into a
+    /// `ProviderError`. `to` is a host the endpoint named, so this string is
+    /// endpoint-influenced and does not cross the IPC boundary.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RefusedRedirect::OffAuthority { status, from, to } => write!(
@@ -943,11 +1040,7 @@ impl HttpTransport for ReqwestTransport {
             .map_err(|_| {
                 TransportError::new(
                     TransportFailure::Timeout,
-                    format!(
-                        "no response headers within {} ms for url ({})",
-                        timeouts.first_byte.as_millis(),
-                        origin.endpoint()
-                    ),
+                    origin.diagnose(Cause::RequestTimedOut),
                 )
             })?
             .map_err(|error| map_reqwest_error(error, &origin))?;
@@ -1003,72 +1096,76 @@ impl ByteStream for ReqwestBody {
 /// Every `reqwest` failure in this workspace becomes a `TransportError` here
 /// and nowhere else.
 ///
-/// # Why this function takes the body's origin
+/// # What this function used to have to do, and no longer does
 ///
 /// `reqwest`'s `Display` ends with `" for url ({url})"` — the whole URL, query
-/// string included. With `Auth::ApiKeyQuery` that string *is* the credential,
-/// and `detail()` sanitises but does not redact, so a refused connection put
-/// the user's API key into `ProviderError::Transport`'s `Display`, `Debug` and
-/// serde JSON — the last of which is the shape that crosses the IPC bridge to
-/// the WebView.
+/// string included. With `Auth::ApiKeyQuery` that string *is* the credential.
+/// Closing that took three guards stacked on each other: `without_url()` to
+/// drop `reqwest`'s copy, a re-attached [`RequestUrl::redacted`] so the
+/// diagnosis was not deleted along with the secret, and a scrubber over
+/// whatever text was left — including the source chain, and including whatever
+/// a future `reqwest` release decides to format.
 ///
-/// Three guards, because one of them is a promise about someone else's crate:
-///
-/// * [`reqwest::Error::without_url`] drops `reqwest`'s own copy of the URL
-///   before it is ever formatted.
-/// * **Vela re-attaches its own, redacted.** Dropping the URL outright — which
-///   is what this function did for one round — takes the credential out by
-///   taking the diagnosis out with it: `Connect: error sending request`, on a
-///   machine with three configured candidates, does not say which one is down.
-///   [`RequestUrl::redacted`] was already the tree's answer to that and is used
-///   here now. Redaction removes the secret, not the diagnosis.
-/// * The scrubber removes credential material from whatever is left — the
-///   source chain, a future `reqwest` release that formats more, an error whose
-///   text came from somewhere else entirely — and from the endpoint string too,
-///   belt to `redacted()`'s braces.
-///
-/// Scrubbing happens **before** `detail()` truncates, because truncating first
-/// can cut a credential in half and keep the half.
+/// None of that is here now, because **no text is carried**. The failure is
+/// classified into a [`Cause`] by asking `reqwest` what *kind* of failure it
+/// was, and the endpoint is an [`EndpointIdentity`] parsed out of the request
+/// Vela built. `reqwest`'s message goes to the local debug log, keyed by the
+/// diagnosis's correlation id, for a user who deliberately opens it.
 ///
 /// # The redirect case is handled first and separately
 ///
-/// A redirect [`redirect_policy`] refused is not a network failure, and its
-/// whole diagnosis — which authority pointed where — lives in the error's
-/// *source*, which `reqwest`'s `Display` does not print. It is also the one
-/// error whose reqwest-side URL is the **previous** hop's, credential and all;
-/// nothing here formats it. The message is rebuilt from the authorities
-/// [`RefusedRedirect`] carries, which cannot contain a query string or userinfo,
-/// and the scrubber still runs over the result.
+/// A redirect [`redirect_policy`] refused is not a network failure. Its
+/// destination authority is *the endpoint's choice*, which is precisely the
+/// kind of value this design stopped putting in errors — so the user is told
+/// that a cross-authority redirect was refused, and where it pointed is in the
+/// debug log with everything else.
 fn map_reqwest_error(error: reqwest::Error, origin: &BodyOrigin) -> TransportError {
     if let Some(refused) = refused_redirect(&error) {
+        let cause = refused.cause();
+        let diagnosis = origin.diagnose(cause).with_status(refused.status());
+        // Where the endpoint pointed is its own choice of text. It is kept, and
+        // it is kept *here* — on this machine, only if the user turned the log
+        // on, findable by the ref the error shows them.
+        let line = refused.to_string();
+        let correlation = diagnosis.correlation();
+        crate::debuglog::record(|| crate::debuglog::DebugEntryOwned {
+            correlation,
+            cause,
+            status: Some(refused.status()),
+            endpoint: origin.endpoint().cloned(),
+            body: line.into_bytes(),
+        });
         return TransportError::new(
             TransportFailure::Request {
                 status: refused.status(),
             },
-            // No `for url (…)` suffix: the `from` authority already names the
-            // endpoint that answered, which is what a user with three
-            // configured candidates needs, and the message is long enough that
-            // appending the path would truncate an authority instead.
-            origin.scrubber().scrub(refused.to_string()),
+            diagnosis,
         );
     }
-    let failure = if error.is_connect() {
-        TransportFailure::Connect
+    let (failure, cause) = if error.is_connect() {
+        (TransportFailure::Connect, Cause::ConnectionFailed)
     } else if error.is_timeout() {
-        TransportFailure::Timeout
+        (TransportFailure::Timeout, Cause::RequestTimedOut)
     } else {
         // Includes the mid-upload reset GATE M FINDING 1 warns about: a reset
         // on a large POST may be a size-limit rejection, so this must never be
         // reported to the user as "the endpoint is down".
-        TransportFailure::Reset
+        (TransportFailure::Reset, Cause::ConnectionReset)
     };
-    let reason = error.without_url().to_string();
-    let raw = if origin.endpoint().is_empty() {
-        reason
-    } else {
-        format!("{reason} for url ({})", origin.endpoint())
-    };
-    TransportError::new(failure, origin.scrubber().scrub(raw))
+    let diagnosis = origin.diagnose(cause);
+    // `reqwest`'s own message is a string built partly out of a URL Vela sent
+    // and partly out of whatever the peer's TLS or HTTP stack said. It is
+    // exactly the kind of text this redesign stopped carrying, so it goes to
+    // the debug log and the correlation id is what links the two.
+    let correlation = diagnosis.correlation();
+    crate::debuglog::record(move || crate::debuglog::DebugEntryOwned {
+        correlation,
+        cause,
+        status: None,
+        endpoint: None,
+        body: error.without_url().to_string().into_bytes(),
+    });
+    TransportError::new(failure, diagnosis)
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,7 +1344,7 @@ pub mod testing {
                 Some(Err(error)) => Err(error),
                 None => Err(TransportError::new(
                     TransportFailure::Connect,
-                    "the script ran out of responses",
+                    Diagnosis::local(Cause::SyntheticTestFailure),
                 )),
             }
         }
@@ -1441,25 +1538,26 @@ mod tests {
         };
         assert_eq!(refused.status(), 302);
 
-        let rendered = detail(refused.to_string());
+        // The rendering is what the **debug log** gets, and both authorities
+        // survive into it. What the *error* gets is `Cause::
+        // RedirectRefusedCrossAuthority` and nothing else: `to` is a host the
+        // endpoint named, and the redesign does not carry endpoint-chosen text
+        // across the IPC boundary however innocuous this particular instance
+        // looks.
+        let rendered = refused.to_string();
         assert!(
             rendered.contains("http://127.0.0.1:11434")
                 && rendered.contains("https://collector.invalid:443"),
-            "both authorities must survive `detail`'s bound: {rendered}"
+            "the debug log keeps both authorities: {rendered}"
         );
-        assert!(!rendered.ends_with('…'), "must not truncate: {rendered}");
+        assert_eq!(refused.cause(), Cause::RedirectRefusedCrossAuthority);
     }
 
     #[test]
     fn a_refused_redirect_is_never_retried_at_the_same_endpoint() {
         let error: ProviderError = TransportError::new(
             TransportFailure::Request { status: 307 },
-            RefusedRedirect::Looping {
-                status: 307,
-                authority: "http://127.0.0.1:8080".into(),
-                hops: MAX_SAME_AUTHORITY_REDIRECTS,
-            }
-            .to_string(),
+            Diagnosis::new(Cause::RedirectLoop),
         )
         .into();
         assert!(
@@ -1475,7 +1573,7 @@ mod tests {
     #[test]
     fn a_transport_error_normalises_into_the_one_taxonomy() {
         let error: ProviderError =
-            TransportError::new(TransportFailure::Reset, "connection reset").into();
+            TransportError::new(TransportFailure::Reset, Cause::ConnectionReset).into();
         assert_eq!(error.code(), "transport");
         assert!(error.allows_failover());
     }

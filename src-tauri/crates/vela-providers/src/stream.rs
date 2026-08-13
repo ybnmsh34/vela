@@ -18,16 +18,23 @@
 //!   [`ToolCallAccumulator`] — and the two wire shapes it can be fed are told
 //!   apart *here*, in [`CompletionAssembler::apply_choice`], because this is the
 //!   only place that still knows which one arrived. See [`ToolCallShape`].
+//! * **MEASURED-3b — deliberation is not an instruction.** All answer text goes
+//!   through [`AnswerChannel`], which owns the accumulated parts and the text a
+//!   tool parser may see. This file used to flush the answer rescued out of an
+//!   unterminated `<think>` block straight into `parts` and a `TextDelta`,
+//!   bypassing the stripper; on an endpoint using emulated tool calling — which
+//!   is every local runtime — that turned a model *thinking* about
+//!   `delete_everything` into a call that would run it, and streamed raw
+//!   `<tool_call>` markup to the UI. See [`crate::answer`].
 
 use serde_json::Value;
 
-use crate::emulation::ToolCallStripper;
+use crate::answer::AnswerChannel;
+use crate::diagnostic::{Cause, Diagnosis, EndpointIdentity};
 use crate::error::{ProviderError, ProviderResult, TransportFailure};
 use crate::event::{EventSink, StreamEvent};
 use crate::http::BodyStream;
-use crate::model::{
-    ChatResponse, ContentPart, Degradation, StopReason, TokenUsage, ToolCallOutcome,
-};
+use crate::model::{ChatResponse, Degradation, StopReason, TokenUsage, ToolCallOutcome};
 use crate::provider::RequestContext;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::redact::Scrubber;
@@ -50,7 +57,9 @@ pub struct CompletionAssembler {
     sse: SseDecoder,
     splitter: ReasoningSplitter,
     tools: ToolCallAccumulator,
-    parts: Vec<ContentPart>,
+    /// Everything the user is shown, and the only text a tool parser may see.
+    /// Not a `Vec<ContentPart>`: see [`crate::answer`].
+    answer: AnswerChannel,
     usage: TokenUsage,
     stop_reason: Option<StopReason>,
     malformed_frames: usize,
@@ -60,10 +69,8 @@ pub struct CompletionAssembler {
     streamed: bool,
     /// An error body that arrived *inside* a 200 stream. Some runtimes do this.
     stream_error: Option<ProviderError>,
-    /// Present when tool calling is being emulated: answer text is routed
-    /// through it so `<tool_call>` markup never reaches the user, even when the
-    /// tag is split across frames.
-    stripper: Option<ToolCallStripper>,
+    /// The endpoint this stream answers, for errors that arrive inside a 200.
+    endpoint: Option<EndpointIdentity>,
     /// The credential material of the request this stream answers.
     ///
     /// The bytes arriving here have already been scrubbed by
@@ -85,7 +92,7 @@ impl CompletionAssembler {
             sse: SseDecoder::new(),
             splitter: ReasoningSplitter::new(),
             tools: ToolCallAccumulator::new(),
-            parts: Vec::new(),
+            answer: AnswerChannel::new(),
             usage: TokenUsage::default(),
             stop_reason: None,
             malformed_frames: 0,
@@ -94,8 +101,8 @@ impl CompletionAssembler {
             requested_usage,
             streamed,
             stream_error: None,
-            stripper: None,
             scrubber: Scrubber::none(),
+            endpoint: None,
         }
     }
 
@@ -106,9 +113,29 @@ impl CompletionAssembler {
         self
     }
 
+    /// Attach the endpoint this stream answers, so an error frame inside an
+    /// otherwise-200 body still names the candidate that produced it.
+    pub fn with_endpoint(mut self, endpoint: Option<EndpointIdentity>) -> Self {
+        self.endpoint = endpoint;
+        self
+    }
+
+    /// Name the endpoint on an error that arrived inside a 200 body, and file
+    /// the frame that produced it in the local debug log.
+    ///
+    /// The frame is the *decoded and scrubbed* value, which is what the debug
+    /// log is for: the endpoint's own words, kept on the user's machine, never
+    /// carried into the error.
+    fn record(&self, error: ProviderError, frame: &Value) -> ProviderError {
+        let error = error.at(self.endpoint.clone());
+        crate::debuglog::record_for(&error, || frame.to_string().into_bytes());
+        error
+    }
+
+
     /// Route answer text through the emulated-tool-call stripper.
     pub fn with_tool_emulation(mut self) -> Self {
-        self.stripper = Some(ToolCallStripper::new());
+        self.answer = std::mem::take(&mut self.answer).with_tool_emulation();
         self
     }
 
@@ -139,7 +166,7 @@ impl CompletionAssembler {
         };
 
         if let Some(error) = object.get("error") {
-            self.stream_error = Some(error_from_body(error));
+            self.stream_error = Some(self.record(error_from_body(error), error));
             return;
         }
 
@@ -194,21 +221,15 @@ impl CompletionAssembler {
             {
                 // The other reasoning transport: a dedicated field. No tags to
                 // strip, and it must never reach the answer channel.
-                if !reasoning.is_empty() {
-                    self.append_reasoning(reasoning);
-                    sink.emit(StreamEvent::ReasoningDelta {
-                        text: reasoning.to_owned(),
-                    });
-                }
+                self.answer.push_reasoning(reasoning, sink);
             }
             if let Some(content) = payload.get("content") {
                 for text in content_texts(content) {
                     for piece in self.splitter.push(&text) {
                         match piece {
-                            ReasoningPiece::Answer(text) => self.emit_answer(&text, sink),
+                            ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
                             ReasoningPiece::Reasoning(text) => {
-                                self.append_reasoning(&text);
-                                sink.emit(StreamEvent::ReasoningDelta { text });
+                                self.answer.push_reasoning(&text, sink)
                             }
                         }
                     }
@@ -228,39 +249,6 @@ impl CompletionAssembler {
         }
     }
 
-    /// Answer text on its way to the user, after emulation stripping.
-    fn emit_answer(&mut self, text: &str, sink: &mut dyn EventSink) {
-        let visible = match &mut self.stripper {
-            Some(stripper) => stripper.push(text),
-            None => text.to_owned(),
-        };
-        if visible.is_empty() {
-            return;
-        }
-        self.append_text(&visible);
-        sink.emit(StreamEvent::TextDelta { text: visible });
-    }
-
-    fn append_text(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        match self.parts.last_mut() {
-            Some(ContentPart::Text { text: existing }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::text(text)),
-        }
-    }
-
-    fn append_reasoning(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        match self.parts.last_mut() {
-            Some(ContentPart::Reasoning { text: existing, .. }) => existing.push_str(text),
-            _ => self.parts.push(ContentPart::reasoning(text)),
-        }
-    }
-
     /// End of body. Flushes held-back text, resolves tool calls, and reports
     /// every degradation observed along the way.
     pub fn finish(mut self, sink: &mut dyn EventSink) -> ProviderResult<ChatResponse> {
@@ -275,50 +263,44 @@ impl CompletionAssembler {
         let finish = self.splitter.finish();
         for piece in finish.pieces {
             match piece {
-                ReasoningPiece::Answer(text) => self.emit_answer(&text, sink),
-                ReasoningPiece::Reasoning(text) => {
-                    self.append_reasoning(&text);
-                    sink.emit(StreamEvent::ReasoningDelta { text });
-                }
+                ReasoningPiece::Answer(text) => self.answer.push_answer(&text, sink),
+                ReasoningPiece::Reasoning(text) => self.answer.push_reasoning(&text, sink),
             }
-        }
-        if let Some(recovered) = finish.recovered_answer {
-            // MEASURED-3: the block never closed, so everything was filed as
-            // reasoning and the user would otherwise see an empty answer.
-            degradations.push(Degradation::UnterminatedReasoning {
-                recovered_answer_chars: recovered.chars().count(),
-            });
-            self.append_text(&recovered);
-            sink.emit(StreamEvent::TextDelta { text: recovered });
         }
 
         let mut tool_calls: Vec<ToolCallOutcome> = std::mem::take(&mut self.tools).finish();
 
-        if let Some(stripper) = self.stripper.take() {
-            let (tail, emulated) = stripper.finish();
-            if !tail.is_empty() {
-                self.append_text(&tail);
-                sink.emit(StreamEvent::TextDelta { text: tail });
-            }
-            let found_tagged = !emulated.is_empty();
-            tool_calls.extend(emulated);
-            if !found_tagged {
+        // The one chokepoint. The recovered answer goes IN here — it is not
+        // appended behind the channel's back — so the stripper sees it, its
+        // markup never streams, and whatever call shape is inside it comes back
+        // quarantined instead of executable. That was FINDING 3.
+        let emulating = self.answer.emulating();
+        let unterminated = finish.recovered_answer.is_some();
+        let closed = self.answer.close(finish.recovered_answer.as_deref(), sink);
+        if unterminated {
+            // MEASURED-3: the block never closed, so everything was filed as
+            // reasoning and the user would otherwise see an empty answer.
+            degradations.push(Degradation::UnterminatedReasoning {
+                recovered_answer_chars: closed.recovered_chars,
+            });
+        }
+        tool_calls.extend(closed.calls);
+        // Reported, never run. See `answer::Provenance::Salvaged`.
+        tool_calls.extend(closed.quarantined);
+
+        if emulating {
+            if !closed.found_tagged {
                 // No `<tool_call>` block. The other shapes models use — a
                 // fenced JSON object, a `TOOL_CALL name {…}` line — can only be
                 // recognised once the whole answer is in hand, so their text may
                 // have streamed before being retracted here. Documented, and
                 // preferred over not recognising the call at all.
-                let answer: String = self
-                    .parts
-                    .iter()
-                    .filter_map(|part| match part {
-                        ContentPart::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect();
-                let parsed = crate::emulation::parse_calls(&answer);
+                //
+                // `executable_text` and not "every text part": salvaged text is
+                // shown to the user but is not eligible to become a call.
+                let parsed = crate::emulation::parse_calls(self.answer.executable_text());
                 if !parsed.is_empty() {
-                    rewrite_answer_text(&mut self.parts, &parsed.remaining_text);
+                    self.answer.retract_committed_text(&parsed.remaining_text);
                     tool_calls.extend(parsed.calls);
                 }
             }
@@ -351,15 +333,12 @@ impl CompletionAssembler {
         });
 
         // Nothing at all came back and nothing said why. That is not an answer.
-        if self.parts.is_empty() && tool_calls.is_empty() && self.malformed_frames > 0 {
-            return Err(ProviderError::malformed(format!(
-                "every frame in the response was unreadable ({} skipped)",
-                self.malformed_frames
-            )));
+        if self.answer.is_empty() && tool_calls.is_empty() && self.malformed_frames > 0 {
+            return Err(ProviderError::malformed(Cause::StreamEndedWithoutAnswer));
         }
 
         Ok(ChatResponse {
-            parts: self.parts,
+            parts: self.answer.into_parts(),
             tool_calls,
             stop_reason,
             usage: self.usage,
@@ -367,20 +346,6 @@ impl CompletionAssembler {
             degradations,
         })
     }
-}
-
-/// Replace every text part with one carrying `text`, keeping its position
-/// relative to the reasoning parts around it.
-fn rewrite_answer_text(parts: &mut Vec<ContentPart>, text: &str) {
-    let first_text = parts
-        .iter()
-        .position(|part| matches!(part, ContentPart::Text { .. }));
-    parts.retain(|part| !matches!(part, ContentPart::Text { .. }));
-    if text.is_empty() {
-        return;
-    }
-    let at = first_text.unwrap_or(parts.len()).min(parts.len());
-    parts.insert(at, ContentPart::text(text));
 }
 
 /// `content` is a string on every endpoint Vela has met, but the OpenAI schema
@@ -459,12 +424,13 @@ pub async fn drive_stream(
 ) -> ProviderResult<ChatResponse> {
     // Grabbed before the loop borrows the body: a stall must still say which
     // endpoint went quiet, and the redacted form is safe to say it with.
-    let endpoint = body.endpoint().to_owned();
+    let endpoint = body.endpoint().cloned();
     // The body knows what request it answers; the assembler is what decodes.
     // Joining them here — rather than at the assembler's construction, three
     // call sites away — is what stops the second barrier being something an
     // adapter has to remember.
-    let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
+    let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone())
+        .with_endpoint(body.origin().endpoint().cloned());
     loop {
         context.cancel.err_if_cancelled()?;
         let read = tokio::select! {
@@ -479,10 +445,7 @@ pub async fn drive_stream(
             Err(_elapsed) => {
                 return Err(ProviderError::transport(
                     TransportFailure::Stalled,
-                    format!(
-                        "no data for {} ms for url ({endpoint})",
-                        context.timeouts.stall.as_millis()
-                    ),
+                    Diagnosis::new(Cause::StreamStalled).at(endpoint.clone()),
                 ))
             }
             Ok(Err(error)) => return Err(ProviderError::from(error)),
@@ -498,7 +461,7 @@ pub async fn drive_stream(
 mod tests {
     use super::*;
     use crate::event::CollectingSink;
-    use crate::model::MalformedToolCall;
+    use crate::model::{ContentPart, MalformedToolCall};
 
     fn assemble(
         body: &str,

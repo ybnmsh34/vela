@@ -17,6 +17,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::diagnostic::{Cause, Diagnosis};
 use crate::error::{ProviderError, ProviderResult};
 use crate::event::{CommitTrackingSink, EventSink};
 use crate::model::{ChatRequest, ChatResponse, Degradation};
@@ -110,7 +111,9 @@ impl Router {
         context: &RequestContext,
     ) -> ProviderResult<ChatResponse> {
         if self.candidates.is_empty() {
-            return Err(ProviderError::malformed("no provider is configured"));
+            return Err(ProviderError::malformed(Diagnosis::local(
+                Cause::NoProviderConfigured,
+            )));
         }
 
         let mut attempts_used = 0u32;
@@ -177,7 +180,9 @@ impl Router {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| ProviderError::malformed("no candidate answered")))
+        Err(last_error.unwrap_or_else(|| {
+            ProviderError::malformed(Diagnosis::local(Cause::NoCandidateAnswered))
+        }))
     }
 }
 
@@ -234,7 +239,10 @@ mod tests {
             &self,
             _: &RequestContext,
         ) -> ProviderResult<Vec<crate::provider::ModelInfo>> {
-            Err(ProviderError::unsupported(Capability::ModelListing, "no"))
+            Err(ProviderError::unsupported(
+                Capability::ModelListing,
+                Cause::CapabilityNotOfferedByBackend,
+            ))
         }
 
         async fn probe_capabilities(
@@ -267,7 +275,7 @@ mod tests {
                     }
                     Err(error)
                 }
-                None => Err(ProviderError::malformed("script exhausted")),
+                None => Err(ProviderError::malformed(Cause::SyntheticTestFailure)),
             }
         }
     }
@@ -277,7 +285,7 @@ mod tests {
     }
 
     fn transport_error() -> ProviderError {
-        ProviderError::transport(TransportFailure::Connect, "refused")
+        ProviderError::transport(TransportFailure::Connect, Cause::ConnectionFailed)
     }
 
     fn fast_policy() -> RetryPolicy {
@@ -322,7 +330,7 @@ mod tests {
         let first = Scripted::new(
             "a",
             vec![Err(ProviderError::AuthFailed {
-                detail: "401".into(),
+                diagnosis: Cause::CredentialRejected.into(),
             })],
         );
         let second = Scripted::new("b", vec![Ok("should never run")]);
@@ -352,7 +360,7 @@ mod tests {
             "a",
             vec![Err(ProviderError::unsupported(
                 Capability::Vision,
-                "no images",
+                Cause::CapabilityAbsentOnThisModel,
             ))],
         );
         let second = Scripted::new("b", vec![Ok("should never run")]);
@@ -406,7 +414,7 @@ mod tests {
             vec![
                 Err(ProviderError::RateLimited {
                     retry_after_ms: Some(1),
-                    detail: "slow down".into(),
+                    diagnosis: Cause::TooManyRequests.into(),
                 }),
                 Ok("after the wait"),
             ],

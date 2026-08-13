@@ -223,6 +223,7 @@ async fn read_bounded(body: &mut BodyStream, limit: usize, stall: std::time::Dur
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostic::{Cause, ConfiguredModelId};
     use crate::error::{Capability, ProviderError};
     use crate::http::testing::{CannedResponse, ScriptedTransport};
     use crate::http::ResponseHeaders;
@@ -239,7 +240,12 @@ mod tests {
     fn mapped(status: u16, body: &str) -> ProviderError {
         let normalised = normalise_error_body(status, body.as_bytes());
         let bytes = normalised.unwrap_or_else(|| body.as_bytes().to_vec());
-        map_error_response(status, &upstream(bytes), "m", None)
+        map_error_response(
+            status,
+            &upstream(bytes),
+            &ConfiguredModelId::of(&crate::model::ChatRequest::new("m")),
+            None,
+        )
     }
 
     #[test]
@@ -256,7 +262,12 @@ mod tests {
         // What the core does on its own: `code` is not a string, so it falls
         // through to the status.
         assert!(matches!(
-            map_error_response(400, &upstream(body.as_bytes().to_vec()), "m", None),
+            map_error_response(
+                400,
+                &upstream(body.as_bytes().to_vec()),
+                &ConfiguredModelId::of(&crate::model::ChatRequest::new("m")),
+                None,
+            ),
             ProviderError::Transport { .. }
         ));
         // What it does once the shape is normalised.
@@ -292,8 +303,19 @@ mod tests {
             mapped(404, body),
             ProviderError::ModelNotFound { .. }
         ));
-        // And the message is not thrown away.
-        assert!(format!("{}", mapped(404, body)).contains("try pulling it first"));
+        // The endpoint's phrasing is *not* carried — "try pulling it first" is
+        // its words, and a peer that wanted to could have put anything there in
+        // any spelling. What is carried is the part that makes the error
+        // actionable and that Vela already knew: the classification, the
+        // status, and the model id out of the request Vela sent.
+        let error = mapped(404, body);
+        assert!(!format!("{error}").contains("try pulling it first"));
+        assert_eq!(error.cause(), Some(Cause::ModelNotServed));
+        assert_eq!(error.status(), Some(404));
+        let ProviderError::ModelNotFound { model_id, .. } = &error else {
+            unreachable!()
+        };
+        assert_eq!(model_id.as_str(), "m");
     }
 
     #[test]

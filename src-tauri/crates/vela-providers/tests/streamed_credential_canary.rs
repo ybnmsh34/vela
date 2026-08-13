@@ -157,32 +157,36 @@ fn assert_no_credential(label: &str, error: &ProviderError, sink: &CollectingSin
 /// the wrong reason: an error that says nothing at all.
 #[track_caller]
 fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
-    let detail = match error {
-        ProviderError::Transport { failure, detail } => {
-            assert!(
-                matches!(
-                    failure,
-                    TransportFailure::Connect
-                        | TransportFailure::Timeout
-                        | TransportFailure::Reset
-                        | TransportFailure::Stalled
-                        | TransportFailure::Request { .. }
-                        | TransportFailure::Server { .. }
-                ),
-                "{label}: unexpected transport failure {failure:?}"
-            );
-            detail
-        }
-        ProviderError::MalformedResponse { detail }
-        | ProviderError::AuthFailed { detail }
-        | ProviderError::RateLimited { detail, .. }
-        | ProviderError::ContextLengthExceeded { detail, .. }
-        | ProviderError::ModelNotFound { detail, .. } => detail,
-        other => panic!("{label}: expected an endpoint or transport failure, got {other:?}"),
-    };
+    if let ProviderError::Transport { failure, .. } = error {
+        assert!(
+            matches!(
+                failure,
+                TransportFailure::Connect
+                    | TransportFailure::Timeout
+                    | TransportFailure::Reset
+                    | TransportFailure::Stalled
+                    | TransportFailure::Request { .. }
+                    | TransportFailure::Server { .. }
+            ),
+            "{label}: unexpected transport failure {failure:?}"
+        );
+    }
+    let diagnosis = error
+        .diagnosis()
+        .unwrap_or_else(|| panic!("{label}: expected an endpoint or transport failure, got {error:?}"));
     assert!(
-        !detail.is_empty(),
-        "{label}: an empty detail would pass every leak assertion vacuously"
+        !diagnosis.cause().message().is_empty(),
+        "{label}: an error with nothing to say would pass every leak assertion vacuously"
+    );
+    // The stronger property the redesign makes available, and the reason this
+    // file's leak assertions are no longer the interesting ones: **nothing** on
+    // the error's surface is endpoint-derived, so there is no encoding left for
+    // a fifth round to find.
+    let unexplained = vela_providers::diagnostic::unexplained_in_error(error);
+    assert!(
+        unexplained.is_empty(),
+        "{label}: the error surface carries text the closed vocabulary does not \
+         explain — {unexplained:?}\n  {error}"
     );
 }
 
@@ -882,24 +886,35 @@ async fn transport_failures_still_name_the_endpoint_they_failed_on() {
 
             for (path, error, sink) in drive(&provider).await {
                 let label = format!("{binding:?} · {} · {path}", forced.label());
-                let ProviderError::Transport { detail, .. } = &error else {
-                    panic!("{label}: expected a transport failure, got {error:?}");
-                };
                 assert!(
-                    detail.contains(&authority),
+                    matches!(&error, ProviderError::Transport { .. }),
+                    "{label}: expected a transport failure, got {error:?}"
+                );
+                let endpoint = error.endpoint().unwrap_or_else(|| {
+                    panic!("{label}: the error must name the endpoint that failed: {error:?}")
+                });
+                assert!(
+                    endpoint.authority().contains(&authority),
                     "{label}: the error must name the endpoint that failed, \
-                     got {detail:?} (looking for {authority:?})"
+                     got {endpoint} (looking for {authority:?})"
                 );
                 assert!(
-                    detail.contains("models/canary-model"),
+                    endpoint.path().contains("models/canary-model"),
                     "{label}: naming the host is not enough — the request target \
-                     tells two candidates on one host apart: {detail:?}"
+                     tells two candidates on one host apart: {endpoint}"
                 );
                 if binding == Binding::Query {
+                    // Rounds 1–4 asserted `<redacted>` was *present* here,
+                    // because the endpoint was a redacted URL string and a URL
+                    // that had simply lost its query would have been a deletion.
+                    // `EndpointIdentity` drops the query string whole instead,
+                    // so the assertion inverts: there is no `?key=` to redact,
+                    // and the two candidate-distinguishing parts — authority and
+                    // path — are both still there, as asserted just above.
+                    let rendered = endpoint.to_string();
                     assert!(
-                        detail.contains("<redacted>"),
-                        "{label}: the key must be redacted in the named URL, not \
-                         absent from it: {detail:?}"
+                        !rendered.contains('?') && !rendered.contains("<redacted>"),
+                        "{label}: the query string is dropped, not redacted: {rendered}"
                     );
                 }
                 assert_no_credential(&label, &error, &sink);
@@ -1167,8 +1182,8 @@ async fn a_body_answering_a_credential_free_request_is_untouched() {
     .origin();
     assert!(origin.scrubber().is_empty());
     assert_eq!(
-        origin.endpoint(),
-        "http://127.0.0.1:11434/v1/chat/completions"
+        origin.endpoint().map(ToString::to_string).as_deref(),
+        Some("http://127.0.0.1:11434/v1/chat/completions")
     );
 
     let text = "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n";
@@ -1202,7 +1217,12 @@ fn the_credential_is_still_on_the_url_that_goes_to_the_socket() {
         request.url.expose().contains(&percent_encode(CANARY)),
         "the wire form must still carry the credential, or nothing authenticates"
     );
-    assert!(!request.origin().endpoint().contains(CANARY_CORE));
+    assert!(!request
+        .origin()
+        .endpoint()
+        .map(|endpoint| endpoint.to_string())
+        .unwrap_or_default()
+        .contains(CANARY_CORE));
     assert!(!request.origin().scrubber().is_empty());
     assert_eq!(
         Scrubber::none().scrub("untouched"),

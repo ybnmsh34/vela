@@ -31,8 +31,9 @@ use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
+use crate::diagnostic::{Cause, ConfiguredModelId, Diagnosis};
 use crate::emulation;
-use crate::error::{detail, Capability, ProviderError, ProviderResult, TransportFailure};
+use crate::error::{Capability, ProviderError, ProviderResult, TransportFailure};
 use crate::event::{CollectingSink, EventSink, NullSink, StreamEvent};
 use crate::http::{HttpRequest, HttpTransport, TransportError};
 use crate::model::{
@@ -216,22 +217,24 @@ impl AnthropicProvider {
         }
         let applied = match resolve_auth(self.secrets.as_ref(), &self.auth) {
             Ok(applied) => applied,
+            // `SecretError`'s own `Display` is not carried: it is Vela's text
+            // today, but it is text, and the whole point of the redesign is that
+            // an error's contents are a closed set rather than whatever a
+            // `Display` impl somewhere feels like producing.
             Err(SecretError::NotFound { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(
-                        "this provider is configured to send a credential, but none is stored",
-                    ),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialMissing,
+                )))
             }
             Err(SecretError::Unavailable { .. }) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail("the credential store could not be read"),
-                })
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreUnreadable,
+                )))
             }
-            Err(error) => {
-                return Err(ProviderError::AuthFailed {
-                    detail: detail(error.to_string()),
-                })
+            Err(_) => {
+                return Err(ProviderError::auth_failed(Diagnosis::local(
+                    Cause::CredentialStoreFailed,
+                )))
             }
         };
         // The query-parameter shape is not one this API uses, but the binding is
@@ -248,12 +251,11 @@ impl AnthropicProvider {
             return Err(map_error_response(
                 response.status,
                 &body,
-                "",
+                &ConfiguredModelId::unknown(),
                 response.header("retry-after"),
             ));
         }
-        body.json()
-            .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
+        body.decode_json()
     }
 
     /// Everything that happens before a byte is sent.
@@ -267,7 +269,7 @@ impl AnthropicProvider {
         if request.needs_vision() && capabilities.vision == Support::Unsupported {
             return Err(ProviderError::unsupported(
                 Capability::Vision,
-                "this model does not accept image input",
+                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
             ));
         }
         if request.offers_tools() && capabilities.tool_calling == Support::Unsupported {
@@ -277,7 +279,7 @@ impl AnthropicProvider {
             // emulation behind the user's back would not be.
             return Err(ProviderError::unsupported(
                 Capability::ToolCalling,
-                "this model was probed and does not accept a tool catalogue",
+                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
             ));
         }
 
@@ -290,7 +292,7 @@ impl AnthropicProvider {
                         if self.options.structured_output == StructuredOutputPolicy::Refuse {
                             return Err(ProviderError::unsupported(
                                 Capability::StructuredOutput,
-                                "this model was probed and does not honour a response schema",
+                                Diagnosis::local(Cause::CapabilityAbsentOnThisModel),
                             ));
                         }
                         degradations.push(Degradation::StructuredOutputUnsupported);
@@ -346,8 +348,8 @@ impl AnthropicProvider {
             concessions,
             self.options.interleaved_thinking,
         );
-        let bytes = serde_json::to_vec(&encoded.body).map_err(|error| {
-            ProviderError::malformed(format!("could not encode request: {error}"))
+        let bytes = serde_json::to_vec(&encoded.body).map_err(|_| {
+            ProviderError::malformed(Diagnosis::local(Cause::RequestCouldNotBeEncoded))
         })?;
         let request = self.prepare_http(
             HttpRequest::post_json(self.api_url("messages"), bytes).with_header(
@@ -370,7 +372,7 @@ impl AnthropicProvider {
                 error: map_error_response(
                     response.status,
                     &body,
-                    &prepared.request.model_id,
+                    &ConfiguredModelId::of(&prepared.request),
                     response.header("retry-after"),
                 ),
                 // Nothing has been emitted to the sink at this point, which is
@@ -379,7 +381,12 @@ impl AnthropicProvider {
             });
         }
 
-        let mut assembler = MessageAssembler::new(streaming);
+        // The endpoint goes on before the branch, not inside it: the
+        // non-streamed path reaches the same assembler through
+        // `apply_message`, and an error frame inside a 200 must name its
+        // candidate whichever transport carried it.
+        let mut assembler =
+            MessageAssembler::new(streaming).with_endpoint(response.body.origin().endpoint().cloned());
         if encoded.schema_tool {
             assembler = assembler.with_schema_tool(wire::SCHEMA_TOOL_NAME);
         }
@@ -396,7 +403,7 @@ impl AnthropicProvider {
             let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
             // Grabbed before the loop borrows the body: a stall must still say
             // which endpoint went quiet, and the redacted form is safe to.
-            let endpoint = body.endpoint().to_owned();
+            let endpoint = body.endpoint().cloned();
             loop {
                 context.cancel.err_if_cancelled()?;
                 let read = tokio::select! {
@@ -408,10 +415,7 @@ impl AnthropicProvider {
                     Err(_elapsed) => {
                         return Err(ProviderError::transport(
                             TransportFailure::Stalled,
-                            format!(
-                                "no data for {} ms for url ({endpoint})",
-                                context.timeouts.stall.as_millis()
-                            ),
+                            Diagnosis::new(Cause::StreamStalled).at(endpoint.clone()),
                         )
                         .into())
                     }
@@ -427,9 +431,7 @@ impl AnthropicProvider {
             // Decoded through the body's own scrubber: the non-streamed path
             // reconstitutes an escaped credential just as readily as the
             // streamed one.
-            let value: Value = body.json().map_err(|error| {
-                ProviderError::malformed(format!("response was not JSON: {error}"))
-            })?;
+            let value: Value = body.decode_json()?;
             assembler.apply_message(&value, sink);
             Ok(assembler.finish(sink)?)
         }
@@ -502,12 +504,14 @@ impl AnthropicProvider {
             // channel it came back through.
             let checked = match (schema_tool_input, schema_tool_raw) {
                 (Some(value), _) => structured::validate(schema, &value).map(|()| value),
-                (None, Some(raw)) => Err(SchemaMismatch {
-                    path: String::new(),
-                    detail: detail(format!(
-                        "the model's structured answer was not usable JSON: {raw}"
-                    )),
-                }),
+                // The model's raw attempt is deliberately *not* quoted here.
+                // It reached this arm precisely because it was not usable JSON,
+                // which makes it arbitrary endpoint-chosen bytes, and the
+                // transcript already carries whatever the model produced.
+                (None, Some(_raw)) => Err(SchemaMismatch::new(
+                    "",
+                    "the model's structured answer was not usable JSON",
+                )),
                 (None, None) => structured::check_answer(schema, &response.answer_text()),
             };
             match checked {
@@ -620,7 +624,7 @@ impl Provider for AnthropicProvider {
         let data = value
             .get("data")
             .and_then(Value::as_array)
-            .ok_or_else(|| ProviderError::malformed("model list had no `data` array"))?;
+            .ok_or_else(|| ProviderError::malformed(Cause::ModelListMalformed))?;
         Ok(data
             .iter()
             .filter_map(|entry| {
@@ -1415,7 +1419,16 @@ mod tests {
             ProviderError::ContextLengthExceeded {
                 limit_tokens: Some(200_000),
                 requested_tokens: Some(205_809),
-                detail: detail("prompt is too long: 205809 tokens > 200000 maximum"),
+                // The endpoint identity arrives without the adapter doing
+                // anything: `map_error_response` attaches it from the body's
+                // origin. That is the round-3 diagnostics guarantee still
+                // holding under the redesign — a user with three candidates
+                // configured can tell which one refused.
+                diagnosis: Diagnosis::new(Cause::ContextWindowExceeded)
+                    .with_status(400)
+                    .at(crate::diagnostic::EndpointIdentity::of(
+                        &crate::redact::RequestUrl::new("https://example.invalid/v1/messages")
+                    )),
             }
         );
     }

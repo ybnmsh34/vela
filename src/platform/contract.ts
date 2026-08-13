@@ -325,7 +325,15 @@ export type MalformedToolCallReason =
   | 'missingName'
   | 'unparseableArguments'
   | 'argumentsNotAnObject'
-  | 'unknownDiscriminator';
+  | 'unknownDiscriminator'
+  /**
+   * The call parsed perfectly and is refused anyway: it was found in text
+   * rescued out of a `<think>` block the model never closed, so the model was
+   * cut off mid-deliberation and never committed to it. Render it as an offer,
+   * not as a failure — the arguments are carried so the user can ask for the
+   * call deliberately. See `vela_providers::answer::Provenance::Salvaged`.
+   */
+  | 'recoveredFromUnterminatedReasoning';
 
 /**
  * Mirrors `vela_providers::model::ToolCallOutcome` (`#[serde(tag = "status")]`).
@@ -517,6 +525,110 @@ export interface ChatEventEnvelope {
 }
 
 /* -------------------------------------------------------------------------- */
+/* store — the conversation list the navigation surface is built on           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A conversation as the navigation surface sees it.
+ *
+ * Note what is **absent**: the stored row carries the backend and model that
+ * last answered in this conversation, and neither appears here. A field the
+ * renderer can read is a field the renderer will eventually branch on, and
+ * conventions §0 rule 3 forbids that. Which model said what is a property of a
+ * message, and belongs to the transcript surface.
+ */
+export interface ConversationSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  /** `null` when nothing has been said yet — not the same as `createdAtMs`. */
+  readonly lastMessageAtMs: number | null;
+  readonly messageCount: number;
+  /**
+   * The title is still the host's placeholder. The UI may render it quietly and
+   * may ask the host to derive a real one.
+   */
+  readonly titleIsPlaceholder: boolean;
+}
+
+/**
+ * Where a search hit came from. `reasoning` is surfaced distinctly so the UI can
+ * say the match was inside a thinking block rather than quoting private
+ * reasoning back as though it were an answer.
+ */
+export type MessageHitKind = 'answer' | 'reasoning';
+
+export interface MessageHit {
+  readonly messageId: string;
+  readonly conversationId: string;
+  readonly conversationTitle: string;
+  readonly kind: MessageHitKind;
+  /** The matched text, with the hit delimited by `[` and `]`. */
+  readonly snippet: string;
+  readonly createdAtMs: number;
+}
+
+export interface StoreListConversationsReq {
+  readonly limit?: number;
+}
+
+export interface ConversationListRes {
+  readonly conversations: readonly ConversationSummary[];
+}
+
+export interface StoreCreateConversationReq {
+  /** Omit to open an untitled conversation, which is the normal case. */
+  readonly title?: string;
+}
+
+export interface ConversationRes {
+  readonly conversation: ConversationSummary;
+}
+
+export interface StoreRenameConversationReq {
+  readonly conversationId: string;
+  readonly title: string;
+}
+
+export interface StoreConversationRefReq {
+  readonly conversationId: string;
+}
+
+export interface StoreSearchReq {
+  readonly query: string;
+  readonly limit?: number;
+}
+
+/**
+ * Two labelled halves rather than one blended list: a title match and a content
+ * match are different claims, and merging them would let the UI imply words
+ * appear in a transcript when they only appear in its name.
+ */
+export interface StoreSearchRes {
+  readonly conversations: readonly ConversationSummary[];
+  readonly messages: readonly MessageHit[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* ui — window layout that must survive a restart                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Persisted in the user's own database, not in webview storage: a sidebar the
+ * user dragged is part of how their workspace looks, and it should not live
+ * somewhere they cannot back up and the browser profile can clear.
+ *
+ * Out-of-range values are clamped by the host, never rejected. A width is a
+ * preference, not an assertion.
+ */
+export interface UiLayout {
+  readonly sidebarWidth: number;
+  /** Collapsing keeps the width, so expanding restores what the user chose. */
+  readonly sidebarCollapsed: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /* the contract                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -532,6 +644,14 @@ export interface IpcContract {
   settings_get: { req: EmptyPayload; res: SettingsSnapshot };
   settings_put_provider: { req: SettingsPutProviderReq; res: ProviderView };
   settings_set_theme: { req: SettingsSetThemeReq; res: SettingsSetThemeRes };
+  store_autotitle_conversation: { req: StoreConversationRefReq; res: ConversationRes };
+  store_create_conversation: { req: StoreCreateConversationReq; res: ConversationRes };
+  store_delete_conversation: { req: StoreConversationRefReq; res: Ack };
+  store_list_conversations: { req: StoreListConversationsReq; res: ConversationListRes };
+  store_rename_conversation: { req: StoreRenameConversationReq; res: ConversationRes };
+  store_search: { req: StoreSearchReq; res: StoreSearchRes };
+  ui_get_layout: { req: EmptyPayload; res: UiLayout };
+  ui_set_layout: { req: UiLayout; res: UiLayout };
 }
 
 export type CommandName = keyof IpcContract & string;
@@ -554,6 +674,14 @@ export const COMMAND_ALLOWLIST = [
   'settings_get',
   'settings_put_provider',
   'settings_set_theme',
+  'store_autotitle_conversation',
+  'store_create_conversation',
+  'store_delete_conversation',
+  'store_list_conversations',
+  'store_rename_conversation',
+  'store_search',
+  'ui_get_layout',
+  'ui_set_layout',
 ] as const;
 
 /**

@@ -21,7 +21,8 @@ use vela_core::credential::Auth;
 use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
-use crate::error::{detail, Capability, ProviderError, ProviderResult, TransportFailure};
+use crate::diagnostic::{Cause, ConfiguredModelId, Diagnosis};
+use crate::error::{Capability, ProviderError, ProviderResult, TransportFailure};
 use crate::http::{HttpRequest, HttpTransport};
 use crate::provider::{ModelInfo, RequestContext};
 
@@ -145,18 +146,11 @@ impl Endpoint {
     /// recorded, so "no credential" must mean "no header".
     fn authenticate(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = resolve_auth(self.secrets.as_ref(), &self.auth).map_err(|error| {
-            ProviderError::AuthFailed {
-                detail: detail(match error {
-                    SecretError::NotFound { .. } => {
-                        "this provider is configured to send a credential, but none is stored"
-                            .to_owned()
-                    }
-                    SecretError::Unavailable { .. } => {
-                        "the credential store could not be read".to_owned()
-                    }
-                    other => other.to_string(),
-                }),
-            }
+            ProviderError::auth_failed(Diagnosis::local(match error {
+                SecretError::NotFound { .. } => Cause::CredentialMissing,
+                SecretError::Unavailable { .. } => Cause::CredentialStoreUnreadable,
+                _ => Cause::CredentialStoreFailed,
+            }))
         })?;
         Ok(request.with_auth(&applied))
     }
@@ -170,12 +164,11 @@ impl Endpoint {
             return Err(crate::openai_compatible::map_error_response(
                 response.status,
                 &body,
-                "",
+                &ConfiguredModelId::unknown(),
                 response.header("retry-after"),
             ));
         }
-        body.json()
-            .map_err(|error| ProviderError::malformed(format!("response was not JSON: {error}")))
+        body.decode_json()
     }
 
     pub async fn get_json(&self, url: String, context: &RequestContext) -> ProviderResult<Value> {
@@ -188,8 +181,9 @@ impl Endpoint {
         body: &Value,
         context: &RequestContext,
     ) -> ProviderResult<Value> {
-        let bytes = serde_json::to_vec(body)
-            .map_err(|error| ProviderError::malformed(format!("could not encode: {error}")))?;
+        let bytes = serde_json::to_vec(body).map_err(|_| {
+            ProviderError::malformed(Diagnosis::local(Cause::RequestCouldNotBeEncoded))
+        })?;
         self.json(HttpRequest::post_json(url, bytes), context).await
     }
 }
@@ -285,7 +279,10 @@ pub(super) async fn discover(
 
     if !reached {
         return Err(unreachable.unwrap_or_else(|| {
-            ProviderError::transport(TransportFailure::Connect, "no endpoint answered")
+            ProviderError::transport(
+                TransportFailure::Connect,
+                Diagnosis::new(Cause::NoEndpointAnswered),
+            )
         }));
     }
 
@@ -370,7 +367,7 @@ pub(super) async fn list_models(
         Some(error) => Err(error),
         None => Err(ProviderError::unsupported(
             Capability::ModelListing,
-            "this endpoint does not enumerate models",
+            Diagnosis::new(Cause::CapabilityNotOfferedByBackend),
         )),
     }
 }
@@ -695,15 +692,15 @@ mod tests {
     fn only_a_transport_level_failure_counts_as_never_having_reached_a_server() {
         assert!(!reached_the_server(&ProviderError::transport(
             TransportFailure::Connect,
-            "refused"
+            Cause::ConnectionFailed
         )));
         assert!(reached_the_server(&ProviderError::transport(
             TransportFailure::Request { status: 404 },
-            "not found"
+            Cause::EndpointRejectedRequest
         )));
-        assert!(reached_the_server(&ProviderError::AuthFailed {
-            detail: detail("nope")
-        }));
+        assert!(reached_the_server(&ProviderError::auth_failed(
+            Cause::CredentialRejected
+        )));
     }
 
     #[test]

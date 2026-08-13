@@ -1,0 +1,24 @@
+{
+  "origin": "http://127.0.0.1:33999",
+  "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
+  "scripts": [
+    "/assets/index-DRujsQ8p.js"
+  ],
+  "landmarks": {
+    "statusLine": 1,
+    "startAConversation": 1,
+    "searchEverything": 1,
+    "navigation": 1
+  },
+  "trapped": [],
+  "offOriginRequests": [],
+  "sameOriginRequests": [
+    "http://127.0.0.1:33999/index.html",
+    "http://127.0.0.1:33999/assets/index-DRujsQ8p.js",
+    "http://127.0.0.1:33999/assets/index-BYd-2Z9b.css"
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "meterBeforeTyping": "Context window not reported by this endpoint · about 0 tokens in this turn",
+  "meterAfterTyping": "Context window not reported by this endpoint · about 220,004 tokens in this turn"
+}

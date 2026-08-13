@@ -1,0 +1,26 @@
+id	verdict	claim	detail
+P1	PASS	the production bundle mounts a non-empty React tree at #root	5176 bytes of markup
+P2	PASS	every feature that only meets at the composition root is on screen	{"statusLine":1,"startAConversation":1,"searchEverything":1,"navigation":1}
+P3	PASS	the page booted the built bundle, not a source module	["/assets/index-DRujsQ8p.js"]
+P4	PASS	no uncaught exception during mount	
+P5	PASS	no console error during mount	
+P6a	PASS	the traps were installed before the document had a body	document.readyState was loading
+P6b	PASS	the app made zero fetch/XHR/WebSocket/EventSource/beacon calls of its own	[]
+P6c	PASS	Chromium itself saw no request leave the page origin	[]
+P7	PASS	the app names the fake it is running on rather than implying a real one	browser / memory-fake (not a real keychain) / Bridge ready · memory-fake
+P8	PASS	with no endpoint configured the meter states no figure at all	the meter is not rendered before a model is selected
+P2b	PASS	opening a conversation brings up the composer, the send action and the model bar	{"composer":1,"send":1,"modelSwitcher":1,"capabilityReadout":1}
+P9	PASS	typing a very large draft moves the context meter off zero	before="Context window not reported by this endpoint · about 0 tokens in this turn" after="Context window not reported by this endpoint · about 220,004 tokens in this turn"
+P10	PASS	the meter never claims a window this endpoint did not report	"Context window not reported by this endpoint · about 220,004 tokens in this turn"
+P13	PASS	a sent turn appears in the transcript	{"user":1,"assistant":1}
+P14	PASS	navigating to another conversation leaves the first transcript behind	{"user":0,"assistant":0}
+P15	PASS	coming back restores the turn — the surface reads it from the store, not from its own state	{"counts":{"user":1,"assistant":1},"sample":"The workstation in the study · a-local-model\nCapabilities unknown\n\nContext window not reported by this endpoint · about 36 tokens in this turn\n\nText file\n\na sen"}
+P16	PASS	the restored turn is the one that was sent, not a re-run of it	1 -> 1 adapter chat calls
+P11	PASS	configuring an endpoint and typing 880,000 characters still produces zero browser requests	0 trapped, 0 off-origin
+P12	PASS	no uncaught exception across the whole session	
+K1	PASS	CONTROL: P1/P2 fail against a page with an empty #root	
+K2a	PASS	CONTROL: the in-page traps record fetch, XHR, WebSocket and EventSource when they are used	["fetch","xhr","websocket","eventsource"]
+K2b	PASS	CONTROL: Chromium's own request event sees an off-origin request when one is made	["http://127.0.0.1:9/v1/models","http://127.0.0.1:9/events"]
+K3	PASS	CONTROL: P4/P5 fail when an error is actually thrown	1 console, 1 uncaught
+K4	PASS	CONTROL: P9 fails on an empty draft — the meter is not stuck at a large number	"Context window not reported by this endpoint · about 0 tokens in this turn"
+K5	PASS	CONTROL: the served policy is the shipping CSP and it confines connections to self	default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src

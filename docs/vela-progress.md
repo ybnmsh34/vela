@@ -1482,6 +1482,67 @@ Environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · i7-11700K �
 > resolved at runtime, `keychain-runtime` must be **re-requested** against the new sha. Recorded so
 > it is not quietly assumed to hold forever.
 
+## 🟢 Composition-root wave, integration: a fifth instance, found in the wave's own output
+
+The five builders' work reconciled without a single textual conflict — the rename, the Rust
+composition root, the React composition root, the schema chokepoint and focus/typography landed as
+one linear history and the whole gate is green on it. The reconciliation found something else.
+
+**The transcript had a store, and nothing ever wrote to it.**
+
+| Half | State |
+|---|---|
+| `src-tauri/src/ipc/transcript.rs` | written, 750 lines, its own integration tests |
+| `store_append_message` / `store_list_messages` / `store_update_message` | typed in `contract.ts`, in `COMMAND_ALLOWLIST` |
+| `BrowserAdapter` fake | written, `browser-adapter-transcript.test.ts`, 14 assertions green |
+| `ConversationSurface`'s `initialEntries` prop | documented as *"a transcript restored from the store"* |
+| Anything under `src/` calling any of it | **nothing** |
+
+`grep -rn "store_append_message\|store_list_messages" src/ | grep -v src/platform/` returned
+nothing. The transcript lived in React state, and `App.tsx` destroys that state **by design** — it
+remounts the surface on `key={conversationId}` so switching conversations cannot leave the previous
+one's stream attached. So clicking another conversation and clicking back lost everything said.
+
+It is the same defect as the other four, and it was invisible for the same reason: the Rust tests
+drove `vela_lib::ipc::*` directly, the adapter tests drove `BrowserAdapter` directly, and no test
+had ever *left a conversation and come back*. A second symptom was hiding in plain sight —
+`use-conversations.ts` only asks the host to derive a title for a conversation with
+`messageCount > 0`, so every conversation also kept its placeholder name forever.
+
+**Fixed at `01bac6c`.** A transcript repository over the adapter, a pure store↔transcript
+translation, a read on mount and a write per settled turn, and the conversation id handed down from
+`App.tsx`. Both new assertions were RED before and green after; the retry-replacement assertion was
+confirmed non-vacuous by disabling the delete (3 stored messages instead of 2).
+
+**Two things the fix deliberately does not do,** because the store cannot carry them honestly, and
+both are open rather than settled:
+
+- **A restored failed turn has no error box.** `errorMessage` is a sentence; `ChatError` is a closed
+  union carrying a `Diagnosis`. Widening one back into the other would state *why* a turn failed on
+  the strength of a string. The `failed` phase survives; the explanation does not.
+- **Tool calls are stored but not replayed.** `emulated` is not a stored field, and it is the flag
+  that decides whether the UI says "this model has no native tool calling, so Vela recovered these
+  from its text". Restoring with `emulated: false` would make every restored emulated call claim it
+  was native.
+
+Both are the ContextMeter argument applied to a new surface: a component that has no honest way to
+say something should say nothing rather than compute a confident answer from an input that cannot
+support one. The fix for either is a wider stored shape, not a cleverer reconstruction.
+
+**One bug the fix introduced and the tests caught before it shipped:** the mount-time restore could
+resolve *after* the user had already sent a turn, and replaced it with the transcript as it was a
+moment earlier — the message vanishing as they watched. The restore is now applied only to a surface
+nothing has happened on yet.
+
+### Gate, on an isolated worktree with a fresh cargo target dir
+
+`pnpm typecheck` · **1302** vitest assertions across 58 files · **135** harness assertions ·
+`pnpm build` · `cargo fmt --check` · `cargo clippy -D warnings` · `cargo build --locked` ·
+`cargo test --locked` · `check-transcripts.sh` (mock-matrix byte-identical) · `secret-scan.sh`.
+
+VERIFIED-BY-FAKE (conventions §10): `BrowserAdapter` is an in-memory host. The renderer reaches
+the store commands; nothing here proves SQLite holds a byte.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

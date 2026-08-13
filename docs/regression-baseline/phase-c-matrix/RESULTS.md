@@ -1,9 +1,26 @@
 # GATE M Part 1 — Phase C — the conversation surface meets the capability matrix
 
-**Verdict: PASS WITH FINDINGS.** No profile crashed the UI, hung it, leaked reasoning markup,
-dropped a malformed tool call, or offered an affordance its endpoint cannot serve. Two findings
-are recorded below; neither is a misrepresentation to the user, and both are gaps between
-components that work and a composition root that does not connect them.
+**Verdict: FAIL, on the context axis alone.**
+
+On the capability axes the surface is sound: no profile crashed the UI, hung it, leaked
+reasoning markup, dropped a malformed tool call, or offered an affordance its endpoint cannot
+serve. Twenty-one of twenty-two assertions pass on all four profiles.
+
+The failure is C5, and it is the same on all four. The gate asked, in as many words, whether the
+UI *"shows the endpoint's real window and warns before exceeding it"*. It shows the window. It
+does not warn — and while it is not warning, it displays **"About 0 of 200,000 tokens"** with a
+message in the composer that is four times the window. That is not a missing warning; it is a
+quantity on screen that is false, and a user who reads it concludes they have room they do not
+have. See FINDING 2.
+
+> **A revision, recorded rather than quietly made.** The first draft of this report classed C5
+> as a wiring gap and said neither finding was a misrepresentation. That was wrong, and by my
+> own criterion: the surface states a number about the turn the user is holding, and the number
+> is wrong. A concurrent reviewing session reached the same conclusion independently and said so
+> in commit `11c46d1`; I had already been re-reading the criterion when it landed, and I record
+> both facts so the next reader can weigh the agreement for what it is worth rather than mistake
+> it for two independent findings. FINDING 1 stands as classified — it is a blocking absence,
+> not a false statement.
 
 | | frontier | mid-local | small-local | hostile |
 |---|---|---|---|---|
@@ -87,9 +104,10 @@ matrix could be exercised. **The UI surface is ready for a host that registers p
 host is not.** The fix belongs in `src-tauri/src/` — build the registry from the settings
 repository, and rebuild it when `settings_put_provider` / `settings_delete_provider` change it.
 
-### FINDING 2 — the context meter never sees the message you are about to send
+### FINDING 2 — the context meter never sees the message you are about to send, and says "About 0"
 
-**Severity: significant. The gate asked specifically for this.**
+**Severity: gate-failing. This is the one assertion that fails, and it fails on all four
+profiles.**
 
 The gate criterion was "does the UI show the endpoint's real window **and warn before exceeding
 it**". The first half holds on every profile (C4). The second does not (**C5, the only failing
@@ -111,6 +129,19 @@ purely the wiring at the composition root: nothing hands the turn's text to the 
 
 Consequence for a user: a message that will not fit is discovered by sending it. On `hostile`
 (4,096 tokens) that is easy to hit by accident.
+
+**Why this is a misrepresentation and not only an omission.** A meter that could not measure the
+draft could say so — `contextBudget` already has an `unknown` verdict for exactly that case, and
+`ContextMeter` renders it as a sentence with no bar. Instead the surface computes a figure from
+an empty input and prints it as fact: *"About 0 of 200,000 tokens"*, with the bar drawn at zero,
+above a composer holding 880,000 characters. The user is told they have room. Phase C's own
+requirement is that degradation be **visible**; on the context axis the surface is not merely
+silent, it is confidently wrong. That is why the gate verdict is FAIL rather than PASS-with-
+findings.
+
+**The narrowest honest fix** is not a redesign: pass the composer's draft and the transcript
+into `ModelWorkspace`'s existing `turnTexts` prop. Until then, a meter that reported `unknown`
+whenever it cannot see the turn would already be an improvement over one that reports zero.
 
 ### FINDING 3 — the composer cannot ask for tools, so no shipping path reaches a tool call
 
@@ -324,10 +355,16 @@ That is the measured fact the architecture is built on, re-confirmed from the re
 | shows an affordance the profile cannot support | Never. Image attach exists only on `frontier`; nothing is offered before a probe |
 | leaks reasoning markup | Never — including mid-stream, and including the block hostile never closes |
 | silently drops a malformed tool call | Never. Both hostile calls are on screen, marked refused, with the raw bytes available |
-| misrepresents what the model can do | Not observed. Every capability row, window figure and degradation matched the endpoint's real behaviour |
+| misrepresents what the model can do | Every capability row, window figure and degradation matched the endpoint's real behaviour. But the context meter states a figure about the turn that is false whenever the composer holds text — see FINDING 2 |
 
-**PASS**, with FINDING 1 blocking Phase C completion (the packaged app cannot reach an endpoint
-at all) and FINDING 2 leaving a promised warning unwired.
+**FAIL.** One axis, four profiles, one assertion: the context meter. Everything the gate asked
+about *capabilities* — reasoning, tool calls, vision, degradation, errors, credentials, egress —
+holds on every profile.
+
+FINDING 1 is separately blocking for Phase C: the packaged application cannot reach any endpoint
+at all, because nothing registers a provider. It is not counted in the verdict above only
+because it is invisible from inside the matrix — the bridge had to fix it before a single
+screenshot could be taken.
 
 ---
 

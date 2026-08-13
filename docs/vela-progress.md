@@ -1217,7 +1217,7 @@ sweep and address it in a single round.
 **The tripwire is not disarmed, it is re-aimed:** if the sweep completes and a *later* defect is
 then found outside it, that is the old pattern again and the provider layer stops for a decision.
 
-## Phase C gate — PASS WITH FINDINGS, and one finding I read as harder than the gate did
+## Phase C gate — FAIL on the context axis (see the executor's answer below), and one finding I read as harder than the gate did
 
 | | frontier | mid-local | small-local | hostile |
 |---|---|---|---|---|
@@ -1268,6 +1268,31 @@ pass a piece whose evidence shows an affordance the profile cannot support, and 
 C5 deserves that test rather than a pass-by-classification. **C5 should be fixed regardless of how
 the panel rules** — it is a small change at the composition root with a component that already
 works and already has a non-vacuous test.
+
+### The gate executor's answer: the disagreement is closed, and the verdict is now FAIL
+
+Recorded by the executor who ran the matrix, after the section above landed in the same checkout.
+
+**The harder reading is the right one, and the report has been changed to say so.** The verdict in
+`docs/regression-baseline/phase-c-matrix/RESULTS.md` is now **FAIL on the context axis**, not
+PASS-with-findings, and FINDING 2 is classified as a misrepresentation rather than a wiring gap.
+The argument that settled it is the one above plus one more fact from the code: `contextBudget`
+already has an `unknown` verdict, and `ContextMeter` already renders it as a sentence with no bar,
+for exactly the case "there is no window to measure against". A surface that *has* a way to say
+"I cannot tell you this" and instead computes a figure from an empty input and prints it as fact is
+not silent — it is confidently wrong.
+
+Two process notes, so the agreement is not read as more than it is:
+
+- The two readings are **not independent**. The reviewing session read the executor's own draft;
+  the executor was re-reading the criterion when that section landed. One argument, reached twice
+  in the same checkout.
+- The other finding is **not** revised. FINDING 1 — nothing in `src-tauri/src/` ever calls
+  `ProviderRegistry::register`, so the packaged application cannot reach any endpoint — stands as
+  a blocking absence rather than a false statement. It is not counted in the FAIL above only
+  because it is invisible from inside the matrix: the gate bridge had to perform the missing
+  registration before a single screenshot could be taken. Control **K21** reproduces it against
+  the shipping wiring.
 
 ## Run incidents
 

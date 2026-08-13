@@ -447,6 +447,78 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     expect(indexesById("if (modelId.trim() === '') return 'noModelChosen';")).toBe(false);
     expect(indexesById('if (providerId.length > MAX) reject();')).toBe(false);
   });
+
+  /**
+   * Added by the GATE M Part 1 Phase C UI matrix.
+   *
+   * The matrix drove one surface against four endpoints whose windows are
+   * 200,000 / 32,768 / 8,192 / 4,096 tokens, and the meter said the right thing
+   * every time because the number came off the capability report. The way that
+   * stops being true is not a `provider.id` branch — it is a *default*. A
+   * fallback window is a claim about a model, made by the renderer, on no
+   * evidence; and the first fallback anyone reaches for is whatever the common
+   * local runtime happens to ship with, which is a backend identity wearing a
+   * number.
+   *
+   * `contextBudget` already answers `unknown` when the endpoint reports none,
+   * and `ContextMeter` draws no bar in that case. This keeps it that way.
+   */
+  it('the context budget has no window of its own to fall back on', () => {
+    const paths = [
+      join(SRC_ROOT, 'lib', 'context-budget.ts'),
+      join(SRC_ROOT, 'features', 'models', 'ContextMeter.tsx'),
+    ];
+
+    const offenders = paths.flatMap((path) => {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      return source
+        .split('\n')
+        .map((line, index) => ({ line, at: index + 1 }))
+        .filter(({ line }) => /\b\d{4,}\b/.test(line) || /\b\d+\s*\*\s*1024\b/.test(line))
+        .map(({ line, at }) => `${relative(REPO_ROOT, path)}:${String(at)} — ${line.trim()}`);
+    });
+
+    expect(
+      offenders,
+      'a token count written into the renderer is a window Vela invented; the endpoint reports it or it is unknown',
+    ).toEqual([]);
+
+    // `capability-rows.ts` is excluded from the literal scan because
+    // `formatTokens` legitimately divides by 1024 to write "32K". What it must
+    // not do is substitute a number when the endpoint reported none.
+    const rows = stripComments(readFileSync(join(SRC_ROOT, 'features', 'models', 'capability-rows.ts'), 'utf8'));
+    const substitutes = rows
+      .split('\n')
+      .filter((line) => /contextWindowTokens|maxOutputTokens/.test(line))
+      .filter((line) => /(\?\?|\|\|)\s*\d/.test(line));
+    expect(substitutes, 'a default window is a claim about a model made on no evidence').toEqual([]);
+
+    // The unknown state must stay reachable and stay wordless about size — it
+    // is what every unprobed model shows, on every backend.
+    const budget = readFileSync(join(SRC_ROOT, 'lib', 'context-budget.ts'), 'utf8');
+    expect(budget, 'null must survive as null').toMatch(/windowTokens === null/);
+  });
+
+  /**
+   * Also from the Phase C UI matrix. That gate added a second harness
+   * (`tests/harness/ui-bridge`) which, unlike the mock provider, deliberately
+   * *imports* the app: it mounts the real `<App/>` against a relay adapter. The
+   * direction that must stay forbidden is the other one — and the existing
+   * guard in `tests/harness/mock-provider/no-app-import.test.ts` covers it by
+   * pattern (`tests/harness`), which is easy to narrow by accident later.
+   * Naming it here means a change to that regex fails a test that says why.
+   */
+  it('the renderer never reaches for the UI-matrix harness', () => {
+    const offenders = sourceFiles(SRC_ROOT, ['.ts', '.tsx'])
+      .filter((path) => !path.includes('.test.'))
+      .filter((path) => /ui-bridge|RelayAdapter/.test(stripComments(readFileSync(path, 'utf8'))))
+      .map((path) => relative(REPO_ROOT, path));
+
+    expect(
+      offenders,
+      'the gate harness mounts the app; the app must never mount the harness',
+    ).toEqual([]);
+  });
 });
 
 /** An id tested against a hard-coded name — the exact branch conventions §0.3 forbids. */

@@ -8559,12 +8559,26 @@ fn normalised_renderings(error: &ProviderError, sink: &CollectingSink) -> Vec<(S
 fn strip_correlation(text: &str) -> String {
     let mut out = text.to_owned();
 
-    // 1. `Display`: ` [ref 00000000000000ab]`.
-    while let Some(start) = out.find("[ref ") {
-        match out[start..].find(']') {
-            Some(offset) => out.replace_range(start..start + offset + 1, "[ref <n>]"),
-            None => break,
+    // 1. `Display`: ` [ref 00000000000000ab]`. Built forwards rather than
+    //    replaced in place — the first draft replaced `[ref …]` with a string
+    //    that itself starts `[ref `, so the loop matched its own output and the
+    //    recorder hung for ten minutes. Caught by the hang, fixed here, re-run.
+    {
+        let mut rebuilt = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(at) = rest.find("[ref ") {
+            rebuilt.push_str(&rest[..at]);
+            rebuilt.push_str("[ref <n>]");
+            match rest[at..].find(']') {
+                Some(offset) => rest = &rest[at + offset + 1..],
+                None => {
+                    rest = "";
+                    break;
+                }
+            }
         }
+        rebuilt.push_str(rest);
+        out = rebuilt;
     }
 
     // 2. `Debug`, in both the compact and the pretty spelling:

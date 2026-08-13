@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | ❌ r3 | ✅ r3 | ❌ r3 | ✅ r3 | ✅ **PASS r3** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL r3 2/4 — round 4 building** | 4 |
+| **B** provider abstraction | ❌ r3 | ✅ r3 | ❌ r3 | ✅ r3 | ⛔ **FAIL r4 — FINDING 3** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ⛔ **GATE FAIL r4: 471 assertions, 8 failures** | 4 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -783,6 +783,113 @@ of implicit guarantee this crate has already been burned by twice.
 
 Nothing here is evidence about the *other* untested `CompatProvider` surfaces — discovery, capability
 probing, tool emulation. Only the credential-in-error path was driven.
+
+## Phase B round 4 — GATE M Part 1 EXECUTED. ⛔ Gate FAILS on a new finding.
+
+**Executor's entry.** Fresh executor: ran no prior round and wrote none of round 4's fixes.
+Full evidence in `docs/regression-baseline/phase-b-matrix/RESULTS.md` (rewritten for round 4)
+and `.../structural/`.
+
+**471 gate assertions, 8 failures.** Round 1: 265/5. Round 2: 361/16. Round 3: 373/0.
+**Round 4: 471/8.** Every case re-run **live**, not carried forward, including round 3's
+compile probes and defect injections.
+
+### Both of the round-3 panel's FAILs are closed, and were attacked rather than read
+
+* **Credential egress on redirect — CLOSED.** New case **12**. The subject of every assertion
+  is a recording listener on a port the user never configured: **zero connections, zero bytes**,
+  across all four `Auth` variants (five bindings) × `complete()` and `stream()`. The assertion is
+  *zero bytes*, not *no credential in the bytes*, because a prompt is user data too.
+  The **positive control** removes the policy and watches the canary arrive — for exactly the
+  three bindings `reqwest` does not protect and not for `Bearer`, which pins the upstream
+  behaviour as a measurement. Two things nobody had driven were added: the full status sweep
+  (301/302/303/307/308, all refused) and the same-authority hop, which **is** followed and is
+  now on the record with its evidence rather than only in a doc comment.
+* **Encoding-defeated redaction — the briefed encodings are CLOSED.** New case **13**, driven in
+  FINDING 2's exact shape. Verbatim, PHP's `\/` and every-char-`\uXXXX` are all removed, on both
+  bindings, both response shapes and both transports — and the peers put **no literal copy** on
+  the wire, asserted from their own send buffers, so the literal pass genuinely had nothing to
+  match. A fourth spelling nobody briefed, **double JSON escaping**, is closed too, by the
+  *second* barrier rather than the first.
+
+### ⛔ FINDING 3 — three spellings of a credential reach every error surface
+
+The scrub resolves **JSON escapes** — the right mechanism, and it holds. **Percent-encoding is
+handled by the opposite mechanism:** a hard-coded second literal, added in one place, for one
+binding. So:
+
+| spelling | verdict |
+|---|---|
+| percent-encoded UPPERCASE hex, on a **header** binding | ⛔ READABLE |
+| percent-encoded lowercase hex, on **either** binding | ⛔ READABLE |
+| every byte percent-encoded | ⛔ RECONSTRUCTIBLE in one decode pass |
+| HTML entities (`&#x2f;`) | ⛔ READABLE |
+
+Landing in `Display`, `Debug`, **the serde JSON that crosses the IPC bridge**, and the
+`StreamEvent` the UI is handed — FINDING 2's four surfaces exactly.
+
+**The sharpest case is the control, not the exotic one.** Uppercase percent is the spelling Vela
+itself writes, and it is deliberately a needle — but the needle is added only inside
+`RequestUrl`, and a header-bound credential never goes through `RequestUrl`. So **`x-api-key`
+(Anthropic) and `x-goog-api-key` (Google) carry a strictly smaller needle set than the query
+binding does.** That is an existing intent implemented for one of three shapes, not a new
+requirement the executor invented.
+
+**The honest counter-argument is in RESULTS.md §5.3** and is not hidden: a defensible narrower
+rule is *"remove what Vela writes, and what a decoder Vela runs produces"*, under which percent
+and HTML spellings are out of scope because Vela never percent- or entity-decodes a body — a
+human does. On that reading FINDING 3 is materially less severe than FINDING 2. It is still
+recorded as a FAIL because the uppercase-percent case is not covered by that narrower rule
+either, and because the round-4 instruction was explicit that the canary must reach none of
+those four surfaces.
+
+The finding lives in the tree as one **`#[ignore]`d, deliberately-red** test whose ignore reason
+says so at the site; deleting the attribute is the fix's acceptance test. `pnpm verify` is
+**exit 0**, so `cargo test` keeps meaning *"nothing NEW is broken"* — a permanently-red suite
+trains a reader to skip the failure list, which is how a second defect hides behind a first.
+The gate verdict is carried by `record.sh`'s **exit 1** and by RESULTS.md.
+
+### Latency finally measures the path that ships
+
+Round 3's latency case used `Auth::None`, so the empty-scrubber fast path short-circuited and
+the medians were of a path that does not run once a user configures a key. Case 07c now runs a
+credentialed arm beside it: **2.1–3.8 ms credentialed**, and **redaction costs about half a
+millisecond per turn** (286–756 µs). That number was not previously available.
+
+### Two more holes closed that the evidence base had admitted to
+
+* **A credential fragmented across two real TCP writes.** Round 3 §8 recorded this as unprovable
+  here — `hold_back_len` was exercised only by a scripted body. A peer that actually fragments,
+  with the split offset swept so it lands inside the credential and inside a `\/` escape, closes
+  it. Green, and it asserts from the peer's send buffer that at least four offsets really did cut
+  the credential in half, so it cannot pass by never having split anything.
+* **The canary containment tripwire, generalised** to three canaries with three different
+  answers about where each may appear.
+
+### Controls: 36 experiments, 39 expected FAILs, and the counting rule is stated
+
+Round 3: 32/36. Round 4 adds four injections — the redirect policy removed, `authority_of`
+dropping the **port**, and each redaction barrier separately — and they are **disjoint**:
+the two redirect defects turn 4 tests red and leave every redaction suite green; the two
+redaction defects turn 2 and 1 red respectively and leave the redirect suite green.
+
+**A measured correction to round 3's own table.** Round 3 recorded DEFECT 1 turning 17 tests
+red. Re-run on this tree it turns **5**. That is not lost coverage — it is round 4's second
+barrier catching what the first no longer does. The cost, stated plainly: a single control now
+under-reports how much redaction it disabled, which is exactly why the two barriers are injected
+separately.
+
+### The executor's instrumentation was wrong once and was fixed rather than filed
+
+The first draft of the lowercase-percent spelling lowercased the *whole* credential rather than
+only its hex digits — a spelling no encoder produces — and the probe duly reported a leak that
+was an artefact of its own construction. Corrected before anything was believed; the corrected
+spelling still leaks. **Fourth consecutive round in which the gate executor caught its own
+tooling lying.**
+
+**VERIFIED-BY-FAKE**, per conventions §10. `MemoryStore`, deterministic mock endpoints,
+deliberately broken loopback sockets. No real model, no real keychain, no packaged binary.
+**GATE M Part 2 remains untouched, unverified, and deferred to the desktop session.**
 
 ## Run incidents
 

@@ -1085,6 +1085,43 @@ error-detail redesign** and could proceed in parallel with it.
 
 ## Run incidents
 
+**2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**
+
+I launched Phase C (frontend, `src/`) and Phase B2 (backend, `src-tauri/`) as concurrent workflows
+against **one working tree**. They are decoupled in *files* but share **one git index**, and
+`git add` + `git commit` is not atomic. B2's commit `3e43e81` therefore swallowed the Phase C
+navigation surface the other session had just staged.
+
+**The B2 agent caught it and handled it correctly**, in its own words:
+
+> Left in place — un-committing a parallel session's finished work, in a repo that has already lost
+> three hours to a snapshot rollback, trades the wrong thing for a tidy history. Path-limited
+> `git commit -- <paths>` from here on.
+
+That is the right call twice over: it preferred a slightly muddled history to risking another
+session's work, and it fixed the mechanism rather than just the symptom.
+
+**The error was mine, and the brief already warned against it:** *"parallel builders work on
+separate branches or worktrees for decoupled pieces."* Phase C and B2 are exactly that — different
+languages, different directories, no shared files — and should have been launched with
+`isolation: 'worktree'`. I did not, because they looked disjoint by *path*, and I was thinking about
+file conflicts rather than about the index they share.
+
+**Practice adopted, effective now:**
+
+1. **Concurrent workflows on decoupled pieces get `isolation: 'worktree'`.** Path-disjointness is
+   not isolation; the index is global.
+2. **Path-limited commits only** while more than one workflow is live — mine included. A blanket
+   `git add -A` from the lead is the same defect the agent just fixed in itself.
+3. **The lead does not snapshot *source* while two workflows are live.** Evidence and docs, yes —
+   they are irreplaceable and nobody is mid-experiment in them. Source is being committed by the
+   agents themselves, with path limits, and a lead snapshot can only cross-stage or capture a
+   half-written state. This is the third time the snapshot habit has needed narrowing, and the
+   narrowing is the right direction: protect what cannot be regenerated, and stay out of the way of
+   what can.
+
+
+
 **2026-08-13 ~08:03Z — a commit swept in a parallel builder's staged work. Left as-is, deliberately.**
 
 Commit `3e43e81` ("Record FINDING 3's closure…") carries, besides its own two files, the entire

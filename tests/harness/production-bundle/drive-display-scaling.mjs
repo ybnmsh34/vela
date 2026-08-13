@@ -42,6 +42,28 @@
  * `--controls` re-serves the same bundle with the fix removed — three separate
  * damages, one per assertion family — and requires each assertion to FAIL. An
  * assertion that cannot fail is not evidence.
+ *
+ * ## THE READING RULER (`R…`), and the assertion this file used to get wrong
+ *
+ * This driver's `…-h` assertion compared the transcript column's CENTRE with
+ * the composer field's. Both are centred in the same window, so a difference of
+ * *width alone* is invisible to it: it printed `column 456.0 vs field 456.0`
+ * and passed while the reader's text overhung the composer by 12px on each side
+ * at 880px — the regression `scrollbar-gutter: stable both-edges` introduced.
+ * Right subject, wrong quantity, and the third time this repository has been
+ * bitten by that shape.
+ *
+ * It now compares **left edge, right edge and width**, through the Phase C
+ * harness's own `oneVerticalRuler`, and the `R…` sweep reads the same three
+ * quantities at three window widths — 1440 / 960 / 880 — with the sidebar
+ * dragged to its maximum, plus the reservation each box makes, as a number.
+ *
+ * **Its control is a bundle, not a damage.** Point `--dist` at a `dist/` built
+ * from the tree that shipped the gutter and `R960-*` and `R880-*` fail with
+ * `text 388–844 (456px), composer 376–856 (480px)`, which is what the desktop
+ * session measured on WebView2. `--baseline` is a *different* control — the
+ * tree before the platform-defaults fix — and the sweep is deliberately not run
+ * against it, because that tree predates the gutter and passes the sweep.
  */
 
 import { createServer } from 'node:http';
@@ -330,8 +352,12 @@ if (baselineDist !== undefined) {
   const baseline = await serveDist(baselineDist);
   const baselineOrigin = `http://127.0.0.1:${baseline.address().port}`;
   try {
+    // The ruler sweep is deliberately NOT run here. `--baseline` means the tree
+    // before the *platform-defaults* fix, which is before `scrollbar-gutter`
+    // existed at all — a tree the sweep passes on, correctly, on an engine that
+    // overlays its scrollbars. Its own control is `--dist <the bundle that
+    // shipped the gutter>`, which fails `R960-*` and `R880-*`; see the header.
     await measureLayout(browser, baselineOrigin, 'B0', true);
-    await measureReadingRuler(browser, baselineOrigin, 'B0-R', true);
     await measureColorScheme(browser, baselineOrigin, true, 'B0-S');
   } finally {
     baseline.close();
@@ -507,7 +533,7 @@ async function measureLayout(browser, origin, prefix, expectFailure = false) {
   }
 }
 
-async function measureReadingRuler(browser, origin, prefix, expectFailure = false) {
+async function measureReadingRuler(browser, origin, prefix) {
   const readings = [];
   for (const { width, what } of RULER_WIDTHS) {
     const ruler = await readRulerAt(browser, origin, width);
@@ -525,23 +551,6 @@ async function measureReadingRuler(browser, origin, prefix, expectFailure = fals
           : `text ${String(text.left)}–${String(text.right)} (${String(text.width)}px), composer ${String(field.left)}–${String(field.right)} (${String(field.width)}px), sidebar ${String(ruler.sidebarWidth)}px`,
       held: oneVerticalRuler(ruler).pass,
     });
-  }
-
-  // A BASELINE RUN IS ONE ASSERTION, NOT TWELVE INVERTED ONES. The pre-fix
-  // bundle holds the ruler perfectly well at 1440px — that reading is correct
-  // and is how the regression reached the tree — so requiring every line to
-  // fail would manufacture failures at the widths that are fine. A gate that
-  // manufactures failures makes real ones unbelievable. What must be true of
-  // the pre-fix bundle is that this sweep catches it *somewhere*.
-  if (expectFailure) {
-    const broken = readings.filter((r) => !r.held);
-    assert(
-      `${prefix}-catches-the-regression`,
-      'the sweep sees the pre-fix bundle break the ruler at some width',
-      broken.length > 0,
-      readings.map((r) => `${String(r.width)}px ${r.held ? 'held' : 'BROKE'}: ${r.shown}`).join(' | '),
-    );
-    return;
   }
 
   for (const r of readings) {

@@ -561,3 +561,249 @@ The Rust side is fine — `settings_set_theme` over IPC persisted `dark` across 
 simply never calls it and never reads it back. `theme-store.ts`'s own header states the convention
 ("No IPC calls inside a store: call a repository from `src/data/`, then set the result"); the
 repository exists and is correct, it just has no caller.
+
+---
+
+## GATE-M2-real-model — real-model (RE-RUN, supersedes the FAIL at `51b5e163`)
+
+- commit: `84c256feccb016e00ba240e8368aa1a17fa0ea6c`
+- critic: real-model
+- verdict: **PASS**
+- environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · llama.cpp `b8833-45cac7ca7`,
+  Qwen3.6-27B Q5_K_M on a Tesla V100 32GB, unmodified and not restarted throughout.
+
+**All four blocking findings from the earlier FAIL are fixed, and I verified each rather than
+taking the fix on trust.**
+
+1. **The shipping host now reaches a real endpoint.** A new composition root
+   `src-tauri/src/provider_host.rs` builds a `CompatProvider` per configured endpoint
+   (`:256`) and registers it (`:180`). Verified live in the running app, not from source:
+   `models_list` **enumerated the real model off the live server**, `chat_send` returned
+   `accepted: true` rather than `NOT_FOUND`, and a full turn rendered in the window — real
+   markdown, real answer, from real model bytes. This was the largest gap of the previous verdict.
+2. **Vision now works through Vela's own IPC.** `ChatMessageInput` gained
+   `parts: Vec<ContentPartDto>`. A generated 64×64 PNG (left half `#FF0000`, right half `#0000FF`)
+   sent as `{kind:'image'}` came back as *"The left half is red and the right half is blue."* —
+   correct against known ground truth.
+3. **Tool calling now works through Vela's own IPC.** `ChatSendReq` gained `tools` and
+   `tool_choice`. A `get_weather` catalogue produced **6 `toolCallDelta` events** with a stable
+   `callId`, `name: get_weather`, `slot: 0`, and argument fragments assembling to
+   `{"city":"Tel Aviv"}`. **114 reasoning deltas arrived in the same turn and none of them leaked
+   into tool-call parsing** — which is the property that actually matters here.
+4. **The context-length error is now typed and carries its numbers.** Previously flattened to a
+   bare transport 400. Now returns `kind: "contextLengthExceeded"` with `limitTokens: 131072` and
+   `requestedTokens: 225522`, in **0.34 s** — Vela rejects it *pre-flight* and never sends the
+   request. Note its own estimate (225,522) differs from the server's count (200,018); that is
+   expected for a local estimate and the decision is correct either way.
+
+Carried forward from the earlier run and still true: reasoning is separated correctly
+(266 `reasoningDelta` vs 3 `textDelta`, answer `"391"` clean, no leakage), reasoning is excluded
+from conversation history sent upstream, and `chat_cancel` genuinely aborts the upstream request —
+verified against llama.cpp's own `/slots` going 1 → 0 processing.
+
+> **Interpretation limit, restated because it binds this PASS.** Qwen3.6-27B is a strong model:
+> 27B, vision-capable, 131k-context, reasoning-enabled. This PASS proves the **happy path only**.
+> It is **not** evidence of graceful degradation and **not** evidence of model-agnosticism — that
+> comes exclusively from the GATE M Part 1 mock matrix. The one place the earlier run diverged from
+> the mocks (a numeric `error.code`) is precisely where Vela broke, which is the whole argument for
+> why this gate exists and why a PASS here must not be over-read.
+
+- evidence: `docs/regression-baseline/local-smoke/20-gate-m2-rerun-tools-vision.txt` plus the
+  earlier transcripts in that directory.
+- note on host: the tool/vision/overflow probes were driven through `ui_matrix_bridge`, which calls
+  the same `vela_lib::ipc::chat` functions the Tauri command wraps. Tauri's event surface cannot be
+  hooked from CDP, so the event stream is not capturable from the shipping host. The *registry* fix
+  — the actual subject of the old FAIL — was verified in the shipping app itself.
+
+---
+
+## CONV-1-conversation-surface — visual
+
+- commit: `84c256feccb016e00ba240e8368aa1a17fa0ea6c`
+- critic: visual
+- verdict: **FAIL**
+- largest_gap: **The thinking block renders raw markdown source.** `ThinkingBlock.tsx:64` emits
+  `<p className={styles.text}>{text}</p>` — a raw string that never passes through `<Markdown>` —
+  and `ThinkingBlock.module.css:91` sets `white-space: pre-wrap`. The user sees literal
+  `**Deconstruct the requirements:**`, literal `*   Topic:` bullets, literal backticks and literal
+  ``` fences, wrapped at the model's own column rather than the reader's. I confirmed this with my
+  own eyes in `11-streaming-answer-light.png` and `21-thinking-expanded-*.png`, independently of the
+  critic. It is not an edge case: `ThinkingBlock.tsx:36` opens the block by default while streaming,
+  so on this reasoning-heavy endpoint it is **the first thing the user sees on every single turn**,
+  and on a trivial prompt it is the *only* thing on screen for ~10 seconds. The renderer, parser and
+  type scale all already exist and are used by the answer body 20 pixels below. This is wiring an
+  existing component to a surface that was skipped, not building anything.
+
+### Second, and nearly as costly: the reading measure
+
+`--vela-measure: 46rem` yields a 688px text column, which at 15px body sets full-width prose at
+**~95–105 characters per line** (a counted 91-char list item fits on one line *inside* a list
+indent; a blockquote runs 103 chars). The comfortable band is 45–75 and the pragmatic ceiling every
+reference product respects is ~80. The evidence set contains its own A/B: the same list item in
+`24-narrow-window-light.png` sets to ~48 characters and is plainly easier to read.
+
+### Other defects, ranked
+
+3. **The composer and the transcript do not share a vertical ruler.** Transcript column x=489→1177
+   (688px); composer field x=472→1208 (736px) — overhanging 17px left and 31px right, asymmetric.
+   Cause: `.column` carries `max-width: var(--vela-measure)` *plus* 24px internal padding while
+   `Composer.module.css` puts padding outside and gives `.field` the full measure. The 7px of
+   asymmetry is the scrollbar.
+4. **Content is guillotined at the scroll edge** with no mask or fade — the code block's header is
+   sliced through its middle at y≈750 in `20-answer-rendered-light.png`.
+5. **Two container tokens equal the page background, each in a different theme.** `--vela-code-bg`
+   is pinned to `night-950` (which *is* dark's `--vela-bg`) and `--vela-thinking-bg` to `night-25`
+   (which *is* light's). Each container is fill-differentiated in only one of the two themes.
+6. **The sidebar is a fixed width** and does not respond to window width; at the app's real 720px
+   minimum it would still consume ~40% of the window.
+7. **The heading scale collapses below h3** — h4 is the same size as body, h5/h6 are *smaller*, and
+   `Markdown.tsx:142` renders `<strong>` with no class so it inherits UA 700 while headings are 600.
+   A bolded run of body text is therefore **heavier than any heading below h3**. Source-level: no
+   artifact in this set exercises h1/h3/h4/h5/h6, so the evidence gap that hid the original defect
+   is still partly open.
+
+### What is genuinely good, recorded because a FAIL should not bury it
+
+The type scale landed and is systematic — six levels off `data-level` with per-level rhythm, h2 cap
+height measured at 1.21× body. **Wrapped prose now sets correctly**: proper hanging indents with the
+marker outside the text block, and the parser reflows the model's 70-column source rather than
+honouring it. `text-wrap: pretty` on paragraphs, `balance` on headings, subdued `::marker`,
+restrained no-fill blockquote with a 2px accent rule, code block with language label, copy
+affordance and its own overflow container. Spacing between block types is even and intentional
+(32/36/28/36px). The command palette — scrim, highlighted match terms, source labels — is
+competitive with Raycast. **Identity is clean**: teal-cyan on night-indigo, an explicit written
+prohibition on clay/terracotta/cream in `tokens.css`, honoured in the render. No Anthropic trade
+dress.
+
+### Blind comparison
+
+Answer body only, labels stripped, against Claude Desktop: **the reference wins, on measure alone.**
+Vela is ahead on several craft details, but a page setting at 95–105 characters loses to one setting
+at 72–78 — the eye loses the line return. With the thinking block in frame it is not close, because
+one page has set prose and the other has visible asterisks. Worth stating plainly: **the answer
+surface is one token change away from winning that comparison.**
+
+- evidence: `evidence/CONV-1-conversation-surface/` — rendered answer, code block, thinking block
+  collapsed and expanded, streaming states, filtered palette, narrow window; all from a **real
+  streamed answer off the live llama.cpp**, plus `streaming-manifest.json` recording the verified
+  theme and answer-length state of each streaming capture.
+- environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · captures at 1400x900
+
+---
+
+## CONV-1-conversation-surface — interaction
+
+- commit: `84c256feccb016e00ba240e8368aa1a17fa0ea6c`
+- critic: interaction
+- verdict: **PASS**
+
+### Ruling on the cloud's PROVISIONAL focus-ownership finding
+
+The cloud observed focus dropping to `<body>` at four moments and asked me to rule on WebView2.
+
+- **Escape out of the command bar — VERIFIED FIXED.** Focus lands on `textarea :: Send a message…`,
+  not `<body>`; **0 Tab presses to recover**, against the cloud's 11 pre-fix. Unambiguous WebView2
+  measurement of the exact regression.
+- **Committing an F2 rename — UNRESOLVED.** Verified good up to the commit: F2 opens the inline
+  field and takes focus into it, and Escape returns focus to the row. Where focus lands *after* a
+  commit was not measurable (see below).
+- **Confirming a delete — UNRESOLVED for the confirm path, VERIFIED GOOD before it.** The
+  confirmation opens with focus on **Cancel**, the safe control, never on the destructive one; and
+  Escape returns focus to the originating row.
+- **Dismissing the model switcher — NOT MEASURED.**
+
+**Nothing in this evidence shows focus landing on `<body>` on WebView2 after `81b1b12`.** Three of
+the four moments are *unmeasured*, not *failed*, and converting an unmeasured moment into a FAIL
+would be the reporting error. On the one moment drivable end to end, the cloud's finding is refuted.
+
+### Why two moments stayed unmeasured — a flaw in my harness, not in the app
+
+The interaction critic identified it precisely: CDP `Input.dispatchKeyEvent` with no `text` field
+produces `rawKeyDown` only, so no `keypress` fires. The rename field is a `<form>` with a single
+input and no submit button, where Chromium relies on **implicit form submission** driven from the
+keypress default handler — so the commit never ran. The same harness flaw explains why Enter also
+failed to activate a plainly focused `<button>` elsewhere in my battery.
+
+**Consequence: my earlier section 7b result is withdrawn.** It concluded that a leaked background
+control does *not* activate while the palette is open. That negative is probably a harness artifact
+and does not establish inertness. The *focus leak itself* remains measured and stands; it is the
+mitigation that is unestablished. The already-filed A1 `aria-modal` finding must not be softened by
+7b. I attempted the critic's one-line falsification (re-dispatch with `text: "\r"`) but the dev
+server had been torn down for the release-build performance run and the retest never reached the
+app; it remains open.
+
+### What works
+
+Roving tabindex in the sidebar (9 stops for the whole shell; a 40-item list costs one Tab, not
+forty). Focus ring real and visible, gated on `:focus-visible`. Every disclosure in the conversation
+surface is a real `<button>` with `aria-expanded` — no div-with-onclick, no dead keyboard path. The
+composer guards IME composition before treating Enter as send, which on this machine is not
+hypothetical: its IME host intermittently steals foreground. Renames commit and persist in the real
+app — a 0-message row titled "Gate rename OK" can only have arrived via a committed, host-persisted
+rename.
+
+### One correction to my own evidence
+
+My focus-ownership file notes that the delete confirmation "is NOT `[role=dialog]`", which reads
+like a semantics defect. **It is not.** `DeleteConversationDialog.tsx:62` declares
+`role="alertdialog"`, the correct APG role for a destructive confirmation. My probe used an exact
+`[role=dialog]` selector that does not match it. **Probe bug, correct app.**
+
+### Scope-widening note on an existing filing
+
+`DeleteConversationDialog` declares `aria-modal="true"` with no Tab containment, no `inert`, and no
+background `aria-hidden` — and a grep of the whole of `src/` finds **no focus-trap or `inert`
+implementation anywhere in the app**. This is the same class as the already-filed palette finding,
+so it widens that filing from one component to two rather than opening a new one. Unmeasured on
+WebView2, and not driving this verdict.
+
+- evidence: `evidence/CONV-1-conversation-surface/focus-ownership.txt`,
+  `evidence/A1-scaffold-shell/interaction-battery.txt`
+- environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · window 1400x900
+
+---
+
+## CONV-1-conversation-surface — performance
+
+- commit: `84c256feccb016e00ba240e8368aa1a17fa0ea6c`
+- critic: performance
+- verdict: **PASS**
+- environment: **release build** (`cargo`/`tauri build`, not the dev binary) · Windows 11 Home
+  10.0.26200 · Intel i7-11700K, 16 logical cores · 63.8 GB RAM · WebView2 151.0.4129.78
+
+| measure | value |
+|---|---|
+| binary size | **14.91 MB** |
+| cold start to **rendered content** | **3106 ms** median of 3 (3170 / 3102 / 3106) |
+| cold start to window *handle* existing | 47 ms warm, 579 ms first uncached — **not** interactive |
+| idle RSS after 60 s, attributed to Vela's process tree | **360.6 MB** (vela.exe 34.5 MB + 6 WebView2 children 326.1 MB) |
+| idle CPU | **0.00%** of one core over a 10 s sample |
+
+A 14.91 MB binary and a genuinely idle 0.00% CPU are Tauri-class and clear the bar. 360 MB resident
+is heavier than a lean Tauri app but is WebView2's process model rather than Vela's allocation, and
+it is well inside the footprint of an Electron peer. Cold start at ~3.1 s to *painted content* is
+the honest figure and is acceptable, though it is the number most worth improving.
+
+### Two measurement corrections, because both would have been misleading
+
+- **The 47 ms cold start is not a cold start.** That is the window handle existing; WebView2 has
+  painted nothing at that point. Quoting it would have flattered the result by ~66×. The number
+  above polls CDP until the app's root actually has content.
+- **The idle memory figure was wrong on first measurement.** I summed every `msedgewebview2.exe` on
+  the machine and got 1,363 MB across 30 processes — but this box runs other WebView2 apps,
+  including the Claude desktop app. Re-measured by walking the descendants of `vela.exe`, Vela owns
+  6 of those processes and 326 MB of that total. Reporting 1.4 GB would have failed the piece on
+  another application's memory.
+
+### Not measured — stated rather than estimated
+
+- **RAM after a 200-message conversation.** Not run. 200 real turns against a 27B model is hours of
+  wall clock; synthesising them through the store IPC would measure the renderer under synthetic
+  load, not the app under use. No number is offered rather than a misleading one.
+- **Streaming render throughput and dropped frames.** Not measured. At 27.9 tok/s this endpoint
+  cannot stress a renderer, so any frame-drop claim from it would be meaningless. A faster endpoint
+  is required before this is worth judging.
+- **TTFT against a third-party API provider.** No API provider is configured on this machine.
+
+This PASS therefore covers footprint, cold start and idle cost. It does **not** cover behaviour
+under sustained load or under a fast endpoint, and should not be read as doing so.

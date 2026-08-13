@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use vela_core::credential::Auth;
 use vela_core::provider::ProviderDescriptor;
-use vela_secrets::{resolve_auth, AppliedAuth, SecretError, SecretStore};
+use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
@@ -234,23 +234,10 @@ impl AnthropicProvider {
                 })
             }
         };
-        match applied {
-            AppliedAuth::None => {}
-            AppliedAuth::Header { name, value } => {
-                request = request.with_header(name, value.expose());
-            }
-            // Not a shape this API uses, but the binding is the user's to
-            // configure and dropping it silently would be worse than honouring it.
-            AppliedAuth::QueryParam { name, value } => {
-                let separator = if request.url.contains('?') { '&' } else { '?' };
-                request.url = format!(
-                    "{}{separator}{name}={}",
-                    request.url,
-                    urlencode(value.expose())
-                );
-            }
-        }
-        Ok(request)
+        // The query-parameter shape is not one this API uses, but the binding is
+        // the user's to configure and dropping it silently would be worse than
+        // honouring it. `with_auth` handles all three shapes.
+        Ok(request.with_auth(&applied))
     }
 
     async fn get_json(&self, url: String, context: &RequestContext) -> ProviderResult<Value> {
@@ -607,18 +594,6 @@ fn already_applied(concessions: Concessions, concession: Concession) -> bool {
 
 fn compact(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
-}
-
-fn urlencode(value: &str) -> String {
-    value
-        .bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
 }
 
 #[async_trait]

@@ -43,6 +43,7 @@ use vela_providers::http::{
     TransportError,
 };
 use vela_providers::openai_compatible::{OpenAiCompatibleProvider, ProviderOptions};
+use vela_providers::redact::RequestUrl;
 use vela_providers::{
     Candidate, ChatMessage, ChatRequest, ContentPart, Degradation, MalformedToolCall, MessageRole,
     Provider, ProviderError, RequestContext, ResponseFormat, RetryPolicy, Router, StopReason,
@@ -129,7 +130,10 @@ fn out_dir() -> PathBuf {
 
 struct WireEntry {
     method: &'static str,
-    url: String,
+    /// Not a `String`: with `Auth::ApiKeyQuery` the credential is *in* the URL,
+    /// and these transcripts are committed. `RequestUrl` prints redacted, so
+    /// the recorder cannot write a key into `docs/` even by accident.
+    url: RequestUrl,
     request_headers: Vec<(String, String)>,
     request_body: Option<Vec<u8>>,
     outcome: WireOutcome,
@@ -2325,7 +2329,7 @@ async fn case_09(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
             .any(|entry| entry.url.contains("key=") || entry.url.contains("token=")),
         entries
             .iter()
-            .map(|e| e.url.clone())
+            .map(|e| e.url.to_string())
             .collect::<Vec<_>>()
             .join(" "),
     );

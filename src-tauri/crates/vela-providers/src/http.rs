@@ -19,9 +19,12 @@
 //! fakes in [`testing`] is **VERIFIED-BY-FAKE**.
 
 use async_trait::async_trait;
+use vela_core::secret::{SecretValue, REDACTED};
+use vela_secrets::AppliedAuth;
 
 use crate::error::{detail, ProviderError, TransportFailure};
 use crate::provider::Timeouts;
+use crate::redact::{RequestUrl, Scrubber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
@@ -38,32 +41,61 @@ impl HttpMethod {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Header names whose value is credential material by convention, whoever set
+/// them. [`HttpRequest::with_auth`] records the credential it applied, so this
+/// list is redundant for anything Vela builds through the seam — it is here so
+/// that a `with_header("authorization", …)` written in a hurry, in a future
+/// adapter, is still redacted by `Debug`.
+const CREDENTIAL_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "x-api-key",
+    "api-key",
+    "x-goog-api-key",
+    "cookie",
+];
+
+fn is_credential_header(name: &str) -> bool {
+    CREDENTIAL_HEADERS
+        .iter()
+        .any(|known| name.eq_ignore_ascii_case(known))
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub method: HttpMethod,
-    pub url: String,
+    /// Not a `String`: a URL may carry a credential (`Auth::ApiKeyQuery`), and
+    /// [`RequestUrl`] is the type that cannot be printed into showing it. See
+    /// [`crate::redact`].
+    pub url: RequestUrl,
     /// Header names are lowercase. **An `authorization` header is present only
     /// when a credential exists** — never empty. See `vela_secrets::resolve_auth`.
     pub headers: Vec<(String, String)>,
     pub body: Option<Vec<u8>>,
+    /// Lowercased names of headers this request was given as credentials, so
+    /// `Debug` and [`HttpRequest::scrubber`] know what not to let out. Private:
+    /// it is set by [`HttpRequest::with_auth`] and nowhere else.
+    secret_headers: Vec<String>,
 }
 
 impl HttpRequest {
-    pub fn get(url: impl Into<String>) -> Self {
+    pub fn get(url: impl Into<RequestUrl>) -> Self {
         Self {
             method: HttpMethod::Get,
             url: url.into(),
             headers: Vec::new(),
             body: None,
+            secret_headers: Vec::new(),
         }
     }
 
-    pub fn post_json(url: impl Into<String>, body: Vec<u8>) -> Self {
+    pub fn post_json(url: impl Into<RequestUrl>, body: Vec<u8>) -> Self {
         Self {
             method: HttpMethod::Post,
             url: url.into(),
             headers: vec![("content-type".into(), "application/json".into())],
             body: Some(body),
+            secret_headers: Vec::new(),
         }
     }
 
@@ -73,11 +105,95 @@ impl HttpRequest {
         self
     }
 
+    /// **The one place a credential is attached to a request.**
+    ///
+    /// All four adapters resolve an `Auth` binding into an [`AppliedAuth`] and
+    /// then had their own copy of this `match`, each with its own `format!` and
+    /// its own private percent-encoder. Three lines of duplication is cheap;
+    /// three chances to forget that the result is credential material is not.
+    ///
+    /// [`AppliedAuth::None`] adds nothing — not an empty header, not an empty
+    /// query parameter. "No credential" is a supported state (conventions §0
+    /// rule 2), and it must be indistinguishable on the wire from a provider
+    /// that has no auth at all.
+    pub fn with_auth(self, applied: &AppliedAuth) -> Self {
+        match applied {
+            AppliedAuth::None => self,
+            AppliedAuth::Header { name, value } => self.with_credential_header(name, value),
+            AppliedAuth::QueryParam { name, value } => self.with_query_credential(name, value),
+        }
+    }
+
+    fn with_credential_header(mut self, name: &str, value: &SecretValue) -> Self {
+        let name = name.to_ascii_lowercase();
+        self.headers.push((name.clone(), value.expose().to_owned()));
+        self.secret_headers.push(name);
+        self
+    }
+
+    fn with_query_credential(mut self, name: &str, value: &SecretValue) -> Self {
+        self.url = std::mem::take(&mut self.url).with_query_credential(name, value);
+        self
+    }
+
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    /// Every literal this request's credentials consist of, so that text
+    /// derived from it — a client's error string, a body an endpoint echoed
+    /// back — can be cleaned before it becomes a `detail`.
+    pub fn scrubber(&self) -> Scrubber {
+        let mut needles: Vec<String> = Vec::new();
+        for (name, value) in &self.headers {
+            if !self.secret_headers.iter().any(|secret| secret == name) {
+                continue;
+            }
+            needles.push(value.clone());
+            // A `Bearer <token>` header is one needle; the bare token is
+            // another, because that is the form that would turn up in a query
+            // string or a vendor error body.
+            if let Some((_, token)) = value.split_once(' ') {
+                needles.push(token.to_owned());
+            }
+        }
+        Scrubber::new(needles).merged(&self.url.scrubber())
+    }
+
+    /// Headers with credential values replaced. What `Debug` prints, and what
+    /// any recorder or transcript should print.
+    pub fn redacted_headers(&self) -> Vec<(String, String)> {
+        self.headers
+            .iter()
+            .map(|(name, value)| {
+                let secret = is_credential_header(name)
+                    || self.secret_headers.iter().any(|known| known == name);
+                let value = if secret {
+                    format!("{REDACTED} ({} bytes)", value.len())
+                } else {
+                    value.clone()
+                };
+                (name.clone(), value)
+            })
+            .collect()
+    }
+}
+
+impl std::fmt::Debug for HttpRequest {
+    /// Derived `Debug` would print the credential header verbatim and the URL
+    /// query string with it. This one prints neither, and prints the body's
+    /// length rather than the body: a prompt is not a secret, but it is not
+    /// something a diagnostic should splatter either.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("headers", &self.redacted_headers())
+            .field("body_bytes", &self.body.as_ref().map(Vec::len))
+            .finish()
     }
 }
 
@@ -102,6 +218,13 @@ impl HttpResponse {
     /// Read the whole body. Used for non-streaming calls and error bodies.
     ///
     /// `limit` bounds what a hostile or broken endpoint can make Vela allocate.
+    ///
+    /// The body is scrubbed of this request's own credential material before it
+    /// is returned. An endpoint that echoes the key it was sent — into an error
+    /// message, into a `"detail"` field — otherwise hands it straight back into
+    /// `map_error_response`, which is a `detail` on a `ProviderError` and from
+    /// there the IPC bridge. Scrubbing is a no-op, and skipped entirely, for
+    /// the ordinary case of a request that carried no credential in its URL.
     pub async fn read_to_end(&mut self, limit: usize) -> Result<Vec<u8>, TransportError> {
         let mut out = Vec::new();
         while let Some(chunk) = self.body.next_chunk().await? {
@@ -111,7 +234,7 @@ impl HttpResponse {
                 break;
             }
         }
-        Ok(out)
+        Ok(self.body.scrubber().scrub_bytes(out))
     }
 }
 
@@ -125,6 +248,16 @@ pub type BodyStream = Box<dyn ByteStream>;
 #[async_trait]
 pub trait ByteStream: Send {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, TransportError>;
+
+    /// The credential material of the request this body answers.
+    ///
+    /// Defaulted to "nothing", so a fake body is four lines as before; the real
+    /// one overrides it with the scrubber built from the request it sent. It
+    /// lives on the body rather than on [`HttpResponse`] because the body is
+    /// what outlives the request.
+    fn scrubber(&self) -> Scrubber {
+        Scrubber::none()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,9 +319,7 @@ impl ReqwestTransport {
             .no_proxy()
             .user_agent(concat!("vela/", env!("CARGO_PKG_VERSION")))
             .build()
-            .map_err(|error| {
-                ProviderError::transport(TransportFailure::Connect, error.to_string())
-            })?;
+            .map_err(|error| ProviderError::from(map_reqwest_error(error, &Scrubber::none())))?;
         Ok(Self { client })
     }
 }
@@ -200,9 +331,16 @@ impl HttpTransport for ReqwestTransport {
         request: HttpRequest,
         timeouts: &Timeouts,
     ) -> Result<HttpResponse, TransportError> {
+        // Built before the request is consumed, and carried into the body: a
+        // mid-stream failure arrives long after `request` is gone, and it is
+        // just as capable of quoting the URL back at us.
+        let scrubber = request.scrubber();
+
+        // THE ONE PLACE the wire form of a URL is taken. It goes to the socket,
+        // never to a string that could become a message.
         let mut builder = match request.method {
-            HttpMethod::Get => self.client.get(&request.url),
-            HttpMethod::Post => self.client.post(&request.url),
+            HttpMethod::Get => self.client.get(request.url.expose()),
+            HttpMethod::Post => self.client.post(request.url.expose()),
         };
         for (name, value) in &request.headers {
             builder = builder.header(name, value);
@@ -222,7 +360,7 @@ impl HttpTransport for ReqwestTransport {
                     ),
                 )
             })?
-            .map_err(map_reqwest_error)?;
+            .map_err(|error| map_reqwest_error(error, &scrubber))?;
 
         let status = response.status().as_u16();
         let headers = response
@@ -239,13 +377,14 @@ impl HttpTransport for ReqwestTransport {
         Ok(HttpResponse {
             status,
             headers,
-            body: Box::new(ReqwestBody { response }),
+            body: Box::new(ReqwestBody { response, scrubber }),
         })
     }
 }
 
 struct ReqwestBody {
     response: reqwest::Response,
+    scrubber: Scrubber,
 }
 
 #[async_trait]
@@ -254,12 +393,37 @@ impl ByteStream for ReqwestBody {
         match self.response.chunk().await {
             Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
             Ok(None) => Ok(None),
-            Err(error) => Err(map_reqwest_error(error)),
+            Err(error) => Err(map_reqwest_error(error, &self.scrubber)),
         }
+    }
+
+    fn scrubber(&self) -> Scrubber {
+        self.scrubber.clone()
     }
 }
 
-fn map_reqwest_error(error: reqwest::Error) -> TransportError {
+/// Every `reqwest` failure in this workspace becomes a `TransportError` here
+/// and nowhere else.
+///
+/// # Why this function takes a scrubber
+///
+/// `reqwest`'s `Display` ends with `" for url ({url})"` — the whole URL, query
+/// string included. With `Auth::ApiKeyQuery` that string *is* the credential,
+/// and `detail()` sanitises but does not redact, so before this fix a refused
+/// connection put the user's API key into `ProviderError::Transport`'s
+/// `Display`, `Debug` and serde JSON — the last of which is the shape that
+/// crosses the IPC bridge to the WebView.
+///
+/// Two independent guards, because one is a promise about someone else's crate:
+///
+/// * [`reqwest::Error::without_url`] drops the URL before it is ever formatted.
+/// * The scrubber removes the credential from whatever is left — the source
+///   chain, a future `reqwest` release that formats more, an error whose text
+///   came from somewhere else entirely.
+///
+/// Scrubbing happens **before** `detail()` truncates, because truncating first
+/// can cut a credential in half and keep the half.
+fn map_reqwest_error(error: reqwest::Error, scrubber: &Scrubber) -> TransportError {
     let failure = if error.is_connect() {
         TransportFailure::Connect
     } else if error.is_timeout() {
@@ -270,7 +434,7 @@ fn map_reqwest_error(error: reqwest::Error) -> TransportError {
         // reported to the user as "the endpoint is down".
         TransportFailure::Reset
     };
-    TransportError::new(failure, error.to_string())
+    TransportError::new(failure, scrubber.scrub(error.without_url().to_string()))
 }
 
 // ---------------------------------------------------------------------------

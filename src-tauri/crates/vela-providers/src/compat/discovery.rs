@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use vela_core::credential::Auth;
-use vela_secrets::{resolve_auth, AppliedAuth, SecretError, SecretStore};
+use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::error::{detail, Capability, ProviderError, ProviderResult, TransportFailure};
@@ -143,7 +143,7 @@ impl Endpoint {
     /// Apply the credential — or, for `Auth::None`, apply nothing at all. An
     /// empty `Authorization` header is a 401 on every profile the matrix
     /// recorded, so "no credential" must mean "no header".
-    fn authenticate(&self, mut request: HttpRequest) -> ProviderResult<HttpRequest> {
+    fn authenticate(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = resolve_auth(self.secrets.as_ref(), &self.auth).map_err(|error| {
             ProviderError::AuthFailed {
                 detail: detail(match error {
@@ -158,21 +158,7 @@ impl Endpoint {
                 }),
             }
         })?;
-        match applied {
-            AppliedAuth::None => {}
-            AppliedAuth::Header { name, value } => {
-                request = request.with_header(name, value.expose());
-            }
-            AppliedAuth::QueryParam { name, value } => {
-                let separator = if request.url.contains('?') { '&' } else { '?' };
-                request.url = format!(
-                    "{}{separator}{name}={}",
-                    request.url,
-                    urlencode(value.expose())
-                );
-            }
-        }
-        Ok(request)
+        Ok(request.with_auth(&applied))
     }
 
     async fn json(&self, request: HttpRequest, context: &RequestContext) -> ProviderResult<Value> {
@@ -206,18 +192,6 @@ impl Endpoint {
             .map_err(|error| ProviderError::malformed(format!("could not encode: {error}")))?;
         self.json(HttpRequest::post_json(url, bytes), context).await
     }
-}
-
-fn urlencode(value: &str) -> String {
-    value
-        .bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
 }
 
 /// Did this error come back *from the server*, or did we never reach one?

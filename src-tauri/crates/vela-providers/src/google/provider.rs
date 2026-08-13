@@ -31,7 +31,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use vela_core::credential::Auth;
 use vela_core::provider::ProviderDescriptor;
-use vela_secrets::{resolve_auth, AppliedAuth, SecretError, SecretStore};
+use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
@@ -229,7 +229,7 @@ impl GoogleProvider {
     /// credential: nothing.** `Auth::None` never reaches the keychain and never
     /// produces a header — not even an empty one, which endpoints answer with a
     /// 401 that then gets misreported as "bad API key".
-    fn prepare_http(&self, mut request: HttpRequest) -> ProviderResult<HttpRequest> {
+    fn prepare_http(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = match resolve_auth(self.secrets.as_ref(), &self.auth) {
             Ok(applied) => applied,
             Err(SecretError::NotFound { .. }) => {
@@ -250,24 +250,10 @@ impl GoogleProvider {
                 })
             }
         };
-        match applied {
-            AppliedAuth::None => {}
-            AppliedAuth::Header { name, value } => {
-                request = request.with_header(name, value.expose());
-            }
-            // This API's documented alternative to the key header. Merged onto
-            // whatever query string the URL already has — `alt=sse` is always
-            // there on a streamed call.
-            AppliedAuth::QueryParam { name, value } => {
-                let separator = if request.url.contains('?') { '&' } else { '?' };
-                request.url = format!(
-                    "{}{separator}{name}={}",
-                    request.url,
-                    urlencode(value.expose())
-                );
-            }
-        }
-        Ok(request)
+        // The query-parameter form is this API's documented alternative to the
+        // key header, and `with_auth` is what makes it safe: the credential
+        // goes into a `RequestUrl`, which cannot be printed into showing it.
+        Ok(request.with_auth(&applied))
     }
 
     async fn get_json(&self, url: String, context: &RequestContext) -> ProviderResult<Value> {
@@ -618,18 +604,6 @@ fn has_version_segment(base_url: &str) -> bool {
     };
     rest.starts_with(|c: char| c.is_ascii_digit())
         && rest.chars().all(|c| c.is_ascii_alphanumeric())
-}
-
-fn urlencode(value: &str) -> String {
-    value
-        .bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
 }
 
 #[async_trait]

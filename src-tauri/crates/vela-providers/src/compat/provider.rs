@@ -465,6 +465,7 @@ mod tests {
     use crate::http::{HttpRequest, HttpResponse, TransportError};
     use crate::model::{ChatMessage, MessageRole};
     use crate::provider::Timeouts;
+    use crate::redact::RequestUrl;
     use serde_json::{json, Value};
     use vela_core::provider::ProviderKind;
     use vela_secrets::MemoryStore;
@@ -680,7 +681,7 @@ mod tests {
                 .any(|d| matches!(d, Degradation::ContextReduced { .. })),
             "the very first turn is fitted, without spending a refusal to learn the window"
         );
-        let urls: Vec<String> = transport
+        let urls: Vec<RequestUrl> = transport
             .recorded()
             .iter()
             .map(|request| request.url.clone())

@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use vela_core::credential::Auth;
 use vela_core::provider::ProviderDescriptor;
-use vela_secrets::{resolve_auth, AppliedAuth, SecretError, SecretStore};
+use vela_secrets::{resolve_auth, SecretError, SecretStore};
 
 use crate::capability::{Evidence, ModelCapabilities, Support};
 use crate::context::{fit_request, ContextBudget, ConversationSummariser, ElisionNote};
@@ -175,7 +175,7 @@ impl OpenAiCompatibleProvider {
     /// nothing.** `Auth::None` never reaches the keychain and never produces a
     /// header — not even an empty one, which the harness answers with a 401
     /// `empty_authorization_header` precisely to make that bug loud.
-    fn authenticate(&self, mut request: HttpRequest) -> ProviderResult<HttpRequest> {
+    fn authenticate(&self, request: HttpRequest) -> ProviderResult<HttpRequest> {
         let applied = match resolve_auth(self.secrets.as_ref(), &self.auth) {
             Ok(applied) => applied,
             Err(SecretError::NotFound { .. }) => {
@@ -196,21 +196,7 @@ impl OpenAiCompatibleProvider {
                 })
             }
         };
-        match applied {
-            AppliedAuth::None => {}
-            AppliedAuth::Header { name, value } => {
-                request = request.with_header(name, value.expose());
-            }
-            AppliedAuth::QueryParam { name, value } => {
-                let separator = if request.url.contains('?') { '&' } else { '?' };
-                request.url = format!(
-                    "{}{separator}{name}={}",
-                    request.url,
-                    urlencode(value.expose())
-                );
-            }
-        }
-        Ok(request)
+        Ok(request.with_auth(&applied))
     }
 
     async fn get_json(&self, url: String, context: &RequestContext) -> ProviderResult<Value> {
@@ -438,18 +424,6 @@ struct Prepared {
     emulated: bool,
     schema: Option<Value>,
     degradations: Vec<Degradation>,
-}
-
-fn urlencode(value: &str) -> String {
-    value
-        .bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
 }
 
 #[async_trait]

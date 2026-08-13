@@ -22,6 +22,7 @@
 //! | [`structured`] | Validating structured output that an endpoint may have ignored |
 //! | [`router`] | Ordered candidates, bounded retries, honest failover |
 //! | [`http`] | The HTTP seam — the only place in Vela that opens a socket |
+//! | [`redact`] | Credential-safe request URLs: a URL that carries an API key cannot be printed into showing it |
 //! | [`anthropic`] | The Messages backend: `content` blocks, `thinking` blocks, `x-api-key` |
 //! | [`google`] | The Gemini `generateContent` backend: `contents`/`parts`, safety blocks, thought signatures |
 //! | [`openai_compatible`] | The OpenAI-shaped backend all four matrix profiles speak |
@@ -103,6 +104,7 @@ pub mod model;
 pub mod openai_compatible;
 pub mod provider;
 pub mod reasoning;
+pub mod redact;
 pub mod router;
 pub mod sse;
 pub mod stream;
@@ -134,6 +136,7 @@ pub use model::{
 };
 pub use openai_compatible::{OpenAiCompatibleProvider, ProviderOptions};
 pub use provider::{CancelToken, ModelInfo, Provider, RequestContext, Timeouts};
+pub use redact::{RequestUrl, Scrubber};
 pub use router::{Candidate, RetryPolicy, Router};
 pub use structured::StructuredOutputPolicy;
 

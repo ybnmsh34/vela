@@ -25,6 +25,8 @@
     "verify": "pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && pnpm build && pnpm test:transcripts && pnpm test:secrets && cd src-tauri && cargo build --workspace --locked && cargo test --workspace --locked"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@tauri-apps/api": "^2.9.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

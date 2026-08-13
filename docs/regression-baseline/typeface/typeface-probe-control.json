@@ -1,0 +1,55 @@
+{
+  "probe": "Handgloves 12345 — the quick brown fox jumps over the lazy dog",
+  "absentControlFamily": "ZzQqNoSuchFontXx",
+  "control": 1725.91,
+  "stacks": {
+    "sans": {
+      "token": "--vela-font-sans",
+      "stack": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "requested": "\"Inter Variable\"",
+      "requestedWidth": 1725.91,
+      "appliedWidth": 2134.16,
+      "italicWidth": 1701.09,
+      "italicFace": {
+        "present": false,
+        "status": "absent"
+      },
+      "checkSaysLoaded": true,
+      "byWeight": {
+        "400": 1725.91,
+        "500": 1725.91,
+        "600": 1808.09,
+        "700": 1808.09
+      }
+    },
+    "mono": {
+      "token": "--vela-font-mono",
+      "stack": "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace",
+      "requested": "\"JetBrains Mono Variable\"",
+      "requestedWidth": 1725.91,
+      "appliedWidth": 2388.94,
+      "italicWidth": 1701.09,
+      "italicFace": {
+        "present": false,
+        "status": "absent"
+      },
+      "checkSaysLoaded": true,
+      "byWeight": {
+        "400": 1725.91,
+        "500": 1725.91,
+        "600": 1808.09,
+        "700": 1808.09
+      }
+    }
+  },
+  "reading": {
+    "measureToken": "30rem",
+    "columnPx": 480,
+    "bodyPx": 15,
+    "meanAdvancePx": 7.482,
+    "charactersPerLine": 64.2
+  },
+  "bodyStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+  "bodyWidth": 2134.16,
+  "loadedFaces": []
+}

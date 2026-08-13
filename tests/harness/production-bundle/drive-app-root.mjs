@@ -23,6 +23,17 @@
  * `<link>`), and the two together are what make "zero requests" a measurement
  * rather than a hope.
  *
+ * ## The typeface probe (`P17`–`P20`, controls `K6a`–`K6d`, `K7`, `K8a`–`K8c`)
+ *
+ * Serving `dist/` is what makes this the right place for it. Whether a font
+ * loads is a question about the **built artefact** — whether Vite emitted the
+ * `.woff2`, whether the `@font-face` survived into the bundled CSS, whether the
+ * shipping `font-src` policy permits it — and none of that exists in `src/`.
+ * The question is settled by advance width against a deliberately absent
+ * family, never by `document.fonts.check()`, which returns `true` for fonts the
+ * engine cannot draw and did so throughout the period when Vela shipped no
+ * typeface at all. See `measureTypeface()` and `src/styles/typeface.css`.
+ *
  * ## Honesty (`docs/architecture/conventions.md` §10)
  *
  * - The browser is **Chromium on Linux**, not WebView2 and not WebKitGTK. Every
@@ -66,6 +77,8 @@ mkdirSync(outDir, { recursive: true });
 
 const results = [];
 let failures = 0;
+/** The real run's typeface reading, so the controls can be compared against it. */
+let liveReading = null;
 
 function assert(id, claim, passed, detail = '') {
   results.push({ id, claim, passed, detail });
@@ -89,14 +102,21 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
-function serveDist(root) {
+/**
+ * @param root      the directory to serve
+ * @param rewrite   optional `(body, file) => body`, applied to every response.
+ *                  Used by the controls to serve a *deliberately damaged* copy
+ *                  of the real bundle — the pre-fix state, staged on demand —
+ *                  without touching the bytes on disk that the real run reads.
+ */
+function serveDist(root, rewrite = (body) => body) {
   return new Promise((resolve) => {
     const server = createServer((request, response) => {
       const url = new URL(request.url, 'http://127.0.0.1');
       const relative = url.pathname === '/' ? '/index.html' : url.pathname;
       const file = join(root, normalize(relative).replace(/^(\.\.[/\\])+/, ''));
       try {
-        const body = readFileSync(file);
+        const body = rewrite(readFileSync(file), file);
         response.writeHead(200, {
           'content-type': MIME[extname(file)] ?? 'application/octet-stream',
           // The same Content-Security-Policy `tauri.conf.json` declares, so the
@@ -272,6 +292,90 @@ async function runProductionBundle() {
     /memory|browser|fake/i.test(statusText),
     statusText.split('\n').filter((l) => /memory|browser|fake/i.test(l)).join(' / '),
   );
+
+  /* --- P17..P19: the typeface the design was authored against ------------- */
+
+  const typeface = await measureTypeface(page);
+  liveReading = typeface.reading;
+
+  for (const [role, id] of [
+    ['sans', 'P17'],
+    ['mono', 'P18'],
+  ]) {
+    const reading = typeface.stacks[role];
+    assert(
+      `${id}a`,
+      `the family --vela-font-${role} names first (${reading.requested}) actually loads — ` +
+        `WIDTH CONTROL, not document.fonts.check`,
+      Math.abs(reading.requestedWidth - typeface.control) > 1,
+      `requested=${reading.requestedWidth} absent-font control=${typeface.control} ` +
+        `(document.fonts.check said ${reading.checkSaysLoaded}, which is not evidence)`,
+    );
+    assert(
+      `${id}b`,
+      `--vela-font-${role} as the app applies it resolves to that same face, not to a fallback`,
+      Math.abs(reading.appliedWidth - reading.requestedWidth) < 0.5,
+      `applied=${reading.appliedWidth} requested=${reading.requestedWidth} ` +
+        `stack=${JSON.stringify(reading.stack)}`,
+    );
+    // Markdown emphasis and code comments both ask for italic, and an italic
+    // the bundle does not carry is drawn by shearing the roman.
+    //
+    // Width is deliberately NOT the assertion here, and this is the one place
+    // in the probe where it is the wrong instrument. For the mono it cannot
+    // work at all: a monospaced italic carries the roman's advances by
+    // definition, so equal widths are the correct result and prove nothing. For
+    // the sans it technically works — Inter's italic runs about 6px wider over
+    // a 2009px string — but a 0.3% margin is a rasterisation rounding away from
+    // a coin flip, and an assertion that thin would eventually fail on WebView2
+    // for reasons having nothing to do with the font being there.
+    //
+    // So both roles are settled by the document's own font set: is there an
+    // `@font-face` entry for this family with `style: italic`, and did its
+    // bytes arrive. The width delta is reported beside it as corroboration —
+    // and control K8a shows it collapsing to exactly zero when the italic faces
+    // are stripped, which is the shape of a synthesised oblique.
+    assert(
+      `${id}c`,
+      `the italic of ${reading.requested} is a real cut in the bundle, not the engine shearing ` +
+        'the roman',
+      reading.italicFace.present && reading.italicFace.status === 'loaded',
+      `@font-face italic entry: present=${reading.italicFace.present} ` +
+        `status=${reading.italicFace.status}; advances italic=${reading.italicWidth} ` +
+        `roman=${reading.requestedWidth}` +
+        (role === 'mono' ? ' (equal is CORRECT for a monospaced face)' : ''),
+    );
+  }
+
+  assert(
+    'P19a',
+    'the sans and mono faces are two different faces, not one stack shadowing the other',
+    Math.abs(typeface.stacks.sans.appliedWidth - typeface.stacks.mono.appliedWidth) > 1,
+    `sans=${typeface.stacks.sans.appliedWidth} mono=${typeface.stacks.mono.appliedWidth}`,
+  );
+
+  const fontRequests = networkRequests.filter((url) => /\.(woff2?|ttf|otf|eot)(\?|$)/.test(url));
+  assert(
+    'P19b',
+    'every font byte came from the bundle itself — no request left the origin for a face',
+    fontRequests.length > 0 && fontRequests.every((url) => url.startsWith(origin)),
+    `${fontRequests.length} font requests: ${JSON.stringify(
+      fontRequests.map((url) => url.replace(origin, '')),
+    )}`,
+  );
+
+  const cpl = typeface.reading.charactersPerLine;
+  assert(
+    'P20',
+    'the reading measure still sets 65–75 characters per line IN THE FACE THAT NOW RENDERS — ' +
+      'the token was back-calculated from a Segoe UI reading and Inter is narrower',
+    cpl >= 65 && cpl <= 75,
+    `${cpl} characters per line: --vela-measure=${typeface.reading.measureToken} ` +
+      `= ${typeface.reading.columnPx}px at ${typeface.reading.bodyPx}px body, ` +
+      `mean advance ${typeface.reading.meanAdvancePx}px`,
+  );
+
+  writeFileSync(join(outDir, 'typeface-probe.json'), JSON.stringify(typeface, null, 2) + '\n');
 
   await page.screenshot({ path: join(outDir, '01-production-bundle-cold.png'), fullPage: false });
 
@@ -534,6 +638,212 @@ async function turnSurvivesNavigation(page) {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* THE WIDTH CONTROL — the only honest way to ask "did this font load?"        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Renders a probe string in three things and reports the advance width of each:
+ *
+ *   1. a family that is **deliberately absent** — the control;
+ *   2. the family a `--vela-font-*` stack names first, with that absent family
+ *      as its **only** fallback, so a face that did not load measures *exactly*
+ *      the control rather than something merely similar;
+ *   3. the whole stack as the app applies it.
+ *
+ * Loaded ⇔ (2) differs from (1). Actually painted with it ⇔ (3) equals (2).
+ *
+ * ## Why not `document.fonts.check()`
+ *
+ * Because it lies. On the operator's Windows 11 / WebView2 machine, with no
+ * Inter installed anywhere and no `@font-face` in the bundle,
+ * `document.fonts.check('16px Inter')` returned **true** while the same probe
+ * string rendered at 481.72px in `Inter` and 481.72px in `ZzQqNoSuchFontXx` —
+ * identical to the digit. The app's body text rendered at 523.91px: Segoe UI.
+ * A boolean that says "yes" about a font the engine cannot draw is worse than
+ * no check at all, so it is *recorded* here as a data point and never asserted
+ * on. Advance width is a fact about glyphs the engine actually has.
+ *
+ * The probe is set at 64px with kerning, ligatures and letter-spacing pinned
+ * off: at body size the difference between two faces can round into the same
+ * layout unit, and an inherited `--vela-tracking-*` would move both readings
+ * together and hide it.
+ */
+async function measureTypeface(page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    return true;
+  });
+  return page.evaluate(async () => {
+    const ABSENT = 'ZzQqNoSuchFontXx';
+    const PROBE = 'Handgloves 12345 — the quick brown fox jumps over the lazy dog';
+
+    const measure = (family, weight, style = 'normal') => {
+      const span = document.createElement('span');
+      span.textContent = PROBE;
+      span.style.cssText =
+        'position:absolute;left:-9999px;top:0;white-space:pre;font-size:64px;' +
+        'letter-spacing:normal;word-spacing:normal;font-kerning:none;' +
+        'font-variant:normal;font-feature-settings:normal;font-stretch:normal;';
+      span.style.fontFamily = family;
+      span.style.fontStyle = style;
+      span.style.fontWeight = String(weight);
+      document.body.appendChild(span);
+      const width = span.getBoundingClientRect().width;
+      span.remove();
+      return Math.round(width * 100) / 100;
+    };
+
+    const rootStyles = getComputedStyle(document.documentElement);
+    const roles = [
+      ['sans', '--vela-font-sans'],
+      ['mono', '--vela-font-mono'],
+    ].map(([role, token]) => {
+      const stack = rootStyles.getPropertyValue(token).replace(/\s+/g, ' ').trim();
+      return { role, token, stack, requested: (stack.split(',')[0] ?? '').trim() };
+    });
+
+    /**
+     * Forces the faces this probe is about to measure to finish loading.
+     *
+     * WITHOUT THIS THE ITALIC READINGS ARE WORTHLESS, and silently so. A face
+     * is fetched on first *use*, and `font-display: block` renders the block
+     * period with an invisible placeholder whose metrics are the fallback's.
+     * The first version of this probe measured that placeholder and reported
+     * 1701.09px for **both** Inter Italic and JetBrains Mono Italic — the same
+     * number for a proportional face and a monospaced one, which is impossible,
+     * and the assertion passed anyway because 1701.09 ≠ the roman.
+     *
+     * It walks `document.fonts` — the set built from the document's **own
+     * `@font-face` rules** — and loads the exact entry it wants by identity.
+     *
+     * Two nearby APIs cannot do this job and both were tried:
+     *
+     *   `document.fonts.check()` speculates about what the system might have
+     *   installed, and returns `true` for fonts the engine cannot draw. It is
+     *   the reason this defect survived three phases.
+     *
+     *   `document.fonts.load('italic 400 64px X')` looks safer, and is not: CSS
+     *   font matching permits **style fallback**, so on a bundle with every
+     *   italic face stripped out it happily resolves — with the *roman* face,
+     *   reporting `matched: 1, status: ["loaded"]`. It answers "something can
+     *   serve this request", which is a different question.
+     *
+     * Enumerating the set and matching on `family` and `style` has no fallback
+     * in it. The entry is there or it is not.
+     */
+    const italicEntry = async (family) => {
+      const name = family.replace(/^['"]|['"]$/g, '');
+      const face = [...document.fonts].find((f) => f.family === name && f.style === 'italic');
+      if (face === undefined) return { present: false, status: 'absent' };
+      try {
+        await face.load();
+      } catch {
+        /* status carries the outcome */
+      }
+      return { present: true, status: face.status };
+    };
+
+    const styleStatus = {};
+    for (const { role, requested } of roles) {
+      // The roman is loaded by the page itself; the italic is only fetched on
+      // first use, so it is loaded here by identity before anything is measured.
+      styleStatus[role] = { italic: await italicEntry(requested) };
+    }
+    await document.fonts.ready;
+
+    const stacks = {};
+    for (const { role, token, stack, requested } of roles) {
+      stacks[role] = {
+        token,
+        stack,
+        requested,
+        requestedWidth: measure(`${requested}, '${ABSENT}'`, 400),
+        appliedWidth: measure(stack, 400),
+        // A *synthesised* oblique is a shear transform: it leans the upright
+        // glyphs and leaves every advance width exactly as it was. A real
+        // italic cut is drawn, and its advances differ — FOR A PROPORTIONAL
+        // FACE. For a monospaced one they are equal by definition, so width
+        // cannot answer the question there and the assertion does not ask it;
+        // `italicFace` below is what settles mono.
+        italicWidth: measure(`${requested}, '${ABSENT}'`, 400, 'italic'),
+        italicFace: styleStatus[role].italic,
+        // Recorded, never asserted on. See the note above.
+        checkSaysLoaded: document.fonts.check(`64px ${requested}`),
+        // Each weight the tokens ask for, so a face that covers only 400 and
+        // leaves the engine to fake the rest is visible in the evidence.
+        byWeight: Object.fromEntries(
+          [400, 500, 600, 700].map((w) => [w, measure(`${requested}, '${ABSENT}'`, w)]),
+        ),
+      };
+    }
+
+    /* --- the reading measure, in the face that now renders ---------------- *
+     * `--vela-measure` is a *character count expressed as a length*, and the
+     * count depends entirely on the face. The 30rem in `tokens.css` was
+     * back-calculated from a reading taken on Windows in **Segoe UI**, which is
+     * the font this app was never supposed to be set in. Inter's set widths are
+     * narrower, so the same column holds more characters — the fix to the
+     * typeface moves this number, and if nothing re-measures it the column
+     * silently drifts out of the 65–75 band the token exists to hold.
+     *
+     * Characters per line is computed as column ÷ mean advance rather than
+     * characters ÷ line boxes: the last line of a paragraph is partial, and
+     * that bias runs ~8% on a document of any length. The prose sample is real
+     * English so the letter frequencies — and therefore the mean advance — are
+     * the ones a reader actually meets.                                       */
+    const PROSE =
+      'The question of which model to run is not a question about intelligence so much as ' +
+      'a question about custody. A workspace that keeps the conversation on the machine it ' +
+      'was typed on can afford to be dull about it; one that does not has to be persuasive. ' +
+      'Vela takes the first position, and the whole of its design follows from there: the ' +
+      'endpoint is yours, the transcript is yours, and nothing leaves without you asking.';
+
+    const readingColumn = document.createElement('div');
+    readingColumn.style.cssText =
+      'position:absolute;left:-9999px;top:0;width:var(--vela-measure);' +
+      'font-size:var(--vela-text-base);';
+    document.body.appendChild(readingColumn);
+    const columnStyles = getComputedStyle(readingColumn);
+    const columnPx = readingColumn.getBoundingClientRect().width;
+    const bodyPx = parseFloat(columnStyles.fontSize);
+    readingColumn.remove();
+
+    const oneLine = document.createElement('span');
+    oneLine.textContent = PROSE;
+    oneLine.style.cssText =
+      'position:absolute;left:-9999px;top:0;white-space:pre;font-weight:400;';
+    oneLine.style.fontFamily = stacks.sans.stack;
+    oneLine.style.fontSize = `${bodyPx}px`;
+    document.body.appendChild(oneLine);
+    const proseWidth = oneLine.getBoundingClientRect().width;
+    oneLine.remove();
+
+    const meanAdvance = proseWidth / PROSE.length;
+
+    return {
+      probe: PROBE,
+      absentControlFamily: ABSENT,
+      control: measure(`'${ABSENT}'`, 400),
+      stacks,
+      reading: {
+        measureToken: rootStyles.getPropertyValue('--vela-measure').trim(),
+        columnPx: Math.round(columnPx * 100) / 100,
+        bodyPx,
+        meanAdvancePx: Math.round(meanAdvance * 1000) / 1000,
+        charactersPerLine: Math.round((columnPx / meanAdvance) * 10) / 10,
+      },
+      // What the element carrying body text is actually set in, measured the
+      // same way — the reading the desktop session took.
+      bodyStack: getComputedStyle(document.body).fontFamily.replace(/\s+/g, ' ').trim(),
+      bodyWidth: measure(getComputedStyle(document.body).fontFamily, 400),
+      loadedFaces: [...document.fonts]
+        .filter((face) => face.status === 'loaded')
+        .map((face) => ({ family: face.family, weight: face.weight, style: face.style })),
+    };
+  });
+}
+
 /** Opens a conversation the way a user does, so the composer exists. */
 async function openAConversation(page) {
   const start = page.getByRole('button', { name: 'Start a conversation' });
@@ -646,6 +956,176 @@ async function runControls() {
       'CONTROL: P9 fails on an empty draft — the meter is not stuck at a large number',
       number === null || number <= 1000,
       JSON.stringify(text),
+    );
+    await context.close();
+  }
+
+  // K6 — the width control, controlled.
+  //
+  // P17/P18 pass when two numbers differ, and a probe that can only ever report
+  // "differs" would pass on a tree with no font in it. Two halves:
+  //
+  //   K6a  a family that is definitely absent must measure *exactly* the
+  //        control, so the equality the probe treats as "did not load" is a
+  //        reading the probe can actually produce;
+  //   K6b  the real bundle, served with every `@font-face` rule stripped out of
+  //        its CSS — the state this repository shipped in until this commit —
+  //        must make P17a FAIL. This is the one that matters: it stages the
+  //        defect and shows the assertion catching it, rather than asserting
+  //        that the assertion would.
+  {
+    const { context, page } = await openPage();
+    await page.goto(`${origin}/index.html`, { waitUntil: 'networkidle' });
+    const absent = await page.evaluate(() => {
+      const measure = (family) => {
+        const span = document.createElement('span');
+        span.textContent = 'Handgloves 12345 — the quick brown fox jumps over the lazy dog';
+        span.style.cssText =
+          'position:absolute;left:-9999px;top:0;white-space:pre;font-size:64px;' +
+          'letter-spacing:normal;word-spacing:normal;font-style:normal;font-kerning:none;' +
+          'font-variant:normal;font-feature-settings:normal;font-stretch:normal;font-weight:400;';
+        span.style.fontFamily = family;
+        document.body.appendChild(span);
+        const width = span.getBoundingClientRect().width;
+        span.remove();
+        return Math.round(width * 100) / 100;
+      };
+      return {
+        control: measure(`'ZzQqNoSuchFontXx'`),
+        alsoAbsent: measure(`'QqZzDefinitelyNotInstalledWw', 'ZzQqNoSuchFontXx'`),
+      };
+    });
+    assert(
+      'K6a',
+      'CONTROL: a family that is not there measures exactly the absent-font control',
+      Math.abs(absent.alsoAbsent - absent.control) < 0.5,
+      `absent=${absent.alsoAbsent} control=${absent.control}`,
+    );
+    await context.close();
+  }
+  {
+    // The same dist/, with `@font-face { … }` removed on the way out of the
+    // server. Nothing on disk changes.
+    const stripped = serveDist(distDir, (body, file) =>
+      extname(file) === '.css'
+        ? Buffer.from(String(body).replace(/@font-face\s*\{[^}]*\}/g, ''))
+        : body,
+    );
+    const server2 = await stripped;
+    const origin2 = `http://127.0.0.1:${server2.address().port}`;
+    try {
+      const { context, page } = await openPage();
+      await page.goto(`${origin2}/index.html`, { waitUntil: 'networkidle' });
+      const damaged = await measureTypeface(page);
+      const sans = damaged.stacks.sans;
+      const mono = damaged.stacks.mono;
+      assert(
+        'K6b',
+        'CONTROL: with every @font-face stripped from the real bundle, P17a/P18a FAIL — ' +
+          'the probe catches the defect this commit closes',
+        Math.abs(sans.requestedWidth - damaged.control) < 0.5 &&
+          Math.abs(mono.requestedWidth - damaged.control) < 0.5,
+        `sans=${sans.requestedWidth} mono=${mono.requestedWidth} control=${damaged.control} ` +
+          `(document.fonts.check said sans=${sans.checkSaysLoaded} mono=${mono.checkSaysLoaded})`,
+      );
+      assert(
+        'K6c',
+        'CONTROL: and the stack then paints in a platform fallback instead — which is what ' +
+          'Windows saw as Segoe UI',
+        Math.abs(sans.appliedWidth - sans.requestedWidth) > 1,
+        `applied=${sans.appliedWidth} requested=${sans.requestedWidth} loaded faces=` +
+          `${JSON.stringify(damaged.loadedFaces)}`,
+      );
+      // Why P20 had to be re-measured at all: the same column, in the fallback
+      // face, is a different number of characters. A reading measure is a
+      // property of the pair (width, face), and changing the face without
+      // re-reading it is how a column tuned for one typeface ends up used for
+      // another — which is the state this commit found the tree in.
+      assert(
+        'K6d',
+        'CONTROL: characters-per-line moves when the face does — so P20 is a measurement of ' +
+          'this typeface, not a constant',
+        Math.abs(damaged.reading.charactersPerLine - liveReading.charactersPerLine) > 1,
+        `fallback face: ${damaged.reading.charactersPerLine} cpl ` +
+          `(mean advance ${damaged.reading.meanAdvancePx}px) vs bundled Inter: ` +
+          `${liveReading.charactersPerLine} cpl (${liveReading.meanAdvancePx}px)`,
+      );
+      writeFileSync(
+        join(outDir, 'typeface-probe-control.json'),
+        JSON.stringify(damaged, null, 2) + '\n',
+      );
+      await context.close();
+    } finally {
+      server2.close();
+    }
+  }
+
+  // K8 — the italic assertions, controlled. The same bundle with only the
+  //      `font-style: italic` faces stripped: P17c/P18c must FAIL while
+  //      P17a/P18a still PASS, which is what makes them a check on the italic
+  //      cut specifically rather than on the family in general.
+  {
+    const server3 = await serveDist(distDir, (body, file) =>
+      extname(file) === '.css'
+        ? Buffer.from(
+            String(body).replace(/@font-face\s*\{[^}]*\}/g, (rule) =>
+              /font-style:\s*italic/.test(rule) ? '' : rule,
+            ),
+          )
+        : body,
+    );
+    const origin3 = `http://127.0.0.1:${server3.address().port}`;
+    try {
+      const { context, page } = await openPage();
+      await page.goto(`${origin3}/index.html`, { waitUntil: 'networkidle' });
+      const noItalic = await measureTypeface(page);
+      const sans = noItalic.stacks.sans;
+      const mono = noItalic.stacks.mono;
+      assert(
+        'K8a',
+        'CONTROL: with the italic faces stripped, P17c/P18c FAIL — the font set has no italic ' +
+          'entry for either family',
+        !sans.italicFace.present && !mono.italicFace.present,
+        `sans=${JSON.stringify(sans.italicFace)} mono=${JSON.stringify(mono.italicFace)}`,
+      );
+      assert(
+        'K8b',
+        'CONTROL: and the engine falls back to shearing the roman — the sans italic advances ' +
+          'collapse to exactly the roman, which is the signature of a synthesised oblique',
+        Math.abs(sans.italicWidth - sans.requestedWidth) < 0.5,
+        `stripped: italic=${sans.italicWidth} roman=${sans.requestedWidth} (delta 0); ` +
+          `bundled, for comparison: the same pair differ`,
+      );
+      assert(
+        'K8c',
+        'CONTROL: …while P17a/P18a still PASS, so both italic checks judge the italic cut ' +
+          'and not the family',
+        Math.abs(sans.requestedWidth - noItalic.control) > 1 &&
+          Math.abs(mono.requestedWidth - noItalic.control) > 1,
+        `sans roman=${sans.requestedWidth} mono roman=${mono.requestedWidth} ` +
+          `absent-font control=${noItalic.control}`,
+      );
+      await context.close();
+    } finally {
+      server3.close();
+    }
+  }
+
+  // K7 — P20 must also move with the *token*, not only with the face. 46rem is
+  //      the width the reading column actually had before Phase C, and it is
+  //      the reading that was judged too wide; the band must reject it.
+  {
+    const { context, page } = await openPage();
+    await page.goto(`${origin}/index.html`, { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: ':root { --vela-measure: 46rem; }' });
+    const wide = await measureTypeface(page);
+    assert(
+      'K7',
+      'CONTROL: P20 fails at the pre-Phase-C 46rem column — the band is judging the width, ' +
+        'not passing on anything it is handed',
+      wide.reading.charactersPerLine > 75,
+      `46rem gives ${wide.reading.charactersPerLine} characters per line, ` +
+        `against a 65–75 band and ${liveReading.charactersPerLine} at the shipping 30rem`,
     );
     await context.close();
   }

@@ -1,0 +1,118 @@
+/**
+ * THE TYPEFACE VELA SHIPS.
+ *
+ * `--vela-font-sans` has named Inter, and `--vela-font-mono` JetBrains Mono,
+ * since the token sheet was written. Until this file existed the repository
+ * contained no font file, no `@font-face` and no font package, so on Windows
+ * the product rendered in Segoe UI and Consolas and on Linux in whatever
+ * `sans-serif` resolves to. The design — including `--vela-tracking-tight`,
+ * annotated in `tokens.css` as a correction for *Inter's* set widths — was
+ * authored against metrics no user had. Measured on Windows 11 / WebView2 with
+ * an absent-font control: a probe string rendered at 481.72px in `Inter`,
+ * 481.72px in a deliberately nonexistent family, and 523.91px in the app's own
+ * body stack. Three numbers, one conclusion.
+ *
+ * ## Why bundled and not the platform font
+ *
+ * The alternative — drop the two families, keep Segoe UI / SF / whatever the
+ * distribution ships, and retune the scale — is cheaper and legitimate, and it
+ * was rejected for one reason: there is no *the* platform font. Retuning
+ * against Segoe UI's metrics detunes against San Francisco's, and detunes again
+ * against Cantarell or DejaVu Sans. A single tracking value and a single
+ * reading measure cannot be correct for three faces at once, so "commit to the
+ * platform font" really means "ship three untested typographies and measure
+ * one". Bundling makes the face a constant, which is what lets a measurement
+ * taken on one machine bind on another: the characters-per-line reading in
+ * `tests/harness/production-bundle/drive-app-root.mjs` is taken in Chromium on
+ * Linux and is meaningful on Windows precisely because the glyphs are the same
+ * bytes.
+ *
+ * ## Why this is not a network request
+ *
+ * Vela's first rule is offline-first. These faces are `url()`s into
+ * `node_modules`, resolved and emitted into `dist/assets/` by Vite at build
+ * time, and served by Tauri from the app bundle. Nothing is fetched from a CDN,
+ * at first paint or ever; `tauri.conf.json` declares `font-src 'self' data:`,
+ * which would block it if something tried. `P19` in the production-bundle
+ * harness measures that every font byte came from the page origin.
+ *
+ * ## The budget, and why it is the *latin* subset
+ *
+ * Four files, 179 KiB total. Both packages publish per-subset variable cuts;
+ * importing either package's own stylesheet would pull cyrillic, cyrillic-ext,
+ * greek, greek-ext, vietnamese and latin-ext as well — seven files per axis per
+ * style, over a megabyte, for an interface that is set in Latin. The rules
+ * below carry the packages' own `unicode-range` values, so a codepoint outside
+ * the subset is drawn by the platform font rather than by nothing: a Cyrillic
+ * answer degrades to Segoe UI, which is the correct degradation and the one
+ * `unicode-range` exists to express.
+ *
+ * One variable face per style covers the whole 100–900 axis, so
+ * `--vela-weight-regular` through `--vela-weight-bold` are all real cuts rather
+ * than the engine's synthetic emboldening. Italic is a real cut too, because
+ * rendered markdown emphasis (`MessageTurn.module.css`) and code comments
+ * (`CodeBlock.module.css`) both ask for it, and a synthesised oblique of a
+ * geometric sans is visibly a slanted upright.
+ *
+ * `font-display: block`, not `swap`. `swap` is the right answer for a webfont
+ * arriving over a network, where the alternative is invisible text for the
+ * length of a round trip. There is no round trip here — the file is on local
+ * disk, decoded in single-digit milliseconds — so `swap` buys nothing and costs
+ * a visible reflow from Segoe UI to Inter on every cold start, which is the
+ * defect this file closes, flashed once per launch.
+ *
+ * ## Licence
+ *
+ * Inter and JetBrains Mono are both SIL Open Font Licence 1.1, which permits
+ * redistribution as part of a larger work. The licence texts ship inside the
+ * packages (`@fontsource-variable/<name>/LICENSE`) and are therefore inside the
+ * dependency tree recorded in `pnpm-lock.yaml`.
+ */
+
+/* ---- Inter — the interface and reading face ------------------------------ */
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-display: block;
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-italic.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---- JetBrains Mono — code, and anything that must align in a column ----- */
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 800;
+  src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: italic;
+  font-display: block;
+  font-weight: 100 800;
+  src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

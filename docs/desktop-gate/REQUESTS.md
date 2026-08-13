@@ -347,3 +347,69 @@ never see an error. The risk signal for off-machine no-auth endpoints is surface
 > for it, so an HTTPS remote endpoint using query-param auth currently reports `RiskLevel::None`
 > even though the key lands in server and proxy access logs. The cloud security critic flagged
 > this as non-blocking. If you judge it worse than that on real usage, say so.
+
+---
+
+## fix:bundle-a-typeface — re-measure the width control on WebView2
+
+- **piece-id:** `fix:bundle-a-typeface`
+- **closes:** the `largest_gap` of the `A1-scaffold-shell` **visual FAIL** — "Vela ships no
+  typeface, so on Windows it renders in Segoe UI and Consolas".
+- **what changed:** Vela now bundles Inter and JetBrains Mono. `src/styles/typeface.css` declares
+  four `@font-face` rules — variable weight, normal and italic, Latin subset — whose `src` are
+  `url()`s into `@fontsource-variable/*` that Vite emits into `dist/assets/` at build time.
+  **Four files, 179 KiB, no network request at any point**; `font-src 'self' data:` would block one
+  if there were. Both stacks in `tokens.css` now lead with the bundled family.
+- **why bundled rather than committing to the platform font:** there is no *the* platform font.
+  Retuning the scale against Segoe UI's metrics detunes it against San Francisco's and against
+  whatever a Linux distribution ships, so "commit to the platform font" means shipping three
+  untested typographies and measuring one. Bundling makes the face a constant — which is the
+  thing that lets a cloud-side measurement bind on your machine at all.
+
+**What to exercise — please use the width control, not `document.fonts.check`**
+
+Your finding included the fact that `document.fonts.check('16px Inter')` returned **`true`** on a
+machine with no Inter. That reproduces here too, on Chromium/Linux, before and after the fix — it
+is `true` in all four states, so it is not evidence in either direction. The probe below is the
+one that settles it, and it is the same method you used.
+
+1. In the live window, render a probe string at 64px in: a deliberately absent family; the first
+   family named by `--vela-font-sans`; and the whole applied stack. **Loaded ⇔ the requested
+   family differs from the absent-font control. Actually painted ⇔ the applied stack equals the
+   requested family.** Repeat for `--vela-font-mono`.
+2. Confirm from DevTools' network panel that the `.woff2` files come from the app bundle and that
+   **nothing** is requested off-origin at any point during launch.
+3. Look at the cold-start paint. `font-display: block` was chosen over `swap` deliberately: the
+   file is on local disk, so there is no round trip to cover, and `swap` would flash Segoe UI and
+   reflow into Inter on every launch. If you see a flash of unstyled text, that judgement is wrong
+   and I want to know.
+4. Re-judge the **type scale** now that it renders in the face it was authored for.
+   `--vela-tracking-tight: -0.01em` is annotated in `tokens.css` as a correction for Inter's set
+   widths and was, until now, being applied to Segoe UI. `--vela-tracking-code: 0.02em` is now
+   landing on JetBrains Mono rather than Consolas. Both are unverified visually by me and neither
+   is verifiable from Linux.
+5. Read a long answer. `--vela-measure` measures **68.3 characters per line** in Inter here
+   (65–75 band, assertion P20). If your reading is materially different, WebView2's rasterisation
+   is doing something mine is not, and the token needs to move.
+
+**What "good" looks like**
+
+Inter and JetBrains Mono, demonstrably, by advance width. No FOUT. No off-origin request. A type
+scale that reads correctly in the face it was designed against rather than one it was inherited by.
+
+**Two removals I could not verify and would like judged**
+
+`-webkit-font-smoothing: antialiased` and `text-rendering: optimizeLegibility` were deleted from
+`base.css`. The first is macOS-only — you correctly called it inert on Windows — and it thins the
+same face on one platform, which works against the reason for bundling it. The second is a hint
+whose only cross-engine effect was already the default. Neither changes anything measurable on
+Windows; both change macOS, which neither of us has measured.
+
+**Evidence, and what kind it is**
+
+`P17`–`P20` and controls `K6a`–`K6d`, `K7` in
+`tests/harness/production-bundle/drive-app-root.mjs`, run against the **production bundle** under
+the **shipping CSP** in headless Chromium on Linux. **VERIFIED-BY-FAKE** (conventions §10): it is
+Chromium, not WebView2. What it establishes is that the bundle contains the faces and that the
+stacks resolve to them in *an* engine. Whether they resolve to them in **yours** is your verdict,
+and it is the binding one.

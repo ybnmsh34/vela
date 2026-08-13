@@ -86,10 +86,28 @@
   --vela-row-selected-text: var(--vela-signal-700);
   --vela-scrim: rgb(16 20 38 / 32%);
 
-  /* ---- type -------------------------------------------------------------- */
+  /* ---- type -------------------------------------------------------------- *
+   * Both stacks lead with the *bundled* face, which `src/styles/typeface.css`
+   * declares and Vite emits into the app bundle — see that file for why Vela
+   * ships a typeface rather than committing to the platform's. The second entry
+   * is the same family as a user might have installed system-wide, so a machine
+   * with a real Inter still gets Inter if the bundled face is ever unavailable.
+   * Everything after it is the platform's, reached only for codepoints outside
+   * the bundled Latin subset.
+   *
+   * Naming the first family here is not what makes it render. Until this commit
+   * these stacks named Inter and JetBrains Mono and *nothing shipped them*, so
+   * every Windows install ran on Segoe UI and Consolas. The check that the
+   * leading family actually paints is an advance-width comparison against a
+   * deliberately absent family — `P17`/`P18` in
+   * `tests/harness/production-bundle/drive-app-root.mjs`. Do not substitute
+   * `document.fonts.check()`: it returns `true` for a font the engine cannot
+   * draw, which is how this went unnoticed for the whole of Phases A–C.       */
   --vela-font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
-  --vela-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+    'Helvetica Neue', sans-serif;
+  --vela-font-mono:
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   --vela-text-2xs: 0.625rem;
   --vela-text-xs: 0.75rem;
@@ -223,9 +241,17 @@
      column adds --vela-gutter on each side and the composer's field is exactly
      this wide, which is what puts them on one ruler), and it is not a width for
      anything that is not prose — a settings form reads --vela-panel-measure.
-     The characters-per-line figure itself is measured, not asserted, by
-     tests/harness/ui-bridge: the average advance depends on a typeface Vela
-     does not yet bundle, so only the engine that painted it can report it. */
+     The characters-per-line figure itself is measured, not asserted — and it
+     had to be re-measured once Vela started bundling a typeface, because a
+     reading measure is a property of the pair (width, face) and 30rem was
+     back-calculated from a reading taken in Segoe UI. In Inter it is **68.3
+     characters per line** (480px column, 7.029px mean advance): assertion P20
+     of tests/harness/production-bundle/drive-app-root.mjs, which computes it as
+     column ÷ mean advance rather than characters ÷ line boxes, the latter being
+     biased ~8% by the partial last line of every paragraph. Control K6d shows
+     the same column reading 64.2 in the platform fallback, which is why the
+     re-measurement was not optional; control K7 shows the old 46rem reading
+     104.7, reproducing the operator's ~95–105 from a different engine. */
   --vela-measure: 30rem;
   /* The gap between the reading column and the window. One token, because the
      transcript and the composer share it — that shared value *is* the vertical

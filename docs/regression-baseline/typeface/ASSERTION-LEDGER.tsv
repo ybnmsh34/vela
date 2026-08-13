@@ -1,0 +1,43 @@
+id	verdict	claim	detail
+P1	PASS	the production bundle mounts a non-empty React tree at #root	5196 bytes of markup
+P2	PASS	every feature that only meets at the composition root is on screen	{"statusLine":1,"startAConversation":1,"searchEverything":1,"navigation":1}
+P3	PASS	the page booted the built bundle, not a source module	["/assets/index-CwXX_m0n.js"]
+P4	PASS	no uncaught exception during mount	
+P5	PASS	no console error during mount	
+P6a	PASS	the traps were installed before the document had a body	document.readyState was loading
+P6b	PASS	the app made zero fetch/XHR/WebSocket/EventSource/beacon calls of its own	[]
+P6c	PASS	Chromium itself saw no request leave the page origin	[]
+P7	PASS	the app names the fake it is running on rather than implying a real one	browser / memory-fake (not a real keychain) / Bridge ready · memory-fake
+P17a	PASS	the family --vela-font-sans names first ("Inter Variable") actually loads — WIDTH CONTROL, not document.fonts.check	requested=2009 absent-font control=1725.91 (document.fonts.check said true, which is not evidence)
+P17b	PASS	--vela-font-sans as the app applies it resolves to that same face, not to a fallback	applied=2009 requested=2009 stack="\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+P17c	PASS	the italic of "Inter Variable" is a real cut in the bundle, not the engine shearing the roman	@font-face italic entry: present=true status=loaded; advances italic=2015 roman=2009
+P18a	PASS	the family --vela-font-mono names first ("JetBrains Mono Variable") actually loads — WIDTH CONTROL, not document.fonts.check	requested=2356 absent-font control=1725.91 (document.fonts.check said true, which is not evidence)
+P18b	PASS	--vela-font-mono as the app applies it resolves to that same face, not to a fallback	applied=2356 requested=2356 stack="\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+P18c	PASS	the italic of "JetBrains Mono Variable" is a real cut in the bundle, not the engine shearing the roman	@font-face italic entry: present=true status=loaded; advances italic=2356 roman=2356 (equal is CORRECT for a monospaced face)
+P19a	PASS	the sans and mono faces are two different faces, not one stack shadowing the other	sans=2009 mono=2356
+P19b	PASS	every font byte came from the bundle itself — no request left the origin for a face	4 font requests: ["/assets/inter-latin-wght-normal-Dx4kXJAl.woff2","/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2","/assets/inter-latin-wght-italic-DpCbqKDY.woff2","/assets/jetbrains-mono-latin-wght-italic-B2M6KQje.woff2"]
+P20	PASS	the reading measure still sets 65–75 characters per line IN THE FACE THAT NOW RENDERS — the token was back-calculated from a Segoe UI reading and Inter is narrower	68.3 characters per line: --vela-measure=30rem = 480px at 15px body, mean advance 7.029px
+P8	PASS	with no endpoint configured the meter states no figure at all	the meter is not rendered before a model is selected
+P2b	PASS	opening a conversation brings up the composer, the send action and the model bar	{"composer":1,"send":1,"modelSwitcher":1,"capabilityReadout":1}
+P9	PASS	typing a very large draft moves the context meter off zero	before="Context window not reported by this endpoint · about 0 tokens in this turn" after="Context window not reported by this endpoint · about 220,004 tokens in this turn"
+P10	PASS	the meter never claims a window this endpoint did not report	"Context window not reported by this endpoint · about 220,004 tokens in this turn"
+P13	PASS	a sent turn appears in the transcript	{"user":1,"assistant":1}
+P14	PASS	navigating to another conversation leaves the first transcript behind	{"user":0,"assistant":0}
+P15	PASS	coming back restores the turn — the surface reads it from the store, not from its own state	{"counts":{"user":1,"assistant":1},"sample":"The workstation in the study · a-local-model\nCapabilities unknown\n\nContext window not reported by this endpoint · about 36 tokens in this turn\n\nText file\n\na sen"}
+P16	PASS	the restored turn is the one that was sent, not a re-run of it	1 -> 1 adapter chat calls
+P11	PASS	configuring an endpoint and typing 880,000 characters still produces zero browser requests	0 trapped, 0 off-origin
+P12	PASS	no uncaught exception across the whole session	
+K1	PASS	CONTROL: P1/P2 fail against a page with an empty #root	
+K2a	PASS	CONTROL: the in-page traps record fetch, XHR, WebSocket and EventSource when they are used	["fetch","xhr","websocket","eventsource"]
+K2b	PASS	CONTROL: Chromium's own request event sees an off-origin request when one is made	["http://127.0.0.1:9/v1/models","http://127.0.0.1:9/events"]
+K3	PASS	CONTROL: P4/P5 fail when an error is actually thrown	1 console, 1 uncaught
+K4	PASS	CONTROL: P9 fails on an empty draft — the meter is not stuck at a large number	"Context window not reported by this endpoint · about 0 tokens in this turn"
+K6a	PASS	CONTROL: a family that is not there measures exactly the absent-font control	absent=1725.91 control=1725.91
+K6b	PASS	CONTROL: with every @font-face stripped from the real bundle, P17a/P18a FAIL — the probe catches the defect this commit closes	sans=1725.91 mono=1725.91 control=1725.91 (document.fonts.check said sans=true mono=true)
+K6c	PASS	CONTROL: and the stack then paints in a platform fallback instead — which is what Windows saw as Segoe UI	applied=2134.16 requested=1725.91 loaded faces=[]
+K6d	PASS	CONTROL: characters-per-line moves when the face does — so P20 is a measurement of this typeface, not a constant	fallback face: 64.2 cpl (mean advance 7.482px) vs bundled Inter: 68.3 cpl (7.029px)
+K8a	PASS	CONTROL: with the italic faces stripped, P17c/P18c FAIL — the font set has no italic entry for either family	sans={"present":false,"status":"absent"} mono={"present":false,"status":"absent"}
+K8b	PASS	CONTROL: and the engine falls back to shearing the roman — the sans italic advances collapse to exactly the roman, which is the signature of a synthesised oblique	stripped: italic=2009 roman=2009 (delta 0); bundled, for comparison: the same pair differ
+K8c	PASS	CONTROL: …while P17a/P18a still PASS, so both italic checks judge the italic cut and not the family	sans roman=2009 mono roman=2356 absent-font control=1725.91
+K7	PASS	CONTROL: P20 fails at the pre-Phase-C 46rem column — the band is judging the width, not passing on anything it is handed	46rem gives 104.7 characters per line, against a 65–75 band and 68.3 at the shipping 30rem
+K5	PASS	CONTROL: the served policy is the shipping CSP and it confines connections to self	default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src

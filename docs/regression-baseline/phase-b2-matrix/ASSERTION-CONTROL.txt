@@ -13,8 +13,8 @@ CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
 --------------------------------------------------------------------------------
 The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
 `data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
-  hostile      finished=false wall clock=5.001431497s chars=0   → FAIL (HUNG)
-  frontier     finished=true  wall clock=12.909156ms chars=16   → PASS
+  hostile      finished=false wall clock=5.001205664s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=12.640682ms chars=16   → PASS
   EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
   Vela's own consumer finishes both in single-digit milliseconds — see each profile's
   07-stream-termination.txt. The assertion discriminates.
@@ -133,10 +133,137 @@ CONTROL 11 — "the turn ends in single-digit milliseconds" applied to a stalled
 --------------------------------------------------------------------------------
 Case 07c asserts a median under 10 ms. Applied to the endpoint of case 07b — 4 s
 between frames, 800 ms stall budget — the same assertion must fail.
-  stalled socket        wall clock=808.264262ms outcome=transport → FAIL
+  stalled socket        wall clock=809.919732ms outcome=transport → FAIL
   EXPECTED: FAIL, at roughly the 800 ms stall budget. The single-digit-millisecond
   claim in case 07c is a measurement of Vela ending a stream promptly, not an artefact
   of every code path in this recorder being fast.
+
+================================================================================
+PHASE B2 — CONTROLS FOR THE CROSS-PRODUCT CASES
+================================================================================
+
+Cases 15–20 and case 07c arm C are new, and a new assertion with no control is a
+new assertion nobody has shown can fail. Each control below applies one of them to
+a subject where it must NOT hold, and records the FAIL beside the PASS.
+
+--------------------------------------------------------------------------------
+CONTROL 12 — "a call recovered from a never-closed <think> is not executable"
+applied to the pre-FINDING-3 consumer
+--------------------------------------------------------------------------------
+Cases 14 and 15 assert that the delete_everything call inside an unterminated block
+comes back QUARANTINED. The defect they close was a consumer that handed the
+salvaged text straight to `emulation::parse_calls`. That consumer is rebuilt here,
+live, on the same text, so "not executable" is measured against something that is.
+  pre-fix consumer      1 call(s), 1 EXECUTABLE   ["EXECUTABLE delete_everything"]   → FAIL
+  EXPECTED: FAIL — the pre-fix consumer produces an EXECUTABLE `delete_everything`
+  out of a sentence in which the model refused to run it. That is FINDING 3, alive,
+  beside the assertion that closes it.
+
+--------------------------------------------------------------------------------
+CONTROL 13 — "the rejected value is not returned as conforming" applied to the
+VISIBLE answer and to the COMMITTED answer
+--------------------------------------------------------------------------------
+Case 16's FAIL is reported against `answer_text()`. This control applies the same
+validation to the two candidate inputs side by side. It is what turns "case 16 is
+red" into "case 16 is red BECAUSE the schema check reads the salvaged text".
+  over answer_text()    Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})   → FAIL
+  over executable_text()  Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })   → PASS
+  EXPECTED: the first FAILS, the second PASSES. The difference between them is one
+  accessor, and `answer.rs` already documents `executable_text()` as "the only text a
+  tool parser may see". FINDING 4 is that the schema checker is the same kind of
+  consumer and was never pointed at it.
+
+--------------------------------------------------------------------------------
+CONTROL 14 — "all three calls survive the junk" applied to a consumer that treats
+a bad frame as fatal
+--------------------------------------------------------------------------------
+MEASURED-2's consumer, applied to case 17's stream: `JSON.parse` every frame, stop
+at the first failure. The junk frames are woven BETWEEN the calls, so how much this
+consumer loses is a direct measure of how much the assertion is worth.
+  fatal-on-bad-frame    1 of 3 calls seen before the first junk frame   → FAIL
+  EXPECTED: FAIL at 1 of 3. The second frame of case 17's stream is junk, so a
+  fatal-on-bad-frame consumer reports ONE call where the socket carried three.
+
+--------------------------------------------------------------------------------
+CONTROL 15 — "0 unexplained strings" applied to round 4's error shape
+--------------------------------------------------------------------------------
+Case 18's strongest assertion is that `unexplained_strings` finds nothing. An audit
+that finds nothing because it cannot see is worthless, so it is run here over the
+shape B2 DELETED — a diagnosis with the endpoint's message in a `detail` field.
+  round-4 error shape   1 unexplained string(s): ["VELA-B2-ECHO-MARKER-Qp7Xn: rejected credential for /v1/chat/completions"]   → FAIL
+  B2 error shape        0 unexplained string(s)   → PASS
+  EXPECTED: the first FAILS (the audit sees the marker AND the path), the second
+  PASSES. So case 18's green is a green from an audit with its eyes open.
+
+--------------------------------------------------------------------------------
+CONTROL 16 — the invariance comparator applied to the ENDPOINT'S OWN bodies
+--------------------------------------------------------------------------------
+Case 18 concludes that four errors are byte-identical. That is only meaningful if
+the comparator can tell four things apart. It is run here over the four peer BODIES,
+which differ by construction.
+  four peer bodies      identical=false   → FAIL
+  EXPECTED: FAIL. The four inputs are four different byte strings; the comparator
+  says so. When the same comparator says the four OUTPUTS are identical, that is a
+  measurement rather than a blind spot.
+
+--------------------------------------------------------------------------------
+CONTROL 17 — "this error is never failed over" applied to a transport failure
+--------------------------------------------------------------------------------
+Case 19 asserts a cancelled turn is not sprayed at the next candidate. Applied to
+the class that IS meant to fail over, the same assertion must fail — otherwise it
+is asserting that Vela never fails over at all, which would be a different and
+much worse property.
+  Transport(Connect)    allows_failover=true   → FAIL
+  Cancelled             allows_failover=false   → PASS
+  EXPECTED: the first FAILS and the second PASSES. The two together say the rule is
+  a rule about CANCELLATION, not a blanket refusal to fail over.
+
+--------------------------------------------------------------------------------
+CONTROL 18 — "the deliberate carry is bounded" applied to the raw payload
+--------------------------------------------------------------------------------
+Case 20 asserts `raw_arguments` never exceeds 401 characters. Applied to what the
+endpoint actually sent, the same assertion must fail — otherwise the bound is being
+measured against something that was already short.
+  what the endpoint sent  11610 characters   → FAIL
+  EXPECTED: FAIL, by roughly a factor of thirty. The bound in case 20 is a bound
+  Vela imposes, not a property of the input.
+
+--------------------------------------------------------------------------------
+CONTROL 19 — "the mismatch detail is Vela's own words" applied to an explainer
+that interpolates the offending value
+--------------------------------------------------------------------------------
+The obvious way to write a schema-mismatch message is `format!("expected string, 
+found {value}")`. It is also the way that turns an error message into an endpoint
+channel. Both are built here from the same hostile answer.
+  naive explainer       carries the endpoint's bytes=true   → FAIL
+  Vela's explainer      carries the endpoint's bytes=false   → PASS
+  Vela's verdict        Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" })
+  EXPECTED: the naive one FAILS, Vela's PASSES — and the third verdict records that
+  `SchemaMismatch::new` bounds even the naive one, so the field's DANGER is what it
+  is given, not how long it is.
+
+--------------------------------------------------------------------------------
+CONTROL 20 — "the payload exercises the code being measured" applied to the payload
+ROUND 4 ACTUALLY MEASURED
+--------------------------------------------------------------------------------
+This is the regression critic's complaint, made mechanical. Arm C asserts thousands
+of backslash bytes. The same assertion is applied here to a real streamed answer
+from the matrix harness — the body round 4's arm B measured.
+  round 4's payload     4881 body characters, 0 backslash byte(s)   → FAIL
+  EXPECTED: FAIL, at or near ZERO backslash bytes. That number is the whole of the
+  regression critic's standing complaint, measured rather than argued: arm B's
+  medians were medians of a scrubber that short-circuited on every chunk.
+
+--------------------------------------------------------------------------------
+CONTROL 21 — "emulation was entered" applied to the Messages adapter
+--------------------------------------------------------------------------------
+Case 15 records that the Anthropic adapter cannot emulate, and asserts the refusal
+instead. If `with_tool_emulation` ever appears on that adapter, this control turns
+green and case 15's Anthropic arm becomes a lie that nobody would otherwise notice.
+  anthropic adapter     with_tool_emulation present=false   → FAIL
+  EXPECTED: the Anthropic line FAILS (it does not emulate, which is why case 15
+  asserts a refusal there) and the Google line PASSES (it does, which is why case 15
+  can drive FINDING 3's shape down that adapter at all).
 
 ================================================================================
 Controls are recorded in verdicts.tsv under case names beginning `control-`. Their

@@ -1,0 +1,45 @@
+GATE M Part 1 (Phase B2) — EXECUTOR ASSERTION CONTROLS
+================================================================================
+
+Seven defects, injected ONE AT A TIME into a COPY of the tree under $TMPDIR, with
+the recorder re-run after each. The shared working tree is never modified — a
+concurrent session owns it, and this run has already lost work to a script that
+assumed otherwise.
+
+Each block names the defect, the assertion it is aimed at, what was expected, and
+what was observed. A defect that turns nothing red is reported as such: it means
+the assertion above it is not protecting what it claims to.
+
+--------------------------------------------------------------------------------
+BASELINE — the copy, unmodified
+--------------------------------------------------------------------------------
+  gate failures: 24
+  red cases:
+    16-reasoning-x-structured-output
+
+  This is the tree as committed. FINDING 4 (case 16) is red here and is red in
+  every block below; a reader attributing a defect to an injection must subtract
+  this line first.
+
+--------------------------------------------------------------------------------
+DEFECT 1 — the FINDING 3 quarantine removed from the answer channel
+--------------------------------------------------------------------------------
+  AIM        cases 14 and 15 — 'a call recovered from a never-closed <think> is NOT executable'
+  EXPECTED   cases 14 and 15 go red on every adapter that emulates; nothing else moves
+  OBSERVED   gate failures: 84 (baseline 24)
+  red cases:
+    14-reasoning-meets-tool-calling
+    15-reasoning-x-tools-every-adapter
+    16-reasoning-x-structured-output
+
+--------------------------------------------------------------------------------
+DEFECT 2 — CANDIDATE FIX for FINDING 4 — extract_json stops scavenging a loose object
+--------------------------------------------------------------------------------
+  AIM        case 16 — 'the rejected value is not handed back as a conforming structured answer'
+  EXPECTED   case 16 goes GREEN. This is a POSITIVE control: it is the only block here that is not a defect, and it exists to show the finding's cause is where the report says it is — and to show what the naive fix costs elsewhere
+  OBSERVED   gate failures: 0 (baseline 24)
+  red cases:
+
+  NOTE: this injection did not increase the failure count. Either the assertion
+  it targets is not load-bearing, or the defect is not the defect it looks like.
+

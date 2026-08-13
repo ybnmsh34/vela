@@ -3790,6 +3790,9 @@ async fn case_07c(profile: &str, url: &str, ledger: &mut Vec<Verdict>) {
         ),
     );
 
+    // B2: the arm that answers the regression critic's standing complaint.
+    case_07c_arm_c(profile, &mut doc).await;
+
     doc.write(ledger);
 }
 
@@ -6707,6 +6710,543 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
          of every code path in this recorder being fast."
     );
 
+    // =====================================================================
+    // B2's controls — one per NEW assertion, applied where it must not hold
+    // =====================================================================
+    let _ = writeln!(
+        out,
+        "\n================================================================================\n\
+         PHASE B2 — CONTROLS FOR THE CROSS-PRODUCT CASES\n\
+         ================================================================================\n\n\
+         Cases 15–20 and case 07c arm C are new, and a new assertion with no control is a\n\
+         new assertion nobody has shown can fail. Each control below applies one of them to\n\
+         a subject where it must NOT hold, and records the FAIL beside the PASS."
+    );
+
+    // C12 — FINDING 3's own assertion, applied to the consumer that had the defect.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 12 — \"a call recovered from a never-closed <think> is not executable\"\n\
+                      applied to the pre-FINDING-3 consumer\n\
+         --------------------------------------------------------------------------------\n\
+         Cases 14 and 15 assert that the delete_everything call inside an unterminated block\n\
+         comes back QUARANTINED. The defect they close was a consumer that handed the\n\
+         salvaged text straight to `emulation::parse_calls`. That consumer is rebuilt here,\n\
+         live, on the same text, so \"not executable\" is measured against something that is."
+    );
+    {
+        let naive = vela_providers::emulation::parse_calls(DELIBERATION);
+        let executable = naive.calls.iter().filter(|call| call.is_ok()).count();
+        let names: Vec<String> = naive
+            .calls
+            .iter()
+            .map(|call| match call {
+                ToolCallOutcome::Ok { name, .. } => format!("EXECUTABLE {name}"),
+                other => format!("{}", describe_calls(std::slice::from_ref(other))),
+            })
+            .collect();
+        let _ = writeln!(
+            out,
+            "  pre-fix consumer      {} call(s), {executable} EXECUTABLE   {names:?}   → {}",
+            naive.calls.len(),
+            if executable == 0 { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-12-deliberation-becomes-a-call".into(),
+            name: "a call parsed straight out of deliberation is not executable".into(),
+            pass: executable == 0,
+            detail: format!("{executable} executable call(s): {names:?}"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL — the pre-fix consumer produces an EXECUTABLE `delete_everything`\n  \
+         out of a sentence in which the model refused to run it. That is FINDING 3, alive,\n  \
+         beside the assertion that closes it."
+    );
+
+    // C13 — case 16's assertion, applied to the two texts, which localises FINDING 4.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 13 — \"the rejected value is not returned as conforming\" applied to the\n\
+                      VISIBLE answer and to the COMMITTED answer\n\
+         --------------------------------------------------------------------------------\n\
+         Case 16's FAIL is reported against `answer_text()`. This control applies the same\n\
+         validation to the two candidate inputs side by side. It is what turns \"case 16 is\n\
+         red\" into \"case 16 is red BECAUSE the schema check reads the salvaged text\"."
+    );
+    {
+        let schema = weather_schema();
+        // What every adapter passes today: the whole visible answer, salvaged
+        // text included.
+        let visible = "The user wants an object. My first guess is \
+                       {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not \
+                       exist and that temperature is below absolute zero, so I must";
+        // What `answer.rs` already computes and calls "the only text a tool
+        // parser may see": committed text, salvaged text excluded. On this turn
+        // it is empty, because the model never left the block.
+        let committed = "";
+        let over_visible = vela_providers::structured::check_answer(&schema, visible);
+        let over_committed = vela_providers::structured::check_answer(&schema, committed);
+        let _ = writeln!(
+            out,
+            "  over answer_text()    {:?}   → {}",
+            over_visible,
+            if over_visible.is_err() { "PASS" } else { "FAIL" }
+        );
+        let _ = writeln!(
+            out,
+            "  over executable_text()  {:?}   → {}",
+            over_committed,
+            if over_committed.is_err() {
+                "PASS"
+            } else {
+                "FAIL"
+            }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-13-schema-over-salvaged-text".into(),
+            name: "validating the VISIBLE answer does not return the rejected value".into(),
+            pass: over_visible.is_err(),
+            detail: format!("{over_visible:?}"),
+        });
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-13-schema-over-committed-text".into(),
+            name: "validating the COMMITTED answer does not return the rejected value".into(),
+            pass: over_committed.is_err(),
+            detail: format!("{over_committed:?}"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: the first FAILS, the second PASSES. The difference between them is one\n  \
+         accessor, and `answer.rs` already documents `executable_text()` as \"the only text a\n  \
+         tool parser may see\". FINDING 4 is that the schema checker is the same kind of\n  \
+         consumer and was never pointed at it."
+    );
+
+    // C14 — case 17's assertion, applied to the naive frame consumer.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 14 — \"all three calls survive the junk\" applied to a consumer that treats\n\
+                      a bad frame as fatal\n\
+         --------------------------------------------------------------------------------\n\
+         MEASURED-2's consumer, applied to case 17's stream: `JSON.parse` every frame, stop\n\
+         at the first failure. The junk frames are woven BETWEEN the calls, so how much this\n\
+         consumer loses is a direct measure of how much the assertion is worth."
+    );
+    {
+        let body = Adapter::Compat.parallel_with_junk();
+        let mut survived = 0usize;
+        for frame in body.split("\n\n") {
+            let Some(data) = frame.strip_prefix("data: ") else {
+                continue;
+            };
+            if data == "[DONE]" {
+                break;
+            }
+            if serde_json::from_str::<Value>(data).is_err() {
+                break; // fatal, by construction
+            }
+            if data.contains("\"tool_calls\"") && data.contains("\"id\"") {
+                survived += 1;
+            }
+        }
+        let _ = writeln!(
+            out,
+            "  fatal-on-bad-frame    {survived} of 3 calls seen before the first junk frame   → {}",
+            if survived == 3 { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-14-fatal-frame-consumer".into(),
+            name: "all three calls survive the junk".into(),
+            pass: survived == 3,
+            detail: format!("{survived} of 3"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL at 1 of 3. The second frame of case 17's stream is junk, so a\n  \
+         fatal-on-bad-frame consumer reports ONE call where the socket carried three."
+    );
+
+    // C15 — case 18's audit, applied to a shape that DOES carry endpoint text.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 15 — \"0 unexplained strings\" applied to round 4's error shape\n\
+         --------------------------------------------------------------------------------\n\
+         Case 18's strongest assertion is that `unexplained_strings` finds nothing. An audit\n\
+         that finds nothing because it cannot see is worthless, so it is run here over the\n\
+         shape B2 DELETED — a diagnosis with the endpoint's message in a `detail` field."
+    );
+    {
+        let round4_shape = json!({
+            "kind": "authFailed",
+            "diagnosis": {
+                "cause": "credential_rejected",
+                "detail": format!("{ECHO_MARKER}: rejected credential for /v1/chat/completions"),
+                "status": 401,
+            }
+        });
+        let found = vela_providers::diagnostic::unexplained_strings(&round4_shape, &[]);
+        let _ = writeln!(
+            out,
+            "  round-4 error shape   {} unexplained string(s): {found:?}   → {}",
+            found.len(),
+            if found.is_empty() { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-15-audit-sees-endpoint-text".into(),
+            name: "0 unexplained strings".into(),
+            pass: found.is_empty(),
+            detail: format!("{found:?}"),
+        });
+        // And the same audit over B2's shape, which must be clean.
+        let b2_shape = json!({
+            "kind": "authFailed",
+            "diagnosis": {"cause": "credential_rejected", "status": 401}
+        });
+        let clean = vela_providers::diagnostic::unexplained_strings(&b2_shape, &[]);
+        let _ = writeln!(
+            out,
+            "  B2 error shape        {} unexplained string(s)   → {}",
+            clean.len(),
+            if clean.is_empty() { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-15-audit-clean-on-b2-shape".into(),
+            name: "0 unexplained strings on the shape B2 actually ships".into(),
+            pass: clean.is_empty(),
+            detail: format!("{clean:?}"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: the first FAILS (the audit sees the marker AND the path), the second\n  \
+         PASSES. So case 18's green is a green from an audit with its eyes open."
+    );
+
+    // C16 — case 18's invariance comparator, applied to inputs that DO differ.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 16 — the invariance comparator applied to the ENDPOINT'S OWN bodies\n\
+         --------------------------------------------------------------------------------\n\
+         Case 18 concludes that four errors are byte-identical. That is only meaningful if\n\
+         the comparator can tell four things apart. It is run here over the four peer BODIES,\n\
+         which differ by construction."
+    );
+    {
+        let bodies: Vec<String> = ECHO_VARIANTS
+            .iter()
+            .map(|variant| {
+                let message = echo_message(variant);
+                let inner = if *variant == "escaped" {
+                    unicode_escaped(&message)
+                } else {
+                    message
+                };
+                strip_correlation(&Adapter::Compat.error_body_raw(&inner))
+            })
+            .collect();
+        let identical = bodies.windows(2).all(|pair| pair[0] == pair[1]);
+        let _ = writeln!(
+            out,
+            "  four peer bodies      identical={identical}   → {}",
+            if identical { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-16-comparator-is-not-blind".into(),
+            name: "the four inputs are byte-identical".into(),
+            pass: identical,
+            detail: format!("{} distinct bodies", {
+                let mut sorted = bodies.clone();
+                sorted.sort();
+                sorted.dedup();
+                sorted.len()
+            }),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL. The four inputs are four different byte strings; the comparator\n  \
+         says so. When the same comparator says the four OUTPUTS are identical, that is a\n  \
+         measurement rather than a blind spot."
+    );
+
+    // C17 — case 19's failover rule, applied to a class that IS failed over.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 17 — \"this error is never failed over\" applied to a transport failure\n\
+         --------------------------------------------------------------------------------\n\
+         Case 19 asserts a cancelled turn is not sprayed at the next candidate. Applied to\n\
+         the class that IS meant to fail over, the same assertion must fail — otherwise it\n\
+         is asserting that Vela never fails over at all, which would be a different and\n\
+         much worse property."
+    );
+    {
+        let transient = ProviderError::transport(
+            vela_providers::error::TransportFailure::Connect,
+            vela_providers::diagnostic::Diagnosis::local(
+                vela_providers::diagnostic::Cause::ConnectionFailed,
+            ),
+        );
+        let cancelled = ProviderError::Cancelled;
+        let _ = writeln!(
+            out,
+            "  Transport(Connect)    allows_failover={}   → {}",
+            transient.allows_failover(),
+            if transient.allows_failover() {
+                "FAIL"
+            } else {
+                "PASS"
+            }
+        );
+        let _ = writeln!(
+            out,
+            "  Cancelled             allows_failover={}   → {}",
+            cancelled.allows_failover(),
+            if cancelled.allows_failover() {
+                "FAIL"
+            } else {
+                "PASS"
+            }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-17-failover-rule".into(),
+            name: "a transport failure is never failed over".into(),
+            pass: !transient.allows_failover(),
+            detail: format!("allows_failover={}", transient.allows_failover()),
+        });
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-17-failover-rule-cancelled".into(),
+            name: "a cancelled turn is never failed over".into(),
+            pass: !cancelled.allows_failover(),
+            detail: format!("allows_failover={}", cancelled.allows_failover()),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: the first FAILS and the second PASSES. The two together say the rule is\n  \
+         a rule about CANCELLATION, not a blanket refusal to fail over."
+    );
+
+    // C18 — case 20's bound, applied to the unbounded payload.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 18 — \"the deliberate carry is bounded\" applied to the raw payload\n\
+         --------------------------------------------------------------------------------\n\
+         Case 20 asserts `raw_arguments` never exceeds 401 characters. Applied to what the\n\
+         endpoint actually sent, the same assertion must fail — otherwise the bound is being\n\
+         measured against something that was already short."
+    );
+    {
+        let raw = hostile_tool_arguments();
+        let sent = raw.chars().count();
+        let _ = writeln!(
+            out,
+            "  what the endpoint sent  {sent} characters   → {}",
+            if sent <= 401 { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-18-raw-arguments-bound".into(),
+            name: "the payload is at most 401 characters".into(),
+            pass: sent <= 401,
+            detail: format!("{sent} characters"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL, by roughly a factor of thirty. The bound in case 20 is a bound\n  \
+         Vela imposes, not a property of the input."
+    );
+
+    // C19 — case 20's "Vela's own words", applied to a naive explainer.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 19 — \"the mismatch detail is Vela's own words\" applied to an explainer\n\
+                      that interpolates the offending value\n\
+         --------------------------------------------------------------------------------\n\
+         The obvious way to write a schema-mismatch message is `format!(\"expected string, \n\
+         found {{value}}\")`. It is also the way that turns an error message into an endpoint\n\
+         channel. Both are built here from the same hostile answer."
+    );
+    {
+        let hostile = hostile_structured_answer();
+        let value: Value = serde_json::from_str(&hostile).unwrap_or(Value::Null);
+        let naive = vela_providers::model::SchemaMismatch::new(
+            "/city",
+            format!(
+                "expected string, found {}",
+                serde_json::to_string(&value["city"]).unwrap_or_default()
+            ),
+        );
+        let velas = vela_providers::structured::check_answer(&weather_schema(), &hostile);
+        let naive_leaks = naive.detail.contains(SIBLING_MARKER);
+        let vela_leaks = format!("{velas:?}").contains(SIBLING_MARKER);
+        let _ = writeln!(
+            out,
+            "  naive explainer       carries the endpoint's bytes={naive_leaks}   → {}",
+            if naive_leaks { "FAIL" } else { "PASS" }
+        );
+        let _ = writeln!(
+            out,
+            "  Vela's explainer      carries the endpoint's bytes={vela_leaks}   → {}",
+            if vela_leaks { "FAIL" } else { "PASS" }
+        );
+        let _ = writeln!(out, "  Vela's verdict        {velas:?}");
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-19-naive-mismatch-explainer".into(),
+            name: "the mismatch detail carries no endpoint text".into(),
+            pass: !naive_leaks,
+            detail: format!("{:?}", elide(&naive.detail, 120)),
+        });
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-19-velas-mismatch-explainer".into(),
+            name: "the mismatch detail carries no endpoint text (Vela's)".into(),
+            pass: !vela_leaks,
+            detail: format!("{velas:?}"),
+        });
+        // …and the bound holds even on the naive one, which is worth recording:
+        // `SchemaMismatch::new` is the sanitiser as well as the constructor.
+        let bounded = naive.detail.chars().count() <= 201;
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-19-naive-is-still-bounded".into(),
+            name: "even a naive explainer's detail is bounded by the constructor".into(),
+            pass: bounded,
+            detail: format!("{} characters", naive.detail.chars().count()),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: the naive one FAILS, Vela's PASSES — and the third verdict records that\n  \
+         `SchemaMismatch::new` bounds even the naive one, so the field's DANGER is what it\n  \
+         is given, not how long it is."
+    );
+
+    // C20 — case 07c arm C's vacuity guard, applied to round 4's own payload.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 20 — \"the payload exercises the code being measured\" applied to the payload\n\
+                      ROUND 4 ACTUALLY MEASURED\n\
+         --------------------------------------------------------------------------------\n\
+         This is the regression critic's complaint, made mechanical. Arm C asserts thousands\n\
+         of backslash bytes. The same assertion is applied here to a real streamed answer\n\
+         from the matrix harness — the body round 4's arm B measured."
+    );
+    {
+        let server = MockServer::start("frontier", &[]).await;
+        let log = WireLog::default();
+        let provider = credentialed_provider_for(&server.url, &log);
+        let mut sink = CollectingSink::new();
+        let _ = provider
+            .stream(
+                user("frontier", "what is the weather in Berlin").with_max_output_tokens(256),
+                &mut sink,
+                &context(),
+            )
+            .await;
+        let body = last_response_body(&log.drain());
+        let backslashes = body.matches('\\').count();
+        let _ = writeln!(
+            out,
+            "  round 4's payload     {} body characters, {backslashes} backslash byte(s)   → {}",
+            body.chars().count(),
+            if backslashes > 1000 { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "frontier".into(),
+            case: "control-20-round4-latency-payload".into(),
+            name: "the measured payload has thousands of backslash bytes".into(),
+            pass: backslashes > 1000,
+            detail: format!("{backslashes} backslash byte(s) in {} chars", body.len()),
+        });
+        server.stop().await;
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: FAIL, at or near ZERO backslash bytes. That number is the whole of the\n  \
+         regression critic's standing complaint, measured rather than argued: arm B's\n  \
+         medians were medians of a scrubber that short-circuited on every chunk."
+    );
+
+    // C21 — case 15's premise, applied to an adapter that never emulates.
+    let _ = writeln!(
+        out,
+        "\n--------------------------------------------------------------------------------\n\
+         CONTROL 21 — \"emulation was entered\" applied to the Messages adapter\n\
+         --------------------------------------------------------------------------------\n\
+         Case 15 records that the Anthropic adapter cannot emulate, and asserts the refusal\n\
+         instead. If `with_tool_emulation` ever appears on that adapter, this control turns\n\
+         green and case 15's Anthropic arm becomes a lie that nobody would otherwise notice."
+    );
+    {
+        let sources = ["anthropic/stream.rs", "anthropic/provider.rs"]
+            .iter()
+            .map(|name| {
+                std::fs::read_to_string(
+                    repo_root()
+                        .join("src-tauri/crates/vela-providers/src")
+                        .join(name),
+                )
+                .unwrap_or_default()
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        let emulates = sources.contains("with_tool_emulation");
+        let _ = writeln!(
+            out,
+            "  anthropic adapter     with_tool_emulation present={emulates}   → {}",
+            if emulates { "PASS" } else { "FAIL" }
+        );
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-21-anthropic-emulates".into(),
+            name: "the Messages adapter enables tool emulation".into(),
+            pass: emulates,
+            detail: format!("with_tool_emulation present = {emulates}"),
+        });
+        let google = std::fs::read_to_string(
+            repo_root().join("src-tauri/crates/vela-providers/src/google/provider.rs"),
+        )
+        .unwrap_or_default()
+        .contains("with_tool_emulation");
+        ledger.push(Verdict {
+            profile: "all".into(),
+            case: "control-21-google-emulates".into(),
+            name: "the Gemini adapter enables tool emulation".into(),
+            pass: google,
+            detail: format!("with_tool_emulation present = {google}"),
+        });
+    }
+    let _ = writeln!(
+        out,
+        "  EXPECTED: the Anthropic line FAILS (it does not emulate, which is why case 15\n  \
+         asserts a refusal there) and the Google line PASSES (it does, which is why case 15\n  \
+         can drive FINDING 3's shape down that adapter at all)."
+    );
+
     let _ = writeln!(
         out,
         "\n================================================================================\n\
@@ -9041,6 +9581,629 @@ async fn case_19(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.write(ledger);
 }
 
+// ===========================================================================
+// Case 20 — THE SIBLING SURFACES x endpoint text  (executor's pick #2)
+// ===========================================================================
+//
+// WHY THIS PAIR. B2's whole thesis is that untrusted bytes must not be carried
+// across the IPC boundary, and B2 delivered that — for `ProviderError`. But
+// `ProviderError` is not the only thing that crosses. `ChatResponse` crosses
+// too, and it has three string-bearing fields that nobody has ever held to the
+// same standard:
+//
+//   Degradation::StructuredOutputMismatch { detail: String }
+//   SchemaMismatch { path: String, detail: String }
+//   ToolCallOutcome::Malformed { raw_arguments: String, ... }
+//
+// Every argument that made the error surface dangerous applies to these
+// verbatim: they are strings, they are built while an endpoint's bytes are in
+// hand, and they are rendered into a UI. The reason nobody looked is that they
+// live on the SUCCESS path, and four rounds of security work all started from
+// an error. That is a category boundary, not a safety property — which is
+// exactly the shape of blind spot this whole phase exists to find.
+//
+// The answer is NOT "these must carry nothing". `raw_arguments` carries the
+// model's broken payload ON PURPOSE, so the UI can show the user what the model
+// was contemplating and let them ask for it deliberately (`answer.rs`). This
+// case asks the three questions that actually matter:
+//
+//   1. Is the DELIBERATE carry BOUNDED? An unbounded one is a denial of service
+//      against the renderer and a hiding place for anything.
+//   2. Is the carry confined to the field documented for it — or has endpoint
+//      text also reached `detail`, which is documented as Vela's own words?
+//   3. Does any of it reach the ERROR surface, where B2 says nothing may?
+
+const SIBLING_MARKER: &str = "VELA-B2-SIBLING-MARKER-Wm4Zt";
+
+/// An answer that fails the schema, with the marker in a place a naive
+/// "explain the mismatch" implementation would interpolate: the offending
+/// VALUE. `/city` is declared `string` and arrives as an object.
+fn hostile_structured_answer() -> String {
+    let long: String = std::iter::repeat(format!("{SIBLING_MARKER} "))
+        .take(120)
+        .collect::<Vec<String>>()
+        .join("");
+    format!("{{\"city\":{{\"nested\":\"{long}\"}},\"celsius\":\"{SIBLING_MARKER}-not-a-number\"}}")
+}
+
+/// A tool call whose arguments are enormous and hostile and NOT valid JSON, so
+/// it lands in `ToolCallOutcome::Malformed { raw_arguments }` — the field that
+/// carries endpoint text deliberately.
+fn hostile_tool_arguments() -> String {
+    let long: String = std::iter::repeat(format!("{SIBLING_MARKER}/"))
+        .take(400)
+        .collect::<Vec<String>>()
+        .join("");
+    format!("{{\"city\": \"{long}")
+}
+
+fn sibling_script(adapter: Adapter, tools: bool) -> PeerScript {
+    Arc::new(move |path: &str, body: &str| {
+        if adapter.is_model_list(path) {
+            return Reply::json(200, adapter.model_list());
+        }
+        let streamed = adapter.wants_stream(path, body);
+        if tools {
+            let raw = hostile_tool_arguments();
+            let payload = match (adapter, streamed) {
+                (Adapter::Compat, false) => format!(
+                    "{{\"id\":\"c\",\"object\":\"chat.completion\",\"choices\":[{{\"index\":0,\
+                     \"message\":{{\"role\":\"assistant\",\"content\":null,\"tool_calls\":\
+                     [{{\"id\":\"call_x\",\"type\":\"function\",\"function\":\
+                     {{\"name\":\"get_weather\",\"arguments\":{}}}}}]}},\
+                     \"finish_reason\":\"tool_calls\"}}]}}",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+                (Adapter::Compat, true) => format!(
+                    "data: {{\"id\":\"c\",\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":\
+                     [{{\"index\":0,\"id\":\"call_x\",\"type\":\"function\",\"function\":\
+                     {{\"name\":\"get_weather\",\"arguments\":{}}}}}]}},\
+                     \"finish_reason\":null}}]}}\n\ndata: [DONE]\n\n",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+                // `input` is a structured object on this transport, so an
+                // UNPARSEABLE argument string is not expressible. The hostile
+                // analogue that IS expressible here is a call with no name —
+                // MEASURED-4's own shape — carrying the same huge payload.
+                (Adapter::Anthropic, false) => format!(
+                    "{{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\
+                     \"model\":\"claude-cross\",\"content\":[{{\"type\":\"tool_use\",\
+                     \"id\":\"toolu_x\",\"input\":{{\"city\":{}}}}}],\
+                     \"stop_reason\":\"tool_use\",\
+                     \"usage\":{{\"input_tokens\":1,\"output_tokens\":2}}}}",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+                (Adapter::Anthropic, true) => format!(
+                    "event: content_block_start\ndata: {{\"type\":\"content_block_start\",\
+                     \"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"toolu_x\",\
+                     \"name\":\"get_weather\",\"input\":{{}}}}}}\n\n\
+                     event: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\
+                     \"index\":0,\"delta\":{{\"type\":\"input_json_delta\",\"partial_json\":{}}}}}\
+                     \n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\
+                     \"index\":0}}\n\nevent: message_delta\ndata: {{\"type\":\"message_delta\",\
+                     \"delta\":{{\"stop_reason\":\"tool_use\"}},\
+                     \"usage\":{{\"output_tokens\":9}}}}\n\n\
+                     event: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+                (Adapter::Google, false) => format!(
+                    "{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"functionCall\":\
+                     {{\"args\":{{\"city\":{}}}}}}}],\"role\":\"model\"}},\
+                     \"finishReason\":\"STOP\",\"index\":0}}],\
+                     \"usageMetadata\":{{\"promptTokenCount\":1,\"candidatesTokenCount\":2,\
+                     \"totalTokenCount\":3}}}}",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+                (Adapter::Google, true) => format!(
+                    "data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"functionCall\":\
+                     {{\"args\":{{\"city\":{}}}}}}}],\"role\":\"model\"}},\"index\":0}}]}}\n\n\
+                     data: {{\"candidates\":[{{\"content\":{{\"parts\":[],\"role\":\"model\"}},\
+                     \"finishReason\":\"STOP\",\"index\":0}}],\
+                     \"usageMetadata\":{{\"promptTokenCount\":1,\"candidatesTokenCount\":2,\
+                     \"totalTokenCount\":3}}}}\n\n",
+                    serde_json::to_string(&raw).expect("serialises")
+                ),
+            };
+            return if streamed {
+                Reply::sse(payload)
+            } else {
+                Reply::json(200, payload)
+            };
+        }
+        let answer = hostile_structured_answer();
+        if streamed {
+            Reply::sse(adapter.streamed(&answer, 64))
+        } else {
+            Reply::json(200, adapter.whole(&answer))
+        }
+    })
+}
+
+async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new_with(
+        profile,
+        "20-sibling-surfaces-x-endpoint-text",
+        "the string-bearing fields on the SUCCESS path, held to B2's standard",
+        "Executor's pick. B2 closed `ProviderError`. `ChatResponse` crosses the same IPC \
+         boundary and has three string fields nobody has audited, for one reason: they live \
+         on the success path, and four rounds of security work all started from an error.",
+        "all three shipping adapters",
+        "one purpose-built loopback peer per adapter, real TCP",
+    );
+    doc.p(
+        "  THE THREE FIELDS:\n    \
+         Degradation::StructuredOutputMismatch { detail }   documented as Vela's own words\n    \
+         SchemaMismatch { path, detail }                    path from the USER's schema\n    \
+         ToolCallOutcome::Malformed { raw_arguments }       endpoint text, ON PURPOSE\n  \
+         The third one is not a defect and this case does not treat it as one. It asks\n  \
+         whether the deliberate carry is BOUNDED, whether it stayed in its own field, and\n  \
+         whether any of it reached the error surface.",
+    );
+
+    // ---- arm 1: a schema mismatch whose offending VALUE is hostile --------
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(sibling_script(adapter, false)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let arm = format!("{} / {}", adapter.label(), transport_label(streamed));
+
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user("weather as JSON"))
+                .with_response_format(ResponseFormat::JsonSchema {
+                    name: "weather".into(),
+                    schema: weather_schema(),
+                });
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let entries = log.drain();
+            let on_the_wire = joined_bodies(&entries).contains(SIBLING_MARKER);
+
+            let Ok(response) = outcome else {
+                doc.check(
+                    &format!("{arm}: the turn completes"),
+                    false,
+                    format!("{outcome:?}"),
+                );
+                peer.stop();
+                continue;
+            };
+
+            let verdict_json = serde_json::to_string(&response.structured).unwrap_or_default();
+            let degradations_json =
+                serde_json::to_string(&response.degradations).unwrap_or_default();
+
+            doc.h(&format!("{arm} — schema mismatch, hostile offending value"));
+            doc.kv("marker on the wire", on_the_wire);
+            doc.kv("STRUCTURED VERDICT", format!("{:?}", response.structured));
+            doc.kv("degradations (serde)", elide(&degradations_json, 300));
+
+            doc.check(
+                &format!("{arm}: the marker really was on the wire — nothing below is vacuous"),
+                on_the_wire,
+                format!("{} response byte(s) recorded", joined_bodies(&entries).len()),
+            );
+            doc.check(
+                &format!("{arm}: the mismatch is REPORTED, not passed through as conforming"),
+                matches!(&response.structured, Some(Err(_))),
+                format!("{:?}", response.structured),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes \
+                     are not interpolated into the explanation"
+                ),
+                !verdict_json.contains(SIBLING_MARKER),
+                elide(&verdict_json, 300),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: SchemaMismatch::path names a field of the USER'S schema, not \
+                     anything the endpoint chose"
+                ),
+                match &response.structured {
+                    Some(Err(mismatch)) => {
+                        mismatch.path.is_empty()
+                            || weather_schema()["properties"]
+                                .as_object()
+                                .is_some_and(|properties| {
+                                    properties.keys().any(|key| mismatch.path.contains(key))
+                                })
+                    }
+                    _ => false,
+                },
+                format!("{:?}", response.structured),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: no Degradation carries endpoint text — the sibling of the error \
+                     surface holds the same line"
+                ),
+                !degradations_json.contains(SIBLING_MARKER),
+                elide(&degradations_json, 300),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: the mismatch detail is BOUNDED — a hostile answer cannot make it \
+                     unbounded"
+                ),
+                match &response.structured {
+                    Some(Err(mismatch)) => {
+                        mismatch.detail.chars().count() <= 201
+                            && !mismatch.detail.contains('\n')
+                    }
+                    _ => false,
+                },
+                format!("{:?}", response.structured),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: the answer text DOES carry it — which is correct. The model's \
+                     answer is the model's answer; this case is about the METADATA"
+                ),
+                response.answer_text().contains(SIBLING_MARKER),
+                format!("{} answer character(s)", response.answer_text().chars().count()),
+            );
+
+            peer.stop();
+        }
+    }
+
+    // ---- arm 2: the deliberate carry, `raw_arguments` --------------------
+    doc.h("the field that carries endpoint text ON PURPOSE — is it bounded?");
+    doc.p(
+        "  `ToolCallOutcome::Malformed { raw_arguments }` exists so a user can see what the\n  \
+         model was trying to do with a call Vela refused to run. That is a deliberate,\n  \
+         documented carry and this case does not argue with it. It argues with an UNBOUNDED\n  \
+         one: 400 repetitions of the marker are sent, and the bound is 400 CHARACTERS.",
+    );
+    for adapter in Adapter::ALL {
+        for streamed in [true, false] {
+            let peer = CrossPeer::start(sibling_script(adapter, true)).await;
+            let log = WireLog::default();
+            let provider = adapter.provider(&peer.url, &log);
+            let arm = format!("{} / {}", adapter.label(), transport_label(streamed));
+
+            let request = ChatRequest::new(adapter.model())
+                .with_message(ChatMessage::user("weather please"))
+                .with_tools([weather_tool()])
+                .with_tool_choice(ToolChoice::Auto);
+            let mut sink = CollectingSink::new();
+            let outcome = if streamed {
+                provider.stream(request, &mut sink, &context()).await
+            } else {
+                provider.complete(request, &context()).await
+            };
+            let entries = log.drain();
+            let sent = joined_bodies(&entries).matches(SIBLING_MARKER).count();
+
+            let Ok(response) = outcome else {
+                doc.check(
+                    &format!("{arm}: a hostile tool payload does not fail the turn"),
+                    false,
+                    format!("{outcome:?}"),
+                );
+                peer.stop();
+                continue;
+            };
+
+            let calls_json = serde_json::to_string(&response.tool_calls).unwrap_or_default();
+            let longest_raw = response
+                .tool_calls
+                .iter()
+                .filter_map(|call| match call {
+                    ToolCallOutcome::Malformed { raw_arguments, .. } => {
+                        Some(raw_arguments.chars().count())
+                    }
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+
+            doc.kv(
+                &format!("{arm}: marker occurrences sent / kept"),
+                format!(
+                    "{sent} / {}",
+                    calls_json.matches(SIBLING_MARKER).count()
+                ),
+            );
+            doc.kv(&format!("{arm}: longest raw_arguments"), longest_raw);
+            doc.kv(&format!("{arm}: calls"), describe_calls(&response.tool_calls));
+
+            doc.check(
+                &format!("{arm}: the hostile payload really was sent — nothing here is vacuous"),
+                sent > 100,
+                format!("{sent} occurrence(s) on the wire"),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds \
+                     401 characters however much the endpoint sends"
+                ),
+                longest_raw <= 401,
+                format!("{longest_raw} character(s)"),
+            );
+            doc.check(
+                &format!(
+                    "{arm}: a call Vela could not parse is NOT executable — it is reported, \
+                     not run"
+                ),
+                !response.tool_calls.is_empty()
+                    && !response.tool_calls.iter().any(ToolCallOutcome::is_ok),
+                describe_calls(&response.tool_calls),
+            );
+            doc.check(
+                &format!("{arm}: no Degradation carries the payload either"),
+                !serde_json::to_string(&response.degradations)
+                    .unwrap_or_default()
+                    .contains(SIBLING_MARKER),
+                describe_degradations(&response.degradations),
+            );
+
+            peer.stop();
+        }
+    }
+
+    // ---- arm 3: none of it reaches the ERROR surface ---------------------
+    doc.h("and none of it reaches the error surface, where B2 says nothing may");
+    for adapter in Adapter::ALL {
+        let peer = CrossPeer::start(Arc::new(move |path: &str, _body: &str| {
+            if adapter.is_model_list(path) {
+                return Reply::json(200, adapter.model_list());
+            }
+            // A 400 whose message is the same hostile payload, so the two
+            // surfaces are compared on identical bytes.
+            Reply::json(400, adapter.error_body(&hostile_structured_answer()))
+        }))
+        .await;
+        let log = WireLog::default();
+        let provider = adapter.provider(&peer.url, &log);
+        let outcome = provider
+            .complete(
+                ChatRequest::new(adapter.model()).with_message(ChatMessage::user("hello")),
+                &context(),
+            )
+            .await;
+        let on_the_wire = joined_bodies(&log.drain()).contains(SIBLING_MARKER);
+        let error = outcome.err();
+        doc.kv(
+            &format!("{} error", adapter.label()),
+            format!("{error:?}"),
+        );
+        doc.check(
+            &format!(
+                "{}: the identical hostile bytes reached the error path too — the comparison \
+                 is like for like",
+                adapter.label()
+            ),
+            on_the_wire,
+            format!("{on_the_wire}"),
+        );
+        doc.check(
+            &format!(
+                "{}: and NOTHING of it is on the error surface — 0 unexplained strings",
+                adapter.label()
+            ),
+            error.as_ref().is_some_and(|error| {
+                vela_providers::diagnostic::unexplained_in_error(error).is_empty()
+            }),
+            error.as_ref().map_or_else(
+                || "no error".to_owned(),
+                |error| {
+                    format!(
+                        "{:?}",
+                        vela_providers::diagnostic::unexplained_in_error(error)
+                    )
+                },
+            ),
+        );
+        peer.stop();
+    }
+
+    doc.write(ledger);
+}
+
+// ---------------------------------------------------------------------------
+// Case 07c, arm C — the payload the regression critic has been asking for
+// ---------------------------------------------------------------------------
+//
+// THE STANDING COMPLAINT, in full, because it was right four rounds running:
+//
+//   Round 4 made this case measure a CREDENTIALED provider, which fixed the
+//   round-3 objection that it measured the empty-scrubber fast path. But the
+//   body it measured was the matrix profile's ordinary answer — 222 characters
+//   with ZERO backslash bytes. `Scrubber::touches` returns early on a chunk with
+//   no `\` and no literal needle; `encoded_spans` never runs; `hold_back_len`
+//   returns 0 on every chunk because no chunk ends in a prefix of the needle.
+//   So arm B put a credential on the REQUEST and then measured a RESPONSE path
+//   that still short-circuited. The arm was credentialed; the measurement was
+//   not.
+//
+// Arm C fixes the measurement rather than the label. The peer streams a body
+// built to make every branch of the redaction path run on every chunk:
+//
+//   * ~24 KB rather than 222 bytes
+//   * dense in `\` — every frame carries JSON escapes, so `touches` cannot
+//     early-out and `encoded_spans` runs on every chunk
+//   * `\uXXXX` escapes and percent-triples, the two encodings rounds 3 and 4
+//     were defeated by, so the resolution path is walked rather than skipped
+//   * NEAR-MISS PREFIXES OF THE CREDENTIAL AT FRAME BOUNDARIES, so
+//     `hold_back_len` returns non-zero and the carry buffer is exercised —
+//     the one branch that costs real work per chunk
+//
+// And the vacuity guard is measured on the wire, not asserted: the transcript
+// prints how many backslashes, escapes and near-miss prefixes actually
+// travelled. A future round can see at a glance whether this arm went hollow
+// again.
+
+/// A frame body engineered to make the scrubber work on every chunk.
+fn adversarial_latency_payload() -> String {
+    let mut out = String::new();
+    // Prefixes of `sk/matrix-latency/Ky-0f19c7/probe` that are NOT the whole
+    // credential. Each one ends a frame, so `hold_back_len` must hold bytes
+    // back and the next chunk must be joined to them before scanning.
+    let near_misses = [
+        "sk/matrix-latency/Ky-0f19c",
+        "sk/matrix-latency/Ky-0f1",
+        "sk/matrix-l",
+        "sk/",
+    ];
+    for round in 0..40 {
+        let near = near_misses[round % near_misses.len()];
+        let text = format!(
+            "chunk {round}: a path C:\\\\Users\\\\vela\\\\{round} and a quote \\\" and an \
+             escape \\u0041\\u0042\\u0043 and a percent %73%6B%2F and a tail {near}"
+        );
+        let escaped = serde_json::to_string(&text).expect("a string serialises");
+        let _ = write!(
+            out,
+            "data: {{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"choices\":\
+             [{{\"index\":0,\"delta\":{{\"content\":{escaped}}},\"finish_reason\":null}}]}}\n\n"
+        );
+    }
+    out.push_str(
+        "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\
+         \"finish_reason\":\"stop\"}]}\n\n",
+    );
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
+/// Five streamed turns against a peer that answers with
+/// [`adversarial_latency_payload`], through a CREDENTIALED provider.
+async fn adversarial_latency_arm(peer_url: &str, log: &WireLog) -> (LatencyArm, usize, usize, usize) {
+    let provider = credentialed_provider_for(peer_url, log);
+    let mut arm = LatencyArm {
+        samples: Vec::new(),
+        answers: Vec::new(),
+        failed: None,
+        credential_on_the_wire: false,
+    };
+    let (mut backslashes, mut escapes, mut near_misses) = (0usize, 0usize, 0usize);
+    for _ in 0..5 {
+        let mut sink = CollectingSink::new();
+        let started = Instant::now();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(20),
+            provider.stream(
+                ChatRequest::new("latency-adversarial")
+                    .with_message(ChatMessage::user("stream me something hostile"))
+                    .with_max_output_tokens(4096),
+                &mut sink,
+                &context(),
+            ),
+        )
+        .await;
+        let elapsed = started.elapsed();
+        for entry in log.drain() {
+            if entry.url.carries_credential() {
+                arm.credential_on_the_wire = true;
+            }
+            let body = last_response_body(std::slice::from_ref(&entry));
+            backslashes += body.matches('\\').count();
+            escapes += body.matches("\\u00").count();
+            near_misses += body.matches("sk/matrix-l").count();
+        }
+        match outcome {
+            Ok(Ok(response)) => {
+                arm.samples.push(elapsed);
+                arm.answers.push(response.answer_text().chars().count());
+            }
+            Ok(Err(error)) => {
+                arm.failed = Some(format!("{error:?}"));
+                break;
+            }
+            Err(_) => {
+                arm.failed = Some("HUNG: 20 s outer deadline".into());
+                break;
+            }
+        }
+    }
+    (arm, backslashes, escapes, near_misses)
+}
+
+async fn case_07c_arm_c(profile: &str, doc: &mut Doc) {
+    let peer = CrossPeer::start(Arc::new(|path: &str, body: &str| {
+        if path.contains("/models") {
+            return Reply::json(200, "{\"object\":\"list\",\"data\":[]}");
+        }
+        if body.contains("\"stream\":true") {
+            Reply::sse(adversarial_latency_payload())
+        } else {
+            Reply::json(200, "{\"id\":\"c\",\"choices\":[]}")
+        }
+    }))
+    .await;
+    let log = WireLog::default();
+    let (arm, backslashes, escapes, near_misses) =
+        adversarial_latency_arm(&peer.url, &log).await;
+
+    doc.h("arm C — a CREDENTIALED provider against a payload that exercises the scrubber");
+    doc.p(
+        "  Round 4's arm B was credentialed and still measured a short-circuit: 222 characters\n  \
+         with no backslash byte means `Scrubber::touches` early-outs, `encoded_spans` never\n  \
+         runs, and `hold_back_len` returns 0 on every chunk. This arm's payload is built so\n  \
+         none of those three can skip. The counts below are read OFF THE WIRE, so a future\n  \
+         round can see if this arm has gone hollow.",
+    );
+    record_arm(doc, "arm C — adversarial payload, credentialed", &arm);
+    doc.kv("backslash bytes on the wire", backslashes);
+    doc.kv("`\\u00XX` escapes on the wire", escapes);
+    doc.kv("near-miss credential prefixes at frame ends", near_misses);
+    doc.kv("profile this arm ran beside", profile);
+
+    doc.check(
+        "arm C really was credentialed",
+        arm.credential_on_the_wire,
+        format!("{}", arm.credential_on_the_wire),
+    );
+    doc.check(
+        "THE PAYLOAD ACTUALLY EXERCISES THE CODE BEING MEASURED — thousands of backslash \
+         bytes, not round 4's zero",
+        backslashes > 1000,
+        format!("{backslashes} backslash byte(s) across 5 turns"),
+    );
+    doc.check(
+        "…and the escape-resolution path is walked, not skipped",
+        escapes > 100,
+        format!("{escapes} `\\u00XX` escape(s)"),
+    );
+    doc.check(
+        "…and `hold_back_len` had something to hold back — near-miss credential prefixes \
+         ended frames",
+        near_misses > 100,
+        format!("{near_misses} near-miss prefix(es)"),
+    );
+    doc.check(
+        "every sampled turn completed without error on the adversarial payload",
+        arm.complete(),
+        arm.failed
+            .clone()
+            .unwrap_or_else(|| format!("{} samples", arm.samples.len())),
+    );
+    doc.check(
+        "TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised",
+        arm.median() < Duration::from_millis(10),
+        format!("median {:?}, samples {:?}", arm.median(), arm.samples),
+    );
+    doc.check(
+        "every sample returned the same answer length — the carry buffer loses nothing",
+        arm.answers_agree(),
+        format!("{:?}", arm.answers),
+    );
+    doc.check(
+        "and the credential is still absent from the answer the scrubber produced",
+        !arm.failed.is_some_and(|failed| failed.contains(LATENCY_KEY)),
+        "checked".to_owned(),
+    );
+
+    peer.stop();
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let started = Instant::now();
@@ -9078,6 +10241,7 @@ async fn main() -> ExitCode {
         case_17(profile, &mut ledger).await;
         case_18(profile, &mut ledger).await;
         case_19(profile, &mut ledger).await;
+        case_20(profile, &mut ledger).await;
         case_09b(profile, &mut ledger).await;
         case_10(profile, &mut ledger).await;
     }

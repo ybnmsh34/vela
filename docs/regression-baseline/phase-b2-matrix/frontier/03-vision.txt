@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- an image sent to a provider whose capabilities are known ----------------
 
-  >>> exchange 1 — POST http://127.0.0.1:38785/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41329/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -48,7 +48,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   probed vision support                  Supported
   UI vision affordance                   true
   requests actually sent                 1
-  wall clock                             2.824964ms
+  wall clock                             3.299104ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] vision is offered and an image is answered
@@ -56,7 +56,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same image before any probe has run ---------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:38785/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41329/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

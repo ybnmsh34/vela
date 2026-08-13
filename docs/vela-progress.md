@@ -1988,6 +1988,51 @@ layout width that produces **the 7px composer/transcript offset which survived o
 scrollbar styling landed; the gutter did not. Small, specific, and the reason a previously "fixed"
 alignment is still visibly off.
 
+## 🔴 The gutter fix I shipped and praised was wrong — and my verification was the reason
+
+`0f83c71` — `scrollbar-gutter: stable both-edges` — **closed the 7px composer offset at 1400×900 and
+broke the same ruler at narrow widths.** The Phase C matrix, re-run on all four profiles, went
+**40/38/36/33 with 0 failures → 38/36/34/31**, with C29b and C30 red on *every* profile. The gate
+bisected it with a purpose-built driver: removing the declaration flips both back to PASS.
+
+The mechanism: the scroller reserves 24px, **the transcript column is inside it and the composer is
+outside**, so the two boxes agree only while the column can still reach `--vela-measure`. Below that
+width they diverge — the fix trades a constant 7px error for a width-dependent one.
+
+### Why it got through, which matters more than the fix
+
+Two independent verifications both said yes, and the gate named both:
+
+1. **The desktop session measured the ruler at one width** — the width where it is correct.
+2. **This wave's own assertion compares the two boxes' CENTRES**, which stay equal when only the
+   *widths* differ. It printed `column 456.0 vs field 456.0` and **passed on a broken ruler.**
+
+The gate's own diagnosis: *"Same class as the font defect the last gate caught itself in: right
+subject, wrong quantity."* That is the third time this project has measured the right thing in the
+wrong unit — `fontFamily` from the declared stack, `document.fonts.check` on an absent font, and now
+centres where the complaint was widths.
+
+**And I own this one specifically.** I ran `platform-defaults.test.ts`, got 19/19, and reported the
+fix as verified. That test asserts the *CSS value* — `scrollbar-gutter: stable both-edges` — not the
+geometry it produces. A test that reads back the declaration you just wrote cannot fail, and I
+treated it as confirmation. The builder's reasoning about `both-edges` was sound *for the case it
+considered*; the error was mine for confirming it with an assertion that could not have caught the
+case it missed.
+
+### Two more defects, both the same shape
+
+- **`EndpointForm`'s three placeholders paint in the UA default `#757575`** — 3.96:1 on the dark form
+  fill, **under AA** — because that file has no `::placeholder` rule while `Composer` and
+  `CommandPalette` both do. `contrast.test.ts` cannot see it: it enumerates pairs of **tokens**, and
+  this foreground is not a token, so *"every token used as a text colour appears in the table"* is
+  satisfied while a real painted string fails.
+- **`claimed-guards` resolves file claims by BASENAME**, so a claim naming `src/app/contract.ts` — a
+  path that does not exist — passes because `contract.ts` exists elsewhere. The guard against false
+  claims contains a false claim.
+
+The executor **did not fix the placeholder defect**, on the grounds that *"whoever fixes it should
+not be the one who graded it."*
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

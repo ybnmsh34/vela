@@ -117,6 +117,36 @@ const VIEWPORTS = [
 ];
 
 /* -------------------------------------------------------------------------- */
+/* the reading ruler, swept across window widths                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE WIDTHS. A ruler read at one window is not a ruler.
+ *
+ * `scrollbar-gutter: stable both-edges` was measured at 1400×900, found true,
+ * and shipped; it had broken the same guarantee at every narrower width, where
+ * the transcript column stops reaching `--vela-measure` and clamps inside the
+ * scroller's reservation while the composer, outside it, does not. Three widths,
+ * because a defect that only appears when a box is clamped needs a window where
+ * it is clamped and one where it is not, and the boundary between them moves
+ * with the sidebar.
+ *
+ * **With the sidebar dragged to its maximum**, which is the reading the Phase C
+ * matrix takes: at its default width the sidebar is under its cap at all three
+ * of these windows, both boxes reach the full measure, and the sweep would
+ * certify a broken ruler exactly as the wave's own gate did.
+ *
+ * 880 is the desktop session's own reading — 456px of text over a 480px field
+ * on real WebView2 — and it is in this list because of that, not because it is
+ * round.
+ */
+const RULER_WIDTHS = [
+  { width: 1440, what: 'wide: neither box is clamped' },
+  { width: 960, what: 'the sidebar is giving way' },
+  { width: 880, what: 'the desktop session’s own reading' },
+];
+
+/* -------------------------------------------------------------------------- */
 /* the ledger                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -476,36 +506,6 @@ async function measureLayout(browser, origin, prefix, expectFailure = false) {
     }
   }
 }
-
-/* -------------------------------------------------------------------------- */
-/* the reading ruler, swept across window widths                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * THE WIDTHS. A ruler read at one window is not a ruler.
- *
- * `scrollbar-gutter: stable both-edges` was measured at 1400×900, found true,
- * and shipped; it had broken the same guarantee at every narrower width, where
- * the transcript column stops reaching `--vela-measure` and clamps inside the
- * scroller's reservation while the composer, outside it, does not. Three widths,
- * because a defect that only appears when a box is clamped needs a window where
- * it is clamped and one where it is not, and the boundary between them moves
- * with the sidebar.
- *
- * **With the sidebar dragged to its maximum**, which is the reading the Phase C
- * matrix takes: at its default width the sidebar is under its cap at all three
- * of these windows, both boxes reach the full measure, and the sweep would
- * certify a broken ruler exactly as the wave's own gate did.
- *
- * 880 is the desktop session's own reading — 456px of text over a 480px field
- * on real WebView2 — and it is in this list because of that, not because it is
- * round.
- */
-const RULER_WIDTHS = [
-  { width: 1440, what: 'wide: neither box is clamped' },
-  { width: 960, what: 'the sidebar is giving way' },
-  { width: 880, what: 'the desktop session’s own reading' },
-];
 
 async function measureReadingRuler(browser, origin, prefix, expectFailure = false) {
   const readings = [];

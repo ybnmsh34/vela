@@ -215,8 +215,17 @@ you are the first to actually run it.
 ## A1-scaffold-shell — Tauri v2 app shell, secure IPC bridge, adapter seam
 
 - **commit:** `cb385356937efb04781926f9326ec43a748f4f7c`
-- **status:** AWAITING_DESKTOP
-- **deferred critics:** `visual`, `interaction`, `performance`
+- **status:** PARTIAL — `visual` **FAIL** and `interaction` **FAIL** written at
+  `4c01a606c6d3c3f3dbf4084a30d24e16c178d5de`; `performance` still **AWAITING_DESKTOP**, held per your
+  instruction until the provider registry is wired (timing an app that cannot complete a turn would
+  produce numbers that look like evidence and are not).
+  **Judged against the quality bar in this file, NOT against this request's stale steps** — you said
+  the old steps describe a diagnostic shell that Phase C replaced, so I judged what actually renders.
+  Largest gaps: `visual` — Vela ships no typeface and renders in Segoe UI on Windows;
+  `interaction` — the command palette claims `aria-modal="true"` without enforcing it and never
+  restores focus. A third defect, theme preference lost on every restart, is filed separately in
+  [`VERDICTS.md`](./VERDICTS.md).
+- **deferred critics:** `visual` ✅, `interaction` ✅, `performance` ⏳
 - **cloud verdicts already passed:** functionality (PASS), architecture (PASS), security (PASS)
 
 **What to exercise**

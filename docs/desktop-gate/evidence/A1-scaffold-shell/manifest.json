@@ -1,0 +1,90 @@
+[
+  {
+    "file": "01-empty-light.png",
+    "state": {
+      "themeLabel": "Theme: light",
+      "dataTheme": "light",
+      "heading": "Vela",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "02-conversation-light.png",
+    "state": {
+      "themeLabel": "Theme: light",
+      "dataTheme": "light",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "03-model-picker-light.png",
+    "state": {
+      "themeLabel": "Theme: light",
+      "dataTheme": "light",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "04-search-light.png",
+    "state": {
+      "themeLabel": "Theme: light",
+      "dataTheme": "light",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": true
+    }
+  },
+  {
+    "file": "01-empty-dark.png",
+    "state": {
+      "themeLabel": "Theme: dark",
+      "dataTheme": "dark",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "02-conversation-dark.png",
+    "state": {
+      "themeLabel": "Theme: dark",
+      "dataTheme": "dark",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "03-model-picker-dark.png",
+    "state": {
+      "themeLabel": "Theme: dark",
+      "dataTheme": "dark",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": false
+    }
+  },
+  {
+    "file": "04-search-dark.png",
+    "state": {
+      "themeLabel": "Theme: dark",
+      "dataTheme": "dark",
+      "heading": "No model chosen yet",
+      "dpr": 1,
+      "cssWidth": 1384,
+      "dialogOpen": true
+    }
+  }
+]

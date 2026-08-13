@@ -1,6 +1,6 @@
 {
-  "answer": "Mock small-local reply to: #tools What is the weather in Lisbon?. orbit keel quartz ivory tiller ivory sextant pennant fathom yardarm.",
-  "whole": "Mock small-local reply to: #tools What is the weather in Lisbon?. orbit keel quartz ivory tiller ivory sextant pennant fathom yardarm.\n\nTools were described in the prompt\nThis model has no built-in tool calling, so 1 tool was described in the prompt and the reply was read back for a call.\nNo token counts\nThis endpoint does not report token usage.\nCopy",
+  "answer": "Mock small-local reply to: #tools What is the weather in Lisbon?. yardarm north north harbor lantern yardarm quartz windward yardarm north.",
+  "whole": "Mock small-local reply to: #tools What is the weather in Lisbon?. yardarm north north harbor lantern yardarm quartz windward yardarm north.\n\nTools were described in the prompt\nThis model has no built-in tool calling, so 1 tool was described in the prompt and the reply was read back for a call.\nNo token counts\nThis endpoint does not report token usage.\nCopy",
   "reasoning": null,
   "tools": null,
   "degradations": [

@@ -440,7 +440,16 @@ try {
     check.headingHierarchyIsVisible(inverted).detail,
   );
 
+  // A reload returns the app to the home surface — a conversation selection is
+  // process state, not a URL — so the composer has to be reopened the way a
+  // user would. K25/K26 were added in `81b1b12` and had never actually run:
+  // the reload landed on the home surface and the wait for `#vela-composer`
+  // timed out, taking K25 and K26 with it. Recorded rather than quietly fixed,
+  // because it is one more instance of this wave's own defect class — something
+  // written and never executed.
   await r.page.reload();
+  await r.page.waitForSelector('[data-testid="status-line"]');
+  await r.page.getByRole('button', { name: 'Start a conversation' }).click();
   await r.page.waitForSelector('#vela-composer');
   await send(r.page, '#markdown which model should I run?');
   const reflowBefore = await check.readingSurface(r.page);

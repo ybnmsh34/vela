@@ -1,6 +1,6 @@
 {
   "answer": "This turn produced reasoning but no answer text.",
-  "whole": "Thought process\n\nThis turn produced reasoning but no answer text.\n\n1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"fixture\"\n88 in · 39 out tokens",
+  "whole": "Thought process\n\nThis turn produced reasoning but no answer text.\n\n1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"berlin\"\n870 in · 38 out tokens",
   "reasoning": {
     "text": "Considering the request about #tools What is the weather in. Profile frontier has a 200000-token window. Answering directly.",
     "hiddenAttribute": true,
@@ -8,7 +8,7 @@
     "expanded": false
   },
   "tools": {
-    "text": "1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"fixture\"",
+    "text": "1 TOOL CALL\n\nget_weather\nNo result yet\ncity: \"berlin\"",
     "cards": [
       "awaitingResult",
       "awaitingResult"

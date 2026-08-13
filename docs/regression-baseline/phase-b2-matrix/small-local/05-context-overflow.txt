@@ -12,7 +12,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- an oversized prompt, with no local planning (max_context_tokens unset) --
   prompt length: 40960 characters
 
-  >>> exchange 1 — POST http://127.0.0.1:41425/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:39951/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -32,24 +32,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       }
 
 ---- what Vela produced ------------------------------------------------------
-  outcome                                Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41425", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
-  wall clock                             4.570667ms
+  outcome                                Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+  wall clock                             5.559806ms
 
 ---- assertions --------------------------------------------------------------
   limit reported by the endpoint         Some(8192)
   requested, per the endpoint            Some(10244)
   [PASS] an overflow is a clean ContextLengthExceeded, not a generic transport error
-        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41425", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
   [PASS] the endpoint's own window is carried through so the UI can say something true
         expected limit 8192
   [PASS] the requested size is carried through too
-        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41425", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
   [PASS] an overflow is never retried elsewhere — it is about the request
-        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41425", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
 
 ---- the same conversation when the window is known — reduce, visibly ------
 
-  >>> exchange 1 — POST http://127.0.0.1:41425/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:39951/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)

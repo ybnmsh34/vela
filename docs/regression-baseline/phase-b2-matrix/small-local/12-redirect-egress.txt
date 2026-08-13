@@ -17,17 +17,17 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   was never a credential for anything, and the transcript is still committed.
 
 ---- Vela's shipping transport — every binding, complete() and stream() ----
-  Auth::None / complete()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:41503/v1/chat/completions] [http 302] [ref 0000000000000129]
-  Auth::None / stream()                  third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:39339/v1/chat/completions] [http 302] [ref 000000000000012a]
-  Auth::Bearer / complete()              third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:44861/v1/chat/completions] [http 302] [ref 000000000000012b]
-  Auth::Bearer / stream()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:42141/v1/chat/completions] [http 302] [ref 000000000000012c]
-  Auth::ApiKeyHeader{x-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:39671/v1/chat/completions] [http 302] [ref 000000000000012d]
-  Auth::ApiKeyHeader{x-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:34267/v1/chat/completions] [http 302] [ref 000000000000012e]
-  Auth::ApiKeyHeader{x-goog-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:33377/v1/chat/completions] [http 302] [ref 000000000000012f]
-  Auth::ApiKeyHeader{x-goog-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:37011/v1/chat/completions] [http 302] [ref 0000000000000130]
-  example error (Display)                could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35419/v1/chat/completions] [http 302] [ref 0000000000000131]
-  Auth::ApiKeyQuery{key} / complete()    third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35419/v1/chat/completions] [http 302] [ref 0000000000000131]
-  Auth::ApiKeyQuery{key} / stream()      third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:34249/v1/chat/completions] [http 302] [ref 0000000000000132]
+  Auth::None / complete()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35067/v1/chat/completions] [http 302] [ref 0000000000000129]
+  Auth::None / stream()                  third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:40459/v1/chat/completions] [http 302] [ref 000000000000012a]
+  Auth::Bearer / complete()              third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:36777/v1/chat/completions] [http 302] [ref 000000000000012b]
+  Auth::Bearer / stream()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:36263/v1/chat/completions] [http 302] [ref 000000000000012c]
+  Auth::ApiKeyHeader{x-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:38285/v1/chat/completions] [http 302] [ref 000000000000012d]
+  Auth::ApiKeyHeader{x-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:38529/v1/chat/completions] [http 302] [ref 000000000000012e]
+  Auth::ApiKeyHeader{x-goog-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:33755/v1/chat/completions] [http 302] [ref 000000000000012f]
+  Auth::ApiKeyHeader{x-goog-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35557/v1/chat/completions] [http 302] [ref 0000000000000130]
+  example error (Display)                could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:40865/v1/chat/completions] [http 302] [ref 0000000000000131]
+  Auth::ApiKeyQuery{key} / complete()    third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:40865/v1/chat/completions] [http 302] [ref 0000000000000131]
+  Auth::ApiKeyQuery{key} / stream()      third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:33147/v1/chat/completions] [http 302] [ref 0000000000000132]
 
 ---- assertions — the shipping transport -----------------------------------
   [PASS] the configured endpoint really was contacted on every arm — nothing is vacuous
@@ -74,8 +74,8 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
     user-agent: vela/pre-fix-control
     accept: application/json
     x-api-key: <CANARY — MASKED BY THE RECORDER>
-    referer: http://127.0.0.1:44223/v1/chat/completions
-    host: 127.0.0.1:41441
+    referer: http://127.0.0.1:41505/v1/chat/completions
+    host: 127.0.0.1:33837
     
   [PASS] CONTROL: with the policy removed the canary DOES reach the third party — so the assertions above are about a real channel
         3 of 5 bindings leaked

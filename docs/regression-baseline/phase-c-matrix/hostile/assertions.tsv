@@ -3,21 +3,22 @@ C1	unprobed floor	PASS	an unprobed model claims nothing and offers no capability
 C2	capability truth	PASS	the vision flag the UI branches on equals the endpoint's real vision support	report.vision=false endpoint=false
 C3	vision	PASS	a model without vision has NO image affordance in the DOM	no image affordance in the DOM by name, test id or accept list
 C4	context	PASS	the meter shows the endpoint's real window, and no other endpoint's	meter says: About 0 of 4K tokens
-C5	context	FAIL	the meter warns BEFORE the turn is sent, for a draft that will not fit	About 0 of 4K tokens
+C5	context	PASS	the meter warns BEFORE the turn is sent, for a draft that will not fit	About 4,510 of 4K tokens — this turn is larger than the window. Sending it will drop the oldest messages, or the endpoint will refuse it. Shorten the message or switch to a model with more room.
 C5b	context	PASS	the meter counts a staged text file and warns on it	About 4,510 of 4K tokens — this turn is larger than the window. Sending it will drop the oldest messages, or the endpoint will refuse it. Shorten the message or switch to a model with more room.
 C6	streamed turn	PASS	the turn reaches a settled, readable state	settled
 C7	reasoning	PASS	no reasoning markup reaches any visible text	no reasoning tags in visible text
 C8	reasoning	PASS	the answer is not swallowed by the reasoning channel	answer=163 chars, reasoning=468 chars, reasoningVisible=true
 C9	usage	PASS	token usage is shown only where the endpoint reported it	usage line present=false expected=false
 C10	reasoning	PASS	the thinking block toggles, and its hidden state follows aria-expanded	first expanded=true then=false hidden=true summary="Thinking (never closed)"
-C11	tool calls	PASS	a malformed tool call is VISIBLE, never silently dropped	cards=[unreadable,unreadable,unreadable,unreadable] saysItWasRefused=true text=2 TOOL CALLS · 2 COULD NOT BE READ get_weather Could not be read Vela could not read this call: the arguments were not valid JSON. It was not run. Show what arrived id call_358c1965 get_weather Could 
+C22	reading surface	PASS	a long document from an endpoint with no answer channel still settles readably	settled
+C11	tool calls	PASS	a malformed tool call is VISIBLE, never silently dropped	cards=[unreadable,unreadable,unreadable,unreadable] saysItWasRefused=true text=2 TOOL CALLS · 2 COULD NOT BE READ get_weather Could not be read Vela could not read this call: the arguments were not valid JSON. It was not run. Show what arrived id call_02ea1d96 get_weather Could 
 C12	tool calls	PASS	no reasoning markup in the tool turn either	no reasoning tags in visible text
 C13	no credential	PASS	an endpoint with no API key is a working state, with no error and no warning	usable=true check=satisfiedWithoutCredential complaintOnScreen=false
-C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:41633/v1/chat/completions trace 0000000000000002 Try again
+C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:45415/v1/chat/completions Try again
 C15	error state	PASS	the failed turn is settled, not a stuck spinner	settled
 C16	streaming	PASS	the transcript shows a partial turn while it is still streaming	answer=0 reasoning=119
 C17	reasoning	PASS	no reasoning markup mid-stream, when a tag may be split across frames	no reasoning tags in visible text
-C18	streaming	PASS	the turn is painted incrementally, not in one lump	27 paints, 27 growing, spread over 2010 ms
+C18	streaming	PASS	the turn is painted incrementally, not in one lump	27 paints, 27 growing, spread over 2011 ms
 C19	console	PASS	zero console errors and zero uncaught exceptions	clean
-C20	network	PASS	the browser never requested the model endpoint	none of 266 requests went to http://127.0.0.1:41633
-C21	network	PASS	the browser never requested the slow endpoint either	none of 266 requests went to http://127.0.0.1:40623
+C20	network	PASS	the browser never requested the model endpoint	none of 306 requests went to http://127.0.0.1:45415
+C21	network	PASS	the browser never requested the slow endpoint either	none of 306 requests went to http://127.0.0.1:38297

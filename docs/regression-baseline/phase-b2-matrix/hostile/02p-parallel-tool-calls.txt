@@ -23,7 +23,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- transport A — complete(): one whole body ------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40957/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45911/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -81,7 +81,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- transport B — stream(): the identical request, frame by frame ---------
 
-  >>> exchange 1 — POST http://127.0.0.1:40957/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:45911/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)

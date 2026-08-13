@@ -15,8 +15,15 @@ K13	FAIL	FAIL	yes	the error-state assertion, applied to a turn that succeeded	(n
 K14	FAIL	FAIL	yes	the no-credential assertion, applied to an endpoint that genuinely requires one	usable=false check=missingRequired complaintOnScreen=false
 K15	PASS	PASS	yes	the console assertion on the run as it stood (it was clean)	clean
 K16	FAIL	FAIL	yes	the same assertion, after one deliberate console.error	error: control: a deliberate console error
-K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:33447/v1/models
-K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	3 paints, 3 growing, spread over 38 ms
-K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3650 ms
+K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:45659/v1/models
+K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 33 ms
+K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3692 ms
 K20	FAIL	FAIL	yes	the "turn is settled" assertion, applied while the turn is still in flight	still says "Waiting for the first token…"
+K22	PASS	PASS	yes	the hierarchy assertion on the surface as it ships (it held in the matrix run)	h1=24px h2=18px h3=16px h4=15px | body=15px | distinct=4 monotonic=true outranksBody=true
+K23	FAIL	FAIL	yes	the same assertion once every heading level is set at one size — the defect as found	h1=15px h2=15px h3=15px h4=15px | body=15px | distinct=1 monotonic=true outranksBody=false
+K24	FAIL	FAIL	yes	the same assertion against a scale that grows as the level deepens	h1=12px h2=16px h3=20px h4=24px | body=15px | distinct=4 monotonic=false outranksBody=false
+K25	PASS	PASS	yes	the reflow assertion on the surface as it ships	9 paragraphs; white-space=normal; 0 still carry a source newline
+K26	FAIL	FAIL	yes	the same assertion once paragraphs preserve the source line endings again	9 paragraphs; white-space=pre-wrap; 0 still carry a source newline
+K27	PASS	PASS	yes	the sideways-scroll assertion on the surface as it ships	column 688px wide, content 688px
+K28	FAIL	FAIL	yes	the same assertion with content four thousand pixels wide in the column	column 688px wide, content 4000px
 K21	PASS	PASS	yes	FINDING 1 reproduced: settings has the endpoint, and chat_send still cannot find it	providers=1 chat_send={"code":"NOT_FOUND","message":"no provider configured with id `matrix`"}

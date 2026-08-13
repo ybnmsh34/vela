@@ -1,248 +1,248 @@
 [
   {
-    "at": 1786616076827,
+    "at": 1786630363299,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "Considering the requ",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363300,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "est about Summarise ",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363300,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "what this endpoint c",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363300,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "an do.. Profile fron",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363301,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "tier has a 200000-to",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363301,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "ken window. Answerin",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076827,
+    "at": 1786630363301,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "g directly.",
         "type": "reasoningDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076828,
+    "at": 1786630363302,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "Mock frontier re",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076828,
+    "at": 1786630363302,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "ply to: Summaris",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076828,
+    "at": 1786630363302,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "e what this endp",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076828,
+    "at": 1786630363302,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "oint can do.. wi",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076828,
+    "at": 1786630363303,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "ndward keel rudd",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363304,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "er lantern lante",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363304,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "rn beacon umber ",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363304,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "pennant zenith h",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363304,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "arbor tiller umb",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363304,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "er sextant yarda",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076829,
+    "at": 1786630363305,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "rm north alpha d",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363305,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "elta rudder umbe",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363305,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "r tiller keel ha",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363306,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "rbor beacon jett",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363306,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "y.",
         "type": "textDelta"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363307,
     "event": "chat:event",
     "payload": {
       "event": {
@@ -254,11 +254,11 @@
           "reasoningTokens": null
         }
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616076830,
+    "at": 1786630363307,
     "event": "chat:event",
     "payload": {
       "event": {
@@ -288,200 +288,2516 @@
         },
         "type": "done"
       },
-      "turnId": "299bfb1e-9016-41da-adaf-e4dcd6c1fc0d"
+      "turnId": "95c11a3b-7ee8-4d13-9f32-f65f784e2222"
     }
   },
   {
-    "at": 1786616077503,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
         "text": "Considering the requ",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077503,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": "est about #tools Wha",
+        "text": "est about #markdown ",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077503,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": "t is the weather in.",
+        "text": "Which local model sh",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077503,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": " Profile frontier ha",
+        "text": "ould I. Profile fron",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077503,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": "s a 200000-token win",
+        "text": "tier has a 200000-to",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": "dow. Answering direc",
+        "text": "ken window. Answerin",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "text": "tly.",
+        "text": "g directly.",
         "type": "reasoningDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": "# Choosing a loc",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "{\"ci",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": "al model for thi",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363982,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "ty\":",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": "s machine\n\nShort",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363983,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "\"fix",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": " answer: start w",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363983,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "ture",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": "ith a 7–8B model",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363983,
     "event": "chat:event",
     "payload": {
       "event": {
-        "delta": {
-          "argumentsFragment": "\"}",
-          "callId": "call_6edab7e2",
-          "name": "get_weather",
-          "slot": 0
-        },
-        "type": "toolCallDelta"
+        "text": " at `Q4_K_M`, me",
+        "type": "textDelta"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "asure, and only ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "move up if\nthe q",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "uality gap is on",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e you can actual",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ly name. Everyth",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ing below is the",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " reasoning,\nand ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "the numbers are ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "worked for a 16 ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363983,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "GB card.\n\nThe pa",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ragraph above is",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " deliberately ha",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rd-wrapped at se",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "venty-odd column",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s, the way\nalmos",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t every model wr",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ites prose, and ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "it must read as ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "**one paragraph*",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "* — not as\nfour ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "short lines with",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " ragged endings.",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363984,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\n\n## What decide",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363985,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s the answer\n\nTh",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363985,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ree quantities, ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "in the order the",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "y bind:\n\n1. **VR",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "AM.** Weights, K",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "V cache and the ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "runtime's own ov",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "erhead all come ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "out of\n   the sa",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "me budget.\n2. **",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Context length.*",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "* The KV cache g",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rows linearly wi",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "th it, and at 32",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363986,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "k it can\n   outw",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "eigh the model.\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "3. **What you ar",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e actually askin",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "g for.** Summari",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "sing a diff and ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363987,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "writing one are\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "   not the same ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "job.\n\n### The ar",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ithmetic\n\nA rule",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " of thumb that h",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "as held up:\n\n- w",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "eights ≈ *parame",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ters* × *bits pe",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363988,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "r weight* ÷ 8\n- ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363989,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "KV cache ≈ 2 × *",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363989,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "layers* × *conte",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363989,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "xt* × *heads* × ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363989,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "*head dim* × *by",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363989,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "tes*\n- leave ~1 ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "GB for the runti",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "me, more if you ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "are also driving",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " a display\n  - o",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "n Windows, the d",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "esktop composito",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "r is not free\n  ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "- on Linux with ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363990,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "no X session run",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ning, it very ne",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "arly is\n\nSo an 8",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "B model at four ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "bits is about **",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "4.5 GB** of weig",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "hts, and the cac",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "he is what\ndecid",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "es whether 32k c",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363991,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ontext fits besi",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "de it.\n\n> Quanti",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "sation is lossy,",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " and it is lossy",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " *unevenly*. A m",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "odel that still ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "writes\n> fluent ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "prose at `Q3` ma",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "y have quietly l",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ost the ability ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363992,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "to emit valid JS",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ON.\n>\n> Test the",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " capability you ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "need, not the ca",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "pability that is",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " easy to eyeball",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ".\n\n## Reading th",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363993,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e quantisation l",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "abels\n\n| Label |",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " Bits/weight | 8",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "B weights | Wher",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e it breaks firs",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t |\n| :--- | ---",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ": | ---: | :--- ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "|\n| `Q8_0` | 8.5",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363994,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " | 8.5 GB | noth",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363995,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ing — it is the ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363995,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "reference |\n| `Q",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363995,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "6_K` | 6.6 | 6.6",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " GB | nothing yo",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "u will notice |\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "| `Q5_K_M` | 5.7",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " | 5.7 GB | long",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "-chain arithmeti",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "c |\n| `Q4_K_M` |",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " 4.9 | 4.9 GB | ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "structured outpu",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t, tool argument",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363996,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s |\n| `Q3_K_M` |",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363997,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " 3.9 | 3.9 GB | ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363997,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "instruction foll",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363998,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "owing, JSON vali",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363998,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "dity |\n\n## Wirin",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363998,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "g it into Vela\n\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363998,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Point Vela at th",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363998,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e runtime's Open",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "AI-compatible en",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "dpoint. No key i",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s needed and\nnon",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e is asked for —",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " `llama-server` ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "does not authent",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "icate by default",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ", and *\"no\nAPI k",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ey\"* is a first-",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "class state here",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630363999,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ", not a warning.",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\n\n```bash\nllama-",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "server \\\n  --mod",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "el ./qwen3-8b-q4",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "_k_m.gguf \\\n  --",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ctx-size 32768 \\",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\n  --host 127.0.",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "0.1 --port 8033 ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\\\n  --jinja\n```\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\nThen add `http:",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "//127.0.0.1:8033",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364000,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "/v1` as an endpo",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364001,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "int and press **",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364001,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Check** to probe",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364001,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\nwhat it can do.",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364001,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " The capability ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364001,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "row that matters",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " most is `tools`",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ": without\n`--jin",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ja` the server w",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ill answer a too",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "l request with ~",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "~an error~~ plai",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "n prose,\nwhich V",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ela will show yo",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "u as a degradati",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "on rather than s",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ilently swallowi",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364002,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ng.\n\n### If the ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "probe disagrees ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "with the model c",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ard\n\nBelieve the",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " probe. A card d",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "escribes a *mode",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "l*; the probe de",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "scribes the\n**se",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "rver** in front ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "of it, and that ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "is the thing you",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364003,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " are actually ta",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "lking to.\nSee th",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e [llama.cpp ser",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ver documentatio",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "n](https://githu",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "b.com/ggml-org/l",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "lama.cpp)\nfor th",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "e flags that cha",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "nge the answer.\n",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "\n---\n\n#### One l",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364004,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ast thing\n\nRun t",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "he thing you int",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "end to run, on t",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "he machine you i",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ntend to run it ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "on, before\nyou d",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "ecide what it is",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " worth. Every nu",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364005,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "mber above is a ",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "starting point f",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "or a\nmeasurement",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": ", and none of th",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "em is a substitu",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "te for one.",
+        "type": "textDelta"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364006,
     "event": "chat:event",
     "payload": {
       "event": {
         "type": "usage",
         "usage": {
           "cachedInputTokens": null,
-          "inputTokens": 88,
-          "outputTokens": 39,
+          "inputTokens": 57,
+          "outputTokens": 828,
           "reasoningTokens": null
         }
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
     }
   },
   {
-    "at": 1786616077504,
+    "at": 1786630364006,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "response": {
+          "degradations": [],
+          "parts": [
+            {
+              "kind": "reasoning",
+              "redacted": false,
+              "signature": null,
+              "text": "Considering the request about #markdown Which local model should I. Profile frontier has a 200000-token window. Answering directly."
+            },
+            {
+              "kind": "text",
+              "text": "# Choosing a local model for this machine\n\nShort answer: start with a 7–8B model at `Q4_K_M`, measure, and only move up if\nthe quality gap is one you can actually name. Everything below is the reasoning,\nand the numbers are worked for a 16 GB card.\n\nThe paragraph above is deliberately hard-wrapped at seventy-odd columns, the way\nalmost every model writes prose, and it must read as **one paragraph** — not as\nfour short lines with ragged endings.\n\n## What decides the answer\n\nThree quantities, in the order they bind:\n\n1. **VRAM.** Weights, KV cache and the runtime's own overhead all come out of\n   the same budget.\n2. **Context length.** The KV cache grows linearly with it, and at 32k it can\n   outweigh the model.\n3. **What you are actually asking for.** Summarising a diff and writing one are\n   not the same job.\n\n### The arithmetic\n\nA rule of thumb that has held up:\n\n- weights ≈ *parameters* × *bits per weight* ÷ 8\n- KV cache ≈ 2 × *layers* × *context* × *heads* × *head dim* × *bytes*\n- leave ~1 GB for the runtime, more if you are also driving a display\n  - on Windows, the desktop compositor is not free\n  - on Linux with no X session running, it very nearly is\n\nSo an 8B model at four bits is about **4.5 GB** of weights, and the cache is what\ndecides whether 32k context fits beside it.\n\n> Quantisation is lossy, and it is lossy *unevenly*. A model that still writes\n> fluent prose at `Q3` may have quietly lost the ability to emit valid JSON.\n>\n> Test the capability you need, not the capability that is easy to eyeball.\n\n## Reading the quantisation labels\n\n| Label | Bits/weight | 8B weights | Where it breaks first |\n| :--- | ---: | ---: | :--- |\n| `Q8_0` | 8.5 | 8.5 GB | nothing — it is the reference |\n| `Q6_K` | 6.6 | 6.6 GB | nothing you will notice |\n| `Q5_K_M` | 5.7 | 5.7 GB | long-chain arithmetic |\n| `Q4_K_M` | 4.9 | 4.9 GB | structured output, tool arguments |\n| `Q3_K_M` | 3.9 | 3.9 GB | instruction following, JSON validity |\n\n## Wiring it into Vela\n\nPoint Vela at the runtime's OpenAI-compatible endpoint. No key is needed and\nnone is asked for — `llama-server` does not authenticate by default, and *\"no\nAPI key\"* is a first-class state here, not a warning.\n\n```bash\nllama-server \\\n  --model ./qwen3-8b-q4_k_m.gguf \\\n  --ctx-size 32768 \\\n  --host 127.0.0.1 --port 8033 \\\n  --jinja\n```\n\nThen add `http://127.0.0.1:8033/v1` as an endpoint and press **Check** to probe\nwhat it can do. The capability row that matters most is `tools`: without\n`--jinja` the server will answer a tool request with ~~an error~~ plain prose,\nwhich Vela will show you as a degradation rather than silently swallowing.\n\n### If the probe disagrees with the model card\n\nBelieve the probe. A card describes a *model*; the probe describes the\n**server** in front of it, and that is the thing you are actually talking to.\nSee the [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp)\nfor the flags that change the answer.\n\n---\n\n#### One last thing\n\nRun the thing you intend to run, on the machine you intend to run it on, before\nyou decide what it is worth. Every number above is a starting point for a\nmeasurement, and none of them is a substitute for one."
+            }
+          ],
+          "stopReason": "endTurn",
+          "structured": null,
+          "toolCalls": [],
+          "usage": {
+            "cachedInputTokens": null,
+            "inputTokens": 57,
+            "outputTokens": 828,
+            "reasoningTokens": null
+          }
+        },
+        "type": "done"
+      },
+      "turnId": "818c126f-239f-4b05-8a2a-b114daddfc8e"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "Considering the requ",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "est about #tools Wha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "t is the weather in.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": " Profile frontier ha",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "s a 200000-token win",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "dow. Answering direc",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "text": "tly.",
+        "type": "reasoningDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364846,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "{\"ci",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "ty\":",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "\"ber",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "lin\"",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "delta": {
+          "argumentsFragment": "}",
+          "callId": "call_30e58faa",
+          "name": "get_weather",
+          "slot": 0
+        },
+        "type": "toolCallDelta"
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
+    "event": "chat:event",
+    "payload": {
+      "event": {
+        "type": "usage",
+        "usage": {
+          "cachedInputTokens": null,
+          "inputTokens": 870,
+          "outputTokens": 38,
+          "reasoningTokens": null
+        }
+      },
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
+    }
+  },
+  {
+    "at": 1786630364847,
     "event": "chat:event",
     "payload": {
       "event": {
@@ -500,9 +2816,9 @@
           "toolCalls": [
             {
               "arguments": {
-                "city": "fixture"
+                "city": "berlin"
               },
-              "callId": "call_6edab7e2",
+              "callId": "call_30e58faa",
               "emulated": false,
               "name": "get_weather",
               "status": "ok"
@@ -510,18 +2826,18 @@
           ],
           "usage": {
             "cachedInputTokens": null,
-            "inputTokens": 88,
-            "outputTokens": 39,
+            "inputTokens": 870,
+            "outputTokens": 38,
             "reasoningTokens": null
           }
         },
         "type": "done"
       },
-      "turnId": "9df3a29e-70c7-472c-93c1-9d871639e698"
+      "turnId": "020cf073-b9da-4b2a-9e50-a994542be778"
     }
   },
   {
-    "at": 1786616079068,
+    "at": 1786630366415,
     "event": "chat:event",
     "payload": {
       "event": {
@@ -530,7 +2846,7 @@
             "cause": "connection_failed",
             "correlation": 1,
             "endpoint": {
-              "authority": "http://127.0.0.1:33103",
+              "authority": "http://127.0.0.1:36475",
               "path": "/v1/chat/completions"
             }
           },
@@ -539,7 +2855,7 @@
         },
         "type": "error"
       },
-      "turnId": "a947696d-06ac-4192-9ed5-f7c91ed0a43f"
+      "turnId": "ebcc30d3-28f2-4095-8112-cab0d34f49bc"
     }
   }
 ]

@@ -1239,3 +1239,69 @@ and were warm. Your second question — whether it is worse on the very first la
 
 - evidence: `evidence/theme-flash/` — 14 sequential full-window frames from 600 ms to 1599 ms,
   filenames carry their capture offset
+
+---
+
+## PLATFORM-DEFAULTS EXECUTOR — items 1 and 2 measured on WebView2
+
+- environment: real WebView2 151.0.4129.78 · Windows 11 Home 10.0.26200 · **classic, space-taking
+  scrollbars**, not overlay · conversation open · sidebar driven to maximum through the separator's
+  own `ArrowRight` keyboard path, not by poking CSS
+
+### Item 1 — the regression is REAL on Windows, and my earlier check missed it
+
+**You are right, and my `left delta 0` reading is exactly how this got through.** I measured at
+1400×900 with the sidebar at its 280px default — the one configuration where the ruler holds — and
+reported it as closed. It is not.
+
+With the sidebar at maximum:
+
+| | 1400px window | 880px window |
+|---|---|---|
+| text content box | 692 → 1172 = **480** | 372 → 828 = **456** |
+| composer field box | 692 → 1172 = **480** | 360 → 840 = **480** |
+| left delta | 0 | **−12** |
+| right delta | 0 | **+12** |
+| width delta | 0 | **24** |
+| `offsetWidth − clientWidth` | **24** | **24** |
+| `scrollbar-gutter` | `stable both-edges` | `stable both-edges` |
+
+At 880px the composer overhangs the reading column by **12px on each side**.
+
+**Your open question, answered: on Windows the two effects do NOT add.** The scroller reserves
+**24px at both widths** — identical to your Linux figure — so the classic space-taking scrollbar
+sits *inside* the reservation the declaration already made rather than taking width on top of it.
+The Windows number is the same 24px you measured on overlay-scrollbar Linux; there is no additional
+Windows-only penalty, and no cancellation either.
+
+**Your note about the centre-comparison assertion is confirmed empirically.** At 880px the text box
+centres at (372+828)/2 = **600.0** and the field centres at (360+840)/2 = **600.0**. Both are exactly
+centred while the ruler is 24px out, so `drive-display-scaling.mjs` will report agreement and pass.
+Edges, not centres — and a fix must be verified at a width where the column is clamped, because at
+1400px every reading is 0 whether the bug is present or not.
+
+### Item 2 — WebView2's default placeholder is the same colour, and the same failure
+
+Measured on the real endpoints form (reached through the model switcher → *Manage endpoints* →
+*Add an endpoint*), dark theme, on the actual `--vela-bg-inset` fill:
+
+```
+placeholder colour : rgb(117, 117, 117)   = #757575
+input background   : rgb(16, 20, 38)      = #101426
+contrast ratio     : 3.96:1               (AA body text needs 4.5:1)
+```
+
+**WebView2's default is identical to Chromium's `#757575`, so the number a Windows user meets is the
+same 3.96:1 you computed.** The three placeholders it paints are "The workstation in the study",
+"study-box" and "http://127.0.0.1:8080/v1". Every other placeholder in the app is styled, so this
+form is the outlier rather than the rule.
+
+- evidence: `evidence/ruler-regression.txt`, `evidence/theme-flash/endpoints-form-dark.png`
+
+### Item 3 — deferred until item 1 is fixed, deliberately
+
+You asked for the painted scrollbar to be re-photographed after any fix to item 1, since a fix will
+touch `scrollbar-gutter`. Correct, and I have not pre-photographed it: captures taken against the
+current broken ruler would have to be retaken anyway, and a stale scrollbar image in the record is
+exactly the kind of artifact that gets cited later as if it were current. Ping me when the fix lands
+and I will capture both themes.

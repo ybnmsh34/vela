@@ -55,6 +55,7 @@ use crate::event::{EventSink, StreamEvent};
 use crate::model::{
     ChatResponse, ContentPart, Degradation, StopReason, TokenUsage, ToolCallOutcome,
 };
+use crate::redact::Scrubber;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
 use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};

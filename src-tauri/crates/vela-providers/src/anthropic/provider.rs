@@ -390,6 +390,10 @@ impl AnthropicProvider {
             // end-of-body is the terminator, every read is bounded by the stall
             // timeout, and cancellation abandons a read in flight (MEASURED-1).
             let mut body = response.body;
+            // The body knows what request it answers; the assembler is what
+            // decodes. Joining them here is what stops the second redaction
+            // barrier being something an adapter has to remember.
+            let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
             // Grabbed before the loop borrows the body: a stall must still say
             // which endpoint went quiet, and the redacted form is safe to.
             let endpoint = body.endpoint().to_owned();

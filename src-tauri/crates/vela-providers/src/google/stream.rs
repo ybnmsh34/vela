@@ -58,6 +58,7 @@ use crate::model::{
     ChatResponse, ContentPart, Degradation, MalformedToolCall, StopReason, TokenUsage,
     ToolCallOutcome,
 };
+use crate::redact::Scrubber;
 use crate::reasoning::{ReasoningPiece, ReasoningSplitter};
 use crate::sse::SseDecoder;
 use crate::tool_accum::{ToolCallAccumulator, ToolCallShape};

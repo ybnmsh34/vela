@@ -398,6 +398,10 @@ impl GoogleProvider {
             // Written here rather than reusing `crate::stream::drive_stream`,
             // which is typed to the OpenAI-shaped assembler.
             let mut body = response.body;
+            // The body knows what request it answers; the assembler is what
+            // decodes. Joining them here is what stops the second redaction
+            // barrier being something an adapter has to remember.
+            let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone());
             // Grabbed before the loop borrows the body: a stall must still say
             // which endpoint went quiet, and the redacted form is safe to.
             let endpoint = body.endpoint().to_owned();

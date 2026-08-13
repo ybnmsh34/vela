@@ -1,0 +1,167 @@
+.switcher {
+  position: relative;
+  display: inline-flex;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  max-width: 22rem;
+  padding: var(--vela-space-1) var(--vela-space-2);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: pointer;
+  transition: background var(--vela-duration) var(--vela-ease);
+}
+
+.trigger:hover {
+  background: var(--vela-row-hover);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 1px;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--vela-space-2));
+  left: 0;
+  width: 24rem;
+  max-width: 90vw;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-surface-raised);
+  box-shadow: var(--vela-shadow-lg);
+  overflow: hidden;
+}
+
+.list {
+  max-height: 20rem;
+  margin: 0;
+  padding: var(--vela-space-1);
+  list-style: none;
+  overflow-y: auto;
+}
+
+.empty {
+  padding: var(--vela-space-4);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  width: 100%;
+  padding: var(--vela-space-2);
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  background: transparent;
+  color: var(--vela-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover:not(:disabled) {
+  background: var(--vela-row-hover);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -2px;
+}
+
+.option:disabled {
+  cursor: default;
+  /* Not hidden and not greyed into illegibility: the row has to stay readable,
+     because the reason it cannot be chosen is written on it. */
+  color: var(--vela-text-muted);
+}
+
+.optionActive {
+  background: var(--vela-row-selected);
+  color: var(--vela-row-selected-text);
+}
+
+.optionMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.optionModel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.optionProvider {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.optionBlocked {
+  flex: none;
+  padding: 2px var(--vela-space-2);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-warning-bg);
+  color: var(--vela-warning);
+  font-size: var(--vela-text-xs);
+}
+
+.check {
+  flex: none;
+  display: inline-flex;
+  color: var(--vela-accent);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-top: 1px solid var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
+.footerAction {
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--vela-accent);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.footerAction:hover {
+  background: var(--vela-row-hover);
+}
+
+.footerAction:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: -2px;
+}

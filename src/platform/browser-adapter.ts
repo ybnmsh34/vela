@@ -26,6 +26,7 @@ import type { EventContract, EventName, PlatformAdapter, Unsubscribe } from './a
 import {
   IPC_CONTRACT_VERSION,
   isAllowedCommand,
+  NO_CAPABILITIES,
   type Ack,
   type AppInfo,
   type AuthMode,
@@ -44,6 +45,12 @@ import {
   type EchoReq,
   type EchoRes,
   type MessageHit,
+  type ModelCapabilityReport,
+  type ModelsListRes,
+  type ModelsProbeRes,
+  type ModelsProviderRefReq,
+  type ModelOption,
+  type ModelsRefReq,
   type NetworkScope,
   type ProviderAuth,
   type ProviderView,
@@ -78,6 +85,8 @@ const MAX_LABEL_LEN = 200;
 const MAX_MESSAGE_BYTES = 1_048_576;
 /** Mirrors `MAX_MESSAGES` in `src-tauri/src/ipc/chat.rs`. */
 const MAX_MESSAGES = 4_096;
+/** Mirrors `MAX_MODEL_ID_LEN` in `src-tauri/src/ipc/models.rs`. */
+const MAX_MODEL_ID_LEN = 200;
 /** Mirrors `MAX_SUPPLIED_TITLE` in `src-tauri/src/ipc/store.rs`. */
 const MAX_SUPPLIED_TITLE = 200;
 /** Mirrors `DEFAULT_LIST_LIMIT` in `src-tauri/src/ipc/store.rs`. */
@@ -390,6 +399,10 @@ export class BrowserAdapter implements PlatformAdapter {
   readonly #secrets = new Map<string, string>();
   /** Stands in for the SQLite settings rows. Never holds a credential. */
   readonly #providers = new Map<string, SettingsPutProviderReq>();
+  /** Mirrors the host's `CapabilityCache`, keyed `providerId/modelId`. */
+  readonly #capabilities = new Map<string, ModelCapabilityReport>();
+  /** Endpoints that enumerate their own models. Absent = no listing route. */
+  readonly #listings = new Map<string, ModelOption[]>();
   #theme: ThemePreference = 'system';
   readonly #listeners = new Map<string, Set<(payload: unknown) => void>>();
   /** Mirrors `ChatTurns` in the host: id -> "has been cancelled". */
@@ -433,6 +446,12 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#chatCancel(payload as ChatCancelReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
+      case 'models_capabilities':
+        return this.#modelsCapabilities(payload as ModelsRefReq);
+      case 'models_list':
+        return this.#modelsList(payload as ModelsProviderRefReq);
+      case 'models_probe':
+        return this.#modelsProbe(payload as ModelsRefReq);
       case 'secrets_set':
         return this.#secretsSet(payload as SecretsSetReq);
       case 'secrets_delete':
@@ -654,6 +673,128 @@ export class BrowserAdapter implements PlatformAdapter {
       credentialFieldLabel: credentialFieldLabel(mode),
       security: assessSecurity(url, auth, credentialPresent, requirement === 'required'),
     };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* models — mirrors `src-tauri/src/ipc/models.rs`                         */
+  /*                                                                        */
+  /* The host keys its cache on (provider, model) and answers a MISS with   */
+  /* the unknown floor rather than NOT_FOUND, because "nothing established" */
+  /* is a fact the switcher has to render. This fake does the same.         */
+  /* ---------------------------------------------------------------------- */
+
+  /** Mirrors `validated_model_id` / `validated_provider_id` in the host. */
+  #modelRef(request: ModelsRefReq, command: CommandName): [string, string] {
+    const providerId = request.providerId.trim();
+    if (providerId === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid providerId: must not be blank', command);
+    }
+    const modelId = request.modelId.trim();
+    if (modelId === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid modelId: must not be blank', command);
+    }
+    if (modelId.length > MAX_MODEL_ID_LEN) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid modelId: must be at most ${MAX_MODEL_ID_LEN} characters`,
+        command,
+      );
+    }
+    return [providerId, modelId];
+  }
+
+  #unknownReport(providerId: string, modelId: string): ModelCapabilityReport {
+    return {
+      providerId,
+      modelId,
+      capabilities: NO_CAPABILITIES,
+      structuredOutput: false,
+      toolCallsEmulated: false,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+      probed: false,
+      findings: [],
+    };
+  }
+
+  #modelsCapabilities(request: ModelsRefReq): ModelCapabilityReport {
+    const [providerId, modelId] = this.#modelRef(request, 'models_capabilities');
+    return (
+      this.#capabilities.get(`${providerId}/${modelId}`) ??
+      this.#unknownReport(providerId, modelId)
+    );
+  }
+
+  /**
+   * Mirrors the host's listing: an endpoint that does not enumerate is
+   * `enumerated: false` with **no** failure, because that is a supported
+   * configuration and not a fault. The fake's default endpoint is one of those,
+   * so the UI's free-text path is what gets exercised unless a test seeds
+   * otherwise — which is the harder case, and therefore the right default.
+   */
+  #modelsList(request: ModelsProviderRefReq): ModelsListRes {
+    const providerId = request.providerId.trim();
+    if (providerId === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid providerId: must not be blank', 'models_list');
+    }
+    if (!this.#providers.has(providerId)) {
+      throw new PlatformError(
+        'NOT_FOUND',
+        `no provider configured with id \`${providerId}\``,
+        'models_list',
+      );
+    }
+    const listed = this.#listings.get(providerId);
+    if (listed === undefined) return { models: [], enumerated: false, failure: null };
+    return { models: listed, enumerated: true, failure: null };
+  }
+
+  /**
+   * Probing the fake establishes only what the fake can honestly demonstrate:
+   * it streams. Everything else stays unknown, so a UI tested against it
+   * under-promises. A test that needs a richer model seeds one.
+   */
+  #modelsProbe(request: ModelsRefReq): ModelsProbeRes {
+    const [providerId, modelId] = this.#modelRef(request, 'models_probe');
+    if (!this.#providers.has(providerId)) {
+      throw new PlatformError(
+        'NOT_FOUND',
+        `no provider configured with id \`${providerId}\``,
+        'models_probe',
+      );
+    }
+    const key = `${providerId}/${modelId}`;
+    const seeded = this.#capabilities.get(key);
+    if (seeded !== undefined) return { report: seeded, failure: null };
+
+    const report: ModelCapabilityReport = {
+      ...this.#unknownReport(providerId, modelId),
+      capabilities: { ...NO_CAPABILITIES, streaming: true },
+      probed: true,
+      findings: [{ capability: 'streaming', support: 'supported', evidence: 'probed' }],
+    };
+    this.#capabilities.set(key, report);
+    return { report, failure: null };
+  }
+
+  /**
+   * Test hook: give a model a capability profile, as though it had been probed.
+   *
+   * Like `seedConversation`, this is a hook on the fake and not a command — it
+   * is unreachable from `invoke`, so no renderer code can call it. It exists
+   * because the four capability profiles the harness exercises (frontier,
+   * mid-local, small-local, hostile) cannot be produced by an in-memory echo,
+   * and a UI tested only against "streams, nothing else" would never have its
+   * degradation paths driven at all.
+   */
+  seedCapabilities(report: ModelCapabilityReport): ModelCapabilityReport {
+    this.#capabilities.set(`${report.providerId}/${report.modelId}`, report);
+    return report;
+  }
+
+  /** Test hook: make an endpoint one that enumerates its own models. */
+  seedModelListing(providerId: string, models: readonly ModelOption[]): void {
+    this.#listings.set(providerId, [...models]);
   }
 
   /* ---------------------------------------------------------------------- */

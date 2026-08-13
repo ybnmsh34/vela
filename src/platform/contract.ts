@@ -646,6 +646,103 @@ export interface ChatEventEnvelope {
 }
 
 /* -------------------------------------------------------------------------- */
+/* models — what an endpoint holds, and what each model demonstrated          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mirrors `src-tauri/src/ipc/models.rs`.
+ *
+ * `settings_*` describes what the user **configured**; these describe what an
+ * endpoint **demonstrated**. Keeping them apart is deliberate: a perfectly valid
+ * configuration pointing at a box that is switched off has no established
+ * capabilities at all, and a single type would have to lie about one of the two.
+ */
+
+/** Mirrors `vela_providers::capability::Support`. */
+export type CapabilitySupport = 'unknown' | 'unsupported' | 'supported' | 'degraded';
+
+/**
+ * Mirrors `vela_providers::capability::Evidence` — how a belief was reached, so
+ * the UI can never imply a probe happened when a default was used.
+ */
+export type CapabilityEvidence = 'probed' | 'declared' | 'cached' | 'unprobed';
+
+/**
+ * Mirrors `models::CapabilityFindingView`.
+ *
+ * Note what is absent: the adapter's free-text `note`. Three closed enums cross;
+ * the renderer writes every sentence, exactly as it does for {@link Concern}
+ * and {@link Cause}.
+ */
+export interface CapabilityFinding {
+  readonly capability: CapabilityName;
+  readonly support: CapabilitySupport;
+  readonly evidence: CapabilityEvidence;
+}
+
+/** Mirrors `models::ModelOption`. */
+export interface ModelOption {
+  readonly modelId: string;
+  /** How the endpoint names it. Rendered as-is; never parsed, never matched. */
+  readonly displayName: string;
+  /** `null` when the endpoint reports none. Never a guessed default. */
+  readonly contextWindowTokens: number | null;
+}
+
+/**
+ * Mirrors `models::ModelCapabilityReport` — **the whole vocabulary the UI has
+ * for what the chosen model can do.**
+ */
+export interface ModelCapabilityReport {
+  readonly providerId: string;
+  readonly modelId: string;
+  /** The offerable flag set. `unknown` reads as `false`, decided host-side. */
+  readonly capabilities: ChatCapabilities;
+  /**
+   * May a structured-output request be *sent*? Separate from `capabilities`
+   * because its failure mode is silent wrong output rather than a loud error.
+   */
+  readonly structuredOutput: boolean;
+  /**
+   * No native tool calling, so the core emulates it in the prompt. The UI must
+   * say "emulated" rather than implying the endpoint understands tools.
+   */
+  readonly toolCallsEmulated: boolean;
+  readonly contextWindowTokens: number | null;
+  readonly maxOutputTokens: number | null;
+  /** `false` means nothing has been established: the floor above is a floor. */
+  readonly probed: boolean;
+  readonly findings: readonly CapabilityFinding[];
+}
+
+export interface ModelsProviderRefReq {
+  readonly providerId: string;
+}
+
+export interface ModelsRefReq {
+  readonly providerId: string;
+  readonly modelId: string;
+}
+
+export interface ModelsListRes {
+  readonly models: readonly ModelOption[];
+  /**
+   * The endpoint enumerated its own models. `false` is a **normal state** for a
+   * runtime with no listing route — the UI falls back to free-text model entry
+   * and must not render an error.
+   */
+  readonly enumerated: boolean;
+  /** Set only for a real failure, never for "this endpoint does not list". */
+  readonly failure: ChatError | null;
+}
+
+export interface ModelsProbeRes {
+  /** What is known *after* the attempt. On failure, whatever was known before. */
+  readonly report: ModelCapabilityReport;
+  readonly failure: ChatError | null;
+}
+
+/* -------------------------------------------------------------------------- */
 /* store — the conversation list the navigation surface is built on           */
 /* -------------------------------------------------------------------------- */
 
@@ -758,6 +855,9 @@ export interface IpcContract {
   chat_cancel: { req: ChatCancelReq; res: ChatCancelRes };
   chat_send: { req: ChatSendReq; res: ChatSendRes };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
+  models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
+  models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
+  models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
   secrets_status: { req: SecretsRefReq; res: SecretsStatusRes };
@@ -788,6 +888,9 @@ export const COMMAND_ALLOWLIST = [
   'chat_cancel',
   'chat_send',
   'diagnostics_echo',
+  'models_capabilities',
+  'models_list',
+  'models_probe',
   'secrets_delete',
   'secrets_set',
   'secrets_status',

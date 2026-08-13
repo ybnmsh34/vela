@@ -1,0 +1,49 @@
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  min-width: 12rem;
+}
+
+.track {
+  height: 4px;
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-border);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-accent);
+  transition: width var(--vela-duration) var(--vela-ease);
+}
+
+.readout,
+.unknown {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: 1.5;
+}
+
+.warning {
+  color: var(--vela-warning);
+}
+
+.comfortable .fill {
+  background: var(--vela-accent);
+}
+
+.tight .fill {
+  background: var(--vela-warning);
+}
+
+.over .fill {
+  background: var(--vela-danger);
+}
+
+.over .warning {
+  color: var(--vela-danger);
+}

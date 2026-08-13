@@ -1,0 +1,129 @@
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border-bottom: 1px solid var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  max-width: 18rem;
+  padding: var(--vela-space-1) var(--vela-space-1) var(--vela-space-1) var(--vela-space-2);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface);
+}
+
+.preview {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vela-radius-sm);
+  object-fit: cover;
+}
+
+.glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+  color: var(--vela-text-subtle);
+  font-size: 9px;
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vela-text);
+  font-size: var(--vela-text-xs);
+}
+
+.size {
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--vela-radius-sm);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+.remove:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 1px;
+}
+
+.refusals {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-warning-bg);
+}
+
+.refusalList {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  margin: 0;
+  padding-left: var(--vela-space-4);
+  color: var(--vela-warning);
+  font-size: var(--vela-text-xs);
+  line-height: 1.5;
+}
+
+.dismiss {
+  flex: none;
+  padding: var(--vela-space-1) var(--vela-space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--vela-radius-pill);
+  background: transparent;
+  color: var(--vela-warning);
+  font: inherit;
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.dismiss:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 1px;
+}

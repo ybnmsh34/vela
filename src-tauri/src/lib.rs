@@ -28,6 +28,11 @@ pub fn run() {
         // In-flight turn bookkeeping. Separate from `AppState` because it is
         // host-process state, not domain state.
         .manage(ipc::chat::ChatTurns::new())
+        // Probe results for the current process. Not persisted on purpose: a
+        // stale `vision: true` surviving a model swap would offer an affordance
+        // the endpoint cannot serve, so a restart returns every model to
+        // "nothing established".
+        .manage(ipc::models::CapabilityCache::new())
         // The system of record. Opened here rather than in `AppState` because
         // the OS application-data directory is only resolvable once the app
         // handle exists. Migrations run inside this call; if it fails, startup
@@ -43,6 +48,9 @@ pub fn run() {
             ipc::chat::chat_cancel,
             ipc::chat::chat_send,
             ipc::diagnostics::diagnostics_echo,
+            ipc::models::models_capabilities,
+            ipc::models::models_list,
+            ipc::models::models_probe,
             ipc::secrets::secrets_delete,
             ipc::secrets::secrets_set,
             ipc::secrets::secrets_status,

@@ -203,6 +203,36 @@ describe('capability-driven affordances', () => {
   });
 });
 
+describe('mounted in the real application root', () => {
+  it('hands the chosen model’s capability struct to the transcript surface', async () => {
+    // The wiring test. `App` joins navigation, models and the conversation
+    // surface; if the capability struct stops reaching the transcript, every
+    // affordance there silently reverts to the floor and no unit test notices.
+    const adapter = await host();
+    adapter.seedCapabilities(
+      profile({ providerId: 'workstation', modelId: 'text-only', capabilities: { vision: true } }),
+    );
+    // The workspace lives in the content region, which the navigation surface
+    // fills with the home screen until a conversation is open.
+    const conversation = adapter.seedConversation({ title: 'An open conversation' });
+    const { useNavigationStore } = await import('@/state/navigation-store');
+    useNavigationStore.getState().select(conversation.id);
+
+    const { App } = await import('@/app/App');
+    render(<App adapter={adapter} />);
+
+    // The workspace mounted around the transcript…
+    expect(await screen.findByRole('button', { name: /The workstation · text-only/ })).toBeInTheDocument();
+    // …and the transcript surface is drawing with the model's own label, which
+    // it can only have got through the context.
+    expect(
+      (await screen.findAllByText(/text-only/)).length,
+      'the model label reaches both the bar and the transcript',
+    ).toBeGreaterThan(1);
+    expect(screen.getByTestId('attach-image')).toBeInTheDocument();
+  });
+});
+
 describe('switching model', () => {
   async function twoEndpoints(): Promise<BrowserAdapter> {
     const adapter = await host();

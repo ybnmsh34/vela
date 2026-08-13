@@ -8,6 +8,16 @@
  * endpoint, its capability struct, and the staged attachments. That is the whole
  * interface between them.
  *
+ * ## Where it is mounted, and the consequence
+ *
+ * `App` puts this in the navigation surface's content slot, which is filled only
+ * while a conversation is open. So the bar — and with it the endpoint editor —
+ * appears once the user has a conversation, not on the home screen. That is the
+ * right default (choosing a model is a thing you do to a conversation) but it
+ * means the home screen has no route to endpoint configuration. When the home
+ * screen grows one, it should open the same {@link EndpointsPanel} rather than a
+ * second editor.
+ *
  * ## What the context meter can and cannot see
  *
  * It measures what this surface holds: the staged files, plus whatever the host

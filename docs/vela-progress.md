@@ -1217,6 +1217,58 @@ sweep and address it in a single round.
 **The tripwire is not disarmed, it is re-aimed:** if the sweep completes and a *later* defect is
 then found outside it, that is the old pattern again and the provider layer stops for a decision.
 
+## Phase C gate — PASS WITH FINDINGS, and one finding I read as harder than the gate did
+
+| | frontier | mid-local | small-local | hostile |
+|---|---|---|---|---|
+| assertions passed | 21/22 | 21/22 | 21/22 | 21/22 |
+| the one failure | C5 | C5 | C5 | C5 |
+| console errors | **0** | 0 | 0 | 0 |
+| uncaught exceptions | **0** | 0 | 0 | 0 |
+| browser→endpoint requests | **0** | 0 | 0 | 0 |
+| time to first painted token | 29.2 ms | 28.9 ms | 22.1 ms | 18.6 ms |
+
+**21/21 assertion controls behaved as expected.** Every assertion was also applied where it must
+not hold, and failed there.
+
+**Zero browser→endpoint requests on every profile** is the measured confirmation of the
+architectural rule: the mock endpoints send no CORS headers, so all provider HTTP must originate in
+the Rust core. It holds.
+
+The report's honesty section is worth keeping as the house standard: it states that no byte came
+from a language model, that the credential store is `MemoryStore` (and the screenshots say
+`memory-fake` because the app says so), that the renderer was **Chromium on Linux — not the Tauri
+webview**, that the transport was HTTP+SSE rather than Tauri IPC, and that the timings are *"an
+upper bound on the renderer's own cost, not a product claim."*
+
+### C5 — the context meter reads zero no matter what you type
+
+`ContextMeter` measures `ModelWorkspace`'s `turnTexts` prop. `App.tsx` mounts `<ModelWorkspace>`
+and **passes no `turnTexts`**, and the composer's draft lives in `Composer`'s own state. So typing
+**880,000 characters** on `frontier` leaves the meter reading **"About 0 of 200,000 tokens"** — and
+the transcript already on screen is not counted either.
+
+The diagnosis is exemplary: the component is **not** broken (C5b stages a text file of the same
+size through the real picker and the meter warns correctly), and that proof is **not vacuous**
+(control K6 stages a small file and the same assertion fails). The gap is purely wiring at the
+composition root.
+
+> Consequence, in the gate's own words: *"a message that will not fit is discovered by sending it.
+> On `hostile` (4,096 tokens) that is easy to hit by accident."*
+
+**Where I differ from the gate.** It classified C5 as a wiring gap and "not a misrepresentation to
+the user." I read it as one. A meter that says *"About 0 of 200,000"* while holding 880,000
+characters does not merely fail to inform — it **actively tells the user they have room when they
+do not**, which is worse than showing nothing at all. Phase C's brief made degradation-must-be-
+visible a load-bearing requirement, and for the context axis it is currently invisible on all four
+profiles.
+
+I am not overriding the gate; the functionality critic rules. But its brief already says it may not
+pass a piece whose evidence shows an affordance the profile cannot support, and I have flagged that
+C5 deserves that test rather than a pass-by-classification. **C5 should be fixed regardless of how
+the panel rules** — it is a small change at the composition root with a component that already
+works and already has a non-vacuous test.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

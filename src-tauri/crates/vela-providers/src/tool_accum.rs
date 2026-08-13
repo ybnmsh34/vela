@@ -21,6 +21,34 @@
 //! belong to the same call. And nothing that fails to parse is ever repaired
 //! into something executable: it becomes a
 //! [`ToolCallOutcome::Malformed`](crate::model::ToolCallOutcome) the UI shows.
+//!
+//! # THE SECOND LOAD-BEARING RULE (GATE M Part 1, Phase B, FINDING 1)
+//!
+//! Everything above is about **one** of the two wire shapes. There are two, and
+//! an earlier version of this file merged them:
+//!
+//! | | streaming `delta.tool_calls[]` | non-streamed `message.tool_calls[]` |
+//! |---|---|---|
+//! | an element is | a **fragment** of a call | a **whole** call |
+//! | `index` | the key that joins fragments | **not in this shape at all** |
+//! | two elements carrying no `index` | two pieces of one call | two different calls |
+//!
+//! Applying the streaming rule — "no index continues the last-touched slot" —
+//! to a non-streamed body made N parallel calls collapse into slot 0: the first
+//! `id` and `name` won, the `arguments` strings were concatenated into a string
+//! that never existed on the wire, and N-1 calls disappeared with nothing
+//! saying so. The gate measured it on the flagship OpenAI-compatible path:
+//! `get_weather{"city":"berlin"}` and `get_weather{"city":"paris"}` came back
+//! streamed as two executable calls and non-streamed as one `Malformed` whose
+//! evidence string was `{"city":"berlin"}{"city":"paris"}`.
+//!
+//! The shape is therefore **stated by the caller, not guessed at here**:
+//! [`push_fragment`](ToolCallAccumulator::push_fragment) for a streamed
+//! fragment, [`push_whole_call`](ToolCallAccumulator::push_whole_call) for an
+//! element of a non-streamed `tool_calls` array. There is deliberately no
+//! shape-agnostic `push`: the information is only available at the boundary
+//! where the response was read, and once it is lost no rule in here can
+//! recover it.
 
 use std::collections::BTreeMap;
 

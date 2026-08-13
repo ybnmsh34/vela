@@ -21,7 +21,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- openai-compatible / stream() — the raw exchange -----------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:36643/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41753/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -77,7 +77,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- openai-compatible / complete() — the raw exchange ---------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:44837/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:43249/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -114,7 +114,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- anthropic / stream() — the raw exchange -------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:38061/v1/messages
+  >>> exchange 1 — POST http://127.0.0.1:39185/v1/messages
       content-type: application/json
       accept: text/event-stream
       anthropic-version: 2023-06-01
@@ -195,7 +195,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- anthropic / complete() — the raw exchange -----------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:39641/v1/messages
+  >>> exchange 1 — POST http://127.0.0.1:42825/v1/messages
       content-type: application/json
       accept: application/json
       anthropic-version: 2023-06-01
@@ -233,7 +233,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- google / stream() — the raw exchange ----------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:45171/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+  >>> exchange 1 — POST http://127.0.0.1:32949/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -283,7 +283,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- google / complete() — the raw exchange --------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:32897/v1beta/models/gemini-cross:generateContent
+  >>> exchange 1 — POST http://127.0.0.1:35711/v1beta/models/gemini-cross:generateContent
       content-type: application/json
       accept: application/json
       (no authorization header)

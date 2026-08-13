@@ -1,7 +1,7 @@
 id	verdict	claim	detail
-P1	PASS	the production bundle mounts a non-empty React tree at #root	5176 bytes of markup
+P1	PASS	the production bundle mounts a non-empty React tree at #root	5196 bytes of markup
 P2	PASS	every feature that only meets at the composition root is on screen	{"statusLine":1,"startAConversation":1,"searchEverything":1,"navigation":1}
-P3	PASS	the page booted the built bundle, not a source module	["/assets/index-DRujsQ8p.js"]
+P3	PASS	the page booted the built bundle, not a source module	["/assets/index-DpJ8fIBh.js"]
 P4	PASS	no uncaught exception during mount	
 P5	PASS	no console error during mount	
 P6a	PASS	the traps were installed before the document had a body	document.readyState was loading

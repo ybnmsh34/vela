@@ -37,16 +37,27 @@ byte the renderer receives was produced by the core from a real exchange with a 
 
 Everything produced here is **VERIFIED-BY-FAKE** (conventions.md §10).
 
-## Two things the bridge does that the shipping host does not
+## Two things the bridge used to do that the shipping host did not
 
-1. **It registers a provider.** Nothing under `src-tauri/src/` ever calls
-   `ProviderRegistry::register`, so on today's builds `chat_send` cannot reach any endpoint.
-   That is FINDING 1 of the gate. `--no-register` reproduces the shipping behaviour exactly,
-   and control K21 uses it.
+> **Both are closed, and the paragraphs are corrected rather than deleted** — a reader who meets
+> `--no-register` needs to know what it is reproducing. Corrected by the GATE M executor after
+> checking the tree rather than the prose; the stale version claimed the shipping host could not
+> reach any endpoint, which stopped being true at `84c256f`.
+
+1. **It registers a provider.** This *was* FINDING 1: nothing under `src-tauri/src/` called
+   `ProviderRegistry::register`, so `chat_send` could not reach any endpoint. Closed —
+   `src-tauri/src/provider_host.rs` builds and registers one per configured endpoint, and the
+   desktop session confirmed it against a live llama.cpp. `--no-register` therefore no longer
+   reproduces the shipping host; it reproduces the **pre-fix** host, which is what control K21
+   uses it for, and K21's claim is "the old defect can still be staged on demand", not "the app
+   still has it".
 2. **It can attach a tool catalogue** to a request, when a user message starts with `#tools`.
-   `ChatSendReq` has no `tools` field, so the shipping composer cannot ask for tools at all —
-   FINDING 2. Everything after the request is the real core: native calls, prompt emulation,
-   malformed reconstruction, degradations.
+   This *was* FINDING 2: `ChatSendReq` had no `tools` field. Closed — it has `tools` and
+   `tool_choice`, and `ChatMessageInput` has `parts`, both proved against a real endpoint. The
+   `#tools` directive remains because the *composer* still has no tool-catalogue UI, so a
+   harness-side catalogue is the only way to drive the path from a browser. Everything after the
+   request is the real core: native calls, prompt emulation, malformed reconstruction,
+   degradations.
 
 Both are stated on every screenshot they affect.
 
@@ -91,6 +102,26 @@ found on a real machine. `reasoningSurface()` reads what came out the other end.
 
 Like `#tools` and `#markdown`, both fire only when asked for, so every recorded transcript and
 every pre-existing case stays byte-identical.
+
+## The two boundaries the relay records — `/invokes.json` and `/endpoint-requests.json`
+
+Added by the GATE M executor for the staged-attachment assertions (C32–C35), and useful to
+anything else that needs to know what actually left a layer:
+
+| Endpoint | What it holds |
+|---|---|
+| `GET /invokes.json` | every command the renderer invoked, with the payload it sent — the **renderer → host** boundary |
+| `GET /endpoint-requests.json` | every request the endpoint received, body included — the **core → endpoint** boundary |
+
+The second is the endpoint's own testimony, not the sender's: `server.mjs` passes
+`--record-requests <file>` to the mock, which appends one JSON object per request through a new
+`onRequest` hook. That hook is purely observational and cannot change a response, so a recorded run
+and an unrecorded one answer identically and `check-transcripts.sh` stays byte-identical.
+
+Both exist because this project's recurring defect is a thing that crosses one boundary and dies at
+the next. `useSelectedModel().attachments` had no reader, so a staged picture never reached the
+payload — and a fix that reached the payload and was dropped by the Rust layer would be the same
+defect one storey down, invisible to any check that only watched the browser.
 
 ## What `layoutRuler()` is for
 
@@ -141,7 +172,7 @@ node tests/harness/ui-bridge/server.mjs --profile hostile --port 8420 --chunk-de
 | `relay-adapter.ts` | `PlatformAdapter` over HTTP + SSE. Transport only |
 | `server.mjs` | Starts the mock and the Rust bridge; serves `/invoke`, `/events`, `/health` |
 | `checks.mjs` | The DOM readers and the assertions — shared by the driver and the controls |
-| `drive-matrix.mjs` | One profile, twenty-three screenshots, thirty-five assertions — thirty on `hostile`, which has no answer channel for the reading surface to be judged in, and thirty-three on `small-local`, which has no reasoning channel |
+| `drive-matrix.mjs` | One profile, up to thirty-one screenshots, forty assertions — thirty-eight on `mid-local` and thirty-six on `small-local` (no vision, so no image to stage), thirty-three on `hostile`, which additionally has no answer channel for the reading surface to be judged in |
 | `controls.mjs` | The same assertions applied where they must fail |
 
 `checks.mjs` is shared on purpose: a control that re-implements the assertion it is controlling

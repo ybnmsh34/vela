@@ -1,6 +1,17 @@
 # GATE M Part 1 — Phase B2 — RESULTS
 
-**Verdict: FAIL.** One defect, found by the coverage this phase was created to add,
+> **RE-RUN BY THE GATE M EXECUTOR (CONV-1 wave). The FAIL below is closed.**
+> `bash docs/regression-baseline/phase-b2-matrix/record.sh` now exits **0**:
+> **1455 gate assertions, 0 failures**, 46 controls behaving as expected, ~26 s wall clock.
+> The 24 failures the verdict below rests on were all FINDING 4 (case 16), and case 16 is
+> green on every adapter and both transports in this run — see `SUMMARY.txt` and
+> `*/16-reasoning-x-structured-output.txt`, which are this run's files.
+>
+> The analysis below is kept verbatim, because the argument that produced the FAIL is worth
+> more than the verdict it produced. Read the header, not the verdict line, for the current
+> state.
+
+**Verdict (as recorded at the time): FAIL.** One defect, found by the coverage this phase was created to add,
 reproduced on all three adapters and both transports, with a control that isolates its
 cause to a single accessor. Everything Phase B earned is intact and is re-verified live.
 

@@ -8,6 +8,8 @@
  * printed URL.
  */
 
+import { appendFileSync } from 'node:fs';
+
 import { PROFILE_NAMES, isProfileName, type ProfileName } from './profiles.ts';
 import { startMockProvider } from './server.ts';
 
@@ -24,6 +26,13 @@ Options:
   --api-key <key>     require this bearer token. Omit for a NO-AUTH endpoint,
                       which is the common local case and the default.
   --chunk-delay <ms>  delay between SSE frames                 (default: 0)
+  --record-requests <path>
+                      append every request this endpoint receives to <path>,
+                      one JSON object per line. Observational only: it cannot
+                      change a response, so a recorded run is byte-identical to
+                      an unrecorded one. Written for the GATE M UI matrix, which
+                      runs this endpoint out of process and has no other way to
+                      read the bytes the Rust core put on the wire.
   --help              this text
 
 Endpoints: GET /health, GET /props, GET /v1/models, POST /v1/chat/completions
@@ -37,6 +46,7 @@ interface CliArgs {
   readonly seed: number | undefined;
   readonly apiKey: string | undefined;
   readonly chunkDelayMs: number;
+  readonly recordRequests: string | undefined;
 }
 
 export function parseArgs(argv: readonly string[]): CliArgs | 'help' {
@@ -46,6 +56,7 @@ export function parseArgs(argv: readonly string[]): CliArgs | 'help' {
   let seed: number | undefined;
   let apiKey: string | undefined;
   let chunkDelayMs = 0;
+  let recordRequests: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -87,11 +98,18 @@ export function parseArgs(argv: readonly string[]): CliArgs | 'help' {
         chunkDelayMs = requireInteger('--chunk-delay', value);
         i += 1;
         break;
+      case '--record-requests':
+        if (value === undefined) {
+          throw new Error('--record-requests requires a path');
+        }
+        recordRequests = value;
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument: ${String(flag)}`);
     }
   }
-  return { profile, port, host, seed, apiKey, chunkDelayMs };
+  return { profile, port, host, seed, apiKey, chunkDelayMs, recordRequests };
 }
 
 function requireInteger(flag: string, value: string | undefined): number {
@@ -116,6 +134,13 @@ async function main(): Promise<void> {
     chunkDelayMs: args.chunkDelayMs,
     ...(args.seed === undefined ? {} : { seed: args.seed }),
     ...(args.apiKey === undefined ? {} : { apiKey: args.apiKey }),
+    ...(args.recordRequests === undefined
+      ? {}
+      : {
+          onRequest: (request): void => {
+            appendFileSync(args.recordRequests as string, `${JSON.stringify(request)}\n`);
+          },
+        }),
   });
 
   const p = handle.profile;

@@ -13,13 +13,13 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   demonstrably half accumulated.
 
 ---- openai-compatible — what Vela produced --------------------------------
-  wall clock                             122.028166ms
+  wall clock                             121.183083ms
   outcome                                Cancelled
   events the sink was handed             ["toolCallDelta", "toolCallDelta", "error"]
 
 ---- openai-compatible — assertions ----------------------------------------
   [PASS] openai-compatible: cancellation ends the turn promptly — no hang
-        122.028166ms
+        121.183083ms
   [PASS] openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
         Some(Cancelled)
   [PASS] openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint
@@ -28,13 +28,13 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         3 event(s)
 
 ---- anthropic — what Vela produced ----------------------------------------
-  wall clock                             121.538219ms
+  wall clock                             121.692605ms
   outcome                                Cancelled
   events the sink was handed             ["toolCallDelta", "toolCallDelta", "toolCallDelta", "error"]
 
 ---- anthropic — assertions ------------------------------------------------
   [PASS] anthropic: cancellation ends the turn promptly — no hang
-        121.538219ms
+        121.692605ms
   [PASS] anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
         Some(Cancelled)
   [PASS] anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint
@@ -43,13 +43,13 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         4 event(s)
 
 ---- google — what Vela produced -------------------------------------------
-  wall clock                             121.463747ms
+  wall clock                             121.404843ms
   outcome                                Cancelled
   events the sink was handed             ["toolCallDelta", "error"]
 
 ---- google — assertions ---------------------------------------------------
   [PASS] google: cancellation ends the turn promptly — no hang
-        121.463747ms
+        121.404843ms
   [PASS] google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
         Some(Cancelled)
   [PASS] google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint

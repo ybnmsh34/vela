@@ -829,6 +829,134 @@ try {
     wholeVerdict.detail,
   );
 
+  /* ---- the staged attachment, at both boundaries ------------------------ *
+   * The assertions that matter most here are the ones that were absent when
+   * the defect shipped, so their controls are the defect itself: a payload
+   * with the parts stripped out (Send discarding the picture), a wire with the
+   * bytes missing (a core that accepts parts and forwards none), and an image
+   * pasted into the prompt as prose instead of offered as an image part.       */
+  {
+    const a = await session(browser, frontier);
+    const PNG_BYTES = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52,
+    ]);
+    const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUg==';
+    const NOTE_NAME = 'control-notes.md';
+    const NOTE_BODY = 'a note staged by the control run';
+
+    // A control for "the button opens a chooser" that is the pre-fix state
+    // rather than a simulation of it: `cloneNode` copies the markup and drops
+    // every listener, so the replacement is the same button with no handler —
+    // which is exactly what `Composer.tsx` shipped.
+    const dead = await a.page.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find(
+        (node) => node.getAttribute('aria-label') === 'Attach an image',
+      );
+      if (button === undefined || button === null) return false;
+      button.replaceWith(button.cloneNode(true));
+      return true;
+    });
+    // The promise is created BEFORE the click, and awaited after it — an
+    // awaited wait placed first would time out no matter what the button did,
+    // and would report the control's own ordering bug as a passing control.
+    const deadChooser = a.page.waitForEvent('filechooser', { timeout: 2_500 }).catch(() => null);
+    await a.page.getByRole('button', { name: 'Attach an image', exact: true }).click();
+    const deadOn =
+      (await deadChooser) === null ? null : await (await deadChooser).element().getAttribute('data-testid');
+    control(
+      'K49',
+      "the composer's attach button opens its own picker — with the handler removed from that button",
+      'FAIL',
+      dead && deadOn === 'composer-attachment-picker',
+      `handler removed=${String(dead)} chooser opened on=${String(deadOn)}`,
+    );
+
+    // Now the real thing, through the picker the reload restores.
+    await a.page.reload();
+    await a.page.waitForSelector('[data-testid="status-line"]');
+    await a.page.getByRole('button', { name: 'Start a conversation' }).click();
+    await a.page.waitForSelector('#vela-composer');
+    await a.page.setInputFiles('input[type="file"]', {
+      name: NOTE_NAME,
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(NOTE_BODY),
+    });
+    await a.page.waitForTimeout(300);
+    await send(a.page, 'read the attached note');
+    const textInvokes = await (await fetch(`${frontier.base}/invokes.json`)).json();
+    const textEndpoint = await (await fetch(`${frontier.base}/endpoint-requests.json`)).json();
+    const textVerdict = check.stagedTextReachedTheWire(
+      textInvokes,
+      textEndpoint,
+      NOTE_NAME,
+      NOTE_BODY,
+    );
+    control('K50', 'a staged text file reaches the wire, on the app as it ships', 'PASS', textVerdict.pass, textVerdict.detail);
+
+    // The degradation that is easy to ship and hard to see: the contents
+    // arrive, the name does not, and the model cannot tell the file from the
+    // question.
+    const unnamed = JSON.parse(JSON.stringify(textInvokes));
+    for (const entry of unnamed) {
+      for (const message of entry.payload?.messages ?? []) {
+        for (const part of message.parts ?? []) {
+          if (part.kind === 'text') part.text = NOTE_BODY;
+        }
+      }
+    }
+    const unnamedVerdict = check.stagedTextReachedTheWire(unnamed, textEndpoint, NOTE_NAME, NOTE_BODY);
+    control('K51', 'the same assertion when the file arrives unnamed — bare contents in the prompt', 'FAIL', unnamedVerdict.pass, unnamedVerdict.detail);
+
+    await a.page.setInputFiles('[data-testid="composer-attachment-picker"]', {
+      name: 'control.png',
+      mimeType: 'image/png',
+      buffer: PNG_BYTES,
+    });
+    await a.page.waitForTimeout(300);
+    await send(a.page, 'what is in this picture?');
+    const invokes = await (await fetch(`${frontier.base}/invokes.json`)).json();
+    const endpointRequests = await (await fetch(`${frontier.base}/endpoint-requests.json`)).json();
+
+    const shipped = check.stagedImageReachedTheWire(invokes, endpointRequests, PNG_BASE64);
+    control('K52', 'a staged image reaches the wire, on the app as it ships', 'PASS', shipped.pass, shipped.detail);
+
+    // THE DEFECT ITSELF: `useSelectedModel().attachments` had no reader, so the
+    // payload went out with no parts at all and the user was told nothing.
+    const stripped = JSON.parse(JSON.stringify(invokes));
+    for (const entry of stripped) {
+      for (const message of entry.payload?.messages ?? []) delete message.parts;
+    }
+    const strippedVerdict = check.stagedImageReachedTheWire(stripped, endpointRequests, PNG_BASE64);
+    control('K53', 'the same assertion against a payload with the parts dropped — the defect as it shipped', 'FAIL', strippedVerdict.pass, strippedVerdict.detail);
+
+    // The same defect one storey down: the renderer's payload is right and the
+    // core forwards no image. Only the second boundary can see this.
+    const blanked = endpointRequests.map((request) => ({ ...request, body: '{"messages":[]}' }));
+    const blankedVerdict = check.stagedImageReachedTheWire(invokes, blanked, PNG_BASE64);
+    control('K54', 'the same assertion when the payload is right and the wire carries no image', 'FAIL', blankedVerdict.pass, blankedVerdict.detail);
+
+    const sawImage = check.endpointSawAnImagePart(endpointRequests);
+    control('K55', 'the endpoint was offered an image part, on the app as it ships', 'PASS', sawImage.pass, sawImage.detail);
+
+    // Base64 pasted into the prompt text. It contains the bytes, so a check
+    // that only searched the body would pass on it; this is why A27 parses.
+    const asProse = endpointRequests.map((request) =>
+      request.path.includes('/chat/completions')
+        ? {
+            ...request,
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: `here is my picture: ${PNG_BASE64}` }],
+            }),
+          }
+        : request,
+    );
+    const proseVerdict = check.endpointSawAnImagePart(asProse);
+    control('K56', 'the same assertion when the image was pasted into the prompt as text', 'FAIL', proseVerdict.pass, proseVerdict.detail);
+
+    await a.page.close();
+  }
+
   writeFileSync(
     join(outDir, 'ASSERTION-CONTROL.tsv'),
     `id\texpected\tobserved\tas_expected\tdescription\tdetail\n${results

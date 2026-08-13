@@ -1,5 +1,15 @@
 # GATE M — the composition root, driven for real
 
+> **RE-RUN BY THE GATE M EXECUTOR (CONV-1 wave):** `drive-app-root.mjs --controls` →
+> **25 assertions, 0 failures**, its five controls included. The screenshots, `ASSERTION-LEDGER.tsv`
+> and `production-bundle-session.json` in this directory are that run.
+>
+> **A hazard for the next reader.** `drive-app-root.mjs` begins with `rmSync(outDir)`, and this
+> file lives in `outDir`. Running the driver deletes `RESULTS.md`, `ASSERTION-CONTROL.txt` and
+> `GUARD-CONTROLS.txt` — the three narrative files that are not regenerated. They were restored
+> from git here. Either move them out of the driver's output directory or teach it to keep them;
+> until then, `git status` after a run is not optional.
+
 **Verdict: PASS.** With three findings recorded below, none of them blocking, and a hard limit
 on what a headless Linux container is entitled to conclude.
 

@@ -1,0 +1,24 @@
+umask                 0022
+identifier            dev.vela.desktop
+
+== CLEAN — a data home with nothing in it ==
+directory             /tmp/tmp.A0XjR99QIb/clean/dev.vela.desktop/diagnostics
+log                   /tmp/tmp.A0XjR99QIb/clean/dev.vela.desktop/diagnostics/exchanges.jsonl
+PASS  the diagnostics directory is 0700  (got 700)
+PASS  the debug log is 0600  (got 600)
+ls -ld                drwx------
+ls -l                 -rw-------
+lines recorded        5
+
+== LOOSE — 0755 directory holding a 0644 log with a line already in it ==
+before: directory     755
+before: log           644
+PASS  the pre-existing directory is tightened to 0700  (got 700)
+PASS  the pre-existing log is tightened to 0600  (got 600)
+PASS  the line that was already in the log is still in it
+lines recorded        6
+
+== CONTROL — the same reader, on a deliberately loose copy ==
+PASS  the reader reports 644 on a 0644 copy, so 600 above is a measurement
+
+failures              0

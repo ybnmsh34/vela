@@ -135,8 +135,17 @@ const REASONING_MARKDOWN_SENTINEL = '#thinkmd';
 
 /**
  * A reasoning channel shaped the way reasoning models actually shape one: a
- * bold lead-in, a plan hard-wrapped in the source, and inline code. Every
- * character of syntax here is a character the reader must never see.
+ * bold lead-in, a plan hard-wrapped in the source, inline code, and a fenced
+ * block. Every character of syntax here is a character the reader must never
+ * see.
+ *
+ * The fence was added by the GATE M executor. Bold, bullets and inline code
+ * were already here, and each is rendered by a *different* branch of
+ * `markdown-parser.ts` — a fence is the one that has to survive being cut
+ * across SSE frames, because its opening and closing markers are three
+ * characters that `fragmentText` will happily split down the middle. A thinking
+ * block that renders every inline construct and still prints ``` at the reader
+ * is a real outcome, and until now nothing here could have seen it.
  */
 const REASONING_MARKDOWN = [
   '**Deconstruct the requirements:**',
@@ -145,6 +154,12 @@ const REASONING_MARKDOWN = [
   '    cannot name a vendor.',
   '*   They mentioned `llama-server`, which means the endpoint is',
   '    OpenAI-compatible.',
+  '',
+  'Sketching the command they would run:',
+  '',
+  '```bash',
+  'llama-server --port 8033 --ctx-size 131072',
+  '```',
   '',
   'Answering now.',
 ].join('\n');

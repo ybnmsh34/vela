@@ -276,11 +276,38 @@ export function readingSurface(page) {
         lineHeightPx: px(bodyStyle.lineHeight),
         clientWidthPx: prose.clientWidth,
         scrollWidthPx: prose.scrollWidth,
-        // What the engine *actually* resolved, not what the stack asked for.
-        // A characters-per-line figure is uninterpretable without it: Vela does
-        // not bundle a typeface yet, so the same column measures differently on
-        // WebView2/Segoe UI than it does here.
+        // The family the stylesheet ASKED FOR. Corrected by the GATE M
+        // executor, which found this field labelled "what the engine actually
+        // resolved" and reporting `Inter` on a container with no Inter
+        // installed — a characters-per-line figure attributed to a face that
+        // never loaded. `getComputedStyle().fontFamily` returns the declared
+        // stack; it says nothing about what was found.
         fontFamily: bodyStyle.fontFamily.split(',')[0].replaceAll(/["']/gu, ''),
+        // Whether that family RESOLVED, measured the way the desktop `visual`
+        // critic settled the same question: render a string at 64px in the
+        // requested family and in a family that certainly does not exist, and
+        // compare advances. `document.fonts.check()` is not used — it returns
+        // a false positive here, which is how the A1 finding nearly went the
+        // other way. A `false` does not fail anything; it is the disclosure
+        // that makes `charsPerLine` interpretable, because the same column
+        // measures ~61 characters in this container's fallback and ~70 in
+        // Segoe UI.
+        firstFamilyResolves: (() => {
+          const advance = (family) => {
+            const context = document.createElement('canvas').getContext('2d');
+            context.font = `64px ${family}`;
+            return context.measureText('Handgloves 12345').width;
+          };
+          const asked = bodyStyle.fontFamily.split(',')[0].trim();
+          const requested = advance(asked);
+          const absent = advance("'ZzQqNoSuchFontXx'");
+          return {
+            asked,
+            requestedAdvancePx: Math.round(requested * 100) / 100,
+            absentControlAdvancePx: Math.round(absent * 100) / 100,
+            resolves: Math.abs(requested - absent) > 0.5,
+          };
+        })(),
         // The measurement the whole reading-measure decision rests on.
         //
         // Not "characters ÷ line boxes": the last line of every paragraph is
@@ -750,6 +777,105 @@ export function readingSurfaceFitsItsColumn(reading) {
  * this matrix could not. Each one is now measured from the engine's own
  * computed values, so the next run reports them whether or not anybody looks.  */
 
+/* ---- the staged attachment, read at both boundaries ---------------------- *
+ * The eighth instance of this project's defect class was an attachment feature
+ * whose every part worked and which was joined to nothing: `attachments` was
+ * staged, listed and convertible to content parts, and `useSelectedModel()
+ * .attachments` had no reader, so pressing Send discarded the user's picture
+ * without a word. Every component test passed, because every one asked a
+ * component about its own state.
+ *
+ * So this asks the only question that matters, twice, at the two places the
+ * bytes have to arrive: what the renderer handed the host, and what the core
+ * put on the wire. A payload that leaves the browser and dies in the Rust layer
+ * is the same defect one storey down.                                         */
+
+/** The last `chat_send` the renderer sent, and the user message it carried. */
+function lastSentUserMessage(invokes) {
+  const sends = (invokes ?? []).filter((entry) => entry.command === 'chat_send');
+  const last = sends[sends.length - 1];
+  const messages = last?.payload?.messages ?? [];
+  return [...messages].reverse().find((message) => message.role === 'user') ?? null;
+}
+
+/** The last chat completion the endpoint was actually asked to serve. */
+function lastEndpointCompletion(endpointRequests) {
+  const completions = (endpointRequests ?? []).filter((request) =>
+    request.path.includes('/chat/completions'),
+  );
+  return completions[completions.length - 1] ?? null;
+}
+
+/**
+ * A25. A staged image reaches the wire — both halves of the journey.
+ *
+ * The base64 is passed in by the caller, who wrote the bytes. It is never
+ * computed here from the same file object the app read, because then the check
+ * and the code under test would agree by sharing an encoder rather than by the
+ * bytes being right.
+ */
+export function stagedImageReachedTheWire(invokes, endpointRequests, base64) {
+  const message = lastSentUserMessage(invokes);
+  const parts = message?.parts ?? [];
+  const inPayload = parts.some(
+    (part) => part.kind === 'image' && part.mimeType === 'image/png' && part.data === base64,
+  );
+  const completion = lastEndpointCompletion(endpointRequests);
+  const onTheWire = (completion?.body ?? '').includes(base64);
+  return ok(
+    inPayload && onTheWire,
+    `renderer->host parts=${JSON.stringify(parts.map((part) => part.kind))} carriesImage=${String(inPayload)} | core->endpoint body ${String((completion?.body ?? '').length)} bytes, carriesImage=${String(onTheWire)}`,
+  );
+}
+
+/**
+ * A26. A staged text file reaches the wire, and arrives *named*.
+ *
+ * A model handed bare file contents cannot tell them from the question, which
+ * is why the name is part of the assertion rather than a nicety.
+ */
+export function stagedTextReachedTheWire(invokes, endpointRequests, fileName, bodyText) {
+  const message = lastSentUserMessage(invokes);
+  const parts = message?.parts ?? [];
+  const textParts = parts.filter((part) => part.kind === 'text').map((part) => part.text ?? '');
+  const inPayload = textParts.some(
+    (text) => text.includes(fileName) && text.includes(bodyText),
+  );
+  const completion = lastEndpointCompletion(endpointRequests);
+  const body = completion?.body ?? '';
+  const onTheWire = body.includes(fileName) && body.includes(bodyText);
+  return ok(
+    inPayload && onTheWire,
+    `renderer->host textParts=${JSON.stringify(textParts.map((text) => text.slice(0, 48)))} | core->endpoint carriesName=${String(body.includes(fileName))} carriesBody=${String(body.includes(bodyText))}`,
+  );
+}
+
+/**
+ * A27. The endpoint really was asked to look at an image.
+ *
+ * Separate from A25 on purpose: A25 proves the *bytes* survived, this proves
+ * they arrived in the shape an OpenAI-compatible endpoint reads as an image
+ * rather than as a wall of base64 pasted into the prompt text.
+ */
+export function endpointSawAnImagePart(endpointRequests) {
+  const completion = lastEndpointCompletion(endpointRequests);
+  if (completion === null) return ok(false, 'the endpoint served no chat completion to read');
+  let parsed = null;
+  try {
+    parsed = JSON.parse(completion.body);
+  } catch {
+    return ok(false, 'the endpoint received a body that is not JSON');
+  }
+  const parts = (parsed.messages ?? []).flatMap((message) =>
+    Array.isArray(message.content) ? message.content : [],
+  );
+  const images = parts.filter((part) => part.type === 'image_url');
+  return ok(
+    images.length > 0 && typeof images[0]?.image_url?.url === 'string',
+    `content parts=${JSON.stringify(parts.map((part) => part.type))} url starts "${String(images[0]?.image_url?.url ?? '').slice(0, 24)}"`,
+  );
+}
+
 /**
  * A19. The thinking block renders markdown rather than printing it.
  *
@@ -760,12 +886,30 @@ export function readingSurfaceFitsItsColumn(reading) {
  */
 export function reasoningRendersAsMarkdown(reasoning) {
   if (reasoning === null) return ok(false, 'no thinking block to read');
-  const literals = ['**', '*   ', '```'].filter((literal) => reasoning.text.includes(literal));
-  const built = reasoning.counts.strong > 0 && reasoning.counts.listItems > 0;
+  // Widened by the GATE M executor, in both halves.
+  //
+  // The syntax half: a bare backtick, not just a fence. A block that renders
+  // bold and bullets and still leaves `llama-server` wrapped in backticks is
+  // exactly the half-wired outcome this project keeps producing, and the old
+  // literal list — `**`, `*   `, ``` — could not see it, because an inline span
+  // is one backtick and never three.
+  //
+  // The structure half: four constructs, not two. `strong` and `li` are
+  // produced by two branches of the parser; requiring `code` and `pre` as well
+  // means the assertion is about the reasoning channel reaching the *renderer*
+  // rather than about two branches of it happening to work.
+  const literals = ['**', '*   ', '```', '`'].filter((literal) =>
+    reasoning.text.includes(literal),
+  );
+  const built =
+    reasoning.counts.strong > 0 &&
+    reasoning.counts.listItems > 0 &&
+    reasoning.counts.inlineCode > 0 &&
+    reasoning.counts.codeBlocks > 0;
   const preserving = /^pre/u.test(reasoning.whiteSpace ?? '');
   return ok(
     literals.length === 0 && built && !preserving,
-    `leaked=[${literals.join(' ')}] strong=${String(reasoning.counts.strong)} items=${String(reasoning.counts.listItems)} white-space=${String(reasoning.whiteSpace)}`,
+    `leaked=[${literals.join(' ')}] strong=${String(reasoning.counts.strong)} items=${String(reasoning.counts.listItems)} inlineCode=${String(reasoning.counts.inlineCode)} fences=${String(reasoning.counts.codeBlocks)} white-space=${String(reasoning.whiteSpace)}`,
   );
 }
 
@@ -860,7 +1004,14 @@ export function headingsOutrankEmphasis(reading) {
 export function readingMeasureIsComfortable(reading) {
   const measured = reading?.prose?.charsPerLine ?? null;
   if (measured === null) return ok(false, 'no multi-line paragraph in the answer to measure');
-  const face = reading?.prose?.fontFamily ?? 'unknown';
+  const asked = reading?.prose?.fontFamily ?? 'unknown';
+  const resolution = reading?.prose?.firstFamilyResolves ?? null;
+  // The face is named as *requested* and the resolution is stated beside it,
+  // so nobody can read this line as evidence that the requested face shipped.
+  const face =
+    resolution === null
+      ? `${asked} (resolution unknown)`
+      : `${asked} ${resolution.resolves ? '(resolved)' : '(NOT resolved — a fallback face was used)'}`;
   return ok(
     measured >= 55 && measured <= 78,
     `${String(measured)} characters per line at ${String(reading?.prose?.clientWidthPx)}px, set in ${face}`,

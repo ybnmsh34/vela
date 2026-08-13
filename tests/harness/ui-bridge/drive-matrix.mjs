@@ -146,6 +146,56 @@ async function openConversation(page) {
   await page.waitForSelector('#vela-composer', { timeout: 10_000 });
 }
 
+/**
+ * Puts the app in a named theme **through its own control**, and confirms the
+ * document agreed.
+ *
+ * Not `page.emulateMedia`, and not a hand-set `data-theme`: the title bar's
+ * button is the only way a user has, and driving it is what makes a capture in
+ * the other theme evidence about the app rather than about the harness. It
+ * cycles system -> light -> dark, so up to three presses settle it.
+ *
+ * The desktop session's standing finding — that the preference is never
+ * persisted — is untouched by this and is not what these captures are for.
+ */
+async function useTheme(page, wanted) {
+  // `system` is the absence of the attribute, not a value of it — the store
+  // removes it rather than writing "system", so that the media query decides.
+  const expected = wanted === 'system' ? null : wanted;
+  const read = () => page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  const button = page.getByRole('button', { name: /^Theme: / }).first();
+  for (let press = 0; press < 4; press += 1) {
+    if ((await read()) === expected) return wanted;
+    await button.click();
+    await page.waitForTimeout(120);
+  }
+  return (await read()) ?? 'system';
+}
+
+/**
+ * Captures the frame in both themes and puts the app back on `system`.
+ *
+ * Both, because CONV-1 raised two token defects that are each invisible in one
+ * theme — `--vela-code-bg` equals the page background in dark, and
+ * `--vela-thinking-bg` equals it in light. A one-theme capture of a thinking
+ * block is exactly the artifact that cannot show that.
+ */
+async function shotInBothThemes(page, name) {
+  const files = [];
+  for (const theme of ['dark', 'light']) {
+    const settled = await useTheme(page, theme);
+    if (settled !== theme) throw new Error(`could not reach the ${theme} theme (got ${settled})`);
+    await page.waitForTimeout(150);
+    files.push(await shot(page, `${name}-${theme}`));
+  }
+  // Back to `system`, which is what the app boots on and what every other
+  // capture in this directory was taken under. A run that left the theme
+  // pinned would silently re-theme the screenshots that follow it.
+  await useTheme(page, 'system');
+  await page.waitForTimeout(120);
+  return files;
+}
+
 async function probeCapabilities(page) {
   await page.getByRole('button', { name: /limit|Capabilities unknown/u }).first().click();
   const probeButton = page.getByRole('button', { name: /^(Check|Check again)$/u });
@@ -437,12 +487,25 @@ try {
   await sendAndSettle(page, '#headings show me every heading level', { timeout: 60_000 });
   const scale = await check.readingSurface(page);
   writeFileSync(join(outDir, 'heading-scale.json'), `${JSON.stringify(scale, null, 2)}\n`);
+  // Two frames, because the six levels do not fit in one at a readable size and
+  // the point of the capture is that a human can compare them. The first holds
+  // `h1` and the top of the scale; the second holds the levels that collapsed —
+  // `h4`, `h5`, `h6` — beside the bold runs that used to outweigh them.
+  await page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    (turn?.querySelector('[data-level="1"]') ?? turn)?.scrollIntoView({ block: 'start' });
+  });
+  await page.waitForTimeout(200);
+  await shotInBothThemes(page, 'heading-scale-from-h1');
   await page.evaluate(() => {
     const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
     (turn?.querySelector('[data-level="4"]') ?? turn)?.scrollIntoView({ block: 'center' });
   });
   await page.waitForTimeout(200);
-  await shot(page, 'heading-scale-deep-levels');
+  // Both themes. The heading scale is a token question and the tokens are
+  // re-authored per theme; a capture in one of them is half the evidence, and
+  // this is the artifact the CONV-1 verdict said did not exist at all.
+  await shotInBothThemes(page, 'heading-scale-deep-levels');
 
   if (expected.answerChannelIsClean) {
     record(
@@ -485,7 +548,7 @@ try {
       'a settled thought is closed, unless closing it would hide the only text the turn produced',
       check.settledThoughtIsClosed(await check.lastAssistantTurn(page)),
     );
-    await shot(page, 'thinking-markdown-collapsed');
+    await shotInBothThemes(page, 'thinking-markdown-collapsed');
 
     // Open it if it is not already: the unterminated case starts open on
     // purpose, and clicking there would close the one block that must not be.
@@ -501,7 +564,7 @@ try {
       turn?.querySelector('section')?.scrollIntoView({ block: 'center' });
     });
     await page.waitForTimeout(200);
-    await shot(page, 'thinking-markdown-expanded');
+    await shotInBothThemes(page, 'thinking-markdown-expanded');
 
     record('C27', 'reasoning', 'the thinking block renders markdown instead of printing its source', check.reasoningRendersAsMarkdown(reasoning));
     record('C28', 'reasoning', 'nothing inside the aside sets larger than the answer it is about', check.asideStaysSubordinate(reasoning));
@@ -573,6 +636,146 @@ try {
     });
   }
   record('C12', 'tool calls', 'no reasoning markup in the tool turn either', check.noReasoningMarkup(await check.transcriptText(page)));
+
+  /* ---- STEP 7b — A STAGED ATTACHMENT, AT BOTH BOUNDARIES ---------------- *
+   * The eighth instance of this project's defect class: a staging hook, a
+   * picker, a tray and a `toContentParts()` — all built, all tested, joined to
+   * nothing. `useSelectedModel().attachments` had no reader, so Send discarded
+   * the user's picture silently and every component test still passed.
+   *
+   * Asked here at the two places the bytes have to arrive, because a payload
+   * that leaves the browser and dies in the Rust layer is the same defect one
+   * storey down:
+   *
+   *   renderer -> host      the `chat_send` payload, read off the relay
+   *   core     -> endpoint  the HTTP body, read off the endpoint's own record
+   *
+   * The base64 is written out here rather than computed from the same file the
+   * app read: a check that shares an encoder with the code it checks agrees
+   * with it about the wrong answer just as readily as about the right one.     */
+  const NOTE_NAME = 'endpoint-notes.md';
+  const NOTE_BODY = 'the study workstation answers on port 8033';
+  const PNG_BYTES = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  ]);
+  const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUg==';
+
+  const boundaries = async () => ({
+    invokes: await (await fetch(`${fast.base}/invokes.json`)).json(),
+    endpoint: await (await fetch(`${fast.base}/endpoint-requests.json`)).json(),
+  });
+
+  // -- a text file, on every profile: it is inlined as prompt text and so is
+  //    never gated on vision.
+  await page.setInputFiles('input[type="file"]', {
+    name: NOTE_NAME,
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(NOTE_BODY),
+  });
+  await page.waitForTimeout(400);
+  await shot(page, 'staged-text-file');
+  await sendAndSettle(page, 'read the attached note', { timeout: 60_000 });
+  const afterText = await boundaries();
+  record(
+    'C32',
+    'attachments',
+    'a staged text file reaches the outgoing payload AND the endpoint, carrying its name',
+    check.stagedTextReachedTheWire(afterText.invokes, afterText.endpoint, NOTE_NAME, NOTE_BODY),
+  );
+
+  // -- an image, where the endpoint can read one. On a model without vision the
+  //    affordance is absent by design (C3), so there is nothing to drive: that
+  //    is the invariant, not a gap in this step.
+  if (expected.vision) {
+    // Through the composer's own paperclip, which is the control that shipped
+    // with no `onClick` at all — a button sitting exactly where a user looks
+    // for it, opening nothing.
+    // Driven the way a user drives it: press the button and answer the file
+    // chooser the browser opens. Waiting for the chooser is the assertion — a
+    // button with no handler opens nothing, and the wait times out. Reading the
+    // hidden input directly would have passed against the broken version, which
+    // is precisely how that control shipped dead.
+    const chooser = page
+      .waitForEvent('filechooser', { timeout: 5_000 })
+      .catch(() => null);
+    // `exact: true`. The model bar's control is named "Attach an image or a
+    // file", which a substring match also selects — and the first run of this
+    // step did exactly that, reporting the composer's button as working while
+    // measuring a different one. The composer's paperclip is the control that
+    // shipped with no handler, so it has to be the one that is clicked.
+    await page.getByRole('button', { name: 'Attach an image', exact: true }).click();
+    const fileChooser = await chooser;
+    const openedOn =
+      fileChooser === null ? null : await fileChooser.element().getAttribute('data-testid');
+    record('C33', 'attachments', "the composer's attach button opens the composer's own picker", {
+      pass: openedOn === 'composer-attachment-picker',
+      detail:
+        fileChooser === null
+          ? 'no filechooser event within 5 s — the control opens nothing'
+          : `chooser opened on ${String(openedOn)}`,
+    });
+    if (fileChooser === null) {
+      await page
+        .locator('[data-testid="composer-attachment-picker"]')
+        .setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: PNG_BYTES });
+    } else {
+      await fileChooser.setFiles({
+        name: 'shot.png',
+        mimeType: 'image/png',
+        buffer: PNG_BYTES,
+      });
+    }
+    await page.waitForTimeout(400);
+    await shot(page, 'staged-image');
+    await sendAndSettle(page, 'what is in this picture?', { timeout: 60_000 });
+    const afterImage = await boundaries();
+    writeFileSync(
+      join(outDir, 'staged-attachment-wire.json'),
+      `${JSON.stringify(
+        {
+          expectedBase64: PNG_BASE64,
+          rendererToHost: (afterImage.invokes ?? [])
+            .filter((entry) => entry.command === 'chat_send')
+            .map((entry) => ({
+              messages: (entry.payload.messages ?? []).map((message) => ({
+                role: message.role,
+                text: String(message.text ?? '').slice(0, 60),
+                parts: (message.parts ?? []).map((part) => ({
+                  kind: part.kind,
+                  mimeType: part.mimeType,
+                  bytes: part.data === undefined ? undefined : part.data.length,
+                  data: part.data,
+                  text: part.text === undefined ? undefined : part.text.slice(0, 80),
+                })),
+              })),
+            })),
+          coreToEndpoint: (afterImage.endpoint ?? [])
+            .filter((request) => request.path.includes('/chat/completions'))
+            .map((request) => ({ path: request.path, bytes: request.body.length })),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    record(
+      'C34',
+      'attachments',
+      'a staged image reaches the outgoing payload AND the bytes arrive at the endpoint',
+      check.stagedImageReachedTheWire(afterImage.invokes, afterImage.endpoint, PNG_BASE64),
+    );
+    record(
+      'C35',
+      'attachments',
+      'the endpoint was asked to look at an image part, not handed base64 as prose',
+      check.endpointSawAnImagePart(afterImage.endpoint),
+    );
+    await shot(page, 'image-turn-sent');
+  } else {
+    record('C34', 'attachments', 'a model without vision offers no image to stage', {
+      pass: (await check.imageAffordances(page)).length === 0,
+      detail: 'no image affordance, as C3 requires',
+    });
+  }
 
   /* ---- STEP 8 — NO CREDENTIAL ------------------------------------------- */
   const snapshot = (await invoke(fast, 'settings_get', {})).ok;

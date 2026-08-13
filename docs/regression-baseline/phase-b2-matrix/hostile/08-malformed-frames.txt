@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the stream --------------------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:45911/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)

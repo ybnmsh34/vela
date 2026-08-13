@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- openai-compatible / stream() — the raw exchange -----------------------
   route into emulation                   not probed — emulation is entered by retry after the endpoint's 400
 
-  >>> exchange 1 — POST http://127.0.0.1:44237/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:44877/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -30,7 +30,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       --- response body (117 bytes, read to end) ---
       {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
 
-  >>> exchange 2 — POST http://127.0.0.1:44237/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:44877/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -103,7 +103,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- openai-compatible / complete() — the raw exchange ---------------------
   route into emulation                   not probed — emulation is entered by retry after the endpoint's 400
 
-  >>> exchange 1 — POST http://127.0.0.1:42733/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:33469/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -114,7 +114,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       --- response body (117 bytes, read to end) ---
       {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
 
-  >>> exchange 2 — POST http://127.0.0.1:42733/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:33469/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -199,7 +199,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- google / stream() — the raw exchange ----------------------------------
   route into emulation                   probed: tool_calling = Unsupported
 
-  >>> exchange 1 — POST http://127.0.0.1:37801/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+  >>> exchange 1 — POST http://127.0.0.1:39343/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -270,7 +270,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- google / complete() — the raw exchange --------------------------------
   route into emulation                   probed: tool_calling = Unsupported
 
-  >>> exchange 1 — POST http://127.0.0.1:37527/v1beta/models/gemini-cross:generateContent
+  >>> exchange 1 — POST http://127.0.0.1:43647/v1beta/models/gemini-cross:generateContent
       content-type: application/json
       accept: application/json
       (no authorization header)

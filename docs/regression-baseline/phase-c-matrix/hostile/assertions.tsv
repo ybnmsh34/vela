@@ -13,7 +13,7 @@ C6b	streamed turn	PASS	everything the core produced for this turn reached the re
 C10	reasoning	PASS	the thinking block toggles, and its hidden state follows aria-expanded	first expanded=true then=false hidden=true summary="Thinking (never closed)"
 C22	reading surface	PASS	a long document from an endpoint with no answer channel still settles readably	settled
 C26	reasoning	PASS	a settled thought is closed, unless closing it would hide the only text the turn produced	summary="Thinking (never closed)" expanded=true (unterminated=true)
-C27	reasoning	PASS	the thinking block renders markdown instead of printing its source	leaked=[] strong=1 items=2 white-space=normal
+C27	reasoning	PASS	the thinking block renders markdown instead of printing its source	leaked=[] strong=1 items=2 inlineCode=1 fences=1 white-space=normal
 C28	reasoning	PASS	nothing inside the aside sets larger than the answer it is about	scale=aside largest in aside=13px, answer body=15px
 C29	layout	PASS	the transcript and the composer stand on one vertical ruler	text 720–1200 (480px), composer 720–1200 (480px)
 C29b	layout	PASS	they stay on it when the window narrows	text 376–856 (480px), composer 376–856 (480px)
@@ -21,12 +21,14 @@ C30	layout	PASS	the sidebar gives way to the reading column as the window narrow
 C31	layout	PASS	the transcript fades into a scroll edge that hides content, and only into one that does	atTop=false atBottom=false mask=linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), r
 C11	tool calls	PASS	a malformed tool call is VISIBLE, never silently dropped	cards=[unreadable,unreadable,unreadable,unreadable] saysItWasRefused=true text=2 TOOL CALLS · 2 COULD NOT BE READ get_weather Could not be read Vela could not read this call: the arguments were not valid JSON. It was not run. Show what arrived id call_28d56638 get_weather Could 
 C12	tool calls	PASS	no reasoning markup in the tool turn either	no reasoning tags in visible text
+C32	attachments	PASS	a staged text file reaches the outgoing payload AND the endpoint, carrying its name	renderer->host textParts=["Attached file: endpoint-notes.md\n\nthe study work"] | core->endpoint carriesName=true carriesBody=true
+C34	attachments	PASS	a model without vision offers no image to stage	no image affordance, as C3 requires
 C13	no credential	PASS	an endpoint with no API key is a working state, with no error and no warning	usable=true check=satisfiedWithoutCredential complaintOnScreen=false
-C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:42999/v1/chat/completions Try again
+C14	error state	PASS	a turn that could not run says so, in Vela's own words	Could not reach the endpoint Vela could not open a connection. http://127.0.0.1:36697/v1/chat/completions Try again
 C15	error state	PASS	the failed turn is settled, not a stuck spinner	settled
 C16	streaming	PASS	the transcript shows a partial turn while it is still streaming	answer=0 reasoning=118
 C17	reasoning	PASS	no reasoning markup mid-stream, when a tag may be split across frames	no reasoning tags in visible text
-C18	streaming	PASS	the turn is painted incrementally, not in one lump	27 paints, 27 growing, spread over 2017 ms
+C18	streaming	PASS	the turn is painted incrementally, not in one lump	27 paints, 27 growing, spread over 2020 ms
 C19	console	PASS	zero console errors and zero uncaught exceptions	clean
-C20	network	PASS	the browser never requested the model endpoint	none of 318 requests went to http://127.0.0.1:42999
-C21	network	PASS	the browser never requested the slow endpoint either	none of 318 requests went to http://127.0.0.1:46823
+C20	network	PASS	the browser never requested the model endpoint	none of 345 requests went to http://127.0.0.1:36697
+C21	network	PASS	the browser never requested the slow endpoint either	none of 345 requests went to http://127.0.0.1:33325

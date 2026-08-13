@@ -11,6 +11,7 @@ describe('the CLI', () => {
       seed: undefined,
       apiKey: undefined,
       chunkDelayMs: 0,
+      recordRequests: undefined,
     });
   });
 
@@ -31,6 +32,7 @@ describe('the CLI', () => {
         '--seed', '77',
         '--api-key', 'sk-abc',
         '--chunk-delay', '5',
+        '--record-requests', '/tmp/requests.jsonl',
       ]),
     ).toEqual({
       profile: 'hostile',
@@ -39,7 +41,12 @@ describe('the CLI', () => {
       seed: 77,
       apiKey: 'sk-abc',
       chunkDelayMs: 5,
+      recordRequests: '/tmp/requests.jsonl',
     });
+  });
+
+  it('refuses --record-requests with no path, rather than recording to nowhere', () => {
+    expect(() => parseArgs(['--record-requests'])).toThrow(/requires a path/u);
   });
 
   it('reports help instead of starting', () => {

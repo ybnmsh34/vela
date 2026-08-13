@@ -11,7 +11,7 @@ frontier	01-plain-chat	PASS	the turn produces an answer	226 characters
 frontier	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 226 chars / whole 226 chars
 frontier	01-plain-chat	PASS	the deltas add up to the answer	delta sum 226 chars
 frontier	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
-frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	8.066206ms
+frontier	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.231112ms
 frontier	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_f3fedcb8 name=get_weather emulated=false args={"city":"eastward"}
 frontier	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -36,10 +36,10 @@ frontier	04-structured-output	PASS	a structured request always comes back with a
 frontier	04-structured-output	PASS	an endpoint that honours the schema returns validated JSON	Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
 frontier	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})))
 frontier	04-structured-output	PASS	refusal is a capability decision, not a blanket ban	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "{\"celsius\":69,\"city\":\"eastward\"}" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(14), output_tokens: Some(39), reasoning_tokens: None, cached_input_tokens: None }, structured: Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})), degradations: [], salvaged_answer: None })
-frontier	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:34677", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+frontier	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36089", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
 frontier	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 200000
-frontier	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:34677", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
-frontier	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:34677", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+frontier	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36089", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+frontier	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36089", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
 frontier	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: finally: what did I ask first?. tiller careful fathom jetty gauge tiller lantern sextant careful keel umber delta tiller jetty orbit zenith zenith ivory rudder alpha alpha fathom quartz beacon." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(150091), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 450110, strategy: ElideOldest }], salvaged_answer: None })
 frontier	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
 frontier	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
@@ -50,16 +50,16 @@ frontier	06-reasoning	PASS	and never in the answer channel	"Mock frontier reply 
 frontier	06-reasoning	PASS	precondition — the markup is in the reasoning channel and not in the answer channel	answer="Mock frontier re" reasoning="Considering the request about <tool_call>{name: echo_tool, arguments: {text: ok}}</tool_call>. Profile frontier has a 200000-token window. Answering directly."
 frontier	06-reasoning	PASS	NO tool call is recovered from reasoning text	Ok("(none)")
 frontier	06-reasoning	PASS	control — the parser DOES recover a call when the markup is in the answer	if this fails, the assertion above proves nothing
-frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.689185ms
+frontier	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.451195ms
 frontier	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	222 characters
 frontier	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 frontier	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }
 frontier	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
 frontier	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
 frontier	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
-frontier	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 4.113643ms, samples [4.075401ms, 4.458225ms, 4.369044ms, 4.113643ms, 4.035286ms]
-frontier	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 3.775552ms
-frontier	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 5.384305ms, worst credentialed 4.458225ms
+frontier	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 3.381747ms, samples [3.519877ms, 3.535797ms, 3.334696ms, 3.381747ms, 3.097066ms]
+frontier	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 3.150238ms
+frontier	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 3.581556ms, worst credentialed 3.535797ms
 frontier	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [222, 222, 222, 222, 222], credentialed [222, 222, 222, 222, 222]
 frontier	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(222), credentialed Some(222)
 frontier	07c-termination-latency	PASS	arm C really was credentialed	true
@@ -67,7 +67,7 @@ frontier	07c-termination-latency	PASS	THE PAYLOAD ACTUALLY EXERCISES THE CODE BE
 frontier	07c-termination-latency	PASS	…and the escape-resolution path is walked, not skipped	600 `\u00XX` escape(s)
 frontier	07c-termination-latency	PASS	…and `hold_back_len` had something to hold back — near-miss credential prefixes ended frames	150 near-miss prefix(es)
 frontier	07c-termination-latency	PASS	every sampled turn completed without error on the adversarial payload	5 samples
-frontier	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.599007ms, samples [6.097462ms, 6.504756ms, 6.605994ms, 6.768408ms, 6.599007ms]
+frontier	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.12894ms, samples [6.159733ms, 6.82488ms, 6.12894ms, 6.125411ms, 6.106608ms]
 frontier	07c-termination-latency	PASS	every sample returned the same answer length — the carry buffer loses nothing	[5420, 5420, 5420, 5420, 5420]
 frontier	07c-termination-latency	PASS	and the credential is still absent from the answer the scrubber produced	checked
 frontier	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
@@ -76,11 +76,11 @@ frontier	08-malformed-frames	PASS	one bad frame never aborts the turn	226 charac
 frontier	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 frontier	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 frontier	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:34677/v1/chat/completions
+frontier	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:36089/v1/chat/completions
 frontier	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 frontier	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 frontier	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialMissing, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	811.43379ms
+frontier	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	811.161952ms
 frontier	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 frontier	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 frontier	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
@@ -261,15 +261,15 @@ frontier	18-error-echo-every-adapter	PASS	every arm really did produce an error 
 frontier	18-error-echo-every-adapter	PASS	the marker really did arrive on the wire, in both spellings, on every adapter	12 of 12 marker-carrying arms saw it on the wire
 frontier	18-error-echo-every-adapter	PASS	NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde shape is drawn from Vela's own closed vocabulary, on all three adapters	24 arms audited, 0 unexplained strings
 frontier	18-error-echo-every-adapter	PASS	invariance holds on every adapter and both transport shapes, not just one	6 of 6 groups invariant
-frontier	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	122.282661ms
+frontier	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.90234ms
 frontier	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the sink is never told the turn finished normally	3 event(s)
-frontier	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	120.848182ms
+frontier	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.174298ms
 frontier	19-cancellation-x-tool-accumulation	PASS	anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	anthropic: the sink is never told the turn finished normally	4 event(s)
-frontier	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.50491ms
+frontier	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.340492ms
 frontier	19-cancellation-x-tool-accumulation	PASS	google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 frontier	19-cancellation-x-tool-accumulation	PASS	google: the sink is never told the turn finished normally	2 event(s)
@@ -350,17 +350,17 @@ frontier	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: the identical hosti
 frontier	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: and NOTHING of it is on the error surface — 0 unexplained strings	[]
 frontier	20-sibling-surfaces-x-endpoint-text	PASS	google: the identical hostile bytes reached the error path too — the comparison is like for like	true
 frontier	20-sibling-surfaces-x-endpoint-text	PASS	google: and NOTHING of it is on the error surface — 0 unexplained strings	[]
-frontier	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35989", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
-frontier	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35989", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
-frontier	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35989", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+frontier	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+frontier	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+frontier	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
 frontier	09b-endpoint-requires-a-key	PASS	STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling	0 unexplained strings
-frontier	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35989", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+frontier	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
 frontier	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }], salvaged_answer: None }))
 frontier	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-frontier	10-failover	PASS	failover does not hang	17.982849ms
-frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.127411ms
+frontier	10-failover	PASS	failover does not hang	11.220233ms
+frontier	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.010958ms
 frontier	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43825", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } }))
+frontier	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46159", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } }))
 mid-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 32768, probe reported Some(32768)
 mid-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Supported, probed Supported
 mid-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -373,7 +373,7 @@ mid-local	01-plain-chat	PASS	the turn produces an answer	170 characters
 mid-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 170 chars / whole 170 chars
 mid-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 170 chars
 mid-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
-mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	7.699504ms
+mid-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	7.442197ms
 mid-local	02-tool-calling	PASS	exactly one executable native call comes back	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the call is named, parsed into an object, and not marked emulated	OK id=call_76cfac58 name=get_weather emulated=false args={"city":"alpha"}
 mid-local	02-tool-calling	PASS	the stop reason says a tool was requested	ToolUse
@@ -393,17 +393,17 @@ mid-local	03-vision	PASS	the vision affordance is NOT offered to the UI	descript
 mid-local	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
 mid-local	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
 mid-local	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-mid-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44039", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
+mid-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45887", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
 mid-local	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 mid-local	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 mid-local	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 mid-local	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
 mid-local	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
 mid-local	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } }); 0 request(s) sent
-mid-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44039", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
+mid-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45887", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
 mid-local	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 32768
-mid-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44039", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
-mid-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44039", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
+mid-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45887", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
+mid-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(32768), requested_tokens: Some(40964), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45887", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(139) } })
 mid-local	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: finally: what did I ask first?. ivory orbit sextant delta north orbit north jetty lantern alpha lantern tiller sextant ember lantern lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(24667), output_tokens: Some(77), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 73838, strategy: ElideOldest }], salvaged_answer: None })
 mid-local	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
 mid-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"\nMock mid-local reply to: what is the weather in Berlin. pennant ember north gauge pennant harbor meridian ember ember gauge meridian pennant gauge zenith yardarm harbor."
@@ -412,16 +412,16 @@ mid-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	1
 mid-local	06-reasoning	PASS	reasoning is captured, not discarded	"Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly."
 mid-local	06-reasoning	PASS	reasoning is stored as its own content part (vela-store models it separately)	["reasoning", "text"]
 mid-local	06-reasoning	PASS	the closing tag is in NO single frame — a frame-local stripper cannot work	confirmed against the recorded frames
-mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 5.693258ms
+mid-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 6.692719ms
 mid-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	165 characters
 mid-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	(none)
 mid-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: Some(12), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }
 mid-local	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
 mid-local	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
 mid-local	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
-mid-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 5.280648ms, samples [6.221878ms, 5.267829ms, 5.280648ms, 5.390032ms, 5.134495ms]
-mid-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 4.901956ms
-mid-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 5.665922ms, worst credentialed 6.221878ms
+mid-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 5.286167ms, samples [5.412648ms, 5.079322ms, 5.323143ms, 5.286167ms, 5.061839ms]
+mid-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 4.608758ms
+mid-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 5.193985ms, worst credentialed 5.412648ms
 mid-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [165, 165, 165, 165, 165], credentialed [165, 165, 165, 165, 165]
 mid-local	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(165), credentialed Some(165)
 mid-local	07c-termination-latency	PASS	arm C really was credentialed	true
@@ -429,7 +429,7 @@ mid-local	07c-termination-latency	PASS	THE PAYLOAD ACTUALLY EXERCISES THE CODE B
 mid-local	07c-termination-latency	PASS	…and the escape-resolution path is walked, not skipped	600 `\u00XX` escape(s)
 mid-local	07c-termination-latency	PASS	…and `hold_back_len` had something to hold back — near-miss credential prefixes ended frames	150 near-miss prefix(es)
 mid-local	07c-termination-latency	PASS	every sampled turn completed without error on the adversarial payload	5 samples
-mid-local	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 9.630362ms, samples [6.643299ms, 6.931526ms, 9.630362ms, 11.249677ms, 10.812339ms]
+mid-local	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.39923ms, samples [7.080194ms, 6.468692ms, 6.242254ms, 5.981862ms, 6.39923ms]
 mid-local	07c-termination-latency	PASS	every sample returned the same answer length — the carry buffer loses nothing	[5420, 5420, 5420, 5420, 5420]
 mid-local	07c-termination-latency	PASS	and the credential is still absent from the answer the scrubber produced	checked
 mid-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	(none)
@@ -438,11 +438,11 @@ mid-local	08-malformed-frames	PASS	one bad frame never aborts the turn	170 chara
 mid-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 mid-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 mid-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:44039/v1/chat/completions
+mid-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:45887/v1/chat/completions
 mid-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 mid-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 mid-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialMissing, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	811.135187ms
+mid-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	809.494823ms
 mid-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 mid-local	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 mid-local	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
@@ -623,15 +623,15 @@ mid-local	18-error-echo-every-adapter	PASS	every arm really did produce an error
 mid-local	18-error-echo-every-adapter	PASS	the marker really did arrive on the wire, in both spellings, on every adapter	12 of 12 marker-carrying arms saw it on the wire
 mid-local	18-error-echo-every-adapter	PASS	NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde shape is drawn from Vela's own closed vocabulary, on all three adapters	24 arms audited, 0 unexplained strings
 mid-local	18-error-echo-every-adapter	PASS	invariance holds on every adapter and both transport shapes, not just one	6 of 6 groups invariant
-mid-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.361525ms
+mid-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.992395ms
 mid-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the sink is never told the turn finished normally	3 event(s)
-mid-local	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.614827ms
+mid-local	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	122.405282ms
 mid-local	19-cancellation-x-tool-accumulation	PASS	anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	anthropic: the sink is never told the turn finished normally	4 event(s)
-mid-local	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	120.949271ms
+mid-local	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.978738ms
 mid-local	19-cancellation-x-tool-accumulation	PASS	google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 mid-local	19-cancellation-x-tool-accumulation	PASS	google: the sink is never told the turn finished normally	2 event(s)
@@ -712,17 +712,17 @@ mid-local	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: the identical host
 mid-local	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: and NOTHING of it is on the error surface — 0 unexplained strings	[]
 mid-local	20-sibling-surfaces-x-endpoint-text	PASS	google: the identical hostile bytes reached the error path too — the comparison is like for like	true
 mid-local	20-sibling-surfaces-x-endpoint-text	PASS	google: and NOTHING of it is on the error surface — 0 unexplained strings	[]
-mid-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42451", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
-mid-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42451", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
-mid-local	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42451", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+mid-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38723", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+mid-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38723", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+mid-local	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38723", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
 mid-local	09b-endpoint-requires-a-key	PASS	STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling	0 unexplained strings
-mid-local	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42451", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+mid-local	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38723", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
 mid-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }], salvaged_answer: None }))
 mid-local	10-failover	PASS	the failover is declared to the caller	FailedOver { attempts: 2 }
-mid-local	10-failover	PASS	failover does not hang	12.083679ms
-mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	210.499645ms
+mid-local	10-failover	PASS	failover does not hang	10.3508ms
+mid-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	206.894774ms
 mid-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41569", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } }))
+mid-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33047", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } }))
 small-local	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 8192, probe reported Some(8192)
 small-local	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Unsupported, probed Unsupported
 small-local	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -735,7 +735,7 @@ small-local	01-plain-chat	PASS	the turn produces an answer	129 characters
 small-local	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 129 chars / whole 129 chars
 small-local	01-plain-chat	PASS	the deltas add up to the answer	delta sum 129 chars
 small-local	01-plain-chat	PASS	no wire-format remnant reaches the answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
-small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.592865ms
+small-local	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	4.1937ms
 small-local	02-tool-calling	PASS	an endpoint with no tools is refused explicitly, never silently	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: what is the weather in Berlin. harbor tiller tiller beacon jetty quartz keel lantern ivory lantern." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(142), output_tokens: Some(32), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ToolCallingEmulated { tool_count: 1 }], salvaged_answer: None })
 small-local	02-tool-calling	PASS	the turn is degraded into emulation rather than failed	ToolCallingEmulated { tool_count: 1 }
 small-local	02-tool-calling	PASS	control — this endpoint really does refuse a native tools request	if this passes, the emulation result below is not an artefact
@@ -754,24 +754,24 @@ small-local	03-vision	PASS	the vision affordance is NOT offered to the UI	descri
 small-local	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
 small-local	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
 small-local	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-small-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(279) } })
+small-local	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41439", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(279) } })
 small-local	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 small-local	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 small-local	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 small-local	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
 small-local	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
 small-local	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } }); 0 request(s) sent
-small-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+small-local	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41439", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
 small-local	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 8192
-small-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
-small-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39951", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+small-local	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41439", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
+small-local	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(8192), requested_tokens: Some(10244), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:41439", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(282) } })
 small-local	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: finally: what did I ask first?. careful yardarm zenith alpha sextant sextant ember tiller pennant yardarm." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6235), output_tokens: Some(34), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 18542, strategy: ElideOldest }], salvaged_answer: None })
 small-local	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
 small-local	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
 small-local	06-reasoning	PASS	the answer itself survives	"Mock small-local reply to: what is the weather in Berlin. tiller lantern sextant zenith gauge lantern umber quartz rudder rudder."
 small-local	06-reasoning	PASS	the deltas the consumer saw equal the final answer	129 vs 129 chars
 small-local	06-reasoning	PASS	an endpoint that emits no reasoning produces no reasoning part	""
-small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.191465ms
+small-local	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 3.396756ms
 small-local	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	130 characters
 small-local	07-stream-termination	PASS	a stream that does send [DONE] reports no missing-sentinel degradation	UsageNotReported
 small-local	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
@@ -779,9 +779,9 @@ small-local	07-stream-termination	PASS	requested-but-absent usage is declared as
 small-local	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
 small-local	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
 small-local	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
-small-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 2.662214ms, samples [3.17993ms, 2.633017ms, 3.028585ms, 2.662214ms, 2.601294ms]
-small-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 2.260234ms
-small-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 4.647359ms, worst credentialed 3.17993ms
+small-local	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 2.298286ms, samples [2.626401ms, 2.666124ms, 2.207699ms, 2.000471ms, 2.298286ms]
+small-local	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 2.06621ms
+small-local	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 3.223869ms, worst credentialed 2.666124ms
 small-local	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [130, 130, 130, 130, 130], credentialed [130, 130, 130, 130, 130]
 small-local	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(130), credentialed Some(130)
 small-local	07c-termination-latency	PASS	arm C really was credentialed	true
@@ -789,7 +789,7 @@ small-local	07c-termination-latency	PASS	THE PAYLOAD ACTUALLY EXERCISES THE CODE
 small-local	07c-termination-latency	PASS	…and the escape-resolution path is walked, not skipped	600 `\u00XX` escape(s)
 small-local	07c-termination-latency	PASS	…and `hold_back_len` had something to hold back — near-miss credential prefixes ended frames	150 near-miss prefix(es)
 small-local	07c-termination-latency	PASS	every sampled turn completed without error on the adversarial payload	5 samples
-small-local	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.418391ms, samples [6.400115ms, 6.418391ms, 6.446911ms, 7.351672ms, 6.080229ms]
+small-local	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.52321ms, samples [6.893598ms, 6.302213ms, 5.926874ms, 6.79558ms, 6.52321ms]
 small-local	07c-termination-latency	PASS	every sample returned the same answer length — the carry buffer loses nothing	[5420, 5420, 5420, 5420, 5420]
 small-local	07c-termination-latency	PASS	and the credential is still absent from the answer the scrubber produced	checked
 small-local	08-malformed-frames	PASS	an endpoint that emits no bad frames produces no skip degradation	UsageNotReported
@@ -798,11 +798,11 @@ small-local	08-malformed-frames	PASS	one bad frame never aborts the turn	129 cha
 small-local	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 small-local	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 small-local	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:39951/v1/chat/completions
+small-local	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:41439/v1/chat/completions
 small-local	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 small-local	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 small-local	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialMissing, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	811.711767ms
+small-local	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.22114ms
 small-local	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 small-local	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 small-local	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
@@ -983,15 +983,15 @@ small-local	18-error-echo-every-adapter	PASS	every arm really did produce an err
 small-local	18-error-echo-every-adapter	PASS	the marker really did arrive on the wire, in both spellings, on every adapter	12 of 12 marker-carrying arms saw it on the wire
 small-local	18-error-echo-every-adapter	PASS	NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde shape is drawn from Vela's own closed vocabulary, on all three adapters	24 arms audited, 0 unexplained strings
 small-local	18-error-echo-every-adapter	PASS	invariance holds on every adapter and both transport shapes, not just one	6 of 6 groups invariant
-small-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.47369ms
+small-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.915419ms
 small-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the sink is never told the turn finished normally	3 event(s)
-small-local	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.629375ms
+small-local	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.446318ms
 small-local	19-cancellation-x-tool-accumulation	PASS	anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	anthropic: the sink is never told the turn finished normally	4 event(s)
-small-local	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.874636ms
+small-local	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	122.099328ms
 small-local	19-cancellation-x-tool-accumulation	PASS	google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 small-local	19-cancellation-x-tool-accumulation	PASS	google: the sink is never told the turn finished normally	2 event(s)
@@ -1072,17 +1072,17 @@ small-local	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: the identical ho
 small-local	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: and NOTHING of it is on the error surface — 0 unexplained strings	[]
 small-local	20-sibling-surfaces-x-endpoint-text	PASS	google: the identical hostile bytes reached the error path too — the comparison is like for like	true
 small-local	20-sibling-surfaces-x-endpoint-text	PASS	google: and NOTHING of it is on the error surface — 0 unexplained strings	[]
-small-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42803", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
-small-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42803", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
-small-local	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42803", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
+small-local	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43657", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
+small-local	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43657", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
+small-local	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43657", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
 small-local	09b-endpoint-requires-a-key	PASS	STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling	0 unexplained strings
-small-local	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42803", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
+small-local	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43657", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(414) } })
 small-local	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UsageNotReported, FailedOver { attempts: 2 }], salvaged_answer: None }))
 small-local	10-failover	PASS	the failover is declared to the caller	UsageNotReported, FailedOver { attempts: 2 }
-small-local	10-failover	PASS	failover does not hang	9.235733ms
-small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	209.528567ms
+small-local	10-failover	PASS	failover does not hang	9.781888ms
+small-local	10-failover	PASS	killing the endpoint mid-stream does not hang the app	207.041167ms
 small-local	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:32923", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(416) } }))
+small-local	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:32879", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(416) } }))
 hostile	00-capability-probe	PASS	the declared context window is read from the endpoint, not guessed	expected 4096, probe reported Some(4096)
 hostile	00-capability-probe	PASS	tool calling matches the recorded matrix row	expected Degraded, probed Degraded
 hostile	00-capability-probe	PASS	vision matches the recorded matrix row	expected Unsupported, probed Unsupported
@@ -1095,7 +1095,7 @@ hostile	01-plain-chat	PASS	the turn produces an answer	166 characters
 hostile	01-plain-chat	PASS	streamed and non-streamed answers are identical	streamed 166 chars / whole 166 chars
 hostile	01-plain-chat	PASS	the deltas add up to the answer	delta sum 166 chars
 hostile	01-plain-chat	PASS	no wire-format remnant reaches the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
-hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	6.66525ms
+hostile	01-plain-chat	PASS	the turn does not hang (well inside the recorded 5003 ms consumer hang)	5.546475ms
 hostile	02-tool-calling	PASS	both broken calls are reported, neither is dropped	MALFORMED index=None id=call_c16f5968 name=get_weather reason=UnparseableArguments raw="{\"city\":\"del"                                     MALFORMED index=None id=MISSING name=get_weather reason=UnknownDiscriminator raw="not-json-at-all"
 hostile	02-tool-calling	PASS	NOTHING from a broken stream is executable	0 executable
 hostile	02-tool-calling	PASS	truncated arguments are reported as unparseable, not guessed at	[UnparseableArguments, UnknownDiscriminator]
@@ -1120,17 +1120,17 @@ hostile	03-vision	PASS	the vision affordance is NOT offered to the UI	descriptor
 hostile	03-vision	PASS	an image is refused as a capability error, not a generic 400	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
 hostile	03-vision	PASS	the refusal is local — the image never leaves the machine	0 HTTP request(s) were made
 hostile	03-vision	PASS	a vision refusal is never shopped around to other backends	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-hostile	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(418) } })
+hostile	03-vision	PASS	an unprobed endpoint's refusal is learned from the endpoint itself	Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39745", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(418) } })
 hostile	04-structured-output	PASS	a structured request always comes back with an explicit verdict	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 hostile	04-structured-output	PASS	prose is NEVER presented as conforming JSON (the gate's most dangerous case)	Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 hostile	04-structured-output	PASS	the mismatch is a reported degradation, not a silent one	UnterminatedReasoning { recovered_answer_chars: 155 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 hostile	04-structured-output	PASS	the endpoint's behaviour is remembered, so the affordance is withdrawn	Degraded
 hostile	04-structured-output	PASS	the streaming path validates structured output as well	Ok(Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })))
 hostile	04-structured-output	PASS	a probed-bad endpoint is refused locally, with no request sent	Err(CapabilityUnsupported { capability: StructuredOutput, diagnosis: Diagnosis { cause: CapabilityAbsentOnThisModel, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } }); 0 request(s) sent
-hostile	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
+hostile	05-context-overflow	PASS	an overflow is a clean ContextLengthExceeded, not a generic transport error	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39745", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
 hostile	05-context-overflow	PASS	the endpoint's own window is carried through so the UI can say something true	expected limit 4096
-hostile	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
-hostile	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45911", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
+hostile	05-context-overflow	PASS	the requested size is carried through too	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39745", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
+hostile	05-context-overflow	PASS	an overflow is never retried elsewhere — it is about the request	Err(ContextLengthExceeded { limit_tokens: Some(4096), requested_tokens: Some(5124), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39745", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(420) } })
 hostile	05-context-overflow	PASS	a conversation that will not fit is reduced and answered, not refused	Ok(ChatResponse { parts: [Reasoning { text: " ЖЖЖ </s> Considering the request about finally: what did I ask first?. Profile hostile has a 4096-token window. Answering directly. ЖЖЖ  nested Mock hostile reply to: finally: what did I ask first?. quartz sextant jetty fathom lantern north beacon orbit keel quartz delta meridian. ▒▒ ▒▒", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: finally: what did I ask first?. quartz sextant jetty fathom lantern north beacon orbit keel quartz delta meridian. ▒▒ ▒▒" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(3163), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 9326, strategy: ElideOldest }, UnterminatedReasoning { recovered_answer_chars: 150 }], salvaged_answer: Some("nested Mock hostile reply to: finally: what did I ask first?. quartz sextant jetty fathom lantern north beacon orbit keel quartz delta meridian. ▒▒ ▒▒") })
 hostile	05-context-overflow	PASS	the reduction is reported explicitly — never a silent truncation	dropped messages = Some(17)
 hostile	06-reasoning	PASS	no reasoning markup reaches the user-visible answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
@@ -1138,7 +1138,7 @@ hostile	06-reasoning	PASS	the answer itself survives	"nested Mock hostile reply 
 hostile	06-reasoning	PASS	the deltas the consumer saw equal the final answer	166 vs 166 chars
 hostile	06-reasoning	PASS	an unterminated <think> does not swallow the answer	"nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
 hostile	06-reasoning	PASS	the recovery is declared, not silent	UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
-hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 7.694316ms
+hostile	07-stream-termination	PASS	VELA DOES NOT HANG — the turn finishes far inside the recorded 5003 ms hang	wall clock 4.512741ms
 hostile	07-stream-termination	PASS	the answer arrives whole regardless of how the stream ended	160 characters
 hostile	07-stream-termination	PASS	a missing [DONE] sentinel is reported, not silently absorbed	UnterminatedReasoning { recovered_answer_chars: 160 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
 hostile	07-stream-termination	PASS	usage is reported only when it actually arrived — never invented	usage = TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
@@ -1146,9 +1146,9 @@ hostile	07-stream-termination	PASS	requested-but-absent usage is declared as a d
 hostile	07c-termination-latency	PASS	the credentialed arm really did put a credential on the wire	credentialed arm: true, uncredentialed arm: false
 hostile	07c-termination-latency	PASS	the uncredentialed arm really did not — the two arms are different paths	false
 hostile	07c-termination-latency	PASS	every sampled turn completed without error, both arms	uncredentialed: 5 samples, credentialed: 5 samples
-hostile	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 5.801679ms, samples [7.256668ms, 6.637209ms, 5.801679ms, 5.604195ms, 5.620218ms]
-hostile	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 5.551359ms
-hostile	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 7.10749ms, worst credentialed 7.256668ms
+hostile	07c-termination-latency	PASS	TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms	median 4.724832ms, samples [5.436688ms, 4.724832ms, 4.717407ms, 4.736944ms, 4.516603ms]
+hostile	07c-termination-latency	PASS	…and on the uncredentialed one, so redaction is not what makes or breaks it	median 4.10376ms
+hostile	07c-termination-latency	PASS	no sample came anywhere near the recorded 5003 ms hang, either arm	worst uncredentialed 5.435803ms, worst credentialed 5.436688ms
 hostile	07c-termination-latency	PASS	every sample returned the same answer length — timing did not truncate anything	uncredentialed [160, 160, 160, 160, 160], credentialed [160, 160, 160, 160, 160]
 hostile	07c-termination-latency	PASS	redaction did not change the answer — both arms delivered the same text length	uncredentialed Some(160), credentialed Some(160)
 hostile	07c-termination-latency	PASS	arm C really was credentialed	true
@@ -1156,7 +1156,7 @@ hostile	07c-termination-latency	PASS	THE PAYLOAD ACTUALLY EXERCISES THE CODE BEI
 hostile	07c-termination-latency	PASS	…and the escape-resolution path is walked, not skipped	600 `\u00XX` escape(s)
 hostile	07c-termination-latency	PASS	…and `hold_back_len` had something to hold back — near-miss credential prefixes ended frames	150 near-miss prefix(es)
 hostile	07c-termination-latency	PASS	every sampled turn completed without error on the adversarial payload	5 samples
-hostile	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.537142ms, samples [7.767634ms, 6.537142ms, 6.585935ms, 6.161874ms, 6.320042ms]
+hostile	07c-termination-latency	PASS	TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised	median 6.451916ms, samples [7.589086ms, 6.416322ms, 6.893652ms, 6.351707ms, 6.451916ms]
 hostile	07c-termination-latency	PASS	every sample returned the same answer length — the carry buffer loses nothing	[5420, 5420, 5420, 5420, 5420]
 hostile	07c-termination-latency	PASS	and the credential is still absent from the answer the scrubber produced	checked
 hostile	08-malformed-frames	PASS	skipping bad frames is reported, not silent	reported 3 skipped, body contains 2 bad frames
@@ -1166,11 +1166,11 @@ hostile	08-malformed-frames	PASS	one bad frame never aborts the turn	166 charact
 hostile	09-no-credential	PASS	a no-credential request is answered — absence of a key is a supported state	None
 hostile	09-no-credential	PASS	NO `authorization` header appears on the wire at all	1 exchange(s) inspected
 hostile	09-no-credential	PASS	and no credential-shaped header of any other name appears either	checked every recorded request header
-hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:45911/v1/chat/completions
+hostile	09-no-credential	PASS	no credential is smuggled into the query string	http://127.0.0.1:39745/v1/chat/completions
 hostile	09-no-credential	PASS	control — a configured credential DOES appear, so the assertion above can fail	if this fails, 'no authorization header' proves nothing
 hostile	09-no-credential	PASS	a missing credential is an auth failure, and NOTHING is sent	0 request(s) sent
 hostile	09-no-credential	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialMissing, status: None, endpoint: None, filter: None, correlation: CorrelationId(0) } })
-hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	810.685125ms
+hostile	07b-stalled-socket	PASS	a stalled socket is abandoned rather than awaited forever	846.082263ms
 hostile	07b-stalled-socket	PASS	and the abandonment is an explicit error, not an empty success	Some(true)
 hostile	11-credential-leak	PASS	NO CREDENTIAL in an error produced with no recorder anywhere in the path	0 leaking rendering(s): []
 hostile	11-credential-leak	PASS	at least one peer really did echo the credential back — the echo cases are real	["400 error body", "200 + error frame", "200 + error frame (bare transport)"]
@@ -1351,15 +1351,15 @@ hostile	18-error-echo-every-adapter	PASS	every arm really did produce an error �
 hostile	18-error-echo-every-adapter	PASS	the marker really did arrive on the wire, in both spellings, on every adapter	12 of 12 marker-carrying arms saw it on the wire
 hostile	18-error-echo-every-adapter	PASS	NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE — every string in every error's serde shape is drawn from Vela's own closed vocabulary, on all three adapters	24 arms audited, 0 unexplained strings
 hostile	18-error-echo-every-adapter	PASS	invariance holds on every adapter and both transport shapes, not just one	6 of 6 groups invariant
-hostile	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	122.028166ms
+hostile	19-cancellation-x-tool-accumulation	PASS	openai-compatible: cancellation ends the turn promptly — no hang	121.183083ms
 hostile	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	openai-compatible: the sink is never told the turn finished normally	3 event(s)
-hostile	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.538219ms
+hostile	19-cancellation-x-tool-accumulation	PASS	anthropic: cancellation ends the turn promptly — no hang	121.692605ms
 hostile	19-cancellation-x-tool-accumulation	PASS	anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	anthropic: the sink is never told the turn finished normally	4 event(s)
-hostile	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.463747ms
+hostile	19-cancellation-x-tool-accumulation	PASS	google: cancellation ends the turn promptly — no hang	121.404843ms
 hostile	19-cancellation-x-tool-accumulation	PASS	google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint	Some(Cancelled)
 hostile	19-cancellation-x-tool-accumulation	PASS	google: the sink is never told the turn finished normally	2 event(s)
@@ -1440,19 +1440,19 @@ hostile	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: the identical hostil
 hostile	20-sibling-surfaces-x-endpoint-text	PASS	anthropic: and NOTHING of it is on the error surface — 0 unexplained strings	[]
 hostile	20-sibling-surfaces-x-endpoint-text	PASS	google: the identical hostile bytes reached the error path too — the comparison is like for like	true
 hostile	20-sibling-surfaces-x-endpoint-text	PASS	google: and NOTHING of it is on the error surface — 0 unexplained strings	[]
-hostile	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39755", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
-hostile	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39755", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
-hostile	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39755", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
+hostile	09b-endpoint-requires-a-key	PASS	a 401 is normalised to AuthFailed, not a generic transport error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36625", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
+hostile	09b-endpoint-requires-a-key	PASS	an auth failure is never retried and never failed over	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36625", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
+hostile	09b-endpoint-requires-a-key	PASS	no upstream BODY text escapes into the error	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36625", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
 hostile	09b-endpoint-requires-a-key	PASS	STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling	0 unexplained strings
-hostile	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39755", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
+hostile	09b-endpoint-requires-a-key	PASS	the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep	Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36625", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(552) } })
 hostile	10-failover	PASS	a dead candidate is routed past, not surfaced as a failure	Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }], salvaged_answer: Some("nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ") }))
 hostile	10-failover	PASS	the failover is declared to the caller	UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
-hostile	10-failover	PASS	failover does not hang	13.142226ms
-hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	206.89157ms
+hostile	10-failover	PASS	failover does not hang	13.455776ms
+hostile	10-failover	PASS	killing the endpoint mid-stream does not hang the app	208.997715ms
 hostile	10-failover	PASS	after visible output, the turn is NOT replayed from another candidate	0 request(s) reached the backup
-hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43843", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } }))
-hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.001369754s, 0 chars
-frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	13.583547ms, 16 chars
+hostile	10-failover	PASS	a killed stream is never reported as a normally finished turn	Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:34777", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } }))
+hostile	control-1-done-driven-consumer	FAIL	a [DONE]-driven consumer terminates	5.00114619s, 0 chars
+frontier	control-1-done-driven-consumer	PASS	a [DONE]-driven consumer terminates	16.31311ms, 16 chars
 mid-local	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think> Mock mid-local reply to: what is the weather in Berlin. penn … [elided: 309 characters total]
 hostile	control-2-raw-content-channel	FAIL	the raw content channel is free of reasoning markup	<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what i … [elided: 330 characters total]
 frontier	control-2-raw-content-channel	PASS	the raw content channel is free of reasoning markup	Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian u … [elided: 226 characters total]
@@ -1474,7 +1474,7 @@ scripted	control-9-credential-grep	PASS	the credential is absent from: RequestUr
 scripted	control-9-credential-grep	PASS	the credential is absent from: RequestUrl Debug — the redacted form	RequestUrl Debug — the redacted form
 scripted	control-10-transport-agreement	PASS	the two transports agree: the same two calls, streamed	["OK|id=call_a|name=get_weather|emulated=false|args={\"city\":\"berlin\"}", "OK|id=call_b|name=get_time|emulated=false|args={\"timezone\":\"CET\"}"]
 scripted	control-10-transport-agreement	FAIL	the two transports agree: only the first call, streamed	["OK|id=call_a|name=get_weather|emulated=false|args={\"city\":\"berlin\"}"]
-hostile	control-11-termination-budget	FAIL	the turn ends in single-digit milliseconds	811.277325ms against a 4 s inter-frame delay
+hostile	control-11-termination-budget	FAIL	the turn ends in single-digit milliseconds	826.300131ms against a 4 s inter-frame delay
 all	control-12-deliberation-becomes-a-call	FAIL	a call parsed straight out of deliberation is not executable	1 executable call(s): ["EXECUTABLE delete_everything"]
 all	control-13-schema-over-salvaged-text	FAIL	validating the VISIBLE answer does not return the rejected value	Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})
 all	control-13-schema-over-committed-text	PASS	validating the COMMITTED answer does not return the rejected value	Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })

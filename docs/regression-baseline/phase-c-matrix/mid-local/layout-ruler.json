@@ -13,10 +13,10 @@
       "width": 480
     },
     "sidebarWidth": 480,
-    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) 100%)",
+    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), rgba(0, 0, 0, 0) 100%)",
     "scrollerEdges": {
       "atTop": "false",
-      "atBottom": "true"
+      "atBottom": "false"
     }
   },
   "narrow": {
@@ -32,10 +32,10 @@
       "width": 480
     },
     "sidebarWidth": 352,
-    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) 100%)",
+    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), rgba(0, 0, 0, 0) 100%)",
     "scrollerEdges": {
       "atTop": "false",
-      "atBottom": "true"
+      "atBottom": "false"
     }
   }
 }

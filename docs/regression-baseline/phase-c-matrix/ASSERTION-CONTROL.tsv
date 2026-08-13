@@ -15,9 +15,9 @@ K13	FAIL	FAIL	yes	the error-state assertion, applied to a turn that succeeded	(n
 K14	FAIL	FAIL	yes	the no-credential assertion, applied to an endpoint that genuinely requires one	usable=false check=missingRequired complaintOnScreen=false
 K15	PASS	PASS	yes	the console assertion on the run as it stood (it was clean)	clean
 K16	FAIL	FAIL	yes	the same assertion, after one deliberate console.error	error: control: a deliberate console error
-K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:42145/v1/models
-K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	2 paints, 2 growing, spread over 48 ms
-K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3653 ms
+K17	FAIL	FAIL	yes	the egress assertion, after the page really did request the endpoint (refused: TypeError: Failed to fetch)	http://127.0.0.1:37335/v1/models
+K18	FAIL	FAIL	yes	the incremental-paint assertion, against an endpoint with no inter-frame delay	3 paints, 3 growing, spread over 37 ms
+K19	PASS	PASS	yes	and against the 120 ms endpoint, where it must hold	24 paints, 24 growing, spread over 3664 ms
 K20	FAIL	FAIL	yes	the "turn is settled" assertion, applied while the turn is still in flight	still says "Waiting for the first token…"
 K22	PASS	PASS	yes	the hierarchy assertion on the surface as it ships (it held in the matrix run)	h1=24px h2=18px h3=16px h4=15px | body=15px | distinct=4 monotonic=true outranksBody=true
 K23	FAIL	FAIL	yes	the same assertion once every heading level is set at one size — the defect as found	h1=15px h2=15px h3=15px h4=15px | body=15px | distinct=1 monotonic=true outranksBody=false
@@ -29,12 +29,12 @@ K28	FAIL	FAIL	yes	the same assertion with content four thousand pixels wide in t
 K29	PASS	PASS	yes	structure-outranks-emphasis on the surface as it ships	strong=600 body=15px | outweighed=[] undersized=[]
 K30	FAIL	FAIL	yes	the same assertion with a bold run at 700 over headings at 600 — the inversion as found	strong=700 body=15px | outweighed=[h1@600 h2@600 h3@600 h4@600 h5@600 h6@600 h2@600] undersized=[]
 K31	FAIL	FAIL	yes	the same assertion with h5 and h6 set smaller than body text — the other half as found	strong=600 body=15px | outweighed=[] undersized=[h5@13px h6@13px]
-K32	PASS	PASS	yes	the characters-per-line assertion on the column as it ships	60.6 characters per line at 480px, set in Inter
-K33	FAIL	FAIL	yes	the same assertion with the column back at the 688px it shipped with	86.5 characters per line at 688px, set in Inter
+K32	PASS	PASS	yes	the characters-per-line assertion on the column as it ships	60.6 characters per line at 480px, set in Inter (NOT resolved — a fallback face was used)
+K33	FAIL	FAIL	yes	the same assertion with the column back at the 688px it shipped with	86.5 characters per line at 688px, set in Inter (NOT resolved — a fallback face was used)
 K34	PASS	PASS	yes	the settled-thought-is-closed assertion on the block as it ships	summary="Thought process" expanded=false (unterminated=false)
 K35	FAIL	FAIL	yes	the same assertion against a settled block that is open — the pre-fix default	summary="Thought process" expanded=true (unterminated=false)
-K36	PASS	PASS	yes	the thinking block renders markdown, on the block as it ships	leaked=[] strong=1 items=2 white-space=normal
-K37	FAIL	FAIL	yes	the same assertion against `<p>{text}</p>` with pre-wrap — the defect as it shipped	leaked=[** * ] strong=0 items=0 white-space=pre-wrap
+K36	PASS	PASS	yes	the thinking block renders markdown, on the block as it ships	leaked=[] strong=1 items=2 inlineCode=1 fences=1 white-space=normal
+K37	FAIL	FAIL	yes	the same assertion against `<p>{text}</p>` with pre-wrap — the defect as it shipped	leaked=[** * `] strong=0 items=0 inlineCode=0 fences=0 white-space=pre-wrap
 K38	PASS	PASS	yes	the aside-stays-subordinate assertion on the block as it ships	scale=aside largest in aside=13px, answer body=15px
 K39	FAIL	FAIL	yes	the same assertion with a 24px heading inside the aside	scale=aside largest in aside=24px, answer body=15px
 K40	PASS	PASS	yes	the one-ruler assertion on the layout as it ships	text 620–1100 (480px), composer 620–1100 (480px)
@@ -47,3 +47,11 @@ K21	PASS	PASS	yes	FINDING 1 reproduced: settings has the endpoint, and chat_send
 K46	FAIL	FAIL	yes	the dropped-opening assertion, on the transcript recorded at 4647556 (mid-local)	the core emitted "Mock mid-local reply to:" and it is NOT on screen — the turn was rendered without its opening
 K47	FAIL	FAIL	yes	the dropped-opening assertion, on the transcript recorded at a936bad (small-local)	the core emitted "Mock small-local reply to:" and it is NOT on screen — the turn was rendered without its opening
 K48	PASS	PASS	yes	the same reader on a turn that did arrive whole (the check is not stuck on FAIL)	the answer's opening reached the screen: "Mock small-local reply to:"
+K49	FAIL	FAIL	yes	the composer's attach button opens its own picker — with the handler removed from that button	handler removed=true chooser opened on=null
+K50	PASS	PASS	yes	a staged text file reaches the wire, on the app as it ships	renderer->host textParts=["Attached file: control-notes.md\n\na note staged b"] | core->endpoint carriesName=true carriesBody=true
+K51	FAIL	FAIL	yes	the same assertion when the file arrives unnamed — bare contents in the prompt	renderer->host textParts=["a note staged by the control run"] | core->endpoint carriesName=true carriesBody=true
+K52	PASS	PASS	yes	a staged image reaches the wire, on the app as it ships	renderer->host parts=["image"] carriesImage=true | core->endpoint body 709 bytes, carriesImage=true
+K53	FAIL	FAIL	yes	the same assertion against a payload with the parts dropped — the defect as it shipped	renderer->host parts=[] carriesImage=false | core->endpoint body 709 bytes, carriesImage=true
+K54	FAIL	FAIL	yes	the same assertion when the payload is right and the wire carries no image	renderer->host parts=["image"] carriesImage=true | core->endpoint body 15 bytes, carriesImage=false
+K55	PASS	PASS	yes	the endpoint was offered an image part, on the app as it ships	content parts=["text","text","text","image_url"] url starts "data:image/png;base64,iV"
+K56	FAIL	FAIL	yes	the same assertion when the image was pasted into the prompt as text	content parts=[] url starts ""

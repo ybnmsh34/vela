@@ -204,6 +204,12 @@
     "clientWidthPx": 480,
     "scrollWidthPx": 480,
     "fontFamily": "Inter",
+    "firstFamilyResolves": {
+      "asked": "Inter",
+      "requestedAdvancePx": 481.72,
+      "absentControlAdvancePx": 481.72,
+      "resolves": false
+    },
     "charsPerLine": 57.4
   },
   "counts": {

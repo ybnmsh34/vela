@@ -212,17 +212,17 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         MALFORMED index=None id=call_emulated_0 name=get_weather reason=RecoveredFromUnterminatedReasoning raw="{\"city\":\"Wm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtW…"
 
 ---- and none of it reaches the error surface, where B2 says nothing may -----
-  openai-compatible error                Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35547", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(549) } })
+  openai-compatible error                Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45783", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(549) } })
   [PASS] openai-compatible: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] openai-compatible: and NOTHING of it is on the error surface — 0 unexplained strings
         []
-  anthropic error                        Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35419", path: "/v1/messages" }), filter: None, correlation: CorrelationId(550) } })
+  anthropic error                        Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:40357", path: "/v1/messages" }), filter: None, correlation: CorrelationId(550) } })
   [PASS] anthropic: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] anthropic: and NOTHING of it is on the error surface — 0 unexplained strings
         []
-  google error                           Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:40469", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(551) } })
+  google error                           Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33349", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(551) } })
   [PASS] google: the identical hostile bytes reached the error path too — the comparison is like for like
         true
   [PASS] google: and NOTHING of it is on the error surface — 0 unexplained strings

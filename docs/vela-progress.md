@@ -2484,3 +2484,76 @@ frontend.
 
 **VERIFIED-BY-FAKE**, per conventions §10. **GATE M Part 2 remains deferred to the desktop
 session and was not attempted.**
+
+---
+
+## GATE M — CONV-1 wave — EXECUTED. ✅ Gate PASSES.
+
+**Executor's entry.** Fresh executor: ran none of the three builder waves, wrote none of the
+fixes under test. Full report and transcripts in
+`docs/regression-baseline/gate-m-conv1-executor/`.
+
+**No application defect was found.** Two were found in the gate's own instruments, and both are
+recorded rather than quietly corrected — see below.
+
+### The five claimed fixes, each proved from outside the thing that claims it
+
+* **The thinking block renders markdown.** Driven through the real `<App/>` over the relay against
+  the real core: `strong 1 · listItems 2 · inlineCode 1 · codeBlocks 1 · white-space normal`, and
+  **no `*`, no backtick and no fence anywhere in the rendered text content**. The assertion was
+  widened in both halves — a bare backtick is now a leak (three-backtick matching cannot see an
+  unrendered inline span), and `code` and `pre` are now required alongside `strong` and `li`, which
+  is four branches of the parser rather than two. Captured collapsed *and* expanded in **both
+  themes**, driven through the title bar's own theme control.
+* **The heading scale.** The CONV-1 evidence gap is closed: h1 24/700, h2 18/700, h3 16/700,
+  h4–h6 15/700, against an unclassed `<strong>` at 15/**600** and body at 15/400. The inversion is
+  gone, and the four captures per profile mean it is never judged from a stylesheet again.
+* **The measure.** 60.6 characters per line in a 480px column, read through
+  `Range.getClientRects()` — the engine's own line boxes, not `--vela-measure`. Transcript text and
+  composer box share one ruler at 1440px (720–1200) and at 880px (376–856); the sidebar goes
+  480→352 while the reading column holds 480.
+* **The handler list, mutated in BOTH directions** in a `git worktree` scratch copy. Dropping
+  `diagnostics_echo` from `generate_handler!` alone turns **2** red, the assembled app answering
+  *"Command … not found"*. Dropping `ui_set_layout` from both allowlists while leaving it
+  registered turns **3** red, *"reachable from the renderer but absent from COMMAND_ALLOWLIST"*.
+  The two directions hit **disjoint** runtime tests, so the gate says which way the lists drifted.
+* **The staged attachment, at BOTH boundaries.** The relay now records what the renderer handed the
+  host, and the mock endpoint records what the core put on the wire. A PNG staged through the
+  composer's own paperclip — pressed, with the browser's `filechooser` answered — arrives as
+  `{kind:'image', mimeType:'image/png', data:'iVBORw0KGgoAAAANSUhEUg=='}` in the payload *and*
+  inside an `image_url` content part in the endpoint's own record of the request. **Deleting one
+  line from the composition root** (`attachments={attachments}`) in a scratch worktree turns the
+  browser matrix to **37/40 with exactly C32, C34 and C35 red and nothing else moved**, and 7 of 8
+  vitest cases red.
+* **The debug log, measured by `stat` under umask 0022** after the switch is thrown through the
+  real `diagnostics_debug_log_set` in the assembled app: `drwx------` / `-rw-------` from a clean
+  start, and a pre-existing `0755` directory holding a `0644` log **tightened to 0700/0600 with its
+  contents kept**. The reader is controlled on a deliberately loose copy, where it reports 644.
+
+### The two instrument defects
+
+1. **An assertion named one button and measured another.** `getByRole({name: 'Attach an image'})`
+   matches substrings, so it selected the model bar's *"Attach an image or a file"* while claiming
+   to test the composer's paperclip — the one control in the app that had shipped dead. Fixed with
+   `exact: true`, and the assertion now checks *which* picker opened.
+2. **The gate attributed a typographic measurement to a font that never loaded.**
+   `reading-surface.json`'s `fontFamily` was commented "what the engine actually resolved" and
+   computed from the *declared* stack, so every committed artifact said `Inter` on a container where
+   no Inter is installed. Replaced with the width-control probe the desktop `visual` critic used:
+   requested and absent-font advances are both 481.72px, `resolves: false`. **The A1 finding "Vela
+   bundles no typeface" is still open** — this only stops the gate implying otherwise.
+
+### Re-run, nothing regressed
+
+Composition-root gate **25/25** (its own controls included) · Phase C matrix **40/38/36/33, 0
+failures** · Phase C controls **56/56 as expected** · Phase B2 matrix **1455 assertions, 0
+failures** (its recorded FAIL, FINDING 4, is closed; the header there now says so) ·
+`pnpm test` **1395 in 63 files** · `pnpm test:harness` **142 in 12 files** ·
+`check-transcripts` **byte-identical** · secret scan clean · `cargo fmt`/`clippy -D warnings` clean ·
+`cargo test --workspace --locked` **44 binaries, 929 passed, 0 failed, 4 ignored** (the fourth is
+the new `#[ignore]`d debug-log evidence driver).
+
+**VERIFIED-BY-FAKE** per conventions §10, with one exception: the debug-log modes are real files
+read with `stat`. **The Tauri webview, WebView2, the Windows build, real case-insensitive
+resolution, cold start, idle RAM and any real model remain unjudged here and belong to the desktop
+session.** GATE M Part 2 was not attempted and is not extended by this report.

@@ -29,7 +29,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,6 +89,24 @@ const mockArgs = [
 ];
 if (options.requireKey !== undefined) mockArgs.push('--api-key', options.requireKey);
 
+/**
+ * The two boundaries this relay can see, and why both are recorded.
+ *
+ * `invokeLog` is what the **renderer** handed the host: the `chat_send` payload
+ * as it left the browser. `endpointRequests` is what the **core** put on the
+ * wire: the HTTP body the real `OpenAiCompatibleProvider` sent to the endpoint.
+ *
+ * A staged attachment has to cross both, and this project's recurring defect is
+ * a thing that crosses the first and dies at the second. Recording only one of
+ * them would have been another instance of it.
+ */
+const endpointRequestsPath = join(
+  mkdtempSync(join(tmpdir(), 'vela-ui-bridge-')),
+  'endpoint-requests.jsonl',
+);
+writeFileSync(endpointRequestsPath, '');
+mockArgs.push('--record-requests', endpointRequestsPath);
+
 const mock = spawn('node', mockArgs, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'inherit'] });
 
 const mockUrl = await new Promise((resolve, reject) => {
@@ -126,6 +146,8 @@ const pending = new Map();
 const listeners = new Set();
 /** Every event the core emitted, kept for the driver's post-run assertions. */
 const eventLog = [];
+/** Every command the renderer invoked, with the payload it sent. */
+const invokeLog = [];
 let nextId = 1;
 let bridgeReady = false;
 
@@ -208,6 +230,32 @@ const server = createServer((request, response) => {
     return;
   }
 
+  // What the renderer handed the host, verbatim — the outgoing payload, read at
+  // the transport boundary rather than from inside a component.
+  if (url.pathname === '/invokes.json') {
+    response.writeHead(200, { ...CORS, 'content-type': 'application/json' });
+    response.end(JSON.stringify(invokeLog));
+    return;
+  }
+
+  // What the core put on the wire. Read off the endpoint's own record, so the
+  // claim "these bytes reached the endpoint" is the endpoint's testimony and
+  // not the sender's.
+  if (url.pathname === '/endpoint-requests.json') {
+    let recorded = [];
+    try {
+      recorded = readFileSync(endpointRequestsPath, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim().length > 0)
+        .map((line) => JSON.parse(line));
+    } catch {
+      recorded = [];
+    }
+    response.writeHead(200, { ...CORS, 'content-type': 'application/json' });
+    response.end(JSON.stringify(recorded));
+    return;
+  }
+
   // Takes the endpoint away, the way a user's local runtime does when they
   // close the terminal it was running in. The next turn meets a real refused
   // connection — no stubbed error, no injected failure.
@@ -243,6 +291,7 @@ const server = createServer((request, response) => {
         response.end(JSON.stringify({ err: { code: 'INVALID_PAYLOAD', message: 'bad json' } }));
         return;
       }
+      invokeLog.push({ command: parsed.command, payload: parsed.payload ?? {} });
       void callBridge(parsed.command, parsed.payload ?? {}).then((message) => {
         response.writeHead(200, { ...CORS, 'content-type': 'application/json' });
         response.end(JSON.stringify(message.err !== undefined ? { err: message.err } : { ok: message.ok }));

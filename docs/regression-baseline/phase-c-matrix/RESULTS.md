@@ -1,5 +1,32 @@
 # GATE M Part 1 — Phase C — the conversation surface meets the capability matrix
 
+> **RE-DRIVEN BY THE GATE M EXECUTOR (CONV-1 wave).** The evidence in this directory is that
+> run: **40 / 38 / 36 / 33 assertions, 0 failures**, with **56 / 56 controls behaving as
+> expected**. Five assertions are new and one was widened:
+>
+> | | measures | why it exists |
+> |---|---|---|
+> | C32 | a staged **text file** reaches the `chat_send` payload *and* the endpoint's request body, carrying its name | the attachment feature was built, tested, and joined to nothing |
+> | C33 | the **composer's own** attach button opens the composer's own picker | that button shipped with no `onClick` |
+> | C34 | a staged **image** reaches both boundaries | the same defect, at the boundary a component test cannot see |
+> | C35 | the endpoint was offered an `image_url` **content part**, parsed rather than searched | base64 pasted into the prompt contains the bytes and is not an image |
+> | C27 (widened) | the thinking block also renders **inline code and a fence**, and leaks no bare backtick | three-backtick matching cannot see an unrendered inline span |
+>
+> Two boundaries are now recorded rather than one — the relay logs what the renderer handed the
+> host (`/invokes.json`), and the mock endpoint logs what the core put on the wire
+> (`--record-requests`). A payload that leaves the browser and dies in the Rust layer is the same
+> defect one storey down, and only the second recording can see it.
+>
+> The thinking block and the heading scale are now captured in **both themes**, driven through the
+> title bar's own theme control. Full report: `../gate-m-conv1-executor/RESULTS.md`.
+>
+> **One correction to this directory's own artifacts.** `reading-surface.json`'s `fontFamily`
+> field was commented "what the engine actually resolved" and computed from the *declared* stack,
+> so every committed artifact here reported `Inter` on a container with no Inter installed. It now
+> carries a real resolution probe: `resolves: false`, requested and absent-control advances both
+> 481.72px. The characters-per-line figures below were always measured in a fallback face; now the
+> files say so.
+
 > **RE-RUN BY THE INTEGRATION OF THE THREE-BUILDER WAVE.** Everything below stands, and two
 > things about this directory changed.
 >

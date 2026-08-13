@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the raw stream ----------------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:45911/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -92,7 +92,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   ReasoningDelta events                  " <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
   content parts                          ["reasoning", "text"]
   degradations                           UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
-  wall clock                             7.854605ms
+  wall clock                             4.448664ms
 
 ---- baseline — every `content` delta concatenated, no state machine -------
     "<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"

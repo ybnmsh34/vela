@@ -43,6 +43,18 @@ export interface MockProviderOptions {
   readonly chunkDelayMs?: number;
   /** Clock for `created`. Default is a fixed constant, for byte-stable output. */
   readonly now?: () => number;
+  /**
+   * Called with every request as it arrives, before it is answered.
+   *
+   * `requests` on the handle already holds them, which is enough for an
+   * in-process consumer. This exists for the out-of-process one: the GATE M UI
+   * matrix runs this endpoint as a **child process**, and the only way for the
+   * driver to read the bytes the Rust core put on the wire is for the endpoint
+   * to write them somewhere the driver can see. Purely observational — it
+   * cannot change the response, so a recorded run and an unrecorded one answer
+   * identically and `check-transcripts.sh` stays byte-identical.
+   */
+  readonly onRequest?: (request: RecordedRequest) => void;
 }
 
 export interface RecordedRequest {
@@ -326,13 +338,15 @@ export async function startMockProvider(
     for (const [key, value] of Object.entries(request.headers)) {
       headers[key] = Array.isArray(value) ? value.join(', ') : (value ?? '');
     }
-    requests.push({
+    const recorded: RecordedRequest = {
       method: request.method ?? 'GET',
       path,
       headers,
       body,
       authorization: request.headers.authorization,
-    });
+    };
+    requests.push(recorded);
+    options.onRequest?.(recorded);
 
     checkAuthorization(request.headers.authorization, apiKey);
 

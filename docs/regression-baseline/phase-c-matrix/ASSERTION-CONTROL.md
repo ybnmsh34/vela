@@ -1,7 +1,10 @@
 # Assertion controls — GATE M Part 1, Phase C
 
-Forty-eight experiments. **48/48 behaved as expected.** Machine-readable results in
+Fifty-six experiments. **56/56 behaved as expected.** Machine-readable results in
 `ASSERTION-CONTROL.tsv`; the script is `tests/harness/ui-bridge/controls.mjs`.
+
+> **GATE M executor, this wave.** Eight experiments are new (K49–K56) and cover the staged
+> attachment at both of the boundaries it has to cross. They are listed with the rest below.
 
 A gate run that prints twenty-two green lines proves nothing unless those lines could have been
 red. Every assertion in `tests/harness/ui-bridge/checks.mjs` is applied here to a case where it
@@ -58,6 +61,35 @@ endpoint, a credentialled endpoint is really configured through `settings_put_pr
 | K46 | C6b | the dropped-opening reader, on the transcript this repo **committed** at `4647556` (`mid-local`) | FAIL | FAIL |
 | K47 | C6b | the same, on the transcript committed at `a936bad` (`small-local`) | FAIL | FAIL |
 | K48 | C6b | the same reader on a turn that did arrive whole — the check is not stuck on FAIL | PASS | PASS |
+| K49 | C33 | the composer's own attach button, with its handler removed by `cloneNode` — **a button that opens nothing, which is what shipped** | FAIL | FAIL |
+| K50 | C32 | baseline: a staged text file reaching the payload and the wire | PASS | PASS |
+| K51 | C32 | the same, with the file arriving unnamed — bare contents the model cannot tell from the question | FAIL | FAIL |
+| K52 | C34 | baseline: a staged image reaching the payload and the wire | PASS | PASS |
+| K53 | C34 | the payload with `parts` deleted — **the defect exactly as it shipped: Send discarded the picture** | FAIL | FAIL |
+| K54 | C34 | the payload right and the endpoint's body carrying no image — the same defect one storey down | FAIL | FAIL |
+| K55 | C35 | baseline: the endpoint offered an `image_url` content part | PASS | PASS |
+| K56 | C35 | the base64 pasted into the prompt as prose — a body that *contains* the bytes and offers no image | FAIL | FAIL |
+
+## The attachment set, and why it has two boundaries rather than one
+
+The eighth instance of this project's defect class was an attachment feature whose every part
+worked and which was joined to nothing. `useSelectedModel().attachments` had no reader, so pressing
+Send discarded the user's picture without a word, and every component test passed — because every
+one asked a component about its own state.
+
+So C32/C34/C35 are read at the two places the bytes have to arrive, and each has a control that is
+the failure *at that place*: **K53** deletes `parts` from what the renderer sent (the defect as it
+shipped), and **K54** leaves the payload correct and empties what the core put on the wire (the
+same defect in the Rust layer, which a renderer-side check could never see). **K56** is the one
+that justifies parsing rather than substring-searching the endpoint body: base64 pasted into the
+prompt text contains the bytes, so a body search alone would call it a pass.
+
+**A stronger control than any of these was also run, and it is recorded outside this file.** The
+whole browser matrix was re-driven against a scratch worktree with one line deleted from the
+composition root — `attachments={attachments}` in `src/app/App.tsx` — and came back **37/40, with
+C32, C34 and C35 red and nothing else moved**. C33 stayed green, correctly: that mutation removes
+the payload wiring, not the button's handler. See
+`../gate-m-conv1-executor/attachment-mutation.txt`.
 
 ## Why the second set breaks the live page rather than a fixture
 

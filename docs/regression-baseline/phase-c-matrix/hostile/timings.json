@@ -1,8 +1,8 @@
 {
   "profile": "hostile",
-  "endpoint": "http://127.0.0.1:42999",
-  "ttftAnyMs": 30.3,
-  "ttftAnswerMs": 45.7,
+  "endpoint": "http://127.0.0.1:36697",
+  "ttftAnyMs": 28.5,
+  "ttftAnswerMs": 44.2,
   "paints": 2,
-  "turnMs": 46
+  "turnMs": 44
 }

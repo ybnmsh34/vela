@@ -599,6 +599,59 @@ fn the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off() {
     );
 }
 
+/// **An evidence driver, not an assertion.** Ignored by default; run by
+/// `scripts/gate-m-debug-log-modes.sh`, which supplies `VELA_GATE_DEBUG_LOG_HOME`
+/// and then reads the modes back **from a shell**.
+///
+/// # Why this exists when two unit tests already assert `0700` / `0600`
+///
+/// Those tests read the mode with the same `std::fs` the code under test used,
+/// inside the process that created the file, under whatever umask the test
+/// harness happened to be running with. That is a fine assertion and a poor
+/// measurement: it cannot tell you what a *user's* shell would see, and it
+/// cannot see a mode that is right at creation and widened afterwards.
+///
+/// So this drives the real `diagnostics_debug_log_set` command in the
+/// assembled app, makes a turn fail so the log actually receives a line — the
+/// sink opens its file lazily, so an enabled log with nothing written to it is
+/// a directory and no file — and then gets out of the way and lets `stat`
+/// answer the question.
+///
+/// It creates nothing itself: the shell chooses the data home, may pre-loosen
+/// the directory and the log before this runs, and inspects both afterwards.
+#[test]
+#[ignore = "evidence driver: needs VELA_GATE_DEBUG_LOG_HOME; run by scripts/gate-m-debug-log-modes.sh"]
+fn debug_log_evidence_driver() {
+    let home = std::path::PathBuf::from(
+        std::env::var("VELA_GATE_DEBUG_LOG_HOME")
+            .expect("VELA_GATE_DEBUG_LOG_HOME must point at the data home to drive"),
+    );
+    let app = RunningApp::start(&home);
+
+    let status = app.ok("diagnostics_debug_log_set", json!({ "enabled": true }));
+    let path = status
+        .get("path")
+        .and_then(Value::as_str)
+        .expect("the switch must report where it writes")
+        .to_owned();
+
+    // A turn that cannot connect. The failure is what puts a line in the log:
+    // `http.rs` records the transport's own message there and hands the user
+    // only a correlation id, which is the whole reason the log exists.
+    //
+    // Port 1 on loopback: nothing listens, and nothing in this process decides
+    // that — the refusal comes from the kernel.
+    app.configure_endpoint("dead-box", "http://127.0.0.1:1/v1");
+    let _ = app.send_turn(turn("dead-box", "is anyone there?"));
+
+    println!("VELA_DEBUG_LOG_PATH={path}");
+    assert!(
+        std::path::Path::new(&path).exists(),
+        "a failed turn with the log enabled must leave a line on disk, or there \
+         is nothing for the shell to measure"
+    );
+}
+
 /// A command that is not in `generate_handler!` must not be dispatchable. This
 /// is the allowlist asserted by **dispatch**, not by comparing two lists.
 #[test]

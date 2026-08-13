@@ -1,0 +1,312 @@
+{"ready":true,"registered":true,"seeded":true}
+{"id":1,"ok":{"accepted":true,"turnId":"t1"}}
+{"at":1786616197741,"event":"chat:event","payload":{"event":{"text":"Here","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197778,"event":"chat:event","payload":{"event":{"text":"'s","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197814,"event":"chat:event","payload":{"event":{"text":" a","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197850,"event":"chat:event","payload":{"event":{"text":" thinking","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197885,"event":"chat:event","payload":{"event":{"text":" process","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197921,"event":"chat:event","payload":{"event":{"text":":","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197957,"event":"chat:event","payload":{"event":{"text":"\n\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616197993,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198030,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198065,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198101,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198138,"event":"chat:event","payload":{"event":{"text":"Ident","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198174,"event":"chat:event","payload":{"event":{"text":"ify","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198210,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198246,"event":"chat:event","payload":{"event":{"text":" User","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198282,"event":"chat:event","payload":{"event":{"text":"'s","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198333,"event":"chat:event","payload":{"event":{"text":" Request","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198354,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198390,"event":"chat:event","payload":{"event":{"text":" The","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198426,"event":"chat:event","payload":{"event":{"text":" user","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198462,"event":"chat:event","payload":{"event":{"text":" is","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198498,"event":"chat:event","payload":{"event":{"text":" asking","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198534,"event":"chat:event","payload":{"event":{"text":" for","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198569,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198605,"event":"chat:event","payload":{"event":{"text":" product","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198641,"event":"chat:event","payload":{"event":{"text":" of","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198677,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198713,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198749,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198786,"event":"chat:event","payload":{"event":{"text":" and","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198821,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198857,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198893,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198930,"event":"chat:event","payload":{"event":{"text":",","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616198965,"event":"chat:event","payload":{"event":{"text":" and","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199001,"event":"chat:event","payload":{"event":{"text":" wants","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199037,"event":"chat:event","payload":{"event":{"text":" a","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199072,"event":"chat:event","payload":{"event":{"text":" brief","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199108,"event":"chat:event","payload":{"event":{"text":" answer","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199145,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199181,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199216,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199252,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199288,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199324,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199360,"event":"chat:event","payload":{"event":{"text":"Perform","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199396,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199432,"event":"chat:event","payload":{"event":{"text":" Calculation","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199467,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199503,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199539,"event":"chat:event","payload":{"event":{"text":"  ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199575,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199611,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199660,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199683,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199718,"event":"chat:event","payload":{"event":{"text":" *","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199754,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199790,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199826,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199862,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199898,"event":"chat:event","payload":{"event":{"text":"  ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199934,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616199969,"event":"chat:event","payload":{"event":{"text":" Break","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200006,"event":"chat:event","payload":{"event":{"text":" it","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200041,"event":"chat:event","payload":{"event":{"text":" down","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200077,"event":"chat:event","payload":{"event":{"text":":","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200113,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200149,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200185,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200221,"event":"chat:event","payload":{"event":{"text":" +","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200257,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200293,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200329,"event":"chat:event","payload":{"event":{"text":")","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200365,"event":"chat:event","payload":{"event":{"text":" *","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200400,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200436,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200472,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200508,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200545,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200581,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200617,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200652,"event":"chat:event","payload":{"event":{"text":"*","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200688,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200724,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200761,"event":"chat:event","payload":{"event":{"text":" +","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200796,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200833,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200869,"event":"chat:event","payload":{"event":{"text":"*","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200905,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200941,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616200977,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201013,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201056,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201092,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201128,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201164,"event":"chat:event","payload":{"event":{"text":" +","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201200,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201236,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201272,"event":"chat:event","payload":{"event":{"text":"6","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201307,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201343,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201379,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201415,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201451,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201488,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201524,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201559,"event":"chat:event","payload":{"event":{"text":"  ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201595,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201631,"event":"chat:event","payload":{"event":{"text":" Alternative","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201667,"event":"chat:event","payload":{"event":{"text":" check","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201703,"event":"chat:event","payload":{"event":{"text":":","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201739,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201775,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201810,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201846,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201882,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201918,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201954,"event":"chat:event","payload":{"event":{"text":")","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616201990,"event":"chat:event","payload":{"event":{"text":" *","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202025,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202061,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202097,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202133,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202169,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202205,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202241,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202276,"event":"chat:event","payload":{"event":{"text":"*","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202312,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202348,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202384,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202420,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202456,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202492,"event":"chat:event","payload":{"event":{"text":"*","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202527,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202563,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202599,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202635,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202671,"event":"chat:event","payload":{"event":{"text":"4","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202708,"event":"chat:event","payload":{"event":{"text":"6","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202743,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202779,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202815,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202851,"event":"chat:event","payload":{"event":{"text":"6","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202886,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202923,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202958,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616202994,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203031,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203067,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203103,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203139,"event":"chat:event","payload":{"event":{"text":"  ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203174,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203210,"event":"chat:event","payload":{"event":{"text":" Another","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203246,"event":"chat:event","payload":{"event":{"text":" check","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203282,"event":"chat:event","payload":{"event":{"text":":","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203318,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203354,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203389,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203425,"event":"chat:event","payload":{"event":{"text":" *","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203461,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203497,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203532,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203568,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203604,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203640,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203676,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203712,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203747,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203783,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203819,"event":"chat:event","payload":{"event":{"text":")","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203855,"event":"chat:event","payload":{"event":{"text":" *","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203891,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203927,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203962,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616203998,"event":"chat:event","payload":{"event":{"text":" +","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204034,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204070,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204106,"event":"chat:event","payload":{"event":{"text":")","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204142,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204178,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204213,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204250,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204286,"event":"chat:event","payload":{"event":{"text":"^","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204322,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204358,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204394,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204429,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204466,"event":"chat:event","payload":{"event":{"text":"^","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204502,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204537,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204574,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204609,"event":"chat:event","payload":{"event":{"text":"4","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204646,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204681,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204717,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204753,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204789,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204825,"event":"chat:event","payload":{"event":{"text":" =","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204861,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204896,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204932,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616204968,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205005,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205041,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205077,"event":"chat:event","payload":{"event":{"text":"Wait","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205114,"event":"chat:event","payload":{"event":{"text":",","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205149,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205185,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205222,"event":"chat:event","payload":{"event":{"text":"7","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205258,"event":"chat:event","payload":{"event":{"text":"*","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205293,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205330,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205365,"event":"chat:event","payload":{"event":{"text":" is","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205401,"event":"chat:event","payload":{"event":{"text":" indeed","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205437,"event":"chat:event","payload":{"event":{"text":" (","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205473,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205509,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205545,"event":"chat:event","payload":{"event":{"text":"-","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205581,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205616,"event":"chat:event","payload":{"event":{"text":")*(","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205652,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205688,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205724,"event":"chat:event","payload":{"event":{"text":"+","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205760,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205796,"event":"chat:event","payload":{"event":{"text":"),","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205832,"event":"chat:event","payload":{"event":{"text":" which","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205868,"event":"chat:event","payload":{"event":{"text":" is","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205904,"event":"chat:event","payload":{"event":{"text":" a","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205940,"event":"chat:event","payload":{"event":{"text":" difference","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616205977,"event":"chat:event","payload":{"event":{"text":" of","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206013,"event":"chat:event","payload":{"event":{"text":" squares","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206049,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206085,"event":"chat:event","payload":{"event":{"text":" Perfect","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206121,"event":"chat:event","payload":{"event":{"text":".)","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206158,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206195,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206231,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206267,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206303,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206339,"event":"chat:event","payload":{"event":{"text":"Verify","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206375,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206411,"event":"chat:event","payload":{"event":{"text":" Result","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206447,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206483,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206519,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206555,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206591,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206627,"event":"chat:event","payload":{"event":{"text":" is","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206663,"event":"chat:event","payload":{"event":{"text":" correct","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206698,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206735,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206771,"event":"chat:event","payload":{"event":{"text":"4","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206807,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206843,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206880,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206915,"event":"chat:event","payload":{"event":{"text":"Format","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206951,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616206987,"event":"chat:event","payload":{"event":{"text":" Output","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207024,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207061,"event":"chat:event","payload":{"event":{"text":" The","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207097,"event":"chat:event","payload":{"event":{"text":" user","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207133,"event":"chat:event","payload":{"event":{"text":" asked","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207169,"event":"chat:event","payload":{"event":{"text":" for","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207205,"event":"chat:event","payload":{"event":{"text":" a","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207241,"event":"chat:event","payload":{"event":{"text":" brief","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207277,"event":"chat:event","payload":{"event":{"text":" answer","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207313,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207349,"event":"chat:event","payload":{"event":{"text":" I","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207385,"event":"chat:event","payload":{"event":{"text":"'ll","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207420,"event":"chat:event","payload":{"event":{"text":" just","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207456,"event":"chat:event","payload":{"event":{"text":" state","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207493,"event":"chat:event","payload":{"event":{"text":" the","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207529,"event":"chat:event","payload":{"event":{"text":" number","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207565,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207601,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207637,"event":"chat:event","payload":{"event":{"text":"5","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207673,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207709,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207745,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207781,"event":"chat:event","payload":{"event":{"text":"Draft","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207817,"event":"chat:event","payload":{"event":{"text":" Response","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207853,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207890,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207926,"event":"chat:event","payload":{"event":{"text":"3","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207962,"event":"chat:event","payload":{"event":{"text":"9","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616207998,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208034,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208070,"event":"chat:event","payload":{"event":{"text":"6","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208106,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208142,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208178,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208214,"event":"chat:event","payload":{"event":{"text":"Final","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208250,"event":"chat:event","payload":{"event":{"text":" Check","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208286,"event":"chat:event","payload":{"event":{"text":":**","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208322,"event":"chat:event","payload":{"event":{"text":" Matches","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208358,"event":"chat:event","payload":{"event":{"text":" request","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208394,"event":"chat:event","payload":{"event":{"text":",","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208430,"event":"chat:event","payload":{"event":{"text":" accurate","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208466,"event":"chat:event","payload":{"event":{"text":",","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208502,"event":"chat:event","payload":{"event":{"text":" brief","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208538,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208574,"event":"chat:event","payload":{"event":{"text":" Ready","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208610,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208647,"event":"chat:event","payload":{"event":{"text":"✅","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208682,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616208790,"event":"chat:event","payload":{"event":{"text":"3","type":"textDelta"},"turnId":"t1"}}
+{"at":1786616208826,"event":"chat:event","payload":{"event":{"text":"9","type":"textDelta"},"turnId":"t1"}}
+{"at":1786616208863,"event":"chat:event","payload":{"event":{"text":"1","type":"textDelta"},"turnId":"t1"}}
+{"at":1786616208899,"event":"chat:event","payload":{"event":{"type":"usage","usage":{"cachedInputTokens":0,"inputTokens":23,"outputTokens":311,"reasoningTokens":null}},"turnId":"t1"}}
+{"at":1786616208900,"event":"chat:event","payload":{"event":{"response":{"degradations":[],"parts":[{"kind":"reasoning","redacted":false,"signature":null,"text":"Here's a thinking process:\n\n1.  **Identify the User's Request:** The user is asking for the product of 17 and 23, and wants a brief answer.\n2.  **Perform the Calculation:**\n   - 17 * 23\n   - Break it down: (10 + 7) * 23 = 10*23 + 7*23 = 230 + 161 = 391\n   - Alternative check: (20 - 3) * 23 = 20*23 - 3*23 = 460 - 69 = 391\n   - Another check: 17 * 23 = (20 - 3) * (20 + 3) = 20^2 - 3^2 = 400 - 9 = 391. (Wait, 17*23 is indeed (20-3)*(20+3), which is a difference of squares. Perfect.)\n3.  **Verify the Result:** 391 is correct.\n4.  **Format the Output:** The user asked for a brief answer. I'll just state the number.\n5.  **Draft Response:** 391\n6.  **Final Check:** Matches request, accurate, brief. Ready.✅\n"},{"kind":"text","text":"391"}],"stopReason":"endTurn","structured":null,"toolCalls":[],"usage":{"cachedInputTokens":0,"inputTokens":23,"outputTokens":311,"reasoningTokens":null}},"type":"done"},"turnId":"t1"}}

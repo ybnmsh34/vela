@@ -1,0 +1,56 @@
+# Windows build failure — pnpm tauri dev @ 51b5e163df22958853b24a281aa40268b5a1f44f
+# Windows 11 26200, rustc 1.97.1 MSVC, node v24.15.0, pnpm 10.33.0
+# Reproduce: git clone, pnpm install, pnpm tauri dev
+
+
+> vela@0.1.0 tauri C:\Users\User\vela-tmp
+> tauri "dev"
+
+     Running BeforeDevCommand (`pnpm dev`)
+
+> vela@0.1.0 dev C:\Users\User\vela-tmp
+> vite
+
+
+  [32m[1mVITE[22m v7.3.6[39m  [2mready in [0m[1m1620[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m1420[22m/[39m
+[31m(!) Failed to run dependency scan. Skipping dependency pre-bundling. Error: [31m  Failed to scan for dependencies from entries:
+  C:/Users/User/vela-tmp/index.html
+C:/Users/User/vela-tmp/tests/harness/ui-bridge/index.html
+
+  [31m[31mX [41;31m[[41;97mERROR[41;31m][0m [1mNo matching export in "src/features/conversation/markdown.ts" for import "Markdown"[0m
+
+    src/features/conversation/MessageTurn.tsx:12:9:
+
+...[dependency compilation elided]...
+
+[96m    Building[0m [=======================> ] 412/427: tauri(b…
+[1m[96m    Building[0m [=======================> ] 413/427: tauri(b…
+[1m[96m    Building[0m [=======================> ] 414/427: windows…
+[1m[96m    Building[0m [=======================> ] 415/427: windows…
+                                                            
+[1m[91merror[0m: failed to run custom build command for `vela-app v0.1.0 (C:\Users\User\vela-tmp\src-tauri)`
+Caused by:
+  process didn't exit successfully: `C:\Users\User\vela-tmp\src-tauri\target\debug\build\vela-app-79f8941eef3ef4a0\build-script-build` (exit code: 1)
+  --- stdout
+  cargo:rerun-if-env-changed=TAURI_CONFIG
+  cargo:rustc-check-cfg=cfg(desktop)
+  cargo:rustc-cfg=desktop
+  cargo:rustc-check-cfg=cfg(mobile)
+  cargo:rerun-if-changed=C:\Users\User\vela-tmp\src-tauri\tauri.conf.json
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_APP_NAME=desktop
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_PREFIX=dev_vela
+  cargo:rustc-check-cfg=cfg(dev)
+  cargo:rustc-cfg=dev
+  cargo:PERMISSION_FILES_PATH=C:\Users\User\vela-tmp\src-tauri\target\debug\build\vela-app-89a194e25d8de560\out\app-manifest\__app__-permission-files
+  cargo:rerun-if-changed=capabilities
+  cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+  cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE=x86_64-pc-windows-msvc
+  package.metadata does not exist
+  `icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build
+[1m[93mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[96m    Building[0m [=======================> ] 416/427: windows…
+[1m[96m    Building[0m [=======================> ] 417/427: windows 
+                                                            
+ ELIFECYCLE  Command failed with exit code 101.

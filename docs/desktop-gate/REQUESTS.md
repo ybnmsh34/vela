@@ -73,7 +73,10 @@ the binding one.
 ## ▶ START HERE — `GATE-M2-real-model` (ready now, nothing else blocks it)
 
 - **commit:** any current HEAD of `claude/new-session-tgl1ut`
-- **status:** AWAITING_DESKTOP
+- **status:** VERDICT_WRITTEN — **FAIL** at `51b5e163df22958853b24a281aa40268b5a1f44f`.
+  See [`VERDICTS.md`](./VERDICTS.md) § `GATE-M2-real-model`. Largest gap: the shipping host
+  registers no provider (`src-tauri/src/state.rs:42`), so no turn from the real UI can reach any
+  endpoint. The provider core itself passed against real model bytes.
 - **deferred critics:** `real-model`
 - **cloud verdicts already passed:** n/a — this is evidence the cloud is structurally incapable of
   producing, not a re-judgement of cloud work.

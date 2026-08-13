@@ -1,0 +1,12 @@
+{"id":1,"ok":{"accepted":true,"turnId":"t1"}}
+{"at":1786616177906,"event":"chat:event","payload":{"event":{"text":"Here","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616177944,"event":"chat:event","payload":{"event":{"text":"'s","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616177981,"event":"chat:event","payload":{"event":{"text":" a","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178017,"event":"chat:event","payload":{"event":{"text":" thinking","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178053,"event":"chat:event","payload":{"event":{"text":" process","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178089,"event":"chat:event","payload":{"event":{"text":":","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178125,"event":"chat:event","payload":{"event":{"text":"\n\n","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178161,"event":"chat:event","payload":{"event":{"text":"1","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178197,"event":"chat:event","payload":{"event":{"text":".","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178233,"event":"chat:event","payload":{"event":{"text":" ","type":"reasoningDelta"},"turnId":"t1"}}
+{"at":1786616178269,"event":"chat:event","payload":{"event":{"text":" **","type":"reasoningDelta"},"turnId":"t1"}}

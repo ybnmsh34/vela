@@ -296,6 +296,32 @@ never `undefined` doing double duty.
 
 - All design tokens live in `src/styles/tokens.css`. A hex code, a `px` radius, or a bare font
   stack inside a component file is a review-blocking change. Add a token instead.
+- **This is enforced, not asked for.** `src/styles/design-system.test.ts` scans every
+  `*.module.css` and fails on a raw colour, type size, radius, font stack, shadow, transition
+  duration, line height, letter spacing, focus outline or `z-index`. It also fails on a
+  `var(--vela-…)` the token sheet does not define — CSS drops an unresolvable declaration
+  silently, so nothing else would ever notice.
+- **The scales, and the question each one settles.** Phase C had four builders on one surface,
+  and each answered the same questions privately: line height landed on six values for
+  overlapping jobs, a bare icon button on five sizes, the focus ring's offset on four. Every one
+  of those files was internally consistent, which is why only a check from above found it. Ask a
+  question once:
+
+  | Question | Scale |
+  |---|---|
+  | How tall is a line? | `--vela-leading-{none,tight,snug,ui,code,prose}` |
+  | How is the text tracked? | `--vela-tracking-{tight,label,code,caps,wordmark}` |
+  | How big is a square control? | `--vela-control-{xs,sm,md}` |
+  | How is focus drawn? | `--vela-focus-ring`, offset `--vela-focus-offset` or `-inset` |
+  | What is on top of what? | `--vela-z-{overlay,popover,dialog,palette}` |
+  | How wide is an overlay? | `--vela-overlay-{sm,md}` |
+
+  Adding a step to a scale is fine. Answering the question again inside a component is the
+  review-blocking change.
+- The focus ring has exactly **two** offsets: outside a control (`--vela-focus-offset`), or
+  inset on a full-bleed row whose outward ring the scroll container would clip
+  (`--vela-focus-offset-inset`). A third value is drift, and a ring that changes width between
+  two controls in one toolbar reads to a user as a rendering bug.
 - Theming: light values are defined on bare `:root`; dark is redefined twice — under
   `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme='light'])`, and under
   `:root[data-theme='dark']` so an explicit choice wins in both directions. **Never define a

@@ -8792,7 +8792,11 @@ async fn case_18(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.check(
         "invariance holds on every adapter and both transport shapes, not just one",
         variant_arms.len() == Adapter::ALL.len() * 2,
-        format!("{} of {} groups invariant", variant_arms.len(), Adapter::ALL.len() * 2),
+        format!(
+            "{} of {} groups invariant",
+            variant_arms.len(),
+            Adapter::ALL.len() * 2
+        ),
     );
 
     doc.write(ledger);

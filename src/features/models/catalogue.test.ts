@@ -151,4 +151,30 @@ describe('selection', () => {
       entryKey({ providerId: 'p', modelId: 'b' }),
     );
   });
+
+  it('cannot be made to collide by an id that contains the separator', () => {
+    // The reason the separator is a NUL and not a slash, a space or a colon.
+    // Both halves are user-supplied — a base URL's id and whatever the endpoint
+    // calls its model — so any *printable* separator is one an id can contain,
+    // and these two rows would fold into one in the switcher.
+    expect(entryKey({ providerId: 'a/b', modelId: 'c' })).not.toBe(
+      entryKey({ providerId: 'a', modelId: 'b/c' }),
+    );
+    expect(entryKey({ providerId: 'a b', modelId: 'c' })).not.toBe(
+      entryKey({ providerId: 'a', modelId: 'b c' }),
+    );
+    expect(entryKey({ providerId: 'a:b', modelId: 'c' })).not.toBe(
+      entryKey({ providerId: 'a', modelId: 'b:c' }),
+    );
+  });
+
+  it('keeps a separator at all — a joined key with none collides', () => {
+    // Guards the failure mode `control-characters.test.ts` exists to prevent:
+    // an invisible separator that a patch tool or an editor silently ate leaves
+    // `entryKey` still compiling, still passing the test above, and returning
+    // the same string for two different rows.
+    expect(entryKey({ providerId: 'ab', modelId: 'c' })).not.toBe(
+      entryKey({ providerId: 'a', modelId: 'bc' }),
+    );
+  });
 });

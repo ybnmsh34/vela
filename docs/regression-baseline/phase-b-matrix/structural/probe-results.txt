@@ -1,0 +1,117 @@
+================================================================================
+GATE M Part 1 (Phase B) round 3 — compile-time structural probes
+================================================================================
+
+CLAIM     A body that reads bytes without the scrubber is not expressible.
+METHOD    Each probe is compiled as a real example against vela-providers.
+VERDICT   A probe that COMPILES is a gate failure.
+
+---- probe-01-round2-shape ----------------------------------------------------
+
+CLAIM UNDER TEST: the round-2 shape — a `Box<dyn ByteStream>` used *as* a
+response body — is no longer expressible. This is the exact line the round-2
+tree accepted, and accepting it is what let an unscrubbed body exist.
+
+EXPECTED: does not compile, E0308.
+use vela_providers::http::{BodyStream, ByteStream, TransportError};
+
+struct Forgetful;
+
+#[async_trait::async_trait]
+
+  [PASS] rejected by the compiler
+  codes observed: error[E0308] 
+  expected among: E0308
+  verbatim:
+    error[E0308]: mismatched types
+      --> crates/vela-providers/examples/zz_probe_tmp.rs:20:29
+    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 1 previous error
+
+---- probe-02-declare-scrubber ----------------------------------------------------
+
+CLAIM UNDER TEST: the method whose omission disabled redaction cannot even be
+declared, so "forgot to forward `scrubber()`" — the literal round-2 recorder
+bug — is not a thing a body can do.
+
+EXPECTED: does not compile, E0407.
+use vela_providers::http::{ByteStream, TransportError};
+use vela_providers::redact::Scrubber;
+
+struct Forgetful;
+
+
+  [PASS] rejected by the compiler
+  codes observed: error[E0407] 
+  expected among: E0407
+  verbatim:
+    error[E0407]: method `scrubber` is not a member of trait `ByteStream`
+      --> crates/vela-providers/examples/zz_probe_tmp.rs:19:5
+    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 1 previous error
+
+---- probe-03-private-field ----------------------------------------------------
+
+CLAIM UNDER TEST: the raw stream a `BodyStream` seals cannot be reached
+through the struct. A decorator that could touch it would simply take the
+unscrubbed door and "next_chunk is the one exit" would be prose.
+
+NOTE ON THIS PROBE'S OWN HISTORY: probes 03/04/05 were one file until the
+controls run, where unsealing the field left the bundle still failing on the
+other two hatches — so the probe reported "rejected" against a tree that had
+the hole. One hatch per file, one verdict per hatch.
+
+EXPECTED: does not compile, E0616.
+
+  [PASS] rejected by the compiler
+  codes observed: error[E0282] error[E0616] 
+  expected among: E0616
+  verbatim:
+    error[E0616]: field `inner` of struct `BodyStream` is private
+      --> crates/vela-providers/examples/zz_probe_tmp.rs:17:51
+    error[E0282]: type annotations needed
+      --> crates/vela-providers/examples/zz_probe_tmp.rs:18:5
+    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 2 previous errors
+
+---- probe-04-into-inner ----------------------------------------------------
+
+CLAIM UNDER TEST: there is no consuming accessor that hands back the sealed
+stream. A single `into_inner()` would undo the whole design without touching
+a field's visibility.
+
+EXPECTED: does not compile, E0599.
+use vela_providers::http::{ByteStream, HttpResponse};
+
+fn unseal(response: HttpResponse) -> Box<dyn ByteStream> {
+    response.body.into_inner()
+}
+
+  [PASS] rejected by the compiler
+  codes observed: error[E0599] 
+  expected among: E0599
+  verbatim:
+    error[E0599]: no method named `into_inner` found for struct `BodyStream` in the current scope
+      --> crates/vela-providers/examples/zz_probe_tmp.rs:11:19
+    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 1 previous error
+
+---- probe-05-body-is-not-a-raw-stream ----------------------------------------------------
+
+CLAIM UNDER TEST: a `BodyStream` is not itself a `ByteStream`, so it cannot
+be passed into a position that reads raw bytes. If it were, laundering would
+be trivial: hand the sealed body to anything taking `impl ByteStream` and
+read it there, or re-wrap it with an origin that claims no credential and
+have the outer read bypass the inner one.
+
+EXPECTED: does not compile, E0277.
+use vela_providers::http::{ByteStream, HttpResponse, TransportError};
+
+async fn read_raw(mut stream: impl ByteStream) -> Result<Option<Vec<u8>>, TransportError> {
+
+  [PASS] rejected by the compiler
+  codes observed: error[E0277] 
+  expected among: E0277
+  verbatim:
+    error[E0277]: the trait bound `BodyStream: ByteStream` is not satisfied
+    error[E0277]: the trait bound `BodyStream: ByteStream` is not satisfied
+    error[E0277]: the trait bound `BodyStream: ByteStream` is not satisfied
+    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 3 previous errors
+
+ALL PROBES REJECTED. The bypass is not expressible.

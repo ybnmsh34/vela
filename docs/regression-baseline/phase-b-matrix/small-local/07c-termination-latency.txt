@@ -14,22 +14,22 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   `include_usage`: both are the shapes that hung the recorded consumers for 5 s.
 
 ---- the samples -------------------------------------------------------------
-  run 1                                  2.442967ms   (130 answer characters)
-  run 2                                  2.489141ms   (130 answer characters)
-  run 3                                  2.177996ms   (130 answer characters)
-  run 4                                  2.24898ms   (130 answer characters)
-  run 5                                  2.020918ms   (130 answer characters)
-  MEDIAN                                 2.24898ms
-  worst sample                           2.489141ms
+  run 1                                  2.189233ms   (130 answer characters)
+  run 2                                  1.665466ms   (130 answer characters)
+  run 3                                  1.738611ms   (130 answer characters)
+  run 4                                  1.902216ms   (130 answer characters)
+  run 5                                  1.546201ms   (130 answer characters)
+  MEDIAN                                 1.738611ms
+  worst sample                           2.189233ms
   recorded naive [DONE] consumer         5003 ms (TIMED OUT)
 
 ---- assertions --------------------------------------------------------------
   [PASS] every sampled turn completed without error
         5 samples
   [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS — median under 10 ms
-        median 2.24898ms, samples [2.442967ms, 2.489141ms, 2.177996ms, 2.24898ms, 2.020918ms]
+        median 1.738611ms, samples [2.189233ms, 1.665466ms, 1.738611ms, 1.902216ms, 1.546201ms]
   [PASS] no sample came anywhere near the recorded 5003 ms hang
-        worst 2.489141ms
+        worst 2.189233ms
   [PASS] every sample returned the same answer length — timing did not truncate anything
         [130, 130, 130, 130, 130]
 

@@ -3634,6 +3634,19 @@ enum Misbehaviour {
 struct RawPeer {
     url: String,
     task: tokio::task::JoinHandle<()>,
+    /// **Every byte this peer wrote to the socket**, upstream of Vela entirely.
+    ///
+    /// This is where the *premise* of an echo case is established, and it moved
+    /// here in round 3 for a reason worth writing down. It used to be read off
+    /// the recorder's `Tee`, which sat inside the response body — and round 3's
+    /// fix makes `BodyStream::next_chunk` scrub before any decorator can see the
+    /// bytes, so the tee stopped being able to observe the endpoint's echo at
+    /// all and the premise check went red against a tree that was in fact
+    /// clean. A false positive from the instrumentation, not a finding.
+    ///
+    /// The peer's own send buffer cannot be affected by anything Vela does, so
+    /// it is the honest place to ask "did the endpoint really echo the key?".
+    sent: Arc<Mutex<Vec<u8>>>,
 }
 
 impl RawPeer {
@@ -3642,7 +3655,15 @@ impl RawPeer {
             .await
             .expect("loopback bind");
         let address = listener.local_addr().expect("bound");
+        let sent: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let sent_by_task = Arc::clone(&sent);
         let task = tokio::spawn(async move {
+            let record = |bytes: &[u8]| {
+                sent_by_task
+                    .lock()
+                    .expect("peer send log poisoned")
+                    .extend_from_slice(bytes)
+            };
             loop {
                 let Ok((mut socket, _)) = listener.accept().await else {
                     return;
@@ -3656,14 +3677,12 @@ impl RawPeer {
                     Misbehaviour::ResetMidBody => {
                         let mut scratch = [0u8; 8192];
                         let _ = socket.read(&mut scratch).await;
-                        let _ = socket
-                            .write_all(
-                                b"HTTP/1.1 200 OK\r\n\
+                        let payload: &[u8] = b"HTTP/1.1 200 OK\r\n\
                                   content-type: text/event-stream\r\n\
                                   content-length: 65536\r\n\r\n\
-                                  data: {\"choices\":[{\"delta\":{\"content\":\"partial \"}}]}\n\n",
-                            )
-                            .await;
+                                  data: {\"choices\":[{\"delta\":{\"content\":\"partial \"}}]}\n\n";
+                        record(payload);
+                        let _ = socket.write_all(payload).await;
                         let _ = socket.flush().await;
                         tokio::time::sleep(Duration::from_millis(40)).await;
                         // The declared content-length is 64 KiB and far less
@@ -3692,17 +3711,14 @@ impl RawPeer {
                             }))
                             .expect("encodes")
                         );
-                        let _ = socket
-                            .write_all(
-                                format!(
-                                    "HTTP/1.1 200 OK\r\n\
-                                     content-type: text/event-stream\r\n\
-                                     content-length: {}\r\n\r\n{frame}",
-                                    frame.len()
-                                )
-                                .as_bytes(),
-                            )
-                            .await;
+                        let payload = format!(
+                            "HTTP/1.1 200 OK\r\n\
+                             content-type: text/event-stream\r\n\
+                             content-length: {}\r\n\r\n{frame}",
+                            frame.len()
+                        );
+                        record(payload.as_bytes());
+                        let _ = socket.write_all(payload.as_bytes()).await;
                         let _ = socket.flush().await;
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -3723,17 +3739,14 @@ impl RawPeer {
                             }
                         }))
                         .expect("encodes");
-                        let _ = socket
-                            .write_all(
-                                format!(
-                                    "HTTP/1.1 400 Bad Request\r\n\
-                                     content-type: application/json\r\n\
-                                     content-length: {}\r\n\r\n{body}",
-                                    body.len()
-                                )
-                                .as_bytes(),
-                            )
-                            .await;
+                        let payload = format!(
+                            "HTTP/1.1 400 Bad Request\r\n\
+                             content-type: application/json\r\n\
+                             content-length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                        record(payload.as_bytes());
+                        let _ = socket.write_all(payload.as_bytes()).await;
                         let _ = socket.flush().await;
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -3743,11 +3756,17 @@ impl RawPeer {
         Self {
             url: format!("http://{address}"),
             task,
+            sent,
         }
     }
 
     fn https_url(&self) -> String {
         self.url.replacen("http://", "https://", 1)
+    }
+
+    /// What this peer put on the wire, as text. Not what Vela read.
+    fn sent_text(&self) -> String {
+        String::from_utf8_lossy(&self.sent.lock().expect("peer send log poisoned")).into_owned()
     }
 
     fn stop(self) {
@@ -3894,12 +3913,11 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     let mut sink_leaks: Vec<String> = Vec::new();
     let mut transport_detail_leaks: Vec<String> = Vec::new();
     let mut real_failures = 0usize;
-    // Recorded, not asserted: the raw response bytes the recorder tees off the
-    // socket ARE the endpoint's own echo of the credential, before Vela has
-    // touched them. That is the endpoint leaking to itself, and a wire tap that
-    // did not see it would be a broken wire tap. What the gate asks is whether
-    // the credential survives into anything Vela produces.
-    let mut endpoint_echoed_it_back: Vec<&'static str> = Vec::new();
+    // The bytes the recorder's `Tee` saw — which, since round 3, are the bytes
+    // *after* `BodyStream::next_chunk` and therefore exactly the bytes Vela's
+    // SSE parser consumes. A canary here would be a leak into Vela's internals;
+    // a `<redacted>` here is byte-level proof that the streamed path scrubbed.
+    let mut body_vela_read: Vec<(&'static str, String)> = Vec::new();
 
     for case in &forced {
         doc.h(&format!("forced failure — {}", case.label));
@@ -3948,7 +3966,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
                 case.label
             ));
         }
-        let endpoint_text = entries
+        let read_text = entries
             .iter()
             .filter_map(|entry| match &entry.outcome {
                 WireOutcome::Response { body, .. } => {
@@ -3958,9 +3976,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        if canary_in_text(&endpoint_text).is_some() {
-            endpoint_echoed_it_back.push(case.label);
-        }
+        body_vela_read.push((case.label, read_text));
 
         match &outcome {
             Ok(()) => {
@@ -3995,6 +4011,11 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
             }
         }
     }
+
+    // Read off the peers themselves BEFORE they are stopped: this is the
+    // premise of the echo cases, taken upstream of every byte Vela touches.
+    let echo_sent = echo.sent_text();
+    let stream_echo_sent = stream_echo.sent_text();
 
     silent.stop();
     reset.stop();
@@ -4060,21 +4081,90 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
             },
         );
     }
+    let bare_sent = stream_echo_bare.sent_text();
     stream_echo_bare.stop();
 
     doc.h("what the ENDPOINT sent back (the premise, not the verdict)");
-    doc.kv(
-        "peers that echoed the credential at us",
-        if endpoint_echoed_it_back.is_empty() {
-            "(none — if this is empty the echo cases below prove nothing)".to_owned()
-        } else {
-            endpoint_echoed_it_back.join(", ")
-        },
+    doc.p(
+        "  Taken from each peer's OWN send buffer, not from anything inside Vela. Round 2\n  \
+         read this off the recorder's body tee; round 3 scrubs before any decorator can\n  \
+         see a byte, so the tee stopped being able to observe the endpoint's echo and the\n  \
+         premise check went red against a clean tree. That was the instrumentation, not a\n  \
+         finding, and the fix is to ask the peer.",
     );
+    let echoing_peers: Vec<(&str, &String)> = [
+        ("400 error body", &echo_sent),
+        ("200 + error frame", &stream_echo_sent),
+        ("200 + error frame (bare transport)", &bare_sent),
+    ]
+    .into_iter()
+    .filter(|(_, sent)| canary_in_text(sent).is_some())
+    .collect();
+    for (label, sent) in &[
+        ("400 error body", &echo_sent),
+        ("200 + error frame", &stream_echo_sent),
+        ("200 + error frame (bare transport)", &bare_sent),
+    ] {
+        doc.kv(
+            &format!("peer `{label}` put the credential on the wire"),
+            canary_in_text(sent).is_some(),
+        );
+        doc.kv(
+            &format!("  bytes peer `{label}` wrote"),
+            format!("{} bytes", sent.len()),
+        );
+    }
     doc.check(
         "at least one peer really did echo the credential back — the echo cases are real",
-        !endpoint_echoed_it_back.is_empty(),
-        format!("{endpoint_echoed_it_back:?}"),
+        !echoing_peers.is_empty(),
+        format!(
+            "{:?}",
+            echoing_peers.iter().map(|(l, _)| *l).collect::<Vec<_>>()
+        ),
+    );
+    doc.check(
+        "ALL THREE echo peers echoed it — no echo case is vacuous",
+        echoing_peers.len() == 3,
+        format!("{} of 3 peers echoed the credential", echoing_peers.len()),
+    );
+
+    doc.h("what VELA read (the same bytes, one layer further in)");
+    doc.p(
+        "  The recorder's `Tee` now sits OUTSIDE `BodyStream`, so what it records is what\n  \
+         the SSE parser consumes. The credential must be gone by here, and the redaction\n  \
+         marker must be present — a body that arrived empty would be clean vacuously.",
+    );
+    let echo_bodies: Vec<&(&'static str, String)> = body_vela_read
+        .iter()
+        .filter(|(label, _)| label.starts_with("the endpoint echoes"))
+        .collect();
+    for (label, text) in &echo_bodies {
+        doc.kv(
+            &format!("`{label}` as the parser saw it"),
+            format!("{:?}", elide(text, 200)),
+        );
+    }
+    doc.check(
+        "the credential is ALREADY GONE from the bytes Vela's parser reads",
+        echo_bodies
+            .iter()
+            .all(|(_, text)| canary_in_text(text).is_none()),
+        format!("{} echo body/bodies checked", echo_bodies.len()),
+    );
+    doc.check(
+        "and the redaction marker IS there — the body was not merely empty",
+        !echo_bodies.is_empty()
+            && echo_bodies
+                .iter()
+                .all(|(_, text)| text.contains("<redacted>")),
+        format!(
+            "{} of {} echo bodies carry `<redacted>`",
+            echo_bodies
+                .iter()
+                .filter(|(_, text)| text.contains("<redacted>"))
+                .count(),
+            echo_bodies.len()
+        ),
     );
 
     doc.h("the IPC boundary");

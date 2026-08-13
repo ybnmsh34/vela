@@ -782,3 +782,86 @@ doctests included).
 **VERIFIED-BY-FAKE**, per conventions §10: `MemoryStore`, deliberately broken
 loopback sockets, deterministic mock endpoints. No real model, no real keychain,
 no packaged binary. **GATE M Part 2 remains untouched and unverified.**
+
+---
+
+## Phase B round 3 — GATE M Part 1 EXECUTED. ✅ Gate PASSES.
+
+**Executor's entry.** Fresh executor: ran neither round 1 nor round 2, wrote none of the
+three fixes. Full evidence in `docs/regression-baseline/phase-b-matrix/RESULTS.md`
+(rewritten for round 3) and `.../structural/`.
+
+**373 gate assertions, 0 failures.** Round 1: 265 / 5 failures. Round 2: 361 / 16 failures,
+all one defect. Every round-2 case was re-run, not carried forward.
+
+### FINDING 2 is closed, and the claim that was checked is the strong one
+
+Not "the leak is patched" but "**an unscrubbed read is not expressible**". Checked three ways:
+
+* **Live, byte level.** The raw TCP peer's own send buffer carries the canary; the bytes
+  Vela's SSE parser consumes carry `<redacted>`. That is the scrub proved as a property of
+  the byte stream, not of the error formatter. Repeated on a bare `ReqwestTransport` with
+  nothing wrapping it, on all four profiles, across nine forced failure paths × five
+  renderings × the `StreamEvent` sink.
+* **Compile time.** Five bypasses written by the executor — the round-2 `Box::new` shape,
+  declaring `scrubber()`, reaching `body.inner`, an `into_inner()`, and passing a
+  `BodyStream` where `impl ByteStream` is wanted — all rejected, each for its predicted
+  error code (E0308 / E0407 / E0616 / E0599 / E0277). Probes 03–05 go beyond the two
+  `compile_fail` doctests the builder shipped: they are the three ways a decorator author
+  would actually reach for raw bytes.
+* **Runtime bypass.** `LaunderingTransport` wraps the real transport, wraps the real body in
+  a decorator that forwards *nothing*, and re-wraps it with `BodyOrigin::carries_no_credential()`
+  — an origin that actively lies. Output is string-identical to no decorator at all, on all
+  three adapters, and the decorator's own tee never sees the credential.
+
+### The over-redaction is closed too, and the three rounds are on the record
+
+From `frontier/10-failover.txt` at each round's commit, verbatim:
+
+```
+round 1  be4f1d8   Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+round 2  81b5b8f   Connect: error sending request
+round 3  (this)    Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+```
+
+Silence was the regression. A user with three candidates configured can now tell them
+apart: three dead ports produce three **pairwise distinct** errors, each naming its own
+authority and request target, each carrying `<redacted>` rather than nothing.
+
+### The gate's own instrumentation was wrong twice — fixed, not filed
+
+1. **The recorder's premise guard went red against a clean tree.** It read the endpoint's
+   echo off the recorder's body tee, and round 3's fix scrubs *before any decorator can see
+   a byte*, so the tee went blind. Fixed by asking the peer's own send buffer — which turned
+   one broken guard into three working ones, one of them stronger than anything either
+   previous round had.
+2. **The executor's compile probes were too coarse.** Three bypasses lived in one file, so
+   unsealing `BodyStream::inner` left the file still failing on the other two and the probe
+   reported "rejected" against a tree with the hole. One hatch per file now; the DEFECT 3
+   control catches it.
+
+### Controls: 32 experiments, 36 expected FAILs (round 2: 24 / 15)
+
+The recorder's 24 (15 FAIL) plus 8 executor experiments. The two defect injections are
+**disjoint** — DEFECT 1 (`next_chunk` unscrubbed) turns 17 tests red across four suites and
+leaves every endpoint-identity test green; DEFECT 2 (`without_url()` with nothing
+re-attached) turns exactly 2 red, both endpoint-identity, and leaves every leak assertion
+green. A gate that could not separate them could not report which direction regressed.
+
+**One correction to round 2's own table:** it predicted round 2's `credential_canary.rs`
+would stay at 8 pass under DEFECT 1. Measured: 7 pass, 1 fail. The fix is why — `read_to_end`
+no longer scrubs separately, so there is one door and breaking it breaks both paths.
+
+### Also re-measured green
+
+Parallel tool calls agree call-by-call on both transports on all four profiles (43
+assertions); prompt emulation works end to end including a parallel emulated batch;
+termination medians 1.7–3.5 ms against a naive consumer's 5.001 s hang; 166 characters
+delivered from a malformed-frame stream against a strict consumer's 31.
+
+**`pnpm verify` exit 0.** `cargo test -p vela-providers`: 469 passed, 0 failed, 1 ignored.
+
+**VERIFIED-BY-FAKE**, per conventions §10. `MemoryStore`, deterministic mock endpoints,
+deliberately broken loopback sockets. No real model, no real keychain, no packaged binary.
+**GATE M Part 2 remains untouched, unverified, and deferred to the desktop session — it is
+still the largest hole in the evidence base for the project.**

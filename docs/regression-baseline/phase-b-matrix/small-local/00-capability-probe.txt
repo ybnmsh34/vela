@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the probe on the wire ---------------------------------------------------
 
-  >>> exchange 1 — GET http://127.0.0.1:38921/props
+  >>> exchange 1 — GET http://127.0.0.1:42177/props
       (no authorization header)
       <<< HTTP 200
       content-type: application/json; charset=utf-8
@@ -38,7 +38,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         }
       }
 
-  >>> exchange 2 — GET http://127.0.0.1:38921/v1/models
+  >>> exchange 2 — GET http://127.0.0.1:42177/v1/models
       (no authorization header)
       <<< HTTP 200
       content-type: application/json; charset=utf-8
@@ -55,7 +55,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         ]
       }
 
-  >>> exchange 3 — POST http://127.0.0.1:38921/v1/chat/completions
+  >>> exchange 3 — POST http://127.0.0.1:42177/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -80,7 +80,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: [DONE]
       
 
-  >>> exchange 4 — POST http://127.0.0.1:38921/v1/chat/completions
+  >>> exchange 4 — POST http://127.0.0.1:42177/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -98,7 +98,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         }
       }
 
-  >>> exchange 5 — POST http://127.0.0.1:38921/v1/chat/completions
+  >>> exchange 5 — POST http://127.0.0.1:42177/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -116,7 +116,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         }
       }
 
-  >>> exchange 6 — POST http://127.0.0.1:38921/v1/chat/completions
+  >>> exchange 6 — POST http://127.0.0.1:42177/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -158,7 +158,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   model listing                          Supported
   usage reporting                        Unsupported
   prompt caching                         Unknown
-  probe wall clock                       21.82763ms
+  probe wall clock                       22.593514ms
 
   findings (how each belief was reached):
     Streaming = Unknown (Declared) — endpoint declares a 8192-token context window

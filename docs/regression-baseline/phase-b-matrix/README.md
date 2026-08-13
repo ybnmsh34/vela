@@ -27,6 +27,7 @@ unverified.** Nothing here may be cited as a real-model result.
 | `ASSERTION-CONTROL.txt` | Each assertion applied where it should *not* hold, with the FAIL recorded. An assertion that cannot fail is worthless |
 | `SUMMARY.txt` | Counts and the failure list from the last run |
 | `record.sh` | Regenerates all of the above |
+| `structural/` | Round 3's half: five compile-time bypass attempts against `BodyStream`, and three defect injections into `src/http.rs`. `probe.sh` and `controls.sh` regenerate `probe-results.txt` and `control-results.txt` |
 
 The case numbers follow the gate brief: `00` capability probe, `01` plain chat,
 `02` tool calling (`02p` **parallel** tool calls, both transports), `03` vision,
@@ -43,6 +44,15 @@ the harness now answers a multi-tool request with a batch, so it is driven live.
 `11` exists because round 2 shipped a credential-redaction fix, and a fix is not
 evidence.
 
+Case 11's **premise** — did the endpoint really echo the credential back? — is
+read in round 3 from each raw TCP peer's own send buffer, not from the recorder's
+body tee. It used to be read from the tee, and round 3's fix scrubs before any
+decorator can see a byte, so the tee went blind and the guard went red against a
+tree that was in fact clean. The peer is upstream of everything Vela does; it is
+the honest place to ask. What the tee sees is now asserted too, for the opposite
+reason: it is what Vela's SSE parser consumes, and it must already read
+`<redacted>`.
+
 `11-credential-leak.txt` is the one file in this directory permitted to contain
 the canary string `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK`. It is a fake that was
 never a credential for anything, and the recorder fails the gate if it appears in
@@ -54,11 +64,21 @@ any other per-profile transcript.
 bash docs/regression-baseline/phase-b-matrix/record.sh
 ```
 
+```bash
+bash docs/regression-baseline/phase-b-matrix/structural/probe.sh      # 5 bypasses
+bash docs/regression-baseline/phase-b-matrix/structural/controls.sh   # 3 defect injections
+```
+
 Needs Node 22+ on `PATH`; the recorder starts and stops its own servers on ports
-the OS assigns — the four mock profiles as Node processes, plus four raw TCP
-peers of its own for case 11. It exits non-zero if any gate assertion fails — and
-**it currently does**, see FINDING 2 in `RESULTS.md`. (FINDING 1, round 1's
-failure, is closed.)
+the OS assigns — the four mock profiles as Node processes, plus five raw TCP
+peers of its own for case 11. It exits non-zero if any gate assertion fails; as
+of round 3 it exits **0**. FINDING 1 and FINDING 2 are both closed — see
+`RESULTS.md`.
+
+`controls.sh` edits `src-tauri/crates/vela-providers/src/http.rs` in place to
+re-introduce each defect, and restores it from a backup on every exit path
+including a failure. If it is ever interrupted hard,
+`git checkout src-tauri/crates/vela-providers/src/http.rs` is the recovery.
 
 The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs`. It
 is an example rather than a test on purpose: it writes into `docs/`, and a

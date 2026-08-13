@@ -383,3 +383,181 @@ os-keychain` now completes (exit 0) where it previously failed at `tauri-build`.
 valid 3-entry file. One cosmetic wrinkle, already disclosed by the author: entry 3 declares 256×256
 via the 0-marker but carries a **512×512** PNG. It builds and it is not blocking; `pnpm tauri icon`
 would produce a true 256px rendition.
+
+---
+
+## A1-scaffold-shell — visual
+
+- commit: `4c01a606c6d3c3f3dbf4084a30d24e16c178d5de`
+- critic: visual
+- verdict: **FAIL**
+- largest_gap: **Vela ships no typeface, so on Windows it renders in Segoe UI and Consolas —
+  not the Inter / JetBrains Mono the design was authored against.** `--vela-font-sans` leads with
+  `'Inter'` (`src/styles/tokens.css:90`) and `--vela-font-mono` with `'JetBrains Mono'` (`:92`), but
+  there is **no `@font-face` anywhere in `src/`, no font file in the repo, and no font package in
+  `package.json`** — verified by grep and find. Measured at runtime in the live window, with a
+  control:
+
+  | requested family | rendered width of "Handgloves 12345" at 64px |
+  |---|---|
+  | `ZzQqNoSuchFontXx` (control — definitely absent) | **481.72** |
+  | `Inter` | **481.72** — identical to the absent-font control |
+  | `JetBrains Mono` | **481.72** — identical |
+  | `Segoe UI` | 523.91 |
+  | the app's actual body stack | **523.91** — Segoe UI |
+
+  Note that `document.fonts.check('16px Inter')` returns `true` here. It is a false positive and must
+  not be used to decide this question; the width control is what settles it.
+
+  `--vela-tracking-tight: -0.01em` is annotated in-file as a correction for Inter's set widths and is
+  being applied to a face with different metrics. Same root cause, related detail:
+  `-webkit-font-smoothing: antialiased` (`src/styles/base.css:28`) is a macOS-only property and is
+  inert here. This is invisible to a Mac/Linux team, whose stack resolves to `-apple-system` (SF) and
+  looks fine. Fix: bundle the faces via `@fontsource` so they are served from the Vite bundle — no
+  network request, offline-first preserved — or commit to the platform font and retune the type scale
+  and tracking against Segoe UI's metrics. Either is defensible. Shipping a design authored for a
+  font that never loads is not.
+
+### Other defects, in severity order
+
+2. **Dark mode renders a pure-white legacy Windows scrollbar.** `color-scheme: light dark` is
+   declared once at `tokens.css:227` and never narrowed to `dark` in either dark block, and there is
+   **zero scrollbar styling in the whole of `src/`** (verified by grep). Any Windows user on a
+   light-themed OS who selects Vela's dark theme gets a white scrollbar with square arrow buttons
+   hard against a `#080b16` canvas, in every scroll container.
+3. **At 150% — the default scale on most Windows 11 laptops — the conversation empty state is
+   clipped.** Confirmed by eye in `06-conversation-light-150pct.png`: the Vela mark present at 1x is
+   gone entirely, the "No model chosen yet" heading sits flush against the header rule, and the
+   transcript is already scrolled. Deterministic, identical in both themes.
+4. **Model-picker popover misalignment:** the empty message insets 20px while the footer action
+   insets 12px, so it is the one element not sharing the popover's left edge
+   (`ModelSwitcher.module.css`).
+5. **`--vela-text-subtle` (`#6f7896`) is the one colour role not re-authored for dark**, and computes
+   to 4.16:1 light and 4.43:1 dark against `--vela-bg` — under AA in both. It is the composer
+   placeholder, the most-read string in an idle app.
+6. At 150% the header toolbar wraps and strands the attach button mid-pane rather than flush right.
+
+### What is genuinely good — recorded because it is, and a FAIL should not obscure it
+
+- **The colour-role system is real**: two ramps plus a semantic layer (`--vela-bg` / `-surface` /
+  `-surface-raised` / `-chrome` / `-border`), producing four distinct neutral planes in dark rather
+  than flat black with outlines.
+- **Radius discipline holds**: 8px cards and CTAs, 12px composer, dialog and popover, correctly
+  nested — the 8px Send button sits inside the 12px composer field, never the reverse.
+- **Dark mode is designed, not inverted.** The accent moves *position on the ramp* — `signal-600`
+  (`#0d857f`) in light, `signal-300` (`#5fe2d6`) in dark; row selection changes technique from opaque
+  tint to translucent composite; shadows are re-authored (30% to 72% alpha, larger blur); elevation
+  direction is correct in both, with chrome receding either way. `design-system.test.ts` asserts that
+  no token is defined only inside a dark block.
+- **The empty states are designed, not deferred** — the conversation view lists capabilities as
+  *unknowns* and explains why nothing is being asserted, which is a better answer than a spinner.
+- **No blur or fixed-px breakage at 150%**; the mark is inline SVG and stays crisp. The layout system
+  handles 1.5x correctly — the 150% failures are fit and UA-chrome failures, not rendering failures.
+
+### Identity check — clean
+
+**No Anthropic trade dress.** The palette is teal-cyan on night-indigo; there is no clay, terracotta,
+coral or cream anywhere in the tokens or the captures, and the token file explicitly forbids them.
+The mark is a sail/triangle with a sparkle in a rounded mint tile and resembles nothing of
+Anthropic's. The three-zone shell is the generic chat skeleton shared by a dozen products, not Claude
+Desktop specifically.
+
+- evidence: `evidence/A1-scaffold-shell/` — eight 1x captures (empty, conversation, model picker and
+  search, in both themes), three true-high-DPI captures taken with `--force-device-scale-factor=1.5`,
+  and `manifest.json` recording the verified DOM state of each. A CDP metrics override was tried
+  first and discarded: it changes `devicePixelRatio` without changing layout, so those captures would
+  have been misleading evidence dressed as DPI testing.
+- environment: Windows 11 Home 10.0.26200 · WebView2 Runtime 151.0.4129.78 · captures at 1400x900
+
+---
+
+## A1-scaffold-shell — interaction
+
+- commit: `4c01a606c6d3c3f3dbf4084a30d24e16c178d5de`
+- critic: interaction
+- verdict: **FAIL**
+- largest_gap: **The command palette declares `aria-modal="true"`, does not enforce it, and never
+  restores focus when it closes.** `CommandPalette.tsx:172` sets `role="dialog" aria-modal="true"`;
+  its key handler covers ArrowDown, ArrowUp, Home, End, Enter and Escape and has **no `Tab` case**;
+  and `:73` focuses the input without capturing `document.activeElement`. Measured live with the
+  palette open: `mainInert: false`, `navInert: false`, **15 focusable elements reachable outside the
+  dialog**, and Tab walks out into the title bar and sidebar in **both directions** — Shift+Tab leaks
+  too. The fix already exists in-tree: `DeleteConversationDialog.tsx:33-40` captures `activeElement`,
+  focuses the *safe* button, and restores on cleanup. Applying that pattern plus swallowing `Tab` is
+  roughly ten lines; making the ARIA claim honest additionally wants `inert` on `<nav>` and `<main>`
+  while the palette is open.
+
+### Correcting the severity, because the distinction matters
+
+An earlier reading inferred from source that a leaked background control would also **activate** on
+Enter. **Measured, it does not.** With real OS keystrokes (`SendKeys`, not synthetic dispatch):
+Ctrl+K, then Tab — focus lands on the Theme button, behind the open palette — then Enter: **theme
+unchanged**, palette closed. A first attempt at this measurement read the wrong indicator, checking
+the theme label while focus was on "New conversation", and was redone.
+
+So the defect is: **focus escapes a dialog that claims modality, and `aria-modal="true"` is a false
+promise to assistive technology** — worse than omitting the attribute, because it tells a screen
+reader that the fifteen reachable controls do not exist. It is **not** "background controls are
+operable through the modal". Overstating it would make the finding easy to dismiss.
+
+### Second defect
+
+**Every keyboard hint shows Mac glyphs on Windows** — `⌘N` and `⌘K` rendered while
+`navigator.platform` is `Win32`, hardcoded at `Sidebar.tsx:189`, `Sidebar.tsx:212` and
+`HomeSurface.tsx:82`, with no platform-aware glyph layer anywhere in `src/`. The glyphs are baked
+into the buttons' accessible names, so a screen reader announces "command K".
+
+**This is mislabelling, not breakage, and the distinction is load-bearing.** The handler tests
+`metaKey || ctrlKey` (`use-navigation-shortcuts.ts:47`), and a genuine OS keystroke confirmed that
+Ctrl+K opens the palette and focuses its input and that Ctrl+N starts a conversation. Nothing is
+broken; Windows users are simply told to press a key their keyboard does not have.
+
+### What works
+
+Ctrl+K, Ctrl+N and Escape all function. The focus ring is real and visible
+(`outline: solid 2px rgb(20,168,158)`) and gated on `:focus-visible`, so it does not fire on mouse
+clicks. Tab order matches reading order in nine stops for the whole shell, and the conversation list
+is a roving tabindex — a 40-item list costs one Tab, not forty, which is the correct call. The
+sidebar resize handle is a real `role="separator"` with arrow-key resizing, so it earns its tab stop.
+Window resize is clean: 1400x900 down to 560x560 with no horizontal scrollbar at any step and the
+sidebar intact — and 560px is *narrower than a user can drag*, since `tauri.conf.json` sets
+`minWidth: 720`.
+
+### Not judged
+
+Streaming, scroll-during-stream and send latency are unreachable while the provider registry is
+empty — unjudgeable, not failed. Model-picker keyboard behaviour, Ctrl+P / Ctrl+F / Ctrl+B
+suppression, and native window management (snap, double-click-maximise, multi-monitor DPI change)
+were not exercised. Native minimise, maximise and close are absent by design and declared as such in
+`TitleBar.tsx`.
+
+- evidence: `evidence/A1-scaffold-shell/interaction-battery.txt` — raw recorded output. Keys go
+  through CDP `Input.dispatchKeyEvent`; Ctrl+K and the activation test additionally used genuine
+  OS-level keystrokes.
+- environment: Windows 11 Home 10.0.26200 · WebView2 Runtime 151.0.4129.78 · window 1400x900
+
+---
+
+## UNREQUESTED DESKTOP FINDING — theme preference is lost on every restart
+
+Found while capturing the two verdicts above, and filed separately because it belongs to neither.
+
+- commit: `4c01a606c6d3c3f3dbf4084a30d24e16c178d5de`
+
+Set the theme to light through the UI: `data-theme` updates correctly and the label follows. But the
+setting is never written — `settings_get` still reports `dark` four seconds later — and after a
+**real process restart** the app comes up as `Theme: system`.
+
+Both halves are broken, and the cause is exact:
+
+- `src/data/settings-repository.ts:56` defines `setTheme`, which calls `settings_set_theme`. It has
+  **zero callers anywhere in `src/`.**
+- `src/app/shell/TitleBar.tsx:51` wires the button to `cyclePreference`, which is purely client-side:
+  `theme-store.ts` only calls `applyThemePreference` and `set({ preference })`.
+- Nothing hydrates the store from `settings_get` at boot; `preference: 'system'` is a hardcoded
+  initial value.
+
+The Rust side is fine — `settings_set_theme` over IPC persisted `dark` across a restart. The frontend
+simply never calls it and never reads it back. `theme-store.ts`'s own header states the convention
+("No IPC calls inside a store: call a repository from `src/data/`, then set the result"); the
+repository exists and is correct, it just has no caller.

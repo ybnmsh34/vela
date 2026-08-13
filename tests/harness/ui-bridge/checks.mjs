@@ -437,10 +437,18 @@ export function layoutRuler(page) {
     // reader's eye actually lines up against.
     const column = scroller?.firstElementChild ?? null;
     const field = document.querySelector('#vela-composer')?.closest('div') ?? null;
+    const form = document.querySelector('#vela-composer')?.closest('form') ?? null;
     const sidebar = document.querySelector('nav[aria-label="Primary"]');
+
+    // What each of the two boxes loses to the scrollbar, measured rather than
+    // read off a declaration: border box less content box. They have to be the
+    // same number or the column and the field are being centred in two
+    // different widths, which is precisely how the ruler broke at 0f83c71.
+    const reserved = (node) => (node === null ? null : node.offsetWidth - node.clientWidth);
 
     return {
       viewportWidth: window.innerWidth,
+      reserve: { scroller: reserved(scroller), composer: reserved(form) },
       transcript: box(column),
       composer: field === null ? null : (() => {
         const rect = field.getBoundingClientRect();
@@ -1023,6 +1031,12 @@ export function readingMeasureIsComfortable(reading) {
  *
  * They were 688px of text over a 736px box — near enough to read as a
  * misalignment rather than as a decision, which is the worst width to be off by.
+ *
+ * **Left edge, right edge and width — never the centre.** Two concentric boxes
+ * of different widths share a centre line, so a centre comparison passes on the
+ * exact defect this exists to catch: at 880px the wave's own gate printed
+ * `column 456.0 vs field 456.0` while the text was overhanging the composer by
+ * 12px on each side.
  */
 export function oneVerticalRuler(ruler) {
   const text = ruler?.transcript ?? null;
@@ -1030,10 +1044,36 @@ export function oneVerticalRuler(ruler) {
   if (text === null || box === null) return ok(false, 'transcript or composer not on screen');
   const left = Math.abs(text.left - box.left);
   const right = Math.abs(text.right - box.right);
+  const width = Math.abs(text.width - box.width);
   // One pixel of slack for sub-pixel centring of an odd-width viewport.
   return ok(
-    left <= 1 && right <= 1,
+    left <= 1 && right <= 1 && width <= 1,
     `text ${String(text.left)}–${String(text.right)} (${String(text.width)}px), composer ${String(box.left)}–${String(box.right)} (${String(box.width)}px)`,
+  );
+}
+
+/**
+ * A23b. The two boxes lose the same width to the scrollbar.
+ *
+ * The mechanism behind A23, read as a quantity instead of as a declaration.
+ * `scrollbar-gutter: stable both-edges` on the transcript's scroller made the
+ * column and the composer stand on opposite sides of a 24px reservation: the
+ * edges agreed only while the window was wide enough for neither box to be
+ * clamped, which is why a single wide reading certified a broken ruler.
+ *
+ * Border box less content box, on each of the two, out of the engine. Equal
+ * numbers mean one reservation; the third argument is what tells a run where
+ * both are zero — every engine that overlays its scrollbars, which is every
+ * engine this repository can run — apart from one where both are real.
+ */
+export function bothBoxesReserveOneGutter(ruler) {
+  const reserve = ruler?.reserve ?? null;
+  if (reserve === null || reserve.scroller === null || reserve.composer === null) {
+    return ok(false, 'could not find both the transcript scroller and the composer form');
+  }
+  return ok(
+    Math.abs(reserve.scroller - reserve.composer) <= 1,
+    `scroller reserves ${String(reserve.scroller)}px, composer reserves ${String(reserve.composer)}px`,
   );
 }
 

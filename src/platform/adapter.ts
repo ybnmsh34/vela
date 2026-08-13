@@ -47,8 +47,81 @@ export interface EventContract {
 
 export type EventName = keyof EventContract & string;
 
+/* -------------------------------------------------------------------------- */
+/* the window itself                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The window the app is drawn in.
+ *
+ * ## Why this is not on {@link IpcContract}
+ *
+ * Everything else the renderer asks the host for is a Vela command, declared in
+ * `contract.ts` and implemented in `src-tauri/src/ipc/`. These five are not:
+ * they are Tauri's own window commands, and `src-tauri/capabilities/main.json`
+ * has granted exactly them — `core:window:allow-minimize`,
+ * `allow-toggle-maximize`, `allow-is-maximized`, `allow-close` and
+ * `allow-start-dragging` — since Phase A. Reimplementing them as Vela commands
+ * would put a second, weaker copy of a permission boundary that already exists
+ * in front of the one that ships.
+ *
+ * So they come through the seam instead of through the IPC contract. The rule
+ * that matters is unchanged and is the reason this interface exists at all: no
+ * component imports `@tauri-apps/api`, so the whole frontend still runs, and is
+ * still tested, in a plain browser.
+ *
+ * ## `isMaximized` is a question, never a memory
+ *
+ * The renderer must not track "maximised" as a local boolean it flips when the
+ * user clicks. `toggleMaximize()` can be refused — by a size constraint, by the
+ * window manager, by a host that failed — and a control that flipped its own
+ * icon would then show *restore* over a window that is not maximised. Ask the
+ * window. Ask it again after every toggle, and whenever {@link onResized} says
+ * something moved.
+ */
+export interface WindowControls {
+  minimize(): Promise<void>;
+  /** Maximise if restored, restore if maximised. Re-read the state afterwards. */
+  toggleMaximize(): Promise<void>;
+  isMaximized(): Promise<boolean>;
+  /** Requests closure, exactly as the OS close button does. */
+  close(): Promise<void>;
+  /**
+   * The window's size changed — by a drag, a snap, Win+Up, a monitor change.
+   * Carries no payload on purpose: the only honest response is to ask
+   * {@link isMaximized} again.
+   */
+  onResized(handler: () => void): Promise<Unsubscribe>;
+}
+
+/**
+ * The window controls for a runtime that has no window to control: a browser
+ * tab, and every test fake.
+ *
+ * `isMaximized()` answers `false` rather than throwing. A browser cannot be
+ * maximised in this sense, and `false` is the state whose icon — *maximise* —
+ * is the honest one to draw when there is nothing to restore.
+ *
+ * Exported so there is exactly one of these. A no-op copied into each fake is
+ * three no-ops that drift.
+ */
+export const NO_WINDOW_CONTROLS: WindowControls = {
+  minimize: async () => {},
+  toggleMaximize: async () => {},
+  isMaximized: async () => false,
+  close: async () => {},
+  onResized: async () => () => {},
+};
+
 export interface PlatformAdapter {
   readonly kind: AdapterKind;
+
+  /**
+   * The window this renderer is drawn in. Required, not optional: the app draws
+   * its own title bar (`decorations: false`), so every adapter has to answer
+   * for the window — with {@link NO_WINDOW_CONTROLS} when it has none.
+   */
+  readonly window: WindowControls;
 
   /**
    * Call a host command. Rejects with a `PlatformError` — always, for every

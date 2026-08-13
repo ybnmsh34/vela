@@ -49,6 +49,17 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The ruler is measured by the Phase C harness's own reader, not by a second
+// implementation living here. A first cut of the ruler bisect re-implemented it,
+// read the column's border box instead of its content box, and reported a
+// 24px break at every width including the ones that are correct.
+import {
+  bothBoxesReserveOneGutter,
+  layoutRuler,
+  oneVerticalRuler,
+  sidebarTracksTheWindow,
+} from '../ui-bridge/checks.mjs';
+
 const playwright = await import(process.env.VELA_PLAYWRIGHT ?? 'playwright');
 const { chromium } = playwright.chromium === undefined ? playwright.default : playwright;
 
@@ -199,24 +210,19 @@ const MEASURE_EMPTY_STATE = () => {
   const scrollTopAsPainted = scroller.scrollTop;
   scroller.scrollTop = 0;
 
-  // The reading ruler: the centre of the transcript's column against the centre
-  // of the composer's field. They are centred in the same window, so the two
-  // centres are the same line — unless the scroller's scrollbar has taken width
-  // out of one of them.
-  const column = heading.closest('div')?.parentElement ?? null;
-  const field = document.querySelector('#vela-composer');
-  const centre = (node) => {
-    const r = node.getBoundingClientRect();
-    return r.left + r.width / 2;
-  };
-  const ruler =
-    column === null || field === null
-      ? null
-      : {
-          columnCentre: centre(column),
-          fieldCentre: centre(field.parentElement ?? field),
-          scrollerGutter: scroller.offsetWidth - scroller.clientWidth,
-        };
+  // THE READING RULER IS MEASURED BY `layoutRuler`, NOT HERE, AND IT IS NOT A
+  // COMPARISON OF CENTRES.
+  //
+  // What stood here read the two boxes' centres and asserted they were equal.
+  // They are centred in the same window, so a *pure width* difference is
+  // invisible to that: it printed `column 456.0 vs field 456.0` and passed while
+  // the transcript's text overhung the composer by 12px on each side at 880px.
+  // Right subject, wrong quantity — the same error as reading a font off the
+  // declared stack. The quantity that changes when the ruler bends is the pair
+  // of *edges*, and the widths behind them, so `oneVerticalRuler` from the
+  // Phase C harness is what judges it (assertion `…-h` below, and the `R…`
+  // sweep across three window widths). Nothing is re-implemented here, because
+  // a second implementation of a measurement is a second thing to get wrong.
 
   const composer = document.querySelector('#vela-composer');
   const statusLine = document.querySelector('[data-testid="status-line"]');
@@ -240,7 +246,6 @@ const MEASURE_EMPTY_STATE = () => {
     composer: composer === null ? null : box(composer),
     statusLine: statusLine === null ? null : box(statusLine),
     viewport: { width: window.innerWidth, height: window.innerHeight },
-    ruler,
     documentScrollWidth: document.documentElement.scrollWidth,
   };
 };
@@ -283,6 +288,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 
 try {
   await measureLayout(browser, origin, 'D');
+  await measureReadingRuler(browser, origin, 'R');
   await measureColorScheme(browser, origin);
   await measureScrollbar(browser, origin);
 } finally {
@@ -295,6 +301,7 @@ if (baselineDist !== undefined) {
   const baselineOrigin = `http://127.0.0.1:${baseline.address().port}`;
   try {
     await measureLayout(browser, baselineOrigin, 'B0', true);
+    await measureReadingRuler(browser, baselineOrigin, 'B0-R', true);
     await measureColorScheme(browser, baselineOrigin, true, 'B0-S');
   } finally {
     baseline.close();
@@ -430,23 +437,33 @@ async function measureLayout(browser, origin, prefix, expectFailure = false) {
         expectFailure ? true : noSideways,
         `document ${m.documentScrollWidth} vs viewport ${m.viewport.width}`);
 
-      // (h) THE READING RULER, with the scrollbar in it. The stylesheet check in
-      //     surfaces.test.ts computes this from declarations and has no
-      //     scrollbar in its arithmetic; this measures it with one.
+      // (h) THE READING RULER — **EDGES AND WIDTHS**, with the scrollbar in it.
+      //     The stylesheet check in surfaces.test.ts computes this from
+      //     declarations; this measures what the engine laid out.
+      //     What was here compared the two boxes' CENTRES, which stay equal
+      //     when only the widths differ: it read `column 456.0 vs field 456.0`
+      //     at a window where the text overhung the composer by 12px on each
+      //     side, and passed. `oneVerticalRuler` compares left edge, right edge
+      //     and width, and `bothBoxesReserveOneGutter` reads the mechanism
+      //     underneath as a quantity.
       //     **Honesty:** Linux Chromium overlays its scrollbars, so this cannot
-      //     reproduce the Windows offset — `scrollbar-gutter: stable both-edges`
-      //     reserves the gutter here anyway, which is what makes the ruler the
-      //     same object on every platform. This is a guard on Linux and the real
-      //     measurement on WebView2.
-      const ruler = m.ruler;
-      const rulerTrue = ruler !== null && Math.abs(ruler.columnCentre - ruler.fieldCentre) <= 0.6;
+      //     reproduce the Windows offset. What it can do — and what the wave
+      //     needed and did not have — is see the reservation itself, which is
+      //     reserved here by declaration on both boxes.
+      const ruler = await layoutRuler(page);
+      const rulerTrue = oneVerticalRuler(ruler);
       assert(
         `${id}-h`,
-        'the transcript column and the composer field share one centre line',
-        expectFailure ? true : rulerTrue,
-        ruler === null
-          ? 'could not find both'
-          : `column ${ruler.columnCentre.toFixed(1)} vs field ${ruler.fieldCentre.toFixed(1)}, scrollbar gutter ${ruler.scrollerGutter}px`,
+        'the transcript column and the composer field share both edges and one width',
+        expectFailure ? true : rulerTrue.pass,
+        rulerTrue.detail,
+      );
+      const oneGutter = bothBoxesReserveOneGutter(ruler);
+      assert(
+        `${id}-i`,
+        'the transcript and the composer lose the same width to the scrollbar',
+        expectFailure ? true : oneGutter.pass,
+        oneGutter.detail,
       );
 
       assert(`${id}-g`, 'no uncaught exception at this size',
@@ -458,6 +475,120 @@ async function measureLayout(browser, origin, prefix, expectFailure = false) {
       await context.close();
     }
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* the reading ruler, swept across window widths                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE WIDTHS. A ruler read at one window is not a ruler.
+ *
+ * `scrollbar-gutter: stable both-edges` was measured at 1400×900, found true,
+ * and shipped; it had broken the same guarantee at every narrower width, where
+ * the transcript column stops reaching `--vela-measure` and clamps inside the
+ * scroller's reservation while the composer, outside it, does not. Three widths,
+ * because a defect that only appears when a box is clamped needs a window where
+ * it is clamped and one where it is not, and the boundary between them moves
+ * with the sidebar.
+ *
+ * **With the sidebar dragged to its maximum**, which is the reading the Phase C
+ * matrix takes: at its default width the sidebar is under its cap at all three
+ * of these windows, both boxes reach the full measure, and the sweep would
+ * certify a broken ruler exactly as the wave's own gate did.
+ *
+ * 880 is the desktop session's own reading — 456px of text over a 480px field
+ * on real WebView2 — and it is in this list because of that, not because it is
+ * round.
+ */
+const RULER_WIDTHS = [
+  { width: 1440, what: 'wide: neither box is clamped' },
+  { width: 960, what: 'the sidebar is giving way' },
+  { width: 880, what: 'the desktop session’s own reading' },
+];
+
+async function measureReadingRuler(browser, origin, prefix, expectFailure = false) {
+  const readings = [];
+  for (const { width, what } of RULER_WIDTHS) {
+    const ruler = await readRulerAt(browser, origin, width);
+    const text = ruler?.transcript ?? null;
+    const field = ruler?.composer ?? null;
+    readings.push({
+      width,
+      what,
+      ruler,
+      text,
+      field,
+      shown:
+        text === null || field === null
+          ? 'transcript or composer not on screen'
+          : `text ${String(text.left)}–${String(text.right)} (${String(text.width)}px), composer ${String(field.left)}–${String(field.right)} (${String(field.width)}px), sidebar ${String(ruler.sidebarWidth)}px`,
+      held: oneVerticalRuler(ruler).pass,
+    });
+  }
+
+  // A BASELINE RUN IS ONE ASSERTION, NOT TWELVE INVERTED ONES. The pre-fix
+  // bundle holds the ruler perfectly well at 1440px — that reading is correct
+  // and is how the regression reached the tree — so requiring every line to
+  // fail would manufacture failures at the widths that are fine. A gate that
+  // manufactures failures makes real ones unbelievable. What must be true of
+  // the pre-fix bundle is that this sweep catches it *somewhere*.
+  if (expectFailure) {
+    const broken = readings.filter((r) => !r.held);
+    assert(
+      `${prefix}-catches-the-regression`,
+      'the sweep sees the pre-fix bundle break the ruler at some width',
+      broken.length > 0,
+      readings.map((r) => `${String(r.width)}px ${r.held ? 'held' : 'BROKE'}: ${r.shown}`).join(' | '),
+    );
+    return;
+  }
+
+  for (const r of readings) {
+    const id = `${prefix}${String(r.width)}`;
+    const both = r.text !== null && r.field !== null;
+    // Three separate assertions, because they fail in different ways: a bent
+    // ruler moves one edge, a clamped column changes a width, and a one-sided
+    // reservation moves both edges together while the widths stay equal.
+    assert(`${id}-left`, `${r.what}: the text and the composer's box start on one line`,
+      both && Math.abs(r.text.left - r.field.left) <= 1, r.shown);
+    assert(`${id}-right`, `${r.what}: and they end on one line`,
+      both && Math.abs(r.text.right - r.field.right) <= 1, r.shown);
+    assert(`${id}-width`, `${r.what}: and they are the same width`,
+      both && Math.abs(r.text.width - r.field.width) <= 1, r.shown);
+    const gutter = bothBoxesReserveOneGutter(r.ruler);
+    assert(`${id}-reserve`, `${r.what}: both boxes lose the same width to the scrollbar`,
+      gutter.pass, gutter.detail);
+  }
+
+  // The instrument's own control, and the reason the three widths are not one
+  // width written three times: the sweep is evidence only if at least one of
+  // its windows is narrow enough that the sidebar has to give way. If it never
+  // does, every window in the list is the wide case in a different hat — which
+  // is exactly the reading that certified the regression.
+  const gaveWay = sidebarTracksTheWindow(readings[0].ruler, readings.at(-1).ruler);
+  assert(
+    `${prefix}-sweep-bites`,
+    'the sweep includes a window where the sidebar has to give way',
+    gaveWay.pass && (readings.at(-1).ruler?.sidebarWidth ?? 0) < (readings[0].ruler?.sidebarWidth ?? 0),
+    gaveWay.detail,
+  );
+}
+
+/** One reading of the ruler at a window width, sidebar at its maximum. */
+async function readRulerAt(browser, origin, width) {
+  const context = await browser.newContext({ viewport: { width, height: 780 } });
+  const page = await context.newPage();
+  await page.goto(`${origin}/index.html`, { waitUntil: 'networkidle' });
+  await enterEmptyConversation(page);
+  await page.evaluate(() => {
+    document.querySelector('[role="separator"]')?.focus();
+  });
+  for (let step = 0; step < 40; step += 1) await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(200);
+  const ruler = await layoutRuler(page);
+  await context.close();
+  return ruler;
 }
 
 /**

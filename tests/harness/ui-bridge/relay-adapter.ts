@@ -24,7 +24,13 @@
  * would let the UI reach a command the real bridge would refuse.
  */
 
-import type { EventContract, EventName, PlatformAdapter, Unsubscribe } from '@/platform/adapter';
+import {
+  NO_WINDOW_CONTROLS,
+  type EventContract,
+  type EventName,
+  type PlatformAdapter,
+  type Unsubscribe,
+} from '@/platform/adapter';
 import { isAllowedCommand, type CommandName, type CommandReq, type CommandRes } from '@/platform/contract';
 import { PlatformError, toPlatformError } from '@/platform/errors';
 
@@ -45,6 +51,13 @@ export class RelayAdapter implements PlatformAdapter {
    * screenshot; the host behind the relay is real, the webview is not.
    */
   readonly kind = 'browser' as const;
+
+  /**
+   * The relay carries Vela's own IPC commands, not Tauri's window commands:
+   * there is no window behind it to minimise or close. The title bar draws its
+   * caption buttons either way, and here they do nothing.
+   */
+  readonly window = NO_WINDOW_CONTROLS;
 
   readonly #base: string;
   readonly #handlers = new Map<string, Set<(payload: never) => void>>();

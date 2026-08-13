@@ -22,7 +22,13 @@ import {
   UNTITLED_TITLE,
 } from '@/lib/navigation-text';
 
-import type { EventContract, EventName, PlatformAdapter, Unsubscribe } from './adapter';
+import {
+  NO_WINDOW_CONTROLS,
+  type EventContract,
+  type EventName,
+  type PlatformAdapter,
+  type Unsubscribe,
+} from './adapter';
 import {
   IPC_CONTRACT_VERSION,
   isAllowedCommand,
@@ -563,6 +569,15 @@ function snippetOf(text: string, terms: readonly string[]): string {
 
 export class BrowserAdapter implements PlatformAdapter {
   readonly kind = 'browser' as const;
+
+  /**
+   * A browser tab has no window to minimise, maximise or close, so these do
+   * nothing and `isMaximized()` stays `false`. The title bar still draws its
+   * three controls: it is one component in both runtimes, and the alternative —
+   * hiding them when `kind === 'browser'` — is branching on which adapter is
+   * live, which is the one thing {@link AdapterKind} says never to do.
+   */
+  readonly window = NO_WINDOW_CONTROLS;
 
   /**
    * Values are held here only so `secrets_status` can answer truthfully. They

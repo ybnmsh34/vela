@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PlatformAdapter } from '@/platform/adapter';
+import { NO_WINDOW_CONTROLS, type PlatformAdapter } from '@/platform/adapter';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { PlatformError } from '@/platform/errors';
 
@@ -29,6 +29,7 @@ describe('createHostRepository', () => {
   it('refuses to run against a host speaking a different contract version', async () => {
     const stale: PlatformAdapter = {
       kind: 'browser',
+      window: NO_WINDOW_CONTROLS,
       invoke: async () =>
         ({
           name: 'Vela',

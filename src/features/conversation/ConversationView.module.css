@@ -27,22 +27,33 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* THE SCROLLBAR IS PART OF THE RULER.
-     `surfaces.test.ts` proves from the stylesheet that the transcript's text
-     and the composer's box stand on one vertical ruler — and on Windows they
-     did not, by ~7px, because this container is a scroller and the composer is
-     not: a classic (non-overlay) scrollbar takes its width out of the content
-     box, the centred column re-centres inside what is left, and the ruler bends
-     by half a scrollbar. That is engine-dependent in the worst way — Linux and
-     macOS overlay their scrollbars, so it is invisible here and plain on the
-     platform most users are on. It was filed by the desktop session as a 7px
-     composer offset and predicted to survive the scrollbar work; this is that
-     prediction answered.
+  /* THE SCROLLBAR IS PART OF THE RULER — AND SO IS THE COMPOSER.
+     On Windows the transcript's text and the composer's box stood ~7px apart,
+     because this container is a scroller and the composer is not: a classic
+     (non-overlay) scrollbar takes its width out of the content box, the centred
+     column re-centres inside what is left, and the ruler bends by half a
+     scrollbar. Linux and macOS overlay their scrollbars, so it is invisible
+     here and plain on the platform most users are on.
      `both-edges` rather than plain `stable`: reserving the gutter on one side
      stops the column *moving* as content grows, but still shifts its centre off
-     the window's by half a scrollbar. Reserving both keeps the centre true, and
-     costs the same 12px twice on every platform, which is the point — the
-     ruler is now the same object everywhere. */
+     the window's by half a scrollbar. Reserving both keeps the centre true.
+
+     THE HALF THAT WAS MISSING, AND WHAT IT COST. This declaration alone closed
+     the 7px at 1400px and opened 12px on each side at every width narrow enough
+     for the column to stop reaching `--vela-measure` — because the column lives
+     INSIDE the reservation and the composer lived OUTSIDE it, so the two boxes
+     agreed only while neither was clamped. The fix is not a different gutter
+     value: it is that `Composer.module.css` now reserves the same gutter with
+     the same property, and `--vela-reading-surface` (which the sidebar gives way
+     to) counts it. One ruler governs both boxes because both stand on the same
+     side of one reservation, and the engine computes it for both.
+
+     Measured, not declared: `oneVerticalRuler` in the Phase C matrix (C29a/b)
+     and the `R…` sweep in `drive-display-scaling.mjs` compare the two boxes'
+     left edges, right edges and widths at 1440 / 960 / 880 with the sidebar at
+     its maximum. `src/styles/surfaces.test.ts` computes the same geometry from
+     this stylesheet at CI time. Nothing anywhere asserts the *string* below;
+     an assertion that pinned it would forbid the next repair. */
   scrollbar-gutter: stable both-edges;
   /* Keeps the last turn from being glued to the composer as it grows. */
   overscroll-behavior: contain;

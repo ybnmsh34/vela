@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { BrowserAdapter } from '@/platform/browser-adapter';
-import type { PlatformAdapter } from '@/platform/adapter';
+import { NO_WINDOW_CONTROLS, type PlatformAdapter } from '@/platform/adapter';
 import type { ChatStreamEvent } from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
 
@@ -60,6 +60,7 @@ describe('the chat repository', () => {
     const inner = await configured(new BrowserAdapter());
     const spy: PlatformAdapter = {
       kind: inner.kind,
+      window: NO_WINDOW_CONTROLS,
       invoke: (command, payload) => {
         order.push(`invoke:${command}`);
         return inner.invoke(command, payload);
@@ -91,6 +92,7 @@ describe('the chat repository', () => {
     const listen = vi.fn(inner.listen.bind(inner));
     const spy: PlatformAdapter = {
       kind: inner.kind,
+      window: NO_WINDOW_CONTROLS,
       invoke: inner.invoke.bind(inner),
       listen: listen as PlatformAdapter['listen'],
     };

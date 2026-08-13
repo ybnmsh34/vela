@@ -5,10 +5,17 @@
 
    What it is capped *against* is the interesting part. Not a share of the
    viewport — that is a guess with a percentage on it — but the width the
-   reading surface needs: `--vela-reading-column` is the transcript's column at
-   its full measure. As the window narrows, the sidebar gives way and the
-   reader's column does not. That is the whole rule, and it is why the number is
-   defined next to the measure rather than here.
+   reading surface needs: `--vela-reading-surface` is the transcript's column at
+   its full measure *plus the gutter its scroller reserves around it*. As the
+   window narrows, the sidebar gives way and the reader's column does not. That
+   is the whole rule, and it is why the number is defined next to the measure
+   rather than here.
+
+   It was `--vela-reading-column`, and the missing `--vela-scroll-reserve` is
+   exactly how the reader lost 12px of text on each side at 880px: the sidebar
+   was allowed to take the last 24px the column needed to reach its measure, so
+   the column clamped inside the scroller's reservation while the composer,
+   outside it, kept the full 480. Both halves are one number now.
 
    `min()`/`max()` and not `clamp()`: the lower bound on the *stored* width is
    `clampSidebarWidth`'s job, in both the renderer and the host. Repeating it
@@ -22,7 +29,7 @@
   min-height: 0;
   width: min(
     var(--vela-sidebar-width),
-    max(var(--vela-rail-width), calc(100vw - var(--vela-reading-column)))
+    max(var(--vela-rail-width), calc(100vw - var(--vela-reading-surface)))
   );
   background: var(--vela-chrome);
   border-right: 1px solid var(--vela-border);

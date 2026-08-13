@@ -19,7 +19,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { PlatformAdapter, Unsubscribe } from '@/platform/adapter';
+import { NO_WINDOW_CONTROLS, type PlatformAdapter, type Unsubscribe } from '@/platform/adapter';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 import type {
@@ -66,6 +66,8 @@ function done(overrides: Partial<ChatResponseBody> = {}): ChatStreamEvent {
 /** A host whose stream this test writes, frame by frame. */
 class ScriptedHost implements PlatformAdapter {
   readonly kind = 'browser' as const;
+  /** No window to control: this fake exists to script a chat stream. */
+  readonly window = NO_WINDOW_CONTROLS;
   readonly sent: ChatSendReq[] = [];
   readonly cancelled: string[] = [];
   refuseWith: PlatformError | null = null;

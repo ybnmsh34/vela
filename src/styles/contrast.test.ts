@@ -224,6 +224,9 @@ const PAIRS: readonly Pair[] = [
   U('--vela-accent', ['--vela-accent-quiet'], 'TitleBar .mark — the Vela glyph'),
   T('--vela-text-muted', SURFACE, 'TitleBar .action'),
   T('--vela-text', SURFACE, 'TitleBar .action:hover'),
+  U('--vela-text-muted', CHROME, 'TitleBar .captionButton — the minimise/maximise/close glyphs'),
+  U('--vela-text', ['--vela-row-hover', '--vela-chrome'], 'TitleBar .captionButton:hover'),
+  U('--vela-text-on-danger', ['--vela-danger'], 'TitleBar .closeButton:hover'),
 
   /* ---- attachments ------------------------------------------------------- */
   T('--vela-text-muted', SURFACE, 'AttachmentControls .button'),

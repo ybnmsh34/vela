@@ -76,3 +76,65 @@
   color: var(--vela-text);
   border-color: var(--vela-border-strong);
 }
+
+/* ---- the caption buttons ------------------------------------------------- */
+
+/* Full height and hard against the right edge, which is what the OS would draw
+   and what a Windows user's cursor is thrown at. The negative inline margin
+   cancels the bar's own padding so the hit target reaches the window corner —
+   a caption button that stops 12px short of the edge cannot be hit by slamming
+   the pointer into it, which is how the maximise button is used. */
+.caption {
+  display: flex;
+  align-self: stretch;
+  margin-inline-end: calc(-1 * var(--vela-space-3));
+  margin-inline-start: var(--vela-space-2);
+}
+
+/* 46px is the OS caption-button metric, not a Vela design step: these buttons
+   have to feel like the ones Windows draws, and they are wider than they are
+   tall so the target can be hit by throwing the pointer into the corner rather
+   than by aiming. It stays here rather than in tokens.css for the same reason
+   `--vela-titlebar-height` does not answer it — nothing else in the app is a
+   caption button, so there is no second opinion to keep in step. */
+.captionButton {
+  display: grid;
+  /* `safe center`, declared after the plain keyword so an engine that does not
+     know the safety keyword still centres. The glyph is 10px inside a box of at
+     least 40, so it should never overflow — but "should never" is how the
+     150%-scaling defect was argued too, and plain `center` distributes negative
+     free space to *both* ends, putting the glyph outside a box no scroll can
+     reach. The title bar is the one strip of this app with no scroller behind
+     it at all. */
+  place-items: center;
+  place-items: safe center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vela-text-muted);
+  cursor: default;
+  transition: background-color var(--vela-duration) var(--vela-ease),
+    color var(--vela-duration) var(--vela-ease);
+}
+
+.captionButton:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+/* Inset, because an outward ring on a full-bleed control that touches the
+   window edge is clipped by the window. */
+.captionButton:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+/* Close is the one control here that loses work, so it is the one that looks
+   different under the pointer — the OS convention, and a last cue before the
+   click lands. */
+.closeButton:hover {
+  background: var(--vela-danger);
+  color: var(--vela-text-on-danger);
+}

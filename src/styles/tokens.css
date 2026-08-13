@@ -318,6 +318,26 @@
      of its own; a share of the viewport is a guess, and this is the thing that
      was actually being protected. */
   --vela-reading-column: calc(var(--vela-measure) + 2 * var(--vela-gutter));
+  /* What `scrollbar-gutter: stable both-edges` takes out of a scroller, on
+     every platform Vela ships to. It is knowable as a number — rather than
+     being whatever the OS says a scrollbar is — only because `base.css` styles
+     `::-webkit-scrollbar` to `--vela-scrollbar-size`, which replaces the native
+     widget in Chromium and WebKit alike. Both edges, so it is twice.
+
+     Two boxes stand inside that reservation and they must reserve the same
+     amount, which is the whole lesson of the regression this token exists to
+     close: the transcript's scroller reserves it, and `Composer.module.css`
+     reserves it with the same property so that the *engine* computes both
+     rather than this file guessing at one of them. What reads the number here
+     is the one place that cannot ask an engine — the sidebar's cap, below. */
+  --vela-scroll-reserve: calc(2 * var(--vela-scrollbar-size));
+  /* The width the reading *surface* needs, which is the column plus what the
+     scroller reserves around it — and it is what the sidebar gives way to. The
+     column alone was the answer until `scrollbar-gutter` landed: the sidebar
+     then took the last 24px the column needed to reach its measure, and at
+     880px the reader lost 12px of text on each side while the composer, outside
+     the reservation, kept the full 480. */
+  --vela-reading-surface: calc(var(--vela-reading-column) + var(--vela-scroll-reserve));
   /* A form of side-by-side fields is not prose and does not want a prose
      measure. This is the width the reading column used to have. */
   --vela-panel-measure: 46rem;

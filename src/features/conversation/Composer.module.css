@@ -1,3 +1,31 @@
+/* THE COMPOSER STANDS INSIDE THE TRANSCRIPT'S RESERVATION.
+ *
+ * The transcript's scroller reserves a gutter on both edges so a classic
+ * Windows scrollbar cannot bend the reading ruler (see the long note in
+ * `ConversationView.module.css`). The column it centres lives INSIDE that
+ * reservation; this form is its sibling and lived OUTSIDE it, so the two boxes
+ * agreed only while the window was wide enough for the column to still reach
+ * `--vela-measure`. Narrower than that and the column clamped to the scroller's
+ * reduced content box while the field kept the full measure: 456px of text over
+ * a 480px box, overhanging 12px on each side, at 880px with the sidebar at its
+ * maximum — on Linux, and confirmed on real WebView2.
+ *
+ * So the form reserves the same gutter, with the same property. `overflow:
+ * hidden` is what makes it a scroll container, which is what `scrollbar-gutter`
+ * applies to; nothing here can overflow (the field, its hint and the offscreen
+ * label are all in flow), so nothing is clipped by it.
+ *
+ * WHY MIRROR THE PROPERTY RATHER THAN PAD BY `--vela-scroll-reserve`. Padding
+ * would put this file's arithmetic where the engine's answer belongs, and the
+ * two part company on any engine that resolves `scrollbar-gutter` differently
+ * or not at all — where a padded composer would break the ruler by the full
+ * reservation instead of holding it at zero. Mirroring makes both boxes ask the
+ * same engine the same question. The token exists for the one place that cannot
+ * ask: the sidebar's cap, which is a length in `min()`.
+ *
+ * The gutter the field is centred against is still `--vela-space-5`, the same
+ * one the column pads by — `surfaces.test.ts` requires those two to be one
+ * number, and the reservation below is not a gutter and does not change it. */
 .composer {
   display: flex;
   flex-direction: column;
@@ -5,6 +33,8 @@
   padding: var(--vela-space-3) var(--vela-space-5) var(--vela-space-4);
   background: var(--vela-bg);
   border-top: 1px solid var(--vela-border);
+  overflow: hidden;
+  scrollbar-gutter: stable both-edges;
 }
 
 .field {

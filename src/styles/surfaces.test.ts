@@ -97,16 +97,30 @@ function substitute(value: string, palette: Map<string, string>): string {
  *
  * A four-function evaluator rather than `eval`: this reads a file, and a file
  * that reaches an evaluator is a file that can execute.
+ *
+ * `min()`, `max()` and `vw` are here because the sidebar's width is a `min()`
+ * of the user's stored width against what the window has left, and the ruler
+ * cannot be computed at a given window width without reading that declaration
+ * as the engine reads it. `viewportWidth` is only consulted by `vw`.
  */
-function lengthPx(value: string, palette: Map<string, string>): number {
-  const flat = substitute(value, palette).replace(/\bcalc\b/gu, '');
-  const tokens = flat.match(/\d*\.?\d+(?:px|rem|em)?|[+\-*/()]/gu) ?? [];
+function lengthPx(value: string, palette: Map<string, string>, viewportWidth = 0): number {
+  const flat = substitute(value, palette).replace(/\bcalc\(/gu, '(');
+  const tokens = flat.match(/min\(|max\(|\d*\.?\d+(?:px|rem|em|vw)?|[+\-*/(),]/gu) ?? [];
   let at = 0;
 
   const peek = (): string | undefined => tokens[at];
   const number = (): number => {
     const token = tokens[at];
     at += 1;
+    if (token === 'min(' || token === 'max(') {
+      const args = [sum()];
+      while (tokens[at] === ',') {
+        at += 1;
+        args.push(sum());
+      }
+      at += 1; // ')'
+      return token === 'min(' ? Math.min(...args) : Math.max(...args);
+    }
     if (token === '(') {
       const inner = sum();
       at += 1; // ')'
@@ -114,6 +128,7 @@ function lengthPx(value: string, palette: Map<string, string>): number {
     }
     if (token === '-') return -number();
     if (token === undefined) throw new Error(`unreadable length: ${value}`);
+    if (token.endsWith('vw')) return (Number.parseFloat(token) * viewportWidth) / 100;
     if (token.endsWith('rem') || token.endsWith('em')) {
       return Number.parseFloat(token) * ROOT_FONT_SIZE_PX;
     }
@@ -291,6 +306,281 @@ describe('the transcript and the composer stand on one vertical ruler', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* 3b. one vertical ruler AT EVERY WINDOW WIDTH                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The test above compares the two boxes at their full measure, which is the
+ * only state a window wide enough for both ever reaches. That is not where the
+ * ruler broke.
+ *
+ * `scrollbar-gutter: stable both-edges` on the transcript's scroller closed a
+ * 7px composer offset on Windows and opened a 24px one at every width narrow
+ * enough for the column to stop reaching `--vela-measure`: the column is
+ * centred INSIDE the scroller's reservation and the composer was centred
+ * OUTSIDE it, so the two boxes agreed only while neither was clamped. Measured
+ * at 880px with the sidebar at its maximum, on Linux Chromium and on real
+ * WebView2 alike: **456px of text over a 480px box.**
+ *
+ * Two things this models that the earlier test cannot:
+ *
+ * 1. **Widths and edges, at several window widths.** The wave's browser gate
+ *    had an assertion for this that compared the two boxes' *centres* — which
+ *    stay equal when only the widths differ. It printed `column 456.0 vs field
+ *    456.0` and passed on a provably broken ruler. Centres are computed here
+ *    too, because a one-edge reservation moves them, but they are never the
+ *    whole assertion.
+ * 2. **The reservation as a quantity, from whichever declaration makes it.** A
+ *    gutter reserved by `scrollbar-gutter` and one reserved by padding are the
+ *    same number to a reader; this reads both, so a later repair that changes
+ *    the mechanism is judged on its geometry rather than on its spelling. There
+ *    is no assertion anywhere on the *string* `stable both-edges`.
+ * 3. **Both kinds of scrollbar.** Windows draws a classic one that takes its
+ *    width out of the content box; Linux and macOS overlay theirs and take
+ *    nothing. Every window below is computed under both, because the original
+ *    7px composer offset exists only under the first and the 24px regression
+ *    was introduced by the declaration that closed it.
+ */
+
+/** The two kinds of scrollbar an engine draws, which is the whole difficulty. */
+type Engine = 'overlay' | 'classic';
+
+/**
+ * What a box actually loses to the scrollbar, and from which edge.
+ *
+ * A declared gutter answers for every platform at once, which is the reason to
+ * declare one. Where none is declared, a scroller that can scroll still loses a
+ * classic scrollbar's width out of its inline-end edge — that is the 7px the
+ * desktop session filed, and modelling it is what keeps this test from being
+ * satisfied by simply deleting the reservation. The desktop session also
+ * established that the two effects do **not** add: where a gutter is reserved,
+ * the classic bar sits inside the reservation rather than on top of it.
+ */
+function reservationOn(
+  box: { gutter: string | undefined; scrolls: boolean },
+  engine: Engine,
+  palette: Map<string, string>,
+): { total: number; centreShift: number } {
+  const size = lengthPx('var(--vela-scrollbar-size)', palette);
+  const value = (box.gutter ?? 'auto').trim();
+  // `stable both-edges` reserves the bar on both edges, so the content box
+  // stays centred in the border box. Plain `stable` reserves the inline-end
+  // edge only, which keeps the box from *moving* as content grows but shifts
+  // its centre by half a bar — the failure mode that made `both-edges` the
+  // choice, and one the centre term below still has to be able to see.
+  if (value === 'stable both-edges') return { total: 2 * size, centreShift: 0 };
+  if (value === 'stable') return { total: size, centreShift: -size / 2 };
+  if (box.scrolls && engine === 'classic') return { total: size, centreShift: -size / 2 };
+  return { total: 0, centreShift: 0 };
+}
+
+interface BoxRule {
+  readonly gutter: string | undefined;
+  readonly pad: number;
+  readonly maxWidth: number;
+}
+
+interface Edges {
+  readonly left: number;
+  readonly right: number;
+  readonly width: number;
+}
+
+/**
+ * Both boxes' edges, in the coordinates of the conversation surface they share
+ * (0 is its left edge). Everything is centred, so an edge is the centre plus or
+ * minus half a width — and the centre is the surface's own unless a reservation
+ * is one-sided.
+ */
+function rulerOn(
+  surface: number,
+  scroller: { gutter: string | undefined },
+  column: BoxRule,
+  composer: BoxRule,
+  field: { maxWidth: number },
+  palette: Map<string, string>,
+  engine: Engine = 'overlay',
+): { text: Edges; field: Edges } {
+  // The transcript's container is a scroller and a real conversation overflows
+  // it; the composer is neither, which is the asymmetry the whole ruler turns on.
+  const scrollerReserve = reservationOn({ gutter: scroller.gutter, scrolls: true }, engine, palette);
+  const columnBox = Math.min(column.maxWidth, surface - scrollerReserve.total);
+  const textWidth = columnBox - 2 * column.pad;
+  const textCentre = surface / 2 + scrollerReserve.centreShift;
+
+  const composerReserve = reservationOn({ gutter: composer.gutter, scrolls: false }, engine, palette);
+  const fieldWidth = Math.min(field.maxWidth, surface - 2 * composer.pad - composerReserve.total);
+  const fieldCentre = surface / 2 + composerReserve.centreShift;
+
+  return {
+    text: { left: textCentre - textWidth / 2, right: textCentre + textWidth / 2, width: textWidth },
+    field: { left: fieldCentre - fieldWidth / 2, right: fieldCentre + fieldWidth / 2, width: fieldWidth },
+  };
+}
+
+/** The rules as this tree declares them, resolved against a palette. */
+function declaredBoxes(palette: Map<string, string>) {
+  const column = rule(CONVERSATION, '.column');
+  const composer = rule(COMPOSER, '.composer');
+  const field = rule(COMPOSER, '.field');
+  return {
+    scroller: { gutter: rule(CONVERSATION, '.scroller').get('scrollbar-gutter') },
+    column: {
+      gutter: undefined,
+      pad: inlinePadding(column.get('padding') ?? '0', palette),
+      maxWidth: lengthPx(column.get('max-width') ?? '', palette),
+    },
+    composer: {
+      gutter: composer.get('scrollbar-gutter'),
+      pad: inlinePadding(composer.get('padding') ?? '0', palette),
+      maxWidth: Number.POSITIVE_INFINITY,
+    },
+    field: { maxWidth: lengthPx(field.get('max-width') ?? '', palette) },
+  };
+}
+
+/** How wide the sidebar actually renders, from its own `min()`/`max()`. */
+function sidebarAt(viewportWidth: number, stored: number, palette: Map<string, string>): number {
+  const declared = rule(SIDEBAR, '.sidebar').get('width') ?? '';
+  return lengthPx(
+    declared.replace('var(--vela-sidebar-width)', `${String(stored)}px`),
+    palette,
+    viewportWidth,
+  );
+}
+
+/**
+ * The windows. Each is a real reading: the two the desktop session and the
+ * Phase C matrix take (1440 and 880 with the sidebar dragged to its maximum),
+ * one between them where the cap starts to bite, the 150%-scaling viewport the
+ * other gate drives, and one narrow enough that the measure genuinely cannot be
+ * kept — which is the case the regression broke and the one a wide-only reading
+ * can never see.
+ */
+const WINDOWS: readonly { width: number; sidebar: number; what: string }[] = [
+  { width: 1440, sidebar: 480, what: 'wide, sidebar at its maximum' },
+  { width: 1100, sidebar: 480, what: 'the cap begins to bite' },
+  { width: 960, sidebar: 480, what: 'the sidebar is giving way' },
+  { width: 880, sidebar: 480, what: 'the desktop session’s reading, sidebar at its maximum' },
+  { width: 880, sidebar: 280, what: 'the same window at the default sidebar' },
+  { width: 1280, sidebar: 280, what: '1920×1080 at 150% scaling' },
+  { width: 600, sidebar: 280, what: 'too narrow to keep the measure at all' },
+];
+
+describe('one vertical ruler at every window width, not only at the wide one', () => {
+  const palette = paletteFor('light');
+  const measure = lengthPx('var(--vela-measure)', palette);
+
+  for (const window of WINDOWS) {
+    for (const engine of ['overlay', 'classic'] as const) {
+      it(`holds at ${String(window.width)}px on a ${engine} scrollbar — ${window.what}`, () => {
+        const surface = window.width - sidebarAt(window.width, window.sidebar, palette);
+        const boxes = declaredBoxes(palette);
+        const { text, field } = rulerOn(
+          surface,
+          boxes.scroller,
+          boxes.column,
+          boxes.composer,
+          boxes.field,
+          palette,
+          engine,
+        );
+
+        const shown = `text ${text.left.toFixed(1)}–${text.right.toFixed(1)} (${text.width.toFixed(1)}px), composer ${field.left.toFixed(1)}–${field.right.toFixed(1)} (${field.width.toFixed(1)}px)`;
+        // WIDTHS AND EDGES. A centre comparison is satisfied by two concentric
+        // boxes of different widths, which is exactly the defect.
+        expect(text.width, `widths part company: ${shown}`).toBeCloseTo(field.width, 1);
+        expect(text.left, `left edges part company: ${shown}`).toBeCloseTo(field.left, 1);
+        expect(text.right, `right edges part company: ${shown}`).toBeCloseTo(field.right, 1);
+      });
+    }
+  }
+
+  it('lets the sidebar give way so the reader keeps the measure', () => {
+    // The other half of the regression: the sidebar was capped against the
+    // column alone, so it took the last 24px the column needed and the reader
+    // lost 12px of text on each side while the sidebar kept its own width.
+    const boxes = declaredBoxes(palette);
+    const readings = WINDOWS.filter(({ width }) => width >= 700).map((window) => {
+      const surface = window.width - sidebarAt(window.width, window.sidebar, palette);
+      const { text } = rulerOn(surface, boxes.scroller, boxes.column, boxes.composer, boxes.field, palette);
+      return {
+        what: `${String(window.width)}px/${String(window.sidebar)} (${window.what})`,
+        sidebar: sidebarAt(window.width, window.sidebar, palette),
+        text: text.width,
+      };
+    });
+    const short = readings.filter(({ text }) => Math.abs(text - measure) > 0.1);
+    expect(
+      short.map((r) => `${r.what}: sidebar ${String(r.sidebar)}px, ${r.text.toFixed(1)}px of text`),
+      `these windows have room for the measure and the reader did not get it (measure ${String(measure)}px)`,
+    ).toEqual([]);
+  });
+
+  it('detects the regression it was written for, and reports the measured numbers', () => {
+    // THE CONTROL, and it is not hypothetical: these are the declarations that
+    // shipped at 0f83c71 — a scroller reserving both edges, a composer
+    // reserving nothing — and the browser's reading of them at 880px with the
+    // sidebar at its maximum was `text 388–844 (456px), composer 376–856
+    // (480px)`. A model that cannot see a 24px break is not evidence that there
+    // is none.
+    const shipping = rulerOn(
+      528, // 880px less the 352px sidebar the old cap allowed
+      { gutter: 'stable both-edges' },
+      { gutter: undefined, pad: 24, maxWidth: 528 },
+      { gutter: undefined, pad: 24, maxWidth: Number.POSITIVE_INFINITY },
+      { maxWidth: 480 },
+      palette,
+    );
+    expect(shipping.text.width).toBeCloseTo(456, 1);
+    expect(shipping.field.width).toBeCloseTo(480, 1);
+    expect(shipping.text.left - shipping.field.left).toBeCloseTo(12, 1);
+    expect(shipping.text.right - shipping.field.right).toBeCloseTo(-12, 1);
+    // And the centres it left equal — which is why the assertion that compared
+    // them passed on this exact geometry.
+    expect((shipping.text.left + shipping.text.right) / 2).toBeCloseTo(
+      (shipping.field.left + shipping.field.right) / 2,
+      1,
+    );
+
+    // A one-edge reservation is the other way to break it: equal widths, and a
+    // centre off by half a scrollbar. That is the 7px the desktop session filed.
+    const oneEdge = rulerOn(
+      960,
+      { gutter: 'stable' },
+      { gutter: undefined, pad: 24, maxWidth: 528 },
+      { gutter: undefined, pad: 24, maxWidth: Number.POSITIVE_INFINITY },
+      { maxWidth: 480 },
+      palette,
+    );
+    expect(oneEdge.text.width).toBeCloseTo(oneEdge.field.width, 1);
+    expect(oneEdge.text.left - oneEdge.field.left).toBeCloseTo(-6, 1);
+
+    // AND THE REPAIR THAT IS NOT ONE: deleting the reservation from both boxes.
+    // It restores the ruler everywhere an overlay scrollbar is drawn, which is
+    // every engine this repository can run — and reopens the original offset on
+    // the platform most users are on, where the bar takes its width out of the
+    // scroller and out of nothing else. A test that could not see this would be
+    // satisfied by reverting `0f83c71` and calling the ruler fixed.
+    const noReservation = (engine: Engine) =>
+      rulerOn(
+        960,
+        { gutter: undefined },
+        { gutter: undefined, pad: 24, maxWidth: 528 },
+        { gutter: undefined, pad: 24, maxWidth: Number.POSITIVE_INFINITY },
+        { maxWidth: 480 },
+        palette,
+        engine,
+      );
+    const overlay = noReservation('overlay');
+    expect(overlay.text.left - overlay.field.left, 'overlay scrollbars hide it').toBeCloseTo(0, 1);
+    const classic = noReservation('classic');
+    expect(classic.text.width).toBeCloseTo(classic.field.width, 1);
+    expect(classic.text.left - classic.field.left, 'half a scrollbar, on Windows').toBeCloseTo(-6, 1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* 4. the scroll edge                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -331,10 +621,18 @@ describe('the sidebar responds to the window it is in', () => {
     // protected, and naming it is what makes the rule checkable: at any window
     // width, sidebar + reading column never exceeds the window.
     //
-    // Both sides must read the *same token*. Two files that each spell out
+    // Both sides must read from the *same token*. Two files that each spell out
     // `calc(measure + 2 * gutter)` agree until one of them is edited.
+    //
+    // The two are no longer the same token, and the difference is the whole of
+    // the regression this section was re-cut after: the column is what the
+    // reader reads, and what the sidebar has to leave room for is the column
+    // *plus the gutter its scroller reserves around it*. Capping against the
+    // column alone let the sidebar take the last 24px and the reader lost 12px
+    // of text on each side. So the derivation is what is checked — one token
+    // built out of the other, resolved to pixels, rather than two spellings.
     const width = rule(SIDEBAR, '.sidebar').get('width') ?? '';
-    expect(width).toMatch(/var\(--vela-reading-column\)/u);
+    expect(width).toMatch(/var\(--vela-reading-surface\)/u);
     expect(rule(CONVERSATION, '.column').get('max-width')).toBe('var(--vela-reading-column)');
 
     const palette = paletteFor('light');
@@ -344,6 +642,16 @@ describe('the sidebar responds to the window it is in', () => {
     ).toBe(
       lengthPx('var(--vela-measure)', palette) + 2 * lengthPx('var(--vela-gutter)', palette),
     );
+    expect(
+      lengthPx('var(--vela-reading-surface)', palette),
+      'the surface the sidebar gives way to is the column plus what the scroller reserves',
+    ).toBe(
+      lengthPx('var(--vela-reading-column)', palette) + lengthPx('var(--vela-scroll-reserve)', palette),
+    );
+    expect(
+      lengthPx('var(--vela-scroll-reserve)', palette),
+      '`stable both-edges` reserves a scrollbar on each edge',
+    ).toBe(2 * lengthPx('var(--vela-scrollbar-size)', palette));
   });
 
   it('hands the user’s chosen width to CSS as a ceiling, not as the answer', () => {

@@ -11,7 +11,15 @@ import type { PlatformAdapter } from './adapter';
 import { BrowserAdapter } from './browser-adapter';
 import { TauriAdapter } from './tauri-adapter';
 
-export type { AdapterKind, EventContract, EventName, PlatformAdapter, Unsubscribe } from './adapter';
+export type {
+  AdapterKind,
+  EventContract,
+  EventName,
+  PlatformAdapter,
+  Unsubscribe,
+  WindowControls,
+} from './adapter';
+export { NO_WINDOW_CONTROLS } from './adapter';
 export * from './contract';
 export { BrowserAdapter } from './browser-adapter';
 export { TauriAdapter } from './tauri-adapter';

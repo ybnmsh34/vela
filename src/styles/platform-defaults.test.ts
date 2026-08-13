@@ -444,23 +444,31 @@ describe('the layout survives 150% display scaling', () => {
     expect(offenders, 'clamp it against the viewport: min(<length>, <n>vh)').toEqual([]);
   });
 
-  it('keeps the reading ruler true when a scrollbar appears', () => {
-    // `surfaces.test.ts` computes, from the stylesheet, that the transcript's
-    // text and the composer's box share one vertical ruler. That computation
-    // has no scrollbar in it, and on Windows there is one: a classic scrollbar
-    // takes its width out of the scroller's content box, the centred column
-    // re-centres in what is left, and the ruler bends by half a scrollbar —
-    // the 7px composer offset the desktop session measured. The two other
-    // platforms overlay their scrollbars, so nothing here or on macOS shows it.
-    //
-    // Reserving the gutter on *both* edges is what keeps the centre line true;
-    // plain `stable` reserves one side and moves the centre by half a bar.
-    const scroller = rule(read('src/features/conversation/ConversationView.module.css'), '.scroller');
-    expect(
-      scroller.get('scrollbar-gutter'),
-      'a scroller whose content is centred against a sibling that is not must reserve both edges',
-    ).toBe('stable both-edges');
-  });
+  /* THE ASSERTION THAT WAS HERE, AND WHY IT IS GONE.
+   *
+   * It read `.scroller`'s `scrollbar-gutter` and required the literal string
+   * `stable both-edges`. It was green, and it was worse than nothing: that
+   * declaration had just regressed the reading ruler by 24px at every window
+   * narrow enough for the transcript column to stop reaching its measure, and
+   * this test made correcting it fail a passing test. A test that pins a
+   * defect in place is a defect.
+   *
+   * The property it was reaching for is geometric — do the transcript's text
+   * and the composer's box have the same width and the same edges, with a
+   * scrollbar in the picture — and a string cannot answer that in either
+   * direction: it passes on the broken tree and fails on any repair that
+   * reserves the gutter another way.
+   *
+   * It is enforced, in the two places that measure rather than read:
+   *   - `src/styles/surfaces.test.ts`, "one vertical ruler at every window
+   *     width, not only at the wide one" — the same geometry computed from
+   *     these stylesheets at seven windows, with a control that reproduces the
+   *     regression's own numbers;
+   *   - `tests/harness/production-bundle/drive-display-scaling.mjs`, the `R…`
+   *     sweep — the two boxes' left edges, right edges and widths read out of a
+   *     real engine at 1440 / 960 / 880 with the sidebar at its maximum, plus
+   *     `D…-h`, and the Phase C matrix's `C29a`/`C29b`/`C30`.
+   * Both exist and both fail on the tree this comment replaced. */
 
   it('lets the transcript scroll rather than clip', () => {
     // The other half: safe centring only helps if the overflow lands somewhere

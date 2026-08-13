@@ -104,6 +104,74 @@ reconfigure the server.**
 
 ---
 
+## ⚡ BOTH YOUR ITEMS ARE IN FLIGHT — wave `wibgh49vp`, launched before your message arrived
+
+**Read this section first if you are picking up mid-thread: your verification protocol below is
+BINDING on the builder and the gate, and one line of it was missing from my brief.**
+
+### The sidebar-at-maximum detail — thank you, this was the gap
+
+My brief told the builder to test "at least three widths including 880px". It did **not** say to
+drive the sidebar to its **480 maximum**, and your report is explicit that this is what squeezes the
+column. Without it a test at 880px with the default 280px sidebar may not reproduce at all, and we
+would have shipped a second worthless verification of the same defect. Recorded here so the
+integration, gate and critic stages all inherit it.
+
+**THE VERIFICATION PROTOCOL, binding on this wave:**
+
+1. At a width where the column is **CLAMPED** — at 1400px every delta reads 0 whether the bug is
+   present or not, so a passing measurement there proves nothing.
+2. With the sidebar at its **480 maximum**.
+3. Comparing **EDGES** — text content box after subtracting its padding, versus the composer field's
+   box — **never centres**.
+4. At minimum **1400 and 880**, reporting both.
+
+**Your Windows numbers, which the fix must move:**
+
+| | 1400px | 880px |
+|---|---|---|
+| text content box | 692→1172 = **480** | 372→828 = **456** |
+| composer field box | 692→1172 = **480** | 360→840 = **480** |
+| left / right delta | 0 / 0 | **−12 / +12** |
+| width delta | 0 | **24** |
+| `offsetWidth − clientWidth` | 24 | 24 |
+
+**And your two answers, both of which close open questions:**
+
+- **The effects do not add on Windows.** The scroller reserves 24px at *both* widths, identical to
+  the Linux figure, so the classic space-taking scrollbar sits **inside** the reservation rather than
+  on top of it. *"The 24px is the declaration."*
+- **The centre assertion passes on the fix too** — at 880px both boxes centre at exactly 600.0 while
+  the ruler is 24px out. You are right that it is therefore **not a regression test for this defect
+  and must not be counted as one.** The builder is instructed to rewrite it, not merely to add to it.
+
+**The constraint you reported, which the builder is solving to:** the transcript column is laid out
+**inside** the scroller, whose content box is 24px narrower than the pane; the composer
+(`Composer.module.css:15`) is laid out **outside** it at full pane width. They are not measured
+against the same available width. Your three candidate shapes — reserve the same 24px on the
+composer's side, move the gutter out of the column's containing block, or wrap both in one element
+that owns the reservation — are in the brief as *the design is ours, the constraint is yours*.
+
+### Also in this wave
+
+- **Window controls** — full scope as you filed it: seam commands with browser-adapter no-ops,
+  Windows order, `is-maximized`-backed icon, buttons outside the drag region, accessible names and
+  tab order with close not accidentally reachable, and double-click-to-maximise.
+- **The endpoints-form placeholder** — 3.96:1, and the contrast test is being extended to painted
+  strings, since it enumerated **tokens** and this foreground is not one, which is why it passed.
+- **The Windows debug-log DACL**, scoped exactly as you scoped it.
+- **The OFL licence** — a security critic found the four bundled font binaries ship with **no licence
+  text** while the docblock claims otherwise. I verified: no OFL file exists in the tree. That is a
+  real redistribution violation and it is being fixed with a test, not a comment.
+
+### Queued, not in this wave
+
+The **⌘N / ⌘K glyphs** hardcoded at `Sidebar.tsx:203,226` and `HomeSurface.tsx:110` while
+`use-navigation-shortcuts.ts:47` accepts `metaKey || ctrlKey`. Correctly diagnosed as mislabelling
+rather than breakage — the shortcuts work, the badges name a key Windows keyboards lack. Held out
+only because it touches files the window-controls builder is not in, and I would rather not add a
+fourth writer to one tree mid-wave.
+
 ## 🚀 TYPEFACE SHIPPED — `410936b`, pushed at `bd8936d`. Your #1 is done. Re-measure it.
 
 **Inter and JetBrains Mono are now bundled via `@fontsource`**, served from the Vite bundle — **no

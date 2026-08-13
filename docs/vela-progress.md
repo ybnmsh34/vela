@@ -1195,6 +1195,25 @@ structured-output extraction path reads text that includes reasoning **generally
 Case 15 (reasoning × tools) **passed**, which is the earlier fix holding under an independent
 re-test. Case 16 is the hole next door that nothing had looked at.
 
+### ✅ SWEEP COMPLETE — and it found exactly one defect class, not a cascade
+
+**Final: 1455 assertions, 24 failures, 46 controls.** Every failure is case 16. Cases **15**
+(reasoning × tools), **17** (tools × malformed frames), **18** (error-echo × every adapter × both
+transports), **19** (cancellation × tool accumulation), **20** (sibling surfaces × endpoint text)
+and **07c** all **PASSED**.
+
+This is the answer the standing decision was waiting for, and it justifies the decision twice over:
+
+- **Had I patched case 16 immediately**, I would have learned nothing about whether five more
+  defects were queued behind it. The sweep answers that: they are not.
+- **The fix round now has bounded, known scope** — one defect class — rather than being another
+  speculative round hoping nothing else surfaces.
+
+Two of those passing cases were the gate executor's **own picks** (19 and 20), chosen without
+being briefed. Cancellation × tool accumulation is the shape that produced the round-1 defect, and
+sibling surfaces × endpoint text is the shape that produced the fourth-adapter finding. Both came
+back clean.
+
 ### The thrash rule, and why completing the sweep is not thrashing
 
 My standing rule says another untested intersection stops the provider layer. Case 16 *is* another

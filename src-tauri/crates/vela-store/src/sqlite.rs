@@ -1768,6 +1768,115 @@ mod tests {
         assert!(totals.is_partial());
     }
 
+    // -- title search -------------------------------------------------------
+
+    #[test]
+    fn searching_titles_finds_a_conversation_the_content_index_cannot() {
+        let store = store();
+        let named = store
+            .create_conversation(NewConversation::titled("Rendering notes"))
+            .unwrap();
+        store
+            .append_message(NewMessage::user(named.id.clone(), "how do sails work"))
+            .unwrap();
+
+        // The words of the title appear nowhere in the transcript, so the FTS
+        // index — which only covers content — cannot answer this.
+        assert!(store.search_messages("Rendering", 10).unwrap().is_empty());
+        let hits = store.search_conversations("rendering", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, named.id);
+    }
+
+    #[test]
+    fn title_search_matches_a_substring_case_insensitively_and_orders_by_recency() {
+        let store = store();
+        let older = store
+            .create_conversation(NewConversation::titled("Star charts"))
+            .unwrap();
+        let newer = store
+            .create_conversation(NewConversation::titled("CHARTING the sails"))
+            .unwrap();
+        // `update_conversation` restamps `updated_at`, which is what the order
+        // is keyed on.
+        store
+            .update_conversation(
+                &newer.id,
+                ConversationPatch {
+                    title: Some("CHARTING the sails".into()),
+                    ..ConversationPatch::default()
+                },
+            )
+            .unwrap();
+
+        let hits = store.search_conversations("chart", 10).unwrap();
+        assert_eq!(
+            hits.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            vec![newer.id.as_str(), older.id.as_str()]
+        );
+    }
+
+    #[test]
+    fn title_search_treats_like_metacharacters_as_literal_text() {
+        let store = store();
+        let literal = store
+            .create_conversation(NewConversation::titled("Down to 100% context"))
+            .unwrap();
+        store
+            .create_conversation(NewConversation::titled("Down to 1000 tokens"))
+            .unwrap();
+
+        // Under `LIKE`, `100%` matches "1000 tokens" too. It must not.
+        let hits = store.search_conversations("100%", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, literal.id);
+
+        // `_` is LIKE's single-character wildcard; here it is just a character.
+        store
+            .create_conversation(NewConversation::titled("a_b"))
+            .unwrap();
+        store
+            .create_conversation(NewConversation::titled("axb"))
+            .unwrap();
+        let underscore = store.search_conversations("a_b", 10).unwrap();
+        assert_eq!(underscore.len(), 1);
+        assert_eq!(underscore[0].title, "a_b");
+    }
+
+    #[test]
+    fn title_search_hides_archived_conversations_and_rejects_a_blank_query() {
+        let store = store();
+        let chat = store
+            .create_conversation(NewConversation::titled("Archived charts"))
+            .unwrap();
+        store
+            .update_conversation(
+                &chat.id,
+                ConversationPatch {
+                    archived: Some(true),
+                    ..ConversationPatch::default()
+                },
+            )
+            .unwrap();
+
+        assert!(store.search_conversations("charts", 10).unwrap().is_empty());
+        assert!(matches!(
+            store.search_conversations("   ", 10),
+            Err(StoreError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn title_search_honours_its_limit() {
+        let store = store();
+        for index in 0..5 {
+            store
+                .create_conversation(NewConversation::titled(format!("chart {index}")))
+                .unwrap();
+        }
+        assert_eq!(store.search_conversations("chart", 2).unwrap().len(), 2);
+    }
+
     // -- deletion and referential integrity ---------------------------------
 
     #[test]

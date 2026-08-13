@@ -23,7 +23,7 @@
  * singleton, because tests need to substitute one.
  */
 
-import type { CommandName, CommandReq, CommandRes } from './contract';
+import type { ChatEventEnvelope, CommandName, CommandReq, CommandRes } from './contract';
 
 /** Which implementation is live. Shown in diagnostics; never branched on for behaviour. */
 export type AdapterKind = 'tauri' | 'browser';
@@ -35,8 +35,13 @@ export type Unsubscribe = () => void;
  * an untyped channel.
  */
 export interface EventContract {
-  // Example for later phases:
-  // 'chat:chunk': { requestId: string; text: string };
+  /**
+   * One normalised stream event for one in-flight turn. Emitted by the host
+   * from `chat_send`'s spawned task; the renderer must already be subscribed
+   * when it calls `chat_send`, because the first token can arrive before the
+   * invoke promise settles.
+   */
+  'chat:event': ChatEventEnvelope;
   [key: string]: unknown;
 }
 

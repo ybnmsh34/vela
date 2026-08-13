@@ -236,11 +236,294 @@ export interface SettingsProviderRefReq {
 }
 
 /* -------------------------------------------------------------------------- */
+/* chat — the normalised turn model                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * These types are the wire form of `vela-providers`' normalised model. They are
+ * transcribed, not invented: every one mirrors a `serde` shape in
+ * `src-tauri/crates/vela-providers/src/{model,event,error,capability}.rs`, and
+ * `src/platform/chat-contract-parity.test.ts` reads those Rust files and fails
+ * if a variant is added on one side only.
+ *
+ * Note what is *absent*: no HTTP status, no `finish_reason`, no vendor error
+ * string, no backend identity. Six event types cover every backend Vela will
+ * ever have, so the conversation surface is written once.
+ */
+
+/** Mirrors `vela_providers::model::MessageRole`. */
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
+
+/** Mirrors `vela_providers::model::StopReason`. */
+export type StopReason = 'endTurn' | 'maxTokens' | 'cancelled' | 'toolUse' | 'unspecified';
+
+/** Mirrors `vela_providers::error::Capability`. */
+export type CapabilityName =
+  | 'streaming'
+  | 'vision'
+  | 'toolCalling'
+  | 'structuredOutput'
+  | 'reasoning'
+  | 'modelListing'
+  | 'usageReporting'
+  | 'promptCaching';
+
+/**
+ * Mirrors `vela_core::provider::ProviderCapabilities` — **the entire vocabulary
+ * the UI has for what a model can do.** Branch on these; never on an id.
+ *
+ * The floor is every flag `false` ({@link NO_CAPABILITIES}). An unprobed model
+ * offers nothing, because offering an affordance the endpoint cannot serve is
+ * worse than not offering it.
+ */
+export interface ChatCapabilities {
+  readonly streaming: boolean;
+  readonly vision: boolean;
+  readonly toolCalls: boolean;
+  readonly reasoning: boolean;
+  readonly modelListing: boolean;
+  readonly usageReporting: boolean;
+  readonly promptCaching: boolean;
+}
+
+/** The pessimistic floor — `ProviderCapabilities::minimal()`. */
+export const NO_CAPABILITIES: ChatCapabilities = {
+  streaming: false,
+  vision: false,
+  toolCalls: false,
+  reasoning: false,
+  modelListing: false,
+  usageReporting: false,
+  promptCaching: false,
+};
+
+/** Mirrors `vela_providers::model::ContentPart` (`#[serde(tag = "kind")]`). */
+export type ContentPart =
+  | { readonly kind: 'text'; readonly text: string }
+  | {
+      readonly kind: 'reasoning';
+      readonly text: string;
+      readonly signature: string | null;
+      readonly redacted: boolean;
+    }
+  | { readonly kind: 'image'; readonly mimeType: string; readonly data: readonly number[] }
+  | {
+      readonly kind: 'toolCall';
+      readonly callId: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }
+  | {
+      readonly kind: 'toolResult';
+      readonly callId: string;
+      readonly content: string;
+      readonly isError: boolean;
+    };
+
+/** Mirrors `vela_providers::model::MalformedToolCall`. */
+export type MalformedToolCallReason =
+  | 'missingName'
+  | 'unparseableArguments'
+  | 'argumentsNotAnObject'
+  | 'unknownDiscriminator';
+
+/**
+ * Mirrors `vela_providers::model::ToolCallOutcome` (`#[serde(tag = "status")]`).
+ *
+ * `malformed` is not an error state to hide: the host refuses to execute a bad
+ * reconstruction and hands the evidence to the UI instead. Rendering it is
+ * mandatory — a silently dropped call is the failure mode this type exists to
+ * prevent.
+ */
+export type ToolCallOutcome =
+  | {
+      readonly status: 'ok';
+      readonly callId: string;
+      readonly name: string;
+      readonly arguments: unknown;
+      /** Recovered from the model's text because the endpoint has no native tools. */
+      readonly emulated: boolean;
+    }
+  | {
+      readonly status: 'malformed';
+      readonly index: number | null;
+      readonly callId: string | null;
+      readonly name: string | null;
+      /** Exactly as received, bounded. Shown as evidence; never parsed into a call. */
+      readonly rawArguments: string;
+      readonly reason: MalformedToolCallReason;
+    };
+
+/** Mirrors `vela_providers::model::ContextStrategy`. */
+export type ContextStrategy = 'elideOldest' | 'summarise';
+
+/**
+ * Mirrors `vela_providers::model::Degradation` (`#[serde(tag = "kind")]`).
+ *
+ * Every reduction the host made compared to what was asked. **These must be
+ * visible.** Silently wrong output is the one forbidden outcome.
+ */
+export type Degradation =
+  | { readonly kind: 'toolCallingEmulated'; readonly toolCount: number }
+  | { readonly kind: 'toolCatalogueWithheld' }
+  | {
+      readonly kind: 'contextReduced';
+      readonly droppedMessages: number;
+      readonly approxDroppedTokens: number;
+      readonly strategy: ContextStrategy;
+    }
+  | { readonly kind: 'structuredOutputUnsupported' }
+  | { readonly kind: 'structuredOutputMismatch'; readonly detail: string }
+  | { readonly kind: 'malformedFramesSkipped'; readonly count: number }
+  | { readonly kind: 'unterminatedReasoning'; readonly recoveredAnswerChars: number }
+  | { readonly kind: 'noTerminationSentinel' }
+  | { readonly kind: 'usageNotReported' }
+  | { readonly kind: 'malformedToolCalls'; readonly count: number }
+  | { readonly kind: 'failedOver'; readonly attempts: number };
+
+/**
+ * Mirrors `vela_providers::model::TokenUsage`. Every field optional, and `null`
+ * means **not reported** — never substitute a zero, which would be a claim.
+ */
+export interface TokenUsage {
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly reasoningTokens: number | null;
+  readonly cachedInputTokens: number | null;
+}
+
+/** Mirrors `vela_providers::error::TransportFailure` (externally tagged). */
+export type TransportFailure =
+  | 'connect'
+  | 'timeout'
+  | 'stalled'
+  | 'reset'
+  | { readonly server: { readonly status: number } }
+  | { readonly request: { readonly status: number } };
+
+/**
+ * Mirrors `vela_providers::error::ProviderError` (`#[serde(tag = "kind")]`) —
+ * the one error taxonomy. `detail` is host-sanitised and bounded; it is never a
+ * raw upstream body.
+ */
+export type ChatError =
+  | {
+      readonly kind: 'contextLengthExceeded';
+      readonly limitTokens: number | null;
+      readonly requestedTokens: number | null;
+      readonly detail: string;
+    }
+  | { readonly kind: 'authFailed'; readonly detail: string }
+  | { readonly kind: 'rateLimited'; readonly retryAfterMs: number | null; readonly detail: string }
+  | { readonly kind: 'modelNotFound'; readonly modelId: string; readonly detail: string }
+  | {
+      readonly kind: 'capabilityUnsupported';
+      readonly capability: CapabilityName;
+      readonly detail: string;
+    }
+  | { readonly kind: 'transport'; readonly failure: TransportFailure; readonly detail: string }
+  | { readonly kind: 'malformedResponse'; readonly detail: string }
+  | { readonly kind: 'cancelled' };
+
+/** Mirrors `vela_providers::model::SchemaMismatch`. */
+export interface SchemaMismatch {
+  readonly path: string;
+  readonly detail: string;
+}
+
+/** Mirrors `Option<Result<Value, SchemaMismatch>>` as serde writes it. */
+export type StructuredOutcome = { readonly Ok: unknown } | { readonly Err: SchemaMismatch } | null;
+
+/** Mirrors `vela_providers::model::ChatResponse` — the assembled turn. */
+export interface ChatResponseBody {
+  readonly parts: readonly ContentPart[];
+  readonly toolCalls: readonly ToolCallOutcome[];
+  readonly stopReason: StopReason;
+  readonly usage: TokenUsage;
+  readonly structured: StructuredOutcome;
+  readonly degradations: readonly Degradation[];
+}
+
+/** Mirrors `vela_providers::event::ToolCallDelta`. */
+export interface ToolCallDelta {
+  /** Vela's own slot key — stable even when the endpoint reuses or skips `index`. */
+  readonly slot: number;
+  readonly callId: string | null;
+  readonly name: string | null;
+  readonly argumentsFragment: string;
+}
+
+/**
+ * Mirrors `vela_providers::event::StreamEvent` (`#[serde(tag = "type")]`).
+ *
+ * Six events, no more. A backend that cannot stream at all emits one
+ * `textDelta` and a `done`, and this surface cannot tell the difference.
+ *
+ * `textDelta.text` is the answer and **never contains reasoning markup** — the
+ * host's splitter has already run, across frame boundaries. The renderer
+ * re-checks anyway (defence in depth), because a leaked `<think>` in the answer
+ * is the single most visible way this surface can be wrong.
+ */
+export type ChatStreamEvent =
+  | { readonly type: 'textDelta'; readonly text: string }
+  | { readonly type: 'reasoningDelta'; readonly text: string }
+  | { readonly type: 'toolCallDelta'; readonly delta: ToolCallDelta }
+  | { readonly type: 'usage'; readonly usage: TokenUsage }
+  | { readonly type: 'done'; readonly response: ChatResponseBody }
+  | { readonly type: 'error'; readonly error: ChatError };
+
+/** One message on its way to the host. */
+export interface ChatMessageInput {
+  readonly role: MessageRole;
+  readonly text: string;
+}
+
+/**
+ * Start a turn.
+ *
+ * The **renderer** mints `turnId`, not the host: events for a turn can arrive
+ * before the `invoke` promise settles, so a subscriber that had to wait for the
+ * id would drop the first token. The host rejects an id already in flight.
+ */
+export interface ChatSendReq {
+  readonly turnId: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly messages: readonly ChatMessageInput[];
+}
+
+export interface ChatSendRes {
+  readonly turnId: string;
+  /**
+   * The turn was accepted and is now streaming. Always `true` — a refusal is an
+   * `IpcError`, never a `false` the caller might forget to read.
+   */
+  readonly accepted: boolean;
+}
+
+export interface ChatCancelReq {
+  readonly turnId: string;
+}
+
+export interface ChatCancelRes {
+  /** `false` when the turn had already finished — a race, not an error. */
+  readonly cancelled: boolean;
+}
+
+/** The payload of the `chat:event` host event. */
+export interface ChatEventEnvelope {
+  readonly turnId: string;
+  readonly event: ChatStreamEvent;
+}
+
+/* -------------------------------------------------------------------------- */
 /* the contract                                                               */
 /* -------------------------------------------------------------------------- */
 
 export interface IpcContract {
   app_info: { req: EmptyPayload; res: AppInfo };
+  chat_cancel: { req: ChatCancelReq; res: ChatCancelRes };
+  chat_send: { req: ChatSendReq; res: ChatSendRes };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
@@ -261,6 +544,8 @@ export type CommandRes<C extends CommandName> = IpcContract[C]['res'];
  */
 export const COMMAND_ALLOWLIST = [
   'app_info',
+  'chat_cancel',
+  'chat_send',
   'diagnostics_echo',
   'secrets_delete',
   'secrets_set',

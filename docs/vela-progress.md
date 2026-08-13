@@ -1592,6 +1592,52 @@ retracted it rather than leave it standing. That is what makes the other eight b
 real and binding, but the app cannot complete a turn yet, and fixing fonts before the app can chat
 would be optimising the wrong thing. `performance` stays held for the same reason.
 
+## ✅✅ GATE M PART 2 — **PASS**. Vela talks to a real model, end to end, in the real app.
+
+**This closes the largest hole in the project's evidence base.** Every result until now was
+VERIFIED-BY-FAKE. This one is not.
+
+`GATE-M2-real-model` **PASS** at `84c256f`, superseding the FAIL at `51b5e16`. Environment:
+Windows 11 · WebView2 151.0.4129.78 · llama.cpp `b8833`, **Qwen3.6-27B Q5_K_M on a Tesla V100
+32GB**, unmodified and never restarted.
+
+The desktop session verified each fix rather than taking it on trust:
+
+**1. The shipping host reaches a real endpoint.** The new composition root `provider_host.rs`
+builds a `CompatProvider` per configured endpoint and registers it. Verified **live in the running
+app, not from source**: `models_list` enumerated the real model off the live server, `chat_send`
+returned `accepted: true` rather than `NOT_FOUND`, and **a full turn rendered in the window — real
+markdown, real answer, from real model bytes.**
+
+**2. Vision works through Vela's own IPC.** A generated 64×64 PNG — left half `#FF0000`, right half
+`#0000FF` — sent as an image part came back as *"The left half is red and the right half is blue."*
+**Correct against known ground truth**, which is the only way to test vision without trusting the
+model's self-report.
+
+**3. Tool calling works through Vela's own IPC.** A `get_weather` catalogue produced 6
+`toolCallDelta` events with a stable `callId` and arguments assembling to `{"city":"Tel Aviv"}` —
+and **114 reasoning deltas arrived in the same turn, none of which leaked into tool-call parsing.**
+
+That last clause is the whole Phase B saga, settled against a real model. Four rounds, a stopped
+piece, an architectural redesign, and the `delete_everything` defect — all of it was about keeping
+deliberation out of the action path. **It now holds on real Qwen3.6 output, not just on mocks.**
+
+### The other desktop verdicts
+
+| Piece | Critic | Verdict |
+|---|---|---|
+| CONV-1 conversation surface | **interaction** | ✅ **PASS** |
+| CONV-1 conversation surface | **performance** | ✅ **PASS** |
+| CONV-1 conversation surface | visual | ❌ FAIL |
+| A3 keychain + settings | keychain-runtime | ✅ PASS |
+
+Interaction PASS means the focus-ownership fix landed correctly **on WebView2**, where the cloud's
+verdict was only provisional. Performance PASS is the first real footprint measurement of the run —
+and it could only be taken once the app could complete a turn, which is exactly why it was held.
+
+**Visual remains FAIL** — the platform-defaults class: no bundled typeface, the white Windows
+scrollbar in dark mode, and 150% DPI layout breakage. That is the platform-polish wave's job.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

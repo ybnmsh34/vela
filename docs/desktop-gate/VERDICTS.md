@@ -940,3 +940,129 @@ already-filed `aria-modal` finding must not be softened by it.
 
 - evidence: `evidence/CONV-1-conversation-surface/focus-ownership.txt` (final section)
 - environment: **release build** · Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78
+
+---
+
+## DESKTOP FINDING — the Windows debug-log directory is readable by a non-owner group
+
+You disclosed that `create_private_dir` / `open_private` have a `#[cfg(not(unix))]` branch that is
+"unenforced and unmeasured on Windows" and asked me to look. **Measured, and the assumption behind it
+does not hold on this machine.**
+
+The Windows branches rest on a claim stated in both files: *"the application-data directory is
+already per-user, and nothing here widens it."* The first half is not guaranteed, and here it is
+false.
+
+`diagnostics_debug_log_set{enabled:true}` created
+`C:\Users\User\AppData\Roaming\dev.vela.desktop\diagnostics`. Its real ACL:
+
+```
+Owner               : DESKTOP-298M5DU\User
+Inheritance enabled : True          <-- nothing protects or replaces the inherited DACL
+  DESKTOP-298M5DU\User              FullControl                inherited=True
+  NT AUTHORITY\SYSTEM               FullControl                inherited=True
+  BUILTIN\Administrators            FullControl                inherited=True
+  DESKTOP-298M5DU\CodexSandboxUsers ReadAndExecute, Synchronize inherited=True   <-- NOT the owner
+  S-1-15-3-3557520199-...-3692855932 FullControl                inherited=True   <-- app-container SID
+```
+
+**A separate local group has read access to the directory that holds raw provider exchanges.**
+`debuglog.rs` is explicit that what lands there is the raw body — the material deliberately kept out
+of rendered errors — so this is prompt and response content, not just timings.
+
+### Being precise about blame and scope
+
+- **Vela did not widen anything.** That ACE is inherited from a parent under `%APPDATA%`, put there
+  by other software on this machine. The code's second clause ("nothing here widens it") is true.
+- **The defect is the first clause and the asymmetry.** The Unix branch *enforces* `0700`/`0600`; the
+  Windows branch enforces nothing and relies on the OS having already done it. That assumption is
+  violable by any other installer, by group policy, or by an admin — and on a real machine, in this
+  case, it was already violated before Vela ever ran.
+- **Fix:** mirror the Unix guarantee rather than assume it. On Windows, set an explicit DACL and
+  disable inheritance on the diagnostics directory (owner + SYSTEM only), so the Windows branch makes
+  the same promise its `unix` sibling does instead of inheriting whatever the machine happens to have.
+- **What I measured:** the **directory**. The log file itself was never created — `FileSink` opens
+  lazily and no exchange wrote to it during the test window — but a file created there inherits the
+  directory's DACL, so the exposure follows. I am flagging the directory because that is what I
+  observed; the file remains unmeasured.
+
+Impact is bounded by the feature being **opt-in and off by default**, which is the right posture and
+is why this is a finding rather than a blocker.
+
+---
+
+## CONV-1-conversation-surface — visual (RE-JUDGE, supersedes the FAIL)
+
+- commit: `923e6da` fix wave, verified at local HEAD after pull
+- critic: visual
+- verdict: **PASS**
+- environment: Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78 · 1400x900 · real streamed
+  answer from live llama.cpp (Qwen3.6-27B)
+
+All seven prior findings ruled on, each against real pixels:
+
+| # | Prior finding | Now |
+|---|---|---|
+| 1 | Thinking block rendered raw markdown | **FIXED** — `<Markdown source={text} scale="aside" />`, `pre-wrap` gone; nested lists, bold lead-ins, inline-code chips, zero literal `**` |
+| 2 | Measure ~95–105 chars | **FIXED** — 480px column, counted **69 characters** per line |
+| 3 | Composer/transcript rulers | **FIXED** — transcript 592→1072, composer 599→1080; identical widths, 7px offset remains |
+| 4 | Guillotined scroll edge | **FIXED, and switched** — fades only on the edge that has more content, correct at top, middle and end |
+| 5 | Container tokens = page bg | **FIXED** — dark now steps page `#080b16` → code `#101426` → bar `#1a1f31` → border `#262c42` |
+| 6 | Fixed sidebar | **FIXED per source** (200–480 clamp, keyboard-resizable separator) — not visually confirmable, every capture is at the 280px default |
+| 7 | Heading scale + `<strong>` inversion | **FIXED** — see the correction below |
+
+### A correction to my own measurement
+
+I reported h4–h6 as "all still 15px/700, differing only by uppercase", and concluded the scale was
+still collapsed. **That was wrong, because I measured size, weight and text-transform but not
+colour.** Measured properly, the six markdown levels carry six distinct treatments, one device
+changing per step:
+
+| md | size | weight | colour | extra |
+|---|---|---|---|---|
+| 1 | 24px | 700 | `#eef0f6` | tracking −0.24px |
+| 2 | 18px | 700 | `#eef0f6` | −0.18px |
+| 3 | 16px | 700 | `#eef0f6` | −0.16px |
+| 4 | 15px | 700 | `#eef0f6` | −0.15px |
+| 5 | 15px | 700 | **`#9aa2bd` muted** | −0.15px |
+| 6 | 15px | 700 | `#9aa2bd` | **uppercase, +0.6px** |
+
+No heading is smaller than body, and `.prose strong` is pinned to 600 against `.heading` at 700 —
+structure outranks emphasis, so the inversion is genuinely gone. The tag is demoted one step from the
+`data-level` (markdown `#` → `<h2>`) to keep a single page `h1`, which is why a DOM tag census reads
+one level low.
+
+### Residuals — recorded, not blocking
+
+Three survivors of finding 5's class, one layer deeper: in **light theme only**,
+`--vela-turn-user-bg` and `--vela-thinking-bg` are both `#eef0f6` (they correctly differ in dark), so
+"what you said" and "how the model thought" collapse onto one value; the inline-code chip fill
+(`--vela-bg-inset`) equals `--vela-thinking-bg` in **both** themes, so chips survive on their border
+alone; and the 7px composer offset, which is the unstyled scrollbar stealing layout width —
+`scrollbar-gutter: stable` would close it. None of these read as bugs on screen; all violate the
+token file's own stated rule.
+
+One nit: nested markers inside the thinking aside fall through to the UA `disc → circle → square`
+cascade, and the filled square at level 3 is the most dated mark on the surface.
+
+### Blind comparison
+
+Answer body only, labels stripped, against a reference at this tier: **Vela wins, narrowly.** Six
+markdown heading levels that are genuinely six distinct things is rare — most renderers at this tier
+flatten h4–h6 into body and hope bold carries it. The blockquote outdented onto the text ruler, the
+bullet column dropped to punctuation colour, the 69-character measure, and the code block's three-step
+elevation are all traceable to a token or rule.
+
+**Where the reference still wins is the letterforms** — blind, the body reads as Segoe UI and the code
+as a system mono. That is the unbundled-typeface item filed under A1, and a blind test cannot unsee
+it. **Land the typeface and this stops being close.**
+
+### Not assessable from this evidence
+
+Paragraph-to-paragraph spacing (this answer has no two adjacent paragraphs), tables, links, and the
+empty/streaming states — every capture is of a completed answer. The streaming caret and the
+"Thinking…" pulse exist in source with reduced-motion fallbacks but are not captured here, and are
+not ruled on.
+
+- evidence: `evidence/CONV-1-retest/` — six answer captures across three scroll positions in both
+  themes, thinking expanded in both, `retest-measurements.txt`, `manifest.json`

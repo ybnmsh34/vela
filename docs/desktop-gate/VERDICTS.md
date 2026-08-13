@@ -1170,3 +1170,72 @@ against every reference at this tier.
 
 - evidence: `evidence/A1-retest/` (six captures across both themes at 1x and true 150%),
   `evidence/CONV-1-retest/typeface-verification.txt` (width-control probe and runtime readings)
+
+---
+
+## INTEGRATION-WAVE FINDING — ruled: it flashes, but not the way the question assumed
+
+- commit: `4a374aa` (release binary rebuilt from this tree)
+- environment: **release build** · Windows 11 Home 10.0.26200 (OS prefers **light**) ·
+  WebView2 151.0.4129.78 · Vela's stored preference set to **dark**, so the two disagree
+
+You asked whether any painted frame shows the wrong palette, and for how long. Answer: **yes, for
+~760 ms — but it is the wrong *background*, not wrong-palette *UI*.** The distinction changes the fix,
+so both halves matter.
+
+### Method
+
+Set the theme to dark through the UI (persistence verified: `settings_get` reports `"dark"`), quit,
+then cold-start the release binary while sampling. Two passes: a 1-pixel background probe at ~60 Hz
+across three runs, then a full-window frame capture to remove the ambiguity the probe left.
+
+### What actually happens
+
+| t | state |
+|---|---|
+| 0 → ~760 ms | window is a **uniform light rectangle, no UI at all** |
+| ~762 → 826 ms | first UI paint |
+| 826 ms onward | **correctly dark**, "Theme: dark", no light-themed UI ever visible |
+
+`frame-0762ms.png` is an empty light-grey window. `frame-0826ms.png` is the full dark UI. Across
+three release runs the first dark frame landed at 869 / 855 / 730 ms.
+
+**So no frame ever shows the wrong-themed interface.** React's first commit already carries
+`data-theme="dark"`. The ordering fact you measured is real, but on the release build the
+wrong-palette *UI* frames never reach the screen.
+
+### What does reach the screen, and why it is still worth fixing
+
+For roughly three quarters of a second on every cold start, a dark-configured app shows a **bright,
+empty, light-coloured window**. That is a more visible artifact than the flash you were hunting, and
+it has two independent causes:
+
+1. **`tauri.conf.json` sets no `backgroundColor`** on the window, so the native surface paints its
+   default light before WebView2 draws anything.
+2. **`base.css:28` is `body { background: var(--vela-bg) }`**, and before React sets `data-theme`,
+   `--vela-bg` resolves through `@media (prefers-color-scheme: dark)` — i.e. **the OS preference, not
+   the stored one**. On this light-preferring machine that is the light page colour. This is exactly
+   the mechanism you described; it simply paints as a flat background rather than as themed UI.
+
+Both are fixable without touching the boot order you deliberately left alone: setting the window's
+`backgroundColor` removes cause 1 outright, and an inline pre-paint resolution in `index.html` — or
+having the host stamp the attribute before the webview loads — removes cause 2.
+
+### The debug build does show wrong-themed UI
+
+Worth recording because it bounds the risk. On the dev build the same test caught the page at
+**`247,248,251`** — Vela's exact light page colour — at 1675 ms, correcting to dark at 1800 ms:
+**~125 ms of genuinely light-themed rendering.** The release build is fast enough that the hydration
+round trip completes before first UI paint; the debug build is not. That margin is a timing
+coincidence, not a guarantee — a slower disk, a cold SQLite, or a larger settings read could widen it
+on a user's machine.
+
+### What I could not test
+
+**A true first-launch-after-install cold start.** There is no installed build on this machine; I ran
+the freshly-built release binary, whose WebView2 user-data directory and SQLite file already existed
+and were warm. Your second question — whether it is worse on the very first launch — is therefore
+**unanswered**, and I would expect it to be worse, not better.
+
+- evidence: `evidence/theme-flash/` — 14 sequential full-window frames from 600 ms to 1599 ms,
+  filenames carry their capture offset

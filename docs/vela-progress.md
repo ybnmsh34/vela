@@ -1313,6 +1313,55 @@ Two process notes, so the agreement is not read as more than it is:
   registration before a single screenshot could be taken. Control **K21** reproduces it against
   the shipping wiring.
 
+## 🔴 DESKTOP VERDICT — `GATE-M2-real-model`: **FAIL**. The deepest finding of the run.
+
+The first real model bytes arrived, and they exposed something no cloud gate could see.
+
+### What worked, against real Qwen3.6-27B output
+
+Driven through the real `vela_lib::ipc::*` command functions, the real `OpenAiCompatibleProvider`
+and the real `ReqwestTransport`:
+
+- **Reasoning separation is correct on real output** — 266 `reasoningDelta` events, 3 `textDelta`,
+  final answer `"391"`. No `<think>` markup, no reasoning prefix in the answer channel.
+- **Reasoning streams immediately**: first `reasoningDelta` at **0.57 s**, first `textDelta` at
+  **10.21 s**. The UI has something to draw for the ~10 s before an answer exists — which is
+  exactly why thinking blocks matter on local models.
+- **Clean termination**, no hang, 10.32 s total.
+
+That is the happy path proven on real bytes, and nothing more. It is **not** evidence of
+model-agnosticism.
+
+### The three blocking findings — all independently reconfirmed by me
+
+| # | Finding | My verification |
+|---|---|---|
+| 1 | **The shipping app cannot reach any model endpoint.** `AppState::for_runtime()` builds `ProviderRegistry::new()` and **nothing ever registers a provider**, so `resolve_provider` returns `NOT_FOUND` for every configured id | `grep -rn "OpenAiCompatibleProvider\|CompatProvider" src-tauri/src/` → **0 matches** |
+| 2 | **Vision and tool calling are structurally unreachable through the app's IPC.** `ChatMessageInput` is `{role, text: String}`, `ChatSendReq` has no `tools`, `build_request` maps every message to exactly one `ContentPart::Text` | `grep -c "tools\|image\|attachment" src-tauri/src/ipc/chat.rs` → **0 matches** |
+| 3 | **The Windows build is broken.** `tauri-build` fails: `icons/icon.ico` not found. Linux does not require it, **so no cloud run can ever see this** | `ls src-tauri/icons/` → four PNGs, **no `.ico`** |
+
+On finding 3 the desktop session did the disciplined thing: it generated an `icon.ico` locally,
+kept it untracked via `.git/info/exclude`, and **did not commit it** — so the FAIL stands rather
+than being quietly repaired by the session reporting it.
+
+### The pattern underneath all of it: NOBODY OWNS THE COMPOSITION ROOT
+
+These are not three unrelated bugs. With Phase C's **C5** they are four instances of one thing:
+
+- provider registry never populated → **backend composition root**
+- `ChatMessageInput` cannot carry an image or a tool → **IPC contract too narrow to compose**
+- `ContextMeter` never receives `turnTexts` → **frontend composition root** (C5)
+- `icon.ico` missing → **build composition**
+
+**Every gate this run has driven a bridge, an example, or a component — never the real assembled
+application.** Phase C's own gate says so in its honesty section: the transport was HTTP+SSE, not
+Tauri IPC. The provider core is genuinely excellent and heavily verified. It is also, right now,
+**unreachable from the product it was built for.**
+
+This is the single most valuable thing the two-session split has produced, and it is precisely the
+class of defect the cloud is structurally blind to: a Linux container never needs `icon.ico`, and
+never launches the real app.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

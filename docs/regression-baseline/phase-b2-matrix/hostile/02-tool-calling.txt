@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- a native tools request --------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40765/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41751/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -66,7 +66,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
                                     MALFORMED index=None id=MISSING name=get_weather reason=UnknownDiscriminator raw="not-json-at-all"
   executable calls                       0
   degradations                           UnterminatedReasoning { recovered_answer_chars: 162 }, MalformedToolCalls { count: 2 }
-  wall clock                             3.410906ms
+  wall clock                             3.151375ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] both broken calls are reported, neither is dropped
@@ -86,7 +86,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the SAME request, STREAMED — do the two paths agree? ------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40765/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41751/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)

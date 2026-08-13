@@ -17,7 +17,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   probed vision support                  Unsupported
   UI vision affordance                   false
   requests actually sent                 0
-  wall clock                             23.207µs
+  wall clock                             20.054µs
 
 ---- assertions --------------------------------------------------------------
   [PASS] the vision affordance is NOT offered to the UI
@@ -31,7 +31,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same image before any probe has run ---------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:40601/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:43237/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -48,9 +48,9 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
           "code": "vision_not_supported"
         }
       }
-  outcome                                Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:40601", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
+  outcome                                Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43237", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
   [PASS] an unprobed endpoint's refusal is learned from the endpoint itself
-        Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:40601", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
+        Err(CapabilityUnsupported { capability: Vision, diagnosis: Diagnosis { cause: CapabilityRefusedByEndpoint, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:43237", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(137) } })
 
 ================================================================================
 VERDICT  5 assertion(s), 0 failure(s)

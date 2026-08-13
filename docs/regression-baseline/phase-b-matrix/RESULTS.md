@@ -1,24 +1,26 @@
 # GATE M Part 1 (Phase B) — does Vela degrade gracefully?
 
 **Recorded:** 2026-08-13 · **Executor:** GATE M Part 1 Phase B evidence run
-**Round 3 re-execution:** 2026-08-13 — **373 gate assertions, 0 failures**
+**Round 4 re-execution:** 2026-08-13 — **471 gate assertions, 8 failures**
 **Subject:** `src-tauri/crates/vela-providers` — Vela's own provider stack
-**Raw evidence:** `<profile>/00-…11-*.txt`, `verdicts.tsv`, `ASSERTION-CONTROL.txt`,
-`structural/probe-results.txt`, `structural/control-results.txt`
+**Raw evidence:** `<profile>/00-…13-*.txt`, `verdicts.tsv`, `ASSERTION-CONTROL.txt`,
+`structural/probe-results.txt`, `structural/control-results.txt`,
+`structural/control-results-round4.txt`
 **Companion:** `../mock-matrix/RESULTS.md` — what the endpoints did
 
-> **Rounds 1 → 2 → 3.** Round 1 FAILED on FINDING 1 (parallel tool calls
-> collapsing on the non-streamed path). Round 2 closed FINDING 1 and opened
-> FINDING 2: a query-string credential leaking through a mid-stream error frame
-> on the streamed path — 16 failures, all one defect. Round 3 claims to have
-> closed FINDING 2 **structurally** and to have stopped over-redacting transport
-> errors. This document is a **third, independent re-execution** by an executor
-> who wrote none of the three fixes and ran neither previous round. It re-ran
-> every case, drove the leak through every forced failure path on all three
-> adapters, attacked the structural claim rather than reading it, and fixed two
-> defects in its own instrumentation along the way.
+> **⛔ GATE M Part 1 (Phase B) FAILS in round 4, on a new finding — FINDING 3.**
 >
-> **FINDING 1 stays closed. FINDING 2 is closed. GATE M Part 1 (Phase B) PASSES.**
+> Round 3 scored 373 assertions and 0 failures, and then two critics failed it
+> on defects the gate had never looked for. Round 4's builders closed both of
+> those, and this executor confirms both closures live. Then it looked where
+> nobody had looked, and found a third: **three spellings of a credential reach
+> `Display`, `Debug`, the serde JSON that crosses the IPC bridge, and the
+> `StreamEvent` the UI is handed.**
+>
+> Rounds 1 → 2 → 3 → 4 have now each died on a surface the previous round's
+> tests did not cover. This round's evidence includes the surface *this* round's
+> tests would not have covered either, which is why it is being reported rather
+> than discovered by the panel.
 
 ---
 
@@ -37,22 +39,23 @@ Nothing in this file is evidence about a real model.
 
 ## 1. The ledger
 
-| | round 1 | round 2 | **round 3 (this directory)** |
-|---|---|---|---|
-| gate assertions | 265 | 361 | **373** |
-| failures | **5** — FINDING 1 | **16** — FINDING 2 | **0** |
-| recorder controls | 15, of which 10 FAIL | 24, of which 15 FAIL | **24, of which 15 FAIL** |
-| executor controls | — | — | **8 experiments → 21 recorded expected-FAILs** |
-| **controls, total** | 15 / 10 FAIL | 24 / 15 FAIL | **32 / 36 expected FAILs** |
-| wall clock, matrix run | ~17 s | ~22 s | ~21.9 s |
+| | round 1 | round 2 | round 3 | **round 4 (this directory)** |
+|---|---|---|---|---|
+| gate assertions | 265 | 361 | 373 | **471** |
+| failures | **5** — FINDING 1 | **16** — FINDING 2 | 0 | **8** — FINDING 3 |
+| cases | 00–11 | +02p, 07c, 11 | same | **+12 redirect, +13 encoding** |
+| recorder controls | 15 / 10 FAIL | 24 / 15 FAIL | 24 / 15 FAIL | **24 / 15 FAIL** |
+| executor controls | — | — | 8 → 21 FAILs | **12 → 24 FAILs** |
+| **controls, total** | 15 / 10 | 24 / 15 | 32 / 36 | **36 / 39** |
+| wall clock, matrix run | ~17 s | ~22 s | ~21.9 s | **~21.7 s** |
 
 ```
-gate assertions   373
-failures          0
+gate assertions   471
+failures          8
 controls          24 (their FAILs are expected)
-wall clock        21.940479445s
+wall clock        21.673259788s
 
-No gate assertion failed.
+FAILURES:  all 8 in case 13, two per profile — see §5
 ```
 
 Per case, gate assertions across all four profiles:
@@ -69,29 +72,26 @@ Per case, gate assertions across all four profiles:
 | 06 reasoning | 23 | 0 |
 | 07 stream termination | 18 | 0 |
 | 07b stalled socket | 8 | 0 |
-| 07c termination latency | 16 | 0 |
+| 07c termination latency | **32** *(was 16)* | 0 |
 | 08 malformed frames | 13 | 0 |
 | 09 no credential | 28 | 0 |
 | 09b endpoint requires a key | 12 | 0 |
 | 10 failover | 24 | 0 |
-| **11 credential canary** | **49** *(was 37)* | **0** *(was 16)* |
+| 11 credential canary | **56** *(was 49)* | 0 |
+| **12 redirect egress** | **52** *(new)* | **0** |
+| **13 encoded credential leak** | **20** *(new)* | **8** |
+| canary containment | 3 | 0 |
 
-Case 11 grew by 12 because the executor replaced one broken vacuity guard with
-three working ones — see §4.1.
+`verdicts.tsv` carries every line. `SUMMARY.txt` carries the failure list.
 
-`verdicts.tsv` carries every line. `SUMMARY.txt` carries the (empty) failure list.
-
-Beyond the matrix, run separately and recorded in `structural/`:
+Beyond the matrix, run separately:
 
 ```
-cargo test -p vela-providers                469 passed, 0 failed, 1 ignored
-  incl. streamed_credential_canary          15 passed
-        finding_two_recipe                   4 passed
-        credential_canary (round 2's)        8 passed
-        zz_gate_m_round3_executor_probe      5 passed   <- the executor's own
-  doctests, incl. 2 compile_fail             3 passed
-structural/probe.sh                          5 of 5 bypasses rejected
-pnpm verify                                  exit 0 (whole gate, superset of CI)
+structural/probe.sh                   5 of 5 compile bypasses rejected (re-run live)
+structural/controls.sh                round 3's three defect injections (re-run live)
+structural/controls-round4.sh         round 4's four defect injections
+cargo test -p vela-providers          green, with ONE deliberately-ignored test
+                                      carrying FINDING 3 — see §5.4
 ```
 
 ---
@@ -103,506 +103,576 @@ pnpm verify                                  exit 0 (whole gate, superset of CI)
 | **00** capability probe | ✅ 200k · tools/vision/schema Supported | ✅ 32k · schema **Degraded**, vision Unsupported | ✅ 8k · tools **Unsupported**, schema Degraded | ✅ 4k · tools **Degraded**, schema Degraded |
 | **01** plain chat, streamed ≡ whole | ✅ identical | ✅ identical | ✅ identical | ✅ identical |
 | **02** tool calling | ✅ native | ✅ native | ✅ **emulation works end to end** | ✅ 2 broken calls on **both** transports |
-| **02p** parallel tool calls | ✅ **3 calls, live, both transports agree** | ✅ same | ✅ **2 emulated calls, both transports agree** | ✅ **3 calls, middle one broken, both transports agree** |
+| **02p** parallel tool calls | ✅ **3 calls, live, both transports agree** | ✅ same | ✅ **2 emulated calls, both agree** | ✅ **3 calls, middle broken, both agree** |
 | **03** vision | ✅ offered, image answered | ✅ affordance absent, image refused locally | ✅ same | ✅ same |
 | **04** structured output | ✅ honoured and validated | ✅ **mismatch reported**, affordance withdrawn | ✅ same | ✅ same |
 | **05** context overflow | ✅ clean error, `200000`/`250004` | ✅ `32768`/`40964` | ✅ `8192`/`10244` | ✅ `4096`/`5124` |
 | **06** reasoning | ✅ separate field, never in the answer | ✅ split `</think>` never leaks | ✅ none emitted, none invented | ✅ unterminated block does not swallow the answer |
 | **07** stream termination | ✅ terminates | ✅ | ✅ usage-absence declared | ✅ missing sentinel declared |
-| **07c** termination latency | ✅ **median 3.34 ms** | ✅ **median 3.51 ms** | ✅ **median 1.74 ms** | ✅ **median 3.36 ms** |
-| **08** malformed frames | ✅ no bad frames, none claimed | ✅ same | ✅ same | ✅ **166 chars delivered vs 31 for a strict consumer** |
+| **07c** latency, **credentialed** | ✅ **3.38 ms** (uncred. 2.97) | ✅ **3.10 ms** (2.57) | ✅ **2.11 ms** (1.82) | ✅ **3.76 ms** (3.01) |
+| **08** malformed frames | ✅ no bad frames, none claimed | ✅ same | ✅ same | ✅ **166 chars vs 31 for a strict consumer** |
 | **09** no credential | ✅ nothing on the wire | ✅ same | ✅ same | ✅ same |
-| **10** failover / mid-request kill | ✅ routed past a dead peer, **and the dead peer is named**; killed stream **not** replayed | ✅ same | ✅ same | ✅ same |
-| **11** credential canary | ✅ **clean on all 9 forced paths, 5 renderings each** | ✅ same | ✅ same | ✅ same |
+| **10** failover / mid-request kill | ✅ routed past a dead peer, **named**; killed stream not replayed | ✅ same | ✅ same | ✅ same |
+| **11** credential canary | ✅ clean on all forced paths | ✅ same | ✅ same | ✅ same |
+| **12** redirect egress | ✅ **third party got 0 bytes, 0 connections** | ✅ same | ✅ same | ✅ same |
+| **13** encoded credential | ⛔ **3 spellings leak** | ⛔ same | ⛔ same | ⛔ same |
 
 ✅ passes every assertion · ⚠️ degrades, explicitly · ⛔ gate failure
 
 ---
 
-## 3. FINDING 1 — parallel tool calls collapse — **STILL CLOSED**
+## 3. What round 4's builders fixed, re-checked live by someone who did not fix it
 
-Re-executed, not carried forward. Case **02p** offers three tools, drives the
-batch live over real TCP on all four profiles on both transports, and compares
-**call by call** — id, name, arguments, failure reason. 43 assertions, 0
-failures, and the two wire shapes are asserted to genuinely differ rather than
-assumed to:
+### 3.1 Credential egress on redirect — **CLOSED**, and the control proves the channel was real
+
+This was the round-3 panel's security FAIL, and the most serious defect the
+project has recorded: a `3xx` from the configured endpoint handed the user's API
+key to a host they never named, on the first request of a healthy turn, with no
+error involved anywhere.
+
+Case **12** drives it as gate evidence rather than reading the fix. The subject
+of every assertion is **the third party** — a recording listener on a port the
+user never configured — not Vela:
 
 ```
-  non-streamed elements                  3
-  any element carried `index`            false      <-- the FINDING 1 shape
-  streamed tool-call elements            20
-  every streamed element carried `index` true
+  Auth::None                       third party: 0 connections, 0 bytes
+  Auth::Bearer                     third party: 0 connections, 0 bytes
+  Auth::ApiKeyHeader{x-api-key}    third party: 0 connections, 0 bytes
+  Auth::ApiKeyHeader{x-goog-api-key} third party: 0 connections, 0 bytes
+  Auth::ApiKeyQuery{key}           third party: 0 connections, 0 bytes
+                                   … × complete() and stream() = 10 arms
+  [PASS] THE THIRD PARTY ACCEPTED ZERO CONNECTIONS            0
+  [PASS] THE THIRD PARTY RECEIVED ZERO BYTES                  0
+  [PASS] the configured endpoint really was contacted         10 connections / 10 arms
 ```
 
-The hostile batch still breaks only the middle call; two good calls survive, the
-broken one is reported and is not executable, `MalformedToolCalls { count: 1 }`
-is raised on **both** transports, and no arguments string is a splice of two
-calls. CONTROL 8 restores round 1's rule against the same three whole calls and
-records **one** spliced call — a string that never existed on any wire.
+The assertion is **zero bytes**, not "no credential in the bytes", because the
+rule the transport is built on is *Vela talks to the endpoint the user
+configured and to nothing else* — and a prompt is user data too.
+
+The refusal is actionable rather than silent, on all ten arms and in all five
+renderings:
+
+```
+  could not reach the endpoint (request): refused the endpoint's 302 redirect to a
+  different host (http://127.0.0.1:46853 -> http://127.0.0.1:41803): Vela sends a
+  request only where you configured it
+```
+
+**The positive control, which is what makes the above mean anything.**
+`PreFixTransport` is this transport as it was before the fix — the same client
+with `no_proxy` and a user agent, and `reqwest`'s untouched redirect and referer
+defaults — driven through identical sockets:
+
+```
+  Auth::None:                          third party got 173 bytes, canary absent
+  Auth::Bearer:                        third party got 173 bytes, canary absent
+  Auth::ApiKeyHeader{x-api-key}:       third party got 227 bytes, canary ARRIVED
+  Auth::ApiKeyHeader{x-goog-api-key}:  third party got 232 bytes, canary ARRIVED
+  Auth::ApiKeyQuery{key}:              third party got 223 bytes, canary ARRIVED
+
+  GET /v1/chat/completions HTTP/1.1
+  user-agent: vela/pre-fix-control
+  x-api-key: <CANARY — MASKED BY THE RECORDER>
+  referer: http://127.0.0.1:34441/v1/chat/completions
+  host: 127.0.0.1:34935
+```
+
+It leaks for exactly the three bindings `reqwest` does not protect and not for
+`Bearer`, which pins the upstream behaviour the fix compensates for as a
+measurement rather than a changelog citation.
+
+**And the control makes the design decision visible.** Even on `Auth::None` and
+`Auth::Bearer` — the bindings upstream *does* protect — the third party still
+received **173 bytes**: the request line, the model id, the prompt. Stripping
+the credential and following anyway would have left that. Refusing is the only
+answer that does not egress user data, and this is the number that says so.
+
+**Two things nobody had driven, added by this executor:**
+
+* **Every redirect status, not just `302`.** `301`, `302`, `303`, `307`, `308`
+  — all five refused, third party `0 bytes` on each. `303` rewrites the method
+  to `GET`, and that changes nothing, because the check is on authority and runs
+  before the rewrite.
+* **The same-authority hop, recorded rather than assumed.** A `301` from
+  `…/v1/chat/completions` to `…/v2/chat/completions` on the same scheme, host
+  and port **is followed**: 2 connections to the one authority, the second path
+  observed in its transcript, and the turn succeeds. That is the
+  reverse-proxy-normalising-a-path case the fix deliberately still allows, and
+  it egresses nowhere new. Recorded here so the choice is on the record with its
+  evidence, not only in a doc comment.
+
+### 3.2 Encoding-defeated redaction — the **briefed** encodings are closed
+
+This was the round-3 panel's functionality FAIL: round 3's scrub was
+byte-literal, and an endpoint that JSON-escapes `/` as `\/` — PHP's
+`json_encode` default — emitted a credential matching no needle, which
+`serde_json` then reassembled downstream of every scrub point.
+
+Case **13** drives it, in FINDING 2's exact shape (a `200` whose SSE stream
+carries the error object, read frame by frame) and beside it a `400` read whole,
+on both bindings and both transports. All three briefed encodings are removed:
+
+```
+  verbatim (control)              · ?key= / x-api-key · 200 / 400 · both calls → clean
+  PHP json_encode: \/             · …                                          → clean
+  every char as \uXXXX            · …                                          → clean
+```
+
+And the mechanism is right rather than a list: the peers put **no literal copy**
+of the credential on the wire (asserted from each peer's own send buffer), so
+the literal pass genuinely had nothing to match, and `<redacted>` is present on
+the cleaned arms, so this is redaction and not deletion.
+
+One unbriefed spelling is closed too, and by the second barrier rather than the
+first: **JSON escaped twice** (`\\/`, an upstream error body embedded in an
+outer one) survives the byte scrub — one decode pass leaves `\/`, which is not
+the credential — and is removed when `decode_json` scrubs the decoded value.
+
+### 3.3 Round 3's guarantees, re-verified rather than carried forward
+
+* **An unscrubbed read is still not expressible.** `structural/probe.sh` re-run
+  live: all five compile bypasses rejected, each for its predicted error code
+  (E0308 / E0407 / E0616 / E0599 / E0277).
+* **Endpoint identity is still named in redacted form.** Case 10, all four
+  profiles: the dead peer is named; case 11's query-credential arms name the
+  request target with `?key=<redacted>`.
+* **Parallel tool calls still agree**, call by call, on both transports, on all
+  four profiles — 43 assertions, 0 failures.
+* **Prompt emulation still works end to end**, including the parallel emulated
+  batch on `small-local`.
 
 ---
 
-## 4. FINDING 2 — a credential leaking through a mid-stream error frame — **CLOSED**
+## 4. Latency, on the path that actually ships (MEASURED-1, corrected)
 
-Round 2's report and its regression recipe are preserved in `git log` (commits
-`5845d29`, `b9ca371`) and quoted in `conventions.md` §9. The claim under test in
-round 3 is not "the leak is patched" but "**an unscrubbed read is not
-expressible**". Those are different claims and were checked differently.
+Round 3's latency case built its provider with `Auth::None`. An empty credential
+set is an empty `Scrubber`, and `BodyStream::next_chunk` short-circuits when the
+scrubber is empty — no copy, no carry buffer, no scan. **The medians round 3
+published were medians of a path that does not run once a user configures a
+key**, offered implicitly as the latency evidence for redaction they never
+exercised. The round-3 regression critic caught this as an evidentiary flaw; it
+is corrected here.
 
-### 4.1 The instrumentation was wrong first, twice — both fixed, not filed
+Case 07c now runs **two arms**, and the single-digit claim is made about the
+credentialed one. `Auth::ApiKeyQuery` is chosen because it makes the scrubber
+non-empty for *every chunk of every response*, so these are numbers about
+`scrub_bytes` and `hold_back_len` actually running.
 
-Two false signals came out of the executor's own tooling. Both are recorded here
-because round 2's most valuable finding was of exactly this kind.
-
-**(a) The recorder's premise check went red against a clean tree.** The first
-round-3 matrix run reported **4 failures**, one per profile, all of them:
-
-```
-frontier / 11-credential-leak / at least one peer really did echo the credential
-    back — the echo cases are real
-      []
-```
-
-That guard existed to stop the leak assertions passing vacuously, and it read
-the endpoint's echo off the **recorder's body tee**. Round 3's fix scrubs inside
-`BodyStream::next_chunk`, *before any decorator can see a byte* — so the tee
-stopped being able to observe the endpoint's echo at all. The guard was correct
-about what it measured and wrong about what it meant.
-
-The fix is to ask the peer, which is upstream of everything Vela does:
-`RawPeer` now records its own send buffer, and the premise is asserted there.
-That turned one broken guard into three working ones, and one of them is
-stronger than anything either previous round had — see §4.2.
-
-**(b) The executor's own compile probes were too coarse.** Three bypass attempts
-(a sealed field, an `into_inner`, a `BodyStream` used as a raw stream) started
-life in one file. Under the DEFECT 3 control — `BodyStream::inner` made public —
-that file *still failed to compile*, on the other two hatches, and the probe
-reported "rejected" against a tree that had the hole. One hatch per file now,
-and the control catches it: `probe-03-private-field COMPILED (correctly
-detected)`.
-
-### 4.2 The leak, driven
-
-**In the recorder (case 11), all four profiles.** Nine forced failure paths with
-`Auth::ApiKeyQuery { param: "key" }` and a distinctive canary in `MemoryStore`:
-connection refused (both transports), first-byte timeout, TLS handshake failure,
-mid-stream reset (both transports), a 400 whose error body quotes the request
-target, **a 200 SSE stream whose only frame is an `{"error":{"message": …}}`
-quoting the request target** (both transports). Every rendering of every
-resulting `ProviderError` is grepped — `Display`, `Debug`, `Debug` alternate,
-`serde_json`, `serde_json` pretty — plus the `CollectingSink` event stream and
-the transport's own normalised failure detail.
-
-The path that failed in round 2, verbatim from `frontier/11-credential-leak.txt`:
-
-```
----- forced failure — the endpoint echoes the URL back (200 + error frame) -
-  variant                                malformed_response
-  Display        "the endpoint returned a response Vela could not read: upstream request
-                  failed: POST /v1/chat/completions?key=<redacted>"
-  Debug          "MalformedResponse { detail: \"upstream request failed: POST
-                  /v1/chat/completions?key=<redacted>\" }"
-  serde_json (THE IPC WIRE SHAPE)
-                 "{\"kind\":\"malformedResponse\",\"detail\":\"upstream request failed: POST
-                  /v1/chat/completions?key=<redacted>\"}"
-```
-
-Repeated on a **bare `ReqwestTransport` with nothing wrapping it** — because a
-decorator is exactly the sort of thing that can invent or hide a leak — with the
-same result:
-
-```
----- the same streamed echo on a BARE ReqwestTransport (no recorder in the path)
-  bare Display   "…: upstream request failed: POST /v1/chat/completions?key=<redacted>"
-  [PASS] NO CREDENTIAL in an error produced with no recorder anywhere in the path
-```
-
-**The premise, and the byte-level proof.** This is the part round 2 could not
-produce. Each peer's own send buffer is checked, and then the same bytes are
-checked one layer further in — at the recorder's tee, which since round 3 sits
-*outside* `BodyStream` and therefore sees exactly what Vela's SSE parser
-consumes:
-
-```
----- what the ENDPOINT sent back (the premise, not the verdict) --------------
-  peer `400 error body` put the credential on the wire                   true
-  peer `200 + error frame` put the credential on the wire                true
-  peer `200 + error frame (bare transport)` put the credential on the wire true
-  [PASS] at least one peer really did echo the credential back — the echo cases are real
-  [PASS] ALL THREE echo peers echoed it — no echo case is vacuous
-
----- what VELA read (the same bytes, one layer further in) -------------------
-  `… (200 + error frame)` as the parser saw it
-     "data: {\"error\":{\"code\":\"server_error\",\"message\":\"upstream request failed:
-      POST /v1/chat/completions?key=<redacted>\"}}\n\ndata: [DONE]\n\n"
-  [PASS] the credential is ALREADY GONE from the bytes Vela's parser reads
-  [PASS] and the redaction marker IS there — the body was not merely empty
-```
-
-The endpoint wrote the key; the parser read `<redacted>`. The scrub is not a
-property of the error-formatting code, it is a property of the byte stream.
-
-**On all three adapters.** The recorder drives `OpenAiCompatibleProvider` only.
-The three-adapter coverage is `tests/streamed_credential_canary.rs` — **seven**
-forced failures × **three** adapters × **two** bindings × **two** transports,
-four surfaces each, 15 tests — audited by this executor rather than trusted, and
-supplemented where the audit found a gap:
-
-* its wide matrix counts *cases*, not *echoes*, so for five of the six
-  adapter/binding pairs "no leak" and "the endpoint was never sent one" were not
-  distinguished. `zz_gate_m_round3_executor_probe.rs::every_adapter_really_was_echoed_a_credential_and_really_redacted_it`
-  closes that: per adapter, per transport, it asserts the endpoint's diagnostic
-  marker **survived**, `<redacted>` **is present** (so there was a secret to
-  remove), and the canary **is gone**. 6 of 6 checked.
-* the executor's probe uses **its own canary literal**, so a fix that
-  special-cased the string in the builder's test would not pass it.
-
-### 4.3 The structural claim, attacked
-
-Round 3's claim is that redaction no longer hangs off an overridable method
-defaulting to no protection: `ByteStream::scrubber()` is gone, `BodyStream` is a
-struct that seals the raw stream and cannot be built without a `BodyOrigin`, and
-`BodyStream::next_chunk` is the single exit.
-
-**Compile-time.** Five bypasses, written by the executor, compiled as real
-examples against the real crate (`structural/probe.sh`, output in
-`structural/probe-results.txt`). Every one is rejected, and for the predicted
-reason:
-
-| probe | the bypass | verdict |
-|---|---|---|
-| 01 | `let _body: BodyStream = Box::new(Forgetful);` — the round-2 shape | rejected, **E0308** |
-| 02 | declaring `fn scrubber(&self) -> Scrubber` on a `ByteStream` impl — the literal line the recorder omitted | rejected, **E0407** |
-| 03 | reaching the sealed field: `&mut body.inner` | rejected, **E0616** *field is private* |
-| 04 | a consuming `body.into_inner()` | rejected, **E0599** *no method* |
-| 05 | passing a `BodyStream` where `impl ByteStream` is wanted | rejected, **E0277** *trait bound not satisfied* |
-
-Probes 03–05 matter beyond the two `compile_fail` doctests the builder shipped:
-they are the three ways a decorator author would actually try to get at raw
-bytes, and all three are closed by the type rather than by a comment.
-
-**Runtime.** `LaunderingTransport` in the executor's probe is the worst decorator
-the current API permits: it wraps the real transport, wraps the real body in a
-`ByteStream` that forwards **nothing**, and re-wraps that with
-`BodyOrigin::carries_no_credential()` — an origin that actively asserts there is
-no secret to remove. Under round 2's API this was enough to disable redaction
-entirely, and it is what happened to the gate's own recorder mid-round-2.
-
-The assertion is made on **the decorator's own tee**, not on the error at the far
-end of the pipeline — "the bytes were already clean when the most hostile
-decorator this API permits first touched them":
-
-```
-what_the_decorator_itself_saw ......................... ok
-a_decorator_that_forwards_nothing_and_lies_about_its_origin_changes_nothing ... ok
-```
-
-The second one also asserts the laundered error is **string-identical** to the
-undecorated one, on all three adapters, so the decorator cannot have changed what
-was readable in either direction.
-
-**Verdict on the claim: it holds.** The executor could not write a body that
-silently bypasses redaction. Two residual observations, neither a gate failure:
-
-* `BodyOrigin::carries_no_credential()` and `BodyOrigin::default()` will produce
-  an unscrubbed body if handed a raw stream — but only from inside a
-  **transport**, which owns its bytes anyway, and only by typing out a named
-  claim. A *decorator* cannot reach a raw stream at all (probes 03–05).
-* `#[derive(Default)]` on `BodyOrigin` makes `BodyOrigin::default()` a quieter
-  spelling of that named claim. Cosmetic; noted for the crate's owner.
-
-### 4.4 The other direction — over-redaction — also closed
-
-Round 2 removed the credential by removing the endpoint. The three rounds, from
-`frontier/10-failover.txt` at each round's commit, verbatim from `git show`:
-
-```
-round 1  be4f1d8   <<< NO RESPONSE — Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
-round 2  81b5b8f   <<< NO RESPONSE — Connect: error sending request
-round 2  5845d29   <<< NO RESPONSE — Connect: error sending request
-round 3  (this)    <<< NO RESPONSE — Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
-```
-
-Round 1's diagnosis is back, and now it is safe: with a query credential the same
-line reads `…/v1/chat/completions?key=<redacted>`, from
-`frontier/11-credential-leak.txt`. **Silence would have been the regression; a
-redacted URL is the correct answer.**
-
-The user-facing form of the requirement — *a user with three candidates
-configured must be able to tell them apart* — is asserted directly rather than
-inferred, in `three_configured_candidates_produce_three_distinguishable_errors`:
-three dead loopback ports, three errors, each naming its own authority **and its
-request target**, each carrying `<redacted>` rather than nothing, and all three
-**pairwise distinct**. Naming *an* endpoint is not enough; the three strings have
-to differ.
-
-`with_no_credential_configured_nothing_is_redacted_at_all` is the control that
-tells redaction apart from deletion: same endpoint, same message, `Auth::None`,
-nothing redacted, the endpoint's diagnostic verbatim, on all three adapters.
-
-### 4.5 A correction to round 2's own table
-
-RESULTS.md round 2 §4 predicted that re-introducing defect 1 would leave round
-2's `credential_canary.rs` at **8 pass**. Measured on the round-3 tree it is
-**7 pass, 1 fail** — `an_endpoint_that_echoes_the_key_back_does_not_get_it_into_an_error`
-goes red. The reason is the fix itself: `read_to_end` no longer scrubs
-separately, because everything it reads has already come through
-`BodyStream::next_chunk`. There is now one door, so breaking it breaks both
-paths. That is a strict improvement in coverage and it makes round 2's prediction
-stale rather than wrong.
-
----
-
-## 5. What passed, and what the numbers were
-
-### Termination is single-digit milliseconds (MEASURED-1)
-
-Case **07c** takes five samples per profile and asserts the **median**, printing
-every sample.
-
-| profile | median | worst of five | `[DONE]` sent? | usage sent? |
+| profile | **credentialed median** | uncredentialed median | cost of redaction | worst credentialed |
 |---|---|---|---|---|
-| frontier | **3.34 ms** | 3.69 ms | yes | yes |
-| mid-local | **3.51 ms** | 4.41 ms | yes | yes |
-| small-local | **1.74 ms** | 2.19 ms | yes | **never** (it accepted `include_usage`) |
-| hostile | **3.36 ms** | 3.80 ms | **never** | **never** |
+| frontier | **3.38 ms** | 2.97 ms | 415 µs | 3.9 ms |
+| mid-local | **3.10 ms** | 2.57 ms | 529 µs | — |
+| small-local | **2.11 ms** | 1.82 ms | 286 µs | — |
+| hostile | **3.76 ms** | 3.01 ms | 756 µs | 3.95 ms |
 
-Against the recorded naive consumers: **5003 ms** and **5006 ms**, both timeouts.
-CONTROL 1 rebuilds the `[DONE]`-driven consumer on Vela's own transport and runs
-it live: **hostile hung for 5.001 s** and delivered 0 characters; frontier
-finished in 14.5 ms. CONTROL 11 shows the same median assertion failing at
-**810 ms** against a stalled socket, so it is not satisfied by every code path
-being fast. Round 2's 15.79 ms outlier did not recur; the spread this round is
-1.5–4.4 ms across all twenty samples.
+Against the recorded naive `[DONE]`-driven consumers: **5003 ms** and **5006
+ms**, both timeouts. CONTROL 1 rebuilds that consumer on Vela's own transport
+and runs it live: hostile hangs 5.001 s and delivers 0 characters.
 
-A socket that goes quiet is still abandoned rather than awaited: `07b`, with the
-endpoint on a 4 s inter-frame delay and an 800 ms stall budget, ends in an
-explicit error after ~810 ms on all four profiles — and that error now **names
-the endpoint**, from `BodyStream::endpoint()`.
+Two vacuity guards make the arms mean what they say, and both are asserted:
+the credentialed arm really did put a credential on the wire, and the
+uncredentialed arm really did not — so these are two different code paths and
+not the same one measured twice. Both arms deliver the same answer length, so
+redaction did not truncate anything.
 
-### Parallel tool calls agree across both transports
-
-Case 02p, all four profiles: `THE TWO TRANSPORTS AGREE, call by call — id, name,
-arguments, reason` passes on every profile, as does `NO SPLICING — every
-arguments string reported is one the endpoint sent`, and `the correlation ids in
-the batch are distinct — a result cannot be misrouted`. CONTROL 10 applies the
-same comparison to a deliberately truncated batch and **FAILS**, so the
-comparison is not vacuous on the profiles that emit one call.
-
-### Prompt-emulated tool calling still works end to end, including in parallel
-
-`small-local` has no native tools and 400s even with `tool_choice: "none"` — the
-control asserts that refusal is real before the emulation result is believed.
-Case 02: catalogue into a system message, `tools` array dropped, textual call
-parsed back out (`OK id=call_emulated_0 name=echo_tool emulated=true
-args={"text":"ok"}`), markup never shown, `ToolCallingEmulated { tool_count: 1 }`
-declared, turn ends in `ToolUse`.
-
-Case 02p adds the **parallel** emulated batch: two `<tool_call>` blocks in one
-answer, both recovered with their own arguments, **identical on both
-transports**, markup never reaching the user.
-
-**A harness limit, stated rather than papered over.** `small-local` echoes back
-only the first eight whitespace-delimited words of the prompt, hard-capped at 120
-characters. The two-call prompt was written to fit inside that. **What this
-proves is the parser and the round trip; it does not prove that two emulated
-calls survive an answer longer than 120 characters, because this harness cannot
-produce one.**
-
-### No data loss from malformed frames (MEASURED-2)
-
-`hostile/08-malformed-frames.txt`: 31 frames, three unusable. Strict `JSON.parse`
-on every frame delivers **31 characters**; Vela delivers **166** — byte-identical
-to the non-streamed ground truth — and raises `MalformedFramesSkipped { count: 3 }`.
-
-### Reasoning never leaks, and never reaches the tool parser (MEASURED-3)
-
-`mid-local` splits `</think>` across two frames (asserted against the recorded
-frames), `hostile` opens `<think>` twice and never closes it and the answer is
-recovered rather than swallowed, `frontier`'s `reasoning_content` lands in the
-reasoning channel and nowhere else. CONTROL 2 applies "no markup" to the raw
-`content` channel and FAILS on exactly the two profiles that carry reasoning
-inline.
-
-### Structured output is never silently trusted (MEASURED-5)
-
-All four profiles answer **200 OK**; `frontier` conforms, the other three return
-prose. CONTROL 3 records **1 PASS, 3 FAIL** applying conformance directly. Vela
-returns `structured: Some(Err(SchemaMismatch))`, raises
-`StructuredOutputMismatch`, moves `structured_output` to `Degraded`, and refuses
-the affordance thereafter with zero HTTP requests sent.
-
-### Explicit refusals, context overflow, failover
-
-Re-measured green: vision refused locally with no request on the wire where
-unprobed; a clean `ContextLengthExceeded` carrying each profile's own two
-numbers; `ContextReduced { dropped_messages: 17 }` when the window is known; a
-dead peer routed past with `FailedOver { attempts: 2 }` **and the dead peer named
-in the transcript**; a provider `SIGKILL`ed mid-request surfacing as
-`Transport { failure: Reset }` with **zero requests reaching the backup**,
-because output had already been committed.
-
-### Credentials
-
-With `Auth::None`: no `authorization` header, no api-key-shaped header of any
-other name, no credential in the query string, across every exchange of every
-case. CONTROL 4 configures a bearer token on the same path and the header
-appears. An empty keychain produces `AuthFailed` with **zero requests sent**. An
-endpoint that demands a key (`09b`) yields `AuthFailed`, never retried, never
-failed over.
-
-**The IPC boundary, recorded rather than assumed:** there is no `provider_*`
-command on the Rust allowlist and none in `contract.ts`, so no `ProviderError`
-crosses the bridge today. The serde rendering is asserted clean regardless —
-that is the shape a future `provider_stream` command would serialise into the
-WebView.
+**Redaction costs about half a millisecond per turn.** That is the honest number
+and it was not previously available.
 
 ---
 
-## 6. ASSERTION CONTROL
+## 5. ⛔ FINDING 3 — three spellings of a credential reach every surface
 
-Round 2 recorded 24 controls with 15 expected FAILs. Round 3 records **32 control
-experiments with 36 recorded FAILs, every one the expected one** — the 24 the
-recorder runs, plus 8 the executor added to attack the two claims this round is
-about.
+**This is the gate failure.** 8 assertions, two per profile, in case 13.
 
-### 6.1 The recorder's controls (`ASSERTION-CONTROL.txt`) — 24 verdicts, 15 FAIL
+### 5.1 What leaks
+
+The endpoint echoes the credential it was sent, spelled a given way, inside its
+error message. Vela's scrub resolves **JSON escapes** — because `serde_json` is
+the decoder Vela runs — and removes two **literal** spellings: the credential as
+written, and the percent-encoded form `RequestUrl::with_query_credential` puts
+in a query string. Everything else survives.
+
+| spelling | who writes it | verdict |
+|---|---|---|
+| percent-encoded, **UPPERCASE** hex, on a **header** binding | any encoder; this is the exact spelling Vela itself writes | ⛔ **READABLE** |
+| percent-encoded, **lowercase** hex, on **either** binding | a lowercase-hex percent encoder | ⛔ **READABLE** |
+| **every byte** percent-encoded | a paranoid encoder — or an endpoint choosing its spelling | ⛔ **RECONSTRUCTIBLE** in one decode pass |
+| HTML entities (`&#x2f;`) | anything HTML-escaping a message that also renders in a web console | ⛔ **READABLE** |
+
+Verbatim from `frontier/13-encoded-credential-leak.txt`:
+
+```
+percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · stream()
+    → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · complete()
+    → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · stream()
+    → RECONSTRUCTIBLE by one decode pass
+HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · stream()
+    → READABLE — Display: matched "Zx7Tn2q"
+```
+
+And the surface it lands on — the same four FINDING 2 landed on:
+
+```
+  Display     the endpoint rejected the credential: VELA-M4-ENCODING-MARKER:
+              rejected credential [%76%65%6C%61%2B…] for /v1/chat/completions
+  Debug       AuthFailed { detail: "… [%76%65%6C%61%2B…] …" }
+  serde JSON  {"kind":"authFailed","detail":"… [%76%65%6C%61%2B…] …"}   <- THE IPC WIRE SHAPE
+  StreamEvent {"type":"error","error":{"kind":"authFailed","detail":"… "}}  <- what the UI is handed
+```
+
+28 of 64 driven arms in each profile, on both bindings, both response shapes and
+both transports.
+
+### 5.2 The sharpest one is not the unbriefed one
+
+`percent-encoded, UPPERCASE hex` is in the table as a **control** — it is the
+spelling Vela itself writes on the wire, and it is deliberately a needle. It is
+removed on the query binding and **not** on a header binding.
+
+The cause, in `http.rs::HttpRequest::scrubber`:
+
+```rust
+for (name, value) in &self.headers {
+    if !self.secret_headers.iter().any(|secret| secret == name) { continue; }
+    needles.push(value.clone());                       // the raw value
+    if let Some((_, token)) = value.split_once(' ') {
+        needles.push(token.to_owned());                // and the bare token
+    }
+}
+Scrubber::new(needles).merged(&self.url.scrubber())    // percent forms arrive ONLY from here
+```
+
+The percent-encoded needle exists only inside `RequestUrl`, and a header-bound
+credential never goes through `RequestUrl`. So the two non-`Bearer` bindings
+Vela ships — **`x-api-key` (Anthropic) and `x-goog-api-key` (Google)** — carry a
+strictly smaller needle set than the query binding does. That is not a new
+requirement this executor invented; it is an existing intent, implemented for
+one of the three shapes.
+
+### 5.3 The structural statement, and the honest counter-argument
+
+**The statement.** Round 4 made the scrub *decoder-aware* for JSON escapes:
+`DecodedView` resolves escapes and matches in the decoded bytes, so `\/`,
+`\uXXXX`, a surrogate pair and any mixture are one case rather than a list. That
+is the right mechanism, and it holds. **Percent-encoding is handled by the
+opposite mechanism** — a hard-coded second literal, added in one place, for one
+binding. Two encodings, two mechanisms, and one of them is a list of one entry.
+
+**The counter-argument, stated because a reader deserves it.** A defensible
+narrower rule is: *remove every spelling Vela puts on the wire, and every
+spelling a decoder Vela runs will produce.* Under that rule percent and HTML
+spellings are out of scope, because Vela never percent-decodes or
+entity-decodes a response body — a human or a downstream tool does. On that
+reading FINDING 3 is materially less severe than FINDING 2, where Vela's own
+decoder handed the plaintext key to the UI.
+
+**Why it is still recorded as a FAIL.** Three reasons, in order of weight:
+
+1. The uppercase-percent case is not covered by that narrower rule either. It is
+   a spelling Vela **does** put on the wire, and the codebase already treats it
+   as a needle — just not for the bindings Anthropic and Google use.
+2. The instruction this round was executed under is explicit: *the canary must
+   reach no `Display`, `Debug`, serde rendering, or `StreamEvent` sink.* It
+   does, in four of them, in a form a reader recovers the key from by eye.
+3. For a product whose premise is offline-first local data sovereignty, a
+   credential recoverable from an error toast, a log line or a pasted bug report
+   is not consistent with the posture. Round 4's own commit messages argue this
+   about `\/`; the argument does not change when the alphabet does.
+
+### 5.4 Where the finding lives in the tree
+
+`tests/zz_gate_m_round4_executor_probe.rs::no_spelling_of_the_credential_survives_into_any_surface`
+is **red** and carries `#[ignore]` with the reason spelled out at the site.
+That is deliberate and is not a way of hiding it:
+
+* the **gate verdict** is carried by `record.sh`'s non-zero exit and by this
+  document, not by that test;
+* `cargo test` keeps meaning *"nothing NEW is broken"* — a permanently-red suite
+  trains a reader to skip the failure list, which is exactly how a second defect
+  hides behind a first;
+* **deleting the `#[ignore]` is the fix's acceptance test.**
+
+Run it with
+`cargo test -p vela-providers --test zz_gate_m_round4_executor_probe -- --ignored`.
+
+### 5.5 What a fix probably looks like — not prescribed, only scoped
+
+The executor did not fix this and does not own the design. Two shapes are
+visible from the evidence:
+
+* **Narrow:** add `percent_encode(value)` to the needle set for header bindings
+  too, closing 5.2 alone. One line, closes the case the codebase already thinks
+  it handles, leaves lowercase and every-byte open.
+* **Structural:** a `PercentDecodedView` beside `DecodedView`, so percent
+  spellings are *resolved* rather than *enumerated*, the way JSON escapes now
+  are. That closes all three percent cases with one mechanism. HTML entities
+  would remain, and a deliberate written decision to leave them out of scope
+  would then be a defensible answer rather than an omission.
+
+---
+
+## 6. What else this round drove that nobody had
+
+### 6.1 A credential fragmented across two real TCP writes
+
+Round 3's §8 recorded this as a hole it could not close: *"Nothing about a
+credential split across a chunk boundary on a real socket.
+`Scrubber::hold_back_len` is proved by a scripted one-byte-at-a-time body, not
+by a peer that actually fragments that way."*
+
+`zz_gate_m_round4_executor_probe.rs::a_credential_fragmented_across_two_real_tcp_writes_is_still_removed`
+closes it. The peer splits its response body across two `write_all` calls with a
+60 ms delay, and the split offset is **swept** so it lands inside the
+credential and inside a `\/` escape sequence. The test asserts, from the peer's
+own send buffer, that at least four sampled offsets genuinely cut the credential
+in half — so it cannot pass by never having split anything. **Green.**
+
+### 6.2 The redirect status sweep and the same-authority hop
+
+§3.1. Nobody had driven anything but `302`, and nobody had recorded what the
+implementation *chose* to do about a same-authority hop.
+
+### 6.3 The canary containment tripwire, generalised
+
+Round 3 asserted its one canary appeared in no transcript but case 11's. Round 4
+has three canaries and three answers: case 11's belongs in
+`11-credential-leak.txt`; case 13's belongs in `13-encoded-credential-leak.txt`,
+because there **the spelling is the evidence** and masking it would destroy what
+a reader has to see; case 12's is **masked wherever that transcript prints
+received bytes** and should therefore appear nowhere at all. All three assertions
+pass.
+
+---
+
+## 7. ASSERTION CONTROL — 36 experiments, 39 recorded expected FAILs
+
+Round 3 recorded 32 experiments with 36 expected FAILs. Round 4 records **36
+experiments with 39**: the recorder's 24, round 3's 8 **re-run live rather than
+carried forward**, and 4 new ones attacking what round 4 changed.
+
+**The counting rule, stated because the previous rounds' totals do not
+reconstruct from their own tables.** An *experiment* is one control setup. An
+*expected FAIL* is one recorded red-or-rejected outcome inside it.
+
+| group | experiments | expected FAILs |
+|---|---:|---:|
+| the recorder's controls (`ASSERTION-CONTROL.txt`) | 24 | 15 |
+| round 3's executor controls, re-run live | 8 | 13 |
+| round 4's executor controls | 4 | 11 |
+| **total** | **36** | **39** |
+
+### 7.1 The recorder's controls (`ASSERTION-CONTROL.txt`) — 24 verdicts, 15 FAIL
 
 | control | applied where it should not hold | result |
 |---|---|---|
 | 1 | a `[DONE]`-driven consumer against `hostile` | **HUNG, 5.001 s**, 0 chars |
-| 2 | "no `<think>` markup" against the raw content channel | **FAIL** on `mid-local`, `hostile`; PASS on `frontier` |
+| 2 | "no `<think>` markup" against the raw content channel | **FAIL** on `mid-local`, `hostile` |
 | 3 | "the answer conforms to the schema" against each profile | **FAIL** on three of four |
 | 4 | "no authorization header" against a configured bearer token | **FAIL** |
 | 5 | "the vision affordance is absent" against `frontier` | **FAIL** |
 | 6 | "exactly one executable tool call" against `hostile` | **FAIL** (2 reported) |
 | 7 | "the turn overflows the window" against a 5-character prompt | **FAIL** |
-| 8 | "every parallel call comes back" with round 1's rule restored | **FAIL** — one spliced call, verbatim |
-| 9 | "the credential is not in this text" against `expose()` and the pre-fix detail | **FAIL** on both; PASS on the two redacted renderings |
-| 10 | "the two transports agree" against a deliberately truncated batch | **FAIL** |
+| 8 | "every parallel call comes back" with round 1's rule restored | **FAIL** — one spliced call |
+| 9 | "the credential is not in this text" against `expose()` | **FAIL** |
+| 10 | "the two transports agree" against a truncated batch | **FAIL** |
 | 11 | "termination in single-digit ms" against a stalled socket | **FAIL, 810 ms** |
 
-### 6.2 The executor's controls (`structural/control-results.txt`) — 8 experiments
+### 7.2 In-case positive controls (not counted above)
 
-Five are compile probes; three re-introduce a defect into `src/http.rs` and
-re-run four suites. Full output in `structural/control-results.txt`; the tree is
-restored on every exit path and `git diff src/` is empty afterwards, which was
-verified.
+Case **12** carries its own, and it is the strongest control in this directory
+because it is a *live channel* rather than a re-introduced defect: the same
+sockets, the same providers, `reqwest`'s defaults instead of Vela's policy, and
+**the canary arrives** — for exactly the three bindings upstream does not
+protect. Case **13** carries the peer-send-buffer premise, which asserts the
+encoding peers left no literal copy on the wire, so the literal pass genuinely
+had nothing to match.
+
+### 7.3 Round 3's executor controls, re-run live (`structural/control-results.txt`)
 
 | # | control | expected | observed |
 |---|---|---|---|
-| E1–E5 | five bypasses compiled against the real crate (§4.3) | all rejected, each for its own error code | **all rejected**, E0308 / E0407 / E0616 / E0599 / E0277 |
-| **E6** | **DEFECT 1** — `next_chunk` hands bytes back unmodified (round 2's streaming path, restored) | the leak suites go red | **17 tests red**: executor probe 3/5, `streamed_credential_canary` 10/15, `finding_two_recipe` 3/4, `credential_canary` 1/8 |
-| **E7** | **DEFECT 2** — `without_url()` and nothing re-attached (round 2's over-redaction) | only the endpoint-identity assertions go red | **exactly 2 tests red**, and different ones: `three_configured_candidates_produce_three_distinguishable_errors`, `transport_failures_still_name_the_endpoint_they_failed_on` |
-| **E8** | **DEFECT 3** — `BodyStream::inner` made public | a compile probe starts compiling | **probe-03 COMPILED**, correctly detected |
+| E1–E5 | five compile bypasses against the real crate | all rejected, each for its own code | **all rejected**, E0308 / E0407 / E0616 / E0599 / E0277 |
+| E6 | **DEFECT 1** — `next_chunk` hands bytes back unmodified | the leak suites go red | **5 red** across two suites *(round 3 recorded 17)* |
+| E7 | **DEFECT 2** — `without_url()` and nothing re-attached | only endpoint-identity assertions go red | **exactly 2 red**, both endpoint-identity — unchanged from round 3 |
+| E8 | **DEFECT 3** — `BodyStream::inner` made public | a compile probe starts compiling | **probe-03 COMPILED**, correctly detected |
 
-**E6 and E7 are disjoint**, which is what a gate needs in order to tell the two
-directions of this round's change apart. Under DEFECT 1 the `Auth::None` control
-and every endpoint-identity test stay green; under DEFECT 2 every leak assertion
-stays green. Round 2's own `credential_canary.rs` is **untouched by DEFECT 2** —
-which is exactly why it shipped that defect.
+**A correction to round 3's own table, measured rather than carried forward.**
+Round 3 recorded DEFECT 1 turning **17 tests red across four suites**. On this
+tree it turns **5 red across two**, and `finding_two_recipe` (was 3 red) and
+round 2's `credential_canary` (was 1 red) now stay **fully green** under it:
 
-E8 is the control that caught a hole in the executor's *own* probe (§4.1b) before
-the probe was believed.
+```
+  DEFECT 1, round 3 tree      probe 3/5 · streamed 10/15 · recipe 3/4 · canary 1/8  = 17
+  DEFECT 1, round 4 tree      probe 2/5 · streamed  3/15 · recipe 0/4 · canary 0/8  =  5
+```
+
+That is not a regression in coverage — it is round 4's **second barrier** doing
+its job. Breaking the byte scrub no longer breaks the whole pipeline, because
+`decode_json` scrubs the decoded value afterwards and catches most of what gets
+through. Defence in depth is worth having; the cost, stated plainly, is that
+**a single control now under-reports how much of the redaction it disabled.**
+That is exactly why round 4 injects the two barriers separately (E10, E11)
+rather than relying on E6 alone.
+
+The three surviving red tests under DEFECT 1 are the ones that read the *bytes*
+rather than the rendered error — `positive_control_the_pre_fix_streamed_read_leaks`,
+`positive_control_a_credential_split_across_two_chunks_leaks`, and the decorator
+probes — which is the correct set for a defect in the byte stream.
+
+### 7.4 Round 4's executor controls (`structural/control-results-round4.txt`) — 4 experiments, 11 FAILs
+
+Baseline (with `--include-ignored`, so FINDING 3's test is counted rather than
+skipped):
+
+```
+  wire_redirect_egress               6 passed; 0 failed
+  encoded_credential_canary         11 passed; 0 failed
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed   <- FINDING 3, expected
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary        15 passed; 0 failed
+```
+
+| # | defect re-introduced | expected | observed |
+|---|---|---|---|
+| **E9** | **DEFECT 4** — the redirect policy removed; `reqwest`'s `Policy::limited(10)` and `referer: true` restored (the tree the round-3 critic failed) | the redirect suite goes red, the redaction suites do not | **4 red**, all in `wire_redirect_egress`; every redaction suite **green** |
+| **E10** | **DEFECT 5** — BARRIER ONE: `scrub_bytes` stops resolving escape spans (round 3's tree exactly) | the encoding suite goes red, the redirect suite does not | **2 red** — `positive_control_a_byte_literal_scrub_is_undone_by_the_decoder`, `the_two_barriers_are_independent`; redirect **green** |
+| **E11** | **DEFECT 6** — BARRIER TWO: `decode_json` stops calling `scrub_value` | a *different, narrower* set goes red | **1 red** — `the_two_barriers_are_independent` only |
+| **E12** | **DEFECT 7** — `authority_of` compares scheme and host but drops the **port** | the redirect suite goes red; nothing else does | **4 red** in `wire_redirect_egress`; every redaction suite **green** |
+
+**The four are disjoint in the way the gate needs.** E9 and E12 move only the
+redirect axis; E10 and E11 move only the redaction axis, and they move it by
+*different amounts* — 2 tests versus 1 — which is what shows the two barriers
+are independently tested rather than jointly satisfied by one assertion.
+
+E10 and E11 are injected **separately on purpose**. Commit `8e3d3ef` records a
+session in which both were disabled at once and a probe still passed, which is
+how a third, undesigned defence was found (`normalise_error_body`'s
+decode/re-encode round trip normalises escaping). One defect at a time is the
+only way to attribute anything.
+
+E12 is the one worth dwelling on: dropping the port from the authority
+comparison is the *plausible* weakening — it reads like a simplification, and it
+would let a redirect to a **different service on the same host** through. It
+turns four tests red, so the port check is load-bearing and asserted.
 
 ---
 
-## 7. Gate verdict
-
-**Round 3: all eleven pieces PASS.**
+## 8. Gate verdict
 
 | piece | verdict |
 |---|---|
 | 1. plain chat, streamed and not | **PASS** — identical on all four |
-| 2. tool calling, including **parallel** | **PASS** — native, emulated and parallel; live on all four profiles; both transports agree call by call. FINDING 1 closed and reproducible on demand (CONTROL 8) |
-| 3. vision | **PASS** — offered only where probed, refused locally elsewhere |
-| 4. structured output | **PASS** — never silently conformant, on either transport |
-| 5. context overflow | **PASS** — clean error, and visible reduction when the window is known |
-| 6. reasoning | **PASS** — no leak, no swallow, excluded from tool parsing |
-| 7. stream termination | **PASS** — medians 1.7–3.5 ms where a naive consumer hangs 5 s |
+| 2. tool calling, including parallel | **PASS** — native, emulated and parallel; both transports agree call by call |
+| 3. vision | **PASS** — offered only where probed |
+| 4. structured output | **PASS** — never silently conformant |
+| 5. context overflow | **PASS** — clean error, visible reduction |
+| 6. reasoning | **PASS** — no leak, no swallow |
+| 7. stream termination | **PASS** — credentialed medians 2.1–3.8 ms where a naive consumer hangs 5 s |
 | 8. malformed frames | **PASS** — 166 characters against a strict consumer's 31 |
 | 9. no credential | **PASS** — nothing on the wire, positively controlled |
 | 10. failover | **PASS** — routes past a dead peer, names it, refuses to replay a killed one |
-| **11. credentials in errors** | **PASS** — clean on nine forced paths × four profiles × five renderings × the event sink, on a bare transport and behind the worst decorator the API permits; on all three adapters, both bindings, both transports; with the endpoint's own diagnosis intact |
+| 11. credentials in errors — **literal and JSON-escaped** | **PASS** — clean on every forced path, both bindings, both transports, all adapters |
+| **12. redirect egress** | **PASS** — third party receives zero bytes on all four `Auth` variants × both calls; positively controlled against a live leak |
+| **13. credentials in errors — other encodings** | ⛔ **FAIL** — see FINDING 3 |
 
-**GATE M Part 1 (Phase B) PASSES.**
+**⛔ GATE M Part 1 (Phase B) FAILS.**
 
-The gate criterion asks whether any piece crashes, hangs, silently produces wrong
-output, or offers an affordance the profile cannot support. Nothing observed in
-this run does. The one hang recorded is CONTROL 1, which is a *naive* consumer
-built to hang so that Vela's 3 ms termination means something.
+The gate criterion asks whether any piece crashes, hangs, silently produces
+wrong output, offers an affordance the profile cannot support, or lets a
+credential reach a host the user did not configure. **None of those is what
+failed.** Nothing crashed, nothing hung, no affordance was over-offered, and
+case 12 establishes that no credential reaches an unconfigured host — including
+under a redirect, which is where it used to. The failure is the explicit
+round-4 assertion that a credential must reach no `Display`, `Debug`, serde
+rendering or `StreamEvent` sink, in §5.
 
-Two things this executor wants on the record with the pass:
+Three things this executor wants on the record with the failure:
 
-1. **The claim that was checked is the strong one.** Not "the leak is gone" but
-   "an unscrubbed read is not expressible". Five bypasses written by someone who
-   did not write the fix were all rejected by the compiler, and the one runtime
-   bypass the API still permits — a decorator that forwards nothing and lies
-   about its origin — changes the output not at all.
-2. **The gate's own instrumentation was wrong twice and was fixed rather than
-   filed** (§4.1). Both fixes made the evidence stronger: the premise is now
-   taken from the peer's send buffer rather than from inside Vela, and the
-   compile probes now fail one reason at a time.
+1. **The two defects round 4 was launched to fix are both closed, and were
+   checked adversarially rather than read.** The redirect fix is proved against
+   a live third party with a positive control that watches the canary arrive
+   when the policy is removed; the encoding fix is proved against peers whose
+   bytes contain no literal copy of the credential at all.
+2. **FINDING 3 is one step further out along the same axis as the round-3
+   functionality FAIL, and it is not the same defect.** Round 3's was "the
+   scrub is byte-literal and a decoder undoes it". Round 4 fixed that for the
+   decoder Vela runs. FINDING 3 is "the scrub is decoder-aware for one encoding
+   and literal-with-one-hard-coded-alternative for another, and that
+   alternative is missing on two of the three bindings Vela ships." Whether
+   that pattern is convergence or thrash is the lead's call, not the executor's,
+   and §5.3 gives both readings honestly.
+3. **The executor's own instrumentation was wrong once and was fixed rather
+   than filed.** The first draft of the lowercase-percent spelling lowercased
+   the *whole* credential rather than only its hex digits — a spelling no
+   encoder produces — and the probe duly reported a leak that was an artefact of
+   its own construction. It was corrected before anything was believed, and the
+   corrected spelling still leaks. This is the fourth consecutive round in
+   which the gate executor caught its own tooling lying; that habit is why
+   these results are worth believing.
 
 **Nothing here has moved on GATE M Part 2** — a real llama.cpp endpoint — which
 was not attempted and remains deferred to the desktop session.
 
 ---
 
-## 8. What this run does NOT prove
+## 9. What this run does NOT prove
 
 * **Nothing about a real model.** Every endpoint is a mock. GATE M Part 2 stays
   deferred and is still the largest hole in the evidence base for the project.
 * **Nothing about the OS keychain.** Exercised against `MemoryStore`.
 * **Nothing about the packaged binary or the running app.** `conventions.md` §11.
-* **The Anthropic and Google adapters are now driven live** — over real TCP,
-  through all seven forced failures, both bindings, both transports
-  (`streamed_credential_canary.rs`, and the executor's probe) — which round 2's
-  §8 had to disclaim. But **only for the credential and error paths.** The
-  capability matrix (cases 00–10) still drives `OpenAiCompatibleProvider` alone;
-  nothing here is evidence about Anthropic's or Google's normalisation,
-  reasoning splitting, tool accumulation or streaming behaviour beyond errors.
+* **Nothing about HTTPS.** Every socket here is plaintext loopback. The redirect
+  policy treats `http`→`https` on the same host as a *different* authority and
+  refuses it, which is asserted — but no TLS handshake was performed, so nothing
+  here is evidence about certificate handling or about what `reqwest` does on a
+  real scheme upgrade.
+* **Nothing about a redirect *chain* longer than the two hops driven.** The
+  same-authority hop limit (`MAX_SAME_AUTHORITY_REDIRECTS = 4`) is asserted by
+  `wire_redirect_egress.rs`, not by the matrix.
+* **Nothing about cases 00–10 on the Anthropic or Google adapters.** The
+  capability matrix still drives `OpenAiCompatibleProvider` alone. Cases 11, 12
+  and 13 and the credential suites drive all four adapters, but **only for the
+  credential, error and egress paths.**
+* **Nothing about `CompatProvider`'s discovery, capability probing or tool
+  emulation.** Only its credential-in-error path is driven
+  (`zz_integration_round4_probe.rs`).
 * **Nothing about emulated tool calls in a long answer.** The `small-local` mock
-  echoes at most 120 characters, so a two-call emulated batch had to be written
-  to fit inside that. §5 states the limit.
-* **Nothing about sampling knobs.** `temperature`, `top_p`, `stop` and `seed` are
-  sent and silently discarded by all four profiles.
-* **Nothing about prompt caching.** No matrix endpoint implements it; the
-  capability stays `Unknown`, and `Unknown` is not offerable.
-* **Nothing about multi-call tool conversations.** Emulation's `render_results`
-  round trip is still not exercised here.
-* **Nothing about a credential split across a chunk boundary *on a real
-  socket*.** `Scrubber::hold_back_len` is proved by a scripted one-byte-at-a-time
-  body (`positive_control_a_credential_split_across_two_chunks_leaks`), not by a
-  peer that actually fragments that way — this container's loopback does not
-  reliably produce that split.
+  echoes at most 120 characters.
+* **Nothing about sampling knobs, or prompt caching.** Sent and discarded; not
+  implemented by any matrix endpoint.
+* **Nothing about whether the encodings in FINDING 3 are ones a real gateway
+  emits.** They are ones an encoder *can* emit, and one of them is the spelling
+  Vela itself writes. The realism ranking in §5.1 is the executor's judgement,
+  labelled as such.
 
 ---
 
-## 9. Reproducing
+## 10. Reproducing
 
 ```bash
-bash docs/regression-baseline/phase-b-matrix/record.sh            # the matrix: exits 0
-bash docs/regression-baseline/phase-b-matrix/structural/probe.sh  # 5 bypasses, all rejected
-bash docs/regression-baseline/phase-b-matrix/structural/controls.sh  # the defect injections
-cd src-tauri && cargo test -p vela-providers                      # 469 passed, 0 failed, 1 ignored
-pnpm verify                                                       # the whole gate, exit 0
+bash docs/regression-baseline/phase-b-matrix/record.sh                 # the matrix: exits 1 (FINDING 3)
+bash docs/regression-baseline/phase-b-matrix/structural/probe.sh       # 5 bypasses, all rejected
+bash docs/regression-baseline/phase-b-matrix/structural/controls.sh    # round 3's defect injections
+bash docs/regression-baseline/phase-b-matrix/structural/controls-round4.sh  # round 4's
+cd src-tauri && cargo test -p vela-providers                           # green, 1 ignored (FINDING 3)
+cd src-tauri && cargo test -p vela-providers -- --ignored              # FINDING 3, red
 ```
 
 Needs Node 22+ on `PATH`. The recorder is
 `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs`; it starts and stops
-its own servers on OS-assigned ports, including five raw TCP peers of its own for
-case 11. Wall-clock lines and ephemeral port numbers differ between runs;
+its own servers on OS-assigned ports, including the raw TCP peers for cases 11,
+12 and 13. Wall-clock lines and ephemeral port numbers differ between runs;
 everything else is byte-stable.
 
-`controls.sh` edits `src/http.rs` in place and restores it from a backup on every
-exit path, including a failure. It leaves `git diff src/` empty; if it ever does
-not, `git checkout src-tauri/crates/vela-providers/src/http.rs` is the recovery.
+Both control scripts edit shipping source in place and restore it from a backup
+on every exit path including a failure. `controls-round4.sh` touches `http.rs`
+**and** `redact.rs`; if either is ever interrupted hard,
+`git checkout src-tauri/crates/vela-providers/src/` is the recovery.
 
-The credential canary `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK` is a fake string that
-was never a credential for anything. The recorder asserts it appears in no
-per-profile transcript except `11-credential-leak.txt`, so a future run that
-leaked it into another case's evidence would fail the gate rather than sit here
-unnoticed. The executor's probe uses a second, different fake
-(`vela+exec3/Zq-…`) that appears only in its own source.
+The three canaries are fake strings that were never credentials for anything.
+The recorder asserts each appears only where it belongs — see §6.3 — so a future
+run that scattered one into another case's evidence would fail the gate rather
+than sit here unnoticed.

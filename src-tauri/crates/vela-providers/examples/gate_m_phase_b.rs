@@ -4661,6 +4661,1240 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
 }
 
 // ===========================================================================
+// Case 12 — redirect egress (round 4)
+// ===========================================================================
+//
+// The round-3 panel's security FAIL, driven as gate evidence rather than read
+// off a fix. `reqwest`'s defaults are `Policy::limited(10)` with
+// `referer: true`, and its cross-host protection strips exactly five headers:
+// `authorization`, `cookie`, `cookie2`, `proxy-authorization`,
+// `www-authenticate`. `x-api-key` is not among them; neither is
+// `x-goog-api-key`; neither is any header an `Auth::ApiKeyHeader` binding
+// names. And `make_referer` keeps the query string, so an `Auth::ApiKeyQuery`
+// credential rode to the next hop inside a `Referer`.
+//
+// So a `3xx` from the configured endpoint handed the user's key to a host they
+// never named, on the first request of a healthy turn, with no error anywhere.
+// This case asserts the third party receives **zero bytes** — not "no
+// credential", zero bytes — because the rule is that Vela talks to the endpoint
+// the user configured and to nothing else, and a prompt is user data too.
+
+/// Case 12's canary. Distinct from case 11's, so a transcript that carries one
+/// cannot be mistaken for a transcript that carries the other, and so the
+/// spread tripwire can name the file each belongs in.
+const REDIRECT_CANARY: &str = "vela+gate/m4-redirect-Rk2p9Wq-DO-NOT-LEAK";
+const REDIRECT_CANARY_CORE: &str = "Rk2p9Wq";
+
+fn redirect_canary_needles() -> Vec<String> {
+    vec![
+        REDIRECT_CANARY.to_owned(),
+        vela_providers::redact::percent_encode(REDIRECT_CANARY),
+        vela_providers::redact::percent_encode(REDIRECT_CANARY).to_lowercase(),
+        REDIRECT_CANARY_CORE.to_owned(),
+    ]
+}
+
+/// A listener that records everything it is sent and answers however it is
+/// told to. Stands in for both halves of the redirect: the endpoint the user
+/// configured, and the third party they did not.
+struct EgressRecorder {
+    url: String,
+    task: tokio::task::JoinHandle<()>,
+    /// Raw request bytes, one entry per accepted connection.
+    received: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// Accepted TCP connections, whether or not a byte followed. A client that
+    /// opened a socket and thought better of it still told the third party the
+    /// user exists.
+    connections: Arc<Mutex<usize>>,
+}
+
+/// What an [`EgressRecorder`] answers with.
+#[derive(Clone)]
+enum Answer {
+    /// A `3xx` pointing somewhere else.
+    Redirect { status: u16, location: String },
+    /// A `3xx` pointing at this same listener, on a different path — the
+    /// reverse-proxy-normalising-a-path case, which is real and harmless.
+    RedirectToSelfPath { status: u16, path: String },
+    /// An ordinary successful chat completion.
+    Chat,
+}
+
+impl EgressRecorder {
+    async fn start(answer: Answer) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback bind");
+        let address = listener.local_addr().expect("bound");
+        let url = format!("http://{address}");
+        let received: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::new()));
+        let connections = Arc::new(Mutex::new(0usize));
+        let received_by_task = Arc::clone(&received);
+        let connections_by_task = Arc::clone(&connections);
+        let self_url = url.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                *connections_by_task.lock().expect("poisoned") += 1;
+                let mut scratch = vec![0u8; 32768];
+                let read = socket.read(&mut scratch).await.unwrap_or(0);
+                let raw = scratch[..read].to_vec();
+                let target = String::from_utf8_lossy(&raw)
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/")
+                    .to_owned();
+                received_by_task.lock().expect("poisoned").push(raw);
+
+                let body = json!({
+                    "id": "redirect-probe",
+                    "object": "chat.completion",
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "followed"},
+                        "finish_reason": "stop"
+                    }]
+                })
+                .to_string();
+                let response = match &answer {
+                    Answer::Redirect { status, location } => format!(
+                        "HTTP/1.1 {status} Found\r\nlocation: {location}\r\n\
+                         content-length: 0\r\nconnection: close\r\n\r\n"
+                    ),
+                    // Only the FIRST path redirects; the destination serves a
+                    // normal answer, or this would loop forever.
+                    Answer::RedirectToSelfPath { status, path }
+                        if !target.starts_with(path.as_str()) =>
+                    {
+                        format!(
+                            "HTTP/1.1 {status} Moved Permanently\r\nlocation: {self_url}{path}\r\n\
+                             content-length: 0\r\nconnection: close\r\n\r\n"
+                        )
+                    }
+                    _ => format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    ),
+                };
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+            }
+        });
+        Self {
+            url,
+            task,
+            received,
+            connections,
+        }
+    }
+
+    fn connections(&self) -> usize {
+        *self.connections.lock().expect("poisoned")
+    }
+
+    fn transcript(&self) -> String {
+        self.received
+            .lock()
+            .expect("poisoned")
+            .iter()
+            .map(|raw| String::from_utf8_lossy(raw).into_owned())
+            .collect::<Vec<_>>()
+            .join("\n----\n")
+    }
+
+    fn bytes_received(&self) -> usize {
+        self.received
+            .lock()
+            .expect("poisoned")
+            .iter()
+            .map(Vec::len)
+            .sum()
+    }
+
+    fn stop(self) {
+        self.task.abort();
+    }
+}
+
+/// Which credential binding is configured. All four `Auth` variants, plus the
+/// second header name Vela actually ships, because `x-api-key` and
+/// `x-goog-api-key` are Anthropic's and Google's and both are absent from
+/// `reqwest`'s strip list.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RedirectBinding {
+    None,
+    Bearer,
+    AnthropicHeader,
+    GoogleHeader,
+    Query,
+}
+
+impl RedirectBinding {
+    const ALL: [RedirectBinding; 5] = [
+        RedirectBinding::None,
+        RedirectBinding::Bearer,
+        RedirectBinding::AnthropicHeader,
+        RedirectBinding::GoogleHeader,
+        RedirectBinding::Query,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            RedirectBinding::None => "Auth::None",
+            RedirectBinding::Bearer => "Auth::Bearer",
+            RedirectBinding::AnthropicHeader => "Auth::ApiKeyHeader{x-api-key}",
+            RedirectBinding::GoogleHeader => "Auth::ApiKeyHeader{x-goog-api-key}",
+            RedirectBinding::Query => "Auth::ApiKeyQuery{key}",
+        }
+    }
+
+    /// What `reqwest`'s own defaults do with this binding across a cross-host
+    /// hop. Asserted by the positive control, not read off a changelog.
+    fn leaks_without_a_policy(self) -> bool {
+        !matches!(self, RedirectBinding::None | RedirectBinding::Bearer)
+    }
+
+    fn auth(self, secret: SecretRef) -> Auth {
+        match self {
+            RedirectBinding::None => Auth::None,
+            RedirectBinding::Bearer => Auth::Bearer { secret },
+            RedirectBinding::AnthropicHeader => Auth::ApiKeyHeader {
+                header: "x-api-key".into(),
+                secret,
+            },
+            RedirectBinding::GoogleHeader => Auth::ApiKeyHeader {
+                header: "x-goog-api-key".into(),
+                secret,
+            },
+            RedirectBinding::Query => Auth::ApiKeyQuery {
+                param: "key".into(),
+                secret,
+            },
+        }
+    }
+}
+
+fn redirect_provider(
+    binding: RedirectBinding,
+    base_url: &str,
+    transport: Arc<dyn HttpTransport>,
+) -> OpenAiCompatibleProvider {
+    let store = Arc::new(MemoryStore::new());
+    let secret = SecretRef::primary("redirect").expect("static id is valid");
+    store
+        .set(&secret, &SecretValue::new(REDIRECT_CANARY))
+        .expect("MemoryStore accepts a non-empty value");
+    OpenAiCompatibleProvider::new(
+        ProviderDescriptor::new("redirect", "Redirect egress", ProviderKind::Local)
+            .expect("static id is valid"),
+        format!("{base_url}/v1"),
+        binding.auth(secret),
+        store,
+        transport,
+    )
+}
+
+/// `ReqwestTransport` as it was **before** the fix: the same client with
+/// `no_proxy` and a user agent, and `reqwest`'s untouched redirect and referer
+/// defaults. The positive control, without which "no egress" proves nothing.
+struct PreFixTransport {
+    client: reqwest::Client,
+}
+
+impl PreFixTransport {
+    fn new() -> Self {
+        Self {
+            client: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .no_proxy()
+                .user_agent("vela/pre-fix-control")
+                .build()
+                .expect("the control client builds"),
+        }
+    }
+}
+
+#[async_trait]
+impl HttpTransport for PreFixTransport {
+    async fn send(
+        &self,
+        request: HttpRequest,
+        _timeouts: &Timeouts,
+    ) -> Result<HttpResponse, TransportError> {
+        let origin = request.origin();
+        let mut builder = match request.method {
+            vela_providers::http::HttpMethod::Get => self.client.get(request.url.expose()),
+            vela_providers::http::HttpMethod::Post => self.client.post(request.url.expose()),
+        };
+        for (name, value) in &request.headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(body) = request.body {
+            builder = builder.body(body);
+        }
+        let response = builder.send().await.map_err(|error| {
+            TransportError::new(
+                vela_providers::TransportFailure::Reset,
+                origin.scrubber().scrub(error.without_url().to_string()),
+            )
+        })?;
+        let status = response.status().as_u16();
+        let headers = ResponseHeaders::new(
+            response.headers().iter().map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_owned(),
+                )
+            }),
+            &origin,
+        );
+        Ok(HttpResponse {
+            status,
+            headers,
+            body: BodyStream::new(PreFixBody { response }, origin),
+        })
+    }
+}
+
+struct PreFixBody {
+    response: reqwest::Response,
+}
+
+#[async_trait]
+impl ByteStream for PreFixBody {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, TransportError> {
+        match self.response.chunk().await {
+            Ok(Some(bytes)) => Ok(Some(bytes.to_vec())),
+            Ok(None) => Ok(None),
+            Err(error) => Err(TransportError::new(
+                vela_providers::TransportFailure::Reset,
+                error.without_url().to_string(),
+            )),
+        }
+    }
+}
+
+/// Drive one turn, either transport, and return whatever came back.
+async fn drive_redirect(
+    provider: &OpenAiCompatibleProvider,
+    streamed: bool,
+) -> Result<String, ProviderError> {
+    let request = ChatRequest::new("redirect-model").with_message(ChatMessage::user("hi"));
+    if streamed {
+        let mut sink = CollectingSink::new();
+        provider
+            .stream(request, &mut sink, &context())
+            .await
+            .map(|response| response.answer_text())
+    } else {
+        provider
+            .complete(request, &context())
+            .await
+            .map(|response| response.answer_text())
+    }
+}
+
+/// Replace every spelling of the canary with a marker, so a transcript can be
+/// committed without a credential — even a fake one — in it.
+fn mask_redirect_canary(text: &str) -> String {
+    let mut out = text.to_owned();
+    for needle in redirect_canary_needles() {
+        out = out.replace(&needle, "<CANARY — MASKED BY THE RECORDER>");
+    }
+    out
+}
+
+async fn case_12(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new(
+        profile,
+        "12-redirect-egress",
+        "a 3xx must not carry the request — or the credential — off the configured authority",
+        "The round-3 panel's security FAIL. `reqwest`'s cross-host protection strips five \
+         headers and none of them is `x-api-key`, `x-goog-api-key` or anything an \
+         `Auth::ApiKeyHeader` binding names; `make_referer` keeps the query string. So a \
+         redirect from the configured endpoint handed the user's key to a host they never \
+         configured, on the first request of a healthy turn.",
+    );
+    doc.p(
+        "  THE SUBJECT IS THE THIRD PARTY, not Vela. Every assertion below is made against\n  \
+         what a recording listener on a port the user never configured actually received:\n  \
+         accepted connections, raw bytes, and the literal request the client wrote. A\n  \
+         credential smuggled in a `Referer`, in a query string, or in a header nobody\n  \
+         thought to enumerate is caught the same way, because nothing is enumerated.",
+    );
+    doc.p(
+        "  The canary is masked wherever this file prints received bytes. It is a fake that\n  \
+         was never a credential for anything, and the transcript is still committed.",
+    );
+
+    // ---- the fixed transport, every binding, both transports ----------------
+    doc.h("Vela's shipping transport — every binding, complete() and stream()");
+    let mut refused = 0usize;
+    let mut third_party_connections = 0usize;
+    let mut third_party_bytes = 0usize;
+    let mut redirector_hits = 0usize;
+    let mut leaked_bindings: Vec<&'static str> = Vec::new();
+    let mut error_named_both = 0usize;
+    let mut retryable = 0usize;
+    let mut canary_in_error: Vec<String> = Vec::new();
+
+    for binding in RedirectBinding::ALL {
+        for streamed in [false, true] {
+            let third_party = EgressRecorder::start(Answer::Chat).await;
+            let redirector = EgressRecorder::start(Answer::Redirect {
+                status: 302,
+                location: format!("{}/v1/chat/completions", third_party.url),
+            })
+            .await;
+
+            let provider = redirect_provider(
+                binding,
+                &redirector.url,
+                Arc::new(ReqwestTransport::new().expect("http client builds")),
+            );
+            let outcome = drive_redirect(&provider, streamed).await;
+
+            redirector_hits += redirector.connections();
+            third_party_connections += third_party.connections();
+            third_party_bytes += third_party.bytes_received();
+
+            let transcript = third_party.transcript();
+            if redirect_canary_needles()
+                .iter()
+                .any(|needle| transcript.contains(needle.as_str()))
+            {
+                leaked_bindings.push(binding.label());
+            }
+
+            match &outcome {
+                Err(error) => {
+                    refused += 1;
+                    let renderings = renderings_of(error);
+                    let names_both = renderings.iter().all(|(_, text)| {
+                        text.contains(&redirector.url) && text.contains(&third_party.url)
+                    });
+                    if names_both {
+                        error_named_both += 1;
+                    }
+                    if error.allows_retry() {
+                        retryable += 1;
+                    }
+                    for (label, text) in &renderings {
+                        if redirect_canary_needles()
+                            .iter()
+                            .any(|needle| text.contains(needle.as_str()))
+                        {
+                            canary_in_error.push(format!("{} / {label}", binding.label()));
+                        }
+                    }
+                    if binding == RedirectBinding::Query && !streamed {
+                        doc.kv(
+                            "example error (Display)",
+                            mask_redirect_canary(&error.to_string()),
+                        );
+                    }
+                }
+                Ok(answer) => {
+                    doc.kv(
+                        &format!("{} / {}", binding.label(), transport_label(streamed)),
+                        format!("FOLLOWED — the turn succeeded with {answer:?}"),
+                    );
+                }
+            }
+
+            doc.kv(
+                &format!("{} / {}", binding.label(), transport_label(streamed)),
+                format!(
+                    "third party: {} connections, {} bytes · redirector: {} connections · {}",
+                    third_party.connections(),
+                    third_party.bytes_received(),
+                    redirector.connections(),
+                    match &outcome {
+                        Ok(_) => "turn SUCCEEDED".to_owned(),
+                        Err(error) =>
+                            format!("refused: {}", mask_redirect_canary(&error.to_string())),
+                    }
+                ),
+            );
+
+            third_party.stop();
+            redirector.stop();
+        }
+    }
+
+    let arms = RedirectBinding::ALL.len() * 2;
+    doc.h("assertions — the shipping transport");
+    doc.check(
+        "the configured endpoint really was contacted on every arm — nothing is vacuous",
+        redirector_hits >= arms,
+        format!("{redirector_hits} connections across {arms} arms"),
+    );
+    doc.check(
+        "THE THIRD PARTY ACCEPTED ZERO CONNECTIONS",
+        third_party_connections == 0,
+        format!("{third_party_connections} connections"),
+    );
+    doc.check(
+        "THE THIRD PARTY RECEIVED ZERO BYTES — not 'no credential', zero bytes",
+        third_party_bytes == 0,
+        format!("{third_party_bytes} bytes"),
+    );
+    doc.check(
+        "no spelling of the canary reached the third party, on any binding",
+        leaked_bindings.is_empty(),
+        if leaked_bindings.is_empty() {
+            "none".to_owned()
+        } else {
+            leaked_bindings.join(", ")
+        },
+    );
+    doc.check(
+        "every arm ended in an error rather than a silently-followed hop",
+        refused == arms,
+        format!("{refused} refused of {arms} arms"),
+    );
+    doc.check(
+        "the error names BOTH authorities — who redirected, and where to — in every rendering",
+        error_named_both == arms,
+        format!("{error_named_both} of {arms}"),
+    );
+    doc.check(
+        "a refused redirect is never retried — the same request earns the same Location",
+        retryable == 0,
+        format!("{retryable} arms reported the failure as retryable"),
+    );
+    doc.check(
+        "no rendering of any refusal carries the credential",
+        canary_in_error.is_empty(),
+        if canary_in_error.is_empty() {
+            "5 renderings × 10 arms clean".to_owned()
+        } else {
+            canary_in_error.join(", ")
+        },
+    );
+
+    // ---- the status sweep: nobody had driven anything but 302 ---------------
+    doc.h("every redirect status, not just 302 — a sweep nobody had run");
+    let mut sweep: Vec<String> = Vec::new();
+    let mut sweep_refused = 0usize;
+    let mut sweep_third_party_bytes = 0usize;
+    for status in [301u16, 302, 303, 307, 308] {
+        let third_party = EgressRecorder::start(Answer::Chat).await;
+        let redirector = EgressRecorder::start(Answer::Redirect {
+            status,
+            location: format!("{}/v1/chat/completions", third_party.url),
+        })
+        .await;
+        let provider = redirect_provider(
+            RedirectBinding::AnthropicHeader,
+            &redirector.url,
+            Arc::new(ReqwestTransport::new().expect("http client builds")),
+        );
+        let outcome = drive_redirect(&provider, false).await;
+        sweep_third_party_bytes += third_party.bytes_received();
+        if outcome.is_err() {
+            sweep_refused += 1;
+        }
+        sweep.push(format!(
+            "{status}: third party {} bytes, {}",
+            third_party.bytes_received(),
+            if outcome.is_err() {
+                "refused"
+            } else {
+                "FOLLOWED"
+            }
+        ));
+        third_party.stop();
+        redirector.stop();
+    }
+    doc.kv("statuses driven", sweep.join(" · "));
+    doc.check(
+        "301, 302, 303, 307 and 308 are all refused — 303 rewrites the method, and that \
+         changes nothing",
+        sweep_refused == 5 && sweep_third_party_bytes == 0,
+        format!("{sweep_refused} of 5 refused, third party got {sweep_third_party_bytes} bytes"),
+    );
+
+    // ---- same authority: the case the fix deliberately still allows ---------
+    doc.h("a same-authority hop — what the implementation chose to do");
+    let normaliser = EgressRecorder::start(Answer::RedirectToSelfPath {
+        status: 301,
+        path: "/v2/chat/completions".into(),
+    })
+    .await;
+    let provider = redirect_provider(
+        RedirectBinding::Query,
+        &normaliser.url,
+        Arc::new(ReqwestTransport::new().expect("http client builds")),
+    );
+    let same_authority = drive_redirect(&provider, false).await;
+    let hops = normaliser.connections();
+    let normaliser_transcript = normaliser.transcript();
+    let second_hop_path = normaliser_transcript.contains("/v2/chat/completions");
+    doc.kv(
+        "outcome",
+        match &same_authority {
+            Ok(answer) => format!("FOLLOWED, answer {answer:?}"),
+            Err(error) => format!("refused: {error}"),
+        },
+    );
+    doc.kv("connections to the one authority", hops);
+    doc.kv("the second hop's path was requested", second_hop_path);
+    doc.check(
+        "a redirect to the SAME scheme, host and port is followed — a reverse proxy \
+         normalising a path is real and egresses nowhere new",
+        same_authority.is_ok() && hops >= 2 && second_hop_path,
+        format!(
+            "{} hops, second path seen: {second_hop_path}, outcome ok: {}",
+            hops,
+            same_authority.is_ok()
+        ),
+    );
+    normaliser.stop();
+
+    // ---- the positive control ----------------------------------------------
+    doc.h("POSITIVE CONTROL — the same sockets with the policy removed");
+    doc.p(
+        "  `PreFixTransport` is this transport as it was before the fix: the same client\n  \
+         with `no_proxy` and a user agent, and `reqwest`'s untouched redirect and referer\n  \
+         defaults. If the canary does not arrive here, the assertions above are vacuous.",
+    );
+    let mut control_rows: Vec<String> = Vec::new();
+    let mut control_leaks = 0usize;
+    let mut control_expected = 0usize;
+    let mut control_bytes = 0usize;
+    let mut control_example = String::new();
+    for binding in RedirectBinding::ALL {
+        let third_party = EgressRecorder::start(Answer::Chat).await;
+        let redirector = EgressRecorder::start(Answer::Redirect {
+            status: 302,
+            location: format!("{}/v1/chat/completions", third_party.url),
+        })
+        .await;
+        let provider =
+            redirect_provider(binding, &redirector.url, Arc::new(PreFixTransport::new()));
+        let _ = drive_redirect(&provider, false).await;
+        let transcript = third_party.transcript();
+        let leaked = redirect_canary_needles()
+            .iter()
+            .any(|needle| transcript.contains(needle.as_str()));
+        if leaked {
+            control_leaks += 1;
+        }
+        if leaked == binding.leaks_without_a_policy() {
+            control_expected += 1;
+        }
+        if leaked && control_example.is_empty() {
+            control_example = mask_redirect_canary(&transcript);
+        }
+        control_bytes += third_party.bytes_received();
+        control_rows.push(format!(
+            "{}: third party got {} bytes, canary {}",
+            binding.label(),
+            third_party.bytes_received(),
+            if leaked { "ARRIVED" } else { "absent" }
+        ));
+        third_party.stop();
+        redirector.stop();
+    }
+    for row in &control_rows {
+        doc.p(format!("    {row}"));
+    }
+    doc.h("what the third party received under the control (canary masked)");
+    doc.p(indent(&elide(&control_example, 1_400), 4));
+    doc.check(
+        "CONTROL: with the policy removed the canary DOES reach the third party — so the \
+         assertions above are about a real channel",
+        control_leaks >= 3,
+        format!("{control_leaks} of 5 bindings leaked"),
+    );
+    doc.check(
+        "CONTROL: it leaks for exactly the bindings `reqwest` does not protect — \
+         x-api-key, x-goog-api-key and the query string — and not for Bearer",
+        control_expected == RedirectBinding::ALL.len(),
+        format!("{control_expected} of 5 bindings matched the predicted upstream behaviour"),
+    );
+    doc.check(
+        "CONTROL, AND THE REASON THE FIX REFUSES RATHER THAN STRIPS: even on the bindings \
+         upstream DOES protect, the third party still received the request — the prompt, \
+         the model id, the tool catalogue. Stripping the credential would have left that.",
+        control_bytes > 0,
+        format!(
+            "{control_bytes} bytes reached the unconfigured host across 5 bindings under the \
+             control; {} under the shipping transport",
+            third_party_bytes
+        ),
+    );
+
+    doc.write(ledger);
+}
+
+fn transport_label(streamed: bool) -> &'static str {
+    if streamed {
+        "stream()"
+    } else {
+        "complete()"
+    }
+}
+
+// ===========================================================================
+// Case 13 — encoding-defeated redaction (round 4)
+// ===========================================================================
+//
+// The round-3 panel's functionality FAIL, and then the ground past it. Round 3
+// made the byte scrub structural, and it is byte-LITERAL: it removes the
+// spelling it was shown. Round 4's builders made it resolve JSON escapes, so
+// `\/`, `\uXXXX`, a surrogate pair and any mixture are one case rather than a
+// list. This case drives that, and then drives the spellings **nobody
+// briefed**, because every round of this piece has died on a surface the
+// previous round's tests did not cover.
+
+const ENCODING_CANARY: &str = "vela+gate/m4-encode-Zx7Tn2q-DO-NOT-LEAK";
+const ENCODING_CANARY_CORE: &str = "Zx7Tn2q";
+/// Planted in every echoed message, carries no secret, and must therefore
+/// survive: it is how this case tells redaction apart from deletion.
+const ENCODING_MARKER: &str = "VELA-M4-ENCODING-MARKER";
+
+/// Every spelling of a credential this case drives.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Encoding {
+    /// The control. If this is ever not removed, nothing else here means
+    /// anything.
+    Verbatim,
+    /// PHP `json_encode` with default flags. Round 4's reported defect.
+    Solidus,
+    /// Every character as `\uXXXX`. Briefed.
+    UnicodeEscape,
+    /// The percent form Vela itself writes into a query string. Briefed.
+    PercentUpper,
+    /// The same with lowercase hex digits. **Nobody briefed this.**
+    PercentLower,
+    /// Every byte percent-encoded. **Nobody briefed this.**
+    PercentEveryByte,
+    /// JSON-escaped twice — an upstream error body embedded in an outer one.
+    /// **Nobody briefed this.**
+    DoubleSolidus,
+    /// `&#x2f;`. **Nobody briefed this**, and nothing in Vela decodes it.
+    HtmlEntity,
+}
+
+impl Encoding {
+    const ALL: [Encoding; 8] = [
+        Encoding::Verbatim,
+        Encoding::Solidus,
+        Encoding::UnicodeEscape,
+        Encoding::PercentUpper,
+        Encoding::PercentLower,
+        Encoding::PercentEveryByte,
+        Encoding::DoubleSolidus,
+        Encoding::HtmlEntity,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Encoding::Verbatim => "verbatim (control)",
+            Encoding::Solidus => "PHP json_encode: \\/",
+            Encoding::UnicodeEscape => "every char as \\uXXXX",
+            Encoding::PercentUpper => "percent-encoded, UPPERCASE hex",
+            Encoding::PercentLower => "percent-encoded, lowercase hex   [UNBRIEFED]",
+            Encoding::PercentEveryByte => "percent-encoded, every byte      [UNBRIEFED]",
+            Encoding::DoubleSolidus => "JSON-escaped twice: \\\\/          [UNBRIEFED]",
+            Encoding::HtmlEntity => "HTML entities: &#x2f;            [UNBRIEFED]",
+        }
+    }
+
+    fn briefed(self) -> bool {
+        matches!(
+            self,
+            Encoding::Verbatim
+                | Encoding::Solidus
+                | Encoding::UnicodeEscape
+                | Encoding::PercentUpper
+        )
+    }
+
+    /// Spell `credential`. The surrounding message is left alone, so the marker
+    /// always arrives readable.
+    fn spell(self, credential: &str) -> String {
+        match self {
+            Encoding::Verbatim => credential.to_owned(),
+            Encoding::Solidus => credential.replace('/', "\\/"),
+            Encoding::UnicodeEscape => credential
+                .chars()
+                .map(|ch| {
+                    let mut buffer = [0u16; 2];
+                    ch.encode_utf16(&mut buffer)
+                        .iter()
+                        .map(|unit| format!("\\u{unit:04x}"))
+                        .collect::<String>()
+                })
+                .collect(),
+            Encoding::PercentUpper => vela_providers::redact::percent_encode(credential),
+            Encoding::PercentLower => {
+                lowercase_percent_hex(&vela_providers::redact::percent_encode(credential))
+            }
+            Encoding::PercentEveryByte => credential
+                .bytes()
+                .map(|byte| format!("%{byte:02X}"))
+                .collect(),
+            Encoding::DoubleSolidus => credential.replace('/', "\\\\/"),
+            Encoding::HtmlEntity => credential
+                .replace('&', "&amp;")
+                .replace('/', "&#x2f;")
+                .replace('+', "&#x2b;"),
+        }
+    }
+}
+
+fn lowercase_percent_hex(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '%' && index + 2 < chars.len() {
+            out.push('%');
+            out.push(chars[index + 1].to_ascii_lowercase());
+            out.push(chars[index + 2].to_ascii_lowercase());
+            index += 3;
+        } else {
+            out.push(chars[index]);
+            index += 1;
+        }
+    }
+    out
+}
+
+fn html_entity_decode(text: &str) -> String {
+    text.replace("&#x2f;", "/")
+        .replace("&#x2b;", "+")
+        .replace("&amp;", "&")
+}
+
+/// Every spelling a *reader* of a surface gets the credential from with no work
+/// at all: the key itself, the percent form Vela writes on the wire, its
+/// lowercase-hex twin, and the stretch of the key no spelling here changes.
+fn encoding_readable_needles() -> Vec<String> {
+    let percent = vela_providers::redact::percent_encode(ENCODING_CANARY);
+    vec![
+        ENCODING_CANARY.to_owned(),
+        percent.clone(),
+        lowercase_percent_hex(&percent),
+        ENCODING_CANARY_CORE.to_owned(),
+    ]
+}
+
+/// Resolve the escapes a JSON decoder resolves, undo percent-encoding, undo
+/// HTML entities — repeatedly. If the credential appears after that, whatever
+/// reached the surface was the credential in a costume.
+fn fully_decoded(text: &str) -> String {
+    let mut current = text.to_owned();
+    for _ in 0..4 {
+        let decoded = html_entity_decode(&percent_decode_bytes(&json_unescape(&current)));
+        if decoded == current {
+            break;
+        }
+        current = decoded;
+    }
+    current
+}
+
+fn json_unescape(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] != '\\' || index + 1 >= chars.len() {
+            out.push(chars[index]);
+            index += 1;
+            continue;
+        }
+        match chars[index + 1] {
+            '/' => {
+                out.push('/');
+                index += 2;
+            }
+            '\\' => {
+                out.push('\\');
+                index += 2;
+            }
+            '"' => {
+                out.push('"');
+                index += 2;
+            }
+            'u' if index + 5 < chars.len() => {
+                let hex: String = chars[index + 2..index + 6].iter().collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(ch) => {
+                        out.push(ch);
+                        index += 6;
+                    }
+                    None => {
+                        out.push(chars[index]);
+                        index += 1;
+                    }
+                }
+            }
+            _ => {
+                out.push(chars[index]);
+                index += 1;
+            }
+        }
+    }
+    out
+}
+
+/// A peer that echoes the credential it was sent, spelled a given way, inside a
+/// 200 whose SSE stream carries an error object. FINDING 2's exact shape.
+struct EncodingPeer {
+    url: String,
+    task: tokio::task::JoinHandle<()>,
+    sent: Arc<Mutex<Vec<u8>>>,
+}
+
+impl EncodingPeer {
+    async fn start(encoding: Encoding, status: u16) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback bind");
+        let address = listener.local_addr().expect("bound");
+        let sent: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let sent_by_task = Arc::clone(&sent);
+        let task = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut scratch = vec![0u8; 32768];
+                let read = socket.read(&mut scratch).await.unwrap_or(0);
+                let raw = String::from_utf8_lossy(&scratch[..read]).into_owned();
+                let target = raw
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/")
+                    .to_owned();
+                let path = target.split('?').next().unwrap_or("/").to_owned();
+                let streaming = raw.contains("\"stream\":true");
+
+                // The gateway parses the credential out of wherever it is and
+                // DECODES it — raw `/` and all — before deciding it is invalid.
+                let credential = header_credential(&raw)
+                    .unwrap_or_else(|| decoded_key_of(&target))
+                    .to_owned();
+                let message = format!(
+                    "{ENCODING_MARKER}: rejected credential [{}] for {path}",
+                    encoding.spell(&credential)
+                );
+                let object = format!(
+                    "{{\"error\":{{\"code\":\"invalid_api_key\",\
+                     \"type\":\"invalid_request_error\",\"message\":\"{message}\"}}}}"
+                );
+                let (content_type, body) = if streaming && status == 200 {
+                    (
+                        "text/event-stream",
+                        format!("data: {object}\n\ndata: [DONE]\n\n"),
+                    )
+                } else {
+                    ("application/json", object)
+                };
+                let reason = if status == 200 { "OK" } else { "Bad Request" };
+                let payload = format!(
+                    "HTTP/1.1 {status} {reason}\r\ncontent-type: {content_type}\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                sent_by_task
+                    .lock()
+                    .expect("poisoned")
+                    .extend_from_slice(payload.as_bytes());
+                let _ = socket.write_all(payload.as_bytes()).await;
+                let _ = socket.flush().await;
+            }
+        });
+        Self {
+            url: format!("http://{address}"),
+            task,
+            sent,
+        }
+    }
+
+    fn sent_text(&self) -> String {
+        String::from_utf8_lossy(&self.sent.lock().expect("poisoned")).into_owned()
+    }
+
+    fn stop(self) {
+        self.task.abort();
+    }
+}
+
+/// The value of any credential-shaped request header, if there is one.
+fn header_credential(raw: &str) -> Option<String> {
+    for line in raw.split("\r\n").skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        let (name, value) = line.split_once(':')?;
+        let name = name.trim().to_ascii_lowercase();
+        if matches!(
+            name.as_str(),
+            "authorization" | "x-api-key" | "api-key" | "x-goog-api-key"
+        ) {
+            return Some(value.trim().trim_start_matches("Bearer ").to_owned());
+        }
+    }
+    None
+}
+
+fn encoding_provider(base_url: &str, header_binding: bool) -> OpenAiCompatibleProvider {
+    let store = Arc::new(MemoryStore::new());
+    let secret = SecretRef::primary("encoding").expect("static id is valid");
+    store
+        .set(&secret, &SecretValue::new(ENCODING_CANARY))
+        .expect("MemoryStore accepts a non-empty value");
+    let auth = if header_binding {
+        Auth::ApiKeyHeader {
+            header: "x-api-key".into(),
+            secret,
+        }
+    } else {
+        Auth::ApiKeyQuery {
+            param: "key".into(),
+            secret,
+        }
+    };
+    OpenAiCompatibleProvider::new(
+        ProviderDescriptor::new("encoding", "Encoded canary", ProviderKind::Local)
+            .expect("static id is valid"),
+        format!("{base_url}/v1"),
+        auth,
+        store,
+        Arc::new(ReqwestTransport::new().expect("http client builds")),
+    )
+}
+
+/// How one driven arm came out.
+struct EncodingOutcome {
+    /// The endpoint's own message reached the error at all.
+    arrived: bool,
+    /// A spelling a reader gets the key from with no work.
+    readable: Option<String>,
+    /// Not readable, but one pass of ordinary decoding gets back to the key.
+    reconstructible: bool,
+    /// `<redacted>` is present, so this is redaction rather than deletion.
+    redacted_marker: bool,
+    example: String,
+}
+
+async fn drive_encoding(peer_url: &str, header_binding: bool, streamed: bool) -> EncodingOutcome {
+    let provider = encoding_provider(peer_url, header_binding);
+    let request = ChatRequest::new("encoding-model").with_message(ChatMessage::user("hi"));
+    let mut sink = CollectingSink::new();
+    let error = if streamed {
+        provider.stream(request, &mut sink, &context()).await.err()
+    } else {
+        provider.complete(request, &context()).await.err()
+    };
+    let Some(error) = error else {
+        return EncodingOutcome {
+            arrived: false,
+            readable: None,
+            reconstructible: false,
+            redacted_marker: false,
+            example: "the peer's rejection did not produce an error at all".into(),
+        };
+    };
+
+    let mut surfaces = renderings_of(&error);
+    for event in &sink.events {
+        surfaces.push((
+            "StreamEvent (the sink the UI reads)",
+            serde_json::to_string(event).unwrap_or_default(),
+        ));
+    }
+
+    let mut readable = None;
+    let mut reconstructible = false;
+    let mut example = String::new();
+    for (label, text) in &surfaces {
+        if let Some(needle) = encoding_readable_needles()
+            .into_iter()
+            .find(|needle| text.contains(needle))
+        {
+            if readable.is_none() {
+                readable = Some(format!("{label}: matched {needle:?}"));
+                example = text.clone();
+            }
+        } else if fully_decoded(text).contains(ENCODING_CANARY) {
+            reconstructible = true;
+            if example.is_empty() {
+                example = text.clone();
+            }
+        }
+    }
+    if example.is_empty() {
+        example = error.to_string();
+    }
+
+    EncodingOutcome {
+        arrived: error.to_string().contains(ENCODING_MARKER),
+        readable,
+        reconstructible,
+        redacted_marker: surfaces.iter().any(|(_, text)| text.contains("<redacted>")),
+        example,
+    }
+}
+
+async fn case_13(profile: &str, ledger: &mut Vec<Verdict>) {
+    let mut doc = Doc::new(
+        profile,
+        "13-encoded-credential-leak",
+        "a credential the endpoint spells differently is still a credential",
+        "Round 3's scrub removes the spelling it was shown. A decoder's whole job is to turn \
+         one spelling into another. This case drives the three encodings the round-4 brief \
+         names, and then four nobody named — because every round of this piece has died on a \
+         surface the previous round's tests did not cover.",
+    );
+    doc.p(
+        "  THE SHAPE DRIVEN IS FINDING 2's: a 200 whose SSE stream carries an\n  \
+         `{\"error\":{...}}` object, read frame by frame through `BodyStream::next_chunk` —\n  \
+         and, beside it, a 400 read whole. Both bindings: the credential in the query string\n  \
+         (percent-encoded on the wire, DECODED by any gateway that parses it) and the\n  \
+         credential in an `x-api-key` header (raw, `/` and all).",
+    );
+    doc.p(
+        "  A spelling is judged two ways, and the transcript says which applies:\n  \
+           READABLE          the key, or the percent form Vela itself wrote, is in the text\n  \
+           RECONSTRUCTIBLE   it is not — but one pass of ordinary decoding gets back to it",
+    );
+
+    let mut rows: Vec<String> = Vec::new();
+    let mut briefed_clean = 0usize;
+    let mut briefed_arms = 0usize;
+    let mut unbriefed_leaks: Vec<String> = Vec::new();
+    let mut arrived_arms = 0usize;
+    let mut total_arms = 0usize;
+    let mut premise_ok = 0usize;
+    let mut premise_arms = 0usize;
+    let mut redaction_not_deletion = 0usize;
+    let mut leak_example = String::new();
+
+    for encoding in Encoding::ALL {
+        for header_binding in [false, true] {
+            for status in [200u16, 400] {
+                let peer = EncodingPeer::start(encoding, status).await;
+                for streamed in [true, false] {
+                    let outcome = drive_encoding(&peer.url, header_binding, streamed).await;
+                    total_arms += 1;
+                    if outcome.arrived {
+                        arrived_arms += 1;
+                    }
+                    if outcome.redacted_marker {
+                        redaction_not_deletion += 1;
+                    }
+                    let leaked = outcome.readable.is_some() || outcome.reconstructible;
+                    if encoding.briefed() {
+                        briefed_arms += 1;
+                        if !leaked {
+                            briefed_clean += 1;
+                        }
+                    }
+                    if leaked {
+                        let verdict = match &outcome.readable {
+                            Some(where_) => format!("READABLE — {where_}"),
+                            None => "RECONSTRUCTIBLE by one decode pass".to_owned(),
+                        };
+                        let row = format!(
+                            "{} · {} · HTTP {status} · {} → {verdict}",
+                            encoding.label(),
+                            if header_binding { "x-api-key" } else { "?key=" },
+                            transport_label(streamed)
+                        );
+                        if !encoding.briefed() || encoding == Encoding::PercentUpper {
+                            unbriefed_leaks.push(row.clone());
+                        }
+                        rows.push(row);
+                        if leak_example.is_empty() {
+                            leak_example = outcome.example.clone();
+                        }
+                    } else {
+                        rows.push(format!(
+                            "{} · {} · HTTP {status} · {} → clean",
+                            encoding.label(),
+                            if header_binding { "x-api-key" } else { "?key=" },
+                            transport_label(streamed)
+                        ));
+                    }
+                }
+                // The premise: for a spelling that is not the literal, the peer
+                // must have put NO literal copy on the wire, or the literal pass
+                // caught it and the spelling was never exercised.
+                let wire = peer.sent_text();
+                if !matches!(encoding, Encoding::Verbatim) && wire.contains(ENCODING_MARKER) {
+                    premise_arms += 1;
+                    if !wire.contains(ENCODING_CANARY) {
+                        premise_ok += 1;
+                    }
+                }
+                peer.stop();
+            }
+        }
+    }
+
+    doc.h("every spelling, both bindings, both response shapes, both transports");
+    for row in &rows {
+        doc.p(format!("    {row}"));
+    }
+
+    doc.h("what a leaking surface actually contains");
+    doc.p(indent(&elide(&leak_example, 900), 4));
+
+    doc.h("assertions");
+    doc.check(
+        "the endpoint's message reached the error on every arm — nothing below is vacuous",
+        arrived_arms == total_arms,
+        format!("{arrived_arms} of {total_arms} arms carried the endpoint's own marker"),
+    );
+    doc.check(
+        "the encoding peers put NO literal copy of the credential on the wire — the literal \
+         pass genuinely had nothing to match",
+        premise_arms > 0 && premise_ok == premise_arms,
+        format!("{premise_ok} of {premise_arms} encoded peers"),
+    );
+    doc.check(
+        "the BRIEFED encodings are all removed — verbatim, PHP's \\/, \\uXXXX, and the \
+         percent form Vela writes",
+        briefed_clean == briefed_arms,
+        format!("{briefed_clean} of {briefed_arms} briefed arms clean"),
+    );
+    doc.check(
+        "redaction, not deletion — `<redacted>` is present somewhere on the arms that were \
+         cleaned",
+        redaction_not_deletion > 0,
+        format!("{redaction_not_deletion} of {total_arms} arms carry the marker"),
+    );
+    doc.check(
+        "NO SPELLING OF THE CREDENTIAL REACHES ANY SURFACE — Display, Debug, the serde JSON \
+         that crosses the IPC bridge, or the StreamEvent the UI is handed",
+        unbriefed_leaks.is_empty(),
+        if unbriefed_leaks.is_empty() {
+            format!("{total_arms} arms clean")
+        } else {
+            format!(
+                "{} of {total_arms} arms leaked:\n        {}",
+                unbriefed_leaks.len(),
+                unbriefed_leaks.join("\n        ")
+            )
+        },
+    );
+
+    doc.write(ledger);
+}
+
+// ===========================================================================
 // Assertion controls — prove a FAIL is reachable
 // ===========================================================================
 
@@ -5318,6 +6552,8 @@ async fn main() -> ExitCode {
 
         case_07b(profile, &mut ledger).await;
         case_11(profile, &mut ledger).await;
+        case_12(profile, &mut ledger).await;
+        case_13(profile, &mut ledger).await;
         case_09b(profile, &mut ledger).await;
         case_10(profile, &mut ledger).await;
     }
@@ -5331,49 +6567,66 @@ async fn main() -> ExitCode {
     // files would be teaching exactly the wrong habit. Case 11's own transcript
     // is the one place it belongs: the NEEDLE line that declares it, and the
     // recorded leak evidence underneath.
+    //
+    // Round 4 adds two more canaries and two more homes. Case 12's is MASKED
+    // wherever that transcript prints received bytes, so it should appear
+    // nowhere at all — including in its own file. Case 13's must appear in its
+    // own file, because there the spelling *is* the evidence and masking it
+    // would destroy what a reader has to see.
     {
-        let mut elsewhere: Vec<String> = Vec::new();
-        let mut inside = 0usize;
+        let homes: [(&str, Vec<String>, Option<&str>); 3] = [
+            ("case 11", canary_needles(), Some("11-credential-leak.txt")),
+            ("case 12", redirect_canary_needles(), None),
+            (
+                "case 13",
+                encoding_readable_needles(),
+                Some("13-encoded-credential-leak.txt"),
+            ),
+        ];
         // Only the per-profile case transcripts. The top-level ledger files —
-        // verdicts.tsv, SUMMARY.txt, RESULTS.md — aggregate case 11's evidence
-        // by design and are written after this scan anyway.
-        for profile in PROFILES {
-            let Ok(entries) = std::fs::read_dir(dir.join(profile)) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let Ok(text) = std::fs::read_to_string(&path) else {
+        // verdicts.tsv, SUMMARY.txt, RESULTS.md — aggregate this evidence by
+        // design and are written after this scan anyway.
+        for (which, needles, home) in homes {
+            let mut elsewhere: Vec<String> = Vec::new();
+            let mut inside = 0usize;
+            for profile in PROFILES {
+                let Ok(entries) = std::fs::read_dir(dir.join(profile)) else {
                     continue;
                 };
-                if !canary_needles()
-                    .iter()
-                    .any(|needle| text.contains(needle.as_str()))
-                {
-                    continue;
-                }
-                let name = path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                if name == "11-credential-leak.txt" {
-                    inside += 1;
-                } else {
-                    elsewhere.push(path.display().to_string());
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let Ok(text) = std::fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    if !needles.iter().any(|needle| text.contains(needle.as_str())) {
+                        continue;
+                    }
+                    let name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    if home == Some(name.as_str()) {
+                        inside += 1;
+                    } else {
+                        elsewhere.push(path.display().to_string());
+                    }
                 }
             }
+            ledger.push(Verdict {
+                profile: "all".into(),
+                case: "canary-containment".into(),
+                name: format!(
+                    "{which}'s canary appears in no evidence file but {}",
+                    home.unwrap_or("— it is masked, so nowhere at all")
+                ),
+                pass: elsewhere.is_empty(),
+                detail: if elsewhere.is_empty() {
+                    format!("{inside} permitted transcript(s) carry it, nothing else does")
+                } else {
+                    elsewhere.join(" ")
+                },
+            });
         }
-        ledger.push(Verdict {
-            profile: "all".into(),
-            case: "11-credential-leak".into(),
-            name: "the canary appears in no evidence file but case 11's own transcript".into(),
-            pass: elsewhere.is_empty(),
-            detail: if elsewhere.is_empty() {
-                format!("{inside} case-11 transcript(s) carry it, nothing else does")
-            } else {
-                elsewhere.join(" ")
-            },
-        });
     }
 
     // verdicts.tsv — every assertion, machine-readable.

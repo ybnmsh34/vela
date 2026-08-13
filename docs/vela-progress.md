@@ -695,7 +695,49 @@ was not called.
 did not cover. Round 4's critics are briefed on that pattern directly — if inclined to PASS, spend
 the remaining effort asking *"what has nobody tested?"* rather than re-running what is green.
 
-## ⚠️ OPEN FINDING carried into round 4's gate: the fourth adapter
+## 🔴 INCIDENT — my snapshot commits shipped disabled credential barriers
+
+**This one is the lead's fault, and it is the direct cost of the lesson drawn from the rollback.**
+
+The integration agent was running the standard vacuity control — disable the guard, confirm the
+test goes red — with **both** redaction barriers switched off in its working tree:
+
+```
+decode_json    lost  self.scrub_value(&mut value)      // DEFECT B
+scrub_bytes    lost  self.replace_encoded(out)         // DEFECT A
+```
+
+I snapshot-committed that working tree **mid-experiment**, twice (`3870bb7`, then `4e78265`), and
+pushed. A five-line throwaway experiment became the tree's shipping redaction code, and for a
+window **HEAD had credential redaction disabled on the remote.**
+
+The agent caught it and restored both lines at `8e3d3ef`, then proved the blast radius was exactly
+those two lines: `git diff e9a0488 -- src-tauri/crates/vela-providers/src/` is empty, so nothing
+else was caught by the same snapshot.
+
+**Both sides own a piece.** The agent's own process note: *"Do not inject defects into the working
+tree of this repo while another session may be snapshotting it. Use a scratch copy. I did not, and
+the cost was a window in which HEAD's credential redaction was disabled."* Mine is that I committed
+source I had not looked at, on a schedule, while agents were actively experimenting in it.
+
+### The two lessons are in genuine tension — how they are reconciled
+
+The rollback taught *"commit and push everything at every check-in."* This taught *"a mid-flight
+working tree can be deliberately broken."* Both are true. The resolution:
+
+1. **`docs/` and evidence: snapshot freely.** They are irreplaceable, expensive to regenerate, and
+   nobody injects defects into a transcript. This is what the rollback protection is actually for.
+2. **Source: check before snapshotting.** `git diff <last-builder-commit> -- <crate>/src/` must be
+   inspected, not assumed. Applied this check-in: it reported CLEAN before I committed.
+3. **A snapshot commit is never authoritative.** Its message says so, and a builder's own commit
+   always supersedes it.
+4. **Defect injection belongs in a scratch copy**, per the agent's note.
+
+Guard that would have caught this in seconds: **run the credential canary suite before pushing a
+snapshot that touches `vela-providers` source.** With both barriers off it goes red on three of the
+four adapters — the fourth is the subject of the finding below.
+
+## ⚠️ FOURTH-ADAPTER FINDING — closed, but "clean for a fragile reason"
 
 Raised by the round-4 **integration agent**, unprompted, in a probe it wrote and then deleted
 (recoverable at `3870bb7:src-tauri/crates/vela-providers/tests/zz_integration_probe.rs`).

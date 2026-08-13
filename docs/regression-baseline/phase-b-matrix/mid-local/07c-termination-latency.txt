@@ -23,29 +23,29 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   the cost of redaction is visible rather than asserted.
 
 ---- arm A — Auth::None (empty scrubber, fast path) ------------------------
-  run 1                                  3.498314ms   (165 answer characters)
-  run 2                                  3.367887ms   (165 answer characters)
-  run 3                                  3.123573ms   (165 answer characters)
-  run 4                                  3.35695ms   (165 answer characters)
-  run 5                                  3.237413ms   (165 answer characters)
-  MEDIAN                                 3.35695ms
-  worst sample                           3.498314ms
+  run 1                                  3.878742ms   (165 answer characters)
+  run 2                                  3.030808ms   (165 answer characters)
+  run 3                                  2.496018ms   (165 answer characters)
+  run 4                                  2.843944ms   (165 answer characters)
+  run 5                                  2.607283ms   (165 answer characters)
+  MEDIAN                                 2.843944ms
+  worst sample                           3.878742ms
   credential on the wire                 false
 
 ---- arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len) 
-  run 1                                  4.589527ms   (165 answer characters)
-  run 2                                  4.562925ms   (165 answer characters)
-  run 3                                  4.224711ms   (165 answer characters)
-  run 4                                  3.945828ms   (165 answer characters)
-  run 5                                  3.32894ms   (165 answer characters)
-  MEDIAN                                 4.224711ms
-  worst sample                           4.589527ms
+  run 1                                  3.681592ms   (165 answer characters)
+  run 2                                  3.177971ms   (165 answer characters)
+  run 3                                  3.50372ms   (165 answer characters)
+  run 4                                  3.477189ms   (165 answer characters)
+  run 5                                  3.176603ms   (165 answer characters)
+  MEDIAN                                 3.477189ms
+  worst sample                           3.681592ms
   credential on the wire                 true
 
 ---- the comparison ----------------------------------------------------------
-  median, uncredentialed                 3.35695ms
-  MEDIAN, CREDENTIALED                   4.224711ms
-  cost of redaction (median delta)       867.761µs
+  median, uncredentialed                 2.843944ms
+  MEDIAN, CREDENTIALED                   3.477189ms
+  cost of redaction (median delta)       633.245µs
   recorded naive [DONE] consumer         5003 ms (TIMED OUT)
 
 ---- assertions --------------------------------------------------------------
@@ -56,11 +56,11 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] every sampled turn completed without error, both arms
         uncredentialed: 5 samples, credentialed: 5 samples
   [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms
-        median 4.224711ms, samples [4.589527ms, 4.562925ms, 4.224711ms, 3.945828ms, 3.32894ms]
+        median 3.477189ms, samples [3.681592ms, 3.177971ms, 3.50372ms, 3.477189ms, 3.176603ms]
   [PASS] …and on the uncredentialed one, so redaction is not what makes or breaks it
-        median 3.35695ms
+        median 2.843944ms
   [PASS] no sample came anywhere near the recorded 5003 ms hang, either arm
-        worst uncredentialed 3.498314ms, worst credentialed 4.589527ms
+        worst uncredentialed 3.878742ms, worst credentialed 3.681592ms
   [PASS] every sample returned the same answer length — timing did not truncate anything
         uncredentialed [165, 165, 165, 165, 165], credentialed [165, 165, 165, 165, 165]
   [PASS] redaction did not change the answer — both arms delivered the same text length

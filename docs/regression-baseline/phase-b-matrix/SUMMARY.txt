@@ -1,9 +1,137 @@
 GATE M Part 1 (Phase B) — run summary
 =====================================
 
-gate assertions   397
-failures          0
+gate assertions   471
+failures          8
 controls          24 (their FAILs are expected)
-wall clock        20.581980662s
+wall clock        20.994529625s
 
-No gate assertion failed.
+FAILURES:
+  frontier / 13-encoded-credential-leak / the BRIEFED encodings are all removed — verbatim, PHP's \/, \uXXXX, and the percent form Vela writes
+      28 of 32 briefed arms clean
+  frontier / 13-encoded-credential-leak / NO SPELLING OF THE CREDENTIAL REACHES ANY SURFACE — Display, Debug, the serde JSON that crosses the IPC bridge, or the StreamEvent the UI is handed
+      28 of 64 arms leaked:
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+  mid-local / 13-encoded-credential-leak / the BRIEFED encodings are all removed — verbatim, PHP's \/, \uXXXX, and the percent form Vela writes
+      28 of 32 briefed arms clean
+  mid-local / 13-encoded-credential-leak / NO SPELLING OF THE CREDENTIAL REACHES ANY SURFACE — Display, Debug, the serde JSON that crosses the IPC bridge, or the StreamEvent the UI is handed
+      28 of 64 arms leaked:
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+  small-local / 13-encoded-credential-leak / the BRIEFED encodings are all removed — verbatim, PHP's \/, \uXXXX, and the percent form Vela writes
+      28 of 32 briefed arms clean
+  small-local / 13-encoded-credential-leak / NO SPELLING OF THE CREDENTIAL REACHES ANY SURFACE — Display, Debug, the serde JSON that crosses the IPC bridge, or the StreamEvent the UI is handed
+      28 of 64 arms leaked:
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+  hostile / 13-encoded-credential-leak / the BRIEFED encodings are all removed — verbatim, PHP's \/, \uXXXX, and the percent form Vela writes
+      28 of 32 briefed arms clean
+  hostile / 13-encoded-credential-leak / NO SPELLING OF THE CREDENTIAL REACHES ANY SURFACE — Display, Debug, the serde JSON that crosses the IPC bridge, or the StreamEvent the UI is handed
+      28 of 64 arms leaked:
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, UPPERCASE hex · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2Bgate%2Fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, lowercase hex   [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "vela%2bgate%2fm4-encode-Zx7Tn2q-DO-NOT-LEAK"
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · ?key= · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 200 · complete() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · stream() → RECONSTRUCTIBLE by one decode pass
+        percent-encoded, every byte      [UNBRIEFED] · x-api-key · HTTP 400 · complete() → RECONSTRUCTIBLE by one decode pass
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · ?key= · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 200 · complete() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · stream() → READABLE — Display: matched "Zx7Tn2q"
+        HTML entities: &#x2f;            [UNBRIEFED] · x-api-key · HTTP 400 · complete() → READABLE — Display: matched "Zx7Tn2q"

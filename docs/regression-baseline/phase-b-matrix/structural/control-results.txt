@@ -15,27 +15,15 @@ here means the suite FAILED as it was supposed to.
 
 ---- DEFECT 1 — next_chunk hands bytes back unmodified (FINDING 2) -------
   the round-2 streaming path, restored verbatim: the scrub is skipped
-  zz_gate_m_round3_executor_probe    2 passed; 3 failed
+  zz_gate_m_round3_executor_probe    3 passed; 2 failed
       a_decorator_that_forwards_nothing_and_lies_about_its_origin_changes_nothing
-      every_adapter_really_was_echoed_a_credential_and_really_redacted_it
       what_the_decorator_itself_saw
-  streamed_credential_canary         5 passed; 10 failed
+  streamed_credential_canary         12 passed; 3 failed
       a_new_body_that_forwards_nothing_still_cannot_leak_the_credential
-      a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret
-      anthropic_leaks_nothing_on_any_forced_failure_header_binding
-      anthropic_leaks_nothing_on_any_forced_failure_query_binding
-      google_leaks_nothing_on_any_forced_failure_header_binding
-      google_leaks_nothing_on_any_forced_failure_query_binding
-      openai_compatible_leaks_nothing_on_any_forced_failure_header_binding
-      openai_compatible_leaks_nothing_on_any_forced_failure_query_binding
       positive_control_a_credential_split_across_two_chunks_leaks
       positive_control_the_pre_fix_streamed_read_leaks
-  finding_two_recipe                 1 passed; 3 failed
-      part_1_openai_compatible_with_a_query_key
-      part_2a_google_with_its_only_binding
-      part_2b_anthropic_with_a_header_key
-  credential_canary                  7 passed; 1 failed
-      an_endpoint_that_echoes_the_key_back_does_not_get_it_into_an_error
+  finding_two_recipe                 4 passed; 0 failed
+  credential_canary                  8 passed; 0 failed
 
 ---- DEFECT 2 — the endpoint is deleted from transport errors ------------
   round 2's over-redaction: without_url() and nothing re-attached

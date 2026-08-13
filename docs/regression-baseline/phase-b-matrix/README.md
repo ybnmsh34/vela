@@ -27,7 +27,7 @@ unverified.** Nothing here may be cited as a real-model result.
 | `ASSERTION-CONTROL.txt` | Each assertion applied where it should *not* hold, with the FAIL recorded. An assertion that cannot fail is worthless |
 | `SUMMARY.txt` | Counts and the failure list from the last run |
 | `record.sh` | Regenerates all of the above |
-| `structural/` | Round 3's half: five compile-time bypass attempts against `BodyStream`, and three defect injections into `src/http.rs`. `probe.sh` and `controls.sh` regenerate `probe-results.txt` and `control-results.txt` |
+| `structural/` | Round 3's half: five compile-time bypass attempts against `BodyStream`, and three defect injections into `src/http.rs`. `probe.sh` and `controls.sh` regenerate `probe-results.txt` and `control-results.txt`. **Round 4 adds `controls-round4.sh`** — four more injections, covering the redirect policy and both redaction barriers — writing `control-results-round4.txt` |
 
 The case numbers follow the gate brief: `00` capability probe, `01` plain chat,
 `02` tool calling (`02p` **parallel** tool calls, both transports), `03` vision,
@@ -44,6 +44,22 @@ the harness now answers a multi-tool request with a batch, so it is driven live.
 `11` exists because round 2 shipped a credential-redaction fix, and a fix is not
 evidence.
 
+**Round 4 adds `12` and `13`, and rebuilds `07c`.**
+
+* `12` **redirect egress** — the round-3 panel's security FAIL. A recording
+  listener on a port the user never configured, a first-party endpoint that
+  `3xx`-redirects to it, all four `Auth` variants (five bindings) across
+  `complete()` and `stream()`, and a **positive control** that removes the policy
+  and watches the canary arrive. Also the redirect-status sweep and the
+  same-authority hop, neither of which anyone had driven.
+* `13` **encoded credential leak** — the round-3 panel's functionality FAIL and
+  the ground past it. Eight spellings of one credential, both bindings, both
+  response shapes, both transports. **This is the case that fails.**
+* `07c` used to build its provider with `Auth::None`, so it measured the
+  empty-scrubber fast path and published those medians as evidence for redaction
+  they never ran. It now measures a **credentialed** arm and keeps the
+  uncredentialed one beside it, so the cost of redaction is visible.
+
 Case 11's **premise** — did the endpoint really echo the credential back? — is
 read in round 3 from each raw TCP peer's own send buffer, not from the recorder's
 body tee. It used to be read from the tee, and round 3's fix scrubs before any
@@ -53,10 +69,16 @@ the honest place to ask. What the tee sees is now asserted too, for the opposite
 reason: it is what Vela's SSE parser consumes, and it must already read
 `<redacted>`.
 
-`11-credential-leak.txt` is the one file in this directory permitted to contain
-the canary string `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK`. It is a fake that was
-never a credential for anything, and the recorder fails the gate if it appears in
-any other per-profile transcript.
+There are now **three** canaries, each with its own permitted home, and the
+recorder fails the gate if one turns up anywhere else:
+
+| canary | belongs in | why |
+|---|---|---|
+| `vela+gate/m1-7Q2Xz9f3a-DO-NOT-LEAK` | `11-credential-leak.txt` | round 2's, kept |
+| `vela+gate/m4-encode-Zx7Tn2q-DO-NOT-LEAK` | `13-encoded-credential-leak.txt` | there the **spelling is the evidence**; masking it would destroy what a reader has to see |
+| `vela+gate/m4-redirect-Rk2p9Wq-DO-NOT-LEAK` | **nowhere** | case 12 masks it wherever it prints received bytes, so it should not appear at all |
+
+All three are fakes that were never credentials for anything.
 
 ## Reproducing
 
@@ -70,10 +92,14 @@ bash docs/regression-baseline/phase-b-matrix/structural/controls.sh   # 3 defect
 ```
 
 Needs Node 22+ on `PATH`; the recorder starts and stops its own servers on ports
-the OS assigns — the four mock profiles as Node processes, plus five raw TCP
-peers of its own for case 11. It exits non-zero if any gate assertion fails; as
-of round 3 it exits **0**. FINDING 1 and FINDING 2 are both closed — see
-`RESULTS.md`.
+the OS assigns — the four mock profiles as Node processes, plus the raw TCP peers
+it needs for cases 11, 12 and 13. It exits non-zero if any gate assertion fails.
+
+**As of round 4 it exits 1.** FINDING 1 and FINDING 2 are closed and stay
+closed; the round-3 panel's two FAILs (credential egress on redirect, and
+encoding-defeated redaction) are both closed and re-verified live. **FINDING 3
+is open** — three spellings of a credential reach every error surface. See
+`RESULTS.md` §5.
 
 `controls.sh` edits `src-tauri/crates/vela-providers/src/http.rs` in place to
 re-introduce each defect, and restores it from a backup on every exit path

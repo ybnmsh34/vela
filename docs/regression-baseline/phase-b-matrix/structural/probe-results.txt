@@ -61,15 +61,7 @@ the hole. One hatch per file, one verdict per hatch.
 
 EXPECTED: does not compile, E0616.
 
-  [PASS] rejected by the compiler
-  codes observed: error[E0282] error[E0616] 
-  expected among: E0616
-  verbatim:
-    error[E0616]: field `inner` of struct `BodyStream` is private
-      --> crates/vela-providers/examples/zz_probe_tmp.rs:17:51
-    error[E0282]: type annotations needed
-      --> crates/vela-providers/examples/zz_probe_tmp.rs:18:5
-    error: could not compile `vela-providers` (example "zz_probe_tmp") due to 2 previous errors
+  [FAIL] IT COMPILED — this bypass is writable.
 
 ---- probe-04-into-inner ----------------------------------------------------
 
@@ -114,4 +106,4 @@ async fn read_raw(mut stream: impl ByteStream) -> Result<Option<Vec<u8>>, Transp
     error[E0277]: the trait bound `BodyStream: ByteStream` is not satisfied
     error: could not compile `vela-providers` (example "zz_probe_tmp") due to 3 previous errors
 
-ALL PROBES REJECTED. The bypass is not expressible.
+AT LEAST ONE PROBE COMPILED OR MISFIRED — GATE FAILURE.

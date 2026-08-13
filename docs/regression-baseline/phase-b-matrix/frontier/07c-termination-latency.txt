@@ -23,29 +23,29 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   the cost of redaction is visible rather than asserted.
 
 ---- arm A — Auth::None (empty scrubber, fast path) ------------------------
-  run 1                                  2.669016ms   (222 answer characters)
-  run 2                                  2.155501ms   (222 answer characters)
-  run 3                                  2.216147ms   (222 answer characters)
-  run 4                                  2.301273ms   (222 answer characters)
-  run 5                                  2.06221ms   (222 answer characters)
-  MEDIAN                                 2.216147ms
-  worst sample                           2.669016ms
+  run 1                                  2.61984ms   (222 answer characters)
+  run 2                                  2.281516ms   (222 answer characters)
+  run 3                                  2.522238ms   (222 answer characters)
+  run 4                                  2.487503ms   (222 answer characters)
+  run 5                                  2.39137ms   (222 answer characters)
+  MEDIAN                                 2.487503ms
+  worst sample                           2.61984ms
   credential on the wire                 false
 
 ---- arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len) 
-  run 1                                  3.079581ms   (222 answer characters)
-  run 2                                  2.935671ms   (222 answer characters)
-  run 3                                  2.709745ms   (222 answer characters)
-  run 4                                  2.508675ms   (222 answer characters)
-  run 5                                  2.941209ms   (222 answer characters)
-  MEDIAN                                 2.935671ms
-  worst sample                           3.079581ms
+  run 1                                  2.960202ms   (222 answer characters)
+  run 2                                  2.619739ms   (222 answer characters)
+  run 3                                  3.088036ms   (222 answer characters)
+  run 4                                  2.882851ms   (222 answer characters)
+  run 5                                  2.677564ms   (222 answer characters)
+  MEDIAN                                 2.882851ms
+  worst sample                           3.088036ms
   credential on the wire                 true
 
 ---- the comparison ----------------------------------------------------------
-  median, uncredentialed                 2.216147ms
-  MEDIAN, CREDENTIALED                   2.935671ms
-  cost of redaction (median delta)       719.524µs
+  median, uncredentialed                 2.487503ms
+  MEDIAN, CREDENTIALED                   2.882851ms
+  cost of redaction (median delta)       395.348µs
   recorded naive [DONE] consumer         5003 ms (TIMED OUT)
 
 ---- assertions --------------------------------------------------------------
@@ -56,11 +56,11 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] every sampled turn completed without error, both arms
         uncredentialed: 5 samples, credentialed: 5 samples
   [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms
-        median 2.935671ms, samples [3.079581ms, 2.935671ms, 2.709745ms, 2.508675ms, 2.941209ms]
+        median 2.882851ms, samples [2.960202ms, 2.619739ms, 3.088036ms, 2.882851ms, 2.677564ms]
   [PASS] …and on the uncredentialed one, so redaction is not what makes or breaks it
-        median 2.216147ms
+        median 2.487503ms
   [PASS] no sample came anywhere near the recorded 5003 ms hang, either arm
-        worst uncredentialed 2.669016ms, worst credentialed 3.079581ms
+        worst uncredentialed 2.61984ms, worst credentialed 3.088036ms
   [PASS] every sample returned the same answer length — timing did not truncate anything
         uncredentialed [222, 222, 222, 222, 222], credentialed [222, 222, 222, 222, 222]
   [PASS] redaction did not change the answer — both arms delivered the same text length

@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | ❌ **FAIL** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **GATE FAIL — returns to builder** | 1 |
+| **B** provider abstraction | ❌ | ❌ | ❌ | ✅ | ❌ **FAIL** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL 3/4 — round 2 building** | 2 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -366,12 +366,47 @@ scripted in the transcript. The defect exists only in a case nothing was testing
 The two hang classes Phase A measured at a full 5 s budget are now closed at ~3 ms. That was the
 single hardest requirement carried into this phase, and it holds.
 
-### Disposition
+### Panel result — ❌ FAIL, 3 of 4
 
-Phase B returns to a **fresh builder** — not to whoever wrote the accumulator. Phase C does **not**
-start. The fix is one round: key non-streamed tool calls on their own identity rather than on a
-streaming-only `index`, correct the truncated-argument discriminator, and add the parallel-call
-shape to the harness so it stops being invisible.
+| Critic | Verdict | Finding |
+|---|---|---|
+| Functionality | ❌ FAIL | The accumulator defect — reproduced independently, with its own mock server and its own test rather than by citing the gate |
+| Architecture | ❌ FAIL | Same root cause, framed structurally: "the one shared `CompletionAssembler` **falsely unifies two wire shapes that are not the same**" |
+| Security | ❌ FAIL | **A second, independent defect — a real credential leak.** See below |
+| Regression | ✅ PASS | No regression on any axis: 163 TS + 115 harness + 619 Rust green, transcripts byte-identical, frontend pixel-identical to both Phase A screenshots |
+
+### 🔴 The security critic found a credential leak nobody was looking for
+
+`Auth::ApiKeyQuery` builds the credential into the URL as a query parameter. Every reqwest-level
+failure funnels through `map_reqwest_error` (`http.rs:262`), which calls `error.to_string()` — and
+reqwest 0.12.28's `Display` **appends the full URL, query string included**. `detail()` truncates
+at 200 chars and strips control characters but **does not redact**, so the key survives intact.
+
+The critic captured a canary key in `Display`, `Debug`, **and** the serde JSON. That JSON is the
+exact shape `ProviderError` serializes **across the IPC bridge to the low-trust WebView**, and it
+fires on the commonest failures there are: connection refused, timeout, TLS handshake failure,
+mid-stream reset.
+
+This is worth dwelling on. Phase A's pre-fix round added `Concern::QueryParamCredentialIsLogged`
+to warn users that *the remote endpoint* would log their key. Phase B then built an HTTP layer
+that leaked the same key into *our own* error type — a different defect, in a different place,
+created after the warning was written. The risk signal was right and did nothing to prevent it.
+
+### Disposition — round 2 launched
+
+Phase C does **not** start. Three **fresh builders**, none of whom wrote the code they are fixing,
+and none of whom found the defects:
+
+1. **Accumulator** — distinguish the two wire shapes rather than unify them. A non-streamed
+   `message.tool_calls[]` entry is a complete call and gets its own slot; streaming fragment
+   behaviour is preserved untouched, because it was correct.
+2. **Credential leak** — redact structurally rather than at each call site, audit every route to an
+   error/log/Debug/IPC surface, and add canary tests with a positive control. `vela-providers`
+   currently has **no credential test at all**.
+3. **Harness blind spot** — make well-formed parallel tool calls a permanent matrix case, in both
+   transports. This is the durable fix: the defect survived 265 assertions because *nothing tested
+   the shape*. Written against the wire spec by someone who is **not** fixing the accumulator, so
+   the test cannot be shaped to fit the fix.
 
 **Deliberately not fixed by the executor.** The finder does not also mark the homework: this run
 produces evidence and stops there, following the precedent set when the harness's own 413 defect

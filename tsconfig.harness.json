@@ -29,5 +29,9 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["tests/harness"]
+  /* The UI-matrix bridge's browser half is React + DOM, not Node, so it is
+     checked by tsconfig.uibridge.json instead. Its Node half is .mjs, which no
+     project picks up. */
+  "include": ["tests/harness"],
+  "exclude": ["tests/harness/ui-bridge"]
 }

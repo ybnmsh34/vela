@@ -1174,6 +1174,49 @@ the desktop session and is untouched.**
 
 ---
 
+## Phase B2 gate — case 16 finds the sibling defect. Sweep still running.
+
+**1443 assertions** (round 4: 471), **24 failures**, 40 controls, 25.4 s. All 24 are one defect,
+found by **case 16 — reasoning × structured output**, one of the cross products mandated for this
+gate precisely because every prior round died in an untested intersection.
+
+A model reasoned inside `<think>` about a value, **rejected it**, and Vela handed the rejected
+value back as the conforming structured answer:
+
+```
+Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+```
+
+**This is the sibling of the `delete_everything` defect, not a repeat of it.** There, deliberation
+became an executed *action*. Here it becomes the *answer*. And unlike that one it is **not an
+adapter asymmetry** — it reproduces on all three adapters across both transports, so the
+structured-output extraction path reads text that includes reasoning **generally**.
+
+Case 15 (reasoning × tools) **passed**, which is the earlier fix holding under an independent
+re-test. Case 16 is the hole next door that nothing had looked at.
+
+### The thrash rule, and why completing the sweep is not thrashing
+
+My standing rule says another untested intersection stops the provider layer. Case 16 *is* another
+untested intersection, so the rule deserves an honest answer rather than a convenient one.
+
+**What changed is how the defect was found.** Rounds 1–4 each discovered a new surface by accident
+— an adversarial critic poking somewhere nobody had thought of. That is the pattern the rule exists
+to stop, because it means we do not know what we do not know, and each round only buys one more
+lucky discovery.
+
+Case 16 was found by a **systematic cross-product sweep** I mandated for this gate. It is not a
+surprise from an unexamined direction; it is the search working as designed. **Cases 17, 18, 19 and
+20 are still running.**
+
+**Decision: let the sweep finish before fixing anything.** Fixing case 16 now, while four more cross
+products are unrun, would reproduce exactly the round-by-round pattern the rule condemns — fix one,
+discover the next, repeat. The disciplined move is to collect the **complete** finding set from the
+sweep and address it in a single round.
+
+**The tripwire is not disarmed, it is re-aimed:** if the sweep completes and a *later* defect is
+then found outside it, that is the old pattern again and the provider layer stops for a decision.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

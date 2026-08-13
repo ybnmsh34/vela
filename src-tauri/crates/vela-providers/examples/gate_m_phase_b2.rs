@@ -9948,6 +9948,97 @@ async fn case_20(profile: &str, ledger: &mut Vec<Verdict>) {
         }
     }
 
+    // ---- arm 2b: THE SECOND BOUND, in the other file ---------------------
+    //
+    // ADDED AFTER THE EXECUTOR CONTROLS RAN, and the reason is recorded rather
+    // than smoothed over. DEFECT 4 in `structural/controls-b2.sh` raises the cap
+    // in `answer.rs::bounded` from 400 to 400 000 — and the first run of this
+    // case did not notice. Arm 2 reaches `tool_accum::truncate`; nothing here
+    // reached `answer::bounded`, which is the bound on a call SALVAGED out of
+    // unterminated deliberation.
+    //
+    // Two bounds, in two files, one covered. That is precisely the shape the
+    // round-4 report named as the reason percent-encoding was fixed for one
+    // binding of three, and this case had reproduced it. Arm 2b exists so the
+    // control that caught it has something to turn red.
+    doc.h("the SECOND bound — a call salvaged out of deliberation, in answer.rs");
+    {
+        let huge: String = std::iter::repeat("Wm4Zt")
+            .take(400)
+            .collect::<Vec<&str>>()
+            .join("");
+        let deliberation = format!(
+            "<think>I could call <tool_call>{{\"name\":\"get_weather\",\"arguments\":             {{\"city\":\"{huge}\"}}}}</tool_call> but I will not"
+        );
+        let peer = CrossPeer::start(Arc::new(move |path: &str, body: &str| {
+            if Adapter::Compat.is_model_list(path) {
+                return Reply::json(200, Adapter::Compat.model_list());
+            }
+            if Adapter::Compat.carries_tools(body) {
+                return Adapter::Compat.tools_refusal();
+            }
+            if body.contains("\"stream\":true") {
+                Reply::sse(Adapter::Compat.streamed(&deliberation, 17))
+            } else {
+                Reply::json(200, Adapter::Compat.whole(&deliberation))
+            }
+        }))
+        .await;
+        let log = WireLog::default();
+        let provider = Adapter::Compat.provider(&peer.url, &log);
+        let mut sink = CollectingSink::new();
+        let outcome = provider
+            .stream(
+                ChatRequest::new(Adapter::Compat.model())
+                    .with_message(ChatMessage::user("weather please"))
+                    .with_tools([weather_tool()])
+                    .with_tool_choice(ToolChoice::Auto),
+                &mut sink,
+                &context(),
+            )
+            .await;
+        let _ = log.drain();
+        match outcome {
+            Ok(response) => {
+                let salvaged: Vec<usize> = response
+                    .tool_calls
+                    .iter()
+                    .filter_map(|call| match call {
+                        ToolCallOutcome::Malformed {
+                            raw_arguments,
+                            reason: MalformedToolCall::RecoveredFromUnterminatedReasoning,
+                            ..
+                        } => Some(raw_arguments.chars().count()),
+                        _ => None,
+                    })
+                    .collect();
+                doc.kv("salvaged raw_arguments lengths", format!("{salvaged:?}"));
+                doc.check(
+                    "a salvaged call really was produced — this arm reaches `answer::bounded`",
+                    !salvaged.is_empty(),
+                    describe_calls(&response.tool_calls),
+                );
+                doc.check(
+                    "THE SECOND BOUND HOLDS TOO — a call salvaged out of deliberation is \
+                     bounded at 401 characters, in answer.rs as well as in tool_accum.rs",
+                    salvaged.iter().all(|length| *length <= 401),
+                    format!("{salvaged:?} from a 2000-character payload"),
+                );
+                doc.check(
+                    "and it is still not executable",
+                    !response.tool_calls.iter().any(ToolCallOutcome::is_ok),
+                    describe_calls(&response.tool_calls),
+                );
+            }
+            Err(error) => doc.check(
+                "the salvaged-bound arm completes",
+                false,
+                format!("{error:?}"),
+            ),
+        }
+        peer.stop();
+    }
+
     // ---- arm 3: none of it reaches the ERROR surface ---------------------
     doc.h("and none of it reaches the error surface, where B2 says nothing may");
     for adapter in Adapter::ALL {

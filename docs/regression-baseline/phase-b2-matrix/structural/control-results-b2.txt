@@ -43,3 +43,62 @@ DEFECT 2 — CANDIDATE FIX for FINDING 4 — extract_json stops scavenging a loo
   NOTE: this injection did not increase the failure count. Either the assertion
   it targets is not load-bearing, or the defect is not the defect it looks like.
 
+--------------------------------------------------------------------------------
+DEFECT 3 — the raw-argument bound raised from 400 to 40000 characters
+--------------------------------------------------------------------------------
+  AIM        case 20 — 'the deliberate carry is BOUNDED'
+  EXPECTED   case 20 goes red on the arms whose payload exceeds 401 characters
+  OBSERVED   gate failures: 48 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+    20-sibling-surfaces-x-endpoint-text
+
+--------------------------------------------------------------------------------
+DEFECT 4 — the salvaged-call bound raised the same way, in the other place it lives
+--------------------------------------------------------------------------------
+  AIM        case 20 — the same assertion, reached through answer.rs rather than tool_accum.rs
+  EXPECTED   case 20 goes red; injected separately from DEFECT 3 because two bounds in two files is exactly the shape that let round 4's percent-encoding fix cover one binding of three
+  OBSERVED   gate failures: 24 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+
+  NOTE: this injection did not increase the failure count. Either the assertion
+  it targets is not load-bearing, or the defect is not the defect it looks like.
+
+--------------------------------------------------------------------------------
+DEFECT 5 — malformed frames counted but never reported
+--------------------------------------------------------------------------------
+  AIM        case 17 — 'the stream really did carry junk', the PREMISE of the whole case
+  EXPECTED   case 17's premise assertion goes red, and case 08's with it. A premise nobody can watch fail is not a premise
+  OBSERVED   gate failures: 29 (baseline 24)
+  red cases:
+    08-malformed-frames
+    16-reasoning-x-structured-output
+    17-tools-x-malformed-frames
+
+--------------------------------------------------------------------------------
+DEFECT 6 — a cancelled turn becomes failable-over
+--------------------------------------------------------------------------------
+  AIM        case 19 — 'THE SECOND CANDIDATE WAS NEVER CONTACTED'
+  EXPECTED   case 19 goes red — and the router arm is the one that matters, because that is where the user's stop would have STARTED a turn on a second endpoint
+  OBSERVED   gate failures: 36 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+    19-cancellation-x-tool-accumulation
+
+--------------------------------------------------------------------------------
+DEFECT 7 — the closed-vocabulary audit given a 'close enough' exemption
+--------------------------------------------------------------------------------
+  AIM        case 18 — 'NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE'
+  EXPECTED   control 15's round-4-shape line flips from FAIL to PASS — the audit goes blind. diagnostic.rs refuses this exemption in a comment; this is what refusing it buys
+  OBSERVED   gate failures: 24 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+
+  NOTE: this injection did not increase the failure count. Either the assertion
+  it targets is not load-bearing, or the defect is not the defect it looks like.
+
+================================================================================
+Reproduce:  bash docs/regression-baseline/phase-b2-matrix/structural/controls-b2.sh
+The shared working tree is read, never written. Everything happens in $TMPDIR.
+================================================================================

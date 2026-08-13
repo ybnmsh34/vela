@@ -32,7 +32,7 @@ Legend: ✅ PASS · ❌ FAIL · 🟡 in progress · ⏸️ **AWAITING_DESKTOP** 
 | **A2** SQLite data layer | ✅ | ✅ | ✅ | ⚪ | ✅ | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ **COMPLETE** | 1 |
 | **A3** keychain + settings | ✅ | ✅ | ✅ static | ⚪ | ✅ | ‖ | ⚪ | ⏳ | ⚪ | ⚪ | ⚪ | ⏸️ **AWAITING_DESKTOP** | 1 |
 | **A4** mock-provider harness | ✅ | ✅ | ✅ | ⚪ | ✅ evidence | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ✅ COMPLETE (1 defect, fix in flight) | 1 |
-| **B** provider abstraction | 🟡 | 🟡 | 🟡 | 🟡 | ❌ **FAIL r2** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **GATE FAIL r2 — round 3 required** | 2→3 |
+| **B** provider abstraction | ❌ | ❌ | ❌ | ✅ | ❌ **FAIL r2** | ‖ | ⚪ | ⚪ | ⚪ | ⚪ | ⏳ | ❌ **PANEL FAIL r2 3/4 — round 3 building** | 3 |
 | **C–H** | — | — | — | — | — | ‖ | — | — | — | — | — | not started | 0 |
 
 ## Phase A — cloud panel PASSED (3/3), two pieces AWAITING_DESKTOP
@@ -506,6 +506,57 @@ evidence** (a 200 SSE body, not a transport error). The fix is landing increment
 evidence base is getting stronger each round: 265 → 361 assertions, 10 → 15 controls that actually
 fail. Round 3 is justified. If round 3 fails on a *third* unscrubbed path, that becomes thrash and
 the piece stops for a decision.
+
+### Round 2 panel — ❌ FAIL 3/4, and the two failures point in opposite directions
+
+| Critic | Verdict | Finding |
+|---|---|---|
+| Functionality | ❌ FAIL | The streamed-echo leak — reproduced with its **own** canary and bytes over real TCP |
+| Architecture | ❌ FAIL | Same defect, counted structurally: the Scrubber is consumed at **exactly one** call site in the whole crate |
+| Security | ❌ FAIL | Same defect, traced through every streaming read loop |
+| Regression | ✅ PASS | No regression — but recorded the **opposite** problem, below |
+
+Three critics converged on the same defect independently, each reproducing it themselves rather
+than citing the gate. That convergence is what makes it credible.
+
+### 🔁 The regression critic found the mirror image: the round-2 fix OVER-redacts
+
+`map_reqwest_error` (`http.rs:436`) calls `error.without_url()` **unconditionally**, stripping the
+endpoint URL from every transport error whether or not it carries a credential.
+
+```
+round 1:  Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+HEAD:     Connect: error sending request
+```
+
+— on a request whose own transcript line reads `(no authorization header)`. `ProviderError::Transport`
+has no endpoint field, so endpoint identity is gone from Display, Debug, and the IPC shape. With
+several candidates configured, a user cannot tell **which** endpoint failed.
+
+It did not fail on this, and the reasoning is sound: the failure class survives, the error stays
+actionable, and there is no chat UI yet to surface it in. But it noted **the tree already owns the
+right tool and uses it two cases later** — `RequestUrl::redacted()`, producing
+`no route for /v1/chat/completions?key=<redacted>`. The safe form was available and was not used.
+
+**Round 3 must satisfy both directions at once.** Redaction must remove the secret, not the
+diagnosis. An `Auth::None` control is what tells the two apart: if endpoint identity vanishes even
+when no credential exists, the fix is over-broad.
+
+### Round 3 — launched, single owner
+
+Tightly-coupled work, so one builder rather than a parallel wave. The brief is explicit that
+patching `next_chunk` and stopping is **not** acceptable: the root cause is that a security
+property rides on an overridable method defaulting to `Scrubber::none()`. The required proof is a
+test showing a **new decorating `ByteStream` that forgets to forward the scrubber fails to compile
+or fails a test** — without that, the defect is merely relocated.
+
+The security critic is additionally briefed to hunt **the eighth path nobody has tested** —
+trailers, redirects, proxy errors, DNS failures, HTTP/2 GOAWAY, decompression errors, non-UTF8
+bodies. Rounds 1 and 2 each died on a path the previous canary suite did not drive; assuming round
+3's suite is complete would be repeating the mistake that produced both failures.
+
+**Thrash tripwire is armed:** a third *unscrubbed path* stops the piece for a decision rather than
+triggering round 4.
 
 ## Run incidents
 

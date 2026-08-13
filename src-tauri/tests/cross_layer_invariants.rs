@@ -21,6 +21,8 @@ use vela_store::{DatabaseLocation, SqliteStore};
 
 use vela_lib::ipc::settings::{self as ipc_settings, SettingsPutProviderReq};
 use vela_lib::ipc::EmptyPayload;
+use vela_lib::provider_host::ProviderHost;
+use vela_providers::http::testing::ScriptedTransport;
 
 const CANARY: &str = "sk-live-PROBE-CANARY-abc123def456-MUST-NOT-LEAK";
 
@@ -49,7 +51,15 @@ fn a_no_auth_provider_travels_the_whole_stack_without_producing_an_authorization
     );
     assert_eq!(req.auth_requirement, AuthRequirement::NotRequired);
 
-    let view = ipc_settings::put_provider(&store, credentials.as_ref(), req).unwrap();
+    let providers = ProviderHost::new(
+        Arc::clone(&credentials),
+        Arc::new(ScriptedTransport::new(Vec::new())),
+    );
+    let view = ipc_settings::put_provider(&store, credentials.as_ref(), &providers, req).unwrap();
+    assert!(
+        providers.get("llamacpp").is_some(),
+        "configuring an endpoint must make it reachable from the chat surface"
+    );
     assert!(view.usable, "a no-auth local provider must be usable");
     assert!(!view.credential_present);
     assert_eq!(view.credential_field_label, None);

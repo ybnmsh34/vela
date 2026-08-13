@@ -134,10 +134,19 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     // the renderer, the sidebar can group, colour or badge by backend without
     // anybody deciding to, and the `PROVIDER_SPECIFIC` scan above would not
     // notice: `providerId` is not a vendor name.
+    //
+    // The slice ends at the transcript types on purpose, and that boundary is
+    // the rule rather than a concession to them. A *message* records which
+    // backend produced it — that is history, and the transcript is where
+    // history belongs. A *conversation* must not, because the sidebar renders
+    // conversations and a field it can see is a field it can group by. The
+    // second assertion below is the control: it fails if the transcript block
+    // ever stops carrying that provenance, so this slice cannot be quietly
+    // narrowed until it asserts nothing.
     const contract = stripComments(readFileSync(join(SRC_ROOT, 'platform', 'contract.ts'), 'utf8'));
     const navigationTypes = contract.slice(
       contract.indexOf('export interface ConversationSummary'),
-      contract.indexOf('export interface IpcContract'),
+      contract.indexOf('export type StoredMessageStatus'),
     );
     expect(navigationTypes.length, 'the navigation wire types moved; fix this slice').toBeGreaterThan(
       400,
@@ -146,6 +155,15 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
       navigationTypes.split('\n').filter((line) => /\bprovider|\bmodelId/i.test(line)),
       'a conversation summary that names a backend is a leak the sidebar will eventually branch on',
     ).toEqual([]);
+
+    const transcriptTypes = contract.slice(
+      contract.indexOf('export type StoredMessageStatus'),
+      contract.indexOf('export interface IpcContract'),
+    );
+    expect(
+      transcriptTypes.split('\n').filter((line) => /\bproviderId|\bmodelId/.test(line)).length,
+      'the slice above proves nothing unless the transcript really is where provenance lives',
+    ).toBeGreaterThan(0);
   });
 
   it('no navigation component reads a backend identity off anything', () => {

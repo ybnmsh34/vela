@@ -19,6 +19,17 @@
 //! system of record and the credential store. The join lives in
 //! [`vela_settings::SettingsService`]; the commands below are the usual thin
 //! adapters over it.
+//!
+//! ## …and the live provider set
+//!
+//! [`put_provider`] and [`delete_provider`] take a [`ProviderHost`] as well.
+//! **That is deliberate and it is not optional.** Before this parameter
+//! existed, `settings_put_provider` wrote a row and stopped: the registry that
+//! `chat_send` resolves against was never touched, so the renderer displayed a
+//! configured endpoint that every turn answered `NOT_FOUND` for. Writing the
+//! row and building the client are one operation, so they take one function —
+//! there is no second door through which a provider can be configured without
+//! becoming reachable.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -33,6 +44,7 @@ use vela_settings::{
 use vela_store::SettingsRepository;
 
 use super::{Ack, EmptyPayload, IpcError, IpcResult};
+use crate::provider_host::ProviderHost;
 use crate::state::AppState;
 use crate::store_host::StoreHandle;
 
@@ -115,22 +127,40 @@ pub fn set_theme<S: SettingsRepository + ?Sized>(
     Ok(SettingsSetThemeRes { theme })
 }
 
+/// Writes the provider row **and** makes the endpoint reachable.
+///
+/// Order matters: the row is written first, so a client that cannot be built
+/// leaves the user's configuration intact rather than silently discarding what
+/// they typed. The build failure then propagates, because a configuration that
+/// produced no client is exactly the state the renderer must not draw as ready.
+///
+/// This also covers *edit*: re-putting an id rebuilds its provider, so changing
+/// a base URL or an auth binding takes effect on the next turn instead of the
+/// next restart.
 pub fn put_provider<S: SettingsRepository + ?Sized>(
     settings: &S,
     credentials: &dyn SecretStore,
+    providers: &ProviderHost,
     req: SettingsPutProviderReq,
 ) -> IpcResult<ProviderView> {
     let service = SettingsService::new(settings, credentials);
     let config = service.put_provider(ProviderConfig::try_from(req)?)?;
+    providers.install(&config)?;
     Ok(service.view(config))
 }
 
+/// Removes the provider row, its credential, **and** the live client.
+///
+/// The unregistration happens after the delete succeeds: a `NOT_FOUND` for an
+/// id that was never configured must not tear down a provider that is.
 pub fn delete_provider<S: SettingsRepository + ?Sized>(
     settings: &S,
     credentials: &dyn SecretStore,
+    providers: &ProviderHost,
     req: SettingsProviderRefReq,
 ) -> IpcResult<Ack> {
     SettingsService::new(settings, credentials).delete_provider(&req.provider_id)?;
+    providers.forget(&req.provider_id);
     Ok(Ack::ok())
 }
 
@@ -162,7 +192,12 @@ pub fn settings_put_provider(
     store: State<'_, StoreHandle>,
     payload: SettingsPutProviderReq,
 ) -> IpcResult<ProviderView> {
-    put_provider(store.store(), state.secrets.as_ref(), payload)
+    put_provider(
+        store.store(),
+        state.secrets.as_ref(),
+        state.providers.as_ref(),
+        payload,
+    )
 }
 
 #[tauri::command]
@@ -171,7 +206,12 @@ pub fn settings_delete_provider(
     store: State<'_, StoreHandle>,
     payload: SettingsProviderRefReq,
 ) -> IpcResult<Ack> {
-    delete_provider(store.store(), state.secrets.as_ref(), payload)
+    delete_provider(
+        store.store(),
+        state.secrets.as_ref(),
+        state.providers.as_ref(),
+        payload,
+    )
 }
 
 #[cfg(test)]
@@ -186,15 +226,23 @@ mod tests {
     struct Host {
         store: SqliteStore,
         credentials: MemoryStore,
+        providers: ProviderHost,
     }
 
     impl Host {
-        /// VERIFIED-BY-FAKE: an in-memory database and an in-memory credential
-        /// store. No file, no keychain.
+        /// VERIFIED-BY-FAKE: an in-memory database, an in-memory credential
+        /// store and a transport with no script behind it. No file, no
+        /// keychain, no socket.
         fn new() -> Self {
             Self {
                 store: SqliteStore::open(DatabaseLocation::InMemory).unwrap(),
                 credentials: MemoryStore::new(),
+                providers: ProviderHost::new(
+                    std::sync::Arc::new(MemoryStore::new()),
+                    std::sync::Arc::new(vela_providers::http::testing::ScriptedTransport::new(
+                        Vec::new(),
+                    )),
+                ),
             }
         }
 
@@ -203,7 +251,7 @@ mod tests {
         }
 
         fn put(&self, req: SettingsPutProviderReq) -> IpcResult<ProviderView> {
-            put_provider(&self.store, &self.credentials, req)
+            put_provider(&self.store, &self.credentials, &self.providers, req)
         }
     }
 
@@ -339,6 +387,7 @@ mod tests {
         delete_provider(
             &host.store,
             &host.credentials,
+            &host.providers,
             SettingsProviderRefReq {
                 provider_id: "acme".into(),
             },
@@ -358,12 +407,76 @@ mod tests {
         let error = delete_provider(
             &host.store,
             &host.credentials,
+            &host.providers,
             SettingsProviderRefReq {
                 provider_id: "ghost".into(),
             },
         )
         .unwrap_err();
         assert_eq!(error.code, IpcErrorCode::NotFound);
+    }
+
+    /// **The regression this whole module was rewritten for.** A row in the
+    /// database with nothing behind it is what made the shipping application
+    /// answer `NOT_FOUND` for an endpoint the UI drew as configured.
+    #[test]
+    fn configuring_a_provider_makes_it_reachable_and_deleting_it_makes_it_unreachable() {
+        let host = Host::new();
+        assert!(
+            host.providers.get("llamacpp").is_none(),
+            "nothing is registered before anything is configured"
+        );
+
+        host.put(local_request()).unwrap();
+        let provider = host
+            .providers
+            .get("llamacpp")
+            .expect("a configured provider must be resolvable by the chat surface");
+        assert_eq!(provider.descriptor().id, "llamacpp");
+
+        delete_provider(
+            &host.store,
+            &host.credentials,
+            &host.providers,
+            SettingsProviderRefReq {
+                provider_id: "llamacpp".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            host.providers.get("llamacpp").is_none(),
+            "a deleted provider must stop answering turns"
+        );
+    }
+
+    #[test]
+    fn editing_a_provider_rebuilds_it_rather_than_leaving_the_old_endpoint_live() {
+        let host = Host::new();
+        host.put(local_request()).unwrap();
+        let before = host.providers.get("llamacpp").unwrap();
+
+        let mut edited = local_request();
+        edited.base_url = "http://127.0.0.1:9999/v1".into();
+        host.put(edited).unwrap();
+
+        let after = host.providers.get("llamacpp").unwrap();
+        assert!(
+            !std::sync::Arc::ptr_eq(&before, &after),
+            "a corrected base URL must not keep sending turns to the old address"
+        );
+        assert_eq!(host.providers.len(), 1, "an edit is not a second provider");
+    }
+
+    #[test]
+    fn a_rejected_configuration_registers_nothing() {
+        let host = Host::new();
+        let mut bad = local_request();
+        bad.base_url = "file:///etc/passwd".into();
+        host.put(bad).unwrap_err();
+        assert!(
+            host.providers.is_empty(),
+            "an invalid configuration must not leave a live client behind"
+        );
     }
 
     #[test]

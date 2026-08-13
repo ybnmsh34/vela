@@ -44,7 +44,12 @@ import {
   type ConversationSummary,
   type EchoReq,
   type EchoRes,
+  type ContentPartInput,
   type MessageHit,
+  type MessageHitKind,
+  type MessageListRes,
+  type MessageRes,
+  type MessageRole,
   type ModelCapabilityReport,
   type ModelsListRes,
   type ModelsProbeRes,
@@ -64,12 +69,20 @@ import {
   type SettingsSetThemeReq,
   type SettingsSetThemeRes,
   type SettingsSnapshot,
+  type StoreAppendMessageReq,
   type StoreConversationRefReq,
   type StoreCreateConversationReq,
+  type StoredMessage,
+  type StoredMessageStatus,
+  type StoredStopReason,
   type StoreListConversationsReq,
+  type StoreListMessagesReq,
+  type StoreMessageRefReq,
   type StoreRenameConversationReq,
   type StoreSearchReq,
   type StoreSearchRes,
+  type StoreUpdateMessageReq,
+  type TokenUsage,
   type ThemePreference,
   type UiLayout,
 } from './contract';
@@ -94,6 +107,11 @@ const DEFAULT_LIST_LIMIT = 500;
 /** Mirrors `DEFAULT_SEARCH_LIMIT` / `MAX_SEARCH_LIMIT` in the same module. */
 const DEFAULT_SEARCH_LIMIT = 50;
 const MAX_SEARCH_LIMIT = 200;
+/** Mirrors `MAX_TOOLS` in `src-tauri/src/ipc/chat.rs`. */
+const MAX_TOOLS = 128;
+/** Mirrors `DEFAULT_MESSAGE_LIMIT` / `MAX_MESSAGE_LIMIT` in `transcript.rs`. */
+const DEFAULT_MESSAGE_LIMIT = 1000;
+const MAX_MESSAGE_LIMIT = 5000;
 /** Mirrors the sidebar bounds in `src-tauri/src/ipc/ui.rs`. */
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 480;
@@ -339,13 +357,69 @@ function storageKey(reference: SecretsRefReq): string {
 /* store — the fake's stand-in for the SQLite tables                          */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Stands in for a `messages` row plus its `message_parts` rows.
+ *
+ * Parts are the single source of truth here as they are in SQLite: the answer
+ * text and the reasoning text are *derived* from them by {@link answerTextOf}
+ * and {@link reasoningTextOf}, never stored twice. A fake that kept its own
+ * flattened copy could agree with the host on writes and disagree on reads.
+ */
 interface FakeMessage {
   readonly id: string;
-  /** The answer text. Never contains reasoning — the same separation the store keeps. */
-  readonly text: string;
-  /** Reasoning, stored beside the answer rather than inside it. */
-  readonly reasoning?: string;
+  readonly conversationId: string;
+  readonly seq: number;
+  readonly role: MessageRole;
+  status: StoredMessageStatus;
+  parts: ContentPartInput[];
+  readonly providerId: string | null;
+  readonly modelId: string | null;
+  usage: TokenUsage;
+  stopReason: StoredStopReason | null;
+  errorMessage: string | null;
   readonly createdAtMs: number;
+  updatedAtMs: number;
+}
+
+const NO_USAGE: TokenUsage = {
+  inputTokens: null,
+  outputTokens: null,
+  reasoningTokens: null,
+  cachedInputTokens: null,
+};
+
+function toStoredMessage(message: FakeMessage): StoredMessage {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    seq: message.seq,
+    role: message.role,
+    status: message.status,
+    parts: [...message.parts],
+    providerId: message.providerId,
+    modelId: message.modelId,
+    usage: message.usage,
+    stopReason: message.stopReason,
+    errorMessage: message.errorMessage,
+    createdAtMs: message.createdAtMs,
+    updatedAtMs: message.updatedAtMs,
+  };
+}
+
+/** The answer. Reasoning is deliberately not part of it. */
+function answerTextOf(message: FakeMessage): string {
+  return message.parts
+    .filter((part) => part.kind === 'text')
+    .map((part) => (part as { readonly text: string }).text)
+    .join('\n');
+}
+
+/** The thinking, or `undefined` when the message has none. */
+function reasoningTextOf(message: FakeMessage): string | undefined {
+  const blocks = message.parts
+    .filter((part) => part.kind === 'reasoning')
+    .map((part) => (part as { readonly text: string }).text);
+  return blocks.length === 0 ? undefined : blocks.join('\n');
 }
 
 interface FakeConversation {
@@ -478,6 +552,14 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#storeAutotitleConversation(payload as StoreConversationRefReq);
       case 'store_search':
         return this.#storeSearch(payload as StoreSearchReq);
+      case 'store_append_message':
+        return this.#storeAppendMessage(payload as StoreAppendMessageReq);
+      case 'store_update_message':
+        return this.#storeUpdateMessage(payload as StoreUpdateMessageReq);
+      case 'store_list_messages':
+        return this.#storeListMessages(payload as StoreListMessagesReq);
+      case 'store_delete_message':
+        return this.#storeDeleteMessage(payload as StoreMessageRefReq);
       case 'ui_get_layout':
         return this.#layout;
       case 'ui_set_layout':
@@ -847,6 +929,7 @@ export class BrowserAdapter implements PlatformAdapter {
         'chat_send',
       );
     }
+    this.#validateTools(request);
     // Mirrors `resolve_provider`: an id that is not configured is NOT_FOUND,
     // never a quiet fallback to whatever else happens to be set up.
     if (!this.#providers.has(request.providerId)) {
@@ -908,6 +991,71 @@ export class BrowserAdapter implements PlatformAdapter {
 
     this.#scheduleFrame(step);
     return { turnId: request.turnId, accepted: true };
+  }
+
+  /**
+   * Mirrors `validated_tools` / `validated_tool_choice` in
+   * `src-tauri/src/ipc/chat.rs`. The fake refuses exactly what the host
+   * refuses, so a composer that offers a malformed catalogue fails the same way
+   * in `pnpm dev` as it does in the packaged app.
+   */
+  #validateTools(request: ChatSendReq): void {
+    const tools = request.tools ?? [];
+    if (tools.length > MAX_TOOLS) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid tools: at most ${MAX_TOOLS} tools per turn`,
+        'chat_send',
+      );
+    }
+    const seen = new Set<string>();
+    tools.forEach((tool, index) => {
+      const name = tool.name.trim();
+      if (name === '') {
+        throw new PlatformError(
+          'INVALID_PAYLOAD',
+          `invalid tools[${index}].name: must not be blank`,
+          'chat_send',
+        );
+      }
+      if (
+        typeof tool.parameters !== 'object' ||
+        tool.parameters === null ||
+        Array.isArray(tool.parameters)
+      ) {
+        throw new PlatformError(
+          'INVALID_PAYLOAD',
+          `invalid tools[${index}].parameters: must be a JSON Schema object`,
+          'chat_send',
+        );
+      }
+      if (seen.has(name)) {
+        // A call comes back naming a tool, not an index: two tools with one
+        // name make the answer un-routable.
+        throw new PlatformError(
+          'INVALID_PAYLOAD',
+          `invalid tools[${index}].name: \`${name}\` is offered twice`,
+          'chat_send',
+        );
+      }
+      seen.add(name);
+    });
+
+    const choice = request.toolChoice;
+    if (choice?.type === 'named' && !seen.has(choice.name.trim())) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid toolChoice: \`${choice.name}\` is not among the tools offered this turn`,
+        'chat_send',
+      );
+    }
+    if (choice?.type === 'required' && tools.length === 0) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid toolChoice: `required` with no tools offered can never be satisfied',
+        'chat_send',
+      );
+    }
   }
 
   #chatCancel(request: ChatCancelReq): ChatCancelRes {
@@ -1036,7 +1184,7 @@ export class BrowserAdapter implements PlatformAdapter {
     // Reasoning is excluded, as in the host: naming a conversation after the
     // model's private thinking would put words in the sidebar the user never saw.
     for (const message of conversation.messages.slice(0, 8)) {
-      const derived = deriveTitle(message.text);
+      const derived = deriveTitle(answerTextOf(message));
       if (derived !== null) {
         conversation.title = derived;
         conversation.updatedAtMs = this.#now();
@@ -1066,14 +1214,17 @@ export class BrowserAdapter implements PlatformAdapter {
     if (terms.length > 0) {
       for (const conversation of this.#conversations.values()) {
         for (const message of conversation.messages) {
-          for (const field of ['reasoning', 'text'] as const) {
-            const text = message[field];
-            if (text === undefined || !matchesTerms(text, terms)) continue;
+          const fields: readonly (readonly [MessageHitKind, string | undefined])[] = [
+            ['reasoning', reasoningTextOf(message)],
+            ['answer', answerTextOf(message)],
+          ];
+          for (const [kind, text] of fields) {
+            if (text === undefined || text === '' || !matchesTerms(text, terms)) continue;
             messages.push({
               messageId: message.id,
               conversationId: conversation.id,
               conversationTitle: conversation.title,
-              kind: field === 'reasoning' ? 'reasoning' : 'answer',
+              kind,
               snippet: snippetOf(text, terms),
               createdAtMs: message.createdAtMs,
             });
@@ -1083,6 +1234,110 @@ export class BrowserAdapter implements PlatformAdapter {
     }
 
     return { conversations, messages: messages.slice(0, limit) };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* the transcript                                                         */
+  /* ---------------------------------------------------------------------- */
+
+  #storeAppendMessage(request: StoreAppendMessageReq): MessageRes {
+    const conversation = this.#requireConversation(
+      request.conversationId,
+      'store_append_message',
+    );
+    if (request.parts.length === 0) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid parts: a message needs at least one part',
+        'store_append_message',
+      );
+    }
+    const now = this.#now();
+    const message: FakeMessage = {
+      id: `${conversation.id}_msg_${conversation.messages.length + 1}`,
+      conversationId: conversation.id,
+      seq: conversation.messages.length,
+      role: request.role,
+      status: request.status ?? 'complete',
+      parts: [...request.parts],
+      providerId: request.providerId ?? null,
+      modelId: request.modelId ?? null,
+      usage: request.usage ?? NO_USAGE,
+      stopReason: request.stopReason ?? null,
+      errorMessage: request.errorMessage ?? null,
+      createdAtMs: now,
+      updatedAtMs: now,
+    };
+    conversation.messages.push(message);
+    conversation.updatedAtMs = now;
+    return { message: toStoredMessage(message) };
+  }
+
+  #storeUpdateMessage(request: StoreUpdateMessageReq): MessageRes {
+    if (request.parts !== undefined && request.parts.length === 0) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid parts: a message needs at least one part',
+        'store_update_message',
+      );
+    }
+    const found = this.#findMessage(request.messageId, 'store_update_message');
+    // An omitted field leaves the value alone. There is no way to clear one.
+    if (request.parts !== undefined) found.parts = [...request.parts];
+    if (request.status !== undefined) found.status = request.status;
+    if (request.usage !== undefined) found.usage = request.usage;
+    if (request.stopReason !== undefined) found.stopReason = request.stopReason;
+    if (request.errorMessage !== undefined) found.errorMessage = request.errorMessage;
+    found.updatedAtMs = this.#now();
+    return { message: toStoredMessage(found) };
+  }
+
+  #storeListMessages(request: StoreListMessagesReq): MessageListRes {
+    const conversation = this.#requireConversation(request.conversationId, 'store_list_messages');
+    const limit = Math.min(request.limit ?? DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT);
+    const includeReasoning = request.includeReasoning ?? true;
+    const messages = conversation.messages
+      .filter((message) => request.afterSeq === undefined || message.seq > request.afterSeq)
+      .slice(0, limit)
+      .map((message) => {
+        const stored = toStoredMessage(message);
+        // A projection, never a delete — exactly as `MessageQuery` describes it.
+        return includeReasoning
+          ? stored
+          : { ...stored, parts: stored.parts.filter((part) => part.kind !== 'reasoning') };
+      });
+    return { messages };
+  }
+
+  #storeDeleteMessage(request: StoreMessageRefReq): Ack {
+    const id = request.messageId.trim();
+    if (id === '') {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid messageId: must not be blank',
+        'store_delete_message',
+      );
+    }
+    for (const conversation of this.#conversations.values()) {
+      const index = conversation.messages.findIndex((message) => message.id === id);
+      if (index >= 0) {
+        conversation.messages.splice(index, 1);
+        return { ok: true };
+      }
+    }
+    throw new PlatformError('NOT_FOUND', `no message with id \`${id}\``, 'store_delete_message');
+  }
+
+  #findMessage(rawId: string, command: CommandName): FakeMessage {
+    const id = rawId.trim();
+    if (id === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid messageId: must not be blank', command);
+    }
+    for (const conversation of this.#conversations.values()) {
+      const found = conversation.messages.find((message) => message.id === id);
+      if (found !== undefined) return found;
+    }
+    throw new PlatformError('NOT_FOUND', `no message with id \`${id}\``, command);
   }
 
   #uiSetLayout(request: UiLayout): UiLayout {
@@ -1123,9 +1378,23 @@ export class BrowserAdapter implements PlatformAdapter {
       updatedAtMs: input.updatedAtMs ?? input.createdAtMs ?? now,
       messages: (input.messages ?? []).map((message, index) => ({
         id: `${id}_msg_${index + 1}`,
-        text: message.text,
-        ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }),
+        conversationId: id,
+        seq: index,
+        role: 'user' as MessageRole,
+        status: 'complete' as StoredMessageStatus,
+        parts: [
+          ...(message.reasoning === undefined
+            ? []
+            : [{ kind: 'reasoning', text: message.reasoning, signature: null, redacted: false } as ContentPartInput]),
+          { kind: 'text', text: message.text } as ContentPartInput,
+        ],
+        providerId: null,
+        modelId: null,
+        usage: NO_USAGE,
+        stopReason: null,
+        errorMessage: null,
         createdAtMs: input.createdAtMs ?? now,
+        updatedAtMs: input.createdAtMs ?? now,
       })),
     };
     this.#conversations.set(id, conversation);

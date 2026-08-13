@@ -35,6 +35,8 @@ use vela_core::provider::ProviderKind;
 use vela_lib::ipc::secrets::{SecretRefDto, SecretsSetReq};
 use vela_lib::ipc::settings::SettingsPutProviderReq;
 use vela_lib::ipc::{secrets as ipc_secrets, settings as ipc_settings, IpcErrorCode};
+use vela_lib::provider_host::ProviderHost;
+use vela_providers::http::testing::ScriptedTransport;
 use vela_secrets::MemoryStore;
 use vela_store::{DatabaseLocation, SqliteStore};
 
@@ -126,7 +128,14 @@ fn observe(doc: &Value, case: &Value) -> Value {
         auth_requirement,
     };
 
-    match ipc_settings::put_provider(&store, &credentials, request) {
+    // Driven through the fully assembled door: `put_provider` builds the live
+    // provider as well as writing the row, so this fixture exercises the same
+    // call the shipping command makes rather than a settings-only shortcut.
+    let providers = ProviderHost::new(
+        std::sync::Arc::new(MemoryStore::new()),
+        std::sync::Arc::new(ScriptedTransport::new(Vec::new())),
+    );
+    match ipc_settings::put_provider(&store, &credentials, &providers, request) {
         Ok(view) => {
             let view = serde_json::to_value(&view).expect("a ProviderView always serialises");
             let security = &view["security"];

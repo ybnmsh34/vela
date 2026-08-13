@@ -10,6 +10,7 @@
 //! and the event channel: no `fs`, no `shell`, no `http`, no `process`.
 
 pub mod ipc;
+pub mod provider_host;
 pub mod state;
 pub mod store_host;
 
@@ -40,6 +41,26 @@ pub fn run() {
         // and then drop it.
         .setup(|app| {
             let store = store_host::open(app.handle())?;
+
+            // THE COMPOSITION ROOT. Configuration in the database becomes live
+            // provider objects here and only here. Without this call the
+            // registry stays empty for the whole life of the process, the UI
+            // draws every configured endpoint as ready, and every turn comes
+            // back `NOT_FOUND` — which is precisely what the packaged
+            // application did before this line existed.
+            //
+            // A provider that cannot be built does not stop startup: the report
+            // records it per-id and the endpoints that do build keep working.
+            // A failure to *read* settings does stop startup, for the same
+            // reason a failed migration does.
+            let report = app
+                .state::<AppState>()
+                .providers
+                .sync_from_settings(store.store())?;
+            for (id, error) in &report.failed {
+                eprintln!("vela: provider `{id}` is configured but unusable: {error}");
+            }
+
             app.manage(store);
             Ok(())
         })
@@ -64,6 +85,10 @@ pub fn run() {
             ipc::store::store_list_conversations,
             ipc::store::store_rename_conversation,
             ipc::store::store_search,
+            ipc::transcript::store_append_message,
+            ipc::transcript::store_delete_message,
+            ipc::transcript::store_list_messages,
+            ipc::transcript::store_update_message,
             ipc::ui::ui_get_layout,
             ipc::ui::ui_set_layout,
         ])

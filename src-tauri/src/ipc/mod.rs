@@ -46,12 +46,14 @@
 
 pub mod app;
 pub mod chat;
+pub mod content;
 pub mod diagnostics;
 pub mod error;
 pub mod models;
 pub mod secrets;
 pub mod settings;
 pub mod store;
+pub mod transcript;
 pub mod ui;
 
 use serde::{Deserialize, Serialize};
@@ -83,12 +85,16 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "settings_get",
     "settings_put_provider",
     "settings_set_theme",
+    "store_append_message",
     "store_autotitle_conversation",
     "store_create_conversation",
     "store_delete_conversation",
+    "store_delete_message",
     "store_list_conversations",
+    "store_list_messages",
     "store_rename_conversation",
     "store_search",
+    "store_update_message",
     "ui_get_layout",
     "ui_set_layout",
 ];

@@ -133,7 +133,12 @@ pub use diagnostic::{
     FilterVerdict, HarmCategories, HarmCategory,
 };
 pub use error::{Capability, ProviderError, ProviderResult, TransportFailure};
+// Standard base64, hoisted to the crate root because it is not backend-specific
+// even though it lives next to the two backends that needed it first. The host
+// decodes image bytes at the IPC boundary with the same codec the wire encoders
+// use, so a picture cannot be re-encoded differently on its way in.
 pub use event::{EventSink, StreamEvent, ToolCallDelta};
+pub use google::wire::base64_decode;
 pub use google::{GoogleOptions, GoogleProvider};
 pub use http::{HttpTransport, ReqwestTransport};
 pub use model::{
@@ -141,6 +146,7 @@ pub use model::{
     MalformedToolCall, MessageRole, ReasoningRequest, ResponseFormat, Sampling, SchemaMismatch,
     StopReason, TokenUsage, ToolCallOutcome, ToolChoice, ToolDefinition,
 };
+pub use openai_compatible::wire::base64_encode;
 pub use openai_compatible::{OpenAiCompatibleProvider, ProviderOptions};
 pub use provider::{CancelToken, ModelInfo, Provider, RequestContext, Timeouts};
 pub use redact::{RequestUrl, Scrubber};
@@ -168,6 +174,21 @@ impl ProviderRegistry {
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn Provider>> {
         self.providers.get(id).cloned()
+    }
+
+    /// Drops a provider. Returns what was removed, or `None` when the id was
+    /// not registered.
+    ///
+    /// Present because a registry that can only grow cannot follow the user:
+    /// deleting a provider in settings has to be able to make the endpoint
+    /// unreachable again, or a removed backend keeps answering turns.
+    pub fn remove(&mut self, id: &str) -> Option<Arc<dyn Provider>> {
+        self.providers.remove(id)
+    }
+
+    /// The registered ids, in enumeration order.
+    pub fn ids(&self) -> Vec<String> {
+        self.providers.keys().cloned().collect()
     }
 
     /// The descriptor list handed to the renderer. Note it returns descriptors,

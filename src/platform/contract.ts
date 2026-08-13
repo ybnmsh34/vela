@@ -601,11 +601,68 @@ export type ChatStreamEvent =
   | { readonly type: 'done'; readonly response: ChatResponseBody }
   | { readonly type: 'error'; readonly error: ChatError };
 
-/** One message on its way to the host. */
+/**
+ * Mirrors `src-tauri/src/ipc/content.rs`'s `ContentPartDto` — the one content
+ * vocabulary that crosses the boundary, in both directions.
+ *
+ * The only difference from {@link ContentPart}, which mirrors the *provider*
+ * model, is `image.data`: **standard base64 here**, raw bytes there. An image is
+ * bytes in the host and in the database; encoding it once at the boundary is
+ * what keeps a JSON payload from carrying a byte array with one number per
+ * pixel channel.
+ */
+export type ContentPartInput =
+  | { readonly kind: 'text'; readonly text: string }
+  | {
+      readonly kind: 'reasoning';
+      readonly text: string;
+      readonly signature?: string | null;
+      readonly redacted?: boolean;
+    }
+  | { readonly kind: 'image'; readonly mimeType: string; readonly data: string }
+  | {
+      readonly kind: 'toolCall';
+      readonly callId: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }
+  | {
+      readonly kind: 'toolResult';
+      readonly callId: string;
+      readonly content: string;
+      readonly isError?: boolean;
+    };
+
+/**
+ * One message on its way to the host.
+ *
+ * `text` is the ordinary case. `parts` carries what text cannot say — an
+ * attached image, a tool result being fed back, a signed reasoning block a
+ * backend requires returned verbatim. The host composes them as **`text` (when
+ * non-empty) followed by `parts`, in order**; a message with neither is one
+ * empty text part, which is what a message with no `parts` has always been.
+ */
 export interface ChatMessageInput {
   readonly role: MessageRole;
   readonly text: string;
+  /** Non-text content, appended after `text`. Omit for an ordinary turn. */
+  readonly parts?: readonly ContentPartInput[];
 }
+
+/** Mirrors `vela_providers::model::ToolDefinition`. */
+export interface ToolDefinitionInput {
+  readonly name: string;
+  readonly description: string;
+  /** JSON Schema for the arguments object. Must be an object. */
+  readonly parameters: unknown;
+}
+
+/** Mirrors `vela_providers::model::ToolChoice` (`#[serde(tag = 'type')]`). */
+export type ToolChoiceInput =
+  | { readonly type: 'auto' }
+  | { readonly type: 'none' }
+  | { readonly type: 'required' }
+  | { readonly type: 'named'; readonly name: string };
 
 /**
  * Start a turn.
@@ -619,6 +676,15 @@ export interface ChatSendReq {
   readonly providerId: string;
   readonly modelId: string;
   readonly messages: readonly ChatMessageInput[];
+  /**
+   * Tools offered for this turn. Per-turn rather than per-provider: which tools
+   * are available is a property of what the user is doing, not of which
+   * endpoint answers. Omit for no tool use — the host then omits the catalogue
+   * from the request entirely, because GATE M FINDING 6 recorded a profile that
+   * rejects a request carrying `tools` even with `toolChoice: none`.
+   */
+  readonly tools?: readonly ToolDefinitionInput[];
+  readonly toolChoice?: ToolChoiceInput;
 }
 
 export interface ChatSendRes {
@@ -829,6 +895,102 @@ export interface StoreSearchRes {
 }
 
 /* -------------------------------------------------------------------------- */
+/* store — the transcript itself                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mirrors `src-tauri/src/ipc/transcript.rs`.
+ *
+ * Before these commands existed the transcript was pure React state, destroyed
+ * the moment the user left the conversation: the `messages` table had been in
+ * the schema since Phase A with nothing able to write to it. Reasoning is
+ * carried and stored as its own part kind, never folded into the answer, so the
+ * UI can collapse it and the prompt-rebuilding path can leave it out.
+ */
+
+/** Mirrors `vela_store::MessageStatus`. */
+export type StoredMessageStatus = 'streaming' | 'complete' | 'cancelled' | 'failed';
+
+/** Mirrors `vela_store::StopReason`. */
+export type StoredStopReason = 'endTurn' | 'maxTokens' | 'cancelled' | 'toolUse' | 'unspecified';
+
+/** Mirrors `transcript::MessageDto`. */
+export interface StoredMessage {
+  readonly id: string;
+  readonly conversationId: string;
+  /** Dense, 0-based position assigned by the host. `afterSeq` is exclusive. */
+  readonly seq: number;
+  readonly role: MessageRole;
+  readonly status: StoredMessageStatus;
+  readonly parts: readonly ContentPartInput[];
+  /**
+   * Which backend produced this message. A record of what happened, per
+   * message — not a switch the UI branches on.
+   */
+  readonly providerId: string | null;
+  readonly modelId: string | null;
+  readonly usage: TokenUsage;
+  readonly stopReason: StoredStopReason | null;
+  readonly errorMessage: string | null;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface StoreAppendMessageReq {
+  readonly conversationId: string;
+  readonly role: MessageRole;
+  readonly parts: readonly ContentPartInput[];
+  /** Defaults to `complete`. Send `streaming` when opening a live turn. */
+  readonly status?: StoredMessageStatus;
+  readonly providerId?: string | null;
+  readonly modelId?: string | null;
+  readonly usage?: TokenUsage;
+  readonly stopReason?: StoredStopReason | null;
+  readonly errorMessage?: string | null;
+}
+
+/**
+ * Amend a message already written — the call that closes out a streaming turn.
+ *
+ * An omitted field means "leave it alone". There is no way to spell "set this
+ * back to nothing": a renderer that could erase a `failed` status could make a
+ * failed turn look complete.
+ */
+export interface StoreUpdateMessageReq {
+  readonly messageId: string;
+  /** Replaces the whole part list. */
+  readonly parts?: readonly ContentPartInput[];
+  readonly status?: StoredMessageStatus;
+  readonly usage?: TokenUsage;
+  readonly stopReason?: StoredStopReason;
+  readonly errorMessage?: string;
+}
+
+export interface StoreListMessagesReq {
+  readonly conversationId: string;
+  /**
+   * `false` leaves reasoning parts out — the projection the "rebuild the
+   * prompt" path wants. It is a projection, never a delete. Defaults to `true`.
+   */
+  readonly includeReasoning?: boolean;
+  /** Exclusive. Only messages after this position; drives incremental loading. */
+  readonly afterSeq?: number;
+  readonly limit?: number;
+}
+
+export interface StoreMessageRefReq {
+  readonly messageId: string;
+}
+
+export interface MessageRes {
+  readonly message: StoredMessage;
+}
+
+export interface MessageListRes {
+  readonly messages: readonly StoredMessage[];
+}
+
+/* -------------------------------------------------------------------------- */
 /* ui — window layout that must survive a restart                             */
 /* -------------------------------------------------------------------------- */
 
@@ -865,12 +1027,16 @@ export interface IpcContract {
   settings_get: { req: EmptyPayload; res: SettingsSnapshot };
   settings_put_provider: { req: SettingsPutProviderReq; res: ProviderView };
   settings_set_theme: { req: SettingsSetThemeReq; res: SettingsSetThemeRes };
+  store_append_message: { req: StoreAppendMessageReq; res: MessageRes };
   store_autotitle_conversation: { req: StoreConversationRefReq; res: ConversationRes };
   store_create_conversation: { req: StoreCreateConversationReq; res: ConversationRes };
   store_delete_conversation: { req: StoreConversationRefReq; res: Ack };
+  store_delete_message: { req: StoreMessageRefReq; res: Ack };
   store_list_conversations: { req: StoreListConversationsReq; res: ConversationListRes };
+  store_list_messages: { req: StoreListMessagesReq; res: MessageListRes };
   store_rename_conversation: { req: StoreRenameConversationReq; res: ConversationRes };
   store_search: { req: StoreSearchReq; res: StoreSearchRes };
+  store_update_message: { req: StoreUpdateMessageReq; res: MessageRes };
   ui_get_layout: { req: EmptyPayload; res: UiLayout };
   ui_set_layout: { req: UiLayout; res: UiLayout };
 }
@@ -898,12 +1064,16 @@ export const COMMAND_ALLOWLIST = [
   'settings_get',
   'settings_put_provider',
   'settings_set_theme',
+  'store_append_message',
   'store_autotitle_conversation',
   'store_create_conversation',
   'store_delete_conversation',
+  'store_delete_message',
   'store_list_conversations',
+  'store_list_messages',
   'store_rename_conversation',
   'store_search',
+  'store_update_message',
   'ui_get_layout',
   'ui_set_layout',
 ] as const;

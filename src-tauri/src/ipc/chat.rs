@@ -32,11 +32,13 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use vela_providers::event::{EventSink, StreamEvent};
-use vela_providers::model::{ChatMessage, ChatRequest, MessageRole};
+use vela_providers::model::{ChatMessage, ChatRequest, ContentPart, MessageRole};
+use vela_providers::model::{ToolChoice, ToolDefinition};
 use vela_providers::provider::{CancelToken, Provider, RequestContext};
-use vela_providers::ProviderRegistry;
 
+use super::content::{to_provider_parts, ContentPartDto};
 use super::{IpcError, IpcResult};
+use crate::provider_host::ProviderHost;
 use crate::state::AppState;
 
 /// The event name the renderer subscribes to. Mirrored in
@@ -51,15 +53,57 @@ const MAX_MESSAGE_BYTES: usize = 1_048_576;
 /// the caller, not a user intent.
 const MAX_MESSAGES: usize = 4_096;
 
+/// Most tools offerable in one turn. Generous for a real catalogue, bounded so
+/// the prompt-emulation path cannot be handed an unbounded list to inline.
+const MAX_TOOLS: usize = 128;
+
+/// Longest tool name and description. Both reach the model verbatim.
+const MAX_TOOL_NAME: usize = 128;
+const MAX_TOOL_DESCRIPTION: usize = 8_192;
+
 /* -------------------------------------------------------------------------- */
 /* wire types                                                                 */
 /* -------------------------------------------------------------------------- */
 
+/// One message in the turn being sent.
+///
+/// # Why there are two content fields
+///
+/// `text` is the ordinary case and stays exactly as it was, so the overwhelming
+/// majority of turns — a person typing a sentence — are one field. `parts`
+/// carries everything text cannot say: an attached image, a tool result being
+/// fed back, a signed reasoning block a backend requires returned verbatim.
+///
+/// The composition rule is one line and is pinned by
+/// [`tests::text_and_parts_compose_in_the_order_the_user_sees`]:
+///
+/// > **the effective content is `text` (when non-empty) followed by `parts`,
+/// > in order** — and a message with neither is a single empty text part,
+/// > which is what a message with no `parts` field has always been.
+///
+/// Two fields rather than one because collapsing `text` into `parts` would
+/// break every caller for no gain, and because a required `parts` array makes
+/// the common case the awkward one.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessageInput {
     pub role: MessageRole,
+    #[serde(default)]
     pub text: String,
+    /// Non-text content, appended after `text`. Empty for an ordinary turn.
+    #[serde(default)]
+    pub parts: Vec<ContentPartDto>,
+}
+
+impl ChatMessageInput {
+    /// The plain-text message this used to be the only way to express.
+    pub fn text(role: MessageRole, text: impl Into<String>) -> Self {
+        Self {
+            role,
+            text: text.into(),
+            parts: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -69,6 +113,18 @@ pub struct ChatSendReq {
     pub provider_id: String,
     pub model_id: String,
     pub messages: Vec<ChatMessageInput>,
+    /// The tools offered for this turn.
+    ///
+    /// Per-turn rather than per-provider on purpose: which tools are available
+    /// is a property of what the user is doing, not of which endpoint is
+    /// answering. Empty is the normal case and means "no tool use", which the
+    /// encoder turns into omitting the catalogue entirely — GATE M FINDING 6
+    /// recorded a profile that rejects a request carrying `tools` even with
+    /// `toolChoice: none`.
+    #[serde(default)]
+    pub tools: Vec<ToolDefinition>,
+    #[serde(default)]
+    pub tool_choice: ToolChoice,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,34 +251,110 @@ pub fn build_request(req: &ChatSendReq) -> IpcResult<ChatRequest> {
             "invalid messages: at most {MAX_MESSAGES} messages per turn"
         )));
     }
+    let mut messages = Vec::with_capacity(req.messages.len());
     for (index, message) in req.messages.iter().enumerate() {
         if message.text.len() > MAX_MESSAGE_BYTES {
             return Err(IpcError::invalid(format!(
                 "invalid messages[{index}]: exceeds {MAX_MESSAGE_BYTES} bytes"
             )));
         }
+        messages.push(ChatMessage::new(
+            message.role,
+            content_of(message, &format!("messages[{index}]"))?,
+        ));
     }
 
-    Ok(ChatRequest::new(req.model_id.trim()).with_messages(
-        req.messages
-            .iter()
-            .map(|message| ChatMessage::new(message.role, vec![text_part(&message.text)])),
-    ))
+    Ok(ChatRequest::new(req.model_id.trim())
+        .with_messages(messages)
+        .with_tools(validated_tools(&req.tools)?)
+        .with_tool_choice(validated_tool_choice(&req.tool_choice, &req.tools)?))
 }
 
-fn text_part(text: &str) -> vela_providers::model::ContentPart {
-    vela_providers::model::ContentPart::Text {
-        text: text.to_owned(),
+/// `text` then `parts`, in that order. See [`ChatMessageInput`].
+fn content_of(message: &ChatMessageInput, whose: &str) -> IpcResult<Vec<ContentPart>> {
+    let extra = to_provider_parts(&message.parts, whose)?;
+    if extra.is_empty() {
+        // Including the empty-text case: a message that says nothing is one
+        // empty text part, exactly as it was before `parts` existed.
+        return Ok(vec![ContentPart::text(message.text.clone())]);
+    }
+    let mut parts = Vec::with_capacity(extra.len() + 1);
+    if !message.text.is_empty() {
+        parts.push(ContentPart::text(message.text.clone()));
+    }
+    parts.extend(extra);
+    Ok(parts)
+}
+
+fn validated_tools(tools: &[ToolDefinition]) -> IpcResult<Vec<ToolDefinition>> {
+    if tools.len() > MAX_TOOLS {
+        return Err(IpcError::invalid(format!(
+            "invalid tools: at most {MAX_TOOLS} tools per turn"
+        )));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for (index, tool) in tools.iter().enumerate() {
+        let name = tool.name.trim();
+        if name.is_empty() {
+            return Err(IpcError::invalid(format!(
+                "invalid tools[{index}].name: must not be blank"
+            )));
+        }
+        if name.len() > MAX_TOOL_NAME {
+            return Err(IpcError::invalid(format!(
+                "invalid tools[{index}].name: must be at most {MAX_TOOL_NAME} characters"
+            )));
+        }
+        if tool.description.len() > MAX_TOOL_DESCRIPTION {
+            return Err(IpcError::invalid(format!(
+                "invalid tools[{index}].description: must be at most {MAX_TOOL_DESCRIPTION} characters"
+            )));
+        }
+        // A JSON Schema for an argument object is an object. Anything else
+        // reaches the model as nonsense, or reaches the emulation path as a
+        // prompt fragment that cannot be satisfied.
+        if !tool.parameters.is_object() {
+            return Err(IpcError::invalid(format!(
+                "invalid tools[{index}].parameters: must be a JSON Schema object"
+            )));
+        }
+        if !seen.insert(name.to_owned()) {
+            // Two tools with one name make the model's answer un-routable: the
+            // call comes back naming a tool, not an index.
+            return Err(IpcError::invalid(format!(
+                "invalid tools[{index}].name: `{name}` is offered twice"
+            )));
+        }
+    }
+    Ok(tools.to_vec())
+}
+
+fn validated_tool_choice(choice: &ToolChoice, tools: &[ToolDefinition]) -> IpcResult<ToolChoice> {
+    match choice {
+        ToolChoice::Named { name } if !tools.iter().any(|tool| tool.name.trim() == name.trim()) => {
+            Err(IpcError::invalid(format!(
+                "invalid toolChoice: `{name}` is not among the tools offered this turn"
+            )))
+        }
+        ToolChoice::Required if tools.is_empty() => Err(IpcError::invalid(
+            "invalid toolChoice: `required` with no tools offered can never be satisfied",
+        )),
+        other => Ok(other.clone()),
     }
 }
 
 /// Resolves the backend for this turn. `NOT_FOUND` is the honest answer for an
 /// id that is not configured — never a fallback to "some other provider".
+///
+/// Takes the [`ProviderHost`] rather than a bare registry, because the host is
+/// the only thing that can have been filled from the user's settings. A
+/// registry reference was what made this function reliably answer `NOT_FOUND`
+/// for every endpoint the user had configured.
 pub fn resolve_provider(
-    registry: &ProviderRegistry,
+    providers: &ProviderHost,
     provider_id: &str,
 ) -> IpcResult<std::sync::Arc<dyn Provider>> {
-    registry.get(provider_id).ok_or_else(|| {
+    providers.get(provider_id).ok_or_else(|| {
         IpcError::not_found(format!("no provider configured with id `{provider_id}`"))
     })
 }
@@ -359,10 +491,24 @@ mod tests {
             turn_id: turn.to_owned(),
             provider_id: "configured-endpoint".to_owned(),
             model_id: "some-model".to_owned(),
-            messages: vec![ChatMessageInput {
-                role: MessageRole::User,
-                text: "hello".to_owned(),
-            }],
+            messages: vec![ChatMessageInput::text(MessageRole::User, "hello")],
+            tools: Vec::new(),
+            tool_choice: ToolChoice::Auto,
+        }
+    }
+
+    fn tool(name: &str) -> ToolDefinition {
+        ToolDefinition::new(
+            name,
+            "look something up",
+            serde_json::json!({"type": "object", "properties": {}}),
+        )
+    }
+
+    fn png_part() -> ContentPartDto {
+        ContentPartDto::Image {
+            mime_type: "image/png".into(),
+            data: vela_providers::base64_encode(&[0x89, b'P', b'N', b'G']),
         }
     }
 
@@ -393,21 +539,185 @@ mod tests {
     #[test]
     fn an_oversized_message_is_rejected_and_names_its_index() {
         let mut req = request("t1");
-        req.messages.push(ChatMessageInput {
-            role: MessageRole::User,
-            text: "x".repeat(MAX_MESSAGE_BYTES + 1),
-        });
+        req.messages.push(ChatMessageInput::text(
+            MessageRole::User,
+            "x".repeat(MAX_MESSAGE_BYTES + 1),
+        ));
         let error = build_request(&req).expect_err("oversized");
         assert!(error.message.contains("messages[1]"), "{}", error.message);
     }
 
     #[test]
     fn an_unconfigured_provider_is_not_found_rather_than_a_substitute() {
-        let registry = ProviderRegistry::new();
-        let Err(error) = resolve_provider(&registry, "absent") else {
+        let providers = ProviderHost::new(
+            Arc::new(vela_secrets::MemoryStore::new()),
+            Arc::new(vela_providers::http::testing::ScriptedTransport::new(
+                Vec::new(),
+            )),
+        );
+        let Err(error) = resolve_provider(&providers, "absent") else {
             panic!("an unconfigured id must not resolve to a provider");
         };
         assert_eq!(error.code, super::super::IpcErrorCode::NotFound);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* the widened contract                                               */
+    /* ------------------------------------------------------------------ */
+
+    #[test]
+    fn an_image_reaches_the_provider_request_instead_of_being_dropped() {
+        let mut req = request("t1");
+        req.messages[0].text = "what is in this picture?".into();
+        req.messages[0].parts = vec![png_part()];
+
+        let built = build_request(&req).expect("valid");
+        assert!(
+            built.needs_vision(),
+            "the provider layer must see this turn as needing vision"
+        );
+        assert!(matches!(
+            built.messages[0].parts.as_slice(),
+            [ContentPart::Text { .. }, ContentPart::Image { .. }]
+        ));
+    }
+
+    #[test]
+    fn text_and_parts_compose_in_the_order_the_user_sees() {
+        let mut req = request("t1");
+        req.messages[0].text = "before".into();
+        req.messages[0].parts = vec![png_part(), ContentPartDto::text("after")];
+        let built = build_request(&req).unwrap();
+        assert_eq!(built.messages[0].parts.len(), 3);
+        assert!(matches!(
+            &built.messages[0].parts[0],
+            ContentPart::Text { text } if text == "before"
+        ));
+        assert!(matches!(
+            &built.messages[0].parts[2],
+            ContentPart::Text { text } if text == "after"
+        ));
+    }
+
+    #[test]
+    fn an_image_only_message_carries_no_empty_text_part() {
+        // An empty leading text part is not free: several encoders emit it as a
+        // content block, and at least one profile treats an empty string
+        // content block as a malformed request.
+        let mut req = request("t1");
+        req.messages[0].text = String::new();
+        req.messages[0].parts = vec![png_part()];
+        let built = build_request(&req).unwrap();
+        assert_eq!(built.messages[0].parts.len(), 1);
+        assert!(matches!(
+            built.messages[0].parts[0],
+            ContentPart::Image { .. }
+        ));
+    }
+
+    #[test]
+    fn a_message_with_no_parts_field_is_exactly_what_it_always_was() {
+        // Backward compatibility, asserted rather than assumed: the shape the
+        // renderer has sent since Phase A still means one text part.
+        let payload: ChatSendReq = serde_json::from_str(
+            r#"{"turnId":"t1","providerId":"p","modelId":"m",
+                "messages":[{"role":"user","text":"hello"}]}"#,
+        )
+        .unwrap();
+        let built = build_request(&payload).unwrap();
+        assert_eq!(built.messages[0].parts.len(), 1);
+        assert_eq!(built.messages[0].answer_text(), "hello");
+        assert!(built.tools.is_empty());
+        assert_eq!(built.tool_choice, ToolChoice::Auto);
+    }
+
+    #[test]
+    fn a_tool_catalogue_reaches_the_provider_request() {
+        let mut req = request("t1");
+        req.tools = vec![tool("get_weather")];
+        let built = build_request(&req).expect("valid");
+        assert!(built.offers_tools());
+        assert_eq!(built.tools[0].name, "get_weather");
+    }
+
+    #[test]
+    fn a_named_tool_choice_must_name_a_tool_that_was_offered() {
+        let mut req = request("t1");
+        req.tools = vec![tool("get_weather")];
+        req.tool_choice = ToolChoice::Named {
+            name: "delete_everything".into(),
+        };
+        let error = build_request(&req).expect_err("unoffered tool");
+        assert!(error.message.contains("toolChoice"), "{}", error.message);
+
+        req.tool_choice = ToolChoice::Named {
+            name: "get_weather".into(),
+        };
+        build_request(&req).expect("a tool that was offered is fine");
+    }
+
+    #[test]
+    fn requiring_a_tool_call_with_no_tools_offered_is_refused_rather_than_hanging_the_turn() {
+        let mut req = request("t1");
+        req.tool_choice = ToolChoice::Required;
+        let error = build_request(&req).expect_err("unsatisfiable");
+        assert!(error.message.contains("can never be satisfied"));
+    }
+
+    #[test]
+    fn two_tools_with_one_name_are_refused_because_a_call_names_a_tool_not_an_index() {
+        let mut req = request("t1");
+        req.tools = vec![tool("f"), tool("f")];
+        let error = build_request(&req).expect_err("duplicate");
+        assert!(error.message.contains("offered twice"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_tool_schema_that_is_not_an_object_is_refused() {
+        let mut req = request("t1");
+        req.tools = vec![ToolDefinition::new("f", "", serde_json::json!("a string"))];
+        let error = build_request(&req).expect_err("not a schema");
+        assert!(error.message.contains("parameters"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_tool_result_can_be_fed_back_as_its_own_message() {
+        // The other half of tool calling: without this the model can ask, and
+        // nothing can answer.
+        let mut req = request("t1");
+        req.messages.push(ChatMessageInput {
+            role: MessageRole::Tool,
+            text: String::new(),
+            parts: vec![ContentPartDto::ToolResult {
+                call_id: "call_1".into(),
+                content: "17C".into(),
+                is_error: false,
+            }],
+        });
+        let built = build_request(&req).unwrap();
+        assert!(matches!(
+            built.messages[1].parts[0],
+            ContentPart::ToolResult { .. }
+        ));
+    }
+
+    #[test]
+    fn a_malformed_part_names_the_message_and_the_part_that_was_wrong() {
+        let mut req = request("t1");
+        req.messages.push(ChatMessageInput {
+            role: MessageRole::User,
+            text: String::new(),
+            parts: vec![ContentPartDto::Image {
+                mime_type: "image/png".into(),
+                data: "%%%".into(),
+            }],
+        });
+        let error = build_request(&req).expect_err("bad base64");
+        assert!(
+            error.message.contains("messages[1].parts[0].data"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]

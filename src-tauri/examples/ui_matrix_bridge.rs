@@ -37,14 +37,26 @@
 //! prove is what the *renderer* does with what the *core* produces from the
 //! recorded behaviour of endpoints that break in the documented ways.
 //!
-//! # The one thing this binary does that the shipping host does not
+//! # FINDING 1 — closed, and what `--no-register` means now
 //!
-//! It registers a provider in the `ProviderRegistry`. Nothing in
-//! `src-tauri/src/` does — `AppState::for_runtime()` builds an empty registry
-//! and `settings_put_provider` writes a settings row without ever constructing
-//! a `Provider`. That gap is FINDING 1 of this gate; see RESULTS.md. The bridge
-//! performs the missing step explicitly (the `registry.register(...)` call in
-//! `main`) so that the rest of the matrix is reachable at all.
+//! This binary used to hand-roll an `OpenAiCompatibleProvider` and push it into
+//! a `ProviderRegistry` itself, because nothing in `src-tauri/src/` did:
+//! `AppState::for_runtime()` built an empty registry and `settings_put_provider`
+//! wrote a settings row without ever constructing a `Provider`. That was
+//! FINDING 1 of this gate, and the bridge performing the missing step was the
+//! only reason the rest of the matrix was reachable.
+//!
+//! **It no longer does that.** The provider is built by
+//! [`vela_lib::provider_host::ProviderHost`] — the shipping composition root —
+//! through the same `settings::put_provider` call the real command makes. The
+//! bridge now contains no provider construction of its own.
+//!
+//! `--no-register` is kept as the **regression control**: it seeds the identical
+//! settings row through a *throwaway* `ProviderHost`, so the row exists and the
+//! live set the chat surface resolves against stays empty. That is exactly the
+//! pre-fix shipping wiring, and every capability axis goes `NOT_FOUND` under it.
+//! If the composition root is ever removed again, this flag reproduces the
+//! symptom on demand.
 
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -52,30 +64,30 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use vela_core::credential::Auth;
-use vela_core::provider::{ProviderDescriptor, ProviderKind};
 use vela_lib::ipc::chat::{ChatSendReq, ChatTurns};
 use vela_lib::ipc::models::{CapabilityCache, ModelCapabilityReport, ModelsProbeRes};
-use vela_lib::ipc::{chat, diagnostics, models, secrets, settings, store, ui, IpcError, IpcResult};
+use vela_lib::ipc::{
+    chat, diagnostics, models, secrets, settings, store, transcript, ui, IpcError, IpcResult,
+};
+use vela_lib::provider_host::ProviderHost;
 use vela_lib::state::AppState;
 use vela_lib::store_host::StoreHandle;
-use vela_providers::http::ReqwestTransport;
+use vela_providers::http::{HttpTransport, ReqwestTransport};
 use vela_providers::model::{ToolChoice, ToolDefinition};
 use vela_providers::provider::{RequestContext, Timeouts};
-use vela_providers::{OpenAiCompatibleProvider, ProviderRegistry};
 use vela_secrets::{MemoryStore, SecretStore};
 use vela_store::{DatabaseLocation, SqliteStore};
 
-/// Prefix on a user message that makes the bridge attach a tool catalogue to
-/// the `ChatRequest`.
+/// Prefix on a user message that makes the bridge attach a tool catalogue when
+/// the payload carried none.
 ///
-/// It exists because `ChatSendReq` has no `tools` field: the shipping composer
-/// cannot ask for tools, so the tool axis of the matrix would otherwise be
-/// unreachable from the UI (FINDING 2). Everything downstream of the request —
-/// native calls, prompt emulation, malformed reconstruction, the degradations —
-/// is the real core against the real endpoint. Only the *request* was built by
-/// the harness rather than by the composer, and RESULTS.md says so on every
-/// screenshot that shows a tool call.
+/// It exists because `ChatSendReq` used to have no `tools` field: the shipping
+/// composer could not ask for tools, so the tool axis of the matrix was
+/// otherwise unreachable from the UI (FINDING 2). **That field now exists**, and
+/// a payload carrying `tools` goes through `chat::build_request` like any other
+/// — the sentinel only fires when the request offered nothing, so the existing
+/// matrix driver keeps working while a caller that sends a real catalogue is
+/// no longer overridden by the harness.
 const TOOLS_SENTINEL: &str = "#tools";
 
 fn main() {
@@ -115,15 +127,21 @@ fn main() {
     let sqlite = SqliteStore::open(DatabaseLocation::in_directory(&temp)).expect("store opens");
     let store_handle = StoreHandle::new(Arc::new(sqlite));
 
-    let mut registry = ProviderRegistry::new();
-    if register {
-        registry.register(Arc::new(build_provider(
-            &provider_id,
-            &endpoint,
-            api_key.as_deref(),
-        )));
+    let secrets: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
+    if let Some(key) = api_key.as_deref() {
+        // The credentialled case is not what the matrix is about, but the
+        // bridge must be able to reach it for the no-credential control.
+        let reference = vela_core::secret::SecretRef::primary(&provider_id).expect("secret ref");
+        secrets
+            .set(&reference, &vela_core::secret::SecretValue::new(key))
+            .expect("memory store accepts a value");
     }
-    let state = AppState::new(Arc::new(MemoryStore::new()), registry);
+    let transport: Arc<dyn HttpTransport> =
+        Arc::new(ReqwestTransport::new().expect("http client builds"));
+    let state = AppState::new(
+        Arc::clone(&secrets),
+        ProviderHost::new(Arc::clone(&secrets), Arc::clone(&transport)),
+    );
 
     let out = Arc::new(Mutex::new(std::io::stdout()));
     let turns = Arc::new(ChatTurns::new());
@@ -131,18 +149,28 @@ fn main() {
 
     // The endpoint the user "configured", written through the real settings
     // command so the renderer sees a real `ProviderView` — including the host's
-    // own security posture and credential check.
+    // own security posture and credential check — and so the provider is built
+    // by the shipping composition root rather than by this file.
+    //
+    // `--no-register` routes the identical write through a throwaway host, which
+    // leaves the row written and the live set empty: the pre-fix wiring, exact.
+    let throwaway = ProviderHost::new(Arc::new(MemoryStore::new()), transport);
     let seeded = settings::put_provider(
         store_handle.store(),
         state.secrets.as_ref(),
+        if register {
+            state.providers.as_ref()
+        } else {
+            &throwaway
+        },
         serde_json::from_value(json!({
             "id": provider_id,
             "displayName": "Capability matrix endpoint",
             "kind": "local",
             "baseUrl": endpoint,
             "modelId": model_id,
-            "authRequirement": "notRequired",
-            "auth": { "type": "none" },
+            "authRequirement": if api_key.is_some() { "required" } else { "notRequired" },
+            "auth": if api_key.is_some() { json!({ "type": "bearerToken" }) } else { json!({ "type": "none" }) },
         }))
         .expect("seed provider payload"),
     );
@@ -170,38 +198,6 @@ fn main() {
             ),
         }
     }
-}
-
-fn build_provider(
-    provider_id: &str,
-    endpoint: &str,
-    api_key: Option<&str>,
-) -> OpenAiCompatibleProvider {
-    let secrets = Arc::new(MemoryStore::new());
-    let auth = match api_key {
-        // The credentialled case is not what the matrix is about, but the
-        // bridge must be able to reach it for the no-credential control.
-        Some(key) => {
-            let reference = vela_core::secret::SecretRef::primary(provider_id).expect("secret ref");
-            secrets
-                .set(&reference, &vela_core::secret::SecretValue::new(key))
-                .expect("memory store accepts a value");
-            Auth::Bearer { secret: reference }
-        }
-        None => Auth::None,
-    };
-    OpenAiCompatibleProvider::new(
-        ProviderDescriptor::new(
-            provider_id,
-            "Capability matrix endpoint",
-            ProviderKind::Local,
-        )
-        .expect("descriptor"),
-        endpoint.to_owned(),
-        auth,
-        secrets,
-        Arc::new(ReqwestTransport::new().expect("http client builds")),
-    )
 }
 
 #[derive(Deserialize)]
@@ -263,11 +259,13 @@ fn dispatch(
         "settings_put_provider" => encode(settings::put_provider(
             store,
             state.secrets.as_ref(),
+            state.providers.as_ref(),
             decode(payload)?,
         )?),
         "settings_delete_provider" => encode(settings::delete_provider(
             store,
             state.secrets.as_ref(),
+            state.providers.as_ref(),
             decode(payload)?,
         )?),
 
@@ -277,6 +275,11 @@ fn dispatch(
         "store_delete_conversation" => encode(store::delete(store, decode(payload)?)?),
         "store_autotitle_conversation" => encode(store::autotitle(store, decode(payload)?)?),
         "store_search" => encode(store::search(store, decode(payload)?)?),
+
+        "store_append_message" => encode(transcript::append_message(store, decode(payload)?)?),
+        "store_update_message" => encode(transcript::update_message(store, decode(payload)?)?),
+        "store_list_messages" => encode(transcript::list_messages(store, decode(payload)?)?),
+        "store_delete_message" => encode(transcript::delete_message(store, decode(payload)?)?),
 
         "ui_get_layout" => encode(ui::get(store, decode(payload)?)?),
         "ui_set_layout" => encode(ui::set(store, decode(payload)?)?),
@@ -335,7 +338,7 @@ fn dispatch(
                 .is_some_and(|message| message.text.trim_start().starts_with(TOOLS_SENTINEL));
 
             let mut built = chat::build_request(&send)?;
-            if wants_tools {
+            if wants_tools && built.tools.is_empty() {
                 built = built
                     .with_tools([ToolDefinition::new(
                         "get_weather",

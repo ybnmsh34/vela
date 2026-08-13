@@ -75,9 +75,9 @@ follow when there are no entries, and an introduction is read from its first lin
 
 ## After
 
-**96 assertions, 0 failures** — `ASSERTION-LEDGER.tsv`.
+**104 assertions, 0 failures** — `ASSERTION-LEDGER.tsv`.
 
-- 78 on the fixed bundle: four viewports × two themes × seven layout checks, six colour-scheme
+- 86 on the fixed bundle: four viewports × two themes × eight layout checks, six colour-scheme
   states × two claims, and the scrollbar probe.
 - 16 on the pre-fix baseline, each *required* to fail, each of which did.
 - 2 synthetic controls: `color-scheme` widened back to `light dark`, and the composer's cap put

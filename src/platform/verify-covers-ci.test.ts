@@ -104,4 +104,36 @@ describe('the local gate is a superset of the remote one', () => {
         'exempt it here with a reason if it is setup rather than a gate.',
     ).toEqual([]);
   });
+
+  it('every job that runs cargo can actually build the dependency graph', () => {
+    // The failure this catches, found at Phase B integration: `static` ran
+    // `cargo clippy` on a bare runner. Clippy builds before it lints, the graph
+    // contains glib-sys / gtk-sys / soup3-sys / javascriptcore-rs-sys /
+    // webkit2gtk-sys, and each resolves its system library through pkg-config in
+    // a build script. The job died at glib-sys without ever reaching Vela's
+    // code — and nobody noticed, because the draft guard meant the workflow had
+    // never run. `verify` passing locally says nothing here: this container has
+    // the packages, so the gap is invisible from a green local run.
+    for (const [name, body] of ciJobs()) {
+      const usesCargo = /^[ \t]*-?[ \t]*run: .*\bcargo\b/m.test(body) || /\n\s+cargo /.test(body);
+      if (!usesCargo) continue;
+      expect(
+        body.includes('libwebkit2gtk-4.1-dev'),
+        `CI job "${name}" runs cargo but never installs the Tauri system ` +
+          'dependencies. It will fail in a build script before linting or ' +
+          'testing anything. Copy the "Install Tauri system dependencies" step.',
+      ).toBe(true);
+    }
+  });
 });
+
+/** `[jobName, jobBody]` for each job in the workflow, split on the job headers. */
+function ciJobs(): Array<[string, string]> {
+  const afterJobs = WORKFLOW.slice(WORKFLOW.indexOf('\njobs:'));
+  const headers = [...afterJobs.matchAll(/^ {2}([\w-]+):$/gm)];
+  return headers.map((header, index) => {
+    const start = header.index ?? 0;
+    const next = headers[index + 1]?.index;
+    return [header[1] ?? '', afterJobs.slice(start, next ?? afterJobs.length)];
+  });
+}

@@ -341,6 +341,57 @@ tokens were re-spent on completed stages. Its partial output had already been co
 **Lesson applied to check-in cadence:** an unchanged event count between check-ins is now treated
 as a stall signal, not as evidence of a long-running stage.
 
+**Resolved.** The resumed integration agent inherited the tree at `9970434` and re-ran the full
+gate from scratch: `pnpm install`, `typecheck`, `test`, `test:harness`, `build`, `cargo fmt
+--all --check`, `cargo clippy --workspace --all-targets -- -D warnings` (forced off the cache by
+touching every `.rs` file, so the green is not a stale fingerprint), `cargo build --workspace
+--locked`, `cargo test --workspace --locked`, plus `check-transcripts.sh` and both halves of the
+secret tripwire. All green: 163 vitest, 114 harness, 12 tripwire, and 618 Rust tests across 19 test binaries plus
+one doc-test.
+No merge conflict, duplicate definition or broken import survived into the assembled tree — the
+in-flight commit had already reconciled them, and `compat/` vs `openai_compatible/` is a
+deliberate two-layer split (the adapter wraps the core backend), not the duplicate it resembles.
+
+### One defect the assembled gate still had: `static` could not run
+
+Found by reading the workflow rather than by running it, because it is invisible from a green
+local run. CI's `static` job — the *first* gate, the one everything else depends on — ran
+`cargo clippy --workspace --all-targets` on a bare `ubuntu-latest` with no Tauri system
+dependencies. Clippy builds before it lints, the dependency graph contains `glib-sys`,
+`gtk-sys`, `soup3-sys`, `javascriptcore-rs-sys` and `webkit2gtk-sys`, and every one of them
+resolves its system library through `pkg-config` in a build script. Only `test-rust` installed
+them.
+
+Reproduced locally by pointing `PKG_CONFIG_LIBDIR` at an empty directory — what a bare runner
+amounts to — against a scratch target dir:
+
+```
+error: failed to run custom build command for `glib-sys v0.18.1`
+  The system library `glib-2.0` required by crate `glib-sys` was not found.
+```
+
+The job would have died there, having never reached a line of Vela's code. It went unnoticed
+because the draft guard means this workflow has not yet run in anger, and because every local
+gate runs in a container that already has the packages.
+
+Fixed by giving `static` the same dependency install, toolchain and cache steps `test-rust`
+has, with `cargo fmt` moved after them so the whole Rust half of the job runs on a prepared
+runner. Guarded so it cannot recur: `src/platform/verify-covers-ci.test.ts` now splits `ci.yml`
+into jobs and fails any job that runs `cargo` without installing `libwebkit2gtk-4.1-dev`.
+Proven red by deleting the new step and watching the guard name the job.
+
+**VERIFIED-BY-FAKE**, per conventions §10: every Phase B result above was produced against the
+mock harness, scripted byte sequences and `MemoryStore`. GATE M Part 2 (a real llama.cpp at
+:8033) remains deferred to the desktop session, and nothing here is evidence about a real model
+endpoint or a real OS keychain.
+
+**Known gap, not fixed here** (it is authorship, not reconciliation): `docs/regression-baseline/
+phase-b/` carries `PROVIDER-CORE.md` and `ADAPTER-OPENAI-COMPATIBLE.md`, but the Anthropic and
+Google adapters landed without an equivalent evidence document. Their behaviour is pinned by
+`tests/anthropic_fixture_replay.rs` and `tests/google_fixture_replay.rs` (16 SSE fixtures, 32
+assertions), so it is documented in code — but the written evidence trail is uneven, and the
+Phase B critics should be told so rather than left to notice.
+
 ## Sequencing decisions
 
 **Phase B is deliberately held, not blocked.** The Phase A workflow still has its integration

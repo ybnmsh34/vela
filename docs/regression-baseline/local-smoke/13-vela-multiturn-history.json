@@ -1,0 +1,42 @@
+[
+  {
+    "path": "/v1/chat/completions",
+    "body": {
+      "messages": [
+        {
+          "content": "What is 17 * 23? Reply with only the number.",
+          "role": "user"
+        }
+      ],
+      "model": "unsloth/Qwen3.6-27B-GGUF:Q5_K_M",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    }
+  },
+  {
+    "path": "/v1/chat/completions",
+    "body": {
+      "messages": [
+        {
+          "content": "What is 17 * 23? Reply with only the number.",
+          "role": "user"
+        },
+        {
+          "content": "391",
+          "role": "assistant"
+        },
+        {
+          "content": "Now multiply that result by 2. Only the number.",
+          "role": "user"
+        }
+      ],
+      "model": "unsloth/Qwen3.6-27B-GGUF:Q5_K_M",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    }
+  }
+]

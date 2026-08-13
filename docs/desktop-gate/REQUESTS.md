@@ -214,7 +214,14 @@ colour palette, or marks.** Matching the *tier* is the goal.
 ## A3-keychain-settings — credential store and settings layer
 
 - **commit:** `cb385356937efb04781926f9326ec43a748f4f7c`
-- **status:** AWAITING_DESKTOP
+- **status:** VERDICT_WRITTEN — **PASS** at `9540d6c600316d63ebbd27ac6f833f4440d8762a`.
+  See [`VERDICTS.md`](./VERDICTS.md) § `A3-keychain-settings`. `KeyringStore` executed for the first
+  time anywhere: keys reach Windows Credential Manager under the documented target name, round-trip
+  and delete correctly, survive restart, and appear in no file on disk. `Auth::None` is first-class
+  and provably sends no `Authorization` header. Your noted `ApiKeyQuery` gap **does not reproduce** —
+  it now reports `elevated` / `queryParamCredentialIsLogged`.
+  **Limit:** the credential *form* was never exercised, because the renderer does not mount; only
+  the IPC → `KeyringStore` → Credential Manager path is proven.
 - **deferred critics:** `keychain-runtime`
 - **cloud verdicts already passed:** functionality (PASS), architecture (PASS), security (PASS —
   **static review only**; every credential test in the cloud ran against `MemoryStore` and is

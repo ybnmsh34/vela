@@ -1,0 +1,12 @@
+{"at":1786620494847,"event":"chat:event","payload":{"event":{"text":"\n","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620494883,"event":"chat:event","payload":{"event":{"text":"  ","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620494919,"event":"chat:event","payload":{"event":{"text":" -","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620494955,"event":"chat:event","payload":{"event":{"text":" Ancient","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620494991,"event":"chat:event","payload":{"event":{"text":" Time","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620495026,"event":"chat:event","payload":{"event":{"text":"keeping","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620495062,"event":"chat:event","payload":{"event":{"text":" (~","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620495098,"event":"chat:event","payload":{"event":{"text":"2","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620495134,"event":"chat:event","payload":{"event":{"text":"5","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"at":1786620495170,"event":"chat:event","payload":{"event":{"text":"0","type":"reasoningDelta"},"turnId":"cancelme"}}
+{"id":2,"ok":{"cancelled":true}}
+{"at":1786620495171,"event":"chat:event","payload":{"event":{"error":{"kind":"cancelled"},"type":"error"},"turnId":"cancelme"}}

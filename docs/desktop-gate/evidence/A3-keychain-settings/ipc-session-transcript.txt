@@ -1,0 +1,38 @@
+A3 keychain-runtime - live IPC transcript against the REAL running Vela
+Driven through the app's own webview (WebView2 CDP), so every call runs
+AppState::for_runtime() -> KeyringStore -> Windows Credential Manager.
+Nothing is stubbed. MemoryStore is not involved.
+
+[0] app_info (which secret backend is live?)
+     -> {"ok": {"name": "Vela", "version": "0.1.0", "contractVersion": 1, "os": "windows", "arch": "x86_64", "secretBackend": "os-keychain"}}
+[1] secrets_status before
+     -> {"ok": {"present": false}}
+[2] secrets_set (canary)
+     -> {"ok": {"ok": true}}
+[3] secrets_status after
+     -> {"ok": {"present": true}}
+
+--- OS check: cmdkey /list ---
+Target: LegacyGeneric:target=a3-canary-provider/primary.dev.vela.desktop
+User: a3-canary-provider/primary
+[4] secrets_set empty value (must refuse)
+     -> {"err": "refusing to store an empty credential for `a3-canary-provider-e/primary`"}
+[5] secrets_delete
+     -> {"ok": {"ok": true}}
+[6] secrets_status after delete
+     -> {"ok": {"present": false}}
+
+--- OS check after delete ---
+  (entry removed from Credential Manager)
+
+--- CLEANUP: removing providers and credentials created by this run ---
+  queryauth            secret={"ok": {"ok": true}}                          provider={"err": "\"invalid args `payload` for command `settings_dele
+  lan-endpoint         secret={"ok": {"ok": true}}                          provider={"err": "\"invalid args `payload` for command `settings_dele
+  local-llamacpp       secret={"ok": {"ok": true}}                          provider={"err": "\"invalid args `payload` for command `settings_dele
+  noauth               secret={"ok": {"ok": true}}                          provider={"err": "\"invalid args `payload` for command `settings_dele
+  a3-canary-provider   secret={"ok": {"ok": true}}                          provider={"err": "\"invalid args `payload` for command `settings_dele
+
+--- final settings_get ---
+  providers remaining: ['lan-endpoint', 'local-llamacpp', 'queryauth']
+  telemetryEnabled  : False
+  credentialBackend : os-keychain

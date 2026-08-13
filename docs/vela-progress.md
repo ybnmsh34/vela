@@ -1953,6 +1953,41 @@ recorded rather than waiting to be discovered.
 Two CI steps also appear in no agent gate report I have seen: `secret-scan.test.sh` (the
 meta-control proving the scanner can actually detect a secret) and `--frozen-lockfile`. Both pass.
 
+## ✅ The typeface fix is confirmed on real Windows — with one item still open
+
+Re-measured by the desktop session on WebView2 151.0.4129.78 / Windows 11 26200, using the
+width-control probe rather than `document.fonts.check` (which false-positives for Inter on that box):
+
+```
+absentControl          481.72     <- what a MISSING font renders at
+Inter                  481.72
+InterVariable          560.09
+JetBrainsMonoVariable  614.41
+SegoeUI                523.91
+appBody                560.09     == InterVariable
+appMono                614.41     == JetBrainsMonoVariable
+
+app body still == Segoe UI ?              False
+app body now differs from absent control ? True
+```
+
+**Before the fix, `appBody` was 523.91 — Segoe UI. It is now 560.09 — Inter Variable.** The design
+finally renders in the typeface it was authored for, on the machine users actually run.
+
+Worth noting a subtlety in that table: **bare `Inter` still measures 481.72, i.e. absent.** The
+bundled face is *Inter Variable*, which is what `@fontsource` ships, and the stack now leads with
+it. Had we verified by checking for `Inter` we would have concluded the fix failed.
+
+**`color-scheme` is fixed too:** `dataTheme=dark` now reports `rootColorScheme=dark` (was
+`light dark`), and 5 `::-webkit-scrollbar` rules are present where there had been zero.
+
+### ⚠️ Still open, measured: `scrollbar-gutter` on the transcript scroller reads `auto`
+
+The desktop session asked for `stable` and diagnosed why: it is the unstyled scrollbar stealing
+layout width that produces **the 7px composer/transcript offset which survived our ruler fix**. The
+scrollbar styling landed; the gutter did not. Small, specific, and the reason a previously "fixed"
+alignment is still visibly off.
+
 ## Run incidents
 
 **2026-08-13 ~08:0xZ — the shared git index crossed two parallel workflows. My structural error.**

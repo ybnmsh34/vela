@@ -201,6 +201,28 @@ The Phase C matrix asserts the same thing against the *real* endpoints, on all f
 
 ---
 
+### 2.5 The desktop session reached the same conclusion from the other side
+
+While this gate ran, the desktop session re-ran **GATE-M2 real-model** at `84c256f` and turned its
+earlier FAIL into a **PASS**. The two runs share no context and no evidence, and they agree:
+
+| | this gate (headless, mock endpoint) | desktop GATE-M2 (Windows, real Qwen3.6-27B) |
+|---|---|---|
+| the registry | a turn through the real `chat_send` reaches the configured endpoint | `models_list` enumerated the real model off the live server; a full turn rendered **in the window** |
+| the image path | `{kind:'image'}` arrives on the wire as `image_url` | a 64×64 PNG read back correctly against known ground truth |
+| the tool path | the offered catalogue arrives on the wire; a turn that offers nothing carries no `tools` key | 6 `toolCallDelta` events assembling `{"city":"Tel Aviv"}`, with 114 reasoning deltas in the same turn and none leaking into tool parsing |
+| context overflow | the meter warns before the turn is sent | typed `contextLengthExceeded` with `limitTokens`/`requestedTokens`, rejected pre-flight in 0.34 s |
+
+That is the strongest form this project's evidence takes: a container that cannot see the product
+and a machine that can, testing the same joint by different means and getting the same answer.
+
+**It changes nothing about what this gate may claim.** The desktop verdict carries its own binding
+interpretation limit — Qwen3.6-27B is a strong model and a PASS against it proves the happy path
+only, never graceful degradation or model-agnosticism. Those come exclusively from the mock matrix,
+re-run above.
+
+---
+
 ## 3. Findings
 
 ### FINDING 1 — the wave's own controls K25–K28 had never been executed
@@ -303,7 +325,29 @@ detached `git worktree` under `$TMPDIR`, with its own `CARGO_TARGET_DIR`.
 
 `scripts/gate-m-composition-root-controls.sh`; full output in `ASSERTION-CONTROL.txt`.
 
-<!-- CONTROLS-TABLE -->
+| id | the joint broken | result |
+|---|---|---|
+| C0 | nothing — the unmodified tree | **14 passed, 0 failed** |
+| C1 | `run()`'s `setup` no longer calls `sync_from_settings` | 1 red: `a_provider_configured_in_an_earlier_session_is_live_after_a_restart` |
+| C2 | `settings::put_provider` writes the row and never installs the provider — **the exact pre-fix wiring** | **7 red**, including the central turn, the image, the tool catalogue, the delete, the cold restart, *and the pre-fix control itself* |
+| C3 | the `DebugLogHandle` is never managed | 1 red: `the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off` |
+| C4 | `build_request` drops tools and non-text parts, as before the wave | 2 red: the image and the tool catalogue |
+| C5 | `store_host::open` returns an in-memory database | 3 red: the cold restart, the database file, and the provider that must survive a restart |
+| C6 | `app_info` removed from `generate_handler!` | 2 red: the backend readout and the origin control |
+
+Twelve of the fourteen assertions have now been watched failing under the defect they exist to
+detect. The two that never went red are the file's **own** controls —
+`nothing_is_readable_before_anything_is_written` and
+`a_command_outside_the_allowlist_is_not_dispatchable` — which assert absences and are supposed to
+hold under a broken composition root. Their non-vacuity comes from the other direction, and C6 is
+the proof for both: removing one command from the handler list makes exactly that command
+undispatchable and turns `the_runtime_state_reports_the_credential_backend_it_actually_built` red,
+which is the mechanism the allowlist assertion depends on. The persistence control is answered the
+same way by C0, where the same store type returns two messages.
+
+C2 is the one to read closely: **breaking one line in `settings.rs` takes down seven of fourteen
+assertions**, which is a measure of how much of this application was downstream of the joint that
+was missing.
 
 ### 6.2 The frontend assertions
 

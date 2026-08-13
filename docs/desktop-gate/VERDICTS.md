@@ -110,6 +110,21 @@ is the browser transport, not the core:
   **10.21 s**. The UI has something to draw for the ~10 s before the answer exists.
 - **Clean termination**: `done` received, no hang, 10.32 s total.
 - Evidence: `docs/regression-baseline/local-smoke/10-vela-bridge-normal.jsonl`
+- **Reasoning is correctly excluded from conversation history.** A two-turn exchange was run
+  through a logging passthrough proxy, so the real model answered *and* the exact outbound bytes
+  were captured. Turn 1 produced 295 reasoning deltas and the answer `"391"`. Turn 2's request body
+  carried only:
+
+  ```json
+  [{"role":"user","content":"What is 17 * 23? Reply with only the number."},
+   {"role":"assistant","content":"391"},
+   {"role":"user","content":"Now multiply that result by 2. Only the number."}]
+  ```
+
+  No `reasoning` key and no `<think>` anywhere in either body, and the model answered `782` —
+  so the history was not merely clean but semantically usable. Top-level keys are exactly
+  `messages`, `model`, `stream`, `stream_options`.
+  Evidence: `docs/regression-baseline/local-smoke/13-vela-multiturn-history.json`
 
 ### Blocking findings
 

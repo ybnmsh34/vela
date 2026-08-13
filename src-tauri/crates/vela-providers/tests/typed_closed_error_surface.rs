@@ -165,10 +165,23 @@ fn renderings(error: &ProviderError) -> Vec<(&'static str, String)> {
 /// own accessor rather than pattern-matching the text means the normalisation
 /// cannot accidentally erase something else.
 fn normalise(error: &ProviderError, text: &str) -> String {
-    match error.correlation() {
-        Some(correlation) => text.replace(&correlation.to_string(), "<ref>"),
-        None => text.to_owned(),
-    }
+    let Some(correlation) = error.correlation() else {
+        return text.to_owned();
+    };
+    // Three spellings, because three renderings spell it three ways: `Display`
+    // writes the 16-hex form, `Debug` writes `CorrelationId(<raw>)`, and serde
+    // writes `"correlation":<raw>`. Each is replaced in its own *framed* form
+    // rather than by a bare number, so a status code or a token count that
+    // happens to equal the counter cannot be normalised away by accident.
+    text.replace(&correlation.to_string(), "<ref>")
+        .replace(
+            &format!("CorrelationId({})", correlation.raw()),
+            "CorrelationId(<ref>)",
+        )
+        .replace(
+            &format!("\"correlation\":{}", correlation.raw()),
+            "\"correlation\":<ref>",
+        )
 }
 
 // ---------------------------------------------------------------------------

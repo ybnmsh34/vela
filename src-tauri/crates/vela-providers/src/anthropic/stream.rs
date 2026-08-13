@@ -180,7 +180,6 @@ impl MessageAssembler {
         error
     }
 
-
     /// Consume a call to the named tool as structured output instead of
     /// reporting it as a tool call.
     pub fn with_schema_tool(mut self, name: &'static str) -> Self {
@@ -254,8 +253,7 @@ impl MessageAssembler {
             "message_stop" => self.saw_message_stop = true,
             "error" => {
                 if let Some(error) = value.get("error") {
-                    self.stream_error =
-                        Some(self.record(map_error_object(None, error), error));
+                    self.stream_error = Some(self.record(map_error_object(None, error), error));
                 }
             }
             // `ping`, and anything a later API version adds. Not damage.

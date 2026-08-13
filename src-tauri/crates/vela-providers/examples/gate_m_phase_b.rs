@@ -228,7 +228,10 @@ impl HttpTransport for RecordingTransport {
                     url,
                     request_headers,
                     request_body,
-                    outcome: WireOutcome::Failed(format!("{:?}: {}", error.failure, error.diagnosis)),
+                    outcome: WireOutcome::Failed(format!(
+                        "{:?}: {}",
+                        error.failure, error.diagnosis
+                    )),
                 });
                 Err(error)
             }

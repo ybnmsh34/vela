@@ -321,10 +321,6 @@ fn assert_no_credential(label: &str, error: &ProviderError, sink: &CollectingSin
     assert_text_is_clean(label, sink_surfaces(sink));
 }
 
-/// Guards the failure mode that would make every negative assertion pass for
-/// the wrong reason: an error that says nothing at all.
-
-
 // ---------------------------------------------------------------------------
 // The echoing peer
 // ---------------------------------------------------------------------------

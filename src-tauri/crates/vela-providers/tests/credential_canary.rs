@@ -137,7 +137,9 @@ fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
         ProviderError::MalformedResponse { .. } => {}
         other => panic!("{label}: expected a transport failure, got {other:?}"),
     }
-    let diagnosis = error.diagnosis().expect("a transport failure has a diagnosis");
+    let diagnosis = error
+        .diagnosis()
+        .expect("a transport failure has a diagnosis");
     assert!(
         !diagnosis.cause().message().is_empty(),
         "{label}: an error with nothing to say would pass every leak assertion vacuously"

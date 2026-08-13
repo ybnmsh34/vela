@@ -385,8 +385,8 @@ impl AnthropicProvider {
         // non-streamed path reaches the same assembler through
         // `apply_message`, and an error frame inside a 200 must name its
         // candidate whichever transport carried it.
-        let mut assembler =
-            MessageAssembler::new(streaming).with_endpoint(response.body.origin().endpoint().cloned());
+        let mut assembler = MessageAssembler::new(streaming)
+            .with_endpoint(response.body.origin().endpoint().cloned());
         if encoded.schema_tool {
             assembler = assembler.with_schema_tool(wire::SCHEMA_TOOL_NAME);
         }

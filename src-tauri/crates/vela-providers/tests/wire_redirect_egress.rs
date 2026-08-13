@@ -549,7 +549,9 @@ fn assert_the_error_names_the_endpoint_and_files_the_destination(
         );
         assert_no_canary_anywhere(&format!("{label}/{surface}"), &text);
     }
-    let correlation = error.correlation().expect("a refused redirect is correlated");
+    let correlation = error
+        .correlation()
+        .expect("a refused redirect is correlated");
     let filed = debug_log()
         .body_for(correlation)
         .unwrap_or_else(|| panic!("{label}: nothing was filed under {correlation}"));
@@ -617,7 +619,12 @@ async fn no_redirect_carries_a_request_or_a_credential_off_the_configured_author
             // ordering makes the red message the third party's own transcript.
             assert_third_party_untouched(&label, &third_party, &redirector);
             let error = outcome.expect_err("a redirect off the configured authority is refused");
-            assert_the_error_names_the_endpoint_and_files_the_destination(&label, &error, &redirector, &third_party);
+            assert_the_error_names_the_endpoint_and_files_the_destination(
+                &label,
+                &error,
+                &redirector,
+                &third_party,
+            );
         }
     }
 }
@@ -734,7 +741,12 @@ async fn a_protocol_relative_location_is_not_a_way_around_the_authority_check() 
 
     assert_third_party_untouched("protocol-relative", &third_party, &redirector);
     let error = outcome.expect_err("a scheme-less Location off the authority is still off it");
-    assert_the_error_names_the_endpoint_and_files_the_destination("protocol-relative", &error, &redirector, &third_party);
+    assert_the_error_names_the_endpoint_and_files_the_destination(
+        "protocol-relative",
+        &error,
+        &redirector,
+        &third_party,
+    );
 }
 
 /// **Laundering through a legitimate hop.** The configured endpoint redirects to
@@ -772,7 +784,12 @@ async fn a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one() 
         redirector.targets()
     );
     let error = outcome.expect_err("the second hop leaves the configured authority");
-    assert_the_error_names_the_endpoint_and_files_the_destination("laundered", &error, &redirector, &third_party);
+    assert_the_error_names_the_endpoint_and_files_the_destination(
+        "laundered",
+        &error,
+        &redirector,
+        &third_party,
+    );
 }
 
 /// A same-authority redirect that never stops is a loop, and `Policy::custom`

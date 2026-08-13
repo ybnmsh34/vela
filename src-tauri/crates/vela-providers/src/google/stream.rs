@@ -177,7 +177,6 @@ impl CandidateAssembler {
         error
     }
 
-
     /// Parse tool calls out of the answer text as well.
     ///
     /// Set only when the catalogue was rendered into the prompt because the

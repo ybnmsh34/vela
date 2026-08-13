@@ -171,9 +171,9 @@ fn assert_the_failure_is_real(label: &str, error: &ProviderError) {
             "{label}: unexpected transport failure {failure:?}"
         );
     }
-    let diagnosis = error
-        .diagnosis()
-        .unwrap_or_else(|| panic!("{label}: expected an endpoint or transport failure, got {error:?}"));
+    let diagnosis = error.diagnosis().unwrap_or_else(|| {
+        panic!("{label}: expected an endpoint or transport failure, got {error:?}")
+    });
     assert!(
         !diagnosis.cause().message().is_empty(),
         "{label}: an error with nothing to say would pass every leak assertion vacuously"
@@ -883,13 +883,20 @@ async fn a_diagnosis_without_the_endpoints_words_is_still_actionable() {
         .expect_err("the stream carries an error object");
 
     let rendered = error.to_string();
-    assert_no_credential("google · a diagnosis without the endpoint's words", &error, &sink);
+    assert_no_credential(
+        "google · a diagnosis without the endpoint's words",
+        &error,
+        &sink,
+    );
     assert!(
         !rendered.contains(MARKER),
         "the endpoint's own words must not reach the error: {rendered}"
     );
     // What replaces them: the three things Vela knew without asking the peer.
-    assert_eq!(error.cause(), Some(vela_providers::Cause::EndpointRejectedRequest));
+    assert_eq!(
+        error.cause(),
+        Some(vela_providers::Cause::EndpointRejectedRequest)
+    );
     let endpoint = error.endpoint().expect("the endpoint must still be named");
     assert!(
         endpoint.path().contains("models/canary-model"),
@@ -1045,7 +1052,11 @@ async fn positive_control_the_pre_fix_streamed_read_leaks() {
     // sufficient — which is why a fifth encoding could not have helped an
     // attacker even if barrier 1 had missed it.
     let (leaked, leaked_sink) = assemble(&unscrubbed);
-    assert_no_credential("bytes that leaked, error that does not", &leaked, &leaked_sink);
+    assert_no_credential(
+        "bytes that leaked, error that does not",
+        &leaked,
+        &leaked_sink,
+    );
     assert!(
         leaked_sink.events.is_empty(),
         "the assembler returns the error rather than emitting it — the provider \

@@ -458,8 +458,8 @@ impl Provider for CompatProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagnostic::Cause;
     use crate::capability::CapabilityFinding;
+    use crate::diagnostic::Cause;
     use crate::error::TransportFailure;
     use crate::event::CollectingSink;
     use crate::http::testing::{CannedResponse, ScriptedTransport};

@@ -132,7 +132,6 @@ impl CompletionAssembler {
         error
     }
 
-
     /// Route answer text through the emulated-tool-call stripper.
     pub fn with_tool_emulation(mut self) -> Self {
         self.answer = std::mem::take(&mut self.answer).with_tool_emulation();
@@ -429,7 +428,8 @@ pub async fn drive_stream(
     // Joining them here — rather than at the assembler's construction, three
     // call sites away — is what stops the second barrier being something an
     // adapter has to remember.
-    let mut assembler = assembler.with_scrubber(body.origin().scrubber().clone())
+    let mut assembler = assembler
+        .with_scrubber(body.origin().scrubber().clone())
         .with_endpoint(body.origin().endpoint().cloned());
     loop {
         context.cancel.err_if_cancelled()?;

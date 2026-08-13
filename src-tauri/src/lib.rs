@@ -16,15 +16,28 @@ pub mod store_host;
 
 use state::AppState;
 
-/// Registers the command allowlist. The `generate_handler!` list and
-/// [`ipc::COMMAND_ALLOWLIST`] must agree — `cargo test` enforces it.
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+/// **The composition root, as a function.**
+///
+/// `run()` is `configure(...).run(context)` and nothing else, so there is
+/// exactly one description of how this application is assembled — the state it
+/// manages, the startup work in `setup`, and the command allowlist.
+///
+/// It is a function rather than a block inside `run()` for one reason: `run()`
+/// takes over the calling thread and needs a windowing system, so nothing could
+/// ever execute it under test, and the assembly went unverified for the whole
+/// project while 1455 assertions passed against bridges and examples. Generic
+/// over the runtime so `tests/gate_m_assembled_app.rs` can build **this** code
+/// on `tauri::test::mock_runtime` and drive the real commands through the real
+/// `invoke_handler`.
+///
+/// The `generate_handler!` list and [`ipc::COMMAND_ALLOWLIST`] must agree —
+/// `cargo test` enforces it.
+pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     // Scoped to this function so the module's import list stays as the scaffold
     // left it; `manage` needs the trait in scope.
     use tauri::Manager;
 
-    tauri::Builder::default()
+    builder
         .manage(AppState::for_runtime())
         // In-flight turn bookkeeping. Separate from `AppState` because it is
         // host-process state, not domain state.
@@ -104,6 +117,13 @@ pub fn run() {
             ipc::ui::ui_get_layout,
             ipc::ui::ui_set_layout,
         ])
+}
+
+/// The process entry point. Everything about how Vela is assembled lives in
+/// [`configure`]; this adds the real runtime and the real context.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    configure(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running Vela");
 }

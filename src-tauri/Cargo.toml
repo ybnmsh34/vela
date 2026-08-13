@@ -54,6 +54,11 @@ path = "src/main.rs"
 
 [dev-dependencies]
 tempfile = "3"
+# The mock runtime, so the gate can build and drive the REAL application —
+# `run()`'s own builder configuration, its `setup`, and its `invoke_handler` —
+# with no window and no display server. `tauri`'s `test` feature is `[]`: it
+# pulls in no additional dependency, it only un-gates `tauri::test`.
+tauri = { version = "2", features = ["test"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

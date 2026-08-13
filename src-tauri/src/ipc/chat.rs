@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Runtime, State};
 use vela_providers::event::{EventSink, StreamEvent};
 use vela_providers::model::{ChatMessage, ChatRequest, ContentPart, MessageRole};
 use vela_providers::model::{ToolChoice, ToolDefinition};
@@ -406,12 +406,12 @@ pub async fn run_turn(
 /* -------------------------------------------------------------------------- */
 
 /// Emits each event to the webview as it is produced.
-struct WindowSink {
-    app: AppHandle,
+struct WindowSink<R: Runtime> {
+    app: AppHandle<R>,
     turn_id: String,
 }
 
-impl EventSink for WindowSink {
+impl<R: Runtime> EventSink for WindowSink<R> {
     fn emit(&mut self, event: StreamEvent) {
         // Infallible by contract: a sink that has gone away must not be able to
         // turn into a provider error halfway through a turn. If the window is
@@ -428,8 +428,8 @@ impl EventSink for WindowSink {
 }
 
 #[tauri::command]
-pub fn chat_send(
-    app: AppHandle,
+pub fn chat_send<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     turns: State<'_, ChatTurns>,
     payload: ChatSendReq,

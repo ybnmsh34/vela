@@ -45,9 +45,14 @@ function BlockNode({ block, last }: { readonly block: Block; readonly last: bool
       );
 
     case 'heading': {
+      // The tag is the document outline: the answer sits inside the page, so
+      // `#` is an `h2`. The *type scale* is `data-level`, because six markdown
+      // levels do not fit into five available tags — `######` and `#####` both
+      // clamp to `h6` — and because sizing off the tag would put the scale in
+      // the stylesheet's selector list instead of in one place.
       const Tag = `h${String(Math.min(block.level + 1, 6))}` as 'h2';
       return (
-        <Tag className={styles.heading}>
+        <Tag className={styles.heading} data-level={block.level}>
           <Spans spans={block.spans} />
         </Tag>
       );
@@ -124,6 +129,8 @@ function Spans({ spans }: { readonly spans: readonly Span[] }) {
         switch (span.kind) {
           case 'text':
             return span.text;
+          case 'break':
+            return <br key={index} />;
           case 'code':
             return (
               <code key={index} className={styles.inlineCode}>

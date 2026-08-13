@@ -365,6 +365,55 @@ try {
     });
   }
 
+  /* ---- STEP 6b — THE READING SURFACE ------------------------------------ *
+   * The primary thing a Vela user looks at, and until now the one thing this
+   * matrix never rendered. Every profile answers a plain prompt with a single
+   * paragraph of filler, so no run had ever painted a heading, a list, a block
+   * quote, a table or a fenced code block — which is why a critic, not a gate,
+   * had to be the one to notice that all six heading levels were the same size.
+   *
+   * `#markdown` makes the endpoint answer with
+   * `tests/fixtures/rich-markdown-answer.md`, the same document
+   * `src/features/conversation/Markdown.test.tsx` asserts against, so the
+   * screenshot and the unit test are about one artifact.                      */
+  await sendAndSettle(page, '#markdown Which local model should I run on this machine?', {
+    timeout: 60_000,
+  });
+  const reading = await check.readingSurface(page);
+  writeFileSync(join(outDir, 'reading-surface.json'), `${JSON.stringify(reading, null, 2)}\n`);
+
+  // Two frames, because the whole point is a document too long for one: the top
+  // where the hierarchy is establishing itself, and the middle where a table, a
+  // block quote and a fenced block sit next to each other.
+  await page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    (turn?.querySelector('[data-level]') ?? turn)?.scrollIntoView({ block: 'start' });
+  });
+  await page.waitForTimeout(200);
+  await shot(page, 'rendered-markdown-answer');
+  await page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    (turn?.querySelector('table') ?? turn?.querySelector('pre') ?? turn)?.scrollIntoView({
+      block: 'center',
+    });
+  });
+  await page.waitForTimeout(200);
+  await shot(page, 'rendered-markdown-answer-blocks');
+
+  if (expected.answerChannelIsClean) {
+    record('C22', 'reading surface', 'the rendered answer has a type hierarchy a reader can use', check.headingHierarchyIsVisible(reading));
+    record('C23', 'reading surface', "wrapped prose reflows to the reader's column, not the model's", check.proseReflows(reading));
+    record('C24', 'reading surface', 'nothing in the answer makes the reading column scroll sideways', check.readingSurfaceFitsItsColumn(reading));
+  } else {
+    // `hostile` never closes its thinking block, so this document is salvaged
+    // rather than answered. Where salvaged text lands is the core's business
+    // and is already judged by C8; judging the *typography* of a channel this
+    // endpoint never opened would be judging the wrong thing. The screenshots
+    // are still taken, because what a hostile endpoint does to a long document
+    // is worth looking at even where there is nothing to assert.
+    record('C22', 'reading surface', 'a long document from an endpoint with no answer channel still settles readably', check.turnSettled(await check.lastAssistantTurn(page)));
+  }
+
   /* ---- STEP 7 — TOOL CALLS ---------------------------------------------- */
   await sendAndSettle(page, '#tools What is the weather in Lisbon?');
   const toolTurn = await check.lastAssistantTurn(page);

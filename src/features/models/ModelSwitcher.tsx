@@ -9,10 +9,21 @@
  * Nothing here knows what a backend is. Labels come from the user's own
  * configuration or from what the endpoint called its model; every branch is on
  * a flag the host computed.
+ *
+ * ## Focus
+ *
+ * The popover unmounts under whatever the user just activated — choosing a
+ * model destroys the button that was clicked to choose it — so closing left
+ * focus on `<body>`. The trigger is the deliberate destination for every exit:
+ * Escape, a click outside, and a chosen model all put the keyboard back on the
+ * control that says what is chosen. `Manage endpoints…` is the exception, and
+ * says so where it is handled: it opens a surface that takes the keyboard
+ * itself, so returning it here would be a fight.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
+import { returnFocusTo } from '@/state/focus-store';
 import type { ModelSelection } from '@/state/model-store';
 
 import { entryKey, isSelectable, selectionOf, type EntryBlock, type ModelEntry } from './catalogue';
@@ -45,10 +56,28 @@ export function ModelSwitcher({
 }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
-  const close = useCallback(() => {
+  /**
+   * Closing returns the keyboard to the trigger **only when the popover is
+   * holding it** — which is what makes one function serve every exit.
+   *
+   * Choosing a model or pressing Escape: the popover has the keyboard, and it
+   * would evaporate with the markup, so it comes back to the trigger. Clicking
+   * outside: the popover still has the keyboard during `mousedown`, so it comes
+   * back to the trigger and the browser then moves it to whatever was clicked —
+   * which is why this must not be conditional on *how* the popover closed.
+   * Focus already elsewhere: nothing to give back, and taking it would be the
+   * same theft in the other direction.
+   *
+   * `handOff` is the one exit that passes the keyboard on rather than back:
+   * opening the endpoints panel, which takes it itself.
+   */
+  const close = useCallback((handOff = false) => {
+    const holdsFocus = container.current?.contains(document.activeElement) ?? false;
     setOpen(false);
+    if (!handOff && holdsFocus) returnFocusTo(trigger.current);
   }, []);
 
   // Escape closes, and a click anywhere else does too. Both are registered only
@@ -79,6 +108,7 @@ export function ModelSwitcher({
     <div className={styles.switcher} ref={container}>
       <button
         type="button"
+        ref={trigger}
         className={styles.trigger}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -159,7 +189,7 @@ export function ModelSwitcher({
                 type="button"
                 className={styles.footerAction}
                 onClick={() => {
-                  close();
+                  close(true);
                   onConfigure();
                 }}
               >

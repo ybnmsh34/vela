@@ -21,9 +21,10 @@
  * not a disabled one. A disabled button is a promise the endpoint cannot keep.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { ChatCapabilities } from '@/platform/contract';
+import { useFocusAnchor } from '@/state/focus-store';
 
 import styles from './Composer.module.css';
 
@@ -58,6 +59,22 @@ export function Composer({
 }: ComposerProps) {
   const [text, setText] = useState('');
   const textarea = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * The composer is where a chat application's keyboard lives, so it is the
+   * first rung of the focus ladder every overlay falls back to when the thing
+   * it was opened from is gone (`src/state/focus-store.ts`). Registering it
+   * here rather than naming it from the overlays keeps the knowledge in one
+   * place: this component knows it is the message box; nothing else has to.
+   */
+  const anchor = useFocusAnchor<HTMLTextAreaElement>('composer');
+  const attach = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      textarea.current = node;
+      anchor(node);
+    },
+    [anchor],
+  );
 
   const change = (next: string): void => {
     setText(next);
@@ -121,7 +138,7 @@ export function Composer({
         </label>
         <textarea
           id="vela-composer"
-          ref={textarea}
+          ref={attach}
           className={styles.input}
           rows={1}
           value={text}

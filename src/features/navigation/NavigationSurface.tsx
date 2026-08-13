@@ -13,6 +13,7 @@
 
 import type { ReactNode } from 'react';
 
+import { useFocusAnchor } from '@/state/focus-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { CommandPalette } from './CommandPalette';
@@ -48,6 +49,11 @@ export function NavigationSurface(props: NavigationSurfaceProps) {
 function NavigationLayout({ children, secretBackend = null, now }: NavigationSurfaceProps) {
   const { createConversation } = useConversations();
   const selectedId = useNavigationStore((state) => state.selectedConversationId);
+  // The floor of the focus ladder. `tabindex="-1"` makes the content region a
+  // destination without making it a stop on the Tab order, so an overlay that
+  // closes while nothing else can hold the keyboard lands here rather than on
+  // `<body>` — see `src/state/focus-store.ts`.
+  const ground = useFocusAnchor<HTMLElement>('ground');
 
   useSidebarLayout();
   useNavigationShortcuts({
@@ -57,7 +63,7 @@ function NavigationLayout({ children, secretBackend = null, now }: NavigationSur
   return (
     <>
       <Sidebar {...(now === undefined ? {} : { now })} />
-      <main className={styles.main}>
+      <main className={styles.main} ref={ground} tabIndex={-1}>
         {selectedId === null ? (
           <HomeSurface secretBackend={secretBackend} />
         ) : (

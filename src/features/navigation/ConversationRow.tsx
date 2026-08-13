@@ -8,11 +8,25 @@
  *
  * The row is a button, not a link: there is no URL, and a link that goes
  * nowhere is a lie told to a screen reader.
+ *
+ * ## Where the keyboard goes when the field closes
+ *
+ * The field takes focus when it opens and used to take it with it when it
+ * closed: committing an F2 rename left focus on `<body>`, seven Tab presses
+ * from the composer, and the arrow keys that walk the list were gone one rename
+ * in. The row button is the deliberate destination — you renamed *this* row, so
+ * this row is where you still are.
+ *
+ * The one case that must **not** restore is a rename ended by clicking
+ * somewhere else. `relatedTarget` on the blur is what tells the two apart: a
+ * non-null value means the user chose where to go next, and taking it back
+ * would be the same defect pointed the other way.
  */
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { ConversationSummary } from '@/platform/contract';
+import { returnFocusTo, useKeyboardHandoff } from '@/state/focus-store';
 
 import styles from './ConversationRow.module.css';
 
@@ -41,12 +55,28 @@ export function ConversationRow({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLButtonElement | null>(null);
+  /** Set by whichever exit is meant to hand the keyboard back to the row. */
+  const restoreOnClose = useRef(false);
+
+  // A row is the one thing in this app that gets destroyed while the user is
+  // standing on it. The delete dialog cannot cover that — it closes one commit
+  // before the list reloads — so the row itself hands the keyboard on.
+  useKeyboardHandoff();
 
   useEffect(() => {
     if (renaming) {
       inputRef.current?.focus();
       inputRef.current?.select();
+      return;
     }
+    if (!restoreOnClose.current) return;
+    restoreOnClose.current = false;
+    // The ladder, not `mainRef.current.focus()`: a rename can move the row
+    // between recency groups, and a rename of the *last* conversation in a
+    // filtered list can take it off screen entirely. Either way the button this
+    // ref points at may be gone by now.
+    returnFocusTo(mainRef.current);
   }, [renaming]);
 
   function startRenaming(): void {
@@ -54,8 +84,9 @@ export function ConversationRow({
     setRenaming(true);
   }
 
-  function commit(): void {
+  function commit(restoreFocus: boolean): void {
     const title = draft.trim();
+    restoreOnClose.current = restoreFocus;
     setRenaming(false);
     // An unchanged or emptied title is a cancel, not a command. The host would
     // reject the blank one anyway; not sending it keeps the error surface for
@@ -70,7 +101,7 @@ export function ConversationRow({
           className={styles.renameForm}
           onSubmit={(event) => {
             event.preventDefault();
-            commit();
+            commit(true);
           }}
         >
           <input
@@ -81,10 +112,15 @@ export function ConversationRow({
             onChange={(event) => {
               setDraft(event.target.value);
             }}
-            onBlur={commit}
+            onBlur={(event) => {
+              // Focus went somewhere the user chose: commit, and leave it there.
+              // Focus went nowhere: commit, and take the row back.
+              commit(event.relatedTarget === null);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.stopPropagation();
+                restoreOnClose.current = true;
                 setRenaming(false);
               }
               // Arrow keys belong to the text cursor while a field is open.
@@ -100,7 +136,10 @@ export function ConversationRow({
     <li className={`${styles.row} ${selected ? styles.selected : ''}`}>
       <button
         type="button"
-        ref={registerRef}
+        ref={(node) => {
+          mainRef.current = node;
+          registerRef(node);
+        }}
         className={styles.main}
         tabIndex={tabbable ? 0 : -1}
         // Explicit, because the row's text content is the title plus its

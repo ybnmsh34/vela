@@ -28,6 +28,12 @@ export const EXPECTED = {
     nativeTools: true,
     reasoning: true,
     usageReported: true,
+    // Whether this endpoint delivers prose into the answer channel at all.
+    // `hostile` never closes its thinking block, so its text is salvaged rather
+    // than answered — which is a correct outcome, and not one the *reading
+    // surface* can be judged on. See the reading-surface step in
+    // `drive-matrix.mjs`.
+    answerChannelIsClean: true,
   },
   'mid-local': {
     modelId: 'mock-mid-local',
@@ -39,6 +45,7 @@ export const EXPECTED = {
     nativeTools: true,
     reasoning: true,
     usageReported: true,
+    answerChannelIsClean: true,
   },
   'small-local': {
     modelId: 'mock-small-local',
@@ -48,6 +55,7 @@ export const EXPECTED = {
     nativeTools: false,
     reasoning: false,
     usageReported: false,
+    answerChannelIsClean: true,
   },
   hostile: {
     modelId: 'mock-hostile',
@@ -57,6 +65,7 @@ export const EXPECTED = {
     nativeTools: false,
     reasoning: true,
     usageReported: false,
+    answerChannelIsClean: false,
   },
 };
 
@@ -171,6 +180,97 @@ export function lastAssistantTurn(page) {
             },
       degradations: notes === null ? [] : [...notes.querySelectorAll('li')].map((li) => li.innerText),
       error: error === null ? null : { kind: error.getAttribute('data-kind'), text: error.innerText },
+    };
+  });
+}
+
+/**
+ * THE READING SURFACE, as the engine actually set it.
+ *
+ * Every other reader here asks what the DOM *says*. This one asks what the
+ * engine *did* — computed font sizes, weights, margins, white-space, and
+ * whether anything overflows its column — because the defect it exists for is
+ * invisible in the DOM. Six headings with six correct tags and one shared font
+ * size is a perfectly well-formed document that cannot be read as one, and no
+ * amount of `innerText` will say so.
+ *
+ * It is also the reason this step exists at all: no screenshot in the Phase C
+ * evidence set rendered a heading, a list, a block quote or a table. The
+ * evidence base could not see the main thing users look at.
+ *
+ * Read from the *answer channel* only — the prose container that holds the
+ * headings — so the thinking block and tool cards cannot flatter the numbers.
+ */
+export function readingSurface(page) {
+  return page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    if (turn === undefined) return null;
+
+    const px = (value) => Math.round(Number.parseFloat(value) * 100) / 100;
+    const firstHeading = turn.querySelector('[data-level]');
+    // The prose container is whatever holds the headings. Found structurally
+    // rather than by class name, because the class name is a build hash.
+    const prose = firstHeading?.parentElement ?? turn.querySelector('p')?.parentElement ?? null;
+    if (prose === null) return { headings: [], paragraphs: [], counts: {}, prose: null };
+
+    const headings = [...prose.querySelectorAll('[data-level]')].map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        level: Number(node.getAttribute('data-level')),
+        tag: node.tagName.toLowerCase(),
+        text: (node.textContent ?? '').trim().slice(0, 60),
+        fontSizePx: px(style.fontSize),
+        fontWeight: style.fontWeight,
+        lineHeightPx: px(style.lineHeight),
+        marginTopPx: px(style.marginTop),
+        textTransform: style.textTransform,
+        color: style.color,
+      };
+    });
+
+    const paragraphs = [...prose.querySelectorAll(':scope > p')].map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        text: (node.textContent ?? '').replace(/\s+/gu, ' ').trim().slice(0, 120),
+        // The whole defect, in one measured value. `pre-wrap` here means the
+        // model's source line endings are the reader's line endings.
+        whiteSpace: style.whiteSpace,
+        fontSizePx: px(style.fontSize),
+        lineHeightPx: px(style.lineHeight),
+        // A soft wrap that survived into the DOM as a literal newline.
+        carriesSourceNewline: (node.textContent ?? '').includes('\n'),
+        hardBreaks: node.querySelectorAll('br').length,
+        renderedLines:
+          px(style.lineHeight) > 0 ? Math.round(node.getBoundingClientRect().height / px(style.lineHeight)) : null,
+      };
+    });
+
+    const bodyStyle = getComputedStyle(prose);
+    return {
+      headings,
+      paragraphs,
+      prose: {
+        fontSizePx: px(bodyStyle.fontSize),
+        lineHeightPx: px(bodyStyle.lineHeight),
+        clientWidthPx: prose.clientWidth,
+        scrollWidthPx: prose.scrollWidth,
+      },
+      counts: {
+        headings: headings.length,
+        paragraphs: prose.querySelectorAll('p').length,
+        listItems: prose.querySelectorAll('li').length,
+        nestedLists: prose.querySelectorAll('ul ul, ol ol, ul ol, ol ul').length,
+        quotes: prose.querySelectorAll('blockquote').length,
+        codeBlocks: prose.querySelectorAll('pre').length,
+        // Filtered rather than `:not(pre code)`: a complex selector inside
+        // `:not()` is a newer feature than this reader needs to depend on, and
+        // a `SyntaxError` here would take the whole step down.
+        inlineCode: [...prose.querySelectorAll('code')].filter((node) => node.closest('pre') === null)
+          .length,
+        tables: prose.querySelectorAll('table').length,
+        links: prose.querySelectorAll('a[href]').length,
+        rules: prose.querySelectorAll('hr').length,
+      },
     };
   });
 }
@@ -344,6 +444,85 @@ export function paintedIncrementally(frames) {
   const span = growing.length < 2 ? 0 : growing.at(-1).t - growing[0].t;
   const pass = growing.length >= 6 && span >= 300;
   return ok(pass, `${String(frames.length)} paints, ${String(growing.length)} growing, spread over ${String(Math.round(span))} ms`);
+}
+
+/**
+ * A16. The rendered answer has a type hierarchy a reader can use.
+ *
+ * Three conditions, and each one catches a different way of not having one:
+ *
+ * - **enough distinct sizes.** All six levels at one size is the defect as
+ *   found. Four distinct steps across the levels present is the floor.
+ * - **monotonic.** Sizes must never *grow* as the level deepens; an `h4` bigger
+ *   than the `h2` above it is worse than a flat document, because it says
+ *   something false about the structure.
+ * - **headings outrank body text.** The largest heading must be larger than the
+ *   paragraph text around it. A "scale" entirely below body size is not one.
+ *
+ * The measurements are the engine's own computed values, so this is a claim
+ * about what was painted and not about what the stylesheet intended.
+ */
+export function headingHierarchyIsVisible(reading) {
+  const headings = reading?.headings ?? [];
+  if (headings.length < 2) {
+    return ok(false, `only ${String(headings.length)} heading(s) reached the answer channel`);
+  }
+  const byLevel = new Map();
+  for (const heading of headings) {
+    if (!byLevel.has(heading.level)) byLevel.set(heading.level, heading.fontSizePx);
+  }
+  const levels = [...byLevel.keys()].sort((a, b) => a - b);
+  const sizes = levels.map((level) => byLevel.get(level));
+  const distinct = new Set(sizes).size;
+  const monotonic = sizes.every((size, index) => index === 0 || size <= sizes[index - 1]);
+  const body = reading?.prose?.fontSizePx ?? 0;
+  const outranksBody = sizes[0] > body;
+
+  const shape = levels.map((level, index) => `h${String(level)}=${String(sizes[index])}px`).join(' ');
+  return ok(
+    distinct >= 4 && monotonic && outranksBody,
+    `${shape} | body=${String(body)}px | distinct=${String(distinct)} monotonic=${String(monotonic)} outranksBody=${String(outranksBody)}`,
+  );
+}
+
+/**
+ * A17. Wrapped prose is reflowed to the reader's column, not the model's.
+ *
+ * Models hard-wrap at seventy-odd columns. If those line endings survive to the
+ * screen, every paragraph in every answer is set ragged at a width nobody
+ * chose. Two independent readings, because either alone can be satisfied by
+ * accident: the engine's computed `white-space` must not preserve newlines, and
+ * no paragraph may still be carrying a literal newline in its text.
+ *
+ * A `<br>` is explicitly allowed — that is an author's hard break surviving on
+ * purpose, and destroying it would be the same defect pointed the other way.
+ */
+export function proseReflows(reading) {
+  const paragraphs = reading?.paragraphs ?? [];
+  if (paragraphs.length === 0) return ok(false, 'no paragraph in the answer channel to judge');
+
+  const preserving = paragraphs.filter((paragraph) => /^pre/u.test(paragraph.whiteSpace));
+  const carrying = paragraphs.filter((paragraph) => paragraph.carriesSourceNewline);
+  return ok(
+    preserving.length === 0 && carrying.length === 0,
+    `${String(paragraphs.length)} paragraphs; white-space=${[...new Set(paragraphs.map((p) => p.whiteSpace))].join('/')}; ${String(carrying.length)} still carry a source newline`,
+  );
+}
+
+/**
+ * A18. Nothing in the answer makes the reading column scroll sideways.
+ *
+ * The commonest way a reading surface breaks its own layout is a wide table or
+ * a long unbroken token. Both are allowed to scroll — inside their own
+ * container. What is forbidden is the column itself widening, which moves every
+ * paragraph on screen.
+ */
+export function readingSurfaceFitsItsColumn(reading) {
+  const prose = reading?.prose;
+  if (prose === undefined || prose === null) return ok(false, 'no prose container found');
+  // One pixel of slack: sub-pixel layout rounds against you on some engines.
+  const fits = prose.scrollWidthPx <= prose.clientWidthPx + 1;
+  return ok(fits, `column ${String(prose.clientWidthPx)}px wide, content ${String(prose.scrollWidthPx)}px`);
 }
 
 /** A14. Usage claimed only where the endpoint reported it. */

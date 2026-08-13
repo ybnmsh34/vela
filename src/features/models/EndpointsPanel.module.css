@@ -8,6 +8,13 @@
   padding: var(--vela-space-5);
 }
 
+/* The panel takes the keyboard when it opens, because the menu item that opened
+   it unmounted itself in the act. It draws no ring: a ring around the whole
+   screen reads as a rendering fault, and the region announces itself by name. */
+.panel:focus {
+  outline: none;
+}
+
 .header {
   display: flex;
   align-items: baseline;

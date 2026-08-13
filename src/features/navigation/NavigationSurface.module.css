@@ -6,6 +6,16 @@
   user-select: text;
 }
 
+/* The content region is the floor of the focus ladder (`src/state/focus-store.ts`):
+   `tabindex="-1"`, reachable only programmatically, and only when nothing else
+   on screen can hold the keyboard. It draws no ring, because a ring around the
+   entire window reads as a rendering fault rather than as a cursor — the region
+   is announced by its landmark role instead. Every rung above it is a real
+   control that draws the real ring. */
+.main:focus {
+  outline: none;
+}
+
 .placeholder {
   display: grid;
   place-items: center;

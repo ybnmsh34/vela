@@ -13,8 +13,11 @@
  * evidence that a real OS keychain or a real model endpoint was exercised.
  */
 
+import { useEffect, useRef } from 'react';
+
 import { VelaMark } from '@/components/VelaMark';
 import { usePlatform } from '@/platform/PlatformProvider';
+import { claimKeyboardIfHomeless, useFocusAnchor } from '@/state/focus-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import styles from './HomeSurface.module.css';
@@ -55,6 +58,23 @@ export function HomeSurface({ secretBackend = null }: HomeSurfaceProps) {
 
   const recent = conversations.slice(0, RECENT_LIMIT);
 
+  /**
+   * This screen is the second rung of the focus ladder, and it is also the
+   * screen that appears *because* something went away — deleting the open
+   * conversation closes it and lands the user here.
+   *
+   * So it does two things. It registers its primary action as a destination
+   * other surfaces can fall back to, and on arrival it takes the keyboard **if
+   * and only if nothing else holds it**. The condition is the whole point: an
+   * unconditional autofocus would yank the caret out from under a user who
+   * opened this screen deliberately and is already typing somewhere.
+   */
+  const primary = useRef<HTMLButtonElement>(null);
+  const anchor = useFocusAnchor<HTMLButtonElement>('primary');
+  useEffect(() => {
+    claimKeyboardIfHomeless(primary.current);
+  }, []);
+
   return (
     <div className={styles.home}>
       <header className={styles.hero}>
@@ -68,7 +88,15 @@ export function HomeSurface({ secretBackend = null }: HomeSurfaceProps) {
       </header>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.primary} onClick={() => void createConversation()}>
+        <button
+          type="button"
+          className={styles.primary}
+          ref={(node) => {
+            primary.current = node;
+            anchor(node);
+          }}
+          onClick={() => void createConversation()}
+        >
           Start a conversation
         </button>
         <button

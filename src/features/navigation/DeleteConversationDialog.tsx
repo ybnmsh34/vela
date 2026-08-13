@@ -8,11 +8,25 @@
  * `role="alertdialog"` with `aria-modal`, focus moved to Cancel (the safe
  * choice, never the destructive one), Escape cancels, and focus returns to
  * where it came from on close.
+ *
+ * ## The focus bug that hid inside a correct focus implementation
+ *
+ * That last clause used to be a plain `restore.focus()`, which is the textbook
+ * pattern and was wrong here for a reason specific to this dialog: **the
+ * element it remembers is the row it is asking permission to destroy.** Cancel
+ * restored correctly; Delete restored focus to a detached node, which the
+ * browser answers by focusing `<body>` and saying nothing.
+ *
+ * `returnFocusTo` is the same pattern with that case answered — it verifies the
+ * opener can still take the keyboard and falls to the next rung of the ladder
+ * when it cannot. A dialog whose subject is destruction must assume its opener
+ * is a corpse.
  */
 
 import { useEffect, useRef } from 'react';
 
 import type { ConversationSummary } from '@/platform/contract';
+import { returnFocusTo } from '@/state/focus-store';
 
 import styles from './DeleteConversationDialog.module.css';
 
@@ -28,14 +42,12 @@ export function DeleteConversationDialog({
   onConfirm,
 }: DeleteConversationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const returnFocusTo = useRef<Element | null>(null);
 
   useEffect(() => {
-    returnFocusTo.current = document.activeElement;
+    const restore = document.activeElement;
     cancelRef.current?.focus();
-    const restore = returnFocusTo.current;
     return () => {
-      if (restore instanceof HTMLElement) restore.focus();
+      returnFocusTo(restore);
     };
   }, []);
 

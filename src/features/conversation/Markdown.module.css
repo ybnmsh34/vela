@@ -13,17 +13,78 @@
   margin-bottom: 0;
 }
 
+/* No `white-space: pre-wrap`, and that absence is the fix.
+   `markdown-parser.ts` now reflows soft-wrapped lines and emits an explicit
+   `<br>` for a hard break, so the model's seventy-column source no longer
+   decides where the reader's lines end. `text-wrap: pretty` asks the engine to
+   even out the rag and avoid a one-word last line; engines that do not know it
+   ignore it and set the paragraph the ordinary way. */
 .paragraph {
   margin: 0 0 var(--vela-space-3);
-  white-space: pre-wrap;
+  text-wrap: pretty;
 }
 
+/* ---- the heading scale --------------------------------------------------- *
+ * Six levels, and every one of them used to be `--vela-text-lg`. A six-level
+ * document rendered as a flat one: no way to tell a section from a
+ * sub-sub-section, which on a long answer is the difference between something
+ * you can skim and a wall.
+ *
+ * Size carries levels 1–3, where model output actually lives. Levels 4–6 are
+ * rare enough that separating them on size alone would need steps too fine to
+ * see, so they are separated by weight, colour, case and vertical rhythm as
+ * well — which is how a type scale is supposed to work anyway.
+ *
+ * The *rhythm* is half of it: space above a heading binds it to what follows
+ * and separates it from what came before. Equal margins on every level make a
+ * document read as one long list of equals no matter what the sizes say.       */
 .heading {
   margin: var(--vela-space-5) 0 var(--vela-space-2);
-  font-size: var(--vela-text-lg);
+  font-size: var(--vela-text-base);
   font-weight: var(--vela-weight-semibold);
   line-height: var(--vela-leading-tight);
   letter-spacing: var(--vela-tracking-tight);
+  color: var(--vela-text);
+  text-wrap: balance;
+}
+
+.heading[data-level='1'] {
+  margin-top: var(--vela-space-6);
+  font-size: var(--vela-text-xl);
+}
+
+.heading[data-level='2'] {
+  margin-top: var(--vela-space-6);
+  font-size: var(--vela-text-lg);
+}
+
+.heading[data-level='3'] {
+  font-size: var(--vela-text-md);
+}
+
+.heading[data-level='4'] {
+  font-size: var(--vela-text-base);
+}
+
+.heading[data-level='5'] {
+  margin-top: var(--vela-space-4);
+  font-size: var(--vela-text-sm);
+}
+
+/* The deepest level stops being a heading-by-size and becomes a label. It is
+   the only one that could otherwise be mistaken for the level above it. */
+.heading[data-level='6'] {
+  margin-top: var(--vela-space-4);
+  font-size: var(--vela-text-sm);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  color: var(--vela-text-muted);
+}
+
+/* A heading that opens a section should not also be pushed away from the text
+   under it, and two headings in a row are one unit, not two. */
+.heading + .heading {
+  margin-top: var(--vela-space-3);
 }
 
 .list {
@@ -33,6 +94,13 @@
 
 .item {
   margin: var(--vela-space-1) 0;
+  padding-left: var(--vela-space-1);
+}
+
+/* The marker is punctuation, not content: at full text colour a column of
+   bullets reads as loud as the words beside it. */
+.item::marker {
+  color: var(--vela-text-subtle);
 }
 
 .item > .list {
@@ -40,11 +108,21 @@
   margin-bottom: 0;
 }
 
+/* A paragraph inside a list item is still a list item, so it does not get the
+   full inter-paragraph gap — only the gap between an item's own paragraphs. */
+.item > .paragraph:last-child {
+  margin-bottom: 0;
+}
+
 .quote {
   margin: 0 0 var(--vela-space-3);
-  padding: var(--vela-space-1) 0 var(--vela-space-1) var(--vela-space-4);
-  border-left: 2px solid var(--vela-border-strong);
+  padding: var(--vela-space-2) 0 var(--vela-space-2) var(--vela-space-4);
+  border-left: 2px solid var(--vela-accent);
   color: var(--vela-text-muted);
+}
+
+.quote > :last-child {
+  margin-bottom: 0;
 }
 
 .rule {
@@ -53,13 +131,24 @@
   border-top: 1px solid var(--vela-border);
 }
 
+/* Sized in `em` against whatever it is embedded in, so `` `--jinja` `` in an h2
+   is an h2-sized piece of code. Monospace sets tighter than the proportional
+   face beside it and needs the tracking step back; `CodeBlock.module.css` makes
+   the same correction, from the same token. */
 .inlineCode {
   font-family: var(--vela-font-mono);
   font-size: var(--vela-text-inline);
+  letter-spacing: var(--vela-tracking-code);
   padding: 0.1em 0.35em;
   border-radius: var(--vela-radius-sm);
   background: var(--vela-bg-inset);
   border: 1px solid var(--vela-border);
+}
+
+/* A heading is already semibold, so code inside one must not double up into a
+   heavier weight than the words around it. */
+.heading .inlineCode {
+  font-weight: inherit;
 }
 
 .link {

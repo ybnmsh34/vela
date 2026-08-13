@@ -95,6 +95,10 @@
   --vela-text-xs: 0.75rem;
   --vela-text-sm: 0.8125rem;
   --vela-text-base: 0.9375rem;
+  /* The step between body and `lg`. It exists because the rendered answer needs
+     six distinguishable heading levels out of a scale built for interface
+     chrome, and `base` → `lg` was the one gap wide enough to hide a level in. */
+  --vela-text-md: 1rem;
   --vela-text-lg: 1.125rem;
   --vela-text-xl: 1.5rem;
 

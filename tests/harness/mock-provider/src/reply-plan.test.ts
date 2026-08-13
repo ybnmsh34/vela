@@ -252,3 +252,49 @@ describe('fragmentation', () => {
     expect(fragmentText('', 3)).toEqual([]);
   });
 });
+
+describe('the #markdown directive', () => {
+  const rich = { messages: [{ role: 'user', content: '#markdown which model should I run?' }] };
+
+  it('answers with the rich document instead of filler prose', () => {
+    // The reading-surface case exists because every profile otherwise answers
+    // with one paragraph, and a gate that never renders a heading cannot see
+    // that all six heading levels were set at the same size.
+    const built = plan('frontier', rich);
+    expect(built.content).toContain('# Choosing a local model');
+    expect(built.content).toContain('| `Q4_K_M` |');
+    expect(built.content).toContain('```bash');
+    expect(built.content).not.toContain('Mock frontier reply to:');
+  });
+
+  it('serves the same document on every profile, through that profile’s defects', () => {
+    for (const name of PROFILE_NAMES) {
+      const built = plan(name, rich);
+      expect(built.content, name).toContain('## What decides the answer');
+      expect(built.contentFragments.join(''), name).toBe(built.content);
+    }
+    // The hostile profile still never closes its thinking block, so the
+    // document arrives through the salvage path rather than around it.
+    expect(plan('hostile', rich).content).not.toContain('</think>');
+  });
+
+  it('changes nothing for a prompt that did not ask for it', () => {
+    // The guarantee that makes this safe to add: every recorded transcript and
+    // every existing matrix case is byte-identical.
+    const built = plan('frontier', ask);
+    expect(built.content).toContain('Mock frontier reply to:');
+    expect(built.content).not.toContain('# Choosing a local model');
+  });
+
+  it('still yields to a requested schema, because JSON was asked for explicitly', () => {
+    const built = plan('frontier', {
+      ...rich,
+      response_format: { type: 'json_object' },
+    });
+    expect(() => JSON.parse(built.content) as unknown).not.toThrow();
+  });
+
+  it('is deterministic, like every other reply', () => {
+    expect(plan('mid-local', rich)).toEqual(plan('mid-local', rich));
+  });
+});

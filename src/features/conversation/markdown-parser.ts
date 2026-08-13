@@ -35,6 +35,12 @@
 
 export type Span =
   | { readonly kind: 'text'; readonly text: string }
+  /**
+   * A line break the author asked for — two or more trailing spaces, or a
+   * trailing backslash. Every *other* newline inside a paragraph is a soft wrap
+   * and disappears into the reflow; see {@link parseParagraph}.
+   */
+  | { readonly kind: 'break' }
   | { readonly kind: 'code'; readonly text: string }
   | { readonly kind: 'strong'; readonly spans: readonly Span[] }
   | { readonly kind: 'em'; readonly spans: readonly Span[] }
@@ -80,6 +86,8 @@ const RULE = /^ {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/;
 const BULLET = /^(\s*)([-*+])\s+(.*)$/;
 const ORDERED = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
+/** CommonMark's two hard-break spellings: two trailing spaces, or a backslash. */
+const HARD_BREAK = /(?: {2,}|\\)$/;
 const TABLE_DIVIDER = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 export function parseMarkdown(source: string): Block[] {
@@ -180,13 +188,61 @@ function parseBlocks(lines: readonly string[]): Block[] {
       ) {
         break;
       }
-      paragraph.push(candidate.trim());
+      // Leading indentation goes, trailing whitespace stays: two trailing
+      // spaces are the difference between a soft wrap and a break the author
+      // meant, and `trim()` used to destroy that distinction before anything
+      // could read it.
+      paragraph.push(candidate.replace(/^\s+/, ''));
       index += 1;
     }
-    blocks.push({ kind: 'paragraph', spans: parseInline(paragraph.join('\n')) });
+    blocks.push({ kind: 'paragraph', spans: parseParagraph(paragraph) });
   }
 
   return blocks;
+}
+
+/**
+ * Joins the lines of one paragraph the way markdown says to: a single newline
+ * is a **soft wrap** and becomes a space, and only an explicit hard break stays
+ * a break.
+ *
+ * ## Why this is a parser change and not a stylesheet change
+ *
+ * Paragraphs used to be joined with `\n` and set `white-space: pre-wrap`, so
+ * every line ending in the model's source became a line ending on screen.
+ * Models hard-wrap their prose at seventy-odd columns; the reader's column is
+ * whatever the window is. The result was every paragraph in every answer set
+ * ragged at a width nobody chose — the most visible thing wrong with the
+ * primary reading surface.
+ *
+ * Dropping `pre-wrap` alone would have fixed the ragging and silently destroyed
+ * the one break an author actually asked for, which is why the two spellings of
+ * a hard break are recognised here and survive as {@link Span} nodes.
+ */
+export function parseParagraph(lines: readonly string[]): Span[] {
+  const spans: Span[] = [];
+  let run: string[] = [];
+
+  const flush = (): void => {
+    if (run.length > 0) spans.push(...parseInline(run.join(' ')));
+    run = [];
+  };
+
+  lines.forEach((line, position) => {
+    // A hard break on the *last* line of a paragraph breaks nothing — there is
+    // no following line to separate it from — so it is dropped rather than
+    // rendered as a trailing blank line.
+    if (position < lines.length - 1 && HARD_BREAK.test(line)) {
+      run.push(line.replace(HARD_BREAK, '').trimEnd());
+      flush();
+      spans.push({ kind: 'break' });
+      return;
+    }
+    run.push(line.trimEnd());
+  });
+  flush();
+
+  return spans;
 }
 
 function closesFence(line: string, marker: string): boolean {
@@ -394,6 +450,13 @@ export function parseInline(source: string): Span[] {
 /** The plain text of a span tree — used for copy affordances and for tests. */
 export function spansToText(spans: readonly Span[]): string {
   return spans
-    .map((span) => (span.kind === 'text' || span.kind === 'code' ? span.text : spansToText(span.spans)))
+    .map((span) => {
+      if (span.kind === 'text' || span.kind === 'code') return span.text;
+      // A break is a newline in text, which is what it was in the source. The
+      // DOM's `textContent` cannot say this — it renders `<br>` as nothing —
+      // so anything reading the tree as text has to be told here.
+      if (span.kind === 'break') return '\n';
+      return spansToText(span.spans);
+    })
     .join('');
 }

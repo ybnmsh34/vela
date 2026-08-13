@@ -9,6 +9,8 @@
  * breakage is visible in one place instead of smeared across the harness.
  */
 
+import { readFileSync } from 'node:fs';
+
 import type { CapabilityProfile } from './profiles.ts';
 import type { ValidatedChatRequest } from './parse-request.ts';
 import { createRng, fnv1a32, hex32, pick, type Rng } from './rng.ts';
@@ -72,6 +74,43 @@ const JUNK_TOKENS: readonly string[] = [
 ];
 
 const DEFAULT_CREATED = 1_700_000_000;
+
+/**
+ * Prompt directive: answer with a long, structurally rich markdown document
+ * instead of filler prose.
+ *
+ * ## Why the harness needs one at all
+ *
+ * The rendered markdown answer is Vela's primary reading surface and **no
+ * screenshot in the Phase C evidence set exercised it**. Every profile answers
+ * with one paragraph of filler, which is the right default for measuring
+ * streaming and reasoning separation and is useless for judging whether a
+ * six-level document can be read. A gate that never renders a heading cannot
+ * report that all six heading levels were the same size — which is exactly what
+ * happened.
+ *
+ * Like `#tools`, it fires only when asked for, so every recorded transcript and
+ * every existing case is byte-identical.
+ *
+ * The document itself is a file rather than a string literal because
+ * `src/features/conversation/Markdown.test.tsx` reads the same bytes: the
+ * screenshot and the unit assertion are then about one artifact instead of two
+ * that resemble each other. It lives in `tests/fixtures/` — neither the app nor
+ * this harness — for the same reason `tests/parity/` does: two sides read it,
+ * so it may belong to neither, and `no-app-import.test.ts` stays as strict as
+ * it was. Read lazily so importing the planner still costs nothing.
+ */
+const MARKDOWN_SENTINEL = '#markdown';
+
+let richMarkdown: string | null = null;
+
+function richMarkdownAnswer(): string {
+  richMarkdown ??= readFileSync(
+    new URL('../../../fixtures/rich-markdown-answer.md', import.meta.url),
+    'utf8',
+  ).trimEnd();
+  return richMarkdown;
+}
 
 function firstWords(text: string, count: number): string {
   const words = text.trim().split(/\s+/u).filter((word) => word.length > 0);
@@ -401,7 +440,11 @@ export function buildReplyPlan(
 
   const prompt = lastUserText(request);
   const structured = structuredReply(request, rng, profile);
-  const body = structured ?? proseReply(profile, rng, prompt);
+  // A schema still wins: a caller that asked for JSON gets JSON, whatever else
+  // the prompt says. The directive replaces *prose*, which is what it is for.
+  const body =
+    structured ??
+    (prompt.includes(MARKDOWN_SENTINEL) ? richMarkdownAnswer() : proseReply(profile, rng, prompt));
 
   const narration = reasoningNarration(profile, prompt);
   const reasoningText = profile.reasoning === 'reasoning-content-field' ? narration : '';

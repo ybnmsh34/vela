@@ -22,6 +22,16 @@
  * `role="combobox"` on the input with `aria-activedescendant` pointing into a
  * `listbox`: focus stays in the text field while the arrows move a highlight,
  * which is the only arrangement where typing and navigating both work.
+ *
+ * ## Focus, on the way in and on the way out
+ *
+ * Taking the keyboard was always here. **Giving it back was not**, and Escape
+ * therefore left focus on `<body>` — eleven Tab presses from the composer,
+ * measured. The bar now remembers what it interrupted and hands the keyboard
+ * back to it through the ladder in `src/state/focus-store.ts`, which skips the
+ * opener when it no longer exists. That last part matters here more than
+ * anywhere: activating a row *replaces the conversation on screen*, so the row
+ * you came from is frequently gone by the time the bar closes.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -29,6 +39,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SearchResults } from '@/data/conversations-repository';
 import type { ConversationSummary, MessageHit } from '@/platform/contract';
 import { toPlatformError } from '@/platform/errors';
+import { returnFocusTo } from '@/state/focus-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import styles from './CommandPalette.module.css';
@@ -60,6 +71,8 @@ export function CommandPalette({ debounceMs = SEARCH_DEBOUNCE_MS }: CommandPalet
   const [searchError, setSearchError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** What had the keyboard when the bar opened, so closing can hand it back. */
+  const openedFrom = useRef<Element | null>(null);
   const listId = useId();
 
   const open = mode !== 'closed';
@@ -70,7 +83,17 @@ export function CommandPalette({ debounceMs = SEARCH_DEBOUNCE_MS }: CommandPalet
     setResults(EMPTY_RESULTS);
     setSearchError(null);
     setActive(0);
+    openedFrom.current = document.activeElement;
     inputRef.current?.focus();
+
+    // The cleanup, not a handler on each exit: the bar is closed from five
+    // places — Escape here, Escape in the global shortcut, the scrim, a row,
+    // and the "New conversation" action — and a return-focus call attached to
+    // each of them is four chances to forget one.
+    return () => {
+      returnFocusTo(openedFrom.current);
+      openedFrom.current = null;
+    };
   }, [open]);
 
   // Local filter: instant, and correct even with no host reachable.

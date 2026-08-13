@@ -11,12 +11,24 @@
  * requires a key it does not have ("waiting for a key" — an unfinished one).
  * They are distinguished by `credentialCheck`, never by `credentialPresent`,
  * because the second says nothing about whether a key was ever wanted.
+ *
+ * ## Focus
+ *
+ * This panel replaces the transcript rather than floating over it, and it is
+ * opened from a menu item that unmounts itself in the act of opening it — so
+ * unless the panel takes the keyboard, nothing has it. It takes the region
+ * itself rather than the first control: the first thing a user needs here is to
+ * know *where they are*, which is what a focused landmark announces, and
+ * jumping straight to a control would skip the heading that says which screen
+ * this is. On the way out the keyboard goes back through the ladder in
+ * `src/state/focus-store.ts`, which lands it on the composer.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { DebugLogSwitch } from '@/features/diagnostics';
 import type { ProviderView, SettingsPutProviderReq } from '@/platform/contract';
+import { returnFocusTo } from '@/state/focus-store';
 
 import { EndpointForm } from './EndpointForm';
 import { SecurityNotice } from './SecurityNotice';
@@ -42,9 +54,18 @@ export function EndpointsPanel({
 }: EndpointsPanelProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const openedFrom = document.activeElement;
+    panel.current?.focus();
+    return () => {
+      returnFocusTo(openedFrom);
+    };
+  }, []);
 
   return (
-    <section className={styles.panel} aria-label="Endpoints">
+    <section className={styles.panel} aria-label="Endpoints" ref={panel} tabIndex={-1}>
       <header className={styles.header}>
         <h2 className={styles.heading}>Endpoints</h2>
         {onClose === undefined ? null : (

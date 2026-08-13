@@ -392,6 +392,110 @@ try {
     check.turnSettled(midFlight).detail,
   );
 
+  /* ---- the reading surface ------------------------------------------------ *
+   * The three new assertions, each against a DOM that must break it. The
+   * breakage is applied to the *live page* rather than to a hand-made object,
+   * so what is being tested is the same reader running over the same engine —
+   * and each one is restored by a reload before the next.                     */
+  const r = await session(browser, frontier);
+  await send(r.page, '#markdown which model should I run?');
+  const readingBefore = await check.readingSurface(r.page);
+  control(
+    'K22',
+    'the hierarchy assertion on the surface as it ships (it held in the matrix run)',
+    'PASS',
+    check.headingHierarchyIsVisible(readingBefore).pass,
+    check.headingHierarchyIsVisible(readingBefore).detail,
+  );
+
+  // The defect exactly as the critic found it: every heading level at one size.
+  await r.page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    for (const heading of turn?.querySelectorAll('[data-level]') ?? []) {
+      heading.style.fontSize = getComputedStyle(document.body).fontSize;
+    }
+  });
+  const flattened = await check.readingSurface(r.page);
+  control(
+    'K23',
+    'the same assertion once every heading level is set at one size — the defect as found',
+    'FAIL',
+    check.headingHierarchyIsVisible(flattened).pass,
+    check.headingHierarchyIsVisible(flattened).detail,
+  );
+
+  // …and the other direction: a scale that runs backwards is not a scale.
+  await r.page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    for (const heading of turn?.querySelectorAll('[data-level]') ?? []) {
+      heading.style.fontSize = `${String(8 + Number(heading.getAttribute('data-level')) * 4)}px`;
+    }
+  });
+  const inverted = await check.readingSurface(r.page);
+  control(
+    'K24',
+    'the same assertion against a scale that grows as the level deepens',
+    'FAIL',
+    check.headingHierarchyIsVisible(inverted).pass,
+    check.headingHierarchyIsVisible(inverted).detail,
+  );
+
+  await r.page.reload();
+  await r.page.waitForSelector('#vela-composer');
+  await send(r.page, '#markdown which model should I run?');
+  const reflowBefore = await check.readingSurface(r.page);
+  control(
+    'K25',
+    'the reflow assertion on the surface as it ships',
+    'PASS',
+    check.proseReflows(reflowBefore).pass,
+    check.proseReflows(reflowBefore).detail,
+  );
+
+  // The pre-fix rendering, reproduced: `white-space: pre-wrap` on a paragraph
+  // whose text still holds the model's own line endings.
+  await r.page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    for (const paragraph of turn?.querySelectorAll('p') ?? []) {
+      paragraph.style.whiteSpace = 'pre-wrap';
+    }
+  });
+  const preWrapped = await check.readingSurface(r.page);
+  control(
+    'K26',
+    'the same assertion once paragraphs preserve the source line endings again',
+    'FAIL',
+    check.proseReflows(preWrapped).pass,
+    check.proseReflows(preWrapped).detail,
+  );
+
+  control(
+    'K27',
+    'the sideways-scroll assertion on the surface as it ships',
+    'PASS',
+    check.readingSurfaceFitsItsColumn(reflowBefore).pass,
+    check.readingSurfaceFitsItsColumn(reflowBefore).detail,
+  );
+  // A table that is not in its own scroll container is the commonest way this
+  // breaks, so the control widens the content the same way one would.
+  await r.page.evaluate(() => {
+    const turn = [...document.querySelectorAll('article[data-role="assistant"]')].at(-1);
+    const prose = turn?.querySelector('[data-level]')?.parentElement;
+    const wide = document.createElement('div');
+    wide.style.width = '4000px';
+    wide.textContent = 'control: content wider than its column';
+    prose?.append(wide);
+  });
+  const overflowing = await check.readingSurface(r.page);
+  control(
+    'K28',
+    'the same assertion with content four thousand pixels wide in the column',
+    'FAIL',
+    check.readingSurfaceFitsItsColumn(overflowing).pass,
+    check.readingSurfaceFitsItsColumn(overflowing).detail,
+  );
+  await r.page.close();
+
   /* ---- the finding, demonstrated rather than argued ---------------------- */
   // With `--no-register` the bridge behaves exactly as the shipping host does:
   // a provider row in settings, and nothing in the ProviderRegistry.

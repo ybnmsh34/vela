@@ -50,6 +50,28 @@ Everything produced here is **VERIFIED-BY-FAKE** (conventions.md §10).
 
 Both are stated on every screenshot they affect.
 
+## One thing the *endpoint* does on request: `#markdown`
+
+A prompt containing `#markdown` makes the mock answer with
+`tests/fixtures/rich-markdown-answer.md` instead of filler prose — a long document with six
+heading levels, nested lists, a block quote, a fenced code block, a five-column table, a rule
+and hard-wrapped paragraphs.
+
+It exists because the rendered markdown answer is Vela's **primary reading surface** and no
+screenshot in the Phase C evidence set exercised it. Every profile answers a plain prompt with
+one paragraph, so no run had ever painted a heading — which is why a critic, and not this gate,
+was the one to find that all six heading levels were set at the same size.
+
+The directive fires only when asked for, so every recorded transcript and every pre-existing
+case is byte-identical. The same file is read by `src/features/conversation/Markdown.test.tsx`,
+so the screenshot and the unit assertions are about one artifact rather than two that resemble
+each other; it lives in `tests/fixtures/` — belonging to neither the app nor this harness — for
+the same reason `tests/parity/` does.
+
+`readingSurface()` in `checks.mjs` reads the result through **computed styles**, not the DOM:
+six headings with six correct tags and one shared font size is a well-formed document that
+cannot be read as one, and no amount of `innerText` will say so.
+
 ## Running it
 
 ```bash
@@ -84,7 +106,7 @@ node tests/harness/ui-bridge/server.mjs --profile hostile --port 8420 --chunk-de
 | `relay-adapter.ts` | `PlatformAdapter` over HTTP + SSE. Transport only |
 | `server.mjs` | Starts the mock and the Rust bridge; serves `/invoke`, `/events`, `/health` |
 | `checks.mjs` | The DOM readers and the assertions — shared by the driver and the controls |
-| `drive-matrix.mjs` | One profile, twenty-two assertions, sixteen screenshots |
+| `drive-matrix.mjs` | One profile, eighteen screenshots, twenty-five assertions — twenty-three on `hostile`, which has no answer channel for the reading surface to be judged in |
 | `controls.mjs` | The same assertions applied where they must fail |
 
 `checks.mjs` is shared on purpose: a control that re-implements the assertion it is controlling

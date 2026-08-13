@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the exchange ------------------------------------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:46623/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:36269/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -30,19 +30,19 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       }
 
 ---- what Vela produced ------------------------------------------------------
-  outcome                                Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46623", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+  outcome                                Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36269", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
 
 ---- assertions --------------------------------------------------------------
   [PASS] a 401 is normalised to AuthFailed, not a generic transport error
-        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46623", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36269", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
   [PASS] an auth failure is never retried and never failed over
-        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46623", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36269", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
   [PASS] no upstream BODY text escapes into the error
-        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46623", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36269", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
   [PASS] STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling
         0 unexplained strings
   [PASS] the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep
-        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46623", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36269", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(271) } })
 
 ================================================================================
 VERDICT  5 assertion(s), 0 failure(s)

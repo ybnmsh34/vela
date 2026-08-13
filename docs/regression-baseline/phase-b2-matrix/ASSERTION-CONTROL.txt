@@ -13,8 +13,8 @@ CONTROL 1 — "the turn finishes inside 2 s" applied to a [DONE]-driven consumer
 --------------------------------------------------------------------------------
 The consumer from the Phase A gate, rebuilt on Vela's own transport: it finalises on
 `data: [DONE]` and treats end-of-body as nothing at all. Budget: 5 s.
-  hostile      finished=false wall clock=5.001642502s chars=0   → FAIL (HUNG)
-  frontier     finished=true  wall clock=12.389152ms chars=16   → PASS
+  hostile      finished=false wall clock=5.000803495s chars=0   → FAIL (HUNG)
+  frontier     finished=true  wall clock=15.217413ms chars=16   → PASS
   EXPECTED: hostile FAILS (it never sends [DONE]); frontier PASSES.
   Vela's own consumer finishes both in single-digit milliseconds — see each profile's
   07-stream-termination.txt. The assertion discriminates.
@@ -133,7 +133,7 @@ CONTROL 11 — "the turn ends in single-digit milliseconds" applied to a stalled
 --------------------------------------------------------------------------------
 Case 07c asserts a median under 10 ms. Applied to the endpoint of case 07b — 4 s
 between frames, 800 ms stall budget — the same assertion must fail.
-  stalled socket        wall clock=810.965669ms outcome=transport → FAIL
+  stalled socket        wall clock=809.463196ms outcome=transport → FAIL
   EXPECTED: FAIL, at roughly the 800 ms stall budget. The single-digit-millisecond
   claim in case 07c is a measurement of Vela ending a stream promptly, not an artefact
   of every code path in this recorder being fast.

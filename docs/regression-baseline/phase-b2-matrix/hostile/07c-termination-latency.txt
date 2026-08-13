@@ -23,29 +23,29 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   the cost of redaction is visible rather than asserted.
 
 ---- arm A — Auth::None (empty scrubber, fast path) ------------------------
-  run 1                                  5.485861ms   (160 answer characters)
-  run 2                                  3.327093ms   (160 answer characters)
-  run 3                                  3.270655ms   (160 answer characters)
-  run 4                                  3.424895ms   (160 answer characters)
-  run 5                                  3.373543ms   (160 answer characters)
-  MEDIAN                                 3.373543ms
-  worst sample                           5.485861ms
+  run 1                                  10.862306ms   (160 answer characters)
+  run 2                                  5.474057ms   (160 answer characters)
+  run 3                                  4.018526ms   (160 answer characters)
+  run 4                                  3.72121ms   (160 answer characters)
+  run 5                                  3.267837ms   (160 answer characters)
+  MEDIAN                                 4.018526ms
+  worst sample                           10.862306ms
   credential on the wire                 false
 
 ---- arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len) 
-  run 1                                  4.328758ms   (160 answer characters)
-  run 2                                  4.111506ms   (160 answer characters)
-  run 3                                  4.218399ms   (160 answer characters)
-  run 4                                  4.267998ms   (160 answer characters)
-  run 5                                  4.038148ms   (160 answer characters)
-  MEDIAN                                 4.218399ms
-  worst sample                           4.328758ms
+  run 1                                  8.527602ms   (160 answer characters)
+  run 2                                  4.692154ms   (160 answer characters)
+  run 3                                  4.366402ms   (160 answer characters)
+  run 4                                  4.684527ms   (160 answer characters)
+  run 5                                  4.251208ms   (160 answer characters)
+  MEDIAN                                 4.684527ms
+  worst sample                           8.527602ms
   credential on the wire                 true
 
 ---- the comparison ----------------------------------------------------------
-  median, uncredentialed                 3.373543ms
-  MEDIAN, CREDENTIALED                   4.218399ms
-  cost of redaction (median delta)       844.856µs
+  median, uncredentialed                 4.018526ms
+  MEDIAN, CREDENTIALED                   4.684527ms
+  cost of redaction (median delta)       666.001µs
   recorded naive [DONE] consumer         5003 ms (TIMED OUT)
 
 ---- assertions --------------------------------------------------------------
@@ -56,11 +56,11 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] every sampled turn completed without error, both arms
         uncredentialed: 5 samples, credentialed: 5 samples
   [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms
-        median 4.218399ms, samples [4.328758ms, 4.111506ms, 4.218399ms, 4.267998ms, 4.038148ms]
+        median 4.684527ms, samples [8.527602ms, 4.692154ms, 4.366402ms, 4.684527ms, 4.251208ms]
   [PASS] …and on the uncredentialed one, so redaction is not what makes or breaks it
-        median 3.373543ms
+        median 4.018526ms
   [PASS] no sample came anywhere near the recorded 5003 ms hang, either arm
-        worst uncredentialed 5.485861ms, worst credentialed 4.328758ms
+        worst uncredentialed 10.862306ms, worst credentialed 8.527602ms
   [PASS] every sample returned the same answer length — timing did not truncate anything
         uncredentialed [160, 160, 160, 160, 160], credentialed [160, 160, 160, 160, 160]
   [PASS] redaction did not change the answer — both arms delivered the same text length
@@ -74,13 +74,13 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   round can see if this arm has gone hollow.
 
 ---- arm C — adversarial payload, credentialed -----------------------------
-  run 1                                  5.690931ms   (5420 answer characters)
-  run 2                                  5.55183ms   (5420 answer characters)
-  run 3                                  5.442423ms   (5420 answer characters)
-  run 4                                  5.393077ms   (5420 answer characters)
-  run 5                                  5.512402ms   (5420 answer characters)
-  MEDIAN                                 5.512402ms
-  worst sample                           5.690931ms
+  run 1                                  5.716528ms   (5420 answer characters)
+  run 2                                  5.252024ms   (5420 answer characters)
+  run 3                                  5.641707ms   (5420 answer characters)
+  run 4                                  5.631737ms   (5420 answer characters)
+  run 5                                  6.04921ms   (5420 answer characters)
+  MEDIAN                                 5.641707ms
+  worst sample                           6.04921ms
   credential on the wire                 true
   backslash bytes on the wire            4200
   `\u00XX` escapes on the wire           600
@@ -97,7 +97,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   [PASS] every sampled turn completed without error on the adversarial payload
         5 samples
   [PASS] TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised
-        median 5.512402ms, samples [5.690931ms, 5.55183ms, 5.442423ms, 5.393077ms, 5.512402ms]
+        median 5.641707ms, samples [5.716528ms, 5.252024ms, 5.641707ms, 5.631737ms, 6.04921ms]
   [PASS] every sample returned the same answer length — the carry buffer loses nothing
         [5420, 5420, 5420, 5420, 5420]
   [PASS] and the credential is still absent from the answer the scrubber produced

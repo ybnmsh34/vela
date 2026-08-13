@@ -20,7 +20,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- openai-compatible / stream() — the raw exchange -----------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:33947/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:41429/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -65,24 +65,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- openai-compatible / stream() — what Vela produced ---------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- openai-compatible / stream() — assertions -----------------------------
   [PASS] openai-compatible / stream(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+        UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] openai-compatible / stream(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] openai-compatible / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, UsageNotReported, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] openai-compatible / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
 ---- openai-compatible / complete() — the raw exchange ---------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:34429/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:40395/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -96,24 +96,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- openai-compatible / complete() — what Vela produced -------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- openai-compatible / complete() — assertions ---------------------------
   [PASS] openai-compatible / complete(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }
+        UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] openai-compatible / complete(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] openai-compatible / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] openai-compatible / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
 ---- anthropic / stream() — the raw exchange -------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:33477/v1/messages
+  >>> exchange 1 — POST http://127.0.0.1:45141/v1/messages
       content-type: application/json
       accept: text/event-stream
       anthropic-version: 2023-06-01
@@ -181,24 +181,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- anthropic / stream() — what Vela produced -----------------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- anthropic / stream() — assertions -------------------------------------
   [PASS] anthropic / stream(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }
+        UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] anthropic / stream(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] anthropic / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] anthropic / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
 ---- anthropic / complete() — the raw exchange -----------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:35819/v1/messages
+  >>> exchange 1 — POST http://127.0.0.1:38243/v1/messages
       content-type: application/json
       accept: application/json
       anthropic-version: 2023-06-01
@@ -213,24 +213,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- anthropic / complete() — what Vela produced ---------------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- anthropic / complete() — assertions -----------------------------------
   [PASS] anthropic / complete(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }
+        UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] anthropic / complete(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] anthropic / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] anthropic / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
 ---- google / stream() — the raw exchange ----------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:39457/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
+  >>> exchange 1 — POST http://127.0.0.1:40495/v1beta/models/gemini-cross:streamGenerateContent?alt=sse
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -273,24 +273,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- google / stream() — what Vela produced --------------------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- google / stream() — assertions ----------------------------------------
   [PASS] google / stream(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }
+        UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] google / stream(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] google / stream(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] google / stream(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
 ---- google / complete() — the raw exchange --------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:45379/v1beta/models/gemini-cross:generateContent
+  >>> exchange 1 — POST http://127.0.0.1:40991/v1beta/models/gemini-cross:generateContent
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -304,18 +304,18 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- google / complete() — what Vela produced ------------------------------
   answer                                 "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
   reasoning                              "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
-  STRUCTURED VERDICT                     Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  degradations                           UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
 
 ---- google / complete() — assertions --------------------------------------
   [PASS] google / complete(): the reasoning block really never closed
-        UnterminatedReasoning { recovered_answer_chars: 167 }
+        UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] google / complete(): a schema really was requested, so there is a verdict at all
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  [FAIL] google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
+  [PASS] google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
   [PASS] google / complete(): a caller cannot read the structured field without meeting the unterminated-reasoning fact — either the verdict is an Err, or the degradation is on the response
-        Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})) / UnterminatedReasoning { recovered_answer_chars: 167 }
+        Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })) / UnterminatedReasoning { recovered_answer_chars: 167 }, StructuredOutputMismatch { detail: "the model returned prose, not JSON — the schema was ignored" }
   [PASS] google / complete(): MEASURED-3 still holds — the salvaged prose is not swallowed
         "The user wants an object. My first guess is {\"city\":\"Atlantis\",\"celsius\":-273.15} — no, that city does not exist and that temperature is below absolute zero, so I must"
 
@@ -343,5 +343,5 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
         Some(Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" }))
 
 ================================================================================
-VERDICT  36 assertion(s), 6 failure(s)
+VERDICT  36 assertion(s), 0 failure(s)
 ================================================================================

@@ -251,6 +251,12 @@ pub fn finished(
         usage,
         structured: None,
         degradations,
+        // This builder takes parts that are already assembled and says nothing
+        // about where they came from. `None` is the truthful value: a producer
+        // that rescued text out of an unterminated reasoning block does not
+        // reach the user through here — it holds an `AnswerChannel` and hands
+        // its `AnswerContent` straight to a `ChatResponse`.
+        salvaged_answer: None,
     }
 }
 

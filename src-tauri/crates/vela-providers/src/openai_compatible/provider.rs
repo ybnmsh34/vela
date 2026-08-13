@@ -397,7 +397,7 @@ impl OpenAiCompatibleProvider {
         if let Some(schema) = &prepared.schema {
             // MEASURED-5: the endpoint will not tell us the schema was ignored,
             // so the answer is checked against what was asked for.
-            match structured::check_answer(schema, &response.answer_text()) {
+            match structured::check_answer(schema, &response.machine_text()) {
                 Ok(value) => response.structured = Some(Ok(value)),
                 Err(mismatch) => {
                     self.learn_one(
@@ -665,7 +665,7 @@ impl Provider for OpenAiCompatibleProvider {
         let mut sink = crate::event::CollectingSink::new();
         let (structured_support, structured_note) =
             match self.send_chat(&prepared, false, &mut sink, context).await {
-                Ok(response) => match structured::check_answer(&schema, &response.answer_text()) {
+                Ok(response) => match structured::check_answer(&schema, &response.machine_text()) {
                     Ok(_) => (
                         Support::Supported,
                         "returned JSON conforming to the requested schema".to_owned(),

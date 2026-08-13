@@ -2,56 +2,8 @@ GATE M Part 1 (Phase B2) — run summary
 =====================================
 
 gate assertions   1455
-failures          24
+failures          0
 controls          46 (their FAILs are expected)
-wall clock        26.05589908s
+wall clock        26.957988371s
 
-FAILURES:
-  frontier / 16-reasoning-x-structured-output / openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  frontier / 16-reasoning-x-structured-output / openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  frontier / 16-reasoning-x-structured-output / anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  frontier / 16-reasoning-x-structured-output / anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  frontier / 16-reasoning-x-structured-output / google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  frontier / 16-reasoning-x-structured-output / google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  mid-local / 16-reasoning-x-structured-output / google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  small-local / 16-reasoning-x-structured-output / google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / openai-compatible / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / openai-compatible / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / anthropic / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / anthropic / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / google / stream(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
-  hostile / 16-reasoning-x-structured-output / google / complete(): THE REJECTED VALUE IS NOT HANDED BACK AS A CONFORMING STRUCTURED ANSWER
-      Some(Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")}))
+No gate assertion failed.

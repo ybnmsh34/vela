@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       {"messages":[{"content":"hello","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
       <<< NO RESPONSE — Connect: the connection could not be established [endpoint http://127.0.0.1:1/v1/chat/completions] [ref 0000000000000086]
 
-  >>> exchange 2 — POST http://127.0.0.1:34655/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:45973/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -74,17 +74,17 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: [DONE]
       
   outcome                                Ok(true)
-  wall clock                             11.591264ms
+  wall clock                             10.863868ms
   answer                                 Some("Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern wi\n… [elided: 201 characters total]")
   degradations                           FailedOver { attempts: 2 }
 
 ---- assertions --------------------------------------------------------------
   [PASS] a dead candidate is routed past, not surfaced as a failure
-        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: hello. beacon umber yardarm tiller alpha pennant windward pennant delta keel zenith yardarm keel windward north orbit pennant lantern windward lantern harbor gauge umber tiller." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(76), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }], salvaged_answer: None }))
   [PASS] the failover is declared to the caller
         FailedOver { attempts: 2 }
   [PASS] failover does not hang
-        11.591264ms
+        10.863868ms
 
 ---- the endpoint is KILLED mid-stream, after output has already been shown --
   The primary is started with a 40 ms inter-frame delay so the turn is still running
@@ -92,7 +92,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   Rule 2 of the router: once a character has reached the user, moving to another
   candidate would restart the answer in front of them.
 
-  >>> exchange 1 — POST http://127.0.0.1:33059/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:44401/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -113,25 +113,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: {"id":"chatcmpl-mock-4a763c63","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"long. Profile fronti"},"finish_reason":null}]}
       
       
-      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:33059/v1/chat/completions] [ref 0000000000000087] >>>
+      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:44401/v1/chat/completions] [ref 0000000000000087] >>>
 
 ---- what Vela produced ------------------------------------------------------
-  wall clock                             206.772743ms
+  wall clock                             207.214283ms
   answer text the user saw               ""
   reasoning text the user saw            "Considering the request about write me something reasonably long. Profile fronti"
   TextDelta events                       0
   ReasoningDelta events                  4
-  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33059", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
+  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44401", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } })
   requests sent to the backup candidate  0
 
 ---- assertions --------------------------------------------------------------
   [PASS] killing the endpoint mid-stream does not hang the app
-        206.772743ms
+        207.214283ms
   output had already been committed      true
   [PASS] after visible output, the turn is NOT replayed from another candidate
         0 request(s) reached the backup
   [PASS] a killed stream is never reported as a normally finished turn
-        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33059", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } }))
+        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:44401", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(135) } }))
 
 ================================================================================
 VERDICT  6 assertion(s), 0 failure(s)

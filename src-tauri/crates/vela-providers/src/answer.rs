@@ -58,6 +58,24 @@
 //!
 //! **A tool call recovered out of a reasoning block that never closed is not
 //! executable.** See [`Provenance::Salvaged`] for the argument.
+//!
+//! # The same decision, for the other machine consumer
+//!
+//! The chokepoint above was installed on the *tool* consumer and left as a
+//! comment for the *schema* consumer — "this is the only text a tool parser may
+//! see" — as though those were different kinds of consumer. They are not. Both
+//! turn model text into a machine-actionable value; the only difference is
+//! whether the value authorises an effect or is returned as a fact. A caller
+//! that receives `Some(Ok(v))` from
+//! [`ChatResponse::structured`](crate::model::ChatResponse) has been told **the
+//! model produced `v`**, and a model that deliberates in JSON — which is what a
+//! model asked for JSON does — writes candidate objects it then rejects.
+//!
+//! So [`AnswerChannel::into_answer`] carries the provenance boundary out with
+//! the parts instead of dissolving it, and the schema consumer is fed from
+//! [`ChatResponse::machine_text`](crate::model::ChatResponse::machine_text),
+//! whose argument type cannot be minted from arbitrary text. See
+//! [`crate::structured::MachineText`].
 
 use crate::emulation::ToolCallStripper;
 use crate::event::{EventSink, StreamEvent};
@@ -117,6 +135,19 @@ pub struct AnswerClose {
     /// finally saw them: after stripping, not before. Feeds
     /// [`Degradation::UnterminatedReasoning`](crate::model::Degradation).
     pub recovered_chars: usize,
+}
+
+/// Everything [`AnswerChannel::into_answer`] hands to the assembler: the parts
+/// as the user will see them, and the provenance boundary inside them.
+#[derive(Debug, Default)]
+pub struct AnswerContent {
+    /// Answer and reasoning, in order, salvaged text merged into the last
+    /// `Text` part so the user sees a single answer.
+    pub parts: Vec<ContentPart>,
+    /// The salvaged tail, if there was one: a **suffix** of the concatenated
+    /// `Text` parts that the user was shown and the model never committed to.
+    /// Subtracting it is how a machine consumer gets back to committed text.
+    pub salvaged: Option<String>,
 }
 
 /// The accumulated content of one answer, and the only route text takes into
@@ -341,15 +372,42 @@ impl AnswerChannel {
         out
     }
 
-    /// The accumulated parts, salvaged text last.
-    pub fn into_parts(mut self) -> Vec<ContentPart> {
-        if let Some(salvaged) = self.salvaged.take().filter(|text| !text.is_empty()) {
+    /// The accumulated parts, salvaged text last — **and the boundary between
+    /// the two**.
+    ///
+    /// # Why this does not return a bare `Vec<ContentPart>`
+    ///
+    /// It used to (`into_parts`), and that is where the second half of this
+    /// module's rule leaked out. Merging the salvaged tail into a
+    /// [`ContentPart::Text`] is right — MEASURED-3 says the user must see it —
+    /// but it is also *lossy*: once merged, nothing downstream can tell which
+    /// characters the model committed to. [`ChatResponse::answer_text`] is a
+    /// concatenation of `Text` parts, so it includes the tail, and every
+    /// schema-check site validated over it. A model that deliberates in JSON,
+    /// rejects the value, and is cut off before closing the block therefore
+    /// had that rejected value returned as `Some(Ok(v))` — an assertion that
+    /// the model produced what it had just refused to produce.
+    ///
+    /// So the boundary travels with the parts. The consumer that turns text
+    /// into a machine-actionable value reads
+    /// [`ChatResponse::machine_text`](crate::model::ChatResponse::machine_text),
+    /// which subtracts this tail, and the consumer that shows text to a human
+    /// reads `answer_text()`, which does not.
+    ///
+    /// [`ContentPart::Text`]: crate::model::ContentPart::Text
+    /// [`ChatResponse::answer_text`]: crate::model::ChatResponse::answer_text
+    pub fn into_answer(mut self) -> AnswerContent {
+        let salvaged = self.salvaged.take().filter(|text| !text.is_empty());
+        if let Some(salvaged) = &salvaged {
             match self.parts.last_mut() {
-                Some(ContentPart::Text { text }) => text.push_str(&salvaged),
-                _ => self.parts.push(ContentPart::text(salvaged)),
+                Some(ContentPart::Text { text }) => text.push_str(salvaged),
+                _ => self.parts.push(ContentPart::text(salvaged.clone())),
             }
         }
-        self.parts
+        AnswerContent {
+            parts: self.parts,
+            salvaged,
+        }
     }
 
     fn emit_committed(&mut self, visible: &str, sink: &mut dyn EventSink) {
@@ -531,19 +589,46 @@ mod tests {
         channel.close(Some("rescued"), &mut sink);
         channel.retract_committed_text("kept");
         assert_eq!(channel.executable_text(), "kept");
+        let content = channel.into_answer();
+        assert_eq!(content.parts, vec![ContentPart::text("keptrescued")]);
+        assert_eq!(content.salvaged.as_deref(), Some("rescued"));
+    }
+
+    /// The boundary the assemblers carry out is the one a machine consumer
+    /// subtracts, so it has to be an exact suffix of what the user saw.
+    #[test]
+    fn the_salvaged_tail_is_a_suffix_of_the_visible_answer() {
+        let mut sink = CollectingSink::new();
+        let mut channel = AnswerChannel::new().with_tool_emulation();
+        channel.push_answer("committed. ", &mut sink);
+        channel.push_reasoning("private", &mut sink);
+        channel.close(Some("rescued"), &mut sink);
+        let visible = channel.visible_answer();
+        let content = channel.into_answer();
+        let salvaged = content.salvaged.expect("something was rescued");
         assert_eq!(
-            channel.into_parts(),
-            vec![ContentPart::text("kept"), ContentPart::text("rescued")]
-                .into_iter()
-                .fold(Vec::new(), |mut acc: Vec<ContentPart>, part| {
-                    match (acc.last_mut(), &part) {
-                        (Some(ContentPart::Text { text }), ContentPart::Text { text: adding }) => {
-                            text.push_str(adding)
-                        }
-                        _ => acc.push(part),
-                    }
-                    acc
-                })
+            visible.strip_suffix(&salvaged),
+            Some("committed. "),
+            "subtracting the salvaged tail must land exactly on committed text"
         );
+        let rejoined: String = content
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ContentPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rejoined, visible, "the user still sees every character");
+    }
+
+    /// Nothing rescued, nothing to subtract — the whole answer is committed.
+    #[test]
+    fn a_turn_with_no_salvage_reports_none() {
+        let mut sink = CollectingSink::new();
+        let mut channel = AnswerChannel::new();
+        channel.push_answer("all of it", &mut sink);
+        channel.close(None, &mut sink);
+        assert_eq!(channel.into_answer().salvaged, None);
     }
 }

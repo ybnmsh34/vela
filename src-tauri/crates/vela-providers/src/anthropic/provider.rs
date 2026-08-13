@@ -512,7 +512,7 @@ impl AnthropicProvider {
                     "",
                     "the model's structured answer was not usable JSON",
                 )),
-                (None, None) => structured::check_answer(schema, &response.answer_text()),
+                (None, None) => structured::check_answer(schema, &response.machine_text()),
             };
             match checked {
                 Ok(value) => {
@@ -840,7 +840,7 @@ impl Provider for AnthropicProvider {
             Ok(assembled) => {
                 let checked = match assembled.schema_tool_input {
                     Some(value) => structured::validate(&schema, &value).map(|()| value),
-                    None => structured::check_answer(&schema, &assembled.response.answer_text()),
+                    None => structured::check_answer(&schema, &assembled.response.machine_text()),
                 };
                 match checked {
                     Ok(_) => (

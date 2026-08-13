@@ -11,7 +11,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- an image sent to a provider whose capabilities are known ----------------
 
-  >>> exchange 1 — POST http://127.0.0.1:39441/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:46197/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -48,7 +48,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   probed vision support                  Supported
   UI vision affordance                   true
   requests actually sent                 1
-  wall clock                             2.44886ms
+  wall clock                             3.114852ms
 
 ---- assertions --------------------------------------------------------------
   [PASS] vision is offered and an image is answered
@@ -56,7 +56,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 
 ---- the same image before any probe has run ---------------------------------
 
-  >>> exchange 1 — POST http://127.0.0.1:39441/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:46197/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -87,9 +87,9 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
           "total_tokens": 179
         }
       }
-  outcome                                Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [] })
+  outcome                                Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [], salvaged_answer: None })
   [PASS] an unprobed vision endpoint answers
-        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [] })
+        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [], salvaged_answer: None })
 
 ================================================================================
 VERDICT  2 assertion(s), 0 failure(s)

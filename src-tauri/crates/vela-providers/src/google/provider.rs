@@ -519,7 +519,7 @@ impl GoogleProvider {
             // MEASURED-5: the endpoint will not tell us the schema was ignored,
             // so the answer is checked against what was asked for. This API has
             // no separate structured channel — the JSON arrives as the answer.
-            match structured::check_answer(schema, &response.answer_text()) {
+            match structured::check_answer(schema, &response.machine_text()) {
                 Ok(value) => response.structured = Some(Ok(value)),
                 Err(mismatch) => {
                     self.learn_one(
@@ -870,7 +870,7 @@ impl Provider for GoogleProvider {
         let (structured_support, structured_note) =
             match self.probe_send(structured_probe, context).await {
                 Ok(assembled) => {
-                    match structured::check_answer(&schema, &assembled.response.answer_text()) {
+                    match structured::check_answer(&schema, &assembled.response.machine_text()) {
                         Ok(_) => (
                             Support::Supported,
                             "returned JSON conforming to the requested schema".to_owned(),

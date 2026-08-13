@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       {"messages":[{"content":"hello","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
       <<< NO RESPONSE — Connect: the connection could not be established [endpoint http://127.0.0.1:1/v1/chat/completions] [ref 0000000000000110]
 
-  >>> exchange 2 — POST http://127.0.0.1:40281/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:34555/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -76,17 +76,17 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: [DONE]
       
   outcome                                Ok(true)
-  wall clock                             11.673094ms
+  wall clock                             11.126473ms
   answer                                 Some("\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian.")
   degradations                           FailedOver { attempts: 2 }
 
 ---- assertions --------------------------------------------------------------
   [PASS] a dead candidate is routed past, not surfaced as a failure
-        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }] }))
+        Ok(Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about hello. Profile mid-local has a 32768-token window. Answering directly.", signature: None, redacted: false }, Text { text: "\nMock mid-local reply to: hello. tiller quartz gauge umber north gauge ivory yardarm sextant quartz careful careful keel yardarm north meridian." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(6), output_tokens: Some(65), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [FailedOver { attempts: 2 }], salvaged_answer: None }))
   [PASS] the failover is declared to the caller
         FailedOver { attempts: 2 }
   [PASS] failover does not hang
-        11.673094ms
+        11.126473ms
 
 ---- the endpoint is KILLED mid-stream, after output has already been shown --
   The primary is started with a 40 ms inter-frame delay so the turn is still running
@@ -94,7 +94,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   Rule 2 of the router: once a character has reached the user, moving to another
   candidate would restart the answer in front of them.
 
-  >>> exchange 1 — POST http://127.0.0.1:35035/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:38853/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -115,25 +115,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: {"id":"chatcmpl-mock-f93e6803","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about write me something"},"finish_reason":null}]}
       
       
-      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:35035/v1/chat/completions] [ref 0000000000000111] >>>
+      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:38853/v1/chat/completions] [ref 0000000000000111] >>>
 
 ---- what Vela produced ------------------------------------------------------
-  wall clock                             207.64642ms
+  wall clock                             207.541929ms
   answer text the user saw               ""
   reasoning text the user saw            "Considering the request about write me something"
   TextDelta events                       0
   ReasoningDelta events                  2
-  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35035", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } })
+  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38853", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } })
   requests sent to the backup candidate  0
 
 ---- assertions --------------------------------------------------------------
   [PASS] killing the endpoint mid-stream does not hang the app
-        207.64642ms
+        207.541929ms
   output had already been committed      true
   [PASS] after visible output, the turn is NOT replayed from another candidate
         0 request(s) reached the backup
   [PASS] a killed stream is never reported as a normally finished turn
-        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:35035", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } }))
+        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:38853", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(273) } }))
 
 ================================================================================
 VERDICT  6 assertion(s), 0 failure(s)

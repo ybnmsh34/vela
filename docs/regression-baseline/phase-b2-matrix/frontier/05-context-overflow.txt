@@ -12,7 +12,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
 ---- an oversized prompt, with no local planning (max_context_tokens unset) --
   prompt length: 1000000 characters
 
-  >>> exchange 1 — POST http://127.0.0.1:39441/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:46197/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -32,24 +32,24 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       }
 
 ---- what Vela produced ------------------------------------------------------
-  outcome                                Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39441", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
-  wall clock                             52.52238ms
+  outcome                                Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46197", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+  wall clock                             63.034254ms
 
 ---- assertions --------------------------------------------------------------
   limit reported by the endpoint         Some(200000)
   requested, per the endpoint            Some(250004)
   [PASS] an overflow is a clean ContextLengthExceeded, not a generic transport error
-        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39441", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46197", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
   [PASS] the endpoint's own window is carried through so the UI can say something true
         expected limit 200000
   [PASS] the requested size is carried through too
-        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39441", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46197", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
   [PASS] an overflow is never retried elsewhere — it is about the request
-        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:39441", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
+        Err(ContextLengthExceeded { limit_tokens: Some(200000), requested_tokens: Some(250004), diagnosis: Diagnosis { cause: ContextWindowExceeded, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:46197", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(1) } })
 
 ---- the same conversation when the window is known — reduce, visibly ------
 
-  >>> exchange 1 — POST http://127.0.0.1:39441/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:46197/v1/chat/completions
       content-type: application/json
       accept: application/json
       (no authorization header)
@@ -84,7 +84,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   answer                                 "Mock frontier reply to: finally: what did I ask first?. tiller careful fathom jetty gauge tiller lantern sextant careful keel umber delta tiller jetty orbit zenith zenith ivory rudder alpha alpha fath\n… [elided: 217 characters total]"
   degradations                           ContextReduced { dropped_messages: 17, approx_dropped_tokens: 450110, strategy: ElideOldest }
   [PASS] a conversation that will not fit is reduced and answered, not refused
-        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: finally: what did I ask first?. tiller careful fathom jetty gauge tiller lantern sextant careful keel umber delta tiller jetty orbit zenith zenith ivory rudder alpha alpha fathom quartz beacon." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(150091), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 450110, strategy: ElideOldest }] })
+        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about finally: what did I ask first?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: finally: what did I ask first?. tiller careful fathom jetty gauge tiller lantern sextant careful keel umber delta tiller jetty orbit zenith zenith ivory rudder alpha alpha fathom quartz beacon." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(150091), output_tokens: Some(87), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [ContextReduced { dropped_messages: 17, approx_dropped_tokens: 450110, strategy: ElideOldest }], salvaged_answer: None })
   [PASS] the reduction is reported explicitly — never a silent truncation
         dropped messages = Some(17)
 

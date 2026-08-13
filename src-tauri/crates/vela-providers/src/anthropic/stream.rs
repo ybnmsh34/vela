@@ -625,14 +625,19 @@ impl MessageAssembler {
             return Err(ProviderError::malformed(Cause::StreamEndedWithoutAnswer));
         }
 
+        // The parts AND the provenance boundary inside them: the salvaged
+        // tail is shown to the user and subtracted before any machine consumer
+        // reads the answer. See `answer::AnswerChannel::into_answer`.
+        let content = self.answer.into_answer();
         Ok(AssembledMessage {
             response: ChatResponse {
-                parts: self.answer.into_parts(),
+                parts: content.parts,
                 tool_calls,
                 stop_reason,
                 usage: self.usage,
                 structured: None,
                 degradations,
+                salvaged_answer: content.salvaged,
             },
             schema_tool_input,
             schema_tool_raw,

@@ -19,7 +19,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       {"messages":[{"content":"hello","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
       <<< NO RESPONSE — Connect: the connection could not be established [endpoint http://127.0.0.1:1/v1/chat/completions] [ref 0000000000000229]
 
-  >>> exchange 2 — POST http://127.0.0.1:38687/v1/chat/completions
+  >>> exchange 2 — POST http://127.0.0.1:44933/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -88,17 +88,17 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       data: {"id":"chatcmpl-mock-c734be66","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
       
   outcome                                Ok(true)
-  wall clock                             11.836755ms
+  wall clock                             21.299281ms
   answer                                 Some("nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ")
   degradations                           UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
 
 ---- assertions --------------------------------------------------------------
   [PASS] a dead candidate is routed past, not surfaced as a failure
-        Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }] }))
+        Ok(Ok(ChatResponse { parts: [Reasoning { text: " <|im_start|> </s> Considering the request about hello. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ", signature: None, redacted: false }, Text { text: "nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }], salvaged_answer: Some("nested Mock hostile reply to: hello. delta yardarm meridian jetty sextant umber alpha gauge sextant keel windward lantern. ▒▒ ЖЖЖ") }))
   [PASS] the failover is declared to the caller
         UnterminatedReasoning { recovered_answer_chars: 129 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported, FailedOver { attempts: 2 }
   [PASS] failover does not hang
-        11.836755ms
+        21.299281ms
 
 ---- the endpoint is KILLED mid-stream, after output has already been shown --
   The primary is started with a 40 ms inter-frame delay so the turn is still running
@@ -106,7 +106,7 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
   Rule 2 of the router: once a character has reached the user, moving to another
   candidate would restart the answer in front of them.
 
-  >>> exchange 1 — POST http://127.0.0.1:36995/v1/chat/completions
+  >>> exchange 1 — POST http://127.0.0.1:42147/v1/chat/completions
       content-type: application/json
       accept: text/event-stream
       (no authorization header)
@@ -127,25 +127,25 @@ HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produ
       : keepalive
       
       
-      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:36995/v1/chat/completions] [ref 000000000000022a] >>>
+      <<< body read failed: Reset the connection was lost mid-exchange [endpoint http://127.0.0.1:42147/v1/chat/completions] [ref 000000000000022a] >>>
 
 ---- what Vela produced ------------------------------------------------------
-  wall clock                             206.704343ms
+  wall clock                             207.100517ms
   answer text the user saw               ""
   reasoning text the user saw            " ▒▒ � "
   TextDelta events                       0
   ReasoningDelta events                  1
-  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36995", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } })
+  outcome                                Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42147", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } })
   requests sent to the backup candidate  0
 
 ---- assertions --------------------------------------------------------------
   [PASS] killing the endpoint mid-stream does not hang the app
-        206.704343ms
+        207.100517ms
   output had already been committed      true
   [PASS] after visible output, the turn is NOT replayed from another candidate
         0 request(s) reached the backup
   [PASS] a killed stream is never reported as a normally finished turn
-        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:36995", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } }))
+        Ok(Err(Transport { failure: Reset, diagnosis: Diagnosis { cause: ConnectionReset, status: None, endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:42147", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(554) } }))
 
 ================================================================================
 VERDICT  6 assertion(s), 0 failure(s)

@@ -20,6 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::structured::MachineText;
+
 /// Who produced a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -550,6 +552,27 @@ pub struct ChatResponse {
     /// it before it can reach the JSON.
     pub structured: Option<Result<serde_json::Value, SchemaMismatch>>,
     pub degradations: Vec<Degradation>,
+    /// The tail of the answer text the model **never committed to**: characters
+    /// rescued out of a reasoning block the stream ended inside
+    /// ([`Provenance::Salvaged`](crate::answer::Provenance::Salvaged)). Always
+    /// a suffix of [`Self::answer_text`], which still contains it because
+    /// MEASURED-3 says the user must see it.
+    ///
+    /// # Why it is `pub(crate)` and `#[serde(skip)]`
+    ///
+    /// Not on the wire: this is a provenance annotation used *inside* the
+    /// process to decide what a machine consumer may read, and the schema check
+    /// runs long before anything crosses the IPC boundary. Keeping it off the
+    /// wire is the same decision [`Provenance`](crate::answer::Provenance)
+    /// records — the shape the UI receives is unchanged.
+    ///
+    /// Not settable from outside the crate: an out-of-crate caller cannot forge
+    /// a provenance claim, and the only writers are the three wire assemblers,
+    /// each of which gets the value from
+    /// [`AnswerChannel::into_answer`](crate::answer::AnswerChannel::into_answer)
+    /// rather than computing it.
+    #[serde(skip)]
+    pub(crate) salvaged_answer: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -613,9 +636,18 @@ impl ChatResponse {
             usage: TokenUsage::default(),
             structured: None,
             degradations: Vec::new(),
+            salvaged_answer: None,
         }
     }
 
+    /// **Every character of answer the user was shown**, committed and
+    /// salvaged, in order.
+    ///
+    /// This is the display accessor and it is honest about being one: it is
+    /// what the transcript renders, what a diagnostic quotes, and what a
+    /// human-facing assertion compares. It is **not** what a machine consumer
+    /// reads — see [`Self::machine_text`], which is the type the schema check
+    /// takes.
     pub fn answer_text(&self) -> String {
         self.parts
             .iter()
@@ -624,6 +656,21 @@ impl ChatResponse {
                 _ => None,
             })
             .collect()
+    }
+
+    /// **The only answer text a machine consumer may turn into a value.**
+    ///
+    /// The committed answer: everything the user saw, minus any tail rescued
+    /// out of a reasoning block that never closed. The counterpart of
+    /// [`AnswerChannel::executable_text`](crate::answer::AnswerChannel::executable_text)
+    /// for the data channel, and it exists for the same reason — see
+    /// [`Provenance::Salvaged`](crate::answer::Provenance::Salvaged).
+    ///
+    /// The return type is the point. [`MachineText`] has no constructor that
+    /// takes text, so `check_answer(schema, &response.answer_text())` — the
+    /// call six sites made, and the one this defect was — does not compile.
+    pub fn machine_text(&self) -> MachineText {
+        MachineText::of(self)
     }
 
     pub fn reasoning_text(&self) -> String {

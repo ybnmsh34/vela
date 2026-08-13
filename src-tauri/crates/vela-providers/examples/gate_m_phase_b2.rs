@@ -6789,8 +6789,17 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
         // parser may see": committed text, salvaged text excluded. On this turn
         // it is empty, because the model never left the block.
         let committed = "";
-        let over_visible = vela_providers::structured::check_answer(&schema, visible);
-        let over_committed = vela_providers::structured::check_answer(&schema, committed);
+        // Both arms go through the SAME entry point the adapters use, so the
+        // control cannot drift from the shipping path. The only difference is
+        // which text the response carries — which is precisely the variable
+        // this control isolates. A response built out here carries no
+        // provenance boundary (`salvaged_answer` is crate-private and cannot be
+        // forged from an example), so `machine_text()` returns all of it: this
+        // arm IS the pre-fix consumer, reconstructed rather than described.
+        let over_visible =
+            vela_providers::structured::check_answer(&schema, &answered(visible).machine_text());
+        let over_committed =
+            vela_providers::structured::check_answer(&schema, &answered(committed).machine_text());
         let _ = writeln!(
             out,
             "  over answer_text()    {:?}   → {}",
@@ -7130,7 +7139,10 @@ async fn controls(ledger: &mut Vec<Verdict>) -> String {
                 serde_json::to_string(&value["city"]).unwrap_or_default()
             ),
         );
-        let velas = vela_providers::structured::check_answer(&weather_schema(), &hostile);
+        let velas = vela_providers::structured::check_answer(
+            &weather_schema(),
+            &answered(&hostile).machine_text(),
+        );
         let naive_leaks = naive.detail.contains(SIBLING_MARKER);
         let vela_leaks = format!("{velas:?}").contains(SIBLING_MARKER);
         let _ = writeln!(
@@ -8553,6 +8565,20 @@ fn weather_schema() -> Value {
         "properties": {"city": {"type": "string"}, "celsius": {"type": "number"}},
         "required": ["city", "celsius"]
     })
+}
+
+/// A finished turn whose whole answer is `text` and whose provenance boundary
+/// is **unrecorded** — every character reads as committed.
+///
+/// The controls below use it to drive `structured::check_answer` through the
+/// exact entry point the three adapters use, with the input as the only
+/// variable. `ChatResponse::salvaged_answer` is crate-private, so an example
+/// cannot forge a boundary: a response built here is, by construction, the
+/// pre-fix consumer.
+fn answered(text: &str) -> vela_providers::ChatResponse {
+    let mut response = vela_providers::ChatResponse::empty();
+    response.parts = vec![vela_providers::ContentPart::text(text)];
+    response
 }
 
 /// The SAME deliberation with the block CLOSED, and one sentence of real answer

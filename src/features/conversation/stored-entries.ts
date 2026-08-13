@@ -31,6 +31,7 @@
  */
 
 import type {
+  ContentPart,
   ContentPartInput,
   StopReason,
   StoredMessage,
@@ -39,8 +40,7 @@ import type {
   TokenUsage,
 } from '@/platform/contract';
 
-import { GUARD_START } from './reasoning-guard';
-import { EMPTY_TURN, hasReportedUsage, type TurnPhase, type TurnState } from './turn-stream';
+import { hasReportedUsage, turnFromParts, type TurnPhase, type TurnState } from './turn-stream';
 import type { ConversationEntry } from './use-conversation';
 
 /**
@@ -106,25 +106,44 @@ function textOf(parts: readonly ContentPartInput[]): string {
     .join('');
 }
 
-function reasoningOf(parts: readonly ContentPartInput[]): string {
-  return parts
-    .filter((part): part is { kind: 'reasoning'; text: string } => part.kind === 'reasoning')
-    .map((part) => part.text)
-    .join('');
+/**
+ * Widen the store's input-shaped parts to the full {@link ContentPart} shape
+ * {@link turnFromParts} takes, keeping only the two kinds it reads.
+ *
+ * The two types differ in their optional fields — `reasoning` may omit
+ * `signature` and `redacted` on the way in — so this fills those with the
+ * defaults the store itself applies, and drops the kinds a settled turn's text
+ * channels have nothing to say about.
+ */
+function textual(parts: readonly ContentPartInput[]): readonly ContentPart[] {
+  return parts.flatMap((part): ContentPart[] => {
+    if (part.kind === 'text') return [{ kind: 'text', text: part.text }];
+    if (part.kind === 'reasoning') {
+      return [
+        {
+          kind: 'reasoning',
+          text: part.text,
+          signature: part.signature ?? null,
+          redacted: part.redacted ?? false,
+        },
+      ];
+    }
+    return [];
+  });
 }
 
+/**
+ * Delegates the answer/reasoning split to {@link turnFromParts} rather than
+ * repeating it. That helper exists for exactly this — "resume-safe rendering",
+ * in its own words — and two implementations of one split is how a restored
+ * transcript starts rendering differently from a live one.
+ */
 function turnFromStored(message: StoredMessage): TurnState {
-  const reasoning = reasoningOf(message.parts);
-  return {
-    ...EMPTY_TURN,
+  return turnFromParts(textual(message.parts), {
     phase: phaseOf(message.status),
-    answer: textOf(message.parts),
-    reasoning,
-    reasoningPhase: reasoning === '' ? 'none' : 'complete',
     usage: usageOf(message.usage),
     stopReason: stopReasonOf(message.stopReason),
-    guard: GUARD_START,
-  };
+  });
 }
 
 /**

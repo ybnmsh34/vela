@@ -695,6 +695,30 @@ was not called.
 did not cover. Round 4's critics are briefed on that pattern directly — if inclined to PASS, spend
 the remaining effort asking *"what has nobody tested?"* rather than re-running what is green.
 
+## ⚠️ OPEN FINDING carried into round 4's gate: the fourth adapter
+
+Raised by the round-4 **integration agent**, unprompted, in a probe it wrote and then deleted
+(recoverable at `3870bb7:src-tauri/crates/vela-providers/tests/zz_integration_probe.rs`).
+
+> `encoded_credential_canary.rs` drives **OpenAiCompatible, Anthropic and Google**. `CompatProvider`
+> is a **fourth** shipping adapter — the one serving llama.cpp, Ollama, LM Studio and vLLM, *"i.e.
+> the configuration Vela exists for"* — and it is **the only one that puts a `serde_json` decode
+> and re-encode (`normalise_error_body`) between the byte scrub and the `UpstreamBytes` decode
+> chokepoint."**
+
+**Verified by the lead, independently:** the `Adapter` enum in `encoded_credential_canary.rs`
+(lines 448-450) lists exactly three variants and `CompatProvider` is not one of them.
+`normalise_error_body` appears in `src/` only — **it is referenced by no test in the crate.**
+
+This is the same shape as the defect that killed each of rounds 1, 2 and 3: a real shipping path
+that no test drives. It is worse here, because the untested adapter is the **primary local-model
+path** — the reason the product exists.
+
+**Status:** the integration agent was still running when this was recorded and may yet fold the
+case into a permanent test. Round 4's gate executor and critics must **verify this specific path
+themselves** and treat a leak there as a genuine gate failure, not a curiosity. If the coverage is
+still absent when the panel convenes, the missing coverage is itself the finding.
+
 ## Run incidents
 
 **2026-08-13 ~05:04Z — the container was rolled back ~3 hours; recovered from the remote.**

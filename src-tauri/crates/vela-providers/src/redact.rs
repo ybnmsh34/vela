@@ -372,8 +372,7 @@ impl Scrubber {
     /// result — an error message, an answer fragment, a tool-call argument —
     /// has been through the needles *after* the decoder finished with it.
     pub fn decode_json(&self, bytes: &[u8]) -> Result<Value, serde_json::Error> {
-        let mut value: Value = serde_json::from_slice(bytes)?;
-        self.scrub_value(&mut value);
+        let value: Value = serde_json::from_slice(bytes)?; // DEFECT B
         Ok(value)
     }
 
@@ -442,7 +441,7 @@ impl Scrubber {
         for needle in self.needles.iter() {
             out = replace_bytes(&out, needle.as_bytes(), REDACTED.as_bytes());
         }
-        self.replace_encoded(out)
+        out // DEFECT A
     }
 
     /// Replace every span of `bytes` that a JSON decoder would read as a needle.

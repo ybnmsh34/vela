@@ -373,6 +373,38 @@ start. The fix is one round: key non-streamed tool calls on their own identity r
 streaming-only `index`, correct the truncated-argument discriminator, and add the parallel-call
 shape to the harness so it stops being invisible.
 
+**Deliberately not fixed by the executor.** The finder does not also mark the homework: this run
+produces evidence and stops there, following the precedent set when the harness's own 413 defect
+was found and closed by someone else. `RESULTS.md` FINDING 1 spells out the three-part regression
+test the fix needs, and all three parts go red against the tree as it stands.
+
+### Evidence, reproduction, and one guard that had to move
+
+`docs/regression-baseline/phase-b-matrix/` — thirteen transcripts per profile carrying the
+literal request and response bytes, plus `verdicts.tsv`, `ASSERTION-CONTROL.txt`, `SUMMARY.txt`
+and `RESULTS.md`. Regenerate with `bash docs/regression-baseline/phase-b-matrix/record.sh`
+(Node 22+ on `PATH`; it starts and stops its own servers and exits non-zero, as it should while
+FINDING 1 stands).
+
+The recorder is `src-tauri/crates/vela-providers/examples/gate_m_phase_b.rs` — an **independent**
+execution, not a re-run of the builders' `tests/mock_matrix_live.rs`: its own wire-tapping
+transport, its own assertions, its own controls. Where the two overlap they agree; the failure
+lives where they do not. Credential *values* are redacted in the transcripts even though every
+credential in the run is fake, because a recorder that prints keys is one accidental re-run
+against a real endpoint away from writing one into `docs/`.
+
+It is an example rather than a test on purpose: it writes into `docs/`, and a `cargo test` that
+rewrites the repository is a trap. That cost one guard change. `no-app-import.test.ts` excluded
+`crates/*/tests/` from its "the mock harness must not be reachable from shipping Rust" scan and
+now also excludes `crates/*/examples/` — a cargo example is a standalone binary, is not built by
+a bare `cargo build`, and is not linked into `[[bin]] vela`. Because widening a guard is how
+blind spots are born, the exclusion is now a named function pinned by its own test: whole path
+segments only, so `src/tests_helper.rs` and a crate called `examples-core` still fail it.
+
+**VERIFIED-BY-FAKE**, per conventions §10. Four deterministic mocks; not one byte came from a
+model. GATE M Part 2 (a real llama.cpp at :8033) was not attempted, remains unreachable from this
+container, and is still the largest hole in the project's evidence base.
+
 ## Run incidents
 
 **2026-08-12 ~23:19Z — Phase B workflow stalled at the integration stage and was resumed.**
@@ -463,5 +495,9 @@ run on half-written code is noise, not signal. It can be run on demand at any ti
 
 ## Open blockers
 
-**None.** GATE M Part 2 is reassigned to the desktop session, not blocked. No operator decision
-is outstanding.
+**One, and it is a gate failure, not an operator decision.** GATE M Part 1 does not pass for
+Phase B: `ToolCallAccumulator` loses tool calls on the non-streamed path (see the gate section
+above and `docs/regression-baseline/phase-b-matrix/RESULTS.md` FINDING 1). It needs an owner, a
+fix, and the three-part regression test named there. Everything else in the gate is green.
+
+GATE M Part 2 is reassigned to the desktop session, not blocked.

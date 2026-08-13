@@ -225,6 +225,14 @@ summary of Phase A against GATE M Part 1 is: *the endpoints that break every way
 we could think of now exist, run, and are recorded to the byte; the client that
 must survive them does not exist yet.*
 
+> **The Phase B answer now exists: `../phase-b-matrix/RESULTS.md`.** It runs
+> Vela's own provider stack against these same four profiles over real TCP and
+> applies the gate criterion to Vela's runtime behaviour for the first time.
+> Result: nine of ten pieces pass, one fails — non-streamed tool calls collapse
+> into one — so **GATE M Part 1 does not pass for Phase B**. Read that file
+> before citing this one about Vela. It is still all VERIFIED-BY-FAKE, and
+> GATE M Part 2 is still unreachable from this container.
+
 ---
 
 ## 4. How to reproduce

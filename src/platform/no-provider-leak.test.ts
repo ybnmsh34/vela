@@ -277,6 +277,91 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     expect(outcome).not.toMatch(/readonly (detail|message|providerMessage): string;/);
   });
 
+  it('the model feature carries backend ids without ever branching on one', () => {
+    // This feature is the one that *must* handle provider ids: choosing where a
+    // conversation runs is what it is for. So the rule for it cannot be "never
+    // mentions one" — it is the sharper one, that an id is only ever carried,
+    // compared for identity, or put on the wire. What is forbidden is treating
+    // it as a *value with meaning*: indexing a table with it, matching it
+    // against a literal, or reading a property off it.
+    //
+    // `entry.providerId === selection.providerId` is fine and is the whole
+    // point: two ids the user configured, compared with each other. A literal
+    // on either side of that comparison is not.
+    const files = sourceFiles(join(SRC_ROOT, 'features', 'models'), ['.ts', '.tsx', '.css']).filter(
+      (path) => !/\.test\.[a-z]+$/.test(path),
+    );
+    expect(files.length, 'the models feature moved; fix this path').toBeGreaterThan(5);
+
+    const offenders = files.flatMap((path) => {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      return [
+        ...offendingLines(path, source),
+        ...source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          .filter(({ line }) => comparesToALiteral(line) || indexesById(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`),
+      ];
+    });
+
+    expect(
+      offenders,
+      'a switcher may address a backend; it must never decide anything from which one it is',
+    ).toEqual([]);
+  });
+
+  it('the attachments feature decides from capabilities and never from an endpoint', () => {
+    // The sharpest case in the whole renderer: whether an image may be attached
+    // is a capability question, and the wrong answer is silent — a picker
+    // offered for a model that cannot see, or withheld from one that can.
+    // Nothing in this feature may know a provider exists.
+    const files = sourceFiles(join(SRC_ROOT, 'features', 'attachments'), [
+      '.ts',
+      '.tsx',
+      '.css',
+    ]).filter((path) => !/\.test\.[a-z]+$/.test(path));
+    expect(files.length, 'the attachments feature moved; fix this path').toBeGreaterThan(3);
+
+    const offenders = files.flatMap((path) => {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      return [
+        ...offendingLines(path, source),
+        ...source
+          .split('\n')
+          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+          .filter(({ line }) => /\bproviderId\b|\bmodelId\b|\bbaseUrl\b/.test(line))
+          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`),
+      ];
+    });
+
+    expect(
+      offenders,
+      'what may be attached follows from the capability struct, and from nothing else',
+    ).toEqual([]);
+  });
+
+  it('the capability wire type is the only thing an affordance can be gated on', () => {
+    // The positive form, for the report that gates the switcher's affordances.
+    // Booleans, integers and closed enums only: a string field here would be a
+    // place for an endpoint's own words to land, and a component would read it.
+    const contract = stripComments(readFileSync(join(SRC_ROOT, 'platform', 'contract.ts'), 'utf8'));
+    const start = contract.indexOf('export interface ModelCapabilityReport');
+    const end = contract.indexOf('export interface ModelsProviderRefReq');
+    expect(start, 'ModelCapabilityReport moved; fix this slice').toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const report = contract.slice(start, end);
+    expect(offendingLines('contract.ts', report)).toEqual([]);
+    // The only two strings are the ids the *user* configured, echoed back.
+    const strings = report
+      .split('\n')
+      .filter((line) => /readonly \w+: string;/.test(line))
+      .map((line) => line.trim());
+    expect(strings).toEqual(['readonly providerId: string;', 'readonly modelId: string;']);
+    expect(report).not.toMatch(/readonly (note|detail|message|reason): string/);
+  });
+
   it('the scan actually catches a leak', () => {
     // A guard whose pattern silently stopped matching is worse than no guard.
     expect(offendingLines('x.tsx', "if (provider.id === 'ollama') return <OllamaPanel />;")).toEqual(
@@ -288,4 +373,41 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
       offendingLines('x.tsx', 'if (capabilities.streaming === Support.Yes) return <Stream />;'),
     ).toEqual([]);
   });
+
+  it('the id-inspection guards actually catch what they are for', () => {
+    // Same reasoning as above, for the two patterns the model feature is
+    // checked against. Both must fire on the real shapes and stay quiet on the
+    // ones the feature is built out of.
+    expect(comparesToALiteral("if (providerId === 'ollama') return true;")).toBe(true);
+    expect(comparesToALiteral('if (entry.modelId !== "gpt-4o") hide();')).toBe(true);
+    expect(indexesById('const icon = ICONS[view.providerId];')).toBe(true);
+    expect(indexesById('const family = providerId.split("-")[0];')).toBe(true);
+
+    expect(comparesToALiteral('entry.providerId === selection.providerId')).toBe(false);
+    expect(comparesToALiteral('if (selection.modelId !== report.modelId) return;')).toBe(false);
+    expect(indexesById('await repository.capabilities(providerId, modelId);')).toBe(false);
+    expect(indexesById('readonly providerId: string;')).toBe(false);
+    // Normalising or measuring the string the user typed is not inspection.
+    expect(indexesById("if (modelId.trim() === '') return 'noModelChosen';")).toBe(false);
+    expect(indexesById('if (providerId.length > MAX) reject();')).toBe(false);
+  });
 });
+
+/** An id tested against a hard-coded name — the exact branch conventions §0.3 forbids. */
+function comparesToALiteral(line: string): boolean {
+  return /\b(?:provider|model)Id\b\s*(?:===|!==)\s*['"`]/.test(line) ||
+    /['"`]\s*(?:===|!==)\s*\b\w*(?:provider|model)Id\b/i.test(line);
+}
+
+/**
+ * An id used as a lookup key or picked apart — a table of backends by another
+ * name.
+ *
+ * `trim()` and `length` are exempt: normalising or measuring a string the user
+ * typed says nothing about *which* backend it names, and is what any id field
+ * does on its way to the host.
+ */
+function indexesById(line: string): boolean {
+  return /\[\s*\w*\.?\b(?:provider|model)Id\b\s*\]/.test(line) ||
+    /\b(?:provider|model)Id\b\s*\.\s*(?!length\b|trim\b)\w/.test(line);
+}

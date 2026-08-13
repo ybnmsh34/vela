@@ -714,10 +714,33 @@ This is the same shape as the defect that killed each of rounds 1, 2 and 3: a re
 that no test drives. It is worse here, because the untested adapter is the **primary local-model
 path** — the reason the product exists.
 
-**Status:** the integration agent was still running when this was recorded and may yet fold the
-case into a permanent test. Round 4's gate executor and critics must **verify this specific path
-themselves** and treat a leak there as a genuine gate failure, not a curiosity. If the coverage is
-still absent when the panel convenes, the missing coverage is itself the finding.
+**Status — CLOSED by the integration agent, with a caveat that outlives it.**
+
+The probe is permanent: `tests/zz_integration_round4_probe.rs`, driving `CompatProvider` against a
+live loopback peer answering in **vLLM's** shape (chosen so `normalise_error_body` actually rewrites
+rather than returning `None`) with the credential spelled `sk\/x\/KEY`. `complete()` and `stream()`,
+across `Display`, `Debug`, the serde JSON that crosses the IPC bridge, and the `StreamEvent` sink.
+**No leak on any surface**, and the peer's own diagnosis survives — redaction, not deletion.
+
+**Why it is clean is not why anyone would guess, and this part matters more than the pass.** The
+credential never reaches the decode at all: `Scrubber::scrub_bytes` is *itself* encoding-aware
+(`replace_encoded` resolves JSON escape spans), so barrier one removes it at the byte stream in any
+spelling, and `NormalisingTransport` decodes an already-`<redacted>` body.
+
+Disabling **both** barriers and re-running the probe showed it still passing — which exposed a third
+mechanism nobody designed and nobody had written down. `normalise_error_body` decodes and re-encodes
+with `serde_json::to_vec`, and that round trip **normalises the escaping**: `sk\/x` and `sk/x`
+both come back out as literal `sk/x`, in a body re-wrapped in a `BodyStream` carrying the same
+origin — so it meets the byte scrub's *literal* pass on the way out.
+
+**The caveat.** That third defence is a side effect of a normalisation step whose purpose is
+entirely unrelated to credentials, and it holds only while that decorator re-wraps with the **real**
+origin rather than `BodyOrigin::carries_no_credential()`. It is load-bearing, undocumented at its
+site, and nothing asserts it. Not a defect today; a good candidate for a Phase C tidy, and the kind
+of implicit guarantee this crate has already been burned by twice.
+
+Nothing here is evidence about the *other* untested `CompatProvider` surfaces — discovery, capability
+probing, tool emulation. Only the credential-in-error path was driven.
 
 ## Run incidents
 

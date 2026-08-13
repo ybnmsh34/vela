@@ -1,0 +1,66 @@
+[
+  {
+    "file": "40-answer-top-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "41-answer-mid-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "42-answer-end-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "43-thinking-expanded-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "literalAsterisksOnScreen": 10
+    }
+  },
+  {
+    "file": "40-answer-top-dark.png",
+    "state": {
+      "theme": "dark",
+      "dataTheme": "dark",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "41-answer-mid-dark.png",
+    "state": {
+      "theme": "dark",
+      "dataTheme": "dark",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "42-answer-end-dark.png",
+    "state": {
+      "theme": "dark",
+      "dataTheme": "dark",
+      "literalAsterisksOnScreen": 2
+    }
+  },
+  {
+    "file": "43-thinking-expanded-dark.png",
+    "state": {
+      "theme": "dark",
+      "dataTheme": "dark",
+      "literalAsterisksOnScreen": 10
+    }
+  }
+]

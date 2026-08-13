@@ -1,0 +1,18 @@
+CONV-1 RETEST — measured on real WebView2 after the fix wave at 923e6da
+Windows 11 26200, WebView2 151.0.4129.78, window 1400x900, real model output.
+
+ITEM 1 thinking block renders markdown:
+   {"strongEls":17,"listItems":74,"literalDoubleAsterisks":0}
+ITEM 2 reading measure:
+   text column 480px at 15px  => ~64-70 chars (was 688px / ~95-105)
+ITEM 3 composer vs transcript ruler:
+   field w=480 l=592 ; text column w=480 l=585  => widths EQUAL, 7px scrollbar offset remains
+ITEM 7 heading scale + strong weight:
+   {"headings":["h3 15px w400 none","h2 24px w700 none","h3 18px w700 none","h4 16px w700 none","h5 15px w700 none","h6 15px w700 none","h6 15px w700 uppercase"],"strong":"13px w600"}
+
+ITEM 8 typeface bundled? (runtime width control)
+   {"absentControl":481.72,"Inter":481.72,"JetBrainsMono":481.72,"SegoeUI":523.91,"appBody":523.91}
+ITEM 9 color-scheme + scrollbar styling:
+   {"rootColorScheme":"light dark","dataTheme":"dark"}
+ITEM 12 --vela-text-subtle:
+   #6f7896

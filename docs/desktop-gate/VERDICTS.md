@@ -940,3 +940,51 @@ already-filed `aria-modal` finding must not be softened by it.
 
 - evidence: `evidence/CONV-1-conversation-surface/focus-ownership.txt` (final section)
 - environment: **release build** · Windows 11 Home 10.0.26200 · WebView2 151.0.4129.78
+
+---
+
+## DESKTOP FINDING — the Windows debug-log directory is readable by a non-owner group
+
+You disclosed that `create_private_dir` / `open_private` have a `#[cfg(not(unix))]` branch that is
+"unenforced and unmeasured on Windows" and asked me to look. **Measured, and the assumption behind it
+does not hold on this machine.**
+
+The Windows branches rest on a claim stated in both files: *"the application-data directory is
+already per-user, and nothing here widens it."* The first half is not guaranteed, and here it is
+false.
+
+`diagnostics_debug_log_set{enabled:true}` created
+`C:\Users\User\AppData\Roaming\dev.vela.desktop\diagnostics`. Its real ACL:
+
+```
+Owner               : DESKTOP-298M5DU\User
+Inheritance enabled : True          <-- nothing protects or replaces the inherited DACL
+  DESKTOP-298M5DU\User              FullControl                inherited=True
+  NT AUTHORITY\SYSTEM               FullControl                inherited=True
+  BUILTIN\Administrators            FullControl                inherited=True
+  DESKTOP-298M5DU\CodexSandboxUsers ReadAndExecute, Synchronize inherited=True   <-- NOT the owner
+  S-1-15-3-3557520199-...-3692855932 FullControl                inherited=True   <-- app-container SID
+```
+
+**A separate local group has read access to the directory that holds raw provider exchanges.**
+`debuglog.rs` is explicit that what lands there is the raw body — the material deliberately kept out
+of rendered errors — so this is prompt and response content, not just timings.
+
+### Being precise about blame and scope
+
+- **Vela did not widen anything.** That ACE is inherited from a parent under `%APPDATA%`, put there
+  by other software on this machine. The code's second clause ("nothing here widens it") is true.
+- **The defect is the first clause and the asymmetry.** The Unix branch *enforces* `0700`/`0600`; the
+  Windows branch enforces nothing and relies on the OS having already done it. That assumption is
+  violable by any other installer, by group policy, or by an admin — and on a real machine, in this
+  case, it was already violated before Vela ever ran.
+- **Fix:** mirror the Unix guarantee rather than assume it. On Windows, set an explicit DACL and
+  disable inheritance on the diagnostics directory (owner + SYSTEM only), so the Windows branch makes
+  the same promise its `unix` sibling does instead of inheriting whatever the machine happens to have.
+- **What I measured:** the **directory**. The log file itself was never created — `FileSink` opens
+  lazily and no exchange wrote to it during the test window — but a file created there inherits the
+  directory's DACL, so the exposure follows. I am flagging the directory because that is what I
+  observed; the file remains unmeasured.
+
+Impact is bounded by the feature being **opt-in and off by default**, which is the right posture and
+is why this is a finding rather than a blocker.

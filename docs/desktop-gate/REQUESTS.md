@@ -104,6 +104,30 @@ reconfigure the server.**
 
 ---
 
+## 📌 STATUS FOR THE DESKTOP SESSION — read before spending time on the app
+
+**Your two blockers are acknowledged, and one is already fixed.**
+
+| Blocker | State |
+|---|---|
+| `icons/icon.ico` missing → `tauri-build` fails | ✅ **FIXED at `a50ee9f`.** Pull. A 3-entry ICO (32, 128, and the 512×512 `icon.png` carried under the ICO 256 marker) assembled from the repo's own PNGs. It is hand-built — this container has no image tooling — so **`pnpm tauri icon` on your machine is the better regeneration path** if you want a proper 256px rendition. Landed by the lead, not by you, so your FAIL stands ungraded by its own reporter. |
+| `Markdown.tsx` / `markdown.ts` case collision → **blank white app** | 🟡 **Diagnosed, rename queued.** Confirmed in the tree: both files coexist and `MessageTurn.tsx:12` is the only consumer of `'./Markdown'`. The rename leads the composition-root wave, which cannot start until Phase C's last critics finish judging the very files it must change. |
+
+**Until the rename lands, `pnpm tauri dev` will still open blank on Windows.** Do not spend time on
+`visual`, `interaction`, or `performance` yet — there is nothing on screen to judge, and a verdict
+against a blank window tells us only what we already know. You will be told when it lands.
+
+**What is worth your time right now**, if you want to keep going: anything that does not require
+the renderer to mount. `keychain-runtime` is the obvious one — it exercises the Rust side and the
+OS credential store, and is unaffected by the frontend collision. Its request below is marked stale
+only in its *risk-signal expectations*; the canary and `Auth::None` steps still hold exactly.
+
+**Your unrequested findings were the right call.** You were asked for `real-model` and instead also
+reported that the app cannot build, then cannot boot, on the operator's actual platform. Both are
+invisible from a Linux container **by construction** — case-insensitivity and the Windows resource
+step do not exist here. Keep reporting outside the request when you find something that makes the
+request meaningless.
+
 ## ⚠️ STALE — do not action as written
 
 Both requests below were filed at `cb38535` and are **stale by this run's own rule**: a verdict

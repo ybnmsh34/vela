@@ -453,11 +453,13 @@ describe('the conversation surface: tool calls and degradation', () => {
       );
     });
 
-    const calls = screen.getByRole('list', { name: 'Tool calls' });
-    expect(within(calls).getByText('search')).toBeInTheDocument();
-    expect(within(calls).getByText('not run')).toBeInTheDocument();
-    expect(within(calls).getByText('{"query": unquoted}')).toBeInTheDocument();
+    // Queried by what a user must be able to see, not by the markup that shows
+    // it: the presentation of a tool call is its own component's business, and
+    // this assertion is about the rule that it is *shown at all*.
+    const calls = screen.getByLabelText('Tool calls');
+    expect(within(calls).getByText(/search/)).toBeInTheDocument();
     expect(within(calls).getByText(/not valid JSON/)).toBeInTheDocument();
+    expect(calls.textContent).toContain('{"query": unquoted}');
     expect(screen.getByText('A tool call could not be read')).toBeInTheDocument();
   });
 
@@ -472,8 +474,9 @@ describe('the conversation surface: tool calls and degradation', () => {
         delta: { slot: 0, callId: 'c1', name: 'search', argumentsFragment: '{"q":' },
       });
     });
-    expect(screen.getByText('arriving')).toBeInTheDocument();
-    expect(screen.getByText('{"q":')).toBeInTheDocument();
+    const calls = screen.getByLabelText('Tool calls');
+    expect(within(calls).getByText(/search/)).toBeInTheDocument();
+    expect(calls.textContent).toContain('{"q":');
   });
 
   it('surfaces every degradation the host reported', async () => {

@@ -2933,3 +2933,220 @@ the move that has cost this project two rounds already.
 **VERIFIED-BY-FAKE** per conventions §10 for everything above that runs in a browser: Chromium on
 Linux, no WebView2, no packaged binary, no keychain, no real model. The desktop session's
 `A1-scaffold-shell` and `CONV-1` PASSes remain the binding visual verdicts.
+
+---
+
+## Wave H — three contracts drafted blind, reconciled, and frozen
+
+Three builders wrote three contracts without being able to see each other's work, and three
+critics graded them without being able to see the other two. This section records the
+reconciliation: what each file covers, what the critics found and what was done about it, the
+seams that only showed once one agent had read all three, and the questions that are still a
+builder's to answer. **From this point the three files change by an amendment entry and by
+nothing else.**
+
+Nothing below is wired. All three files declare payload shapes and none of their command names
+are on `COMMAND_ALLOWLIST` in `src/platform/contract.ts`; `isAllowedCommand` answers `false` for
+every one of them, so calling one today fails at the renderer with `UNKNOWN_COMMAND` before it
+reaches the host. Each file says so in its own header, in the terms
+`src/platform/claimed-guards.test.ts` exists to enforce.
+
+### What each covers
+
+| File | Owns | Declares | Enforced by |
+|---|---|---|---|
+| `src/platform/contract-project.ts` | The durable container: metadata, the user's working directory, the host-owned layout on disk, the private agent workspace, the skills mount and its Windows link story | 8 commands (`project_create` … `project_update`) | `tsc` only |
+| `src/platform/contract-sandbox.ts` | What runs model-produced code and what that code may reach: two program families, the event stream, cancellation, six mandatory limits, the four-level permission selector, deny-by-default filesystem scope | 6 commands (`sandbox_submit`, `sandbox_approve`, `sandbox_cancel`, `sandbox_release`, `sandbox_policy`, `sandbox_report_document`) | `tsc` only |
+| `src/platform/contract-harness.ts` | The agent loop above one turn: the one-method runtime seam, sequencing/buffering/replay above it, registration and total selection, and the services a harness is handed | no commands — it is a renderer-side seam, not a wire | `tsc` only |
+
+### The verdicts, and what was done
+
+Two of the three came back FAIL. **A critic's verdict was not reinterpreted**: every blocking and
+serious finding was repaired, including the two I would have argued with, and the two arguments
+are recorded under "Disagreements" below rather than used as an excuse.
+
+| Contract | Finding | Repair |
+|---|---|---|
+| SANDBOX | **blocking** — the commonest process submit had no legal `workingDirectory`: a required absolute guest path inside a scope whose only directory is a scratch path the host does not reveal until after acceptance | `ProcessWorkingDirectory` is now a union — a scratch variant is always legal and needs no knowledge the caller lacks; a guest-path variant is for a caller that mounted something. `EffectiveGrant.workingDirectory` reports where it landed |
+| SANDBOX | serious — refusals had two delivery channels, no rule about which, and one channel provably cannot carry a reason (a code-and-message pair over a closed 7-code set, and conventions §3.2 forbids parsing the message) | Every `RefusalReason` now arrives as a settled event, without exception. Exactly one failure rejects the invoke — a duplicate run id — and it was **removed from the union**, because the only stream that id names belongs to the healthy run already using it |
+| SANDBOX | serious — for documents the file defined first-render, diagnostic and truncation events and gave the host no way to observe any of them | The fork is decided: the renderer draws the frame, the host owns the run. `sandbox_report_document` carries the surface's observations back so sequencing and lifetime stay in one place. The "off" guarantee is restated honestly — host-held so no *request* can raise it, which is not the same as a claim about Vela's own renderer |
+| SANDBOX | serious — the isolation union was four process mechanisms, and a Canvas document had to assert a floor that misdescribed what it got | `Isolation` is now tagged by family. `DocumentIsolation` names the browser boundary so a caller can *require* it, and the two scales are never compared — there is no answer to "is an opaque origin stronger than a container" |
+| SANDBOX | serious — a POSIX-only base environment, declared complete, on the platform Vela ships to. A Python interpreter started without `SYSTEMROOT` fails during start-up, and `bash` is not present at all | Two closed per-platform lists, `SANDBOX_BASE_ENVIRONMENT_POSIX` and `SANDBOX_BASE_ENVIRONMENT_WINDOWS`. `SandboxPolicySnapshot.languages` means a surface discovers a missing interpreter without submitting in front of the user |
+| SANDBOX | serious — an SVG could legally enable script, and the comment beside the field said that combination turns the safest language into an XSS vector with a reassuring name | `DocumentProgram` is two variants; the field exists only on the two script-capable languages. The host-side check is gone, along with its ten private re-derivations |
+| SANDBOX | serious — the strength tuple claimed "a new class has exactly one place to be ranked" across two places, and an unranked class silently sorted below the weakest one | The unions are **derived from** their ranking tuples, and `isolationRank`/`isolationMeets` ship, with the unknown-value case decided once instead of ten times |
+| HARNESS | **blocking** — "a harness must write the transcript through `store_append_message` and `store_update_message` as the run goes" was stated as binding, and `HarnessServices` had no store surface and explicitly no adapter | `TranscriptWriter` is on the seam: two methods, not the four on `src/data/transcript-repository.ts`, constructed at the composition root. The rule now names something a harness can reach |
+| HARNESS | serious — the loop's message-accumulation rule was never specified: what role a tool result rides on, whether the assistant turn and its signed reasoning are re-sent, and how a response part becomes an input part (they differ in exactly one field, which is what makes it dangerous) | A four-rule block below `ToolResultPart` decides all three, and `ContentPartCodec` puts the one conversion in one place. This is not per-harness policy — the caller rebuilds the next run's input from the store, so two harnesses accumulating differently break the swap-the-engine property |
+| PROJECT | serious — the header promised every named path says who creates it and when; `skillStore` said neither, and is deliberately outside `ProjectDirectory` so a repair list cannot report it | The host creates it empty at launch, before any command that reads it, and the one observable consequence is written down: every enabled skill mounts unavailable with `skillNotFound`. Why it stays out of `ProjectDirectory` is now argued rather than assumed |
+
+Every minor finding was repaired too. The ones worth naming here because they were *false
+statements* rather than gaps: the harness file told ten builders that TypeScript decorators are
+disabled in `tsconfig.app.json` (they are not — `experimentalDecorators` governs the legacy form
+only), asserted as fact a sibling-package claim its own cited study marks UNVERIFIED, and
+misreported what that study established about three model-router slots; the project file cited
+"conventions §0 and §2" for five rules that live in `tsconfig.app.json`, §3.2, §5 and §9. A
+contract that is wrong about the reader's own build configuration is doing the thing this repo's
+guards exist to catch, one level up.
+
+### The seams — what only showed once one agent had read all three
+
+**1. Two contracts had a collision neither could see.** SANDBOX protected a category covering the
+whole application-data directory from ever being mounted. PROJECT puts the private agent
+workspace two levels inside that directory. Read together, the agent could not reach its own
+workspace through the only execution path it has. The category is now `velaStore` — the database
+and settings — and both files state the carve-out and the reason. This is the kind of
+contradiction that otherwise gets discovered at implementation time and resolved by widening
+whichever side is easier to widen.
+
+**2. A junction is a mount hazard, not only a delete hazard.** PROJECT's skills mount is a
+directory of junctions into the machine-wide store, and every file API follows one
+transparently. A read-write mount of that directory is a read-write mount of every skill on the
+machine, granted to model-authored code, through a path that does not look like it leads there.
+SANDBOX now refuses it (`skillsMountMustBeReadOnly`) and PROJECT names the rule from its side.
+The delete-side hazard was documented on `LinkStrategy`, which is not the type the builder
+writing `project_delete` reads; it is now cross-referenced there as well.
+
+**3. HARNESS could not say which project a run was in.** It carried a conversation id and nothing
+else, while `ConversationSummary` carries no project id — so a tool call had no way to know which
+directories it was allowed near. `RunRequest.projectId` closes it, and it means that file needs no
+amendment when the column lands.
+
+**4. Nobody owned the join between a run and an execution.** `ToolExecutor` is where a Bash or
+Python tool becomes a `sandbox_submit`; that is now written down, along with the three
+consequences a builder would otherwise meet one at a time — the approval prompt lives there, the
+cancel signal has to reach it, and a sandbox refusal is a tool result rather than a rejection.
+Neither file imports the other; the join is made once, at the composition root.
+
+**5. Canvas was described as a first-class consumer and served as a second-class one.** Three of
+the SANDBOX repairs above — the document isolation family, the report command, the script union —
+are the same finding seen from three angles. The file now serves both consumers, or says plainly
+which one it does not.
+
+### Shared vocabulary, and its one home
+
+| Concept | Home | Imported by |
+|---|---|---|
+| `ProjectId` | `src/platform/contract-project.ts` | sandbox (`SandboxSubmitReq`), harness (`RunRequest`) |
+| `AbsolutePath` | `src/platform/contract-project.ts` | sandbox (`Mount.hostPath`, the auto-approval roots) |
+| `Ack`, `EmptyPayload`, the content parts, the turn model, the error taxonomy | `src/platform/contract.ts` | all three |
+| The stream envelope shape — an id, a `seq`, an event | `src/platform/contract.ts` sets the pattern | harness and sandbox follow it; three streams, one shape |
+| Timestamps | convention, everywhere | integer milliseconds since the epoch, always suffixed `AtMs`; a duration is suffixed `Ms` |
+| Run identity | separate per contract, on purpose | `RunId` (harness) and `SandboxRunId` are **not** interchangeable — one agent run submits many sandbox runs |
+
+The rule a builder should carry away: if two of these files spell the same concept two ways, that
+is a defect in this wave and not a choice to be resolved locally.
+
+### Decisions a builder must not relitigate
+
+- **The sandbox is a boundary, not a filter.** No blocklist type, no allowed-command list,
+  nowhere to hang a static-analysis verdict. What a run may do is decided by what it is *given*,
+  before its first byte is interpreted, by a component that never reads its source. Adding any of
+  those is an amendment that has to argue for itself.
+- **The unit of approval is one whole submitted run**, approved before it starts. Not a command
+  (that requires reading the program), not a syscall class (nobody can be asked at that rate).
+- **Permission level is host-held.** It is not a field on a submit and a request has no
+  vocabulary to raise it.
+- **Full access does not disable the sandbox.** Approval and isolation are orthogonal.
+- **All six sandbox limits are required.** An optional limit is one a caller forgets and two
+  hosts default differently.
+- **Skill sync and memory are not methods on the harness seam.** The source has one method; the
+  README that said otherwise is contradicted by the file it describes. A read-only injected
+  resolver carries what is left.
+- **Sequencing, buffering and replay live above the harness**, never inside it.
+- **Project directories are keyed by id, never by name.** That single choice deletes a sanitiser,
+  a reserved-device-name table and a containment re-check, and makes rename a metadata update.
+- **The private workspace is disposable and never holds the only copy of anything**, which is
+  what makes repair-on-read safe.
+- **On Windows the skills mount is a directory junction, never a symlink** — even where a symlink
+  would succeed. A design that depends on Developer Mode works on the developer's machine.
+- **Delete has one behaviour and no options.** Conversations reassign to the default project; the
+  working directory is never touched.
+
+### Still the builder's to decide — and nobody has
+
+Written plainly because a builder reading this needs to know which questions are theirs.
+
+**SANDBOX.** No isolation backend is chosen for either family; until one exists every report
+answers `declared`, not `probed`, and the container/microVM classes are expressible and
+unimplemented. The canonical encoding behind `requestDigest` is host-owned and unspecified — it
+must cover the grant as well as the source. How `SANDBOX_PROTECTED_ROOTS` resolves to concrete
+paths per platform is host-owned. Reattachment is not designed: `seq` exists so it can be added
+without renumbering, but nothing replays anything. Environment values are plaintext with nothing
+enforcing "no credentials here". Concurrency beyond `maximumConcurrentRuns` — queueing,
+fairness, which surface wins — is unspecified. Whether deleting a project cancels or refuses
+while one of its runs is live is named in both files and settled in neither.
+
+**PROJECT.** `ConversationSummary` has no project id, so `conversationCount`, `lastActiveAtMs`,
+`project_move_conversation` and the delete-time reassignment all await an amendment to
+`src/platform/contract.ts`; a host reporting zero for every project is currently telling the
+truth. How the user produces an absolute path is open — a native picker needs the `dialog`
+capability that `src-tauri/capabilities/main.json` does not grant, typing needs nothing, and the
+payload is identical either way. Nothing detects reparse points on delete. The store migration
+that seeds the default project does not exist. Project **knowledge** and the Context list
+(`docs/vela-feature-spec.md` PRJ-1/PRJ-2, CWK-15) are deliberately out of scope and `ProjectPaths`
+is frozen at four fields, so they arrive by amendment.
+
+**HARNESS.** Tool approval is invisible on the run stream — a UI cannot distinguish "running"
+from "waiting for you" — and making it visible needs an amendment. There is no skills contract
+and no memory contract, so `ContextRef.id` is opaque and the honest first resolver serves project
+instructions and nothing else. Retention beyond `RUN_BUFFER_MIN_EVENTS` is a policy a builder
+picks. Reconciling a message left streaming by a killed run, on next launch, is undefined.
+Cross-conversation concurrency is permitted and unthrottled.
+
+**All three.** No Rust module, no allowlist entries, no `BrowserAdapter` implementations, no
+`EventContract` keys, and **no test asserts a single behavioural rule in any of the three files.**
+`tsc` holds the shapes; that is the whole of the automatic enforcement, and each header says so.
+
+### The amendment procedure
+
+Identical in all three files and deliberately boring. Append a numbered entry to that file's
+AMENDMENTS block: the date, the type or field touched, what changed, and what a builder already
+coding against the previous shape has to do about it. Bump that file's own contract version in
+the same change — the three versions are independent because the three surfaces move at
+different cadences, and one number for three would make every project change look like a sandbox
+break. An amendment that removes or narrows something must say what consumers of the old shape do
+instead; "nothing used it" is an acceptable answer and has to be written down rather than assumed.
+An edit above the AMENDMENTS block with no row in it is the change that block exists to make
+impossible to miss in review.
+
+The AMENDMENTS blocks are empty today, and that is correct: the reconciliation happened *before*
+the freeze, so the repairs above are not amendments — nothing was ever coding against the earlier
+shapes.
+
+### The gate
+
+Run in the `wave-h/contracts` worktree, after the reconciliation:
+
+| step | result |
+|---|---|
+| `pnpm typecheck` | clean |
+| `pnpm exec vitest run` | **72 files, 1568 tests, 0 failures** |
+| `src/platform/claimed-guards.test.ts` | 12/12 — every backticked path and every backticked name in all three files resolves |
+
+The pre-wave baseline was 72 files / 1565 tests. **The three extra tests are not new assertions**
+— `src/platform/control-characters.test.ts` generates one case per file under `src/`, and this
+wave added three files. No suite was edited and no expectation was touched.
+
+Not run here, and not claimed: `cargo test`, `pnpm build`, `pnpm verify`. Nothing in this wave
+touches Rust, and per conventions §10 no claim about the running application can be made from
+this environment. VERIFIED-BY-FAKE does not really apply — these are three declaration files
+checked by a compiler and a static guard, so no endpoint, keychain or webview is implicated in
+either direction.
+
+### Disagreements, recorded
+
+Two critic findings I think were partly wrong, both repaired anyway because repairing them cost
+nothing and neither repair makes a contract false.
+
+**"The expired-approval reason has no clearly reachable trigger."** Correct as written, but the
+critic reasoned from a doc comment that called release "let go of a *settled* run" — the fix was
+not to delete the reason but to legalise release-on-unsettled, which a caller needs regardless (a
+surface that unmounts while a prompt is open must be able to let go). The reason is now
+`approvalAbandoned`, the name no longer implies a timer that does not exist, and release states
+its three cases.
+
+**"`RunSnapshot.retainedFrom` is fixed at 0, so the buffer is unbounded."** The unbounded buffer
+is real and worth fixing. The second half of the same finding — that the truncation signal can
+therefore never fire for a live run — was the sharper observation, and it is what made the first
+half indefensible rather than merely expensive: a guarantee whose cost is an unbounded allocation,
+protecting a signal that can never fire, is two mistakes holding each other up.
+`RUN_BUFFER_MIN_EVENTS` replaces the guarantee with a floor.

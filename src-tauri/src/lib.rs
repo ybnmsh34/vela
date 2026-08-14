@@ -11,6 +11,7 @@
 
 pub mod ipc;
 pub mod provider_host;
+pub mod scheduler_host;
 pub mod state;
 pub mod store_host;
 
@@ -92,6 +93,23 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
                 app.path().app_data_dir()?,
             ));
 
+            // Scheduling, in the two steps it takes.
+            //
+            // The repair first: a run row still marked `running` is what
+            // `due_schedules` reads as "still working", so a process that died
+            // mid-run would wedge that schedule forever. Reaping has to happen
+            // before the first poll, which is why it is a separate call and not
+            // something the loop does on its way round.
+            //
+            // Then the loop. It sleeps a full interval before its first poll,
+            // so nothing fires while the window is still being drawn. What a
+            // fired schedule does — spawn a conversation, record a run, move to
+            // its next slot — is `vela_store::poll_once`; nothing about it
+            // depends on a real clock, which is how it is tested without
+            // waiting an hour.
+            scheduler_host::reap_on_boot(store.store());
+            scheduler_host::spawn(store.shared());
+
             app.manage(store);
             Ok(())
         })
@@ -105,6 +123,11 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::models::models_capabilities,
             ipc::models::models_list,
             ipc::models::models_probe,
+            ipc::schedules::schedules_create,
+            ipc::schedules::schedules_delete,
+            ipc::schedules::schedules_list,
+            ipc::schedules::schedules_list_runs,
+            ipc::schedules::schedules_set_enabled,
             ipc::secrets::secrets_delete,
             ipc::secrets::secrets_set,
             ipc::secrets::secrets_status,

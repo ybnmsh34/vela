@@ -68,6 +68,15 @@ import {
   type ProviderAuth,
   type ProviderView,
   type RiskLevel,
+  type ScheduleListRes,
+  type ScheduleRes,
+  type ScheduleRunListRes,
+  type SchedulesCreateReq,
+  type SchedulesListReq,
+  type SchedulesListRunsReq,
+  type SchedulesRefReq,
+  type SchedulesSetEnabledReq,
+  type ScheduleView,
   type SecretsRefReq,
   type SecretsSetReq,
   type SecretsStatusRes,
@@ -110,6 +119,10 @@ const MAX_MESSAGES = 4_096;
 const MAX_MODEL_ID_LEN = 200;
 /** Mirrors `MAX_SUPPLIED_TITLE` in `src-tauri/src/ipc/store.rs`. */
 const MAX_SUPPLIED_TITLE = 200;
+/** Mirrors `MAX_TITLE_CHARS` in `src-tauri/src/ipc/schedules.rs`. */
+const MAX_SCHEDULE_TITLE = 200;
+/** Mirrors `MAX_PROMPT_CHARS` in `src-tauri/src/ipc/schedules.rs`. */
+const MAX_SCHEDULE_PROMPT = 8_000;
 /** Mirrors `DEFAULT_LIST_LIMIT` in `src-tauri/src/ipc/store.rs`. */
 const DEFAULT_LIST_LIMIT = 500;
 /** Mirrors `DEFAULT_SEARCH_LIMIT` / `MAX_SEARCH_LIMIT` in the same module. */
@@ -598,6 +611,23 @@ export class BrowserAdapter implements PlatformAdapter {
   /** Stands in for the SQLite `conversations` and `messages` tables. */
   readonly #conversations = new Map<string, FakeConversation>();
   #conversationSeq = 0;
+  /**
+   * Stands in for the SQLite `schedules` table.
+   *
+   * **There is no `schedule_runs` map, and that is not an omission.** Runs are
+   * produced by the host's poll thread (`src-tauri/src/scheduler_host.rs`),
+   * which has no browser equivalent and no command that could stand in for one
+   * — the renderer cannot fire a schedule, by design. So a schedule created
+   * against this fake is stored, listed, enabled, disabled and deleted exactly
+   * as the host does it, and never fires: `schedules_list_runs` answers an
+   * empty list for a schedule that exists and `NOT_FOUND` for one that does
+   * not, which are the two states a pane built here can be developed against.
+   * Faking a run would mean a second copy of the cadence arithmetic with
+   * nothing pinning it to the host's, which is the drift this repo keeps
+   * finding in itself.
+   */
+  readonly #schedules = new Map<string, ScheduleView>();
+  #scheduleSeq = 0;
   #layout: UiLayout = {
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
@@ -684,6 +714,16 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#storeListMessages(payload as StoreListMessagesReq);
       case 'store_delete_message':
         return this.#storeDeleteMessage(payload as StoreMessageRefReq);
+      case 'schedules_create':
+        return this.#schedulesCreate(payload as SchedulesCreateReq);
+      case 'schedules_delete':
+        return this.#schedulesDelete(payload as SchedulesRefReq);
+      case 'schedules_list':
+        return this.#schedulesList(payload as SchedulesListReq);
+      case 'schedules_list_runs':
+        return this.#schedulesListRuns(payload as SchedulesListRunsReq);
+      case 'schedules_set_enabled':
+        return this.#schedulesSetEnabled(payload as SchedulesSetEnabledReq);
       case 'ui_get_layout':
         return this.#layout;
       case 'ui_set_layout':
@@ -1244,6 +1284,105 @@ export class BrowserAdapter implements PlatformAdapter {
       );
     }
     return title;
+  }
+
+  /**
+   * The host's `validate_text`, in the fake. Same trim, same blankness rule,
+   * same ceiling — the message text matters because `PlatformError.message` is
+   * the only thing a test can compare across the two halves.
+   */
+  #validScheduleText(
+    field: 'title' | 'prompt',
+    raw: string,
+    max: number,
+    command: CommandName,
+  ): string {
+    const text = raw.trim();
+    if (text === '') {
+      throw new PlatformError('INVALID_PAYLOAD', `invalid ${field}: must not be blank`, command);
+    }
+    if ([...text].length > max) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid ${field}: must be at most ${max} characters`,
+        command,
+      );
+    }
+    return text;
+  }
+
+  #requireSchedule(id: string, command: CommandName): ScheduleView {
+    const found = this.#schedules.get(id.trim());
+    if (found === undefined) {
+      throw new PlatformError('NOT_FOUND', `no schedule with id \`${id}\``, command);
+    }
+    return found;
+  }
+
+  #schedulesCreate(request: SchedulesCreateReq): ScheduleRes {
+    const title = this.#validScheduleText(
+      'title',
+      request.title,
+      MAX_SCHEDULE_TITLE,
+      'schedules_create',
+    );
+    const prompt = this.#validScheduleText(
+      'prompt',
+      request.prompt,
+      MAX_SCHEDULE_PROMPT,
+      'schedules_create',
+    );
+
+    this.#scheduleSeq += 1;
+    const now = this.#now();
+    const schedule: ScheduleView = {
+      id: `sched_${this.#scheduleSeq}`,
+      title,
+      prompt,
+      cadence: request.cadence,
+      nextRunAtMs: request.firstRunAtMs,
+      enabled: true,
+      projectId: request.projectId ?? null,
+      missedRuns: 0,
+      createdAtMs: now,
+      updatedAtMs: now,
+    };
+    this.#schedules.set(schedule.id, schedule);
+    return { schedule };
+  }
+
+  #schedulesList(request: SchedulesListReq): ScheduleListRes {
+    // Soonest-due first, so the list reads as a queue — the host's ORDER BY.
+    const schedules = [...this.#schedules.values()]
+      .filter((schedule) => (request.includeDisabled === true ? true : schedule.enabled))
+      .sort((a, b) => a.nextRunAtMs - b.nextRunAtMs || (a.id < b.id ? -1 : 1));
+    return { schedules };
+  }
+
+  #schedulesSetEnabled(request: SchedulesSetEnabledReq): ScheduleRes {
+    const existing = this.#requireSchedule(request.scheduleId, 'schedules_set_enabled');
+    const schedule: ScheduleView = {
+      ...existing,
+      enabled: request.enabled,
+      updatedAtMs: this.#now(),
+    };
+    this.#schedules.set(schedule.id, schedule);
+    return { schedule };
+  }
+
+  #schedulesDelete(request: SchedulesRefReq): Ack {
+    // NOT_FOUND rather than a silent success, exactly as the host: the user
+    // just asked to destroy a schedule and its whole history.
+    const schedule = this.#requireSchedule(request.scheduleId, 'schedules_delete');
+    this.#schedules.delete(schedule.id);
+    return { ok: true };
+  }
+
+  #schedulesListRuns(request: SchedulesListRunsReq): ScheduleRunListRes {
+    // The schedule must exist — an empty list for an id that was deleted would
+    // read as "it never ran" rather than "it is gone".
+    this.#requireSchedule(request.scheduleId, 'schedules_list_runs');
+    return { runs: [] };
   }
 
   #requireConversation(id: string, command: CommandName): FakeConversation {

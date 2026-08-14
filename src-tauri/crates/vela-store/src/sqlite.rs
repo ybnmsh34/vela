@@ -23,13 +23,16 @@ use crate::error::{StoreError, StoreResult};
 use crate::location::DatabaseLocation;
 use crate::migrations;
 use crate::model::{
-    ContentPart, Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
-    MessageRole, MessageStatus, NewConversation, NewMessage, NewProject, Project, ProjectId,
-    ProjectPatch, SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
+    Cadence, ContentPart, Conversation, ConversationId, ConversationPatch, Message, MessageId,
+    MessagePatch, MessageRole, MessageStatus, NewConversation, NewMessage, NewProject, NewSchedule,
+    Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId, SchedulePatch, ScheduleRun,
+    ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus, SecretRefName, Setting, SettingEntry,
+    StopReason, Timestamp, TokenUsage,
 };
 use crate::repository::{
     ConversationQuery, ConversationRepository, HasLocation, MessageQuery, MessageRepository,
-    ProjectFilter, ProjectRepository, SearchHit, SearchHitKind, SettingsRepository, UsageTotals,
+    ProjectFilter, ProjectRepository, ScheduleRepository, SearchHit, SearchHitKind,
+    SettingsRepository, UsageTotals,
 };
 
 const CONVERSATION_COLUMNS: &str = "c.id, c.project_id, c.title, c.provider_id, c.model_id, \
@@ -1090,6 +1093,341 @@ fn map_search_error(error: rusqlite::Error) -> StoreError {
         }
     }
     unwrap_store_error(error)
+}
+
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_COLUMNS: &str = "s.id, s.title, s.prompt, s.cadence, s.next_run_at, s.enabled, \
+     s.project_id, s.provider_id, s.model_id, s.missed_runs, s.created_at, s.updated_at";
+
+const SCHEDULE_RUN_COLUMNS: &str = "id, schedule_id, status, trigger, started_at, finished_at, \
+     duration_ms, conversation_id, error";
+
+/// The overlap guard, spelled once. Anything asking "may this schedule start
+/// another run?" asks it through this fragment, so a second caller cannot
+/// answer the question differently — see [`ScheduleRepository::due_schedules`].
+const NO_RUN_IN_FLIGHT: &str =
+    "NOT EXISTS (SELECT 1 FROM schedule_runs r WHERE r.schedule_id = s.id AND r.status = 'running')";
+
+fn read_schedule(row: &Row<'_>) -> rusqlite::Result<Schedule> {
+    let project_id: Option<String> = row.get(6)?;
+    Ok(Schedule {
+        id: ScheduleId::new(row.get::<_, String>(0)?).map_err(to_sqlite_error)?,
+        title: row.get(1)?,
+        prompt: row.get(2)?,
+        cadence: Cadence::from_db(&row.get::<_, String>(3)?).map_err(to_sqlite_error)?,
+        next_run_at: Timestamp::from_millis(row.get(4)?),
+        enabled: row.get::<_, i64>(5)? != 0,
+        project_id: project_id
+            .map(ProjectId::new)
+            .transpose()
+            .map_err(to_sqlite_error)?,
+        provider_id: row.get(7)?,
+        model_id: row.get(8)?,
+        missed_runs: u32::try_from(row.get::<_, i64>(9)?).unwrap_or(u32::MAX),
+        created_at: Timestamp::from_millis(row.get(10)?),
+        updated_at: Timestamp::from_millis(row.get(11)?),
+    })
+}
+
+fn read_schedule_run(row: &Row<'_>) -> rusqlite::Result<ScheduleRun> {
+    let conversation_id: Option<String> = row.get(7)?;
+    Ok(ScheduleRun {
+        id: ScheduleRunId::new(row.get::<_, String>(0)?).map_err(to_sqlite_error)?,
+        schedule_id: ScheduleId::new(row.get::<_, String>(1)?).map_err(to_sqlite_error)?,
+        status: ScheduleRunStatus::from_db(&row.get::<_, String>(2)?).map_err(to_sqlite_error)?,
+        trigger: RunTrigger::from_db(&row.get::<_, String>(3)?).map_err(to_sqlite_error)?,
+        started_at: Timestamp::from_millis(row.get(4)?),
+        finished_at: row.get::<_, Option<i64>>(5)?.map(Timestamp::from_millis),
+        duration_ms: row.get(6)?,
+        conversation_id: conversation_id
+            .map(ConversationId::new)
+            .transpose()
+            .map_err(to_sqlite_error)?,
+        error: row.get(8)?,
+    })
+}
+
+fn fetch_schedule(conn: &Connection, id: &ScheduleId) -> StoreResult<Schedule> {
+    let sql = format!("SELECT {SCHEDULE_COLUMNS} FROM schedules s WHERE s.id = ?1");
+    conn.query_row(&sql, [id.as_str()], read_schedule)
+        .optional()
+        .map_err(unwrap_store_error)?
+        .ok_or_else(|| StoreError::NotFound {
+            entity: ScheduleId::ENTITY,
+            id: id.to_string(),
+        })
+}
+
+fn fetch_schedule_run(conn: &Connection, id: &ScheduleRunId) -> StoreResult<ScheduleRun> {
+    let sql = format!("SELECT {SCHEDULE_RUN_COLUMNS} FROM schedule_runs WHERE id = ?1");
+    conn.query_row(&sql, [id.as_str()], read_schedule_run)
+        .optional()
+        .map_err(unwrap_store_error)?
+        .ok_or_else(|| StoreError::NotFound {
+            entity: ScheduleRunId::ENTITY,
+            id: id.to_string(),
+        })
+}
+
+impl ScheduleRepository for SqliteStore {
+    fn create_schedule(&self, input: NewSchedule) -> StoreResult<Schedule> {
+        input.validate()?;
+        let now = self.now();
+        let id = ScheduleId::new(self.ids.next_id(ScheduleId::PREFIX))?;
+        let conn = self.connection();
+
+        conn.execute(
+            "INSERT INTO schedules (
+                 id, title, prompt, cadence, next_run_at, enabled, project_id,
+                 provider_id, model_id, missed_runs, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, 0, ?9, ?9)",
+            params![
+                id.as_str(),
+                input.title.trim(),
+                input.prompt,
+                input.cadence.as_db(),
+                input.first_run_at.as_millis(),
+                input.project_id.as_ref().map(ProjectId::as_str),
+                input.provider_id,
+                input.model_id,
+                now.as_millis(),
+            ],
+        )?;
+
+        fetch_schedule(&conn, &id)
+    }
+
+    fn get_schedule(&self, id: &ScheduleId) -> StoreResult<Schedule> {
+        let conn = self.connection();
+        fetch_schedule(&conn, id)
+    }
+
+    fn list_schedules(&self, include_disabled: bool) -> StoreResult<Vec<Schedule>> {
+        let conn = self.connection();
+        let filter = if include_disabled {
+            ""
+        } else {
+            " WHERE s.enabled = 1"
+        };
+        let sql = format!(
+            "SELECT {SCHEDULE_COLUMNS} FROM schedules s{filter} ORDER BY s.next_run_at, s.id"
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map([], read_schedule)
+            .map_err(unwrap_store_error)?;
+        rows.map(|row| row.map_err(unwrap_store_error))
+            .collect::<StoreResult<Vec<_>>>()
+    }
+
+    fn update_schedule(&self, id: &ScheduleId, patch: SchedulePatch) -> StoreResult<Schedule> {
+        if let Some(title) = &patch.title {
+            if title.trim().is_empty() {
+                return Err(StoreError::invalid("title", "a schedule must have a title"));
+            }
+        }
+        if let Some(prompt) = &patch.prompt {
+            if prompt.trim().is_empty() {
+                return Err(StoreError::invalid(
+                    "prompt",
+                    "a schedule with no prompt has nothing to run",
+                ));
+            }
+        }
+        let now = self.now();
+        let conn = self.connection();
+        fetch_schedule(&conn, id)?;
+
+        let mut assignments: Vec<String> = Vec::new();
+        let mut values: Vec<Value> = Vec::new();
+        if let Some(title) = patch.title {
+            assignments.push(format!("title = ?{}", values.len() + 1));
+            values.push(Value::Text(title.trim().to_string()));
+        }
+        if let Some(prompt) = patch.prompt {
+            assignments.push(format!("prompt = ?{}", values.len() + 1));
+            values.push(Value::Text(prompt));
+        }
+        if let Some(cadence) = patch.cadence {
+            assignments.push(format!("cadence = ?{}", values.len() + 1));
+            values.push(Value::Text(cadence.as_db().to_string()));
+        }
+        if let Some(next_run_at) = patch.next_run_at {
+            assignments.push(format!("next_run_at = ?{}", values.len() + 1));
+            values.push(Value::Integer(next_run_at.as_millis()));
+        }
+        if let Some(enabled) = patch.enabled {
+            assignments.push(format!("enabled = ?{}", values.len() + 1));
+            values.push(Value::Integer(i64::from(enabled)));
+        }
+        if let Some(project_id) = patch.project_id {
+            assignments.push(format!("project_id = ?{}", values.len() + 1));
+            values.push(project_id.map_or(Value::Null, |id| Value::Text(id.into_string())));
+        }
+        if let Some(missed_runs) = patch.missed_runs {
+            assignments.push(format!("missed_runs = ?{}", values.len() + 1));
+            values.push(Value::Integer(i64::from(missed_runs)));
+        }
+
+        if !assignments.is_empty() {
+            assignments.push(format!("updated_at = ?{}", values.len() + 1));
+            values.push(Value::Integer(now.as_millis()));
+            values.push(Value::Text(id.to_string()));
+            let sql = format!(
+                "UPDATE schedules SET {} WHERE id = ?{}",
+                assignments.join(", "),
+                values.len()
+            );
+            conn.execute(&sql, params_from_iter(values.iter()))?;
+        }
+
+        fetch_schedule(&conn, id)
+    }
+
+    fn delete_schedule(&self, id: &ScheduleId) -> StoreResult<()> {
+        let conn = self.connection();
+        let removed = conn.execute("DELETE FROM schedules WHERE id = ?1", [id.as_str()])?;
+        if removed == 0 {
+            return Err(StoreError::NotFound {
+                entity: ScheduleId::ENTITY,
+                id: id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn due_schedules(&self, now: Timestamp) -> StoreResult<Vec<Schedule>> {
+        let conn = self.connection();
+        let sql = format!(
+            "SELECT {SCHEDULE_COLUMNS} FROM schedules s
+             WHERE s.enabled = 1 AND s.next_run_at <= ?1 AND {NO_RUN_IN_FLIGHT}
+             ORDER BY s.next_run_at, s.id"
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map([now.as_millis()], read_schedule)
+            .map_err(unwrap_store_error)?;
+        rows.map(|row| row.map_err(unwrap_store_error))
+            .collect::<StoreResult<Vec<_>>>()
+    }
+
+    fn begin_schedule_run(
+        &self,
+        schedule_id: &ScheduleId,
+        trigger: RunTrigger,
+        at: Timestamp,
+    ) -> StoreResult<ScheduleRun> {
+        let id = ScheduleRunId::new(self.ids.next_id(ScheduleRunId::PREFIX))?;
+        let conn = self.connection();
+        // Explicit, so a run against a schedule that has just been deleted is a
+        // `NotFound` naming the schedule rather than an opaque foreign-key
+        // constraint mentioning a table the caller never named.
+        fetch_schedule(&conn, schedule_id)?;
+
+        conn.execute(
+            "INSERT INTO schedule_runs (id, schedule_id, status, trigger, started_at)
+             VALUES (?1, ?2, 'running', ?3, ?4)",
+            params![
+                id.as_str(),
+                schedule_id.as_str(),
+                trigger.as_db(),
+                at.as_millis(),
+            ],
+        )?;
+
+        fetch_schedule_run(&conn, &id)
+    }
+
+    fn attach_run_conversation(
+        &self,
+        run_id: &ScheduleRunId,
+        conversation_id: &ConversationId,
+    ) -> StoreResult<ScheduleRun> {
+        let conn = self.connection();
+        fetch_schedule_run(&conn, run_id)?;
+        conversation_exists(&conn, conversation_id)?;
+        conn.execute(
+            "UPDATE schedule_runs SET conversation_id = ?1 WHERE id = ?2",
+            params![conversation_id.as_str(), run_id.as_str()],
+        )?;
+        fetch_schedule_run(&conn, run_id)
+    }
+
+    fn finish_schedule_run(
+        &self,
+        run_id: &ScheduleRunId,
+        at: Timestamp,
+        outcome: ScheduleRunOutcome,
+    ) -> StoreResult<ScheduleRun> {
+        let conn = self.connection();
+        let run = fetch_schedule_run(&conn, run_id)?;
+        if !run.is_running() {
+            return Err(StoreError::invalid(
+                "runId",
+                "this run has already finished; a second close would overwrite its outcome",
+            ));
+        }
+
+        // Clamped at zero rather than allowed negative: a clock that stepped
+        // backwards mid-run is a broken machine, and the schema's own CHECK
+        // would refuse the row anyway.
+        let duration = at.as_millis().saturating_sub(run.started_at.as_millis()).max(0);
+        let (status, error) = match outcome {
+            ScheduleRunOutcome::Succeeded => (ScheduleRunStatus::Success, None),
+            ScheduleRunOutcome::Failed { error } => (ScheduleRunStatus::Failed, Some(error)),
+        };
+
+        conn.execute(
+            "UPDATE schedule_runs
+             SET status = ?1, finished_at = ?2, duration_ms = ?3, error = ?4
+             WHERE id = ?5",
+            params![
+                status.as_db(),
+                at.as_millis(),
+                duration,
+                error,
+                run_id.as_str(),
+            ],
+        )?;
+
+        fetch_schedule_run(&conn, run_id)
+    }
+
+    fn list_schedule_runs(
+        &self,
+        schedule_id: &ScheduleId,
+        limit: u32,
+    ) -> StoreResult<Vec<ScheduleRun>> {
+        let conn = self.connection();
+        fetch_schedule(&conn, schedule_id)?;
+        let sql = format!(
+            "SELECT {SCHEDULE_RUN_COLUMNS} FROM schedule_runs
+             WHERE schedule_id = ?1 ORDER BY started_at DESC, id DESC LIMIT ?2"
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map(params![schedule_id.as_str(), limit], read_schedule_run)
+            .map_err(unwrap_store_error)?;
+        rows.map(|row| row.map_err(unwrap_store_error))
+            .collect::<StoreResult<Vec<_>>>()
+    }
+
+    fn reap_orphaned_runs(&self, at: Timestamp) -> StoreResult<u32> {
+        let conn = self.connection();
+        let reaped = conn.execute(
+            "UPDATE schedule_runs
+             SET status = 'failed',
+                 finished_at = ?1,
+                 duration_ms = max(?1 - started_at, 0),
+                 error = 'Vela stopped before this run finished'
+             WHERE status = 'running'",
+            [at.as_millis()],
+        )?;
+        Ok(u32::try_from(reaped).unwrap_or(u32::MAX))
+    }
 }
 
 // ---------------------------------------------------------------------------

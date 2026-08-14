@@ -57,6 +57,7 @@ pub mod content;
 pub mod diagnostics;
 pub mod error;
 pub mod models;
+pub mod schedules;
 pub mod secrets;
 pub mod settings;
 pub mod store;
@@ -93,6 +94,11 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "models_capabilities",
     "models_list",
     "models_probe",
+    "schedules_create",
+    "schedules_delete",
+    "schedules_list",
+    "schedules_list_runs",
+    "schedules_set_enabled",
     "secrets_delete",
     "secrets_set",
     "secrets_status",

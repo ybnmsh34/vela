@@ -57,6 +57,7 @@ pub mod content;
 pub mod diagnostics;
 pub mod error;
 pub mod models;
+pub mod project;
 pub mod secrets;
 pub mod settings;
 pub mod store;
@@ -93,6 +94,14 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "models_capabilities",
     "models_list",
     "models_probe",
+    "project_create",
+    "project_delete",
+    "project_get",
+    "project_layout",
+    "project_list",
+    "project_move_conversation",
+    "project_reconcile_skills",
+    "project_update",
     "secrets_delete",
     "secrets_set",
     "secrets_status",

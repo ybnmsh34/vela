@@ -92,6 +92,18 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
                 app.path().app_data_dir()?,
             ));
 
+            // Where projects keep their host-owned directories, and what this
+            // filesystem can actually do. Both are established HERE, at launch,
+            // before any command that reads them is served: the canonical skill
+            // store must exist before the first reconcile, or "empty store" and
+            // "no store" become two different UI sentences for the same disk;
+            // and the link strategy is decided by attempting the real operation
+            // once rather than per project, because its answer cannot change
+            // under a running process.
+            app.manage(ipc::project::ProjectHost::establish(
+                app.path().app_data_dir()?,
+            ));
+
             app.manage(store);
             Ok(())
         })
@@ -105,6 +117,14 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::models::models_capabilities,
             ipc::models::models_list,
             ipc::models::models_probe,
+            ipc::project::project_create,
+            ipc::project::project_delete,
+            ipc::project::project_get,
+            ipc::project::project_layout,
+            ipc::project::project_list,
+            ipc::project::project_move_conversation,
+            ipc::project::project_reconcile_skills,
+            ipc::project::project_update,
             ipc::secrets::secrets_delete,
             ipc::secrets::secrets_set,
             ipc::secrets::secrets_status,

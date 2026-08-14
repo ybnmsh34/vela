@@ -38,7 +38,10 @@ const CONVERSATION_COLUMNS: &str = "c.id, c.project_id, c.title, c.provider_id, 
 
 const PROJECT_COLUMNS: &str = "p.id, p.name, p.description, p.system_prompt, p.created_at, \
      p.updated_at, p.archived_at, \
-     (SELECT count(*) FROM conversations c WHERE c.project_id = p.id)";
+     (SELECT count(*) FROM conversations c WHERE c.project_id = p.id), \
+     p.working_directory, p.enabled_skills, \
+     (SELECT max(coalesce(c.last_message_at, c.updated_at)) \
+      FROM conversations c WHERE c.project_id = p.id)";
 
 const MESSAGE_COLUMNS: &str = "id, conversation_id, seq, role, status, provider_id, model_id, \
      stop_reason, input_tokens, output_tokens, reasoning_tokens, cached_input_tokens, \
@@ -195,6 +198,7 @@ fn read_conversation(row: &Row<'_>) -> rusqlite::Result<Conversation> {
 }
 
 fn read_project(row: &Row<'_>) -> rusqlite::Result<Project> {
+    let enabled: String = row.get(9)?;
     Ok(Project {
         id: ProjectId::new(row.get::<_, String>(0)?).map_err(to_sqlite_error)?,
         name: row.get(1)?,
@@ -204,6 +208,16 @@ fn read_project(row: &Row<'_>) -> rusqlite::Result<Project> {
         updated_at: Timestamp::from_millis(row.get(5)?),
         archived_at: row.get::<_, Option<i64>>(6)?.map(Timestamp::from_millis),
         conversation_count: row.get(7)?,
+        working_directory: row.get(8)?,
+        // A column that will not parse is corruption, not an empty list: a
+        // project silently losing every skill the user switched on is exactly
+        // the silently-wrong outcome the whole mount design exists to avoid.
+        enabled_skills: serde_json::from_str(&enabled).map_err(|error| {
+            to_sqlite_error(StoreError::corrupt(format!(
+                "projects.enabled_skills is not a JSON array of strings: {error}"
+            )))
+        })?,
+        last_active_at: row.get::<_, Option<i64>>(10)?.map(Timestamp::from_millis),
     })
 }
 
@@ -498,14 +512,18 @@ impl ProjectRepository for SqliteStore {
         let conn = self.connection();
 
         conn.execute(
-            "INSERT INTO projects (id, name, description, system_prompt, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            "INSERT INTO projects
+                 (id, name, description, system_prompt, created_at, updated_at,
+                  working_directory, enabled_skills)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7)",
             params![
                 id.as_str(),
                 input.name.trim(),
                 input.description,
                 input.system_prompt,
                 now.as_millis(),
+                input.working_directory,
+                encode_skills(&input.enabled_skills)?,
             ],
         )?;
 
@@ -541,6 +559,9 @@ impl ProjectRepository for SqliteStore {
                 return Err(StoreError::invalid("name", "a project must have a name"));
             }
         }
+        if let Some(skills) = &patch.enabled_skills {
+            crate::model::validate_enabled_skills(skills)?;
+        }
         let now = self.now();
         let conn = self.connection();
         fetch_project(&conn, id)?;
@@ -558,6 +579,14 @@ impl ProjectRepository for SqliteStore {
         if let Some(system_prompt) = patch.system_prompt {
             assignments.push(format!("system_prompt = ?{}", values.len() + 1));
             values.push(system_prompt.map_or(Value::Null, Value::Text));
+        }
+        if let Some(working_directory) = patch.working_directory {
+            assignments.push(format!("working_directory = ?{}", values.len() + 1));
+            values.push(working_directory.map_or(Value::Null, Value::Text));
+        }
+        if let Some(enabled_skills) = &patch.enabled_skills {
+            assignments.push(format!("enabled_skills = ?{}", values.len() + 1));
+            values.push(Value::Text(encode_skills(enabled_skills)?));
         }
         if let Some(archived) = patch.archived {
             assignments.push(format!("archived_at = ?{}", values.len() + 1));
@@ -594,6 +623,49 @@ impl ProjectRepository for SqliteStore {
         }
         Ok(())
     }
+
+    fn delete_project_reassigning(
+        &self,
+        id: &ProjectId,
+        reassign_to: &ProjectId,
+    ) -> StoreResult<u64> {
+        if id == reassign_to {
+            return Err(StoreError::invalid(
+                "projectId",
+                "a project cannot be its own reassignment target",
+            ));
+        }
+        let mut conn = self.connection();
+        // One transaction, because the two halves must not be separable. The
+        // schema's own `ON DELETE SET NULL` would unfile the conversations
+        // instead, and an unfiled conversation is the state the sentinel default
+        // project exists to make impossible.
+        let tx = conn.transaction()?;
+        let sql = format!("SELECT {PROJECT_COLUMNS} FROM projects p WHERE p.id = ?1");
+        for candidate in [id, reassign_to] {
+            tx.query_row(&sql, [candidate.as_str()], read_project)
+                .optional()
+                .map_err(unwrap_store_error)?
+                .ok_or_else(|| StoreError::NotFound {
+                    entity: ProjectId::ENTITY,
+                    id: candidate.to_string(),
+                })?;
+        }
+
+        let moved = tx.execute(
+            "UPDATE conversations SET project_id = ?2 WHERE project_id = ?1",
+            [id.as_str(), reassign_to.as_str()],
+        )?;
+        tx.execute("DELETE FROM projects WHERE id = ?1", [id.as_str()])?;
+        tx.commit()?;
+        Ok(moved as u64)
+    }
+}
+
+fn encode_skills(names: &[String]) -> StoreResult<String> {
+    serde_json::to_string(names).map_err(|error| {
+        StoreError::invalid("enabledSkills", format!("cannot be encoded: {error}"))
+    })
 }
 
 fn fetch_project(conn: &Connection, id: &ProjectId) -> StoreResult<Project> {
@@ -1209,6 +1281,7 @@ impl HasLocation for SqliteStore {
 mod tests {
     use super::*;
     use crate::migrations::SCHEMA_VERSION;
+    use crate::model::{DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME};
     use crate::repository::VelaStore;
 
     fn store() -> SqliteStore {
@@ -1970,6 +2043,7 @@ mod tests {
                 name: "Navigation".into(),
                 description: Some("route planning".into()),
                 system_prompt: Some("Answer like a navigator.".into()),
+                ..NewProject::default()
             })
             .unwrap();
 
@@ -2002,8 +2076,12 @@ mod tests {
                 },
             )
             .unwrap();
-        assert!(store.list_projects(false).unwrap().is_empty());
-        assert_eq!(store.list_projects(true).unwrap().len(), 1);
+        // The seeded default project is always there, so "hidden" is measured
+        // against it rather than against an empty list.
+        let visible = store.list_projects(false).unwrap();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id.as_str(), DEFAULT_PROJECT_ID);
+        assert_eq!(store.list_projects(true).unwrap().len(), 2);
     }
 
     #[test]
@@ -2024,6 +2102,186 @@ mod tests {
             ),
             Err(StoreError::Invalid { .. })
         ));
+    }
+
+    #[test]
+    fn the_default_project_exists_the_moment_the_database_does() {
+        let store = store();
+        let seeded = store
+            .get_project(&ProjectId::new(DEFAULT_PROJECT_ID).unwrap())
+            .expect("the migration seeds it, so no read can ever find it missing");
+
+        assert_eq!(seeded.name, DEFAULT_PROJECT_NAME);
+        assert_eq!(seeded.enabled_skills, Vec::<String>::new());
+        assert_eq!(seeded.working_directory, None);
+        assert_eq!(seeded.archived_at, None);
+        assert_eq!(
+            store
+                .list_projects(false)
+                .unwrap()
+                .iter()
+                .filter(|project| project.id.as_str() == DEFAULT_PROJECT_ID)
+                .count(),
+            1,
+            "exactly one, or the reassignment target is ambiguous"
+        );
+    }
+
+    #[test]
+    fn the_default_project_can_be_renamed_because_its_directory_is_keyed_by_id() {
+        let store = store();
+        let id = ProjectId::new(DEFAULT_PROJECT_ID).unwrap();
+        let renamed = store
+            .update_project(
+                &id,
+                ProjectPatch {
+                    name: Some("Everything else".into()),
+                    ..ProjectPatch::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(renamed.name, "Everything else");
+        assert_eq!(renamed.id.as_str(), DEFAULT_PROJECT_ID, "the id is fixed");
+        assert_eq!(
+            store.get_project(&id).unwrap().name,
+            "Everything else",
+            "nothing re-derives a label from the seed constant"
+        );
+    }
+
+    #[test]
+    fn the_working_directory_and_the_enabled_skills_round_trip_in_order() {
+        let store = store();
+        let created = store
+            .create_project(NewProject {
+                name: "Field notes".into(),
+                working_directory: Some("C:\\Users\\me\\notes".into()),
+                enabled_skills: vec!["research".into(), "Writing".into()],
+                ..NewProject::default()
+            })
+            .unwrap();
+
+        assert_eq!(
+            created.working_directory.as_deref(),
+            Some("C:\\Users\\me\\notes")
+        );
+        assert_eq!(created.enabled_skills, vec!["research", "Writing"]);
+
+        // Order is preserved rather than sorted: it decides which of two names
+        // that fold to one directory mounts.
+        let updated = store
+            .update_project(
+                &created.id,
+                ProjectPatch {
+                    enabled_skills: Some(vec!["Writing".into(), "research".into()]),
+                    working_directory: Some(None),
+                    ..ProjectPatch::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(updated.enabled_skills, vec!["Writing", "research"]);
+        assert_eq!(
+            updated.working_directory, None,
+            "`Some(None)` clears the binding, which `None` cannot spell"
+        );
+
+        // Replacement, not accumulation.
+        let cleared = store
+            .update_project(
+                &created.id,
+                ProjectPatch {
+                    enabled_skills: Some(Vec::new()),
+                    ..ProjectPatch::default()
+                },
+            )
+            .unwrap();
+        assert!(cleared.enabled_skills.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_project_reassigns_its_conversations_rather_than_unfiling_them() {
+        let store = store();
+        let default = ProjectId::new(DEFAULT_PROJECT_ID).unwrap();
+        let doomed = store.create_project(NewProject::named("Sails")).unwrap();
+        let chat = store
+            .create_conversation(NewConversation::titled("keep me").in_project(doomed.id.clone()))
+            .unwrap();
+
+        let moved = store
+            .delete_project_reassigning(&doomed.id, &default)
+            .unwrap();
+
+        assert_eq!(moved, 1);
+        let survivor = store.get_conversation(&chat.id).unwrap();
+        assert_eq!(
+            survivor.project_id.as_ref(),
+            Some(&default),
+            "reassigned, not unfiled — `ON DELETE SET NULL` would have unfiled it"
+        );
+        assert_eq!(store.get_project(&default).unwrap().conversation_count, 1);
+        assert!(matches!(
+            store.get_project(&doomed.id),
+            Err(StoreError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn a_reassigning_delete_refuses_an_unknown_project_and_changes_nothing() {
+        let store = store();
+        let default = ProjectId::new(DEFAULT_PROJECT_ID).unwrap();
+        let ghost = ProjectId::new("proj_ghost").unwrap();
+        let real = store.create_project(NewProject::named("Sails")).unwrap();
+
+        assert!(matches!(
+            store.delete_project_reassigning(&ghost, &default),
+            Err(StoreError::NotFound { .. })
+        ));
+        assert!(matches!(
+            store.delete_project_reassigning(&real.id, &ghost),
+            Err(StoreError::NotFound { .. })
+        ));
+        assert!(matches!(
+            store.delete_project_reassigning(&real.id, &real.id),
+            Err(StoreError::Invalid { .. })
+        ));
+        assert!(
+            store.get_project(&real.id).is_ok(),
+            "a refused delete leaves the project exactly as it was"
+        );
+    }
+
+    #[test]
+    fn a_projects_last_activity_follows_its_conversations_and_its_own_edits_do_not() {
+        let store = store();
+        let project = store.create_project(NewProject::named("Sails")).unwrap();
+        assert_eq!(project.last_active_at, None, "nothing has happened in it");
+
+        let chat = store
+            .create_conversation(NewConversation::titled("rigging").in_project(project.id.clone()))
+            .unwrap();
+        store
+            .append_message(NewMessage::user(chat.id.clone(), "how much halyard"))
+            .unwrap();
+
+        let used = store.get_project(&project.id).unwrap();
+        let last_active = used.last_active_at.expect("a turn happened in it");
+        assert_eq!(used.conversation_count, 1);
+
+        // Editing the record moves `updated_at` and must not move
+        // `last_active_at`: "when did I last edit this" and "when was this last
+        // used" are two questions and were one field in an earlier design.
+        let renamed = store
+            .update_project(
+                &project.id,
+                ProjectPatch {
+                    name: Some("Rigging".into()),
+                    ..ProjectPatch::default()
+                },
+            )
+            .unwrap();
+        assert!(renamed.updated_at.as_millis() > used.updated_at.as_millis());
+        assert_eq!(renamed.last_active_at, Some(last_active));
     }
 
     // -- search -------------------------------------------------------------

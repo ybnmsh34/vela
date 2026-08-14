@@ -63,6 +63,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "message_search",
         sql: include_str!("migrations/0002_message_search.sql"),
     },
+    Migration {
+        version: 3,
+        name: "project_workspace",
+        sql: include_str!("migrations/0003_project_workspace.sql"),
+    },
 ];
 
 /// The schema version this build produces and understands.
@@ -402,6 +407,72 @@ mod tests {
             leftover, 0,
             "the failed migration's transaction must roll back"
         );
+    }
+
+    /// The default project must exist **before any row can reference it**, and
+    /// a migration is the only place that can promise that.
+    ///
+    /// The alternative — creating it lazily on first read — has two readers
+    /// racing to create the fallback target, producing two fallback targets and
+    /// attaching the loser's conversations to a project the UI never lists.
+    /// This drives the real migration list against a raw connection, so it
+    /// fails if the seed is ever moved out of the schema and into startup code.
+    #[test]
+    fn the_default_project_is_seeded_by_a_migration_rather_than_at_first_read() {
+        let mut conn = fresh();
+        apply(&mut conn, &FixedClock::default()).unwrap();
+
+        let (id, name): (String, String) = conn
+            .query_row(
+                "SELECT id, name FROM projects WHERE id = ?1",
+                [crate::model::DEFAULT_PROJECT_ID],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("the migrations must leave the default project in place");
+        assert_eq!(id, crate::model::DEFAULT_PROJECT_ID);
+        assert_eq!(name, crate::model::DEFAULT_PROJECT_NAME);
+
+        let total: i64 = conn
+            .query_row("SELECT count(*) FROM projects", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 1, "the seed creates one row, not one per launch");
+    }
+
+    /// A database that already holds user projects, upgraded in place, keeps
+    /// them and gains the default. Migration 3 is the first schema step this
+    /// project has shipped that inserts a row rather than only shaping tables,
+    /// so the in-place path is worth proving rather than assuming.
+    #[test]
+    fn upgrading_an_existing_database_seeds_the_default_without_disturbing_what_is_there() {
+        let mut conn = fresh();
+        apply_list(&mut conn, &MIGRATIONS[..2], &FixedClock::default()).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at)
+             VALUES ('proj_existing', 'Sails', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        let applied_now = apply(&mut conn, &FixedClock::default()).unwrap();
+        assert_eq!(applied_now, vec![3]);
+
+        let names: Vec<String> = conn
+            .prepare("SELECT name FROM projects ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(names, vec!["General".to_string(), "Sails".to_string()]);
+
+        let skills: String = conn
+            .query_row(
+                "SELECT enabled_skills FROM projects WHERE id = 'proj_existing'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(skills, "[]", "the new column's default reaches old rows");
     }
 
     /// Structural guard for rule 0.4: config may name a keychain entry, never

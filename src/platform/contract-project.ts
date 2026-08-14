@@ -7,37 +7,44 @@
  * workspace**, and the **skills mount** the workspace reads skills through.
  * This file declares all of it and implements none of it.
  *
- * ## What this file is not
+ * ## What this file is, as of AMENDMENT 5 — and what is still only declared
  *
- * **It is not wired to anything, and no comment below may imply otherwise.**
- * `src/platform/contract.ts` is the live IPC contract: a name becomes a real
- * command by appearing in its `COMMAND_ALLOWLIST` *and* in `generate_handler!`
- * in `src-tauri/src/lib.rs`, and two tests hold that pairing
- * (`rust_and_typescript_allowlists_are_identical` and
- * `src-tauri/tests/handler_binding.rs`). Nothing here is on either list. The
- * shapes in {@link ProjectCommands} are the agreed payloads for commands that
- * do not exist yet; calling one today fails with `UNKNOWN_COMMAND` at the
- * renderer, before it reaches the host.
+ * **All eight commands in {@link ProjectCommands} are now wired**, and this
+ * paragraph replaces one that said the opposite. A name becomes a real command
+ * by appearing in `COMMAND_ALLOWLIST` in `src/platform/contract.ts` *and* in
+ * `generate_handler!` in `src-tauri/src/lib.rs`; three tests hold that pairing
+ * (`rust_and_typescript_allowlists_are_identical`,
+ * `src-tauri/tests/handler_binding.rs`, and — from this file's own vocabulary —
+ * `src/platform/browser-adapter-projects.test.ts`, which walks
+ * {@link PROJECT_COMMAND_NAMES} and asserts every one of them is allowlisted).
+ * The host implementation is `src-tauri/src/ipc/project.rs` over
+ * `src-tauri/crates/vela-projects/`, and the headless fake is in
+ * `src/platform/browser-adapter.ts`.
  *
- * There is likewise no parity test for this file. `contract.ts`'s chat shapes
- * are pinned to Rust by `src/platform/chat-contract-parity.test.ts`; this file
- * has no counterpart, and cannot have one until there is Rust to compare it
- * against. Every rule stated below is therefore **unenforced** unless the
- * sentence naming it also names the thing that enforces it. That phrasing is
- * deliberate and `src/platform/claimed-guards.test.ts` is why: a comment naming
- * a guard that does not exist is worse than no guard at all, because every
- * later builder reads the claim and builds on it.
+ * There is still **no parity test for this file's shapes**. `contract.ts`'s
+ * chat shapes are pinned to Rust by `src/platform/chat-contract-parity.test.ts`;
+ * this file has no counterpart, so a field renamed on one side and not the other
+ * is caught by `tsc` on the renderer and by nothing at all across the bridge.
+ * What *is* now enforced is behaviour: the rules with a test are the ones whose
+ * sentence names it, and that phrasing stays deliberate.
+ * `src/platform/claimed-guards.test.ts` is why: a comment naming a guard that
+ * does not exist is worse than no guard at all, because every later builder
+ * reads the claim and builds on it.
  *
- * ## One dependency this contract does not have yet
+ * ## One dependency this contract still does not have
  *
  * `ConversationSummary` in `src/platform/contract.ts` carries **no project
- * id**. Everything below that relates a conversation to a project —
- * {@link ProjectSummary.conversationCount}, {@link ProjectSummary.lastActiveAtMs},
- * `project_move_conversation`, and the reassignment rule in
- * {@link ProjectDeleteReq} — presupposes an amendment to that file adding one.
- * Until that amendment lands, those fields describe an empty relation: a host
- * that reports `conversationCount: 0` for every project is not lying, it is
- * reporting the truth about a link nobody has built.
+ * id**, and that has not changed. What did change is that the relation itself is
+ * no longer empty: `conversations.project_id` has existed in the store's schema
+ * since its first migration, so {@link ProjectSummary.conversationCount} and
+ * {@link ProjectSummary.lastActiveAtMs} are derived from real rows,
+ * `project_move_conversation` really files a conversation, and the reassignment
+ * rule in {@link ProjectDeleteReq} really runs. The missing piece is narrower
+ * than the earlier draft claimed and is worth stating exactly: **the renderer
+ * cannot ask which project a conversation is in.** It can move one and it can
+ * read a count; it cannot filter a conversation list by project or show the
+ * project a conversation belongs to without an amendment to `contract.ts`
+ * adding that field.
  *
  * ## Grounding
  *
@@ -115,7 +122,7 @@ import type { Ack } from './contract';
  * no wire yet, and coupling the two would force a wire bump for a change no
  * command can carry.
  */
-export const PROJECT_CONTRACT_VERSION = 2;
+export const PROJECT_CONTRACT_VERSION = 3;
 
 /* -------------------------------------------------------------------------- */
 /* the two names the other frozen contracts import from here                  */
@@ -212,8 +219,9 @@ export type AbsolutePath = string;
  *
  * ## Who creates the row, and when
  *
- * **The store migration that introduces the projects table**, in the same
- * transaction, before any other row can reference it.
+ * **A store migration**, in one transaction, before any other row can reference
+ * it — `src-tauri/crates/vela-store/src/migrations/0003_project_workspace.sql`,
+ * held by `the_default_project_is_seeded_by_a_migration_rather_than_at_first_read`.
  *
  * Not lazily on first read. Two readers racing to create the fallback target
  * produce two fallback targets, and the loser's conversations are attached to a
@@ -221,10 +229,10 @@ export type AbsolutePath = string;
  * plus a worse one: a launch path that creates data is a launch path that can
  * half-create it.
  *
- * **No test enforces this today** — there is no projects table yet. This rule
- * used to be a doc comment attached to no declaration, sitting between two
- * constants, which meant a builder hovering this id in an editor was told the
- * row must really exist and not who makes it.
+ * It is migration **3** rather than the migration that introduced the projects
+ * table, which is what this paragraph used to require. Migration 1 had already
+ * shipped and is checksummed, so it cannot be edited; what transfers is the part
+ * of the rule that was load-bearing, and AMENDMENT 4 records the departure.
  */
 export const DEFAULT_PROJECT_ID: ProjectId = '00000000-0000-4000-8000-000000000001';
 
@@ -1074,16 +1082,19 @@ export interface ProjectMoveConversationReq {
  * The payload map for the project commands, in the shape `IpcContract` uses in
  * `src/platform/contract.ts`, so that merging this in later is mechanical.
  *
- * **None of these are registered and none of them work.** A command becomes
- * real by being added to `IpcContract` and `COMMAND_ALLOWLIST` in
- * `src/platform/contract.ts`, implemented in `src-tauri/src/ipc/`, listed in
- * the Rust allowlist, registered in `generate_handler!`, and implemented in
- * `src/platform/browser-adapter.ts` — the five steps in conventions §3.3. This
- * file performs none of them. Until it does, `isAllowedCommand` returns `false`
- * for every name below and the renderer refuses the call locally.
+ * **All eight are registered and all eight answer.** A command becomes real by
+ * being added to `IpcContract` and `COMMAND_ALLOWLIST` in
+ * `src/platform/contract.ts`, implemented in `src-tauri/src/ipc/`, listed in the
+ * Rust allowlist, registered in `generate_handler!`, and implemented in
+ * `src/platform/browser-adapter.ts` — the five steps in conventions §3.3. All
+ * five are done for every name below; see AMENDMENT 5.
  *
- * The reason to freeze the shapes anyway is the only reason to freeze anything:
- * ten builders stubbing against `project_create` all mean the same payload.
+ * What is **not** done is any behaviour these names imply beyond what
+ * `src-tauri/src/ipc/project.rs` and `src-tauri/crates/vela-projects/` actually
+ * implement. In particular `project_reconcile_skills` and `project_layout` are
+ * the same operation under two names on both sides of the bridge, because
+ * reading a layout has to reconcile or its mount list describes the last write
+ * rather than the disk.
  */
 export interface ProjectCommands {
   project_create: { req: ProjectCreateReq; res: ProjectRes };
@@ -1111,8 +1122,11 @@ export type ProjectCommandRes<C extends ProjectCommandName> = ProjectCommands[C]
  * `COMMAND_ALLOWLIST` keeps in `src/platform/contract.ts`, so that whatever
  * parses that list can parse this one when these commands are promoted.
  *
- * This is a list of names to *use consistently*, not a list of names that
- * resolve. See {@link ProjectCommands}.
+ * Every name here now resolves, and
+ * `src/platform/browser-adapter-projects.test.ts` walks this list and asserts
+ * `isAllowedCommand` for each — so a name added here and forgotten in
+ * `COMMAND_ALLOWLIST` fails `pnpm test`, and the Rust half of that pairing fails
+ * `cargo test`. See {@link ProjectCommands}.
  */
 export const PROJECT_COMMAND_NAMES = [
   'project_create',
@@ -1177,4 +1191,47 @@ void _projectCommandNamesAreWellTyped;
  *    ProjectPaths.workspace now name projectFilesystemScope in
  *    src/platform/contract-sandbox.ts as the one place a run's three mounts are
  *    built. The rule was prose in both contracts and code in neither.
+ *
+ * 4. 2026-08-15 — no shape changed: DEFAULT_PROJECT_ID's seeding rule said the
+ *    row is created by "the store migration that introduces the projects table".
+ *    That migration is 0001_initial_schema.sql, which shipped without the row
+ *    and is checksummed — editing it makes every existing database refuse to
+ *    open, so the rule as written could not be obeyed. The seed is therefore in
+ *    0003_project_workspace.sql, which also adds the working_directory and
+ *    enabled_skills columns. What the rule was protecting is intact and is what
+ *    the test asserts: a migration creates the row, in one transaction, before
+ *    any read can see a database without it — not a first-launch path and not a
+ *    lazy create. Revisit: nothing in code. Anyone reading the old sentence
+ *    should know the guarantee did not weaken, only the file changed.
+ *
+ * 5. 2026-08-15 — no shape changed, but the file's status did, and this is the
+ *    loud one. The header said "It is not wired to anything, and no comment
+ *    below may imply otherwise", and ProjectCommands said "None of these are
+ *    registered and none of them work". Both are now false: all eight commands
+ *    are in IpcContract and COMMAND_ALLOWLIST in src/platform/contract.ts, in
+ *    the Rust allowlist and generate_handler!, implemented in
+ *    src-tauri/src/ipc/project.rs over the new src-tauri/crates/vela-projects
+ *    crate, and implemented in src/platform/browser-adapter.ts. Leaving those
+ *    two paragraphs standing would have been the same defect this project keeps
+ *    finding, pointed the other way — a comment claiming something is NOT
+ *    connected when it is, which is how a later builder comes to write a second
+ *    implementation. Revisit: any builder who stubbed a project command on the
+ *    assumption that it returns UNKNOWN_COMMAND.
+ *
+ *    Two things this amendment deliberately does NOT claim. There is still no
+ *    parity test pinning these shapes to Rust, so a field renamed on one side
+ *    only is caught by nothing; and project_layout and project_reconcile_skills
+ *    are one operation under two names, because reading a layout has to
+ *    reconcile anyway.
+ *
+ * 6. 2026-08-15 — no shape changed: the header's "One dependency this contract
+ *    does not have yet" overstated the gap. It said conversationCount,
+ *    lastActiveAtMs, project_move_conversation and ProjectDeleteReq's
+ *    reassignment rule all "presuppose an amendment" to contract.ts adding a
+ *    project id to ConversationSummary. They do not: conversations.project_id
+ *    has been in the schema since 0001_initial_schema.sql, so all four are
+ *    derived from real rows by the host. What genuinely needs that amendment is
+ *    narrower and is now stated as such — the renderer cannot ask which project
+ *    a conversation is in, so it cannot filter a conversation list by project.
+ *    Revisit: anyone who read the old paragraph as "counts are always zero".
  */

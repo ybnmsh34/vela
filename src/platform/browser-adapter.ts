@@ -94,6 +94,23 @@ import {
   type ThemePreference,
   type UiLayout,
 } from './contract';
+import {
+  DEFAULT_PROJECT_ID,
+  DEFAULT_PROJECT_NAME,
+  PROJECT_INSTRUCTIONS_MAX_CHARS,
+  PROJECT_NAME_MAX_CHARS,
+  type ProjectCreateReq,
+  type ProjectLayoutRes,
+  type ProjectListReq,
+  type ProjectListRes,
+  type ProjectMoveConversationReq,
+  type ProjectRefReq,
+  type ProjectRes,
+  type ProjectSummary,
+  type ProjectUpdateReq,
+  type ProjectView,
+  type WorkingDirectoryBinding,
+} from './contract-project';
 import { PlatformError } from './errors';
 
 /** Mirrors `MAX_ECHO_BYTES` in `src-tauri/src/ipc/diagnostics.rs`. */
@@ -533,6 +550,29 @@ interface FakeConversation {
   readonly createdAtMs: number;
   updatedAtMs: number;
   readonly messages: FakeMessage[];
+  /**
+   * Which project this conversation is filed under, mirroring
+   * `conversations.project_id`. `null` is the store's own "unfiled" state, which
+   * `project_move_conversation` moves a conversation out of and never back into
+   * — the sentinel default project is where "no project" goes.
+   *
+   * Deliberately **not** exposed on {@link ConversationSummary}: that shape is
+   * frozen without a project id, and inventing one here would put a field on the
+   * wire that the host does not send.
+   */
+  projectId: string | null;
+}
+
+/** Stands in for a row of the `projects` table. Never touches a filesystem. */
+interface FakeProject {
+  readonly id: string;
+  name: string;
+  instructions: string;
+  enabledSkills: readonly string[];
+  workingDirectoryPath: string | null;
+  readonly createdAtMs: number;
+  updatedAtMs: number;
+  archivedAtMs: number | null;
 }
 
 /**
@@ -598,6 +638,28 @@ export class BrowserAdapter implements PlatformAdapter {
   /** Stands in for the SQLite `conversations` and `messages` tables. */
   readonly #conversations = new Map<string, FakeConversation>();
   #conversationSeq = 0;
+  /**
+   * Stands in for the SQLite `projects` table, **seeded exactly as migration 3
+   * seeds it**. The default project exists from construction rather than being
+   * created on first read, for the reason the migration gives: two readers
+   * racing to create a fallback target produce two fallback targets.
+   */
+  readonly #projects = new Map<string, FakeProject>([
+    [
+      DEFAULT_PROJECT_ID,
+      {
+        id: DEFAULT_PROJECT_ID,
+        name: DEFAULT_PROJECT_NAME,
+        instructions: '',
+        enabledSkills: [],
+        workingDirectoryPath: null,
+        createdAtMs: 0,
+        updatedAtMs: 0,
+        archivedAtMs: null,
+      },
+    ],
+  ]);
+  #projectSeq = 0;
   #layout: UiLayout = {
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
@@ -650,6 +712,24 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#modelsList(payload as ModelsProviderRefReq);
       case 'models_probe':
         return this.#modelsProbe(payload as ModelsRefReq);
+      case 'project_list':
+        return this.#projectList(payload as ProjectListReq);
+      case 'project_get':
+        return this.#projectGet(payload as ProjectRefReq);
+      case 'project_create':
+        return this.#projectCreate(payload as ProjectCreateReq);
+      case 'project_update':
+        return this.#projectUpdate(payload as ProjectUpdateReq);
+      case 'project_delete':
+        return this.#projectDelete(payload as ProjectRefReq);
+      case 'project_layout':
+      case 'project_reconcile_skills':
+        // One operation, two names — exactly as the host has it. Reading a
+        // layout has to reconcile anyway, or the mount list would describe the
+        // last write rather than the disk.
+        return this.#projectLayout(payload as ProjectRefReq);
+      case 'project_move_conversation':
+        return this.#projectMoveConversation(payload as ProjectMoveConversationReq);
       case 'secrets_set':
         return this.#secretsSet(payload as SecretsSetReq);
       case 'secrets_delete':
@@ -1246,6 +1326,302 @@ export class BrowserAdapter implements PlatformAdapter {
     return title;
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* projects                                                               */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * **VERIFIED-BY-FAKE, and this surface is where that label matters most.**
+   *
+   * A browser tab has no filesystem, so nothing here creates a workspace,
+   * probes a link strategy, or mounts a skill. What it does reproduce is every
+   * rule the host enforces *above* the disk: the seeded default project, the
+   * `isDefault` flag, the refusals, the replacement semantics of
+   * `enabledSkills`, and the reassignment on delete. What it reports for the
+   * layout is labelled as a fake in the path string itself, so a screenshot of
+   * this screen cannot be mistaken for evidence that anything was written.
+   */
+  #requireProject(id: string, command: CommandName): FakeProject {
+    const found = this.#projects.get(id.trim());
+    if (found === undefined) {
+      throw new PlatformError('NOT_FOUND', `no project with id \`${id}\``, command);
+    }
+    return found;
+  }
+
+  #summariseProject(project: FakeProject): ProjectSummary {
+    const filed = [...this.#conversations.values()].filter(
+      (conversation) => conversation.projectId === project.id,
+    );
+    const lastActive = filed.reduce<number | null>(
+      (latest, conversation) => Math.max(latest ?? 0, conversation.updatedAtMs),
+      null,
+    );
+    return {
+      id: project.id,
+      name: project.name,
+      // The flag, not a comparison against the id — that is the host's job and
+      // this fake is standing in for the host.
+      isDefault: project.id === DEFAULT_PROJECT_ID,
+      workingDirectoryPath: project.workingDirectoryPath,
+      createdAtMs: project.createdAtMs,
+      updatedAtMs: project.updatedAtMs,
+      lastActiveAtMs: lastActive,
+      conversationCount: filed.length,
+      archivedAtMs: project.archivedAtMs,
+    };
+  }
+
+  #viewProject(project: FakeProject): ProjectView {
+    return {
+      summary: this.#summariseProject(project),
+      instructions: project.instructions,
+      enabledSkills: [...project.enabledSkills],
+    };
+  }
+
+  #validProjectName(raw: string, command: CommandName): string {
+    const name = raw.trim();
+    if (name === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid name: must not be blank', command);
+    }
+    // Scalar values, matching the host's `chars().count()`. `[...name]`
+    // iterates code points; `name.length` would count UTF-16 units and disagree
+    // with Rust on any name containing an emoji.
+    if ([...name].length > PROJECT_NAME_MAX_CHARS) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid name: must be at most ${PROJECT_NAME_MAX_CHARS} characters`,
+        command,
+      );
+    }
+    return name;
+  }
+
+  #validInstructions(raw: string, command: CommandName): string {
+    if ([...raw].length > PROJECT_INSTRUCTIONS_MAX_CHARS) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid instructions: must be at most ${PROJECT_INSTRUCTIONS_MAX_CHARS} characters`,
+        command,
+      );
+    }
+    return raw;
+  }
+
+  /**
+   * Refuses two enabled names that would land on one path.
+   *
+   * The real host measures its filesystem before deciding what folds together.
+   * This fake has no filesystem, so it stands in with a case-insensitive
+   * comparison — which is the answer on the platform Vela ships to, and is
+   * therefore the useful one for a UI to develop against. It is a stand-in and
+   * not a second source of truth: **a component may not do this itself**, and
+   * nothing under `src/features/` may pre-filter the list it sends.
+   */
+  #validEnabledSkills(names: readonly string[], command: CommandName): readonly string[] {
+    names.forEach((name, index) => {
+      if (name.trim() === '') {
+        throw new PlatformError(
+          'INVALID_PAYLOAD',
+          `invalid enabledSkills[${index}]: must not be blank`,
+          command,
+        );
+      }
+    });
+    for (let later = 0; later < names.length; later += 1) {
+      for (let earlier = 0; earlier < later; earlier += 1) {
+        const a = names[earlier] as string;
+        const b = names[later] as string;
+        if (a === b || a.toLowerCase() === b.toLowerCase()) {
+          throw new PlatformError(
+            'INVALID_PAYLOAD',
+            `invalid enabledSkills: \`${a}\` and \`${b}\` are one directory on this ` +
+              'filesystem; disable one of them',
+            command,
+          );
+        }
+      }
+    }
+    return [...names];
+  }
+
+  /**
+   * The three refusals on {@link WorkingDirectoryBinding}, minus the two this
+   * runtime cannot answer.
+   *
+   * Only "must be absolute" is checked, and it is checked with a pattern rather
+   * than by asking a path API, because there is no path API here. The
+   * containment rules — not inside the application-data directory, not inside
+   * another project's root — need to know where that directory *is*, and a
+   * browser tab does not. A caller that needs those enforced is talking to the
+   * host, which does enforce them.
+   */
+  #validWorkingDirectory(
+    binding: WorkingDirectoryBinding,
+    command: CommandName,
+  ): string | null {
+    if (binding.kind === 'none') return null;
+    const path = binding.path.trim();
+    const absolute = /^([A-Za-z]:[\\/]|[\\/]{2}[^\\/]|\/)/u.test(path);
+    if (!absolute) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid workingDirectory: must be an absolute path',
+        command,
+      );
+    }
+    return path;
+  }
+
+  #projectList(request: ProjectListReq): ProjectListRes {
+    const includeArchived = request.includeArchived ?? false;
+    const projects = [...this.#projects.values()]
+      .filter((project) => includeArchived || project.archivedAtMs === null)
+      // Mirrors `ORDER BY p.name COLLATE NOCASE, p.id`.
+      .sort(
+        (a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id),
+      )
+      .map((project) => this.#summariseProject(project));
+    return { projects };
+  }
+
+  #projectGet(request: ProjectRefReq): ProjectRes {
+    return { project: this.#viewProject(this.#requireProject(request.projectId, 'project_get')) };
+  }
+
+  #projectCreate(request: ProjectCreateReq): ProjectRes {
+    const name = this.#validProjectName(request.name, 'project_create');
+    const instructions = this.#validInstructions(request.instructions ?? '', 'project_create');
+    const enabledSkills = this.#validEnabledSkills(request.enabledSkills ?? [], 'project_create');
+    const workingDirectoryPath =
+      request.workingDirectory === undefined
+        ? null
+        : this.#validWorkingDirectory(request.workingDirectory, 'project_create');
+
+    this.#projectSeq += 1;
+    const now = this.#now();
+    const project: FakeProject = {
+      id: `proj_${this.#projectSeq}`,
+      name,
+      instructions,
+      enabledSkills,
+      workingDirectoryPath,
+      createdAtMs: now,
+      updatedAtMs: now,
+      archivedAtMs: null,
+    };
+    this.#projects.set(project.id, project);
+    return { project: this.#viewProject(project) };
+  }
+
+  #projectUpdate(request: ProjectUpdateReq): ProjectRes {
+    const project = this.#requireProject(request.projectId, 'project_update');
+    // Everything is validated before anything is written, so a refused update
+    // changes nothing — including the fields beside the one that was refused.
+    const name =
+      request.name === undefined
+        ? undefined
+        : this.#validProjectName(request.name, 'project_update');
+    const instructions =
+      request.instructions === undefined
+        ? undefined
+        : this.#validInstructions(request.instructions, 'project_update');
+    const enabledSkills =
+      request.enabledSkills === undefined
+        ? undefined
+        : this.#validEnabledSkills(request.enabledSkills, 'project_update');
+    const workingDirectoryPath =
+      request.workingDirectory === undefined
+        ? undefined
+        : this.#validWorkingDirectory(request.workingDirectory, 'project_update');
+
+    if (name !== undefined) project.name = name;
+    if (instructions !== undefined) project.instructions = instructions;
+    if (enabledSkills !== undefined) project.enabledSkills = enabledSkills;
+    if (workingDirectoryPath !== undefined) project.workingDirectoryPath = workingDirectoryPath;
+    if (request.archived !== undefined) {
+      project.archivedAtMs = request.archived ? this.#now() : null;
+    }
+    project.updatedAtMs = this.#now();
+    return { project: this.#viewProject(project) };
+  }
+
+  #projectDelete(request: ProjectRefReq): Ack {
+    const project = this.#requireProject(request.projectId, 'project_delete');
+    if (project.id === DEFAULT_PROJECT_ID) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid projectId: the default project cannot be deleted; it is where every ' +
+          "other project's conversations go",
+        'project_delete',
+      );
+    }
+    for (const conversation of this.#conversations.values()) {
+      if (conversation.projectId === project.id) {
+        // Reassigned, never deleted. A user who wants them gone deletes them,
+        // with `store_delete_conversation`, having been asked.
+        conversation.projectId = DEFAULT_PROJECT_ID;
+      }
+    }
+    this.#projects.delete(project.id);
+    return { ok: true };
+  }
+
+  #projectLayout(request: ProjectRefReq): ProjectLayoutRes {
+    const project = this.#requireProject(request.projectId, 'project_layout');
+    // Paths shaped like the host's and labelled as what they are. Nothing here
+    // exists on any disk, and the string says so rather than leaving a
+    // screenshot to imply otherwise.
+    const fake = '(browser fake — nothing is created)';
+    const root = `${fake} projects/${project.id}`;
+    return {
+      layout: {
+        projectId: project.id,
+        paths: {
+          root,
+          workspace: `${root}/workspace`,
+          skillsMount: `${root}/skills`,
+          skillStore: `${fake} skills`,
+        },
+        // `probeFailed` is the honest member: it means the host does not know
+        // what this machine supports, which is exactly true of a browser tab.
+        // Reporting `junction` would claim a reparse point that does not exist.
+        linkStrategy: { kind: 'copy', reason: 'probeFailed' },
+        workingDirectory:
+          project.workingDirectoryPath === null
+            ? { kind: 'none' }
+            : // Never `bound`: nothing here can stat a directory, and `bound`
+              // asserts one is there and says whether it is writable. The
+              // contract has no "not measured" member — `WorkingDirectory` is a
+              // union of three answers about a real disk — so the fake reports
+              // the state that is true of this runtime, where no directory
+              // exists at any path. It is a statement about a browser tab and
+              // never evidence about the user's own folder.
+              { kind: 'unavailable', path: project.workingDirectoryPath, problem: 'notFound' },
+        // One entry per enabled skill, all unavailable — which is precisely
+        // what the host reports against an empty canonical skill store.
+        mounts: project.enabledSkills.map((name) => ({
+          name,
+          source: `${fake} skills/${name}`,
+          status: { kind: 'unavailable', problem: 'skillNotFound' },
+        })),
+        repaired: [],
+      },
+    };
+  }
+
+  #projectMoveConversation(request: ProjectMoveConversationReq): Ack {
+    const conversation = this.#requireConversation(
+      request.conversationId,
+      'project_move_conversation',
+    );
+    const project = this.#requireProject(request.projectId, 'project_move_conversation');
+    conversation.projectId = project.id;
+    return { ok: true };
+  }
+
   #requireConversation(id: string, command: CommandName): FakeConversation {
     const found = this.#conversations.get(id.trim());
     if (found === undefined) {
@@ -1291,6 +1667,7 @@ export class BrowserAdapter implements PlatformAdapter {
       createdAtMs: now,
       updatedAtMs: now,
       messages: [],
+      projectId: null,
     };
     this.#conversations.set(conversation.id, conversation);
     return { conversation: this.#summarise(conversation) };
@@ -1544,6 +1921,7 @@ export class BrowserAdapter implements PlatformAdapter {
         createdAtMs: input.createdAtMs ?? now,
         updatedAtMs: input.createdAtMs ?? now,
       })),
+      projectId: null,
     };
     this.#conversations.set(id, conversation);
     return this.#summarise(conversation);

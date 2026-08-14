@@ -154,6 +154,25 @@ pub trait ProjectRepository {
     fn update_project(&self, id: &ProjectId, patch: ProjectPatch) -> StoreResult<Project>;
     /// Deleting a project **unfiles** its conversations; it never deletes them.
     fn delete_project(&self, id: &ProjectId) -> StoreResult<()>;
+    /// Deletes a project after moving every conversation filed under it to
+    /// `reassign_to`, **in one transaction**, and answers with how many moved.
+    ///
+    /// This exists beside [`ProjectRepository::delete_project`] rather than
+    /// replacing it because the two answer different questions. Plain deletion
+    /// leans on the schema's `ON DELETE SET NULL` and leaves conversations
+    /// unfiled, which is a complete state for a store whose project column is
+    /// nullable. The command layer's contract is stricter — there is always a
+    /// default project and conversations are reassigned to it, so "loose" and
+    /// "in a project" never become two code paths at every call site.
+    ///
+    /// Reassigning to the project being deleted is
+    /// [`crate::StoreError::Invalid`]; it would delete the row the
+    /// conversations were just pointed at.
+    fn delete_project_reassigning(
+        &self,
+        id: &ProjectId,
+        reassign_to: &ProjectId,
+    ) -> StoreResult<u64>;
 }
 
 pub trait ConversationRepository {

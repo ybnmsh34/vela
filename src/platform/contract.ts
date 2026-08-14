@@ -31,6 +31,18 @@
  *    `secrets_get`, and adding one is a review-blocking change.
  */
 
+import type {
+  ProjectCreateReq,
+  ProjectDeleteReq,
+  ProjectLayoutRes,
+  ProjectListReq,
+  ProjectListRes,
+  ProjectMoveConversationReq,
+  ProjectRefReq,
+  ProjectRes,
+  ProjectUpdateReq,
+} from './contract-project';
+
 /** Bump together with `IPC_CONTRACT_VERSION` in `src-tauri/src/ipc/mod.rs`. */
 export const IPC_CONTRACT_VERSION = 1;
 
@@ -1060,6 +1072,21 @@ export interface IpcContract {
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
+  /**
+   * The project surface. Its request and response shapes live in
+   * `src/platform/contract-project.ts`, which is where they are argued; only the
+   * command-to-payload mapping is here, because this is the file the allowlist
+   * and the Rust parity test read. See that file's AMENDMENTS 5 for what changed
+   * when these stopped being declared-but-unregistered.
+   */
+  project_create: { req: ProjectCreateReq; res: ProjectRes };
+  project_delete: { req: ProjectDeleteReq; res: Ack };
+  project_get: { req: ProjectRefReq; res: ProjectRes };
+  project_layout: { req: ProjectRefReq; res: ProjectLayoutRes };
+  project_list: { req: ProjectListReq; res: ProjectListRes };
+  project_move_conversation: { req: ProjectMoveConversationReq; res: Ack };
+  project_reconcile_skills: { req: ProjectRefReq; res: ProjectLayoutRes };
+  project_update: { req: ProjectUpdateReq; res: ProjectRes };
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
   secrets_status: { req: SecretsRefReq; res: SecretsStatusRes };
@@ -1099,6 +1126,14 @@ export const COMMAND_ALLOWLIST = [
   'models_capabilities',
   'models_list',
   'models_probe',
+  'project_create',
+  'project_delete',
+  'project_get',
+  'project_layout',
+  'project_list',
+  'project_move_conversation',
+  'project_reconcile_skills',
+  'project_update',
   'secrets_delete',
   'secrets_set',
   'secrets_status',

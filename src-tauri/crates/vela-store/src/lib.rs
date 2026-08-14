@@ -74,6 +74,7 @@ pub use model::{
     ContentPart, Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
     MessageRole, MessageStatus, NewConversation, NewMessage, NewProject, Project, ProjectId,
     ProjectPatch, SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
+    DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME,
 };
 pub use repository::{
     ConversationQuery, ConversationRepository, HasLocation, MessageQuery, MessageRepository,

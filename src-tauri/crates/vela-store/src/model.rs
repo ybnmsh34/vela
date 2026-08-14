@@ -642,6 +642,24 @@ pub struct ConversationPatch {
 // Projects
 // ---------------------------------------------------------------------------
 
+/// The default project's id — fixed, seeded by migration 3, and never
+/// generated.
+///
+/// Exported so the seed, the host and `src/platform/browser-adapter.ts`'s fake
+/// all name the same row. **Nothing above this crate may branch on it**: the
+/// project contract carries an `isDefault` flag precisely so no comparison
+/// against this literal ever appears in the renderer.
+///
+/// `the_default_project_is_seeded_by_a_migration_rather_than_at_first_read`
+/// holds the constant and the migration's SQL together.
+pub const DEFAULT_PROJECT_ID: &str = "00000000-0000-4000-8000-000000000001";
+
+/// The default project's name **at seed time, and only at seed time**. After
+/// the seed the row's own `name` is the only truth: the user may rename it, and
+/// anything that re-derived a label from this constant would show one name in
+/// the list and another wherever it re-derived.
+pub const DEFAULT_PROJECT_NAME: &str = "General";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -650,10 +668,25 @@ pub struct Project {
     pub description: Option<String>,
     /// Instructions applied to every conversation in the project.
     pub system_prompt: Option<String>,
+    /// The stored working-directory binding — **not a checked path**. It may
+    /// name a directory that has been deleted or is on an unplugged drive;
+    /// resolving it against the disk belongs to `vela-projects`.
+    pub working_directory: Option<String>,
+    /// Skills the user switched on, in mount order. Intent, not reality.
+    pub enabled_skills: Vec<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub archived_at: Option<Timestamp>,
     pub conversation_count: i64,
+    /// The most recent activity in any conversation filed under this project,
+    /// or `None` when nothing has happened in it yet.
+    ///
+    /// **Derived on read, never stored.** A stored copy is a cache with no
+    /// invalidation story, and it answers a different question from
+    /// `updated_at`: "when was this project last used" rather than "when did I
+    /// last edit it". Those two were one field in an earlier design and the
+    /// sort order it produced could not be explained to a user.
+    pub last_active_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -661,6 +694,8 @@ pub struct NewProject {
     pub name: String,
     pub description: Option<String>,
     pub system_prompt: Option<String>,
+    pub working_directory: Option<String>,
+    pub enabled_skills: Vec<String>,
 }
 
 impl NewProject {
@@ -675,8 +710,26 @@ impl NewProject {
         if self.name.trim().is_empty() {
             return Err(StoreError::invalid("name", "a project must have a name"));
         }
-        Ok(())
+        validate_enabled_skills(&self.enabled_skills)
     }
+}
+
+/// Rejects a skill list this crate cannot store meaningfully.
+///
+/// **Case collisions are not checked here and must not be**: whether `Foo` and
+/// `foo` are one directory is a property of the volume the skills mount lives
+/// on, which this crate has no access to and no business guessing at. That
+/// refusal belongs to the host, which measures it.
+pub(crate) fn validate_enabled_skills(names: &[String]) -> StoreResult<()> {
+    for (index, name) in names.iter().enumerate() {
+        if name.trim().is_empty() {
+            return Err(StoreError::invalid(
+                format!("enabledSkills[{index}]"),
+                "must not be blank",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -684,6 +737,12 @@ pub struct ProjectPatch {
     pub name: Option<String>,
     pub description: Option<Option<String>>,
     pub system_prompt: Option<Option<String>>,
+    /// `Some(None)` clears the binding; `None` leaves it untouched. Two
+    /// different intents that a single nullable field could not spell.
+    pub working_directory: Option<Option<String>>,
+    /// Replaces the whole set rather than adding to it: a patch that could only
+    /// add would need a second command to remove, and the two would race.
+    pub enabled_skills: Option<Vec<String>>,
     pub archived: Option<bool>,
 }
 

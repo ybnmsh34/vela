@@ -56,6 +56,7 @@ pub mod chat;
 pub mod content;
 pub mod diagnostics;
 pub mod error;
+pub mod mcp;
 pub mod models;
 pub mod secrets;
 pub mod settings;
@@ -90,6 +91,7 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "diagnostics_debug_log_get",
     "diagnostics_debug_log_set",
     "diagnostics_echo",
+    "mcp_list_tools",
     "models_capabilities",
     "models_list",
     "models_probe",

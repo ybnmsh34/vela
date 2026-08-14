@@ -92,6 +92,16 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
                 app.path().app_data_dir()?,
             ));
 
+            // The user's MCP servers, read from the same directory. Reading the
+            // file is all that happens here: a server is a child process, and
+            // one is spawned on the first `mcp_list_tools` rather than at
+            // startup, so a machine with four configured servers does not
+            // launch four processes to draw a window. An unreadable file does
+            // not stop startup — see `McpHost`.
+            app.manage(ipc::mcp::McpHost::under_data_dir(
+                app.path().app_data_dir()?,
+            ));
+
             app.manage(store);
             Ok(())
         })
@@ -102,6 +112,7 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::diagnostics::diagnostics_debug_log_get,
             ipc::diagnostics::diagnostics_debug_log_set,
             ipc::diagnostics::diagnostics_echo,
+            ipc::mcp::mcp_list_tools,
             ipc::models::models_capabilities,
             ipc::models::models_list,
             ipc::models::models_probe,

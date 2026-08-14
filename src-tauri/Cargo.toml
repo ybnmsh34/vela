@@ -5,6 +5,7 @@ members = ["crates/*"]
 default-members = [
   ".",
   "crates/vela-core",
+  "crates/vela-mcp",
   "crates/vela-providers",
   "crates/vela-secrets",
   "crates/vela-settings",
@@ -25,6 +26,7 @@ serde_json = "1"
 thiserror = "2"
 
 vela-core = { path = "crates/vela-core" }
+vela-mcp = { path = "crates/vela-mcp" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
 vela-settings = { path = "crates/vela-settings" }
@@ -78,6 +80,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 vela-core.workspace = true
+vela-mcp.workspace = true
 vela-secrets.workspace = true
 vela-providers.workspace = true
 vela-settings.workspace = true

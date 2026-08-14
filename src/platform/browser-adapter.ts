@@ -53,6 +53,7 @@ import {
   type EchoReq,
   type EchoRes,
   type ContentPartInput,
+  type McpListToolsRes,
   type MessageHit,
   type MessageHitKind,
   type MessageListRes,
@@ -145,6 +146,20 @@ export interface BrowserAdapterOptions {
    * subscribes appear to work.
    */
   readonly scheduleFrame?: (run: () => void) => void;
+  /**
+   * What `mcp_list_tools` answers.
+   *
+   * A browser tab cannot spawn a child process, so this fake cannot connect to
+   * an MCP server and must not pretend to. What it can do is stand in for the
+   * *answer*, which is what the UI consumes — and it has to, because the
+   * interesting states of that command are the ones a developer cannot reach on
+   * demand from the real host: a server that will not spawn, a remote entry this
+   * build cannot speak to, an unreadable configuration file.
+   *
+   * Defaults to a machine with no MCP configuration, which is where every user
+   * starts and is the only state the real host produces without a file on disk.
+   */
+  readonly mcp?: McpListToolsRes;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -611,11 +626,14 @@ export class BrowserAdapter implements PlatformAdapter {
   readonly #now: () => number;
   readonly #latencyMs: number;
   readonly #scheduleFrame: (run: () => void) => void;
+  /** See {@link BrowserAdapterOptions.mcp}: no servers configured by default. */
+  readonly #mcp: McpListToolsRes;
 
   constructor(options: BrowserAdapterOptions = {}) {
     this.#now = options.now ?? (() => Date.now());
     this.#latencyMs = options.latencyMs ?? 0;
     this.#scheduleFrame = options.scheduleFrame ?? ((run) => queueMicrotask(run));
+    this.#mcp = options.mcp ?? { configFailure: null, servers: [] };
   }
 
   async invoke<C extends CommandName>(command: C, payload: CommandReq<C>): Promise<CommandRes<C>> {
@@ -644,6 +662,8 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#debugLogSet(payload as DebugLogSetReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
+      case 'mcp_list_tools':
+        return this.#mcp;
       case 'models_capabilities':
         return this.#modelsCapabilities(payload as ModelsRefReq);
       case 'models_list':

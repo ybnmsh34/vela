@@ -18,6 +18,7 @@ describe('IPC contract', () => {
       'diagnostics_debug_log_get',
       'diagnostics_debug_log_set',
       'diagnostics_echo',
+      'mcp_list_tools',
       'models_capabilities',
       'models_list',
       'models_probe',

@@ -92,6 +92,28 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
                 app.path().app_data_dir()?,
             ));
 
+            // The canonical skill store, created **empty, here, before any
+            // command that reads it is served**. That ordering is what
+            // `src/platform/contract-project.ts` requires and it has exactly
+            // one observable consequence worth stating: on a machine with no
+            // skills installed, `skills_list` answers with an empty list and
+            // every enabled skill would mount unavailable — not an error, not a
+            // refused command. A host that instead created the directory lazily
+            // inside whichever command happened to run first would produce a
+            // different sentence in the UI for the same disk.
+            //
+            // A failure to create it does **not** stop startup, unlike a
+            // failure to open the database. An absent store is an empty store,
+            // which is a state the contract defines and every caller already
+            // handles; the database has no such reading, because running
+            // without a system of record accepts the user's work and drops it.
+            let (skills, skills_failure) =
+                ipc::skills::SkillsHandle::under_data_dir(app.path().app_data_dir()?);
+            if let Some(error) = skills_failure {
+                eprintln!("vela: the skill store could not be created: {error}");
+            }
+            app.manage(skills);
+
             app.manage(store);
             Ok(())
         })
@@ -112,6 +134,8 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::settings::settings_get,
             ipc::settings::settings_put_provider,
             ipc::settings::settings_set_theme,
+            ipc::skills::skills_list,
+            ipc::skills::skills_read,
             ipc::store::store_autotitle_conversation,
             ipc::store::store_create_conversation,
             ipc::store::store_delete_conversation,

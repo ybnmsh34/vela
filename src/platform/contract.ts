@@ -1029,6 +1029,107 @@ export interface MessageListRes {
 }
 
 /* -------------------------------------------------------------------------- */
+/* skills — the canonical store on disk, read one level at a time             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Why a directory in the skill store could not be read as a skill.
+ *
+ * A closed vocabulary the **renderer** words. Transcribed from
+ * `SkillProblem` in `src-tauri/crates/vela-skills/src/document.rs`, and
+ * `src/platform/skill-mount-parity.test.ts` is what keeps the two lists equal:
+ * a Rust variant added without its twin here fails `pnpm test`, and one added
+ * here without its twin there fails `pnpm typecheck`.
+ *
+ * The format is the public Agent Skills spec — YAML frontmatter, then a
+ * Markdown body — so most of these are the spec's own rules: a `name` of 1–64
+ * lowercase alphanumerics and single hyphens that matches the directory it sits
+ * in, and a `description` of 1–1024 characters.
+ */
+export type SkillProblem =
+  | 'noSkillFile'
+  | 'unreadable'
+  | 'noFrontmatter'
+  | 'unterminatedFrontmatter'
+  | 'unsupportedFrontmatterSyntax'
+  | 'duplicateFrontmatterKey'
+  | 'missingName'
+  | 'missingDescription'
+  | 'nameIsNotWellFormed'
+  | 'nameTooLong'
+  | 'nameDoesNotMatchDirectory'
+  | 'descriptionIsEmpty'
+  | 'descriptionTooLong'
+  | 'nameIsNotASinglePathSegment';
+
+/**
+ * One entry of the first level of progressive disclosure.
+ *
+ * A skill that cannot be parsed is **listed with its problem**, never dropped:
+ * a skill the user installed that vanishes from every surface with no sentence
+ * saying why is the silently-wrong outcome conventions §9 rule 6 forbids.
+ *
+ * A discriminated union rather than an entry with optional halves, so no
+ * consumer can read a description off a broken skill.
+ */
+export type SkillListing =
+  | {
+      readonly kind: 'skill';
+      /**
+       * The directory name on disk. Equal to `name` for a valid skill — the
+       * spec requires it — and carried separately because the mount is keyed by
+       * the directory, so anything explaining a mount names this one.
+       */
+      readonly directory: string;
+      readonly name: string;
+      readonly description: string;
+    }
+  | { readonly kind: 'invalid'; readonly directory: string; readonly problem: SkillProblem };
+
+export interface SkillsListRes {
+  /** Every directory in the store, in name order. Empty is the normal state. */
+  readonly skills: readonly SkillListing[];
+}
+
+export interface SkillsReadReq {
+  /** One path segment. Anything else is `INVALID_PAYLOAD`. */
+  readonly name: string;
+}
+
+/**
+ * The third level of disclosure: what a skill carries, **by name only**.
+ *
+ * No file's contents cross the bridge. The spec's loading model fetches this
+ * level "only as needed", and the need is per file; a caller that wants one
+ * asks for it, and no command does that today.
+ */
+export interface SkillResources {
+  readonly scripts: readonly string[];
+  readonly references: readonly string[];
+  readonly assets: readonly string[];
+}
+
+/**
+ * The second level of disclosure, for exactly one skill.
+ *
+ * `invalid` is a **response**, not an error: the request was well formed and
+ * the host answered it truthfully — the file on disk is not a skill. Making it
+ * an error would split "this skill is broken" across a catch block and a
+ * branch, in a renderer that already has to word the same vocabulary for
+ * {@link SkillListing}.
+ */
+export type SkillsReadRes =
+  | {
+      readonly kind: 'skill';
+      readonly name: string;
+      readonly description: string;
+      /** The instruction text: loaded because this skill was asked for. */
+      readonly body: string;
+      readonly resources: SkillResources;
+    }
+  | { readonly kind: 'invalid'; readonly problem: SkillProblem };
+
+/* -------------------------------------------------------------------------- */
 /* ui — window layout that must survive a restart                             */
 /* -------------------------------------------------------------------------- */
 
@@ -1067,6 +1168,8 @@ export interface IpcContract {
   settings_get: { req: EmptyPayload; res: SettingsSnapshot };
   settings_put_provider: { req: SettingsPutProviderReq; res: ProviderView };
   settings_set_theme: { req: SettingsSetThemeReq; res: SettingsSetThemeRes };
+  skills_list: { req: EmptyPayload; res: SkillsListRes };
+  skills_read: { req: SkillsReadReq; res: SkillsReadRes };
   store_append_message: { req: StoreAppendMessageReq; res: MessageRes };
   store_autotitle_conversation: { req: StoreConversationRefReq; res: ConversationRes };
   store_create_conversation: { req: StoreCreateConversationReq; res: ConversationRes };
@@ -1106,6 +1209,8 @@ export const COMMAND_ALLOWLIST = [
   'settings_get',
   'settings_put_provider',
   'settings_set_theme',
+  'skills_list',
+  'skills_read',
   'store_append_message',
   'store_autotitle_conversation',
   'store_create_conversation',

@@ -4226,6 +4226,7 @@ dependencies = [
  "vela-providers",
  "vela-secrets",
  "vela-settings",
+ "vela-skills",
  "vela-store",
 ]
 
@@ -4277,6 +4278,14 @@ dependencies = [
  "vela-core",
  "vela-secrets",
  "vela-store",
+]
+
+[[package]]
+name = "vela-skills"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
 ]
 
 [[package]]

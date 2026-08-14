@@ -273,7 +273,7 @@ function wireTokensAndMethods(): ReadonlySet<string> {
   for (const [path, text] of CONTENTS) {
     if (path.endsWith('.md')) continue;
     for (const line of text.split(/\r?\n/)) {
-      if (COMMENT_LINE.test(line)) continue;
+      if (isProseLine(path, line)) continue;
       for (const name of captured(line, /"([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})"/g)) names.add(name);
       for (const name of captured(line, /\.([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})\s*\(/g))
         names.add(name);
@@ -283,32 +283,42 @@ function wireTokensAndMethods(): ReadonlySet<string> {
 }
 
 /**
- * Every snake_case token that appears somewhere **outside** a backtick.
+ * Every snake_case token this file uses **as code**.
  *
  * This is the discriminator the word-count floor was standing in for, and it is
- * a sharper one. A name that really exists is *used*: it is defined, called,
- * imported, or written in a config key, and at least one of those occurrences is
- * code rather than prose-in-backticks. A name that was never written appears in
- * exactly one place — the sentence claiming it. That is not a theory; it is the
- * measured property of the tenth false claim, whose identifier occurred exactly
- * once in the whole tree, inside its own claim.
+ * a sharper one. A name that really exists is *used*: defined, called, imported,
+ * or written in a config key. A name that was never written appears only in the
+ * sentence claiming it. That is not a theory; it is the measured property of the
+ * tenth false claim, whose identifier occurred exactly once in the whole tree,
+ * inside its own claim.
  *
- * It is deliberately blind to backticked prose, including the *body* of a fenced
- * block: an example inside a fence is somebody's illustration, not evidence that
- * a thing exists, and counting it would let a fabricated name vouch for itself.
+ * ## Prose is not evidence, and getting that wrong made this guard weaker
  *
- * The fence's **info string** is kept, and the distinction is not a nicety.
- * ` ```compile_fail ` is rustdoc telling the compiler what to do with the block;
- * it is a directive, not an illustration, and it is the only place that token
- * can appear. Dropping it made eight true sentences across the tree read as
- * false claims — a guard's own blind spot manufacturing defects, which is the
- * failure this file exists to prevent, pointed the other way.
+ * The first version of this collected every token outside a backtick, anywhere,
+ * and the doc comment above it claimed the rule was "as code rather than as
+ * prose". It was not. A fabricated five-word test name mentioned once in an
+ * ordinary comment — or in a markdown bullet — resolved green, and a critic
+ * demonstrated it: `every_secret_is_stripped_before_the_socket`, named in a doc
+ * comment as the holder of the redaction invariant and mentioned once more in a
+ * naming note, passed. **That name was inside the old four-word guard's remit**,
+ * so the repair was a strict regression on a class already covered — the exact
+ * shape of defect this file exists to catch, introduced by the file itself.
+ *
+ * So prose lines are skipped, per language, because the question differs by
+ * language: `#` opens a comment in a shell script and opens an attribute in
+ * Rust, where `#[serde(skip_serializing_if = "…")]` carries real names. A
+ * markdown file contributes nothing at all — every line of it is prose.
+ *
+ * Two things survive that look like exceptions and are not. A fence's **info
+ * string** is kept, because ` ```compile_fail ` is rustdoc directing the
+ * compiler rather than illustrating anything, and it is the only position that
+ * token ever occupies. The fence **body** is dropped, so a name cannot vouch for
+ * itself by starring in its own worked example.
  */
-function codeVocabulary(): ReadonlySet<string> {
+export function vocabularyOf(path: string, text: string): ReadonlySet<string> {
   const names = new Set<string>();
-  for (const text of CONTENTS.values()) {
-    const code = text
-      .replace(/```([^\n]*)\n[\s\S]*?```/g, ' $1 ')
+  const collect = (fragment: string): void => {
+    const code = fragment
       .replace(/`[^`\n]*`/g, ' ')
       // Straight quotes are this repo's way of naming something that is gone.
       // See {@link wireTokensAndMethods} — a retired name must not vouch for
@@ -318,7 +328,32 @@ function codeVocabulary(): ReadonlySet<string> {
       const name = match[1];
       if (name !== undefined) names.add(name);
     }
+  };
+
+  let insideFence = false;
+  for (const line of text.split(/\r?\n/)) {
+    const fence = fenceToggle(line);
+    if (fence !== null) {
+      insideFence = !insideFence;
+      // The info string only. ` ```compile_fail ` is rustdoc directing the
+      // compiler — a directive, not an illustration, and the only place that
+      // token can appear. The *body* below it is somebody's worked example and
+      // is dropped, which is what stops a fabricated name vouching for itself
+      // by starring in its own demonstration.
+      if (insideFence) collect(fence);
+      continue;
+    }
+    if (insideFence) continue;
+    if (isProseLine(path, line)) continue;
+    collect(line);
   }
+  return names;
+}
+
+/** {@link vocabularyOf}, over every scanned file. */
+function codeVocabulary(): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const [path, text] of CONTENTS) for (const name of vocabularyOf(path, text)) names.add(name);
   return names;
 }
 
@@ -327,6 +362,42 @@ function codeVocabulary(): ReadonlySet<string> {
  * above and the claim scan below need it, and the corpora are built first.
  */
 const COMMENT_LINE = /^\s*(\/\/[/!]?|\*|\/\*|#|\|)/;
+
+/**
+ * The same question asked per language, which is not the same question.
+ *
+ * {@link COMMENT_LINE} treats a leading `#` as a comment, which is right for a
+ * shell script and wrong for Rust, where `#[serde(rename_all = "camelCase")]` is
+ * an attribute carrying real wire names. A markdown file has no code lines at
+ * all: every line of it is prose, and that is the whole reason this distinction
+ * exists.
+ */
+function isProseLine(path: string, line: string): boolean {
+  if (path.endsWith('.md')) return true;
+  if (/\.(sh|yml|toml)$/.test(path)) return /^\s*#/.test(line);
+  return /^\s*(?:\/\/[/!]?|\/\*|\*)/.test(line);
+}
+
+/** ` ```rust `, ` ```compile_fail `, or a bare ` ``` ` — inside a doc comment or not. */
+const FENCE_LINE = /^\s*(?:\/\/[/!]?|\*|#)?\s*```(.*)$/;
+
+/**
+ * The info string if this line opens or closes a fence, otherwise `null`.
+ *
+ * A line carrying an **even** number of ` ``` ` opens and closes on itself: it is
+ * prose *about* a fence, not a fence. `emulation.rs:354` is exactly that —
+ * `/// \`\`\`json { … } \`\`\` or the same object bare.` — and reading it as an
+ * opener left the scan believing it was inside a code block for the remaining
+ * three hundred lines of the file, which were then silently exempt from every
+ * check here. Nothing claim-shaped lived in them, so it cost nothing this time;
+ * `no scanned file ends inside a fence` below makes the next one loud.
+ */
+function fenceToggle(line: string): string | null {
+  const matched = FENCE_LINE.exec(line);
+  if (matched === null) return null;
+  if ((line.match(/```/g) ?? []).length % 2 === 0) return null;
+  return matched[1] ?? '';
+}
 
 /** Shell test labels — `pass "name: …"` / `fail "name" …` in the script tests. */
 function shellLabels(): ReadonlySet<string> {
@@ -413,7 +484,7 @@ export function claimsIn(path: string, text: string): readonly Claim[] {
     // that the method does not exist, and reading that as a claim would demand
     // rustc's error text be edited into a falsehood. Rust writes its fences
     // inside doc comments, so the marker is found after the comment lead-in.
-    if (/^\s*(?:\/\/[/!]?|\*|#)?\s*```/.test(line)) {
+    if (fenceToggle(line) !== null) {
       insideFence = !insideFence;
       continue;
     }
@@ -610,14 +681,90 @@ describe('this guard is not vacuous', () => {
     expect(reported).toEqual(['src/app/contract.ts', 'src/nowhere/at/all/App.tsx']);
   });
 
-  it('does not let a name vouch for itself out of a code fence', () => {
-    // `codeVocabulary` keeps a fence's info string and drops its body. If it
-    // kept the body, any fabricated name could be resolved by writing an
-    // example that uses it — which is exactly how a false claim would be
-    // dressed up as a real one.
-    expect(CODE_VOCABULARY.has('compile_fail')).toBe(true);
-    expect(CODE_VOCABULARY.has('the_log_stays_off_when_the_directory_cannot_be_made_private')).toBe(
+  it('does not accept prose as evidence that a name exists', () => {
+    // The regression a critic found and this pins. `codeVocabulary` accepted any
+    // mention outside a backtick, so a fabricated guard could be legitimised by
+    // saying its name twice: once in the claim, once anywhere else. The critic's
+    // own reproduction is the fixture — a five-word name that the *old* guard
+    // caught and the repair excused.
+    const rustProse = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      '//! ATTACK: the redaction invariant is held by `every_secret_is_stripped_before_the_socket`.\n' +
+        '//! Naming note: every_secret_is_stripped_before_the_socket reads well as a sentence.\n',
+    );
+    expect(rustProse.has('every_secret_is_stripped_before_the_socket')).toBe(false);
+
+    // The markdown half of the same attack. Every line of a `.md` is prose, so
+    // a bullet mentioning a name proves nothing about whether it was written.
+    const markdown = vocabularyOf(
+      'docs/vela-progress.md',
+      '- Naming note: zzq_bullet_beta reads well.\n\nzzq_prose_alpha is also nice.\n',
+    );
+    expect(markdown.has('zzq_bullet_beta')).toBe(false);
+    expect(markdown.has('zzq_prose_alpha')).toBe(false);
+
+    // And the line that is *not* prose, per language. `#` opens a comment in a
+    // shell script and an attribute in Rust; treating both as comments dropped
+    // real serde vocabulary and manufactured false claims out of true sentences.
+    const attribute = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      '#[serde(skip_serializing_if = "Option::is_none")]\npub struct S;\n',
+    );
+    expect(attribute.has('skip_serializing_if')).toBe(true);
+    expect(vocabularyOf('scripts/probe.sh', '# not_a_real_name here\n').has('not_a_real_name')).toBe(
       false,
     );
+  });
+
+  it('has no scanned file that ends inside a fence', () => {
+    // An unbalanced fence marker exempts the rest of a file from every check in
+    // here, silently. `emulation.rs:354` writes ` ```json { … } ``` ` inline in a
+    // sentence, which opens and closes on one line; a scanner that toggled on
+    // any ` ``` ` read it as an opener and skipped the next three hundred lines.
+    const unbalanced = [...CONTENTS]
+      .filter(([, text]) => {
+        let inside = false;
+        for (const line of text.split(/\r?\n/)) if (fenceToggle(line) !== null) inside = !inside;
+        return inside;
+      })
+      .map(([path]) => path);
+
+    expect(unbalanced, 'these files are partly exempt from this guard without saying so').toEqual(
+      [],
+    );
+  });
+
+  it('counts a name as evidence only where it is used as code', () => {
+    // Against a fixture, not against the tree, and that is the point. This
+    // control first pinned a real identifier as the negative case — one that was
+    // absent because the guard had just caught it missing. Another branch then
+    // went and wrote that test, which was the entire object of the exercise, and
+    // the control failed for the one reason a control never should: the project
+    // succeeded. A control has to be anchored to the rule, not to a fact
+    // somebody is actively working to change.
+    const vocabulary = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      [
+        'fn zz_defined_as_code() {}',
+        '```rust',
+        'fn zz_only_inside_a_fence() {}',
+        '```',
+        'let x = `zz_only_in_backticks` + "zz_only_in_straight_quotes";',
+      ].join('\n'),
+    );
+
+    expect(vocabulary.has('zz_defined_as_code')).toBe(true);
+    // An example inside a fence is an illustration; if it counted, a fabricated
+    // name could vouch for itself by appearing in its own worked example.
+    expect(vocabulary.has('zz_only_inside_a_fence')).toBe(false);
+    // The claim itself is never its own evidence.
+    expect(vocabulary.has('zz_only_in_backticks')).toBe(false);
+    // Straight quotes are how this repo retires a name. See the ledger.
+    expect(vocabulary.has('zz_only_in_straight_quotes')).toBe(false);
+
+    // And against the real tree, the one token that lives only in a fence's
+    // info string: `\`\`\`compile_fail` is rustdoc directing the compiler, not
+    // an illustration, so it survives while fence bodies do not.
+    expect(CODE_VOCABULARY.has('compile_fail')).toBe(true);
   });
 });

@@ -27,7 +27,12 @@ import { NO_CAPABILITIES, type ChatCapabilities } from '@/platform/contract';
 
 import { ConversationView } from './ConversationView';
 import { TurnAttachmentsProvider, type TurnAttachments } from './turn-attachments';
-import { pendingTurnTexts, useConversation, type ConversationEntry } from './use-conversation';
+import {
+  assistantTexts,
+  pendingTurnTexts,
+  useConversation,
+  type ConversationEntry,
+} from './use-conversation';
 
 interface ConversationSurfaceProps {
   /**
@@ -55,6 +60,17 @@ interface ConversationSurfaceProps {
    */
   readonly onPendingTurn?: ((texts: readonly string[]) => void) | undefined;
   /**
+   * Called with every settled assistant answer, oldest first, whenever the
+   * transcript changes and once on mount.
+   *
+   * Reported outward for the same reason {@link ConversationSurfaceProps.onPendingTurn}
+   * is: something else on screen needs what this surface holds, and it must not
+   * reach in. Canvas is that something — it scans these for fenced blocks it can
+   * draw — and the array is plain strings so that this feature still imports
+   * nothing from that one.
+   */
+  readonly onAssistantMessages?: ((texts: readonly string[]) => void) | undefined;
+  /**
    * The files the user staged for the next message.
    *
    * Handed in rather than reached for, like the capability struct above and for
@@ -76,6 +92,7 @@ export function ConversationSurface({
   capabilities = NO_CAPABILITIES,
   initialEntries,
   onPendingTurn,
+  onAssistantMessages,
   attachments = null,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
@@ -98,6 +115,12 @@ export function ConversationSurface({
   useEffect(() => {
     onPendingTurn?.(pending);
   }, [pending, onPendingTurn]);
+
+  const answers = useMemo(() => assistantTexts(conversation.entries), [conversation.entries]);
+
+  useEffect(() => {
+    onAssistantMessages?.(answers);
+  }, [answers, onAssistantMessages]);
 
   // The composer's picker reads the holder from here rather than through the
   // view, which is presentational and has no business knowing files exist.

@@ -5,10 +5,12 @@
 
 import { useState } from 'react';
 
+import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
+import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { AppShell } from './shell/AppShell';
@@ -70,17 +72,39 @@ export function App({ adapter }: AppProps) {
  * image (GATE M Part 2 proved it against a real model) and the hook could
  * produce one; the renderer never put one in the payload. Both halves worked.
  * The joint is here, and it is one line.
+ *
+ * ## The third joint: Canvas
+ *
+ * Same shape as the first, same direction. The transcript holds the model's
+ * answers; the artifact panel needs them and must not reach in, so the surface
+ * reports them outward as plain strings and this root hands them to
+ * `CanvasSurface`. Neither feature imports the other, which is the rule
+ * `src/features/README.md` sets and the reason the markdown parser both of them
+ * read now lives in `src/lib/`.
+ *
+ * `DEFAULT_PROJECT_ID` is passed literally, and that is a statement about what
+ * is not built rather than a shortcut. The project feature does not exist, so
+ * there is exactly one project and this is its id; `contract-project.ts` says no
+ * code under `src/` should *compare* against that constant, and nothing here
+ * does. When projects arrive, this line reads the selected one and nothing
+ * downstream changes.
  */
 function Workspace() {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const [turnTexts, setTurnTexts] = useState<readonly string[] | null>(null);
+  const [answers, setAnswers] = useState<readonly string[]>(NO_ANSWERS);
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>
-      <Transcript onPendingTurn={setTurnTexts} />
+      <CanvasSurface assistantTexts={answers} projectId={DEFAULT_PROJECT_ID}>
+        <Transcript onPendingTurn={setTurnTexts} onAssistantMessages={setAnswers} />
+      </CanvasSurface>
     </ModelWorkspace>
   );
 }
+
+/** Stable identity, so the effect that reports answers does not loop on mount. */
+const NO_ANSWERS: readonly string[] = [];
 
 /**
  * The `key` is the load-bearing part. Switching conversations must not leave the
@@ -96,7 +120,13 @@ function Workspace() {
  * nothing. Handing the id down is the whole connection: given one, the surface
  * reads the conversation back and writes each settled turn to it.
  */
-function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonly string[]) => void }) {
+function Transcript({
+  onPendingTurn,
+  onAssistantMessages,
+}: {
+  readonly onPendingTurn: (texts: readonly string[]) => void;
+  readonly onAssistantMessages: (texts: readonly string[]) => void;
+}) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const { selection, capabilities, attachments } = useSelectedModel();
 
@@ -104,6 +134,7 @@ function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonl
     <ConversationSurface
       key={conversationId ?? 'none'}
       conversationId={conversationId}
+      onAssistantMessages={onAssistantMessages}
       providerId={selection?.providerId ?? null}
       modelId={selection?.modelId ?? null}
       modelLabel={selection?.modelLabel ?? null}

@@ -1,0 +1,196 @@
+/* The panel is a column that owns its own overflow. Nothing inside it may make
+   the app scroll sideways, which is why every scrolling region below sets its
+   own `overflow` rather than inheriting one. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--vela-border);
+  background: var(--vela-surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  color: var(--vela-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
+  border: 0;
+  border-radius: var(--vela-radius-sm);
+  background: transparent;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-md);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+.close:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--vela-space-1);
+}
+
+.tab {
+  height: var(--vela-control-sm);
+  padding: 0 var(--vela-space-3);
+  border: 0;
+  border-radius: var(--vela-radius-pill);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-accent);
+}
+
+.tab:disabled {
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+.tab:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.versions {
+  display: flex;
+  gap: var(--vela-space-1);
+  margin-left: auto;
+}
+
+.version {
+  height: var(--vela-control-sm);
+  min-width: var(--vela-control-sm);
+  padding: 0 var(--vela-space-2);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-2xs);
+  cursor: pointer;
+}
+
+.version[aria-pressed='true'] {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.version:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.scripts {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.code {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--vela-space-3);
+  overflow: auto;
+  background: var(--vela-code-bg);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  tab-size: 2;
+}
+
+.code code {
+  font: inherit;
+  white-space: pre;
+}
+
+.diff {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.diffLead {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.diffBody {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--vela-space-2) 0;
+  overflow: auto;
+  background: var(--vela-code-bg);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  white-space: pre;
+}
+
+/* The gutter character carries the meaning on its own, so a reader who cannot
+   distinguish the two tints still reads the diff. The tint is the fast path,
+   not the only path. */
+.diffRow {
+  display: block;
+  padding: 0 var(--vela-space-3);
+}
+
+.diffRow[data-kind='added'] {
+  background: var(--vela-accent-quiet);
+}
+
+.diffRow[data-kind='removed'] {
+  background: var(--vela-danger-bg);
+}

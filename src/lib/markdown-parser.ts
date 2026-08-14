@@ -27,10 +27,23 @@
  * ## Why not `markdown.ts`
  *
  * It was, and that broke the app on every case-insensitive filesystem: the
- * renderer beside it is `Markdown.tsx`, Vite resolves `.ts` before `.tsx`, and
- * so `import { Markdown } from './Markdown'` bound *this* module — which
+ * renderer was beside it as `Markdown.tsx`, Vite resolves `.ts` before `.tsx`,
+ * and so `import { Markdown } from './Markdown'` bound *this* module — which
  * exports no `Markdown` — and Windows got a blank window. The two stems must
- * differ by more than case. `src/platform/case-collision.test.ts` holds that.
+ * differ by more than case. `src/platform/case-collision.test.ts` holds that,
+ * and it still holds it now that the two files are in different directories:
+ * the rule is per-directory, so a renderer dropped into this one under a stem
+ * that differs from this file's only by case would break the same way.
+ *
+ * ## Why it is in `src/lib/` and not in the conversation feature
+ *
+ * It was there while one surface read it. Canvas is the second — it decides
+ * whether a fenced block is an artifact from the same `open` flag the transcript
+ * draws its "still writing" label from — and a feature may not import another
+ * feature (`src/features/README.md`, which names `lib/` as where a shared thing
+ * goes). The alternative was a second fence scanner in the canvas feature, and
+ * two implementations of "where does this fence end" is how the two surfaces
+ * come to disagree about the same three backticks.
  */
 
 export type Span =

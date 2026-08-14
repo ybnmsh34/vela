@@ -32,6 +32,7 @@ import {
 import {
   IPC_CONTRACT_VERSION,
   isAllowedCommand,
+  MEMORY_CONTENT_MAX_CHARS,
   NO_CAPABILITIES,
   type Ack,
   type AppInfo,
@@ -53,6 +54,15 @@ import {
   type EchoReq,
   type EchoRes,
   type ContentPartInput,
+  type MemoryAddReq,
+  type MemoryClearRes,
+  type MemoryEntry,
+  type MemoryListRes,
+  type MemoryRefReq,
+  type MemoryRes,
+  type MemoryScope,
+  type MemoryScopeReq,
+  type MemoryUpdateReq,
   type MessageHit,
   type MessageHitKind,
   type MessageListRes,
@@ -598,6 +608,13 @@ export class BrowserAdapter implements PlatformAdapter {
   /** Stands in for the SQLite `conversations` and `messages` tables. */
   readonly #conversations = new Map<string, FakeConversation>();
   #conversationSeq = 0;
+  /**
+   * Memory entries by id. Flat rather than bucketed by scope so that
+   * `memory_update` and `memory_delete` are id lookups, exactly as they are
+   * against the real host; the scope partition is applied on read.
+   */
+  readonly #memory = new Map<string, MemoryEntry>();
+  #memorySeq = 0;
   #layout: UiLayout = {
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
@@ -644,6 +661,16 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#debugLogSet(payload as DebugLogSetReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
+      case 'memory_add':
+        return this.#memoryAdd(payload as MemoryAddReq);
+      case 'memory_clear_scope':
+        return this.#memoryClearScope(payload as MemoryScopeReq);
+      case 'memory_delete':
+        return this.#memoryDelete(payload as MemoryRefReq);
+      case 'memory_list':
+        return this.#memoryList(payload as MemoryScopeReq);
+      case 'memory_update':
+        return this.#memoryUpdate(payload as MemoryUpdateReq);
       case 'models_capabilities':
         return this.#modelsCapabilities(payload as ModelsRefReq);
       case 'models_list':
@@ -1336,6 +1363,119 @@ export class BrowserAdapter implements PlatformAdapter {
       }
     }
     return { conversation: this.#summarise(conversation) };
+  }
+
+  /* -- memory ------------------------------------------------------------ */
+
+  /**
+   * The scope's partition key, as one string.
+   *
+   * A map keyed by this is how the fake keeps MEM-2's isolation with no chance
+   * of a query that forgets to filter: two scopes are two buckets, so a read
+   * of one cannot reach the other even by accident. The host gets the same
+   * property from `WHERE scope_kind = ? AND project_id IS ?` and a test.
+   */
+  #memoryBucket(scope: MemoryScope, command: CommandName): string {
+    if (scope.kind === 'global') return 'global';
+    if (scope.projectId.trim() === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid projectId: must not be blank', command);
+    }
+    return `project:${scope.projectId.trim()}`;
+  }
+
+  #memoryRequire(entryId: string, command: CommandName): MemoryEntry {
+    const entry = this.#memory.get(entryId.trim());
+    if (entry === undefined) {
+      throw new PlatformError('NOT_FOUND', `no memoryEntry with id \`${entryId}\``, command);
+    }
+    return entry;
+  }
+
+  #memoryValidateContent(content: string, command: CommandName): string {
+    if (content.trim() === '') {
+      throw new PlatformError('INVALID_PAYLOAD', 'invalid content: must not be blank', command);
+    }
+    if ([...content].length > MEMORY_CONTENT_MAX_CHARS) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid content: must be at most ${String(MEMORY_CONTENT_MAX_CHARS)} characters`,
+        command,
+      );
+    }
+    return content.trim();
+  }
+
+  #memoryList(request: MemoryScopeReq): MemoryListRes {
+    const bucket = this.#memoryBucket(request.scope, 'memory_list');
+    // Pinned first, then most recently updated first — the host's ORDER BY,
+    // reproduced here because a consumer that takes the first N under a budget
+    // must take the same N against either host.
+    const entries = [...this.#memory.values()]
+      .filter((entry) => this.#memoryBucket(entry.scope, 'memory_list') === bucket)
+      .sort((left, right) => {
+        if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+        if (left.updatedAtMs !== right.updatedAtMs) return right.updatedAtMs - left.updatedAtMs;
+        return right.id.localeCompare(left.id);
+      });
+    return { entries };
+  }
+
+  #memoryAdd(request: MemoryAddReq): MemoryRes {
+    const content = this.#memoryValidateContent(request.content, 'memory_add');
+    // Validates the scope before anything is written, so a bad project id
+    // cannot leave a row in a bucket nothing lists.
+    this.#memoryBucket(request.scope, 'memory_add');
+    this.#memorySeq += 1;
+    const now = this.#now();
+    const source = request.sourceConversationId?.trim() ?? '';
+    const entry: MemoryEntry = {
+      id: `mem_${String(this.#memorySeq)}`,
+      scope: request.scope,
+      category: request.category,
+      content,
+      pinned: false,
+      sourceConversationId: source === '' ? null : source,
+      createdAtMs: now,
+      updatedAtMs: now,
+    };
+    this.#memory.set(entry.id, entry);
+    return { entry };
+  }
+
+  #memoryUpdate(request: MemoryUpdateReq): MemoryRes {
+    const existing = this.#memoryRequire(request.entryId, 'memory_update');
+    const content =
+      request.content === undefined
+        ? existing.content
+        : this.#memoryValidateContent(request.content, 'memory_update');
+    // The scope is not patchable here for the same reason it is not in the
+    // host: moving an entry between scopes is a separate decision.
+    const entry: MemoryEntry = {
+      ...existing,
+      category: request.category ?? existing.category,
+      content,
+      pinned: request.pinned ?? existing.pinned,
+      updatedAtMs: this.#now(),
+    };
+    this.#memory.set(entry.id, entry);
+    return { entry };
+  }
+
+  #memoryDelete(request: MemoryRefReq): Ack {
+    const entry = this.#memoryRequire(request.entryId, 'memory_delete');
+    this.#memory.delete(entry.id);
+    return { ok: true };
+  }
+
+  #memoryClearScope(request: MemoryScopeReq): MemoryClearRes {
+    const bucket = this.#memoryBucket(request.scope, 'memory_clear_scope');
+    let removed = 0;
+    for (const entry of [...this.#memory.values()]) {
+      if (this.#memoryBucket(entry.scope, 'memory_clear_scope') !== bucket) continue;
+      this.#memory.delete(entry.id);
+      removed += 1;
+    }
+    return { removed };
   }
 
   #storeSearch(request: StoreSearchReq): StoreSearchRes {

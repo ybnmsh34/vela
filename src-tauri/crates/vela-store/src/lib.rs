@@ -71,13 +71,15 @@ pub use error::{StoreError, StoreResult};
 pub use location::{DatabaseLocation, DATABASE_FILE_NAME};
 pub use migrations::{AppliedMigration, Migration, MIGRATIONS, SCHEMA_VERSION};
 pub use model::{
-    ContentPart, Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
-    MessageRole, MessageStatus, NewConversation, NewMessage, NewProject, Project, ProjectId,
+    ContentPart, Conversation, ConversationId, ConversationPatch, MemoryCategory, MemoryEntry,
+    MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId, MessagePatch, MessageRole,
+    MessageStatus, NewConversation, NewMemoryEntry, NewMessage, NewProject, Project, ProjectId,
     ProjectPatch, SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
+    MEMORY_CONTENT_MAX_CHARS,
 };
 pub use repository::{
-    ConversationQuery, ConversationRepository, HasLocation, MessageQuery, MessageRepository,
-    ProjectFilter, ProjectRepository, SearchHit, SearchHitKind, SettingsRepository, UsageTotals,
-    VelaStore,
+    ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,
+    MessageRepository, ProjectFilter, ProjectRepository, SearchHit, SearchHitKind,
+    SettingsRepository, UsageTotals, VelaStore,
 };
 pub use sqlite::SqliteStore;

@@ -66,6 +66,15 @@ interface ConversationSurfaceProps {
    * surface mounted on its own in a test is in. It is not "the tray is empty".
    */
   readonly attachments?: TurnAttachments | null;
+  /**
+   * The chosen model's context window, when the endpoint reported one.
+   *
+   * Handed in for the same reason the capability struct is: what the model can
+   * do belongs to another feature. Used only to size the memory block — see
+   * `src/lib/memory-prompt.ts` — so `null` costs the user a smaller memory
+   * block, never a refused turn.
+   */
+  readonly contextWindowTokens?: number | null;
 }
 
 export function ConversationSurface({
@@ -77,12 +86,14 @@ export function ConversationSurface({
   initialEntries,
   onPendingTurn,
   attachments = null,
+  contextWindowTokens = null,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
     conversationId,
     providerId,
     modelId,
     attachments,
+    contextWindowTokens,
     ...(initialEntries === undefined ? {} : { initialEntries }),
   });
 
@@ -90,9 +101,13 @@ export function ConversationSurface({
   // (see its own note), and this is the shadow the meter is weighed against.
   const [draft, setDraft] = useState('');
 
+  // The memory block is part of what pressing send would put on the wire, so
+  // it is part of what the meter is told about. Leaving it out here while
+  // `toMessages` sends it is exactly the drift the shared traversal exists to
+  // prevent.
   const pending = useMemo(
-    () => pendingTurnTexts(conversation.entries, draft),
-    [conversation.entries, draft],
+    () => pendingTurnTexts(conversation.entries, draft, conversation.memoryPreamble),
+    [conversation.entries, draft, conversation.memoryPreamble],
   );
 
   useEffect(() => {

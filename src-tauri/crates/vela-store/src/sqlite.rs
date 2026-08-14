@@ -23,13 +23,16 @@ use crate::error::{StoreError, StoreResult};
 use crate::location::DatabaseLocation;
 use crate::migrations;
 use crate::model::{
-    ContentPart, Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
-    MessageRole, MessageStatus, NewConversation, NewMessage, NewProject, Project, ProjectId,
-    ProjectPatch, SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
+    validate_memory_content, ContentPart, Conversation, ConversationId, ConversationPatch,
+    MemoryCategory, MemoryEntry, MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId,
+    MessagePatch, MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage,
+    NewProject, Project, ProjectId, ProjectPatch, SecretRefName, Setting, SettingEntry, StopReason,
+    Timestamp, TokenUsage,
 };
 use crate::repository::{
-    ConversationQuery, ConversationRepository, HasLocation, MessageQuery, MessageRepository,
-    ProjectFilter, ProjectRepository, SearchHit, SearchHitKind, SettingsRepository, UsageTotals,
+    ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,
+    MessageRepository, ProjectFilter, ProjectRepository, SearchHit, SearchHitKind,
+    SettingsRepository, UsageTotals,
 };
 
 const CONVERSATION_COLUMNS: &str = "c.id, c.project_id, c.title, c.provider_id, c.model_id, \
@@ -1090,6 +1093,169 @@ fn map_search_error(error: rusqlite::Error) -> StoreError {
         }
     }
     unwrap_store_error(error)
+}
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+const MEMORY_COLUMNS: &str = "id, scope_kind, project_id, category, content, pinned, \
+     source_conversation_id, created_at, updated_at";
+
+fn read_memory_entry(row: &Row<'_>) -> rusqlite::Result<MemoryEntry> {
+    let source: Option<String> = row.get(6)?;
+    Ok(MemoryEntry {
+        id: MemoryEntryId::new(row.get::<_, String>(0)?).map_err(to_sqlite_error)?,
+        scope: MemoryScope::from_db(&row.get::<_, String>(1)?, row.get(2)?)
+            .map_err(to_sqlite_error)?,
+        category: MemoryCategory::from_db(&row.get::<_, String>(3)?).map_err(to_sqlite_error)?,
+        content: row.get(4)?,
+        pinned: row.get::<_, i64>(5)? != 0,
+        source_conversation_id: source
+            .map(ConversationId::new)
+            .transpose()
+            .map_err(to_sqlite_error)?,
+        created_at: Timestamp::from_millis(row.get(7)?),
+        updated_at: Timestamp::from_millis(row.get(8)?),
+    })
+}
+
+fn fetch_memory_entry(conn: &Connection, id: &MemoryEntryId) -> StoreResult<MemoryEntry> {
+    conn.query_row(
+        &format!("SELECT {MEMORY_COLUMNS} FROM memory_entries WHERE id = ?1"),
+        [id.as_str()],
+        read_memory_entry,
+    )
+    .optional()
+    .map_err(unwrap_store_error)?
+    .ok_or_else(|| StoreError::NotFound {
+        entity: MemoryEntryId::ENTITY,
+        id: id.to_string(),
+    })
+}
+
+impl MemoryRepository for SqliteStore {
+    fn create_memory_entry(&self, input: NewMemoryEntry) -> StoreResult<MemoryEntry> {
+        input.validate()?;
+        let now = self.now();
+        let id = MemoryEntryId::new(self.ids.next_id(MemoryEntryId::PREFIX))?;
+        let conn = self.connection();
+
+        conn.execute(
+            "INSERT INTO memory_entries (id, scope_kind, project_id, category, content, pinned,
+                                         source_conversation_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![
+                id.as_str(),
+                input.scope.as_db(),
+                input.scope.project_id().map(ProjectId::as_str),
+                input.category.as_db(),
+                input.content.trim(),
+                i64::from(input.pinned),
+                input
+                    .source_conversation_id
+                    .as_ref()
+                    .map(ConversationId::as_str),
+                now.as_millis(),
+            ],
+        )?;
+
+        fetch_memory_entry(&conn, &id)
+    }
+
+    fn get_memory_entry(&self, id: &MemoryEntryId) -> StoreResult<MemoryEntry> {
+        let conn = self.connection();
+        fetch_memory_entry(&conn, id)
+    }
+
+    fn list_memory_entries(&self, scope: &MemoryScope) -> StoreResult<Vec<MemoryEntry>> {
+        let conn = self.connection();
+        // `project_id IS ?2` rather than `= ?2`: SQLite's `=` is never true for
+        // NULL, so the global scope — whose project_id is NULL by construction —
+        // would silently list nothing. `IS` compares NULLs as equal, which is
+        // exactly the comparison this partition needs.
+        let mut statement = conn.prepare(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memory_entries
+             WHERE scope_kind = ?1 AND project_id IS ?2
+             ORDER BY pinned DESC, updated_at DESC, id DESC"
+        ))?;
+        let rows = statement
+            .query_map(
+                params![scope.as_db(), scope.project_id().map(ProjectId::as_str)],
+                read_memory_entry,
+            )
+            .map_err(unwrap_store_error)?;
+        rows.map(|row| row.map_err(unwrap_store_error))
+            .collect::<StoreResult<Vec<_>>>()
+    }
+
+    fn update_memory_entry(
+        &self,
+        id: &MemoryEntryId,
+        patch: MemoryPatch,
+    ) -> StoreResult<MemoryEntry> {
+        if let Some(content) = &patch.content {
+            validate_memory_content(content)?;
+        }
+        let now = self.now();
+        let conn = self.connection();
+        fetch_memory_entry(&conn, id)?;
+
+        let mut assignments: Vec<String> = Vec::new();
+        let mut values: Vec<Value> = Vec::new();
+        if let Some(category) = patch.category {
+            assignments.push(format!("category = ?{}", values.len() + 1));
+            values.push(Value::Text(category.as_db().to_string()));
+        }
+        if let Some(content) = patch.content {
+            assignments.push(format!("content = ?{}", values.len() + 1));
+            values.push(Value::Text(content.trim().to_string()));
+        }
+        if let Some(pinned) = patch.pinned {
+            assignments.push(format!("pinned = ?{}", values.len() + 1));
+            values.push(Value::Integer(i64::from(pinned)));
+        }
+
+        // The scope is deliberately absent from `MemoryPatch`. Moving an entry
+        // between scopes is MEM-2's "promote to global" and it is a different
+        // operation with a different consent question; letting it happen as a
+        // field on a general-purpose patch would make it something a caller
+        // could do by accident.
+        if !assignments.is_empty() {
+            assignments.push(format!("updated_at = ?{}", values.len() + 1));
+            values.push(Value::Integer(now.as_millis()));
+            values.push(Value::Text(id.as_str().to_string()));
+            let sql = format!(
+                "UPDATE memory_entries SET {} WHERE id = ?{}",
+                assignments.join(", "),
+                values.len()
+            );
+            conn.execute(&sql, params_from_iter(values.iter()))?;
+        }
+
+        fetch_memory_entry(&conn, id)
+    }
+
+    fn delete_memory_entry(&self, id: &MemoryEntryId) -> StoreResult<()> {
+        let conn = self.connection();
+        let removed = conn.execute("DELETE FROM memory_entries WHERE id = ?1", [id.as_str()])?;
+        if removed == 0 {
+            return Err(StoreError::NotFound {
+                entity: MemoryEntryId::ENTITY,
+                id: id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn clear_memory_scope(&self, scope: &MemoryScope) -> StoreResult<u64> {
+        let conn = self.connection();
+        let removed = conn.execute(
+            "DELETE FROM memory_entries WHERE scope_kind = ?1 AND project_id IS ?2",
+            params![scope.as_db(), scope.project_id().map(ProjectId::as_str)],
+        )?;
+        Ok(removed as u64)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2297,5 +2463,212 @@ mod tests {
             .list_conversations(ConversationQuery::default().limited(1))
             .unwrap();
         assert_eq!(listed.len(), 1);
+    }
+
+    // -- memory -------------------------------------------------------------
+
+    fn remember(store: &SqliteStore, scope: MemoryScope, content: &str) -> MemoryEntry {
+        store
+            .create_memory_entry(NewMemoryEntry::new(
+                scope,
+                MemoryCategory::TechPrefs,
+                content,
+            ))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_memory_entry_round_trips_with_its_provenance() {
+        let store = store();
+        let chat = conversation(&store);
+        let written = store
+            .create_memory_entry(
+                NewMemoryEntry::new(
+                    MemoryScope::Global,
+                    MemoryCategory::TechPrefs,
+                    "  uses pnpm, never npm  ",
+                )
+                .from_conversation(chat.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            written.content, "uses pnpm, never npm",
+            "content is trimmed"
+        );
+        assert_eq!(written.scope, MemoryScope::Global);
+        assert!(!written.pinned);
+        assert_eq!(written.source_conversation_id, Some(chat));
+
+        let read_back = store.get_memory_entry(&written.id).unwrap();
+        assert_eq!(read_back, written);
+    }
+
+    /// MEM-2's only claim, and the reason [`MemoryRepository`] has no
+    /// list-everything method.
+    #[test]
+    fn project_memory_and_global_memory_never_see_each_other() {
+        let store = store();
+        let alpha = store.create_project(NewProject::named("Alpha")).unwrap().id;
+        let beta = store.create_project(NewProject::named("Beta")).unwrap().id;
+
+        remember(&store, MemoryScope::Global, "global fact");
+        remember(&store, MemoryScope::project(alpha.clone()), "alpha fact");
+        remember(&store, MemoryScope::project(beta.clone()), "beta fact");
+
+        let global = store.list_memory_entries(&MemoryScope::Global).unwrap();
+        assert_eq!(
+            global.iter().map(|e| &e.content).collect::<Vec<_>>(),
+            vec!["global fact"],
+        );
+
+        let in_alpha = store
+            .list_memory_entries(&MemoryScope::project(alpha))
+            .unwrap();
+        assert_eq!(
+            in_alpha.iter().map(|e| &e.content).collect::<Vec<_>>(),
+            vec!["alpha fact"],
+        );
+
+        let in_beta = store
+            .list_memory_entries(&MemoryScope::project(beta))
+            .unwrap();
+        assert_eq!(
+            in_beta.iter().map(|e| &e.content).collect::<Vec<_>>(),
+            vec!["beta fact"],
+        );
+    }
+
+    /// The order MEM-1 specifies for injection: pinned first, then recency.
+    /// Taking the first N under a budget must take the right N.
+    #[test]
+    fn listing_puts_pinned_entries_first_then_the_most_recently_updated() {
+        let store = store();
+        let oldest = remember(&store, MemoryScope::Global, "oldest");
+        let middle = remember(&store, MemoryScope::Global, "middle");
+        let newest = remember(&store, MemoryScope::Global, "newest");
+
+        store
+            .update_memory_entry(
+                &oldest.id,
+                MemoryPatch {
+                    pinned: Some(true),
+                    ..MemoryPatch::default()
+                },
+            )
+            .unwrap();
+
+        let listed = store.list_memory_entries(&MemoryScope::Global).unwrap();
+        assert_eq!(
+            listed.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            vec![oldest.id.as_str(), newest.id.as_str(), middle.id.as_str()],
+        );
+    }
+
+    #[test]
+    fn an_entry_with_no_content_is_refused_on_write_and_on_amendment() {
+        let store = store();
+        assert!(matches!(
+            store.create_memory_entry(NewMemoryEntry::new(
+                MemoryScope::Global,
+                MemoryCategory::Other,
+                "   ",
+            )),
+            Err(StoreError::Invalid { .. }),
+        ));
+
+        let entry = remember(&store, MemoryScope::Global, "real");
+        assert!(matches!(
+            store.update_memory_entry(
+                &entry.id,
+                MemoryPatch {
+                    content: Some("  ".into()),
+                    ..MemoryPatch::default()
+                },
+            ),
+            Err(StoreError::Invalid { .. }),
+        ));
+        assert_eq!(store.get_memory_entry(&entry.id).unwrap().content, "real");
+    }
+
+    /// Per-scope reset: the thing the reference's all-or-nothing wipe cannot do.
+    #[test]
+    fn clearing_one_scope_leaves_every_other_scope_intact() {
+        let store = store();
+        let project = store.create_project(NewProject::named("Alpha")).unwrap().id;
+        remember(&store, MemoryScope::Global, "global fact");
+        remember(&store, MemoryScope::project(project.clone()), "one");
+        remember(&store, MemoryScope::project(project.clone()), "two");
+
+        let removed = store
+            .clear_memory_scope(&MemoryScope::project(project.clone()))
+            .unwrap();
+        assert_eq!(removed, 2);
+        assert!(store
+            .list_memory_entries(&MemoryScope::project(project))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            store
+                .list_memory_entries(&MemoryScope::Global)
+                .unwrap()
+                .len(),
+            1,
+        );
+    }
+
+    /// The cascade `0003_memory.sql` argues for: an entry whose project is gone
+    /// is a row no scope can ever list, so it must not survive the project.
+    #[test]
+    fn deleting_a_project_takes_its_memory_and_leaves_global_memory_alone() {
+        let store = store();
+        let project = store.create_project(NewProject::named("Alpha")).unwrap().id;
+        remember(&store, MemoryScope::Global, "global fact");
+        let doomed = remember(&store, MemoryScope::project(project.clone()), "alpha fact");
+
+        store.delete_project(&project).unwrap();
+
+        assert!(matches!(
+            store.get_memory_entry(&doomed.id),
+            Err(StoreError::NotFound { .. }),
+        ));
+        assert_eq!(
+            store
+                .list_memory_entries(&MemoryScope::Global)
+                .unwrap()
+                .len(),
+            1,
+        );
+    }
+
+    /// Provenance survives the conversation it came from. Deleting the chat
+    /// does not make the fact untrue, so the entry stays and only loses its
+    /// pointer.
+    #[test]
+    fn deleting_the_source_conversation_keeps_the_entry_and_drops_the_pointer() {
+        let store = store();
+        let chat = conversation(&store);
+        let entry = store
+            .create_memory_entry(
+                NewMemoryEntry::new(MemoryScope::Global, MemoryCategory::CommsPrefs, "terse")
+                    .from_conversation(chat.clone()),
+            )
+            .unwrap();
+
+        store.delete_conversation(&chat).unwrap();
+
+        let read_back = store.get_memory_entry(&entry.id).unwrap();
+        assert_eq!(read_back.content, "terse");
+        assert_eq!(read_back.source_conversation_id, None);
+    }
+
+    #[test]
+    fn deleting_an_entry_that_is_not_there_is_not_found_rather_than_silence() {
+        let store = store();
+        let missing = MemoryEntryId::new("mem_nope").unwrap();
+        assert!(matches!(
+            store.delete_memory_entry(&missing),
+            Err(StoreError::NotFound { .. }),
+        ));
     }
 }

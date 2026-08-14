@@ -933,6 +933,131 @@ export interface StoreSearchRes {
 }
 
 /* -------------------------------------------------------------------------- */
+/* memory                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mirrors `src-tauri/src/ipc/memory.rs`.
+ *
+ * The durable facts Vela keeps about the user, and only what a human or a
+ * surface the human drove has written. **Nothing writes here automatically.**
+ * `docs/vela-feature-spec.md` MEM-1 describes a post-turn extraction pass that
+ * decides what was worth remembering; it does not exist in this build, no code
+ * calls `memory_add` from a turn, and nothing in this file may be read as
+ * saying otherwise.
+ */
+
+/**
+ * Which memory space a request addresses.
+ *
+ * A discriminated union rather than MEM-1's `project:<id>` string, because a
+ * caller that has to build that string is a caller that can build `project:`
+ * with nothing after it — a partition that is neither global nor any project
+ * and that nothing can ever read back. The host refuses a blank project id with
+ * `INVALID_PAYLOAD`.
+ *
+ * **The two scopes never mix.** MEM-2's rule is that a chat inside a project
+ * reads and writes that project's space only, and a chat outside projects reads
+ * and writes global only. It is enforced in the store — every read takes one
+ * scope and there is no method that returns more than one — and
+ * `vela-store`'s `project_memory_and_global_memory_never_see_each_other` is
+ * what holds it.
+ *
+ * The renderer only ever sends `global` today, because nothing in the renderer
+ * knows which project a conversation belongs to: {@link ConversationSummary}
+ * carries no project id, and there is no project surface. The project variant
+ * is real and reachable from the host; it is not reachable from the UI yet.
+ */
+export type MemoryScope =
+  | { readonly kind: 'global' }
+  | { readonly kind: 'project'; readonly projectId: string };
+
+/**
+ * The four things the reference captures, plus `other`.
+ *
+ * A closed enum so the renderer writes every heading a user reads and the host
+ * never invents one — the same discipline the error causes keep. `other` exists
+ * so a fact that cannot be placed is still stored: a dropped fact is the
+ * silently-wrong outcome, a fact under "Other" is a visible one.
+ */
+export type MemoryCategory =
+  | 'roleContext'
+  | 'commsPrefs'
+  | 'techPrefs'
+  | 'projectDetails'
+  | 'other';
+
+/** Mirrors `MEMORY_CONTENT_MAX_CHARS` in `vela-store/src/model.rs`. */
+export const MEMORY_CONTENT_MAX_CHARS = 2_000;
+
+export interface MemoryEntry {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly category: MemoryCategory;
+  readonly content: string;
+  /** Ranked ahead of everything unpinned when the injection budget is short. */
+  readonly pinned: boolean;
+  /**
+   * Which conversation this fact came out of, when that is known. `null` both
+   * for an entry the user typed and for one whose source conversation has been
+   * deleted — the host does not distinguish those, and neither does this.
+   */
+  readonly sourceConversationId: string | null;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface MemoryScopeReq {
+  readonly scope: MemoryScope;
+}
+
+export interface MemoryListRes {
+  /**
+   * Pinned first, then most recently updated first. That is MEM-1's injection
+   * order, produced once by the host so a consumer taking the first N under a
+   * budget takes the right N without re-sorting.
+   */
+  readonly entries: readonly MemoryEntry[];
+}
+
+export interface MemoryAddReq {
+  readonly scope: MemoryScope;
+  readonly category: MemoryCategory;
+  readonly content: string;
+  readonly sourceConversationId?: string;
+}
+
+/**
+ * Amend an entry. An omitted field means "leave it alone".
+ *
+ * There is no `scope` field, deliberately: moving an entry between scopes is
+ * MEM-2's "promote to global" and carries its own consent question. It must not
+ * be something a caller can do as a side effect of fixing a typo.
+ */
+export interface MemoryUpdateReq {
+  readonly entryId: string;
+  readonly category?: MemoryCategory;
+  readonly content?: string;
+  readonly pinned?: boolean;
+}
+
+export interface MemoryRefReq {
+  readonly entryId: string;
+}
+
+export interface MemoryRes {
+  readonly entry: MemoryEntry;
+}
+
+export interface MemoryClearRes {
+  /**
+   * How many entries went. Reported rather than acked so a confirmation can say
+   * what it did — "forgot 12 things" is checkable, "ok" is not.
+   */
+  readonly removed: number;
+}
+
+/* -------------------------------------------------------------------------- */
 /* store — the transcript itself                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -1057,6 +1182,11 @@ export interface IpcContract {
   diagnostics_debug_log_get: { req: EmptyPayload; res: DebugLogStatus };
   diagnostics_debug_log_set: { req: DebugLogSetReq; res: DebugLogStatus };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
+  memory_add: { req: MemoryAddReq; res: MemoryRes };
+  memory_clear_scope: { req: MemoryScopeReq; res: MemoryClearRes };
+  memory_delete: { req: MemoryRefReq; res: Ack };
+  memory_list: { req: MemoryScopeReq; res: MemoryListRes };
+  memory_update: { req: MemoryUpdateReq; res: MemoryRes };
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
@@ -1096,6 +1226,11 @@ export const COMMAND_ALLOWLIST = [
   'diagnostics_debug_log_get',
   'diagnostics_debug_log_set',
   'diagnostics_echo',
+  'memory_add',
+  'memory_clear_scope',
+  'memory_delete',
+  'memory_list',
+  'memory_update',
   'models_capabilities',
   'models_list',
   'models_probe',

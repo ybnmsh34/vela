@@ -39,10 +39,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createChatRepository, newTurnId, type ChatRepository, type TurnHandle } from '@/data/chat-repository';
+import { createMemoryRepository, GLOBAL_MEMORY, type MemoryRepository } from '@/data/memory-repository';
 import { createTranscriptRepository, type TranscriptRepository } from '@/data/transcript-repository';
+import { memorySystemMessage } from '@/lib/memory-prompt';
 import { usePlatform } from '@/platform/PlatformProvider';
-import type { ChatMessageInput, ChatStreamEvent, ContentPartInput } from '@/platform/contract';
+import type {
+  ChatMessageInput,
+  ChatStreamEvent,
+  ContentPartInput,
+  MemoryEntry,
+} from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
+import { useMemoryStore } from '@/state/memory-store';
 
 import { entriesFromStored, errorMessageOfTurn, partsOfTurn, statusOfTurn } from './stored-entries';
 import type { TurnAttachments } from './turn-attachments';
@@ -63,6 +71,9 @@ export type ConversationEntry =
 
 /** No attachments, as a shared constant so `send` allocates nothing per turn. */
 const NO_PARTS: readonly ContentPartInput[] = [];
+
+/** Nothing remembered, as a shared constant so an empty read allocates nothing. */
+const NO_MEMORY: readonly MemoryEntry[] = [];
 
 /** Shown instead of the transcript's contents when the store cannot be read. */
 const UNREADABLE = 'This conversation could not be read from the store';
@@ -93,11 +104,32 @@ export interface UseConversationOptions {
   readonly attachments?: TurnAttachments | null;
   /** Defaults to `requestAnimationFrame`. */
   readonly scheduleCommit?: (run: () => void) => void;
+  /** Substituted in tests; defaults to one built over the platform adapter. */
+  readonly memory?: MemoryRepository;
+  /**
+   * The chosen model's context window, for sizing the memory block against it.
+   *
+   * `null` — the default — means the endpoint reported none, which is ordinary.
+   * `memoryBudgetTokens` in `src/lib/memory-prompt.ts` then assumes the
+   * smallest window worth supporting rather than assuming plenty.
+   */
+  readonly contextWindowTokens?: number | null;
 }
 
 export interface Conversation {
   readonly entries: readonly ConversationEntry[];
   readonly streaming: boolean;
+  /**
+   * The exact system message memory will contribute to the next turn, or `null`
+   * when it will contribute none.
+   *
+   * Exposed rather than kept private because the context meter has to weigh it:
+   * `pendingTurnTexts` takes this same string, so the figure the user reads and
+   * the payload the host receives are built from one value. A meter that did
+   * not know about the memory block would under-report every turn by the whole
+   * of it.
+   */
+  readonly memoryPreamble: string | null;
   /** `null` when sending is possible; otherwise why it is not. */
   readonly blockedReason: string | null;
   send: (text: string) => void;
@@ -123,15 +155,22 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     () => options.transcript ?? createTranscriptRepository(adapter),
     [options.transcript, adapter],
   );
+  const memory = useMemo(
+    () => options.memory ?? createMemoryRepository(adapter),
+    [options.memory, adapter],
+  );
   const schedule = options.scheduleCommit ?? defaultScheduler;
   const providerId = options.providerId ?? null;
   const modelId = options.modelId ?? null;
   const conversationId = options.conversationId ?? null;
+  const contextWindowTokens = options.contextWindowTokens ?? null;
   const supplied = options.initialEntries;
 
   const [entries, setEntries] = useState<readonly ConversationEntry[]>(() => supplied ?? []);
   const [streaming, setStreaming] = useState(false);
   const [unreadable, setUnreadable] = useState(false);
+  const [remembered, setRemembered] = useState<readonly MemoryEntry[]>(NO_MEMORY);
+  const memoryRevision = useMemoryStore((store) => store.revision);
 
   // Read by `send`/`retry`, which need the current transcript without taking a
   // dependency on it — a side effect inside a state updater would run twice
@@ -193,6 +232,61 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       // reads what did land, and says so if it cannot read at all.
     });
   }, []);
+
+  /**
+   * Read the user's memory on the way in.
+   *
+   * The **global** scope, always, because nothing in the renderer knows which
+   * project a conversation belongs to: `ConversationSummary` carries no project
+   * id and there is no project surface. The host's project scope is real and
+   * tested; it is not reachable from here yet, and this hook does not pretend
+   * otherwise by inventing one.
+   *
+   * A failed read leaves memory empty and the turn goes without it. That is a
+   * deliberate degradation and it is **not** surfaced anywhere today — unlike
+   * an unreadable transcript, which blocks sending, because a reply built on a
+   * history that failed to load is a reply to a conversation that did not
+   * happen. A missing remembered preference is not that.
+   *
+   * Re-runs on `memoryRevision`, which the memory pane bumps after every
+   * successful write. Reading only on mount would mean a memory the user wrote
+   * with this conversation open saved, listed, and changed nothing about the
+   * next answer until they switched conversations and back.
+   */
+  useEffect(() => {
+    let abandoned = false;
+    void (async () => {
+      try {
+        const stored = await memory.list(GLOBAL_MEMORY);
+        if (!abandoned && mounted.current) setRemembered(stored);
+      } catch {
+        if (!abandoned && mounted.current) setRemembered(NO_MEMORY);
+      }
+    })();
+    return () => {
+      abandoned = true;
+    };
+  }, [memory, memoryRevision]);
+
+  /**
+   * What memory will contribute to the next turn.
+   *
+   * Computed once and used twice — by `start`, which sends it, and by the
+   * caller's context meter through `pendingTurnTexts`. Recomputing it in two
+   * places is how the two drift.
+   */
+  const memoryMessage = useMemo(
+    () => memorySystemMessage(remembered, contextWindowTokens),
+    [remembered, contextWindowTokens],
+  );
+
+  /**
+   * Read by `start` through a ref for the same reason `entriesRef` is: `start`
+   * must not be rebuilt every time memory loads, because it is handed to the
+   * composer.
+   */
+  const memoryRef = useRef(memoryMessage);
+  memoryRef.current = memoryMessage;
 
   /**
    * Read the conversation back on the way in.
@@ -357,7 +451,7 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
             turnId,
             providerId,
             modelId,
-            messages: toMessages(history, userText, parts),
+            messages: toMessages(history, userText, parts, memoryRef.current),
             onEvent: (event) => {
               onEvent(turnId, event, isFirst);
             },
@@ -507,7 +601,15 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       ? 'Choose a model to start a conversation'
       : null;
 
-  return { entries, streaming, blockedReason, send, stop, retry };
+  return {
+    entries,
+    streaming,
+    blockedReason,
+    memoryPreamble: memoryMessage?.text ?? null,
+    send,
+    stop,
+    retry,
+  };
 }
 
 /**
@@ -537,12 +639,19 @@ function userMessage(text: string, parts: readonly ContentPartInput[]): ChatMess
   return parts.length === 0 ? { role: 'user', text } : { role: 'user', text, parts };
 }
 
+/**
+ * The memory block leads, because it is context for everything after it. A
+ * system message appended after the transcript reads as a late instruction, and
+ * some endpoints refuse a system role anywhere but first.
+ */
 function toMessages(
   history: readonly ConversationEntry[],
   userText: string,
   parts: readonly ContentPartInput[],
+  memory: ChatMessageInput | null,
 ): readonly ChatMessageInput[] {
-  return [...historyMessages(history), userMessage(userText, parts)];
+  const messages = [...historyMessages(history), userMessage(userText, parts)];
+  return memory === null ? messages : [memory, ...messages];
 }
 
 /**
@@ -562,10 +671,16 @@ function toMessages(
 export function pendingTurnTexts(
   history: readonly ConversationEntry[],
   draft: string,
+  memoryPreamble: string | null = null,
 ): readonly string[] {
   const messages = historyMessages(history);
   if (draft.trim() !== '') messages.push({ role: 'user', text: draft });
-  return messages.map((message) => message.text);
+  const texts = messages.map((message) => message.text);
+  // Counted whether or not the composer holds anything: memory rides on every
+  // turn this surface sends, including the first one, so a meter that only
+  // counted it once there was a draft would read low on an empty composer and
+  // jump by the whole block on the first keystroke.
+  return memoryPreamble === null ? texts : [memoryPreamble, ...texts];
 }
 
 function refusalOf(error: unknown): { code: string; message: string } {

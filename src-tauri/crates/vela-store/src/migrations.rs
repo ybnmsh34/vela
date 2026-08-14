@@ -63,6 +63,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "message_search",
         sql: include_str!("migrations/0002_message_search.sql"),
     },
+    Migration {
+        version: 3,
+        name: "memory",
+        sql: include_str!("migrations/0003_memory.sql"),
+    },
 ];
 
 /// The schema version this build produces and understands.
@@ -300,6 +305,7 @@ mod tests {
             "message_parts",
             "settings",
             "message_search",
+            "memory_entries",
         ] {
             let count: i64 = conn
                 .query_row(

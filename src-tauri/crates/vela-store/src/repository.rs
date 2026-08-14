@@ -12,9 +12,9 @@
 
 use crate::error::StoreResult;
 use crate::model::{
-    Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
-    NewConversation, NewMessage, NewProject, Project, ProjectId, ProjectPatch, Setting,
-    SettingEntry, Timestamp,
+    Conversation, ConversationId, ConversationPatch, MemoryEntry, MemoryEntryId, MemoryPatch,
+    MemoryScope, Message, MessageId, MessagePatch, NewConversation, NewMemoryEntry, NewMessage,
+    NewProject, Project, ProjectId, ProjectPatch, Setting, SettingEntry, Timestamp,
 };
 
 /// Which project's conversations to list.
@@ -206,6 +206,41 @@ pub trait MessageRepository {
     fn search_messages(&self, query: &str, limit: u32) -> StoreResult<Vec<SearchHit>>;
 }
 
+/// Durable, categorised facts, partitioned by [`MemoryScope`].
+///
+/// The one rule this trait exists to keep is MEM-2's: **a read of one scope
+/// never returns an entry from another.** Every method below takes the scope or
+/// an id, and there is deliberately no "list everything" method — a caller that
+/// could ask for all entries would sooner or later render them together, which
+/// is the leak. Export across scopes is a feature that has to be written
+/// deliberately, not one that falls out of a convenience method.
+///
+/// `sqlite::tests::project_memory_and_global_memory_never_see_each_other` is
+/// what makes the previous paragraph true rather than aspirational.
+pub trait MemoryRepository {
+    fn create_memory_entry(&self, input: NewMemoryEntry) -> StoreResult<MemoryEntry>;
+    fn get_memory_entry(&self, id: &MemoryEntryId) -> StoreResult<MemoryEntry>;
+    /// One scope's entries, **pinned first, then most recently updated first**.
+    ///
+    /// The order is the injection order MEM-1 specifies (pinned > recency), so
+    /// a caller that takes the first N under a budget takes the right N without
+    /// re-sorting. Embedding similarity, the third term in that rule, is not
+    /// implemented anywhere in Vela and is not applied here.
+    fn list_memory_entries(&self, scope: &MemoryScope) -> StoreResult<Vec<MemoryEntry>>;
+    fn update_memory_entry(
+        &self,
+        id: &MemoryEntryId,
+        patch: MemoryPatch,
+    ) -> StoreResult<MemoryEntry>;
+    fn delete_memory_entry(&self, id: &MemoryEntryId) -> StoreResult<()>;
+    /// Empties one scope and reports how many rows went.
+    ///
+    /// The per-scope reset the reference does not have: its Reset "permanently
+    /// deletes all memories including project memories", which forces a user
+    /// who wants to forget one project into an all-or-nothing wipe.
+    fn clear_memory_scope(&self, scope: &MemoryScope) -> StoreResult<u64>;
+}
+
 pub trait SettingsRepository {
     /// Insert or replace. The value is arbitrary JSON and must never be a
     /// credential — pass a [`crate::model::SecretRefName`] instead.
@@ -221,7 +256,13 @@ pub trait SettingsRepository {
 /// `Arc<dyn VelaStore>`, so the host, the IPC layer and tests all depend on
 /// this trait rather than on SQLite.
 pub trait VelaStore:
-    ProjectRepository + ConversationRepository + MessageRepository + SettingsRepository + Send + Sync
+    ProjectRepository
+    + ConversationRepository
+    + MessageRepository
+    + MemoryRepository
+    + SettingsRepository
+    + Send
+    + Sync
 {
     /// Which database is actually live, for honest diagnostics — the same
     /// reason `app_info.secretBackend` exists. Returns
@@ -238,6 +279,7 @@ where
     T: ProjectRepository
         + ConversationRepository
         + MessageRepository
+        + MemoryRepository
         + SettingsRepository
         + Send
         + Sync

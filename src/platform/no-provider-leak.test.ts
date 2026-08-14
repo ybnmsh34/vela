@@ -26,7 +26,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { basename, extname, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = process.cwd();
@@ -193,10 +193,34 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
     // hook that carries it from a prop to that repository. A *component*
     // touching it means the surface has started to look at what answered, and
     // the next step from there is always a branch.
+    //
+    // `basename`, not `split('/')`, and that is a repair rather than a detail.
+    // `sourceFiles` returns `join`ed paths, so on Windows every separator is a
+    // backslash: `split('/')` returned the whole path, `CARRIERS` never matched
+    // anything, and the guard reported its own designated carrier. It passed on
+    // CI and could only fail on the machine that builds the product — the same
+    // shape as `chat-contract-parity`'s CRLF defect, in a different guard.
+    //
+    // The tempting repair was to widen `CARRIERS` until the noise stopped. That
+    // would have retired the rule to silence a scan that was not running.
     const CARRIERS = new Set(['use-conversation.ts']);
-    const offenders = sourceFiles(join(SRC_ROOT, 'features', 'conversation'), ['.ts', '.tsx', '.css'])
-      .filter((path) => !/\.test\.[a-z]+$/.test(path))
-      .filter((path) => !CARRIERS.has(path.split('/').at(-1) ?? ''))
+    const conversationFiles = sourceFiles(join(SRC_ROOT, 'features', 'conversation'), [
+      '.ts',
+      '.tsx',
+      '.css',
+    ]).filter((path) => !/\.test\.[a-z]+$/.test(path));
+
+    // The exemption is load-bearing, so it is checked rather than assumed: the
+    // carrier must be present in the scan and must be the thing removed from it.
+    // Both halves matter — if the file were renamed, the first fails; if the
+    // separator broke again, the second does.
+    expect(
+      conversationFiles.filter((path) => CARRIERS.has(basename(path))).map((p) => basename(p)),
+      'the carrier exemption matches nothing, so this guard is scanning the wrong set',
+    ).toEqual(['use-conversation.ts']);
+
+    const offenders = conversationFiles
+      .filter((path) => !CARRIERS.has(basename(path)))
       .flatMap((path) => {
         const source = stripComments(readFileSync(path, 'utf8'));
         return source

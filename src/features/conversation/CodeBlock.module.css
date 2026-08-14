@@ -1,5 +1,11 @@
+/* Code is not prose. It has its own natural line length — often far longer than
+   a readable paragraph — and it is what suffers most in a 480px column, where
+   every second line wraps or scrolls. So on a wide window it takes the space a
+   paragraph must not: `--vela-wide-measure` rather than the reading measure.
+   This is the single change that makes a maximised window worth maximising. */
 .block {
   margin: var(--vela-space-4) 0;
+  width: var(--vela-wide-measure);
   border: 1px solid var(--vela-code-border);
   border-radius: var(--vela-radius-md);
   background: var(--vela-code-bg);

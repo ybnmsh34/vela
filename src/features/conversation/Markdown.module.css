@@ -196,8 +196,13 @@
   border-radius: var(--vela-radius-sm);
 }
 
+/* Tables are not prose and are not bound by the reading measure. On a wide
+   window this is where the extra space actually pays off — a table cramped into
+   a 480px column is the thing that suffers most, and widening it costs the
+   reader nothing because nobody reads a table line by line. */
 .tableWrap {
   margin: 0 0 var(--vela-space-3);
+  width: var(--vela-wide-measure);
   overflow-x: auto;
   border: 1px solid var(--vela-border);
   border-radius: var(--vela-radius-md);

@@ -1,5 +1,29 @@
+/* TURN OWNERSHIP IS GEOMETRY, NOT COLOUR.
+
+   Before this, the user turn and the assistant turn were byte-identical boxes —
+   left 1280, right 1760, width 480, align-self auto, margin 0 — and the *only*
+   thing that said who was speaking was a background fill. That fails anyone
+   scanning a transcript rather than reading it, and it fails completely for
+   anyone who cannot distinguish the two fills.
+
+   So the two sides now sit on opposite edges and carry different widths: the
+   assistant keeps the full reading measure on the left, and the user's turn is
+   capped narrower and pushed to the right. Cover the colours and you can still
+   tell them apart, which is the actual requirement. */
 .turn {
+  display: flex;
+  flex-direction: column;
   padding: var(--vela-space-5) 0;
+}
+
+.turn[data-role='user'] {
+  align-items: flex-end;
+}
+
+/* Not `flex-end`: the assistant's children include code blocks and tables that
+   are allowed to exceed the prose measure, and stretching is what lets them. */
+.turn[data-role='assistant'] {
+  align-items: stretch;
 }
 
 .turn[data-role='assistant'] + .turn[data-role='user'],
@@ -11,7 +35,11 @@
    what you typed is what you see. */
 .userBody {
   display: inline-block;
-  max-width: 100%;
+  /* Narrower than the assistant's measure, deliberately: the width difference is
+     half of what makes ownership readable at a glance, the edge is the other
+     half. `min(100%, …)` so a narrow window collapses it gracefully rather than
+     overflowing. */
+  max-width: var(--vela-turn-user-measure);
   padding: var(--vela-space-3) var(--vela-space-4);
   border-radius: var(--vela-radius-lg);
   background: var(--vela-turn-user-bg);

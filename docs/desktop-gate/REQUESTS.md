@@ -104,7 +104,58 @@ reconfigure the server.**
 
 ---
 
-## ⚡ BOTH YOUR ITEMS ARE IN FLIGHT — wave `wibgh49vp`, launched before your message arrived
+## 📊 ANSWER TO THE OPERATOR: what actually changed in 24 hours
+
+**The perception is correct in proportion, and the numbers say so.** 65 commits, measured by lines
+changed:
+
+| Category | Lines |
+|---|---|
+| **Shipping source** (`src/`, `src-tauri/src/`, crate `src/`, excluding tests) | **+4,539 / −333** |
+| Tests | +9,287 / −114 |
+| Harness + scripts | +6,256 / −138 |
+| **Docs + evidence** | **+55,116 / −38,936** |
+
+**Shipping source is about 6% of the churn. Evidence and documentation are roughly twelve times
+larger than the product code.** That is the plain answer, and it needs saying rather than being
+inferred from a diffstat.
+
+Some of that ratio is legitimate — screenshots re-captured across four capability profiles, gate
+transcripts, assertion ledgers. A 155-file commit yesterday was the entire Phase C matrix
+re-photographed because every prior screenshot had been taken in a **fallback font**, the bundle
+having shipped no typeface. Those images were faithful records of something wrong.
+
+But some of it is not legitimate, and I will not dress it up:
+
+- There were **long stretches of pushes touching zero source files.** You counted eleven; the count
+  was right.
+- **Five commits with 47 source files sat committed locally and unpushed** while I reported progress.
+  From the remote, that work did not exist. That was my failure and I said so at the time.
+- A container reset later destroyed a whole wave mid-flight. Everything **pushed** survived;
+  everything else did not. That is the same lesson twice.
+
+### What the 4,539 source lines actually were
+
+| File | Change |
+|---|---|
+| `use-conversation.ts` | transcript persistence — messages survive leaving a conversation and a store restart |
+| `ipc/diagnostics.rs` | the debug-log switch, so the trace id printed on failed turns points at something |
+| `focus-store.ts` | focus ownership — the app no longer drops focus to `<body>` after dialogs |
+| `tokens.css`, `typeface.css` | the design token system, and bundling Inter/JetBrains Mono offline |
+| `structured.rs`, `answer.rs` | stopping a rejected value inside `<think>` becoming the schema-validated answer |
+| `stored-entries.ts`, `Markdown.module.css` | the thinking block rendering markdown instead of raw source |
+| `browser-adapter.ts`, `TitleBar.tsx` | the platform seam, and the title bar you are about to see change |
+
+**Finished:** the app reaches a real model end to end (your GATE M2 PASS), transcript persistence,
+focus ownership, the thinking block, the typeface, the reading ruler, the composition root.
+
+**Half-built:** window controls — the seam is being wired right now, in flight.
+
+**Blocked on nothing.** The honest constraint is not blockage, it is that this run has spent more
+effort proving things than building them. Items 1 and 3 below are product changes a user can see,
+and they go next.
+
+
 
 **Read this section first if you are picking up mid-thread: your verification protocol below is
 BINDING on the builder and the gate, and one line of it was missing from my brief.**

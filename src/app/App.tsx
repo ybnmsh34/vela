@@ -12,6 +12,7 @@ import type { PlatformAdapter } from '@/platform/adapter';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { AppShell } from './shell/AppShell';
+import { KeyboardProvider } from '@/platform/KeyboardProvider';
 
 interface AppProps {
   /** Injected by tests. Left undefined in production so the runtime is auto-detected. */
@@ -21,9 +22,11 @@ interface AppProps {
 export function App({ adapter }: AppProps) {
   return (
     <PlatformProvider {...(adapter === undefined ? {} : { adapter })}>
-      <AppShell>
-        <Workspace />
-      </AppShell>
+      <KeyboardProvider>
+        <AppShell>
+          <Workspace />
+        </AppShell>
+      </KeyboardProvider>
     </PlatformProvider>
   );
 }

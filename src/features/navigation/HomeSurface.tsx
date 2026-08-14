@@ -20,6 +20,8 @@ import { usePlatform } from '@/platform/PlatformProvider';
 import { claimKeyboardIfHomeless, useFocusAnchor } from '@/state/focus-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
+import { ShortcutHint } from '@/components/ShortcutHint';
+
 import styles from './HomeSurface.module.css';
 import { useConversations } from './use-conversations';
 
@@ -107,7 +109,7 @@ export function HomeSurface({ secretBackend = null }: HomeSurfaceProps) {
           }}
         >
           Search everything
-          <kbd className={styles.kbd}>⌘K</kbd>
+          <ShortcutHint keyName="K" className={styles.kbd} />
         </button>
       </div>
 

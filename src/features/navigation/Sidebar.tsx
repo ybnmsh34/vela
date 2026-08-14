@@ -39,6 +39,8 @@ import {
 
 import { ConversationRow } from './ConversationRow';
 import { DeleteConversationDialog } from './DeleteConversationDialog';
+import { ShortcutHint } from '@/components/ShortcutHint';
+
 import styles from './Sidebar.module.css';
 import { useConversations } from './use-conversations';
 
@@ -200,7 +202,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           >
             <PlusIcon />
             <span>New conversation</span>
-            <kbd className={styles.kbd}>⌘N</kbd>
+            <ShortcutHint keyName="N" className={styles.kbd} />
           </button>
           {/* The collapse control shares the row with the primary action rather
               than the search field: search is the one that has to hold a full
@@ -223,7 +225,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <SearchIcon />
           <span>Search conversations</span>
-          <kbd className={styles.kbd}>⌘K</kbd>
+          <ShortcutHint keyName="K" className={styles.kbd} />
         </button>
       </div>
 

@@ -22,7 +22,10 @@ export interface ShortcutHintProps {
   /** The key as printed on the keycap: `'K'`, `'N'`. */
   readonly keyName: string;
   /** The badge's visual class, owned by the surface it sits on. */
-  readonly className?: string;
+  /** `| undefined` explicitly: the repo runs `exactOptionalPropertyTypes`,
+   *  so an optional prop passed through from a CSS-module lookup is
+   *  `string | undefined` and `?:` alone will not accept it. */
+  readonly className?: string | undefined;
 }
 
 export function ShortcutHint({ keyName, className }: ShortcutHintProps) {

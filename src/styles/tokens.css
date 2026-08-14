@@ -323,7 +323,19 @@
      a reading measure, and it is what actually suffers at 480px. This is where
      a big window pays off most: on a wide viewport a code block may use the
      space a paragraph must not. */
-  --vela-wide-measure: min(100%, calc(var(--vela-measure) + 16rem));
+  /* NOT `min(100%, …)`, and that mistake is worth the comment. `100%` resolves
+     against the containing block — which IS the reading column — so the min()
+     collapsed to the column's own width and the token could never be wider than
+     the thing it exists to exceed. Measured on WebView2 at 2560px before the
+     fix: the code block rendered 526px against a 528px prose column, i.e. the
+     breakout did nothing at the one window size it was written for.
+     Unbounded here; the breakout that consumes it is gated on a viewport with
+     provable room — see `CodeBlock.module.css`. */
+  --vela-wide-measure: calc(var(--vela-measure) + 16rem);
+  /* The viewport from which a breakout has room to land. At 1600px with the
+     sidebar dragged to its 480 maximum the pane is 1120 and the column 528, so
+     there is 296px of slack on each side against a 128px breakout. */
+  --vela-wide-breakout-from: 1600px;
   /* The user's own turn is capped NARROWER than the assistant's and sits on the
      opposite edge, so a glance tells you who spoke without reading a word. */
   --vela-turn-user-measure: min(100%, 26rem);

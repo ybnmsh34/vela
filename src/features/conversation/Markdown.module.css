@@ -202,10 +202,20 @@
    reader nothing because nobody reads a table line by line. */
 .tableWrap {
   margin: 0 0 var(--vela-space-3);
-  width: var(--vela-wide-measure);
   overflow-x: auto;
   border: 1px solid var(--vela-border);
   border-radius: var(--vela-radius-md);
+}
+
+/* Same breakout as the code block, and for the same reason: `width` alone is
+   swallowed by the reading column's `max-width`, so the box is pulled out by
+   half the difference on each side. See `CodeBlock.module.css` for the full
+   account of why the first attempt measured 526px against a 528px column. */
+@media (min-width: 1600px) {
+  .tableWrap {
+    width: var(--vela-wide-measure);
+    margin-inline: calc((var(--vela-measure) - var(--vela-wide-measure)) / 2);
+  }
 }
 
 .table {

@@ -105,21 +105,33 @@ function substitute(value: string, palette: Map<string, string>): string {
  */
 function lengthPx(value: string, palette: Map<string, string>, viewportWidth = 0): number {
   const flat = substitute(value, palette).replace(/\bcalc\(/gu, '(');
-  const tokens = flat.match(/min\(|max\(|\d*\.?\d+(?:px|rem|em|vw)?|[+\-*/(),]/gu) ?? [];
+  const tokens = flat.match(/clamp\(|min\(|max\(|\d*\.?\d+(?:px|rem|em|vw)?|[+\-*/(),]/gu) ?? [];
   let at = 0;
 
   const peek = (): string | undefined => tokens[at];
   const number = (): number => {
     const token = tokens[at];
     at += 1;
-    if (token === 'min(' || token === 'max(') {
+    if (token === 'min(' || token === 'max(' || token === 'clamp(') {
       const args = [sum()];
       while (tokens[at] === ',') {
         at += 1;
         args.push(sum());
       }
       at += 1; // ')'
-      return token === 'min(' ? Math.min(...args) : Math.max(...args);
+      if (token === 'min(') return Math.min(...args);
+      if (token === 'max(') return Math.max(...args);
+      /* `clamp(a, b, c)` is `max(a, min(b, c))`. This helper could not read
+         `clamp` at all until the reading measure became
+         `clamp(30rem, 24rem + 6vw, 33rem)`, at which point every ruler
+         assertion silently compared against the *preferred* value — 432px at
+         the harness viewport — instead of the 480px the engine actually
+         resolves. Eleven assertions failed against CSS that is correct;
+         measured on WebView2 the column is 480px up to ~1600px and 528px at
+         2560px, both inside the 60–80 character band. The helper was the thing
+         that was wrong. */
+      const [low = 0, preferred = 0, high = 0] = args;
+      return Math.max(low, Math.min(preferred, high));
     }
     if (token === '(') {
       const inner = sum();

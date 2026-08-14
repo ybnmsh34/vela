@@ -23,6 +23,14 @@
 //!   body, no endpoint text, no correlation id. The property `diagnostic.rs`
 //!   exists to hold — that endpoint-supplied text never rides an IPC response
 //!   toward the renderer — is unchanged, and [`tests`] asserts it.
+//! * **Enabling can fail, and a failure means off.** The log holds raw upstream
+//!   bodies, so the directory it lives in has to be reachable by its owner and
+//!   nobody else — `0700` on unix, an owner-and-`SYSTEM` DACL with inheritance
+//!   disabled on Windows. [`vela_providers::private_fs`] applies that and then
+//!   re-reads it off the filesystem; if what comes back is not private,
+//!   [`debug_log_set`] returns an error naming the path and the log stays
+//!   **off**. A debug log that silently stays readable by another account is
+//!   worse than no debug log.
 //! * **It does not persist.** Each launch starts with the log off. Vela's
 //!   posture is offline-first with no telemetry, and a debug log that survives
 //!   a restart is a file that grows for months after the session that needed
@@ -34,7 +42,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use vela_providers::debuglog;
+use vela_providers::{debuglog, private_fs};
 
 use super::{EmptyPayload, IpcError, IpcResult};
 
@@ -148,43 +156,6 @@ pub fn debug_log_get(handle: &DebugLogHandle, _req: EmptyPayload) -> IpcResult<D
     Ok(status_of(handle))
 }
 
-/// Create the directory the log lives in, reachable by its owner and nobody
-/// else.
-///
-/// # Why not `create_dir_all`
-///
-/// Because that is `0755` under the ordinary `0022` umask, and a `0600` log
-/// inside a world-listable directory still publishes its name, its size and its
-/// timestamps to every account on the machine — which is to say, that this user
-/// is debugging their endpoint and when they were doing it. The file's own mode
-/// is set where the file is opened (`vela_providers::debuglog`); this is the
-/// other half, and neither half is the property on its own.
-///
-/// An existing directory is tightened rather than accepted: it may have been
-/// created by an earlier run, or by a build from before this rule.
-#[cfg(unix)]
-fn create_private_dir(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(path)?;
-    let mut permissions = std::fs::metadata(path)?.permissions();
-    if permissions.mode() & 0o077 != 0 {
-        permissions.set_mode(0o700);
-        std::fs::set_permissions(path, permissions)?;
-    }
-    Ok(())
-}
-
-/// Windows: the application-data directory is already per-user, and nothing
-/// here widens it. See the `unix` sibling for what this is protecting.
-#[cfg(not(unix))]
-fn create_private_dir(path: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(path)
-}
-
 /// Turn recording on or off.
 ///
 /// Enabling creates the directory first: `FileSink` opens its file lazily and
@@ -192,25 +163,68 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
 /// panic — so a missing directory would otherwise leave the switch reporting
 /// `enabled: true` over a log that never receives a line.
 ///
-/// It is created **private** (`0700`), and the log inside it is opened `0600`.
-/// This file is where the raw endpoint bodies go; it is precisely the one that
-/// must not be readable by other accounts.
+/// It is created **private** — `0700` on unix, an owner-and-`SYSTEM` DACL with
+/// inheritance disabled on Windows — and the log inside it likewise. This file
+/// is where the raw endpoint bodies go; it is precisely the one that must not
+/// be readable by other accounts.
+///
+/// # Why this is one call into [`private_fs`] and not two implementations here
+///
+/// It used to be two. The `unix` arm set `0700`; the `#[cfg(not(unix))]` arm was
+/// `create_dir_all` under a comment asserting *"the application-data directory
+/// is already per-user, and nothing here widens it"*. The second clause is true
+/// and the first was an assumption, and on this project's own Windows machine it
+/// was false before Vela ever ran: `%APPDATA%\dev.vela.desktop\diagnostics` was
+/// measured carrying an inherited `CodexSandboxUsers  ReadAndExecute` ACE, with
+/// DACL inheritance enabled. A separate local group could read the directory
+/// holding raw provider exchanges. [`private_fs`] is the one place that keeps
+/// the promise on every platform, and — the part that matters — **reads the
+/// result back off the filesystem** instead of trusting the request it just
+/// made.
 pub fn debug_log_set(handle: &DebugLogHandle, req: DebugLogSetReq) -> IpcResult<DebugLogStatus> {
+    debug_log_set_with(handle, req, private_fs::create_private_dir)
+}
+
+/// [`debug_log_set`] with the directory step supplied by the caller.
+///
+/// The seam exists because the platform enforcement — a Win32 DACL, unix mode
+/// bits — is the part a test cannot make fail on demand, while *the wiring
+/// around it* is exactly what has to be proven: that a directory which cannot be
+/// made private leaves the log **off** rather than on. Production passes
+/// [`private_fs::create_private_dir`];
+/// [`tests::the_log_stays_off_when_the_directory_cannot_be_made_private`] passes
+/// [`private_fs::create_private_dir_with`] with an enforcer that refuses, and
+/// its control passes the pre-fix body (`create_dir_all` and a shrug) and shows
+/// the log coming up enabled over a directory nothing protected.
+///
+/// # Failing closed
+///
+/// On failure the sink is **removed**, not merely left uninstalled. A caller who
+/// asks to enable the log and is told no must not be left recording into a path
+/// this function has just refused to vouch for.
+fn debug_log_set_with(
+    handle: &DebugLogHandle,
+    req: DebugLogSetReq,
+    create_private_dir: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> IpcResult<DebugLogStatus> {
     if !req.enabled {
         debuglog::disable();
         return Ok(status_of(handle));
     }
 
     if let Some(parent) = handle.path().parent() {
-        create_private_dir(parent).map_err(|error| {
-            IpcError::new(
+        if let Err(error) = create_private_dir(parent) {
+            debuglog::disable();
+            return Err(IpcError::new(
                 super::IpcErrorCode::Internal,
                 format!(
-                    "could not create the debug log directory `{}`: {error}",
+                    "the debug log was not turned on: `{}` could not be made \
+                     private on this machine ({error}). Vela will not write raw \
+                     provider exchanges to a path another account can read.",
                     parent.display()
                 ),
-            )
-        })?;
+            ));
+        }
     }
     debuglog::enable(Arc::new(debuglog::FileSink::new(handle.path())));
     Ok(status_of(handle))
@@ -308,6 +322,194 @@ mod tests {
             before,
             "turning it off must actually stop the recording"
         );
+    }
+
+    /// Widen a path so a principal that is not its owner can read it — the state
+    /// the desktop gate measured on `%APPDATA%\dev.vela.desktop\diagnostics`,
+    /// expressed in whatever the platform spells it in.
+    ///
+    /// The control below needs this to be *deterministic*: `create_dir_all` in a
+    /// temporary directory happens to produce a non-private directory on both
+    /// platforms this ships on, but "happens to" is how a control quietly stops
+    /// controlling for anything. This makes it so on purpose.
+    #[cfg(unix)]
+    fn widen(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        let mode = permissions.mode() & 0o7777;
+        permissions.set_mode(mode | 0o055);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+
+    /// `BUILTIN\Users` (`S-1-5-32-545`): a group that exists on every
+    /// installation, is not the owner and is not `SYSTEM` — standing in for the
+    /// `CodexSandboxUsers` ACE that was actually inherited on the measured
+    /// machine.
+    #[cfg(windows)]
+    fn widen(path: &Path) {
+        let out = std::process::Command::new("icacls")
+            .arg(path)
+            .arg("/grant")
+            .arg("*S-1-5-32-545:(OI)(CI)(RX)")
+            .output()
+            .expect("icacls must be present on Windows");
+        assert!(
+            out.status.success(),
+            "could not widen {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// **The wiring the whole module exists for: a directory that cannot be made
+    /// private leaves the log OFF.**
+    ///
+    /// The platform enforcement itself is unfakeable in a test — a Win32 DACL
+    /// either applies or it does not — so it is injected through the seam
+    /// `private_fs` publishes for exactly this. What is under test is everything
+    /// around it: that `debug_log_set` propagates the refusal instead of
+    /// swallowing it, that no sink is installed, that `debug_log_get` agrees,
+    /// and that the user is told which path failed and why.
+    ///
+    /// Its control is
+    /// [`the_pre_fix_body_lets_the_log_come_up_over_a_directory_nothing_protected`],
+    /// and without that control this test proves nothing: a switch that refused
+    /// to enable under every enforcer would pass it too.
+    #[test]
+    fn the_log_stays_off_when_the_directory_cannot_be_made_private() {
+        let _guard = debug_log_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let handle = DebugLogHandle::under_data_dir(dir.path());
+        debuglog::disable();
+
+        let error = debug_log_set_with(&handle, DebugLogSetReq { enabled: true }, |path| {
+            // The enforcement step refusing: `SetNamedSecurityInfoW` denied on
+            // Windows, `chmod` refused on a filesystem with no mode bits.
+            private_fs::create_private_dir_with(path, |_| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
+                ))
+            })
+        })
+        .unwrap_err();
+
+        assert!(
+            !debuglog::is_enabled(),
+            "the directory could not be made private and the log was turned on \
+             anyway — every prompt and answer in the session goes to a path \
+             another account can read"
+        );
+        assert!(
+            !debug_log_get(&handle, EmptyPayload {}).unwrap().enabled,
+            "the switch reports `enabled: true` after refusing to enable"
+        );
+
+        assert_eq!(error.code, IpcErrorCode::Internal);
+        let parent = handle.path().parent().unwrap().display().to_string();
+        assert!(
+            error.message.contains(&parent),
+            "the refusal does not name the path that failed, so the user \
+             cannot act on it: {}",
+            error.message
+        );
+        assert!(
+            error.message.contains("SetNamedSecurityInfoW"),
+            "the refusal does not say why: {}",
+            error.message
+        );
+
+        // And nothing was installed that could receive a line.
+        debuglog::record(|| debuglog::DebugEntryOwned {
+            correlation: vela_providers::diagnostic::CorrelationId::next(),
+            cause: vela_providers::diagnostic::Cause::CredentialRejected,
+            status: Some(401),
+            endpoint: None,
+            body: b"must not be recorded".to_vec(),
+        });
+        assert!(
+            !handle.path().exists(),
+            "a log file was written under a directory that could not be secured"
+        );
+    }
+
+    /// **The control for the test above, and the defect it closes.**
+    ///
+    /// The `#[cfg(not(unix))]` body as it shipped was `create_dir_all` and a
+    /// comment assuming the OS had already made the directory private. Injected
+    /// as the directory step, it succeeds, and the switch comes up **enabled**
+    /// over a directory a principal that is not the owner can read — measured
+    /// through the same reader `Get-Acl` and `stat` answer from a shell, not
+    /// asserted about the request that was made.
+    ///
+    /// Without this, the test above would pass on a `debug_log_set` that had
+    /// been broken into never enabling at all.
+    #[test]
+    fn the_pre_fix_body_lets_the_log_come_up_over_a_directory_nothing_protected() {
+        let _guard = debug_log_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let handle = DebugLogHandle::under_data_dir(dir.path());
+        let diagnostics = handle.path().parent().unwrap().to_path_buf();
+        debuglog::disable();
+
+        let status = debug_log_set_with(&handle, DebugLogSetReq { enabled: true }, |path| {
+            // The pre-fix body, verbatim, plus the state the desktop gate
+            // measured on a real machine.
+            std::fs::create_dir_all(path)?;
+            widen(path);
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(
+            status.enabled,
+            "the control did not enable the log, so the test above is not \
+             distinguishing a refusal from a switch that never turns on"
+        );
+        assert!(debuglog::is_enabled());
+
+        let report = private_fs::describe(&diagnostics).unwrap();
+        assert!(
+            !report.is_private(),
+            "the control did not produce a directory a non-owner can reach, so \
+             it is not controlling for anything: {report:?}"
+        );
+        debuglog::disable();
+    }
+
+    /// **The fix, measured on whatever platform is running this.**
+    ///
+    /// Not `#[cfg(unix)]`: the defect was a Windows one, and a guard that only
+    /// runs where the bug was not is how it survived. `describe` reads mode bits
+    /// on unix and the real ACEs on Windows, so this asserts the same sentence
+    /// in both places — nobody but the owner can reach the directory holding raw
+    /// provider exchanges.
+    #[test]
+    fn turning_the_log_on_tightens_a_directory_another_account_could_read() {
+        let _guard = debug_log_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let handle = DebugLogHandle::under_data_dir(dir.path());
+        let diagnostics = handle.path().parent().unwrap().to_path_buf();
+        debuglog::disable();
+
+        // An earlier run — or an earlier build — left one behind, loose.
+        std::fs::create_dir_all(&diagnostics).unwrap();
+        widen(&diagnostics);
+        let before = private_fs::describe(&diagnostics).unwrap();
+        assert!(!before.is_private(), "control: {before:?}");
+
+        let status = debug_log_set(&handle, DebugLogSetReq { enabled: true }).unwrap();
+        assert!(status.enabled);
+
+        let after = private_fs::describe(&diagnostics).unwrap();
+        assert!(
+            after.is_private(),
+            "the real switch accepted a diagnostics directory another account \
+             can read: {after:?}"
+        );
+        assert!(after.foreign.is_empty(), "{after:?}");
+        assert_ne!(after.inheritance_disabled, Some(false), "{after:?}");
+        debuglog::disable();
     }
 
     #[cfg(unix)]

@@ -141,16 +141,34 @@ fn open_private(path: &Path) -> Option<std::fs::File> {
     Some(file)
 }
 
-/// Windows has no mode bits to set here. The log lives under the per-user
-/// application-data directory, which the OS already ACLs to that user, and
-/// nothing in this file widens it.
+/// Windows and anything else: [`crate::private_fs::open_private_append`].
+///
+/// # What this used to say, and why it was wrong
+///
+/// > *"Windows has no mode bits to set here. The log lives under the per-user
+/// > application-data directory, which the OS already ACLs to that user, and
+/// > nothing in this file widens it."*
+///
+/// The second clause was true. The first was an assumption, and on a real
+/// Windows machine it was already false before Vela ever ran:
+/// `%APPDATA%\dev.vela.desktop\diagnostics` was measured carrying an inherited
+/// `CodexSandboxUsers  ReadAndExecute` ACE. Windows has no mode bits, but it
+/// does have a DACL, and "the OS already did the equivalent" is a statement
+/// about some other installer's ACLs rather than a property of this file.
+///
+/// [`open_private_append`](crate::private_fs::open_private_append) applies an
+/// owner-and-`SYSTEM` DACL with inheritance disabled and then **re-reads the
+/// result off the filesystem**, so a log this returns is one the OS has been
+/// asked about. `None` on failure, which the sink treats as "record nothing" —
+/// a debug log that silently stays readable by another account is worse than no
+/// debug log.
+///
+/// The `unix` sibling is left as it is deliberately: it tightens through the
+/// open handle rather than by path, which is strictly stronger, and it is the
+/// arm this workspace's mode tests already measure.
 #[cfg(not(unix))]
 fn open_private(path: &Path) -> Option<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .ok()
+    crate::private_fs::open_private_append(path).ok()
 }
 
 impl DebugSink for FileSink {
@@ -326,6 +344,12 @@ mod tests {
     }
 
     /// Records one entry through `sink`, which is what opens the file.
+    ///
+    /// `cfg(unix)` because only the mode assertions below reach for it; on
+    /// Windows the equivalent measurement is an ACL one and lives in
+    /// `crate::private_fs`, so leaving this ungated makes `-D warnings` fail on
+    /// the platform the ACL work was for.
+    #[cfg(unix)]
     fn record_one(sink: &FileSink, body: &str) {
         let owned = entry(CorrelationId::next(), body);
         sink.record(&DebugEntry {

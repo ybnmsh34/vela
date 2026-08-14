@@ -31,6 +31,25 @@ reqwest = { version = "0.12", default-features = false, features = [
   "charset",
 ] }
 
+# The Win32 half of `private_fs`. There is no way to express "this directory is
+# reachable by its owner and nobody else" on Windows through `std::fs`: the
+# concept is a DACL, and setting one — with inheritance *disabled*, which is the
+# whole point — means `SetNamedSecurityInfoW`. Reading it back means
+# `GetNamedSecurityInfoW` plus `GetAce`, because the promise this module makes is
+# a measurement and not a restatement of what was requested.
+#
+# `cfg(windows)` so no unix build pulls a line of this in. The feature list is
+# exactly the four namespaces `private_fs::imp` imports from, plus
+# `Win32_Foundation` for `LocalFree`/`CloseHandle`/`WIN32_ERROR`.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 # `net` is dev-only and buys one thing: `tests/wire_auth_headers.rs` opens a
 # real loopback socket to record the literal bytes Vela puts on the wire. That

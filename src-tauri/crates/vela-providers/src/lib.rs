@@ -23,6 +23,7 @@
 //! | [`router`] | Ordered candidates, bounded retries, honest failover |
 //! | [`http`] | The HTTP seam — the only place in Vela that opens a socket |
 //! | [`redact`] | Credential-safe request URLs: a URL that carries an API key cannot be printed into showing it |
+//! | [`private_fs`] | Making the debug log's directory and file reachable by their owner and nobody else — mode bits on unix, an inheritance-protected DACL on Windows — and **reading the result back off the filesystem** rather than trusting the request |
 //! | [`anthropic`] | The Messages backend: `content` blocks, `thinking` blocks, `x-api-key` |
 //! | [`google`] | The Gemini `generateContent` backend: `contents`/`parts`, safety blocks, thought signatures |
 //! | [`openai_compatible`] | The OpenAI-shaped backend all four matrix profiles speak |
@@ -105,6 +106,7 @@ pub mod http;
 pub mod lenient_json;
 pub mod model;
 pub mod openai_compatible;
+pub mod private_fs;
 pub mod provider;
 pub mod reasoning;
 pub mod redact;

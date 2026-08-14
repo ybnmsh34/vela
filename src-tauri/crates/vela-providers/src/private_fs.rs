@@ -74,12 +74,43 @@
 //! The **unix** implementation is measured by this module's own tests and, out
 //! of process, by `scripts/gate-m-debug-log-modes.sh`.
 //!
-//! The **Windows** implementation is **UNRUN**. It was written in a Linux
-//! container, type-checked against `x86_64-pc-windows-msvc`, and never
-//! executed. Not one line of it has touched a real ACL.
-//! `scripts/gate-m-debug-log-acl.ps1` exists so the desktop session can settle
-//! that in one command; until it reports, the Windows guarantee here is a
-//! design, not a result.
+//! The **Windows** implementation was **UNRUN** — written in a Linux container,
+//! type-checked against `x86_64-pc-windows-msvc`, never executed, and, it turned
+//! out, never even *compiled*: this module was missing from `lib.rs`, so no
+//! platform had built a line of it.
+//!
+//! It has now been run. `scripts/gate-m-debug-log-acl.ps1` drove the real
+//! `debug_log_set` against the real `%APPDATA%\dev.vela.desktop\diagnostics` on
+//! the machine the original finding came from, and read the result back with
+//! `Get-Acl` — a reader that shares no code with this module. Before, after
+//! `icacls /reset` restored the shipped state:
+//!
+//! ```text
+//! Owner               : DESKTOP-298M5DU\User
+//! Inheritance enabled : True
+//!   S-1-15-3-3557520199-…-3692855932   FullControl                 inherited=True
+//!   DESKTOP-298M5DU\User               FullControl                 inherited=True
+//!   DESKTOP-298M5DU\CodexSandboxUsers  ReadAndExecute, Synchronize inherited=True
+//!   NT AUTHORITY\SYSTEM                FullControl                 inherited=True
+//!   BUILTIN\Administrators             FullControl                 inherited=True
+//! ```
+//!
+//! After:
+//!
+//! ```text
+//! Owner               : DESKTOP-298M5DU\User
+//! Inheritance enabled : False
+//!   NT AUTHORITY\SYSTEM                FullControl                 inherited=False
+//!   DESKTOP-298M5DU\User               FullControl                 inherited=False
+//! SDDL                : …D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;S-1-5-21-…-1001)
+//! ```
+//!
+//! `D:PAI` — `P` for protected — is the Windows spelling of the promise at the
+//! top of this file, and the log file inside came out the same way. The
+//! remaining honesty note is narrower and still real: **the Windows branch has
+//! been measured on exactly one machine**, one Windows build, one account that
+//! is a member of `Administrators`. Nothing here has been exercised on a
+//! domain-joined host, on a network share, or as a standard user.
 
 use std::fs::File;
 use std::io;
@@ -290,9 +321,11 @@ mod imp {
 // windows
 // ---------------------------------------------------------------------------
 
-/// The Win32 half. **Written in a Linux container and never executed** — see
-/// the module docs. Type-checked against `x86_64-pc-windows-msvc`; that is a
-/// statement about the compiler, not about a machine.
+/// The Win32 half. Written in a Linux container, never executed and never
+/// compiled until this crate root learned the module existed; since then it has
+/// been run against a real ACL on a real machine — see the module docs for the
+/// before/after `Get-Acl` readings and for what that one machine does and does
+/// not settle.
 #[cfg(windows)]
 mod imp {
     use super::Privacy;
@@ -311,12 +344,12 @@ mod imp {
         TRUSTEE_IS_WELL_KNOWN_GROUP,
     };
     use windows_sys::Win32::Security::{
-        CreateWellKnownSid, EqualSid, GetAce, GetAclInformation, GetLengthSid,
-        GetSecurityDescriptorControl, GetTokenInformation, AclSizeInformation, ACCESS_ALLOWED_ACE,
-        ACE_FLAGS, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, INHERITED_ACE,
-        NO_INHERITANCE, OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID,
-        PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SUB_CONTAINERS_AND_OBJECTS_INHERIT, TOKEN_QUERY,
-        TOKEN_USER, TokenUser, WinLocalSystemSid,
+        AclSizeInformation, CreateWellKnownSid, EqualSid, GetAce, GetAclInformation, GetLengthSid,
+        GetSecurityDescriptorControl, GetTokenInformation, TokenUser, WinLocalSystemSid,
+        ACCESS_ALLOWED_ACE, ACE_FLAGS, ACE_HEADER, ACL, ACL_SIZE_INFORMATION,
+        DACL_SECURITY_INFORMATION, INHERITED_ACE, NO_INHERITANCE, OWNER_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SE_DACL_PROTECTED,
+        SUB_CONTAINERS_AND_OBJECTS_INHERIT, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -556,13 +589,12 @@ mod imp {
 
             let mut control: u16 = 0;
             let mut revision: u32 = 0;
-            let protected = if GetSecurityDescriptorControl(descriptor, &mut control, &mut revision)
-                != 0
-            {
-                control & SE_DACL_PROTECTED != 0
-            } else {
-                false
-            };
+            let protected =
+                if GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) != 0 {
+                    control & SE_DACL_PROTECTED != 0
+                } else {
+                    false
+                };
 
             let mut foreign = Vec::new();
             let mut lines = vec![format!("owner={}", sid_string(owner))];
@@ -572,7 +604,10 @@ mod imp {
                 foreign.push("everyone (NULL DACL)".to_owned());
                 lines.push("dacl=NULL — unrestricted".to_owned());
             } else {
-                let mut size = ACL_SIZE_INFORMATION::default();
+                // `windows-sys` derives no `Default` for its raw structs — the
+                // caller is expected to hand the API a zeroed out-parameter,
+                // which `GetAclInformation` then fills.
+                let mut size: ACL_SIZE_INFORMATION = std::mem::zeroed();
                 if GetAclInformation(
                     dacl,
                     (&mut size) as *mut ACL_SIZE_INFORMATION as *mut core::ffi::c_void,
@@ -600,8 +635,8 @@ mod imp {
                                 "ace type={} sid={name} mask=0x{:08x} inherited={inherited}",
                                 header.AceType, allowed.Mask
                             ));
-                            let grants = header.AceType == ACCESS_ALLOWED_ACE_TYPE
-                                && allowed.Mask != 0;
+                            let grants =
+                                header.AceType == ACCESS_ALLOWED_ACE_TYPE && allowed.Mask != 0;
                             let ours = EqualSid(sid, user.as_psid()) != 0
                                 || EqualSid(sid, system.as_psid()) != 0;
                             if grants && !ours {

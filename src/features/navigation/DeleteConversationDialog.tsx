@@ -21,12 +21,20 @@
  * opener can still take the keyboard and falls to the next rung of the ladder
  * when it cannot. A dialog whose subject is destruction must assume its opener
  * is a corpse.
+ *
+ * ## And the half of `aria-modal` that was still missing
+ *
+ * The attribute claimed the sidebar behind this dialog was unreachable while it
+ * asked its question. One Shift+Tab off Cancel reached it. The capture, the
+ * restore and the containment are all `src/components/ModalSurface.tsx` now —
+ * the dialog says what it is about and which control is the safe one, and gets
+ * the rest by construction.
  */
 
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 
+import { ModalSurface } from '@/components/ModalSurface';
 import type { ConversationSummary } from '@/platform/contract';
-import { returnFocusTo } from '@/state/focus-store';
 
 import styles from './DeleteConversationDialog.module.css';
 
@@ -43,50 +51,39 @@ export function DeleteConversationDialog({
 }: DeleteConversationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    const restore = document.activeElement;
-    cancelRef.current?.focus();
-    return () => {
-      returnFocusTo(restore);
-    };
-  }, []);
-
   return (
-    <div
-      className={styles.scrim}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+    <ModalSurface
+      role="alertdialog"
+      labelledBy="delete-conversation-title"
+      describedBy="delete-conversation-body"
+      scrimClassName={styles.scrim}
+      className={styles.dialog}
+      // Cancel, never Delete. Which control the keyboard lands on is a statement
+      // about what a reflexive Enter should cost.
+      initialFocus={cancelRef}
+      onDismiss={onCancel}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          onCancel();
+        }
       }}
     >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-conversation-title"
-        aria-describedby="delete-conversation-body"
-        className={styles.dialog}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.stopPropagation();
-            onCancel();
-          }
-        }}
-      >
-        <h2 id="delete-conversation-title" className={styles.title}>
-          Delete this conversation?
-        </h2>
-        <p id="delete-conversation-body" className={styles.body}>
-          <strong className={styles.name}>{conversation.title}</strong> and everything in it will be
-          removed from this device. This cannot be undone.
-        </p>
-        <div className={styles.actions}>
-          <button type="button" ref={cancelRef} className={styles.cancel} onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className={styles.confirm} onClick={onConfirm}>
-            Delete
-          </button>
-        </div>
+      <h2 id="delete-conversation-title" className={styles.title}>
+        Delete this conversation?
+      </h2>
+      <p id="delete-conversation-body" className={styles.body}>
+        <strong className={styles.name}>{conversation.title}</strong> and everything in it will be
+        removed from this device. This cannot be undone.
+      </p>
+      <div className={styles.actions}>
+        <button type="button" ref={cancelRef} className={styles.cancel} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className={styles.confirm} onClick={onConfirm}>
+          Delete
+        </button>
       </div>
-    </div>
+    </ModalSurface>
   );
 }

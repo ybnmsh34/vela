@@ -32,14 +32,20 @@
  * opener when it no longer exists. That last part matters here more than
  * anywhere: activating a row *replaces the conversation on screen*, so the row
  * you came from is frequently gone by the time the bar closes.
+ *
+ * Both halves of that now live in `src/components/ModalSurface.tsx`, along with
+ * the half that was missing entirely: the bar declared `aria-modal="true"` and
+ * let Tab walk straight out of it, in both directions. The scrim, the box, the
+ * capture, the restore and the containment are one component because they are
+ * one promise, and this file makes it by rendering through it.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { ModalSurface } from '@/components/ModalSurface';
 import type { SearchResults } from '@/data/conversations-repository';
 import type { ConversationSummary, MessageHit } from '@/platform/contract';
 import { toPlatformError } from '@/platform/errors';
-import { returnFocusTo } from '@/state/focus-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import styles from './CommandPalette.module.css';
@@ -71,8 +77,6 @@ export function CommandPalette({ debounceMs = SEARCH_DEBOUNCE_MS }: CommandPalet
   const [searchError, setSearchError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  /** What had the keyboard when the bar opened, so closing can hand it back. */
-  const openedFrom = useRef<Element | null>(null);
   const listId = useId();
 
   const open = mode !== 'closed';
@@ -83,17 +87,6 @@ export function CommandPalette({ debounceMs = SEARCH_DEBOUNCE_MS }: CommandPalet
     setResults(EMPTY_RESULTS);
     setSearchError(null);
     setActive(0);
-    openedFrom.current = document.activeElement;
-    inputRef.current?.focus();
-
-    // The cleanup, not a handler on each exit: the bar is closed from five
-    // places — Escape here, Escape in the global shortcut, the scrim, a row,
-    // and the "New conversation" action — and a return-focus call attached to
-    // each of them is four chances to forget one.
-    return () => {
-      returnFocusTo(openedFrom.current);
-      openedFrom.current = null;
-    };
   }, [open]);
 
   // Local filter: instant, and correct even with no host reachable.
@@ -186,129 +179,133 @@ export function CommandPalette({ debounceMs = SEARCH_DEBOUNCE_MS }: CommandPalet
   const optionId = (index: number): string => `${listId}-option-${index}`;
 
   return (
-    <div
-      className={styles.scrim}
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) closePalette();
-      }}
+    // Unmounting is the exit, not any one handler: the bar is closed from five
+    // places — Escape here, Escape in the global shortcut, the scrim, a row, and
+    // the "New conversation" action — and a return-focus call attached to each
+    // of them is four chances to forget one. `ModalSurface` restores on unmount,
+    // so all five are the same exit.
+    <ModalSurface
+      label="Command bar"
+      scrimClassName={styles.scrim}
+      className={styles.panel}
+      initialFocus={inputRef}
+      onDismiss={closePalette}
     >
-      <div className={styles.panel} role="dialog" aria-modal="true" aria-label="Command bar">
-        <div className={styles.field}>
-          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
-            <circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-            <path
-              d="M10.2 10.2 13.4 13.4"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-          </svg>
-          <input
-            ref={inputRef}
-            className={styles.input}
-            type="text"
-            role="combobox"
-            aria-expanded="true"
-            aria-controls={listId}
-            aria-autocomplete="list"
-            aria-activedescendant={rows.length > 0 ? optionId(active) : undefined}
-            aria-label={mode === 'search' ? 'Search conversations' : 'Go to conversation'}
-            placeholder={
-              mode === 'search'
-                ? 'Search titles and messages…'
-                : 'Go to conversation, or type to search…'
-            }
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActive(0);
-            }}
-            onKeyDown={(event) => {
-              switch (event.key) {
-                case 'ArrowDown':
-                  event.preventDefault();
-                  setActive((index) => Math.min(index + 1, rows.length - 1));
-                  return;
-                case 'ArrowUp':
-                  event.preventDefault();
-                  setActive((index) => Math.max(index - 1, 0));
-                  return;
-                case 'Home':
-                  event.preventDefault();
-                  setActive(0);
-                  return;
-                case 'End':
-                  event.preventDefault();
-                  setActive(Math.max(0, rows.length - 1));
-                  return;
-                case 'Enter':
-                  event.preventDefault();
-                  activate(rows[active]);
-                  return;
-                case 'Escape':
-                  event.preventDefault();
-                  closePalette();
-                  return;
-                default:
-              }
-            }}
+      <div className={styles.field}>
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+          <circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path
+            d="M10.2 10.2 13.4 13.4"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
           />
-        </div>
-
-        <ul className={styles.results} id={listId} role="listbox" aria-label="Results">
-          {rows.map((row, index) => (
-            <li
-              key={rowKey(row, index)}
-              id={optionId(index)}
-              role="option"
-              aria-selected={index === active}
-              className={`${styles.row} ${index === active ? styles.active : ''}`}
-              onPointerDown={(event) => {
-                // Down, not click: a click would first blur the input.
+        </svg>
+        <input
+          ref={inputRef}
+          className={styles.input}
+          type="text"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={rows.length > 0 ? optionId(active) : undefined}
+          aria-label={mode === 'search' ? 'Search conversations' : 'Go to conversation'}
+          placeholder={
+            mode === 'search'
+              ? 'Search titles and messages…'
+              : 'Go to conversation, or type to search…'
+          }
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(event) => {
+            switch (event.key) {
+              case 'ArrowDown':
                 event.preventDefault();
-                activate(row);
-              }}
-              onPointerEnter={() => {
-                setActive(index);
-              }}
-            >
-              {row.kind === 'action' && (
-                <>
-                  <span className={styles.rowTitle}>{row.label}</span>
-                  <span className={styles.rowKind}>Action</span>
-                </>
-              )}
-              {row.kind === 'conversation' && (
-                <>
-                  <span className={styles.rowTitle}>{row.conversation.title}</span>
-                  <span className={styles.rowKind}>Conversation</span>
-                </>
-              )}
-              {row.kind === 'message' && (
-                <>
-                  <span className={styles.rowTitle}>
-                    <Snippet snippet={row.hit.snippet} />
-                  </span>
-                  <span className={styles.rowKind}>
-                    {row.hit.kind === 'reasoning' ? 'In thinking' : 'In message'} ·{' '}
-                    {row.hit.conversationTitle}
-                  </span>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        {searchError !== null && (
-          <p className={styles.footnote} role="alert">
-            Search unavailable · {searchError}
-          </p>
-        )}
-        {searchError === null && rows.length === 1 && query.trim() !== '' && (
-          <p className={styles.footnote}>No conversation or message matches “{query.trim()}”.</p>
-        )}
+                setActive((index) => Math.min(index + 1, rows.length - 1));
+                return;
+              case 'ArrowUp':
+                event.preventDefault();
+                setActive((index) => Math.max(index - 1, 0));
+                return;
+              case 'Home':
+                event.preventDefault();
+                setActive(0);
+                return;
+              case 'End':
+                event.preventDefault();
+                setActive(Math.max(0, rows.length - 1));
+                return;
+              case 'Enter':
+                event.preventDefault();
+                activate(rows[active]);
+                return;
+              case 'Escape':
+                event.preventDefault();
+                closePalette();
+                return;
+              default:
+            }
+          }}
+        />
       </div>
-    </div>
+
+      <ul className={styles.results} id={listId} role="listbox" aria-label="Results">
+        {rows.map((row, index) => (
+          <li
+            key={rowKey(row, index)}
+            id={optionId(index)}
+            role="option"
+            aria-selected={index === active}
+            className={`${styles.row} ${index === active ? styles.active : ''}`}
+            onPointerDown={(event) => {
+              // Down, not click: a click would first blur the input.
+              event.preventDefault();
+              activate(row);
+            }}
+            onPointerEnter={() => {
+              setActive(index);
+            }}
+          >
+            {row.kind === 'action' && (
+              <>
+                <span className={styles.rowTitle}>{row.label}</span>
+                <span className={styles.rowKind}>Action</span>
+              </>
+            )}
+            {row.kind === 'conversation' && (
+              <>
+                <span className={styles.rowTitle}>{row.conversation.title}</span>
+                <span className={styles.rowKind}>Conversation</span>
+              </>
+            )}
+            {row.kind === 'message' && (
+              <>
+                <span className={styles.rowTitle}>
+                  <Snippet snippet={row.hit.snippet} />
+                </span>
+                <span className={styles.rowKind}>
+                  {row.hit.kind === 'reasoning' ? 'In thinking' : 'In message'} ·{' '}
+                  {row.hit.conversationTitle}
+                </span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {searchError !== null && (
+        <p className={styles.footnote} role="alert">
+          Search unavailable · {searchError}
+        </p>
+      )}
+      {searchError === null && rows.length === 1 && query.trim() !== '' && (
+        <p className={styles.footnote}>No conversation or message matches “{query.trim()}”.</p>
+      )}
+    </ModalSurface>
   );
 }
 

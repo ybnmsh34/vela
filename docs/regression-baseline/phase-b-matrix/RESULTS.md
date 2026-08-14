@@ -206,7 +206,7 @@ answer that does not egress user data, and this is the number that says so.
 
 This was the round-3 panel's functionality FAIL: round 3's scrub was
 byte-literal, and an endpoint that JSON-escapes `/` as `\/` — PHP's
-`json_encode` default — emitted a credential matching no needle, which
+`"json_encode"` default — emitted a credential matching no needle, which
 `serde_json` then reassembled downstream of every scrub point.
 
 Case **13** drives it, in FINDING 2's exact shape (a `200` whose SSE stream

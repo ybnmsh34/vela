@@ -133,7 +133,15 @@ describe('adding an endpoint that does take a key', () => {
     expect(JSON.stringify(snapshot)).not.toContain('sk-live-canary');
   });
 
-  it('distinguishes "does not insist on one" from "waiting for one"', async () => {
+  // Ten seconds, and the number is measured rather than guessed. This case types
+  // two whole endpoints through `userEvent`, which dispatches a real event per
+  // keystroke, and it lands at 5050-5081ms against vitest's 5000ms default — so
+  // it passes alone and fails under load. A critic caught it flaking in 3 of 4
+  // runs on a contended machine and 0 of 8 on an idle one, which is the worst
+  // shape a test can have: it does not fail for the author, only for whoever is
+  // running something else at the time, and the natural reading of a red guard
+  // suite is that the guard broke.
+  it('distinguishes "does not insist on one" from "waiting for one"', { timeout: 10_000 }, async () => {
     const user = userEvent.setup();
     mount(new BrowserAdapter());
 

@@ -665,7 +665,7 @@ key to a third party is close to the worst defect available.
 ### The other FAIL: the leak moved one decode step downstream
 
 Round 3 made the byte-stream scrub structural — and that holds. But it is **byte-literal**. An
-endpoint that JSON-escapes `/` as `\/` (PHP's `json_encode` default) emits a credential that matches
+endpoint that JSON-escapes `/` as `\/` (PHP's `"json_encode"` default) emits a credential that matches
 no needle, passes the scrub untouched, and is then **reconstituted by the crate's own `serde_json`
 decoder** downstream of every scrub point, landing in `AuthFailed` and printing in Display, Debug,
 and the IPC serde shape.

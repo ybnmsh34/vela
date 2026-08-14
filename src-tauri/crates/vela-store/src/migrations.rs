@@ -6,7 +6,7 @@
 //!    their own data; the recovery story for a bad migration is a new migration
 //!    that fixes it, not a rollback that discards rows.
 //! 2. **Shipped migrations are frozen.** Every applied migration's SQL is
-//!    checksummed into `schema_migrations`. Editing one after release would
+//!    checksummed into `"schema_migrations"`. Editing one after release would
 //!    silently fork users' schemas, so it is detected and refused
 //!    ([`StoreError::MigrationChanged`]).
 //! 3. **A newer database is refused, not downgraded** ([`StoreError::SchemaAhead`]).

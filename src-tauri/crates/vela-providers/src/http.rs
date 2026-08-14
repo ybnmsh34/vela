@@ -393,7 +393,7 @@ fn is_credential_response_header(name: &str) -> bool {
 /// Round 3 established that bytes leave a body only through
 /// [`BodyStream::next_chunk`], and that that door scrubs. That held. What it
 /// could not do is survive a *decode*: an endpoint that JSON-escapes the
-/// credential — `sk\/x\/KEY`, the default spelling of PHP's `json_encode` —
+/// credential — `sk\/x\/KEY`, the default spelling of PHP's `"json_encode"` —
 /// matches no needle as bytes, and `serde_json` then hands the raw secret back
 /// to code that sits downstream of every scrub point. The leak had been moved
 /// one decode step, not closed.

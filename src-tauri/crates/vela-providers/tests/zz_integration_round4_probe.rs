@@ -25,7 +25,7 @@
 //! A real loopback peer answering in **vLLM's** error shape — deliberately not
 //! the canonical one, so `normalise_error_body` actually rewrites it rather
 //! than returning `None` and leaving the bytes alone — with the echoed
-//! credential spelled the way PHP's `json_encode` spells it (`sk\/x\/KEY`).
+//! credential spelled the way PHP's `"json_encode"` spells it (`sk\/x\/KEY`).
 //! Real `ReqwestTransport`, real provider, `complete()` and `stream()`, across
 //! `Display`, `Debug`, the serde JSON that crosses the IPC bridge, and the
 //! `StreamEvent` sink the UI reads.
@@ -68,7 +68,7 @@ use vela_providers::{
 };
 use vela_secrets::{MemoryStore, SecretStore};
 
-/// The `/` characters are the point: they are what `json_encode` rewrites.
+/// The `/` characters are the point: they are what `"json_encode"` rewrites.
 const CANARY: &str = "sk/vela-probe4/Ky-7d41c0f9ab63e2/DO-NOT-LEAK";
 /// The stretch that survives `detail()`'s 200-character bound cutting the key
 /// in half, so a partial leak is still a leak.
@@ -77,7 +77,7 @@ const CANARY_CORE: &str = "7d41c0f9ab63e2";
 /// redaction apart from a deletion.
 const MARKER: &str = "VELA-PROBE-MARKER";
 
-/// Encode as the contents of a JSON string literal, PHP `json_encode` style:
+/// Encode as the contents of a JSON string literal, PHP `"json_encode"` style:
 /// the required minimum, plus `/` → `\/`.
 fn solidus(text: &str) -> String {
     text.replace('\\', "\\\\")

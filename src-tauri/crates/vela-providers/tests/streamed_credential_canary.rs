@@ -210,7 +210,7 @@ enum Forced {
     /// through `next_chunk`, frame by frame.
     EchoedInA200Stream,
     /// **ROUND 4.** The same 400 echo, from a peer that percent-decodes the key
-    /// it was given and writes `/` as `\/` — PHP `json_encode`'s default. No
+    /// it was given and writes `/` as `\/` — PHP `"json_encode"`'s default. No
     /// literal copy of the credential is on the wire, so the byte scrub this
     /// file was written to prove has nothing to match; what removes it is that
     /// the scrub reads a *decoded view* of the bytes, and that the decode is
@@ -477,7 +477,7 @@ async fn echo_server(status: u16) -> String {
 /// percent-encoded target it received.
 ///
 /// Both halves matter. Without the decode, `Auth::ApiKeyQuery`'s credential
-/// reaches the peer as `%2F`-encoded text that contains no `/` for `json_encode`
+/// reaches the peer as `%2F`-encoded text that contains no `/` for `"json_encode"`
 /// to rewrite; without the escaping, this is just [`echo_server`] again.
 async fn escaping_echo_server(status: u16) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a free port");
@@ -501,7 +501,7 @@ async fn escaping_echo_server(status: u16) -> String {
                 },
                 seen.target
             );
-            // PHP `json_encode`, default flags. Built by hand rather than with
+            // PHP `"json_encode"`, default flags. Built by hand rather than with
             // `serde_json::to_string`, because serde deliberately does **not**
             // escape `/` — the point of this peer is to be something other than
             // a Rust encoder.

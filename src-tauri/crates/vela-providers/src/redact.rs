@@ -42,7 +42,7 @@
 //! echoes the credential back **encoded** defeats it, and Vela's own decoder
 //! then puts the secret back together downstream of every scrub point. The
 //! reproduction was a `Bearer` key containing `/` and an endpoint whose JSON
-//! encoder escapes `/` as `\/` — the default behaviour of PHP's `json_encode`,
+//! encoder escapes `/` as `\/` — the default behaviour of PHP's `"json_encode"`,
 //! and therefore of every gateway written in it. `sk\/x\/KEY` matches no
 //! needle, is released verbatim, and `serde_json` hands back `sk/x/KEY`.
 //!
@@ -806,7 +806,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     /// The reproduction, verbatim: a key with `/` in it and an endpoint whose
-    /// JSON encoder escapes `/` — PHP's `json_encode` default.
+    /// JSON encoder escapes `/` — PHP's `"json_encode"` default.
     const SLASHED: &str = "sk/critic/ESCAPE-PROBE-9f3a2b1c";
 
     fn php_escaped(text: &str) -> String {

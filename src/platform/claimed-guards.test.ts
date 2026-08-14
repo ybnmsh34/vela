@@ -152,6 +152,23 @@ const EXTERNAL_CRATES = new Set([
   'char',
 ]);
 
+/**
+ * Rustdoc's own code-fence directives. `` ```compile_fail `` is an instruction to
+ * the doctest compiler, not a name this tree could ever define, and it is
+ * discussed by eight comments across the repo. It lives here — beside the other
+ * vocabulary this tree does not own — rather than being rescued by an exception
+ * inside {@link vocabularyOf}, because an exception there is a hole a fabricated
+ * name can climb through and a name here is just a fact about rustdoc.
+ */
+const RUSTDOC_DIRECTIVES = new Set([
+  'compile_fail',
+  'should_panic',
+  'no_run',
+  'ignore',
+  'edition2018',
+  'edition2021',
+]);
+
 /** Trait and derive names that resolve in rustdoc via the prelude, not this tree. */
 const PRELUDE_ITEMS = new Set([
   'Default',
@@ -274,6 +291,10 @@ function wireTokensAndMethods(): ReadonlySet<string> {
     if (path.endsWith('.md')) continue;
     for (const line of text.split(/\r?\n/)) {
       if (withoutComments(path, line).trim() === '') continue;
+      // `#[doc = "…"]` is a comment that survived being written as an attribute.
+      // Its string is prose, so it must not vouch the way an endpoint's wire
+      // token does — a critic used exactly this to launder a fabricated name.
+      if (/^\s*#!?\[\s*doc\s*=/.test(line)) continue;
       for (const name of captured(line, /"([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})"/g)) names.add(name);
       for (const name of captured(line, /\.([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})\s*\(/g))
         names.add(name);
@@ -333,25 +354,19 @@ export function vocabularyOf(path: string, text: string): ReadonlySet<string> {
     }
   };
 
-  // Fences first, because a fence lives *inside* a doc comment and stripping
-  // comments would take its info string with it. ` ```compile_fail ` is rustdoc
-  // directing the compiler — a directive, and the only position that token ever
-  // occupies. The fence *body* is dropped, so a name cannot vouch for itself by
-  // starring in its own worked example.
-  const outsideFences: string[] = [];
-  let insideFence = false;
-  for (const line of text.split(/\r?\n/)) {
-    const fence = fenceToggle(line);
-    if (fence !== null) {
-      insideFence = !insideFence;
-      if (insideFence && !path.endsWith('.md')) collect(fence);
-      continue;
-    }
-    if (insideFence) continue;
-    outsideFences.push(line);
-  }
-
-  collect(withoutComments(path, outsideFences.join('\n')));
+  // No fence handling at all, and removing it was the point. An earlier version
+  // lifted fence info strings out *before* stripping comments, so that
+  // ` ```compile_fail ` survived — and that lift-out never asked whether the
+  // fence was itself inside a comment. A critic harvested a name straight out of
+  // a `/** … *\/` block through it, and showed that ` ````code ` toggles too, so
+  // a four-backtick fence opened and its inner ``` closed, exposing a body the
+  // comment above swore was dropped.
+  //
+  // Every exception is an exploit surface. There is now one rule — comments and
+  // string bodies are not vocabulary — and no exception to it. Rustdoc's own
+  // directives are foreign vocabulary and are named as such in {@link resolves},
+  // next to the external crates, where things this tree does not own belong.
+  collect(withoutComments(path, text));
   return names;
 }
 
@@ -369,26 +384,110 @@ function codeVocabulary(): ReadonlySet<string> {
 const COMMENT_LINE = /^\s*(\/\/[/!]?|\*|\/\*|#|\|)/;
 
 /**
- * Removes comment *content*, per language, leaving the code around it.
+ * Everything in `text` that a compiler would read, with comments and string
+ * bodies removed. A single character scan, and it is a scan on purpose.
  *
- * This replaced a predicate that classified whole lines, and the difference is
- * the whole finding. Asking "does this line **start** with a comment marker"
- * misses the two commonest ways a comment actually appears: after code on the
- * same line, and inside a `/* … *\/` block whose interior lines do not begin
- * with `*`. A critic planted five-word fabricated guard names in both and both
- * resolved green — including, the second time around, the exact name from its
- * first verdict. Classifying lines was the wrong shape; comments have to be
- * taken out.
+ * ## Three attempts, and why the first two were the wrong shape
  *
- * `//` is only a comment when it is not `://`, which is how this repo's
- * `no-provider-leak` scanner already draws the line, and for the same reason: a
- * URL in a string is not a comment.
+ * A critic failed this rule three times, each time by planting a fabricated
+ * guard name where the stripper could not see it.
+ *
+ * 1. Any mention outside a backtick counted, so ordinary prose vouched for a
+ *    name that had never been written.
+ * 2. Prose was then recognised by asking whether a **line began** with a
+ *    comment marker — which misses a trailing `// …` after code, and a
+ *    `/* … *\/` interior whose lines do not start with `*`.
+ * 3. Comments were removed by regex, which cannot see the things that actually
+ *    matter: a **string that spans lines**, a Rust raw string, a nested block
+ *    comment. This repo writes long English prose inside backslash-continued
+ *    Rust strings — `gate_m_phase_b2.rs` narrates in them — and one such
+ *    sentence was the only thing resolving four separate claims.
+ *
+ * Regexes were never going to close it, because every one of those is a nested
+ * or multi-line construct and a regex has no state. So this walks the text once
+ * with the small amount of state the job actually needs: comment depth, and
+ * which quote it is inside.
+ *
+ * ## What it deliberately does not do
+ *
+ * A YAML block scalar (`run: |`) is content that is often shell, and it is kept
+ * as code. A name written into one would vouch for itself. That is an open,
+ * measured limit rather than an oversight — closing it means parsing YAML, and
+ * `.github/` is the only place it applies.
  */
 function withoutComments(path: string, text: string): string {
   if (path.endsWith('.md')) return '';
-  let code = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-  if (/\.(sh|yml|toml)$/.test(path)) code = code.replace(/(^|\s)#.*$/gm, '$1');
-  return code;
+  const rust = path.endsWith('.rs');
+  const hashComments = /\.(sh|yml|toml)$/.test(path);
+  // Rust `'` is a lifetime far more often than a char literal, and a lifetime
+  // has no closing quote — treating it as one would swallow the rest of the
+  // line and drop real code, which manufactures false claims. A char literal
+  // holds one character and can never contain a name, so Rust simply has no
+  // single-quote string here. Backticks are only strings in TypeScript.
+  const quotes = rust ? '"' : path.endsWith('.css') ? '"\'' : '"\'`';
+
+  const kept: string[] = [];
+  let at = 0;
+  let depth = 0;
+  while (at < text.length) {
+    const here = text[at] ?? '';
+    const after = text[at + 1] ?? '';
+
+    if (depth > 0) {
+      // Rust block comments nest; C-family ones do not, and closing early is
+      // what a real compiler does too.
+      if (rust && here === '/' && after === '*') (depth += 1), (at += 2);
+      else if (here === '*' && after === '/') (depth -= 1), (at += 2);
+      else at += 1;
+      continue;
+    }
+    if (here === '/' && after === '/') {
+      while (at < text.length && text[at] !== '\n') at += 1;
+      continue;
+    }
+    if (here === '/' && after === '*') {
+      depth = 1;
+      at += 2;
+      continue;
+    }
+    if (hashComments && here === '#') {
+      while (at < text.length && text[at] !== '\n') at += 1;
+      continue;
+    }
+    // `r"…"`, `r#"…"#`, `r##"…"##` — no escapes inside, closed by the matching
+    // hash count. This is where a name hides from a line-oriented stripper.
+    if (rust && here === 'r' && (after === '#' || after === '"')) {
+      let scan = at + 1;
+      let hashes = 0;
+      while (text[scan] === '#') (hashes += 1), (scan += 1);
+      if (text[scan] === '"') {
+        const closer = `"${'#'.repeat(hashes)}`;
+        const ends = text.indexOf(closer, scan + 1);
+        at = ends < 0 ? text.length : ends + closer.length;
+        kept.push(' ');
+        continue;
+      }
+    }
+    if (quotes.includes(here)) {
+      at += 1;
+      while (at < text.length) {
+        if (text[at] === '\\') {
+          at += 2;
+          continue;
+        }
+        if (text[at] === here) {
+          at += 1;
+          break;
+        }
+        at += 1;
+      }
+      kept.push(' ');
+      continue;
+    }
+    kept.push(here);
+    at += 1;
+  }
+  return kept.join('');
 }
 
 /** ` ```rust `, ` ```compile_fail `, or a bare ` ``` ` — inside a doc comment or not. */
@@ -475,7 +574,7 @@ const PATH_TOKEN =
  * Lowering the floor alone was not affordable and was measured too: at two
  * words the scan goes from 102 claims to 799, and resolving them by the old
  * corpora alone leaves 76 unresolved, almost all foreign vocabulary
- * (`json_encode`, `set_var`, `workflow_dispatch`). What makes the floor payable
+ * (`"json_encode"`, `set_var`, `workflow_dispatch`). What makes the floor payable
  * is {@link codeVocabulary}: a real name is used somewhere as code, a fabricated
  * one exists only inside its own claim. With that, the same 799 leave a residue
  * small enough to resolve one site at a time, honestly, which is what was done.
@@ -559,6 +658,7 @@ function resolves(claim: Claim): boolean {
     }
     case 'named-test':
       if (EXTERNAL_CRATES.has(claim.token.split('::')[0] ?? '')) return true;
+      if (RUSTDOC_DIRECTIVES.has(tail)) return true;
       // An integration test is a whole file, not an item: `cargo test` compiles
       // `tests/<name>.rs` as its own crate, so naming one is naming a file.
       if (BASENAMES.has(`${tail}.rs`)) return true;
@@ -803,26 +903,63 @@ describe('this guard is not vacuous', () => {
     const vocabulary = vocabularyOf(
       'src-tauri/src/probe.rs',
       [
+        '/// ```compile_fail',
+        '/// fn zz_only_inside_a_fence() {}',
+        '/// ```',
         'fn zz_defined_as_code() {}',
-        '```rust',
-        'fn zz_only_inside_a_fence() {}',
-        '```',
-        'let x = `zz_only_in_backticks` + "zz_only_in_straight_quotes";',
+        'let x = zz_bare_identifier + "zz_only_in_straight_quotes";',
       ].join('\n'),
     );
 
     expect(vocabulary.has('zz_defined_as_code')).toBe(true);
-    // An example inside a fence is an illustration; if it counted, a fabricated
-    // name could vouch for itself by appearing in its own worked example.
+    expect(vocabulary.has('zz_bare_identifier')).toBe(true);
+    // A fence in Rust lives inside a doc comment, so it goes when the comment
+    // goes — body AND info string. That is why `compile_fail` is named in
+    // {@link RUSTDOC_DIRECTIVES} instead of being rescued by an exception here:
+    // the exception was a hole, and a critic climbed through it.
     expect(vocabulary.has('zz_only_inside_a_fence')).toBe(false);
-    // The claim itself is never its own evidence.
-    expect(vocabulary.has('zz_only_in_backticks')).toBe(false);
+    expect(vocabulary.has('compile_fail')).toBe(false);
     // Straight quotes are how this repo retires a name. See the ledger.
     expect(vocabulary.has('zz_only_in_straight_quotes')).toBe(false);
 
-    // And against the real tree, the one token that lives only in a fence's
-    // info string: `\`\`\`compile_fail` is rustdoc directing the compiler, not
-    // an illustration, so it survives while fence bodies do not.
-    expect(CODE_VOCABULARY.has('compile_fail')).toBe(true);
+    // …and the directive still resolves, through the route that names it.
+    expect(
+      resolves({ kind: 'named-test', file: 'src-tauri/src/probe.rs', line: 1, token: 'compile_fail' }),
+    ).toBe(true);
+
+    // A string body is not vocabulary either — not on one line, and not across
+    // a line break, which is where the third failure lived. This repo narrates
+    // in backslash-continued Rust strings, and one such sentence was the only
+    // thing resolving a name for twelve separate claims.
+    const continued = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      'const WHY: &str = "a sentence mentioning zzq_continued_string_name \\\n across a line break";\n',
+    );
+    expect(continued.has('zzq_continued_string_name')).toBe(false);
+
+    // Rust raw strings have no escapes and their own closing sequence, so a
+    // stripper that does not know about them reads their contents as code.
+    const raw = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      'const R: &str = r#"zzq_raw_string_name lives in here"#;\n',
+    );
+    expect(raw.has('zzq_raw_string_name')).toBe(false);
+
+    // Rust block comments nest. A stripper that stops at the first `*/` reads
+    // the outer tail as code.
+    const nested = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      '/* outer /* inner */ zzq_nested_block_name still commented */\n',
+    );
+    expect(nested.has('zzq_nested_block_name')).toBe(false);
+
+    // A lifetime is not a string. Treating `'` as one swallows the rest of the
+    // line and drops real code, which manufactures false claims rather than
+    // hiding true ones — the failure pointed the other way, and just as bad.
+    expect(
+      vocabularyOf('src-tauri/src/probe.rs', "fn f<'a>(x: &'a str) -> zzq_real_return { }\n").has(
+        'zzq_real_return',
+      ),
+    ).toBe(true);
   });
 });

@@ -19,7 +19,7 @@
 //! ```
 //!
 //! `\/` for `/` is not exotic: it is the **default** output of PHP's
-//! `json_encode`, and therefore of every gateway written in it. A `Bearer` key
+//! `"json_encode"`, and therefore of every gateway written in it. A `Bearer` key
 //! containing `/` is not exotic either — base64 alphabets contain it, AWS-style
 //! keys contain it, and a user picking a key for their own vLLM or
 //! `llama-server --api-key` may type anything at all.
@@ -39,7 +39,7 @@
 //! | peer | spelling | who does this |
 //! |---|---|---|
 //! | [`Escaping::Verbatim`] | `sk/vela-round4/…` | round 3's peer — the control |
-//! | [`Escaping::Solidus`] | `sk\/vela-round4\/…` | PHP `json_encode`, default flags |
+//! | [`Escaping::Solidus`] | `sk\/vela-round4\/…` | PHP `"json_encode"`, default flags |
 //! | [`Escaping::Unicode`] | `sk/…` | `JSON_HEX_*`, hand-rolled encoders, JS replacers |
 //!
 //! …across three adapters, two credential bindings, two response shapes (a 400
@@ -102,7 +102,7 @@ use vela_secrets::{MemoryStore, SecretStore};
 
 /// This round's canary.
 ///
-/// The `/` characters are the whole point: they are what PHP's `json_encode`
+/// The `/` characters are the whole point: they are what PHP's `"json_encode"`
 /// rewrites, and they are what a base64 or AWS-style key — or a key a user
 /// invented for their own `llama-server --api-key` — contains. The rest is a
 /// distinctive literal so a partial leak is still a leak.
@@ -231,7 +231,7 @@ enum Escaping {
     /// the control that proves the matrix is not passing because the peers are
     /// broken.
     Verbatim,
-    /// PHP `json_encode` with default flags: `/` becomes `\/`. The reproduction.
+    /// PHP `"json_encode"` with default flags: `/` becomes `\/`. The reproduction.
     Solidus,
     /// Every character of the message spelled `\uXXXX`. No `/` involved, no `\"`
     /// involved — nothing the case above covers. One mechanism has to answer

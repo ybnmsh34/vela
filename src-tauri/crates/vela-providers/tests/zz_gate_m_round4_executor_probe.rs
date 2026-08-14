@@ -9,7 +9,7 @@
 //! # What is briefed, and therefore not here
 //!
 //! `tests/encoded_credential_canary.rs` drives three spellings — verbatim, PHP
-//! `json_encode`'s `\/`, and every character as `\uXXXX` — and the percent-encoded
+//! `"json_encode"`'s `\/`, and every character as `\uXXXX` — and the percent-encoded
 //! form of the credential is a needle in its own right, so an endpoint echoing
 //! `%2F` is caught by the literal pass. Those are the round-4 brief's three
 //! encodings. This file starts where that list ends.

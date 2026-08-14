@@ -3898,7 +3898,7 @@ enum Misbehaviour {
     /// **ROUND 4.** Parses the `key` query parameter, percent-**decodes** it —
     /// which is what any gateway does before deciding the key is invalid — and
     /// echoes the raw credential back inside a 400, with the JSON string
-    /// escaped the way PHP's `json_encode` escapes it: `/` becomes `\/`.
+    /// escaped the way PHP's `"json_encode"` escapes it: `/` becomes `\/`.
     ///
     /// The canary contains `/`, so the bytes on the wire contain **no literal
     /// copy** of it. A byte-literal scrub matches nothing, releases the frame
@@ -3933,7 +3933,7 @@ fn percent_decode_bytes(value: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// PHP's `json_encode` with default flags, for the contents of a JSON string.
+/// PHP's `"json_encode"` with default flags, for the contents of a JSON string.
 fn php_json_escape(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -4063,7 +4063,7 @@ impl RawPeer {
                         // precisely because serde does *not* escape the solidus:
                         // this peer is imitating PHP, not Rust.
                         // The PATH only, deliberately: the query string carries
-                        // the *percent-encoded* credential, which `json_encode`
+                        // the *percent-encoded* credential, which `"json_encode"`
                         // does not touch and a byte-literal scrub therefore does
                         // catch. Quoting it here would leave a matchable form on
                         // the wire and blunt the premise this peer exists to
@@ -4548,7 +4548,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.h("ROUND 4 — the ESCAPING peers, whose bytes contain no literal canary at all");
     doc.p(
         "  These two peers percent-decode the `key` parameter and echo the raw credential\n  \
-         back with `/` written `\\/`, which is what PHP's `json_encode` does by default.\n  \
+         back with `/` written `\\/`, which is what PHP's `"json_encode"` does by default.\n  \
          The assertion below is the PREMISE of the round-4 cases and it is the opposite of\n  \
          the one above: the canary must NOT appear literally in what these peers wrote, or\n  \
          a byte-literal scrub would have caught it and the cases would prove nothing. What\n  \
@@ -5486,7 +5486,7 @@ enum Encoding {
     /// The control. If this is ever not removed, nothing else here means
     /// anything.
     Verbatim,
-    /// PHP `json_encode` with default flags. Round 4's reported defect.
+    /// PHP `"json_encode"` with default flags. Round 4's reported defect.
     Solidus,
     /// Every character as `\uXXXX`. Briefed.
     UnicodeEscape,

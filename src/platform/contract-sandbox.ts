@@ -381,8 +381,8 @@ export interface EnvironmentEntry {
  * (`HF_TOKEN`, `WANDB_API_KEY`, `AWS_*` are the ones it names). That is a blocklist, and a
  * blocklist over an inherited environment fails the same way a blocklist over a command
  * string fails: it enumerates what somebody thought of. Vela inverts it. The child's
- * environment is exactly {@link ProcessProgram.environment} plus the platform list for the
- * machine the host is running on, and a variable that is not in one of those two places does
+ * environment is exactly {@link ProcessProgram.environment} plus the list for the guest
+ * platform in {@link SandboxPolicySnapshot.guestPlatform}, and a variable that is not in one of those two places does
  * not exist inside the run — including every token the user happened to export into the
  * shell that launched Vela.
  *

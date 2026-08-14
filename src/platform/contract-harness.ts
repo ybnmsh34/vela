@@ -402,7 +402,15 @@ export type SelectionReason =
    * at all, the reason every selection carries. See {@link HarnessId}.
    */
   | 'noneChosen'
-  /** The stored setting names a harness this build does not have. */
+  /**
+   * The stored setting would name a harness this build does not have.
+   *
+   * **Unreachable today**, and for the same reason `selected` is: nothing stores
+   * a choice, so {@link HarnessSelectionRequest.requestedId} is `null` on every
+   * call and no id can be unknown. It is written now so that the arm exists when
+   * the amendment on {@link HarnessId} lands and a settings row survives a
+   * downgrade — not because anything can produce it.
+   */
   | 'unknownHarnessId'
   /** The chosen harness needs a model flag this model has not established. */
   | 'modelCapabilityUnmet'
@@ -413,10 +421,18 @@ export type SelectionReason =
  * The outcome of picking a harness.
  *
  * A union rather than a lookup that throws, which is what the reference does
- * (`ValueError`, listing the available ids). Every one of these arms is reachable
- * from ordinary use: a settings row written by a newer build, a harness removed
- * in an update, a model that has not been probed yet. A throw at that point takes
- * the window down at launch; a union makes the caller render something.
+ * (`ValueError`, listing the available ids). Each arm answers a state a user can
+ * actually be in once a choice can be stored: a settings row written by a newer
+ * build, a harness removed in an update, a model that has not been probed yet. A
+ * throw at that point takes the window down at launch; a union makes the caller
+ * render something.
+ *
+ * **Two of them cannot happen yet.** Nothing stores a harness choice — see the
+ * amendment named on {@link HarnessId} — so `requestedId` is `null` on every
+ * call, which makes `selected` and `unknownHarnessId` unreachable and every
+ * launch a `substituted` with `noneChosen`. This paragraph used to say every arm
+ * was reachable from ordinary use, sixteen lines above the paragraph explaining
+ * that two are not.
  *
  * `substituted` is the interesting arm and the only place a *requested* id
  * travels — carried so the UI can say which choice could not be honoured. It is
@@ -1531,9 +1547,18 @@ export interface HarnessRuntime {
    * have to say what happens, and every answer is bad: refusing needs a failure
    * mode this file does not have, serving it crosses a project boundary that
    * `SANDBOX_PROTECTED_ROOTS` exists to hold, and resolving `null` reports
-   * missing material that is present. **Taken: the resolver is a project's.** A
-   * resolver that *is* one project's cannot be mispaired, and every method below
-   * it loses a parameter rather than gaining one.
+   * missing material that is present. **Taken: the resolver is a project's.**
+   * Every method below it loses a parameter rather than gaining one, and the
+   * per-call mispairing the alternative invites — index project A, load with
+   * project B — cannot be expressed at all.
+   *
+   * It is not *unmispairable*, and an earlier draft of this sentence said it
+   * was. A {@link ContextRef} is structural and unbranded, so refs indexed from
+   * one project's resolver still typecheck into another project's
+   * {@link RunContextRequest.preload}. What changed is the size of the hazard:
+   * one field on one call, instead of every call on a shared instance. Both
+   * ends say what happens when it is got wrong — the ref resolves `null` and
+   * takes the `contextUnavailable` path — and nothing enforces it.
    *
    * **What the one-instance rule was protecting is kept, and it was never
    * identity.** The property that matters is that a ref the caller indexed still

@@ -292,7 +292,7 @@ mod tests {
     use serde_json::json;
 
     /// Streaming fragments — the shape every test below this line but the
-    /// `whole_call` ones feeds.
+    /// whole-call ones feeds.
     fn accumulate(deltas: &[Value]) -> Vec<ToolCallOutcome> {
         let mut accumulator = ToolCallAccumulator::new();
         for delta in deltas {

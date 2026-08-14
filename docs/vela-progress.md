@@ -647,12 +647,12 @@ involved. Confirmed live on real sockets with a real provider:
 | `Auth::ApiKeyQuery{"key"}` | `referer: http://…/v1/messages?key=<canary>` |
 | `Auth::Bearer` | *(safe)* |
 
-**Root cause, confirmed in reqwest-0.12.28's source:** `remove_sensitive_headers` strips only
-`authorization`/`cookie`/`cookie2`/`proxy-authorization`/`www-authenticate` on cross-host.
-`x-api-key`, `x-goog-api-key`, and any user-named header are **not on that list** — and those are
-**Anthropic's and Google's auth headers**. The two non-Bearer bindings Vela ships are exactly the
-two reqwest does not protect. Separately, `make_referer` clears username/password/fragment but
-**keeps the query string**.
+**Root cause, confirmed in reqwest-0.12.28's source:** `reqwest::redirect::remove_sensitive_headers`
+strips only `authorization`/`cookie`/`cookie2`/`proxy-authorization`/`www-authenticate` on
+cross-host. `x-api-key`, `x-goog-api-key`, and any user-named header are **not on that list** — and
+those are **Anthropic's and Google's auth headers**. The two non-Bearer bindings Vela ships are
+exactly the two reqwest does not protect. Separately, `reqwest::redirect::make_referer` clears
+username/password/fragment but **keeps the query string**.
 
 This defeats the rule stated in that very function's own comment (`http.rs:516-521`): *"No implicit
 egress. Vela talks to the endpoint the user configured and to nothing else… must not silently
@@ -772,7 +772,7 @@ that class starts in.
 | Invariant | How it was made real |
 |---|---|
 | The thinking block renders markdown, not source, in the real app | `frontier/16-thinking-markdown-expanded.png`: a bold lead-in, two bullets and `llama-server` as inline code, at 13px under a 15px answer. Control: `<p>{text}</p>` with `pre-wrap` fails 6 tests across `ThinkingBlock.test.tsx` and `MessageTurn.test.tsx` |
-| Allowlist and `generate_handler!` cannot drift | **mutated both ways.** `diagnostics_ping` allowlisted and unregistered → `every_allowlisted_command_is_reachable_in_the_assembled_app` FAILS with *"the assembled app answers `Command … not found`"*. `ui_set_layout` dropped from both allowlists and left registered → `no_command_is_reachable_that_the_allowlist_does_not_declare` FAILS. The verdict comes from invoking the real `invoke_handler`, not from reading source |
+| Allowlist and `generate_handler!` cannot drift | **mutated both ways.** "diagnostics_ping" allowlisted and unregistered → `every_allowlisted_command_is_reachable_in_the_assembled_app` FAILS with *"the assembled app answers `Command … not found`"*. `ui_set_layout` dropped from both allowlists and left registered → `no_command_is_reachable_that_the_allowlist_does_not_declare` FAILS. The verdict comes from invoking the real `invoke_handler`, not from reading source |
 | A staged image reaches the outgoing payload | removing `attachments={attachments}` from the composition root fails 7 of 8 tests in `staged-attachment-payload.test.tsx`. In the browser the composer's picker is now the fourth image affordance the matrix sees, with the same `accept` list as the tray's |
 | The debug log and its directory are 0600/0700 | **measured from a shell, not from the test process.** Under `umask 0022`: `drwx------` / `-rw-------`, both from a clean start and from a directory left at 0755 with a 0644 log — which was tightened in place, keeping its earlier contents |
 | The composition-root wave still holds | full gate green; `mock-matrix` byte-identical after regeneration |
@@ -1012,7 +1012,8 @@ TextDelta   = ...literal <tool_call>{...}</tool_call> markup streamed to the UI
 **The model reasoned about a destructive call, decided against it, and Vela executed it anyway.**
 
 **Root cause.** `CompletionAssembler::finish` (`stream.rs:285-295`) flushes
-`ReasoningFinish::recovered_answer` via `append_text` plus a direct `sink.emit`, **bypassing
+`ReasoningFinish::recovered_answer` via the method then called "append_text" plus a direct
+`sink.emit`, **bypassing
 `emit_answer` and therefore the `ToolCallStripper`**. The recovered reasoning lands in `self.parts`
 as Text, so the `found_tagged == false` fallback at `stream.rs:319` runs `emulation::parse_calls`
 over it. The non-streamed `complete()` twin does the same.
@@ -1051,7 +1052,8 @@ Not round 5. A different kind of work: the round-4 panel's **highest-severity de
 about tool execution rather than redaction, and which the stop rule does not cover.
 
 **The defect.** `CompletionAssembler::finish` flushed `ReasoningFinish::recovered_answer` with
-`append_text` plus a direct `sink.emit(TextDelta)`, bypassing `emit_answer` and therefore the
+the method then called "append_text" plus a direct `sink.emit(TextDelta)`, bypassing `emit_answer`
+and therefore the
 `ToolCallStripper`. The text then sat in `parts` as `Text`, where the `found_tagged == false`
 fallback ran `parse_calls` over it. On the OpenAI-compatible adapter — the path every local
 runtime uses — a model that emitted `<think>I could call <tool_call>{"name":"delete_everything",
@@ -1075,7 +1077,7 @@ the executability, and leaves the invariant where it was: three private methods 
 to remember to call. `answer::AnswerChannel` now owns the accumulated parts and the text a tool
 parser may see, behind private fields, in all three adapters — the same move `BodyStream` got in
 round 2 and `ResponseHeaders` in round 4. Appending a `Text` part directly does not compile
-(`E0616`); there is no `push_salvaged` back door (`E0599`); `executable_text()` excludes salvaged
+(`E0616`); there is no "push_salvaged" back door (`E0599`); `executable_text()` excludes salvaged
 text by construction and is what the untagged-shape fallback reads.
 
 **The audit the brief asked for.** Anthropic had the same shape at `anthropic/stream.rs:568`
@@ -1551,7 +1553,8 @@ never launches the real app.
 | Regression | ✅ | No regression — but found a **dead pointer**, below |
 
 **The defect in one line:** `AnswerChannel` gives tool parsing `executable_text()` (committed text
-only, salvage excluded) — but `into_parts()` appends salvaged text as a `ContentPart::Text`, so
+only, salvage excluded) — but the method then called "into_parts()" appends salvaged text as a
+`ContentPart::Text`, so
 `answer_text()` includes it, and **schema validation reads `answer_text()`**. Tool parsing got the
 safe accessor; the schema checker, *which is the same kind of consumer*, got the unsafe one.
 
@@ -2026,9 +2029,9 @@ case it missed.
   `CommandPalette` both do. `contrast.test.ts` cannot see it: it enumerates pairs of **tokens**, and
   this foreground is not a token, so *"every token used as a text colour appears in the table"* is
   satisfied while a real painted string fails.
-- **`claimed-guards` resolves file claims by BASENAME**, so a claim naming `src/app/contract.ts` — a
-  path that does not exist — passes because `contract.ts` exists elsewhere. The guard against false
-  claims contains a false claim.
+- **`claimed-guards` resolves file claims by BASENAME**, so a claim naming a path the file has never
+  been at — "src/app/contract.ts", when it lives at `src/platform/contract.ts` — passes because
+  `contract.ts` exists elsewhere. The guard against false claims contains a false claim.
 
 The executor **did not fix the placeholder defect**, on the grounds that *"whoever fixes it should
 not be the one who graded it."*
@@ -2737,7 +2740,7 @@ Mutation controls, run in a scratch worktree so the shared tree never held a def
 
 | mutation | expected | observed |
 |---|---|---|
-| add `Cause::SolarFlareCorruptedTheReply`, `ContentPart::Hologram`, `StreamEvent::Heartbeat`, `TokenUsage::tokens_per_second` | vitest red, 4 named | **4 failed, 27 passed**, each naming its pair |
+| add `Cause::SolarFlareCorruptedTheReply`, `ContentPart::Hologram`, `StreamEvent::Heartbeat`, "TokenUsage::tokens_per_second" | vitest red, 4 named | **4 failed, 27 passed**, each naming its pair |
 | delete `Capability::PromptCaching`, `Evidence::Cached` | vitest red, 2 named | **2 failed, 29 passed** |
 | add `'dropMiddle'` to `ContextStrategy` and `'imageDownscaled'` to `Degradation`, TS only | typecheck red | **red, naming both missing variants** |
 | …then add them to the test's lists too | vitest red | **2 failed, 29 passed** |
@@ -2759,8 +2762,8 @@ file, so a backtick here would be a fresh claim of the very thing being retired.
 | # | location | the claim | verdict | action |
 |---|---|---|---|---|
 | 1 | `src/platform/contract.ts:277` | `chat-contract-parity.test.ts` reads the Rust files and fails if a variant is added on one side only | **FALSE** — file never existed | made true: the test is written, both directions mutation-controlled |
-| 2 | `vela-providers/src/diagnostic.rs:66` | `audit_closed_vocabulary` walks an error's serde rendering and rejects unexplained strings | **FALSE name, TRUE enforcement** | renamed to the real one: `tests/typed_closed_error_surface.rs::no_error_in_the_whole_taxonomy_carries_an_unexplained_string`, plus its control |
-| 3 | `vela-providers/src/answer.rs:169` | salvaged text is held out of `parts` until `Self::into_parts` | **FALSE name** | the method is `into_answer` |
+| 2 | `vela-providers/src/diagnostic.rs:66` | "audit_closed_vocabulary" walks an error's serde rendering and rejects unexplained strings | **FALSE name, TRUE enforcement** | renamed to the real one: `tests/typed_closed_error_surface.rs::no_error_in_the_whole_taxonomy_carries_an_unexplained_string`, plus its control |
+| 3 | `vela-providers/src/answer.rs:169` | salvaged text is held out of `parts` until "Self::into_parts" | **FALSE name** | the method is `into_answer` |
 | 4 | `tests/streamed_credential_canary.rs:36` | "with_no_credential_configured_nothing_is_redacted_at_all" is the redacted-vs-deleted control | **FALSE name** | pointed at `a_body_answering_a_credential_free_request_is_untouched`, and the sentence now describes what that test actually asserts |
 | 5 | `tests/encoded_credential_canary.rs:75` | "redaction_removes_the_secret_and_not_the_diagnosis" keeps the endpoint's message alive | **FALSE name and stale semantics** — the redesign stopped carrying the endpoint's words at all | pointed at `a_diagnosis_survives_even_though_the_endpoints_words_do_not`; the sentence now says cause, endpoint and correlation id survive |
 | 6 | `tests/zz_gate_m_round3_executor_probe.rs:32` | `streamed_credential_canary.rs` proves the echo premise via "a_redacted_message_keeps_its_diagnosis_and_loses_only_the_secret" | **FALSE** | rewritten to name `the_credential_is_still_on_the_url_that_goes_to_the_socket` and scoped to the query binding, which is what it actually covers |

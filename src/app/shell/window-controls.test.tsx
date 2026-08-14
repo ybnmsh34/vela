@@ -264,9 +264,9 @@ describe('the drag region', () => {
     await screen.findByRole('button', { name: 'Maximise' });
 
     // Tauri injects its own `mousedown` listener on `document`, and on a
-    // detail-2 press over a drag region it invokes `internal_toggle_maximize`.
-    // This stands in for it: the second press must not reach the document, or
-    // the window is toggled twice.
+    // detail-2 press over a drag region it invokes
+    // `"internal_toggle_maximize"`. This stands in for it: the second press
+    // must not reach the document, or the window is toggled twice.
     const reachedDocument: number[] = [];
     const spy = (event: MouseEvent): void => {
       reachedDocument.push(event.detail);
@@ -337,7 +337,7 @@ describe('the capability grant matches the wire that was run', () => {
   });
 
   it('withholds internal-toggle-maximize, because the renderer owns that gesture', () => {
-    // Tauri's injected drag script invokes `internal_toggle_maximize` on a
+    // Tauri's injected drag script invokes `"internal_toggle_maximize"` on a
     // detail-2 mousedown over a drag region. This app handles that gesture
     // itself, through the seam, so it can be tested and so the icon is re-read
     // from the window afterwards. Granting this permission as well would put

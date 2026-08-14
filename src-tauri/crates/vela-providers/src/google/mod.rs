@@ -156,8 +156,8 @@ impl Blocked {
 /// # Where the sentence went
 ///
 /// It used to be a `String` this module composed and handed to `detail`. The
-/// composition was already an allowlist — `describe_reason` and
-/// `describe_category` map a wire token to a `&'static str` and drop anything
+/// composition was already an allowlist — "describe_reason" and
+/// "describe_category" map a wire token to a `&'static str` and drop anything
 /// they do not recognise — but it arrived at the error as *text*, which is the
 /// shape the redesign removed. The provider core now owns the vocabulary:
 /// [`FilterVerdict`] carries the stage, the filter and the flagged categories
@@ -192,7 +192,7 @@ pub fn describe_block(blocked: &Blocked) -> String {
     filter_verdict(blocked).to_string()
 }
 
-// `describe_reason` / `describe_categories` / `describe_category` used to live
+// "describe_reason" / "describe_categories" / "describe_category" used to live
 // here: three allowlists mapping a wire token to a `&'static str`. The
 // allowlists were right and they were not deleted — they moved into
 // `crate::diagnostic` as `FilterKind::recognise` and `HarmCategory::recognise`,

@@ -8,9 +8,9 @@
  * adapter. Neither of those is the artefact Tauri loads. This one serves
  * `dist/` — the exact directory `tauri.conf.json`'s `frontendDist` points at,
  * the bytes `pnpm build` produced — over HTTP to headless Chromium, and lets
- * `dist/index.html` boot `src/main.tsx` -> `<App/>` with **no adapter
- * argument**, so `createPlatformAdapter()` auto-detects exactly as it does in
- * the shipping window.
+ * the `index.html` that `pnpm build` emits into `dist/` boot `src/main.tsx`
+ * -> `<App/>` with **no adapter argument**, so `createPlatformAdapter()`
+ * auto-detects exactly as it does in the shipping window.
  *
  * ## The traps are installed before a byte of app code runs
  *

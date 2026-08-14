@@ -15,7 +15,7 @@
 //!
 //! An environment proxy is not hypothetical. `hyper-util`'s matcher reads
 //! `ALL_PROXY`/`all_proxy`, `HTTP_PROXY`/`http_proxy` and
-//! `HTTPS_PROXY`/`https_proxy` (`Matcher::from_env`, reached from
+//! `HTTPS_PROXY`/`https_proxy` (`hyper_util::…::Matcher::from_env`, via
 //! `reqwest::proxy::Matcher::system`, which `ClientBuilder` installs unless
 //! `no_proxy()` was called), and it applies them to **loopback destinations
 //! too**: `intercept` bypasses only hosts named in `NO_PROXY`. There is no

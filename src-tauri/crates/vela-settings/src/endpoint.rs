@@ -110,8 +110,9 @@ fn scope_of_ip(address: IpAddr) -> NetworkScope {
         }
         IpAddr::V6(v6) => {
             let segments = v6.segments();
-            // fc00::/7 unique-local, fe80::/10 link-local. `Ipv6Addr::is_unique_local`
-            // is still unstable, so the check is written out.
+            // fc00::/7 unique-local, fe80::/10 link-local.
+            // `std::net::Ipv6Addr::is_unique_local` is still unstable, so the
+            // check is written out.
             let unique_local = (segments[0] & 0xfe00) == 0xfc00;
             let link_local = (segments[0] & 0xffc0) == 0xfe80;
             if unique_local || link_local || v6.is_unspecified() {

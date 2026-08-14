@@ -95,14 +95,14 @@ export function TitleBar({ context }: TitleBarProps) {
    *
    * On `mousedown` with `detail === 2`, not on `dblclick`, and that is not a
    * stylistic choice. The first click of the pair has already handed the window
-   * to the OS drag loop (`start_dragging`), which consumes the mouse-up; a
+   * to the OS drag loop (`"start_dragging"`), which consumes the mouse-up; a
    * `dblclick` may therefore never be dispatched, while the second `mousedown`
    * always is. Tauri's own drag script does exactly this, for exactly that
    * reason.
    *
    * `stopPropagation` is what keeps it to *one* toggle. Tauri's script listens
-   * on `document` and, on this same event, invokes `internal_toggle_maximize` —
-   * two toggles on one gesture reads as a control that does nothing. Stopping
+   * on `document` and, on this same event, invokes `"internal_toggle_maximize"`
+   * — two toggles on one gesture reads as a control that does nothing. Stopping
    * here means the renderer owns the gesture: one call, through the seam, with
    * a re-read of the window behind it. `capabilities/main.json` withholds
    * `core:window:allow-internal-toggle-maximize` for the same reason, and

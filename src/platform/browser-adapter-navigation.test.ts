@@ -3,8 +3,8 @@
  *
  * Conventions §8: "Every `BrowserAdapter` command gets a vitest test mirroring
  * the Rust one. When they disagree, the fake is wrong." Each test here has a
- * counterpart in `src-tauri/src/ipc/store.rs` or `.../ui.rs` asserting the same
- * rule, and the two text rules they share are pinned by
+ * counterpart in `src-tauri/src/ipc/store.rs` or `src-tauri/src/ipc/ui.rs`
+ * asserting the same rule, and the two text rules they share are pinned by
  * `tests/parity/navigation.json`.
  *
  * **VERIFIED-BY-FAKE.** Nothing here is evidence about SQLite, FTS5 or a real

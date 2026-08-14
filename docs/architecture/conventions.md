@@ -137,7 +137,7 @@ vela/
 - Unit tests in a `#[cfg(test)] mod tests` at the bottom of the file they test. Integration
   tests in `crates/<crate>/tests/`.
 - Test names are sentences describing the rule being protected —
-  `no_auth_endpoint_with_no_credential_is_a_success_state`, not `test_auth_1`.
+  `no_auth_endpoint_with_no_credential_is_a_success_state`, not "test_auth_1".
 - One request struct and one response struct per command, both
   `#[serde(rename_all = "camelCase")]`.
 

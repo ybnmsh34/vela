@@ -219,8 +219,8 @@ impl RunningApp {
             // resolves the data directory.
             // Deprecated only because looping on it busy-waits; called once it
             // is exactly "run the startup the event loop would have run", which
-            // is the whole point here. The alternative, `run_return`, does not
-            // return until the app exits.
+            // is the whole point here. The alternative,
+            // `tauri::App::run_return`, does not return until the app exits.
             #[allow(deprecated)]
             app.run_iteration(|_, _| {});
             let data_dir = app.path().app_data_dir().expect("an app data dir");

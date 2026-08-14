@@ -11,9 +11,9 @@
 //! `www-authenticate`. It does **not** strip `x-api-key`. It does not strip
 //! `x-goog-api-key`. It does not strip whatever header an `Auth::ApiKeyHeader`
 //! binding names. Those are exactly the two non-`Bearer` bindings Vela ships.
-//! And `make_referer` clears username, password and fragment while **keeping
-//! the query string**, so an `Auth::ApiKeyQuery` credential travelled to the
-//! next hop inside a `Referer` header.
+//! And `reqwest::redirect::make_referer` clears username, password and
+//! fragment while **keeping the query string**, so an `Auth::ApiKeyQuery`
+//! credential travelled to the next hop inside a `Referer` header.
 //!
 //! So a `3xx` from the configured endpoint handed the user's API key to a host
 //! the user never named — on the first request of a perfectly healthy turn,
@@ -352,9 +352,10 @@ impl Binding {
     /// hop — asserted by the control, so the claim is measured rather than read
     /// off a changelog.
     ///
-    /// `remove_sensitive_headers` strips `authorization`, so `Bearer` survives
-    /// upstream's protection. Nothing strips `x-api-key` or `x-goog-api-key`,
-    /// and `make_referer` keeps the query string that carries `?key=`.
+    /// `reqwest::redirect::remove_sensitive_headers` strips `authorization`,
+    /// so `Bearer` survives upstream's protection. Nothing strips `x-api-key`
+    /// or `x-goog-api-key`, and `reqwest::redirect::make_referer` keeps the
+    /// query string that carries `?key=`.
     fn leaks_without_a_policy(self) -> bool {
         match self {
             Binding::None | Binding::Bearer => false,

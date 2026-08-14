@@ -340,8 +340,21 @@ interface RustItem {
 function readRustItem(file: string, keyword: 'enum' | 'struct', name: string): RustItem {
   const source = SOURCES[file];
   if (source === undefined) throw new Error(`chat-contract-parity: ${file} is not loaded`);
+  return parseRustItem(source, keyword, name, file);
+}
 
-  const declaration = new RegExp(`^pub ${keyword} ${name}\\b[^{\\n]*\\{$`, 'm');
+/**
+ * The same read, against source text rather than a filename, so the line-ending
+ * cases below can be exercised on a fixture instead of on whatever `git` happens
+ * to have checked out.
+ */
+function parseRustItem(
+  source: string,
+  keyword: 'enum' | 'struct',
+  name: string,
+  file = '<fixture>',
+): RustItem {
+  const declaration = new RegExp(`^pub ${keyword} ${name}\\b[^{\\r\\n]*\\{$`, 'm');
   const at = source.search(declaration);
   if (at < 0) {
     throw new Error(`chat-contract-parity: no \`pub ${keyword} ${name}\` in ${file}`);
@@ -356,7 +369,17 @@ function readRustItem(file: string, keyword: 'enum' | 'struct', name: string): R
   const rename = /rename_all\s*=\s*"(camelCase|snake_case)"/.exec(attributes);
   const renameAll: RenameRule = rename ? (rename[1] as RenameRule) : 'none';
 
-  const lines = source.slice(at).split('\n').slice(1);
+  // Split on either terminator. `git config core.autocrlf` is `true` on Windows
+  // and there is no `.gitattributes`, so every line of these files ends `\r\n`
+  // in a Windows checkout — `model.rs` measures 798 CRLF and 0 bare LF. Splitting
+  // on `'\n'` alone left a `'\r'` on the end of every line, so the column-0 `}`
+  // was never found and 28 of this file's 31 cases threw `unterminated`. The
+  // declaration regex above matched anyway, which is why the symptom pointed
+  // here rather than at the search: JavaScript counts `\r` as a line terminator
+  // for `$` under `m`, so `\{$` was satisfied by `{\r`. The guarantee
+  // `contract.ts` advertises therefore did not execute on the only machine that
+  // builds the product. `the parity parser itself` now pins both endings.
+  const lines = source.slice(at).split(/\r?\n/).slice(1);
   const end = lines.indexOf('}');
   if (end < 0) throw new Error(`chat-contract-parity: unterminated ${name} in ${file}`);
 
@@ -643,6 +666,50 @@ describe('the parity parser itself', () => {
     expect(() => readRustItem('model.rs', 'enum', 'NoSuchEnum')).toThrow(
       /no `pub enum NoSuchEnum`/,
     );
+  });
+
+  // The line-ending controls. These are not hypothetical: for as long as this
+  // file has existed it threw on every Windows checkout, so the parity it
+  // asserts was enforced only on CI's LF tree. A guard that cannot run where the
+  // product is built is a claim, not a guard — the exact shape this file was
+  // written to end. Both endings are pinned so neither can regress into the
+  // other's blind spot.
+
+  it('reads an item whose lines end CRLF, which is every Windows checkout', () => {
+    const fixture = [
+      '#[derive(Debug, Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub enum FixtureEnum {',
+      '    OneThing,',
+      '    TwoThings { detail: String },',
+      '}',
+      '',
+    ].join('\r\n');
+    const item = parseRustItem(fixture, 'enum', 'FixtureEnum');
+    expect(item.members).toEqual(['OneThing', 'TwoThings']);
+    expect(item.renameAll).toBe('camelCase');
+    expect(wireNames(item)).toEqual(['oneThing', 'twoThings']);
+  });
+
+  it('reads the same members from a source and its opposite-ending twin', () => {
+    // Stronger than the fixture: the real files, converted both ways, so a
+    // parser that happened to suit one checkout cannot pass this.
+    const lf = (SOURCES['model.rs'] ?? '').replace(/\r\n/g, '\n');
+    const crlf = lf.replace(/\n/g, '\r\n');
+    expect(lf.includes('\r')).toBe(false);
+    expect(crlf.split('\r\n').length).toBeGreaterThan(400);
+
+    for (const [keyword, name] of [
+      ['enum', 'ContentPart'],
+      ['enum', 'Degradation'],
+      ['struct', 'TokenUsage'],
+    ] as const) {
+      const fromLf = parseRustItem(lf, keyword, name);
+      const fromCrlf = parseRustItem(crlf, keyword, name);
+      expect(fromLf.members.length, `${name} read as nothing`).toBeGreaterThan(1);
+      expect(fromCrlf.members, `${name} differs across line endings`).toEqual(fromLf.members);
+      expect(fromCrlf.renameAll).toBe(fromLf.renameAll);
+    }
   });
 
   it('reads the variant names, not the doc comments or attributes around them', () => {

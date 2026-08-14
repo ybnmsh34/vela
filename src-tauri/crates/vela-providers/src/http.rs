@@ -810,10 +810,11 @@ impl ReqwestTransport {
             // The *other* way a request reaches a host the user never named:
             // the endpoint asks it to. See [`redirect_policy`].
             .redirect(redirect_policy())
-            // `reqwest` defaults this to `true`, and `make_referer` clears
-            // username, password and fragment but **keeps the query string** —
-            // so with `Auth::ApiKeyQuery` the credential travels to the next hop
-            // inside a `Referer` header even when no credential header does.
+            // `reqwest` defaults this to `true`, and
+            // `reqwest::redirect::make_referer` clears username, password and
+            // fragment but **keeps the query string** — so with
+            // `Auth::ApiKeyQuery` the credential travels to the next hop inside
+            // a `Referer` header even when no credential header does.
             // Vela has no use for a referer at all: there is no page here, only
             // an API call the user configured.
             .referer(false)
@@ -848,16 +849,17 @@ const MAX_SAME_AUTHORITY_REDIRECTS: usize = 4;
 /// # The defect this exists to close
 ///
 /// `reqwest`'s default is `Policy::limited(10)` with `referer: true`, and its
-/// cross-host protection (`redirect::remove_sensitive_headers`) strips exactly
-/// five headers: `authorization`, `cookie`, `cookie2`, `proxy-authorization`,
-/// `www-authenticate`. `x-api-key` is not on that list. Neither is
-/// `x-goog-api-key`, nor any header an `Auth::ApiKeyHeader` binding names. Those
-/// are precisely the two non-`Bearer` bindings Vela ships: a `302` from the
-/// configured endpoint handed the user's Anthropic or Google key to whatever
-/// host the `Location` named, on the first request of a healthy turn, with no
-/// error involved. `Auth::ApiKeyQuery` leaked by a second route: the credential
-/// is *in the URL*, and `make_referer` keeps the query string, so it rode to the
-/// next hop in a `Referer` header (suppressed only on an https→http downgrade).
+/// cross-host protection (`reqwest::redirect::remove_sensitive_headers`) strips
+/// exactly five headers: `authorization`, `cookie`, `cookie2`,
+/// `proxy-authorization`, `www-authenticate`. `x-api-key` is not on that list.
+/// Neither is `x-goog-api-key`, nor any header an `Auth::ApiKeyHeader` binding
+/// names. Those are precisely the two non-`Bearer` bindings Vela ships: a `302`
+/// from the configured endpoint handed the user's Anthropic or Google key to
+/// whatever host the `Location` named, on the first request of a healthy turn,
+/// with no error involved. `Auth::ApiKeyQuery` leaked by a second route: the
+/// credential is *in the URL*, and `reqwest::redirect::make_referer` keeps the
+/// query string, so it rode to the next hop in a `Referer` header (suppressed
+/// only on an https→http downgrade).
 ///
 /// # Why refusing, rather than following-with-the-credential-stripped
 ///

@@ -216,7 +216,7 @@ fn slot() -> &'static RwLock<Option<Arc<dyn DebugSink>>> {
 /// Start recording raw exchanges to `sink`.
 ///
 /// **Nothing is recorded until this is called.** The name is deliberately not
-/// `set_sink`: turning this on is a decision the user makes, and the call site
+/// "set_sink": turning this on is a decision the user makes, and the call site
 /// should read like one.
 pub fn enable(sink: Arc<dyn DebugSink>) {
     if let Ok(mut current) = slot().write() {

@@ -377,7 +377,7 @@ impl AnswerChannel {
     ///
     /// # Why this does not return a bare `Vec<ContentPart>`
     ///
-    /// It used to (`into_parts`), and that is where the second half of this
+    /// It used to ("into_parts"), and that is where the second half of this
     /// module's rule leaked out. Merging the salvaged tail into a
     /// [`ContentPart::Text`] is right — MEASURED-3 says the user must see it —
     /// but it is also *lossy*: once merged, nothing downstream can tell which

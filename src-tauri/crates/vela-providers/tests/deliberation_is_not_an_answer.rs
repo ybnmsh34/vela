@@ -10,8 +10,8 @@
 //! into a machine-actionable value, and a caller that receives `Some(Ok(v))`
 //! from a schema-validated field has been told **the model produced `v`**. It
 //! was left on the convention side of that chokepoint, and every schema-check
-//! site validated over [`ChatResponse::answer_text`] — which, by way of
-//! `AnswerChannel::into_parts`, *includes* salvaged text.
+//! site validated over [`ChatResponse::answer_text`] — which, by way of the
+//! method then called "AnswerChannel::into_parts", *includes* salvaged text.
 //!
 //! # The turn
 //!
@@ -656,7 +656,7 @@ fn the_committed_half_of_the_turn_contains_no_json() {
 ///
 /// This is belt to the type system's braces. `structured::check_answer` takes
 /// a value that can only be minted from a `ChatResponse`, so the wrong call
-/// does not compile — but a future `check_answer_str` would, and this names
+/// does not compile — but a future "check_answer_str" would, and this names
 /// the file if one appears.
 #[test]
 fn the_schema_consumer_is_fed_from_the_chokepoint() {

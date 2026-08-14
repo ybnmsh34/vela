@@ -10,7 +10,7 @@
 //! itself.
 //!
 //! The second rule: nothing in this struct is provider-specific. There is no
-//! `is_ollama`, no per-vendor sub-struct, no enum of known vendors. A backend
+//! "is_ollama", no per-vendor sub-struct, no enum of known vendors. A backend
 //! Vela has never heard of is described exactly as well as one it ships with —
 //! which is the whole premise of a model-agnostic client.
 

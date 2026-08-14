@@ -4661,7 +4661,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     //
     // The fix is to ask the question the assertion is actually about: is there
     // a Tauri *command* named `provider_…`, invoked from the frontend? Command
-    // names appear as `invoke('provider_x'` in TS and as a `provider_x` handler
+    // names appear as `invoke('provider_x'` in TS and as a "provider_x" handler
     // registered in the Rust allowlist.
     let provider_command_in_rust = allowlist.contains("\"provider_")
         || allowlist.contains("fn provider_")
@@ -4689,7 +4689,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.p(
         "  No command carries a ProviderError across the bridge yet, so today the leak surface\n  \
          is latent rather than live. Its serde rendering is asserted clean regardless — that is\n  \
-         the shape a future `provider_stream` command would serialise.",
+         the shape a future \"provider_stream\" command would serialise.",
     );
 
     doc.h("assertions");
@@ -4771,8 +4771,8 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
 // `authorization`, `cookie`, `cookie2`, `proxy-authorization`,
 // `www-authenticate`. `x-api-key` is not among them; neither is
 // `x-goog-api-key`; neither is any header an `Auth::ApiKeyHeader` binding
-// names. And `make_referer` keeps the query string, so an `Auth::ApiKeyQuery`
-// credential rode to the next hop inside a `Referer`.
+// names. And `reqwest::redirect::make_referer` keeps the query string, so an
+// `Auth::ApiKeyQuery` credential rode to the next hop inside a `Referer`.
 //
 // So a `3xx` from the configured endpoint handed the user's key to a host they
 // never named, on the first request of a healthy turn, with no error anywhere.
@@ -5116,9 +5116,9 @@ async fn case_12(profile: &str, ledger: &mut Vec<Verdict>) {
         "a 3xx must not carry the request — or the credential — off the configured authority",
         "The round-3 panel's security FAIL. `reqwest`'s cross-host protection strips five \
          headers and none of them is `x-api-key`, `x-goog-api-key` or anything an \
-         `Auth::ApiKeyHeader` binding names; `make_referer` keeps the query string. So a \
-         redirect from the configured endpoint handed the user's key to a host they never \
-         configured, on the first request of a healthy turn.",
+         `Auth::ApiKeyHeader` binding names; `reqwest::redirect::make_referer` keeps the \
+         query string. So a redirect from the configured endpoint handed the user's key to \
+         a host they never configured, on the first request of a healthy turn.",
     );
     doc.p(
         "  THE SUBJECT IS THE THIRD PARTY, not Vela. Every assertion below is made against\n  \

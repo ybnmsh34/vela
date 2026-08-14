@@ -210,36 +210,50 @@ describe('no provider-specific detail crosses the adapter boundary', () => {
       '.css',
     ]).filter((path) => !/\.test\.[a-z]+$/.test(path));
 
-    // The exemption is load-bearing, so it is checked rather than assumed: the
-    // carrier must be present in the scan and must be the thing removed from it.
-    // Both halves matter — if the file were renamed, the first fails; if the
-    // separator broke again, the second does.
-    expect(
-      conversationFiles.filter((path) => CARRIERS.has(basename(path))).map((p) => basename(p)),
-      'the carrier exemption matches nothing, so this guard is scanning the wrong set',
-    ).toEqual(['use-conversation.ts']);
+    // One definition, used by the scan *and* by the proof at the bottom. It was
+    // written twice — once inline in the filter, once for the self-test — so the
+    // proof was exercising a copy: narrow the real regex and the assertions that
+    // swear it still fires would go on passing against the stale twin. A guard
+    // whose self-test does not run the guard is the same defect as a guard that
+    // does not run, one level up.
+    //
+    // A comparison, a lookup, a member read — anything but declaring the prop
+    // and forwarding it verbatim.
+    const inspects = (line: string): boolean => /\bproviderId\b\s*(?:===|!==|\?\.|\[|\.)/.test(line);
+    const inspections = (path: string): string[] =>
+      stripComments(readFileSync(path, 'utf8'))
+        .split('\n')
+        .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+        .filter(({ line }) => inspects(line))
+        .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`);
 
+    const carriers = conversationFiles.filter((path) => CARRIERS.has(basename(path)));
     const offenders = conversationFiles
       .filter((path) => !CARRIERS.has(basename(path)))
-      .flatMap((path) => {
-        const source = stripComments(readFileSync(path, 'utf8'));
-        return source
-          .split('\n')
-          .map((line, index) => ({ line: line.trim(), number: index + 1 }))
-          // A comparison, a lookup, a template — anything but declaring the
-          // prop and forwarding it verbatim.
-          .filter(({ line }) => /\bproviderId\b\s*(?:===|!==|\?\.|\[|\.)/.test(line))
-          .map(({ line, number }) => `${relative(REPO_ROOT, path)}:${number} — ${line}`);
-      });
+      .flatMap(inspections);
 
     expect(
       offenders,
       'the conversation surface addresses a backend; it must never inspect one',
     ).toEqual([]);
 
+    // The exemption is asserted rather than trusted, in both directions. An
+    // exemption that has silently stopped applying reads exactly like a clean
+    // tree — which is precisely how the separator defect above hid on CI. And an
+    // exemption that has stopped being *needed* is standing cover for the next
+    // component that reaches for an id, so it has to be shown still earning its
+    // place rather than left open out of politeness.
+    expect(
+      carriers.map((path) => basename(path)).sort(),
+      'the carrier moved or was renamed; fix CARRIERS rather than the assertion',
+    ).toEqual([...CARRIERS].sort());
+    expect(
+      carriers.flatMap(inspections).length,
+      'the hook no longer holds an id: delete the exemption instead of leaving it open',
+    ).toBeGreaterThan(0);
+
     // The guard proves it can fail. Both shapes a component would actually
     // reach for, and neither of the two that are fine.
-    const inspects = (line: string): boolean => /\bproviderId\b\s*(?:===|!==|\?\.|\[|\.)/.test(line);
     expect(inspects("if (providerId === 'x') return null;")).toBe(true);
     expect(inspects('const badge = BADGES[providerId.toLowerCase()];')).toBe(true);
     expect(inspects('readonly providerId: string | null;')).toBe(false);

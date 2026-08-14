@@ -442,7 +442,19 @@ function wireTokensAndMethods(): ReadonlySet<string> {
       const stripped = raw.replace(TRAILING_SLASH_COMMENT, '');
       const line = hashComments ? stripped.replace(TRAILING_HASH_COMMENT, '') : stripped;
       if (line.trim() === '') continue;
+      // Both quote characters, because this repo's TypeScript writes its string
+      // literals in single quotes and its Rust in double. Reading only double
+      // quotes meant every command name in `contract.ts` and the three frozen
+      // contracts — `'sandbox_submit'`, `'project_create'` — was invisible here
+      // while being a perfectly real declaration one line away, and the guard
+      // reported thirty-four of them the moment those contracts merged. The rule
+      // is unchanged and it is the rule that matters: the **entire** quoted
+      // content must be one snake_case token, which is what a wire name, a
+      // config key and a shell `pass "label"` look like, and which a sentence
+      // never is. Comment lines and trailing comments are already gone above, so
+      // this reads string literals in code and nothing else.
       for (const name of captured(line, /"([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})"/g)) names.add(name);
+      for (const name of captured(line, /'([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})'/g)) names.add(name);
       for (const name of captured(line, /\.([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})\s*\(/g))
         names.add(name);
     }

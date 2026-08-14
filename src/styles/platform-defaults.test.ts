@@ -499,19 +499,15 @@ describe('the layout survives 150% display scaling', () => {
 /* 3. one inset in the model picker                                            */
 /* -------------------------------------------------------------------------- */
 
-/** The declarations of the first rule whose selector list contains `selector`. */
-function rule(sheet: string, selector: string): Map<string, string> {
-  const stripped = sheet.replace(/\/\*[\s\S]*?\*\//gu, '');
-  const pattern = new RegExp(`(^|,|\\})\\s*${selector.replace('.', '\\.')}\\s*(,[^{]*)?\\{([^}]*)\\}`, 'mu');
-  const body = pattern.exec(stripped)?.[3];
-  expect(body, `no rule for ${selector}`).toBeDefined();
-  const out = new Map<string, string>();
-  for (const line of (body ?? '').split(';')) {
-    const at = line.indexOf(':');
-    if (at > 0) out.set(line.slice(0, at).trim(), line.slice(at + 1).trim());
-  }
-  return out;
-}
+/* `rule()` lived here: a helper that parsed a stylesheet and returned one rule's
+   declarations as a map. Its only caller was the assertion pinning
+   `scrollbar-gutter: stable both-edges` — the assertion an architecture critic
+   found "forbids its own fix", because correcting the ruler regression made a
+   *passing* test fail. That assertion is gone, and reading declarations back out
+   of a stylesheet is the shape that let it happen: it verifies what was written
+   rather than what the browser laid out. The ruler is now measured from
+   `Range.getClientRects()` in the browser instead. Deleting the helper rather
+   than keeping it available discourages writing that shape again. */
 
 /** `padding: a b c d` → the inline (left/right) component, in px. */
 function inlinePadding(shorthand: string): number {

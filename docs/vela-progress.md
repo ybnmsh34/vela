@@ -2933,3 +2933,295 @@ the move that has cost this project two rounds already.
 **VERIFIED-BY-FAKE** per conventions §10 for everything above that runs in a browser: Chromium on
 Linux, no WebView2, no packaged binary, no keychain, no real model. The desktop session's
 `A1-scaffold-shell` and `CONV-1` PASSes remain the binding visual verdicts.
+
+---
+
+## Wave H — three contracts drafted blind, reconciled, and frozen
+
+Three builders wrote three contracts without being able to see each other's work, and three
+critics graded them without being able to see the other two. This section records the
+reconciliation: what each file covers, what the critics found and what was done about it, the
+seams that only showed once one agent had read all three, and the questions that are still a
+builder's to answer. **From this point the three files change by an amendment entry and by
+nothing else.**
+
+Nothing below is wired. All three files declare payload shapes and none of their command names
+are on `COMMAND_ALLOWLIST` in `src/platform/contract.ts`; `isAllowedCommand` answers `false` for
+every one of them, so calling one today fails at the renderer with `UNKNOWN_COMMAND` before it
+reaches the host. Each file says so in its own header, in the terms
+`src/platform/claimed-guards.test.ts` exists to enforce.
+
+### What each covers
+
+| File | Owns | Declares | Enforced by |
+|---|---|---|---|
+| `src/platform/contract-project.ts` | The durable container: metadata, the user's working directory, the host-owned layout on disk, the private agent workspace, the skills mount and its Windows link story | 8 commands (`project_create` … `project_update`) | `tsc` only |
+| `src/platform/contract-sandbox.ts` | What runs model-produced code and what that code may reach: two program families, the event stream, cancellation, six mandatory limits, the four-level permission selector, deny-by-default filesystem scope | 6 commands (`sandbox_submit`, `sandbox_approve`, `sandbox_cancel`, `sandbox_release`, `sandbox_policy`, `sandbox_report_document`) | `tsc` only |
+| `src/platform/contract-harness.ts` | The agent loop above one turn: the one-method runtime seam, sequencing/buffering/replay above it, registration and total selection, and the services a harness is handed | no commands — it is a renderer-side seam, not a wire | `tsc` only |
+
+### The verdicts, and what was done
+
+Two of the three came back FAIL. **A critic's verdict was not reinterpreted**: every blocking and
+serious finding was repaired, including the two I would have argued with, and the two arguments
+are recorded under "Disagreements" below rather than used as an excuse.
+
+| Contract | Finding | Repair |
+|---|---|---|
+| SANDBOX | **blocking** — the commonest process submit had no legal `workingDirectory`: a required absolute guest path inside a scope whose only directory is a scratch path the host does not reveal until after acceptance | `ProcessWorkingDirectory` is now a union — a scratch variant is always legal and needs no knowledge the caller lacks; a guest-path variant is for a caller that mounted something. `EffectiveGrant.workingDirectory` reports where it landed |
+| SANDBOX | serious — refusals had two delivery channels, no rule about which, and one channel provably cannot carry a reason (a code-and-message pair over a closed 7-code set, and conventions §3.2 forbids parsing the message) | Every `RefusalReason` now arrives as a settled event, without exception. Exactly one failure rejects the invoke — a duplicate run id — and it was **removed from the union**, because the only stream that id names belongs to the healthy run already using it |
+| SANDBOX | serious — for documents the file defined first-render, diagnostic and truncation events and gave the host no way to observe any of them | The fork is decided: the renderer draws the frame, the host owns the run. `sandbox_report_document` carries the surface's observations back so sequencing and lifetime stay in one place. The "off" guarantee is restated honestly — host-held so no *request* can raise it, which is not the same as a claim about Vela's own renderer |
+| SANDBOX | serious — the isolation union was four process mechanisms, and a Canvas document had to assert a floor that misdescribed what it got | `Isolation` is now tagged by family. `DocumentIsolation` names the browser boundary so a caller can *require* it, and the two scales are never compared — there is no answer to "is an opaque origin stronger than a container" |
+| SANDBOX | serious — a POSIX-only base environment, declared complete, on the platform Vela ships to. A Python interpreter started without `SYSTEMROOT` fails during start-up, and `bash` is not present at all | Two closed per-platform lists, `SANDBOX_BASE_ENVIRONMENT_POSIX` and `SANDBOX_BASE_ENVIRONMENT_WINDOWS`. `SandboxPolicySnapshot.languages` means a surface discovers a missing interpreter without submitting in front of the user |
+| SANDBOX | serious — an SVG could legally enable script, and the comment beside the field said that combination turns the safest language into an XSS vector with a reassuring name | `DocumentProgram` is two variants; the field exists only on the two script-capable languages. The host-side check is gone, along with its ten private re-derivations |
+| SANDBOX | serious — the strength tuple claimed "a new class has exactly one place to be ranked" across two places, and an unranked class silently sorted below the weakest one | The unions are **derived from** their ranking tuples, and `isolationRank`/`isolationMeets` ship, with the unknown-value case decided once instead of ten times |
+| HARNESS | **blocking** — "a harness must write the transcript through `store_append_message` and `store_update_message` as the run goes" was stated as binding, and `HarnessServices` had no store surface and explicitly no adapter | `TranscriptWriter` is on the seam: two methods, not the four on `src/data/transcript-repository.ts`, constructed at the composition root. The rule now names something a harness can reach |
+| HARNESS | serious — the loop's message-accumulation rule was never specified: what role a tool result rides on, whether the assistant turn and its signed reasoning are re-sent, and how a response part becomes an input part (they differ in exactly one field, which is what makes it dangerous) | A four-rule block below `ToolResultPart` decides all three, and `ContentPartCodec` puts the one conversion in one place. This is not per-harness policy — the caller rebuilds the next run's input from the store, so two harnesses accumulating differently break the swap-the-engine property |
+| PROJECT | serious — the header promised every named path says who creates it and when; `skillStore` said neither, and is deliberately outside `ProjectDirectory` so a repair list cannot report it | The host creates it empty at launch, before any command that reads it, and the one observable consequence is written down: every enabled skill mounts unavailable with `skillNotFound`. Why it stays out of `ProjectDirectory` is now argued rather than assumed |
+
+Every minor finding was repaired too. The ones worth naming here because they were *false
+statements* rather than gaps: the harness file told ten builders that TypeScript decorators are
+disabled in `tsconfig.app.json` (they are not — `experimentalDecorators` governs the legacy form
+only), asserted as fact a sibling-package claim its own cited study marks UNVERIFIED, and
+misreported what that study established about three model-router slots; the project file cited
+"conventions §0 and §2" for five rules that live in `tsconfig.app.json`, §3.2, §5 and §9. A
+contract that is wrong about the reader's own build configuration is doing the thing this repo's
+guards exist to catch, one level up.
+
+### The seams — what only showed once one agent had read all three
+
+**1. Two contracts had a collision neither could see.** SANDBOX protected a category covering the
+whole application-data directory from ever being mounted. PROJECT puts the private agent
+workspace two levels inside that directory. Read together, the agent could not reach its own
+workspace through the only execution path it has. The category is now `velaStore` — the database
+and settings — and both files state the carve-out and the reason. This is the kind of
+contradiction that otherwise gets discovered at implementation time and resolved by widening
+whichever side is easier to widen.
+
+**2. A junction is a mount hazard, not only a delete hazard.** PROJECT's skills mount is a
+directory of junctions into the machine-wide store, and every file API follows one
+transparently. A read-write mount of that directory is a read-write mount of every skill on the
+machine, granted to model-authored code, through a path that does not look like it leads there.
+SANDBOX now refuses it (`skillsMountMustBeReadOnly`) and PROJECT names the rule from its side.
+The delete-side hazard was documented on `LinkStrategy`, which is not the type the builder
+writing `project_delete` reads; it is now cross-referenced there as well.
+
+**3. HARNESS could not say which project a run was in — and putting it on the request closed only
+half of that.** It carried a conversation id and nothing else, while `ConversationSummary` carries
+no project id, so a tool call had no way to know which directories it was allowed near.
+`RunRequest.projectId` closes it **for the request object**, and it means that file needs no
+amendment when the column lands. What it did not close, and what the post-freeze critic found, is
+that the request feeds two services and neither could read it: `ToolExecutor.execute` takes a call
+and a signal, and `ContextResolver.index()` took nothing at all while the resolver was defined as
+one app-wide instance. A project id that nothing downstream can see is a seam closed on paper. Both
+halves are closed now — services are built per run from the request, and a resolver is one
+project's — under "The post-freeze round" below.
+
+**4. Nobody owned the join between a run and an execution.** `ToolExecutor` is where a Bash or
+Python tool becomes a `sandbox_submit`; that is now written down, along with the three
+consequences a builder would otherwise meet one at a time — the approval prompt lives there, the
+cancel signal has to reach it, and a sandbox refusal is a tool result rather than a rejection.
+Neither file imports the other; the join is made once, at the composition root.
+
+**5. Canvas was described as a first-class consumer and served as a second-class one.** Three of
+the SANDBOX repairs above — the document isolation family, the report command, the script union —
+are the same finding seen from three angles. The file now serves both consumers, or says plainly
+which one it does not.
+
+### The post-freeze round — one blocking defect and four serious, from a fresh-context critic
+
+The three files were graded again after the freeze by a critic who had not seen the wave.
+**CONTRACT-SANDBOX: PASS. CONTRACT-PROJECT: PASS. CONTRACT-HARNESS: FAIL.** So these repairs are
+*amendments* rather than reconciliation — the first entries in all three AMENDMENTS blocks, with
+all three contract versions bumped to 2 — and the paragraph further down that said those blocks
+are empty is corrected rather than left standing.
+
+| Contract | Finding | Repair |
+|---|---|---|
+| HARNESS | **blocking** — `ContextResolver` could not be implemented at all. Three statements could not all hold: `HarnessRuntime.context` is one app-wide instance built once at the composition root; `projectInstructions` resolves to `ProjectView.instructions` for `RunRequest.projectId`; `index()` takes no project. An app-wide resolver has no project to index, and the only escape left — a caller hand-mints a `ContextRef` and `load` decodes its id — contradicts both "the caller indexes, picks, and passes refs" and `ContextRef.id` being opaque to this seam, so ten builders would have had to agree on an id format with nothing frozen to agree on. A builder reaching that line stops and guesses | `contextFor(projectId)` replaces the field: a resolver **is** one project's, so nothing below it needs a project parameter. The rejected alternative is argued at the method — a project on `index`/`load` keeps one instance and buys a pairing a caller can get wrong (index project A, load with project B), and all three answers to that are bad. What the one-instance rule protected was never object identity but *equivalence*, and equivalence is now what is required. `load` says a ref must have come from the same resolver's `index`, which closes the hand-minted-ref hatch by name |
+| HARNESS | serious — `ToolExecutor.execute(call, signal)` receives no project and no run, while the same file asserts the executor "is the only one holding both halves" and both sibling contracts rest on that. Nothing typed `(request: RunRequest) => HarnessServices`, and the file forbade that same per-run move for `ContextResolver` — so a builder had no consistent rule and had to guess whether `HarnessServices` is per-app or per-run | **`HarnessServices` is per run**, and two new types say so rather than a sentence: `HarnessServicesFactory` and `CreateLiveRuns`, which takes one. Which members that binds is written out — `tools` and `context` are built from the request, `turns`/`transcript`/`parts`/`now` are ordinarily shared. `execute` keeps its two arguments: an executor is bound to its run at construction, and passing the ids per call would make the *harness* the supplier of the project on every tool call, which is the one fact a run must not be able to vary |
+| HARNESS + SANDBOX | serious — a `sandbox_submit` for a project needs a `FilesystemScope` (workspace read-write, skills mount read-only, working directory if any) that was prose in two contracts and constructed by no exported helper, unlike `mergeRunCapabilities`, which ships precisely because a rule that must not vary should not be re-derived ten times | `projectFilesystemScope` ships, in the sandbox contract, taking a `ProjectLayout`. The two host-owned mounts are fixed and cannot be passed; the user's own directory is a caller's judgement (`WorkingDirectoryGrant`) and is mounted only where the layout resolved `bound`. It validates nothing and says why — every rule it could check is host-side, and a renderer-side re-check is theatre on the compromised side of the boundary |
+| HARNESS | serious — `HarnessId` claimed the id "is persisted as a user setting". `SettingsSnapshot` has no harness field, `COMMAND_ALLOWLIST` has no generic settings write, and the whole selection model — a stored `requestedId`, a `noneChosen` first-run reason — presupposed a store nobody built. The project's own central defect class | Replaced by what is true today (`requestedId` is `null` on every call, `selected` is unreachable, every selection is `substituted` with `noneChosen`) plus the amendment that would make it false: a nullable "harnessId" on `SettingsSnapshot` and a "settings_set_harness" command, named in straight quotes because neither exists, marked required-but-unbuilt |
+| cross-contract | serious — `RunOutcome` was exported by two files with unrelated meanings: three members in HARNESS, eight in SANDBOX. Across `contract.ts` and all three new files it was the **only** exported-name collision, and it bites exactly at the join both files name — a `ToolExecutor` imports from both and gets a duplicate identifier | The sandbox side becomes `SandboxOutcome`, following the decision already taken for `RunId` against `SandboxRunId`: where two contracts need one word, the sandbox takes the prefix, because one agent run submits many sandbox runs |
+| SANDBOX | serious — the base environment was chosen by "the platform the host is on", and `CrashedOutcome.signal` was "`null` on Windows". A Linux container on a Windows host is the ordinary shape of the container ambition this file states at its head, and both rules then inject `PATHEXT`/`COMSPEC`/`SYSTEMROOT` into a Linux guest, omit `HOME`/`TMPDIR`, and drop the signal number of a process that has one | `GuestPlatform`, and a required `SandboxPolicySnapshot.guestPlatform`. Which base list applies, which casing rules `environmentNamesCollide` is decided under, whether a kill carries a signal, and which variable names the scratch directory are all read off the guest. A caller learns it without submitting, the way it already learns `languages` |
+| PROJECT | serious — `enabledSkills` had no case-collision rule, on the platform Vela ships to. `['Foo','foo']` is two enabled skills and one directory; `occupiedByUnrelatedEntry` misdescribes it, because the occupant is ours | The sibling contract's answer, applied: `project_create` and `project_update` refuse a colliding list with `INVALID_PAYLOAD`, exactly as `environmentNamesCollide` refuses a colliding environment, and a record that already holds a pair (an application-data directory redirected onto a case-insensitive volume) mounts the first entry and reports the rest with the new `nameCollidesWithAnotherEnabledSkill`. The folding is the filesystem's question — an NTFS upcase table fixed at format time is not `toLowerCase` — so the host answers it and the renderer may not |
+| PROJECT | minor, raised twice — three load-bearing rule blocks were doc comments attached to no declaration, in a contract whose only delivery mechanism is doc comments. A builder hovering `WorkingDirectoryBinding` saw one sentence and none of its three refusal rules | The seeding rule is on `DEFAULT_PROJECT_ID`; the three `INVALID_PAYLOAD` path refusals and the execution seam are on `WorkingDirectoryBinding`; the private-workspace boundary is on `ProjectPaths.workspace`, and the section that held it is gone |
+
+**Disagreement, recorded and repaired anyway.** One: the finding on `ToolExecutor` is really two, and the half about `execute`'s signature is arguably not a defect — an executor built per run needs no per-call project, and the critic says as much. What was genuinely missing was the *rule*, in a file that had stated its opposite one type over. So the repair is the rule and its types, and `execute` is unchanged; saying so here rather than quietly changing the signature is the honest form of the disagreement.
+
+### Shared vocabulary, and its one home
+
+| Concept | Home | Imported by |
+|---|---|---|
+| `ProjectId` | `src/platform/contract-project.ts` | sandbox (`SandboxSubmitReq`), harness (`RunRequest`) |
+| `AbsolutePath` | `src/platform/contract-project.ts` | sandbox (`Mount.hostPath`, the auto-approval roots) |
+| `Ack`, `EmptyPayload`, the content parts, the turn model, the error taxonomy | `src/platform/contract.ts` | all three |
+| The stream envelope shape — an id, a `seq`, an event | `src/platform/contract.ts` sets the pattern | harness and sandbox follow it; three streams, one shape |
+| Timestamps | convention, everywhere | integer milliseconds since the epoch, always suffixed `AtMs`; a duration is suffixed `Ms` |
+| Run identity | separate per contract, on purpose | `RunId` (harness) and `SandboxRunId` are **not** interchangeable — one agent run submits many sandbox runs |
+| How a run ended | separate per contract, on purpose | `RunOutcome` (harness: completed, cancelled, failed) and `SandboxOutcome` (sandbox: eight, including `refused` and `rendered`). They were both `RunOutcome` until the post-freeze round; the sandbox took the prefix for the reason it took `SandboxRunId` |
+| A run's filesystem scope | `src/platform/contract-sandbox.ts` | built from a `ProjectLayout` by `projectFilesystemScope` — the harness contract points at it and does not restate it |
+| Which platform a program runs on | `src/platform/contract-sandbox.ts` | `GuestPlatform` on the policy snapshot. It is the **guest's**, not the host's, and the difference is a Linux container on a Windows machine |
+
+The rule a builder should carry away: if two of these files spell the same concept two ways, that
+is a defect in this wave and not a choice to be resolved locally.
+
+### Decisions a builder must not relitigate
+
+- **The sandbox is a boundary, not a filter.** No blocklist type, no allowed-command list,
+  nowhere to hang a static-analysis verdict. What a run may do is decided by what it is *given*,
+  before its first byte is interpreted, by a component that never reads its source. Adding any of
+  those is an amendment that has to argue for itself.
+- **The unit of approval is one whole submitted run**, approved before it starts. Not a command
+  (that requires reading the program), not a syscall class (nobody can be asked at that rate).
+- **Permission level is host-held.** It is not a field on a submit and a request has no
+  vocabulary to raise it.
+- **Full access does not disable the sandbox.** Approval and isolation are orthogonal.
+- **All six sandbox limits are required.** An optional limit is one a caller forgets and two
+  hosts default differently.
+- **Skill sync and memory are not methods on the harness seam.** The source has one method; the
+  README that said otherwise is contradicted by the file it describes. A read-only injected
+  resolver carries what is left.
+- **A `ContextResolver` is one project's**, obtained from `contextFor(projectId)`. Not one
+  app-wide instance, and not a resolver told which project on every call — a resolver that *is* a
+  project's cannot be paired with the wrong one.
+- **`HarnessServices` is built per run**, from that run's `RunRequest`. `tools` and `context` come
+  from the request; `turns`, `transcript`, `parts` and `now` are shared. A composition root that
+  builds one bundle for the whole application is building the wrong thing.
+- **Sequencing, buffering and replay live above the harness**, never inside it.
+- **Project directories are keyed by id, never by name.** That single choice deletes a sanitiser,
+  a reserved-device-name table and a containment re-check, and makes rename a metadata update.
+- **The private workspace is disposable and never holds the only copy of anything**, which is
+  what makes repair-on-read safe.
+- **On Windows the skills mount is a directory junction, never a symlink** — even where a symlink
+  would succeed. A design that depends on Developer Mode works on the developer's machine.
+- **Delete has one behaviour and no options.** Conversations reassign to the default project; the
+  working directory is never touched.
+
+### Still the builder's to decide — and nobody has
+
+Written plainly because a builder reading this needs to know which questions are theirs.
+
+**SANDBOX.** No isolation backend is chosen for either family; until one exists every report
+answers `declared`, not `probed`, the container/microVM classes are expressible and unimplemented,
+and `guestPlatform` will answer whatever the host is on because the child *is* a host process —
+the field earns its keep on the day a namespace backend lands, and the day it does, which guest
+image is chosen is a host decision nobody has made. The canonical encoding behind `requestDigest` is host-owned and unspecified — it
+must cover the grant as well as the source. How `SANDBOX_PROTECTED_ROOTS` resolves to concrete
+paths per platform is host-owned. Reattachment is not designed: `seq` exists so it can be added
+without renumbering, but nothing replays anything. Environment values are plaintext with nothing
+enforcing "no credentials here". Concurrency beyond `maximumConcurrentRuns` — queueing,
+fairness, which surface wins — is unspecified. Whether deleting a project cancels or refuses
+while one of its runs is live is named in both files and settled in neither.
+
+**PROJECT.** `ConversationSummary` has no project id, so `conversationCount`, `lastActiveAtMs`,
+`project_move_conversation` and the delete-time reassignment all await an amendment to
+`src/platform/contract.ts`; a host reporting zero for every project is currently telling the
+truth. How the user produces an absolute path is open — a native picker needs the `dialog`
+capability that `src-tauri/capabilities/main.json` does not grant, typing needs nothing, and the
+payload is identical either way. Nothing detects reparse points on delete. The store migration
+that seeds the default project does not exist. **Nothing asks the filesystem how it folds case**,
+which the `enabledSkills` collision rule now requires of the host: on Windows it is the volume's
+upcase table, a directory can be flagged case-sensitive, and APFS can be formatted either way —
+the renderer is explicitly not allowed to answer it, and no host code answers it yet. Project
+**knowledge** and the Context list
+(`docs/vela-feature-spec.md` PRJ-1/PRJ-2, CWK-15) are deliberately out of scope and `ProjectPaths`
+is frozen at four fields, so they arrive by amendment.
+
+**HARNESS.** Tool approval is invisible on the run stream — a UI cannot distinguish "running"
+from "waiting for you" — and making it visible needs an amendment. There is no skills contract
+and no memory contract, so `ContextRef.id` is opaque and the honest first resolver serves project
+instructions and nothing else. **Nothing can store a chosen harness**: `SettingsSnapshot` has no
+field for one and there is no command that could write it, so until that amendment lands a
+selector can be rendered and cannot be honoured — the shape it needs is named at `HarnessId`, in
+straight quotes, because neither half exists. Retention beyond `RUN_BUFFER_MIN_EVENTS` is a policy
+a builder picks. Reconciling a message left streaming by a killed run, on next launch, is
+undefined. Cross-conversation concurrency is permitted and unthrottled. `HarnessServices` is per
+run and `contextFor` is per project, but **who calls `contextFor` for a conversation whose project
+changed mid-session** — and whether preloaded refs survive that — is nobody's decision yet.
+
+**All three.** No Rust module, no allowlist entries, no `BrowserAdapter` implementations, no
+`EventContract` keys, and **no test asserts a single behavioural rule in any of the three files.**
+`tsc` holds the shapes; that is the whole of the automatic enforcement, and each header says so.
+
+### The amendment procedure
+
+Identical in all three files and deliberately boring. Append a numbered entry to that file's
+AMENDMENTS block: the date, the type or field touched, what changed, and what a builder already
+coding against the previous shape has to do about it. Bump that file's own contract version in
+the same change — the three versions are independent because the three surfaces move at
+different cadences, and one number for three would make every project change look like a sandbox
+break. An amendment that removes or narrows something must say what consumers of the old shape do
+instead; "nothing used it" is an acceptable answer and has to be written down rather than assumed.
+An edit above the AMENDMENTS block with no row in it is the change that block exists to make
+impossible to miss in review.
+
+The AMENDMENTS blocks were empty at the freeze, and that was correct: the reconciliation happened
+*before* it, so the repairs in the first table are not amendments — nothing was ever coding against
+those earlier shapes. **They are not empty now.** The post-freeze round above is recorded as four
+entries in HARNESS, three in SANDBOX and three in PROJECT, and all three versions read 2. The one
+that costs a builder something is HARNESS #1: `HarnessRuntime.context` is gone and
+`contextFor(projectId)` is what replaces it.
+
+### The gate
+
+Run in the `wave-h/contracts` worktree, after the reconciliation and again after the post-freeze
+round:
+
+| step | result |
+|---|---|
+| `pnpm typecheck` | clean |
+| `pnpm exec vitest run` | **72 files, 1568 tests, 0 failures** |
+| `src/platform/claimed-guards.test.ts` | 12/12 — every backticked path and every backticked name in all three files resolves |
+
+The pre-wave baseline was 72 files / 1565 tests. **The three extra tests are not new assertions**
+— `src/platform/control-characters.test.ts` generates one case per file under `src/`, and this
+wave added three files. No suite was edited and no expectation was touched. The post-freeze round
+changed no test file and moved neither count.
+
+**Every type-level claim in the post-freeze round was probed** — a throwaway file that should fail
+to compile, the exact error read, the file deleted — because a contract that says "this is now
+unrepresentable" and has not watched the compiler refuse it is making the same kind of claim this
+repo keeps catching:
+
+| probe | error |
+|---|---|
+| a `HarnessRuntime` literal carrying the old `context` field | TS2353 — `'context' does not exist in type 'HarnessRuntime'` |
+| `runtime.contextFor()` with no project | TS2554 — Expected 1 arguments, but got 0 |
+| `resolver.index('some-project')` | TS2554 — Expected 0 arguments, but got 1 |
+| a `HarnessServices` value where a `HarnessServicesFactory` is required | TS2322 — provides no match for the signature `(request: RunRequest): HarnessServices` |
+| the same bundle passed to `CreateLiveRuns` | TS2345, same reason |
+| `import type { RunOutcome } from './contract-sandbox'` | TS2305 — no exported member `RunOutcome` |
+| a `SandboxPolicySnapshot` without the new field | TS2741 — Property `guestPlatform` is missing |
+| asking `projectFilesystemScope` for a writable skills mount | TS2353 — `'skillsMount' does not exist in type 'ProjectScopeRequest'` |
+| assigning to `.mode` on a mount it returned | TS2540 — Cannot assign to `mode` because it is a read-only property |
+| an exhaustive `switch` over `SkillMountProblem` written before the new member | TS2322 — `'nameCollidesWithAnotherEnabledSkill'` is not assignable to type `never` |
+
+And the control, which matters more: one file that imports the agent loop's `RunOutcome` and the
+sandbox's `SandboxOutcome` together — the `ToolExecutor` position where the collision used to be —
+builds a conforming `HarnessRuntime` with `contextFor`, a per-run `HarnessServicesFactory` that
+reads `request.projectId`, and both shapes of `projectFilesystemScope` call. It compiles clean.
+
+Not run here, and not claimed: `cargo test`, `pnpm build`, `pnpm verify`. Nothing in this wave
+touches Rust, and per conventions §10 no claim about the running application can be made from
+this environment. VERIFIED-BY-FAKE does not really apply — these are three declaration files
+checked by a compiler and a static guard, so no endpoint, keychain or webview is implicated in
+either direction.
+
+### Disagreements, recorded
+
+Two critic findings I think were partly wrong, both repaired anyway because repairing them cost
+nothing and neither repair makes a contract false.
+
+**"The expired-approval reason has no clearly reachable trigger."** Correct as written, but the
+critic reasoned from a doc comment that called release "let go of a *settled* run" — the fix was
+not to delete the reason but to legalise release-on-unsettled, which a caller needs regardless (a
+surface that unmounts while a prompt is open must be able to let go). The reason is now
+`approvalAbandoned`, the name no longer implies a timer that does not exist, and release states
+its three cases.
+
+**"`RunSnapshot.retainedFrom` is fixed at 0, so the buffer is unbounded."** The unbounded buffer
+is real and worth fixing. The second half of the same finding — that the truncation signal can
+therefore never fire for a live run — was the sharper observation, and it is what made the first
+half indefensible rather than merely expensive: a guarantee whose cost is an unbounded allocation,
+protecting a signal that can never fire, is two mistakes holding each other up.
+`RUN_BUFFER_MIN_EVENTS` replaces the guarantee with a floor.

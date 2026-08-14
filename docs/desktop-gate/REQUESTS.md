@@ -348,10 +348,21 @@ request meaningless.
 bridge-status panel and a placeholder region — which no longer exists. Judging that would tell us
 nothing. Judge the real product surface instead.
 
-- **status:** AWAITING_DESKTOP
-- **deferred critics:** `visual`, `interaction`
-- **hold `performance`** until the registry lands (see the status block above); a cold-start or
-  streaming number from a build that cannot complete a turn is not a measurement.
+- **status:** **VERDICT_WRITTEN — all three delivered, all three PASS.** See
+  [`VERDICTS.md`](./VERDICTS.md).
+  - `visual` — FAIL at `4c01a60`, then **PASS on re-judge** after the fix wave: thinking block
+    renders markdown, measure at 69 characters, both boxes share one ruler, scroll mask switched,
+    container tokens stepped per theme.
+  - `interaction` — **PASS**. All four of the cloud's focus moments were later verified fixed on
+    WebView2: Escape out of the command bar recovers in 0 tabs against 11 pre-fix, and committing a
+    rename, confirming a delete and dismissing the model switcher each land on a named element,
+    never `<body>`.
+  - `performance` — **PASS** on the **release** build: 14.91 MB binary, 3106 ms cold start to
+    rendered content, 360.6 MB idle attributed to Vela's own process tree, 0.00% idle CPU.
+    Explicitly **not** covered: sustained load, and streaming against a fast endpoint.
+- **deferred critics:** `visual` ✅ · `interaction` ✅ · `performance` ✅
+- `performance` was held until the registry landed, exactly as you asked, and taken once the app
+  could complete a turn.
 
 **What to exercise.** `pnpm tauri dev`, then: the empty/home state; starting a conversation;
 switching between conversations in the sidebar; the command palette (open, filter, Escape); rename
@@ -400,8 +411,12 @@ UI that may still be sent back to its builders wastes the effort.
 ## Open requests
 
 Phase A cleared its full cloud panel on 2026-08-12 — functionality, architecture, and security
-all returned PASS, `failing: []`. The two pieces below carry deferred critics and are therefore
-**AWAITING_DESKTOP, not complete**.
+all returned PASS, `failing: []`.
+
+> **Status corrected by the desktop session.** Both pieces below have since been judged and this
+> preamble no longer describes them. **A3 is complete (PASS).** **A1's `visual` is PASS on re-judge;
+> its `interaction` FAIL still stands and has not been re-judged** — see the A1 block for exactly
+> which half of it is closed. No desktop critic is currently blocked or waiting.
 
 Useful setup for both: `pnpm install && pnpm build`, then `pnpm tauri dev` (or build a release
 binary). `pnpm verify` runs the full cloud-side suite. The Tauri release binary **compiles and
@@ -413,16 +428,27 @@ you are the first to actually run it.
 ## A1-scaffold-shell — Tauri v2 app shell, secure IPC bridge, adapter seam
 
 - **commit:** `cb385356937efb04781926f9326ec43a748f4f7c`
-- **status:** PARTIAL — `visual` **FAIL** and `interaction` **FAIL** written at
-  `4c01a606c6d3c3f3dbf4084a30d24e16c178d5de`; `performance` still **AWAITING_DESKTOP**, held per your
-  instruction until the provider registry is wired (timing an app that cannot complete a turn would
-  produce numbers that look like evidence and are not).
-  **Judged against the quality bar in this file, NOT against this request's stale steps** — you said
-  the old steps describe a diagnostic shell that Phase C replaced, so I judged what actually renders.
-  Largest gaps: `visual` — Vela ships no typeface and renders in Segoe UI on Windows;
-  `interaction` — the command palette claims `aria-modal="true"` without enforcing it and never
-  restores focus. A third defect, theme preference lost on every restart, is filed separately in
-  [`VERDICTS.md`](./VERDICTS.md).
+- **status:** **`visual` PASS · `interaction` FAIL (still standing, half closed) · `performance`
+  delivered under CONV-1.**
+  - **`visual` — FAIL at `4c01a606`, then PASS on re-judge at `e7b56d66`.** All five
+    platform-defaults findings closed: the typeface is bundled and confirmed by a runtime width
+    control (app body renders as Inter Variable, not Segoe UI); the white legacy scrollbar is gone;
+    the 150% empty state renders with its mark; `--vela-text-subtle` now measures 5.99:1 light /
+    5.09:1 dark; the model-picker insets agree (closed arithmetically — **no capture shows the
+    popover open**, and that is recorded as such).
+  - **`interaction` — FAIL at `4c01a606`, NOT re-judged. Half of it is closed.**
+    *Closed and verified on WebView2:* focus restore — `CommandPalette.tsx:86,94` now captures
+    `document.activeElement` and calls `returnFocusTo`, and all four focus moments land on a named
+    element rather than `<body>`.
+    *Still open:* the palette declares `aria-modal="true"` and does not enforce it. There is still
+    **no `case 'Tab'` and no `inert`** in `CommandPalette.tsx`, so focus leaks out of the dialog in
+    both directions while it claims modality to assistive tech. `DeleteConversationDialog` is a
+    second instance of the same class. **This FAIL stands until that is fixed and re-judged.**
+  - **`performance` — PASS**, taken on the release build once the registry landed, and recorded
+    under CONV-1 rather than here.
+  - Theme preference lost on restart, filed separately, is **fixed** — `settings_get` now returns
+    the stored theme across a real process restart.
+  - Judged against the quality bar in this file, not against this request's stale steps, as you asked.
 - **deferred critics:** `visual` ✅, `interaction` ✅, `performance` ⏳
 - **cloud verdicts already passed:** functionality (PASS), architecture (PASS), security (PASS)
 

@@ -111,12 +111,18 @@ export function DocumentPreview({ program, run, title }: DocumentPreviewProps) {
     report({ kind: 'rendered', renderMs: Math.max(0, Date.now() - mountedAt.current) });
   }, [report]);
 
-  if (run.phase.kind === 'awaitingApproval') {
-    return <ApprovalCard run={run} program={program} title={title} />;
-  }
-
+  // One decision, in one place. An earlier draft asked the phase twice — once
+  // here to show the approval card, and once through {@link drawnGrant} to
+  // decide about the frame — and a mutation probe found the consequence: with
+  // `drawnGrant` broken to hand back the approval's own grant, the frame still
+  // did not draw, because the *other* branch caught it first. A rule with two
+  // guards is a rule whose test passes when one of them is wrong.
   if (grant === null) {
-    return <PreviewNotice run={run} />;
+    return run.phase.kind === 'awaitingApproval' ? (
+      <ApprovalCard run={run} program={program} title={title} />
+    ) : (
+      <PreviewNotice run={run} />
+    );
   }
 
   return (

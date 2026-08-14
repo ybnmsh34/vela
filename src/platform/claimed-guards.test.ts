@@ -273,7 +273,7 @@ function wireTokensAndMethods(): ReadonlySet<string> {
   for (const [path, text] of CONTENTS) {
     if (path.endsWith('.md')) continue;
     for (const line of text.split(/\r?\n/)) {
-      if (isProseLine(path, line)) continue;
+      if (withoutComments(path, line).trim() === '') continue;
       for (const name of captured(line, /"([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})"/g)) names.add(name);
       for (const name of captured(line, /\.([a-z][a-z0-9]*(?:_[a-z0-9]+){1,})\s*\(/g))
         names.add(name);
@@ -319,34 +319,39 @@ export function vocabularyOf(path: string, text: string): ReadonlySet<string> {
   const names = new Set<string>();
   const collect = (fragment: string): void => {
     const code = fragment
+      // A quoted string is somebody's data, not this tree's vocabulary — and
+      // straight quotes are specifically how this repo names something that is
+      // gone. See {@link wireTokensAndMethods}: a retired name must not vouch
+      // for itself just because a sentence retiring it spelled it out. All three
+      // quote characters, so a name cannot slip in as `'…'` or a template.
       .replace(/`[^`\n]*`/g, ' ')
-      // Straight quotes are this repo's way of naming something that is gone.
-      // See {@link wireTokensAndMethods} — a retired name must not vouch for
-      // itself just because a sentence retiring it spelled it out.
-      .replace(/"[^"\n]*"/g, ' ');
+      .replace(/"[^"\n]*"/g, ' ')
+      .replace(/'[^'\n]*'/g, ' ');
     for (const match of code.matchAll(/\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b/g)) {
       const name = match[1];
       if (name !== undefined) names.add(name);
     }
   };
 
+  // Fences first, because a fence lives *inside* a doc comment and stripping
+  // comments would take its info string with it. ` ```compile_fail ` is rustdoc
+  // directing the compiler — a directive, and the only position that token ever
+  // occupies. The fence *body* is dropped, so a name cannot vouch for itself by
+  // starring in its own worked example.
+  const outsideFences: string[] = [];
   let insideFence = false;
   for (const line of text.split(/\r?\n/)) {
     const fence = fenceToggle(line);
     if (fence !== null) {
       insideFence = !insideFence;
-      // The info string only. ` ```compile_fail ` is rustdoc directing the
-      // compiler — a directive, not an illustration, and the only place that
-      // token can appear. The *body* below it is somebody's worked example and
-      // is dropped, which is what stops a fabricated name vouching for itself
-      // by starring in its own demonstration.
-      if (insideFence) collect(fence);
+      if (insideFence && !path.endsWith('.md')) collect(fence);
       continue;
     }
     if (insideFence) continue;
-    if (isProseLine(path, line)) continue;
-    collect(line);
+    outsideFences.push(line);
   }
+
+  collect(withoutComments(path, outsideFences.join('\n')));
   return names;
 }
 
@@ -364,18 +369,26 @@ function codeVocabulary(): ReadonlySet<string> {
 const COMMENT_LINE = /^\s*(\/\/[/!]?|\*|\/\*|#|\|)/;
 
 /**
- * The same question asked per language, which is not the same question.
+ * Removes comment *content*, per language, leaving the code around it.
  *
- * {@link COMMENT_LINE} treats a leading `#` as a comment, which is right for a
- * shell script and wrong for Rust, where `#[serde(rename_all = "camelCase")]` is
- * an attribute carrying real wire names. A markdown file has no code lines at
- * all: every line of it is prose, and that is the whole reason this distinction
- * exists.
+ * This replaced a predicate that classified whole lines, and the difference is
+ * the whole finding. Asking "does this line **start** with a comment marker"
+ * misses the two commonest ways a comment actually appears: after code on the
+ * same line, and inside a `/* … *\/` block whose interior lines do not begin
+ * with `*`. A critic planted five-word fabricated guard names in both and both
+ * resolved green — including, the second time around, the exact name from its
+ * first verdict. Classifying lines was the wrong shape; comments have to be
+ * taken out.
+ *
+ * `//` is only a comment when it is not `://`, which is how this repo's
+ * `no-provider-leak` scanner already draws the line, and for the same reason: a
+ * URL in a string is not a comment.
  */
-function isProseLine(path: string, line: string): boolean {
-  if (path.endsWith('.md')) return true;
-  if (/\.(sh|yml|toml)$/.test(path)) return /^\s*#/.test(line);
-  return /^\s*(?:\/\/[/!]?|\/\*|\*)/.test(line);
+function withoutComments(path: string, text: string): string {
+  if (path.endsWith('.md')) return '';
+  let code = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+  if (/\.(sh|yml|toml)$/.test(path)) code = code.replace(/(^|\s)#.*$/gm, '$1');
+  return code;
 }
 
 /** ` ```rust `, ` ```compile_fail `, or a bare ` ``` ` — inside a doc comment or not. */
@@ -687,12 +700,52 @@ describe('this guard is not vacuous', () => {
     // saying its name twice: once in the claim, once anywhere else. The critic's
     // own reproduction is the fixture — a five-word name that the *old* guard
     // caught and the repair excused.
+    // Every syntactic form a comment takes, not the two that happened to be
+    // demonstrated. The first repair pinned only a leading `//!` and a markdown
+    // bullet, and a critic walked straight through the gap with a trailing
+    // comment and a block-comment interior — so the control passed while the
+    // rule it was named after did not hold. A control narrower than its own
+    // name is the defect this file exists to catch, one level up.
     const rustProse = vocabularyOf(
       'src-tauri/src/probe.rs',
-      '//! ATTACK: the redaction invariant is held by `every_secret_is_stripped_before_the_socket`.\n' +
-        '//! Naming note: every_secret_is_stripped_before_the_socket reads well as a sentence.\n',
+      [
+        '//! zzq_leading_bang_comment_name holds this.',
+        '/// zzq_leading_slash_comment_name too.',
+        '// zzq_plain_line_comment_name as well.',
+        'const A: u8 = 1; // zzq_trailing_comment_name holds the invariant',
+        '/*',
+        'zzq_block_interior_no_star_name is named in here,',
+        ' * zzq_block_interior_with_star_name on a starred line,',
+        '*/',
+        'const B: u8 = 2; /* zzq_inline_block_name */',
+      ].join('\n'),
     );
-    expect(rustProse.has('every_secret_is_stripped_before_the_socket')).toBe(false);
+    for (const planted of [
+      'zzq_leading_bang_comment_name',
+      'zzq_leading_slash_comment_name',
+      'zzq_plain_line_comment_name',
+      'zzq_trailing_comment_name',
+      'zzq_block_interior_no_star_name',
+      'zzq_block_interior_with_star_name',
+      'zzq_inline_block_name',
+    ]) {
+      expect(rustProse.has(planted), `${planted} was accepted out of a comment`).toBe(false);
+    }
+
+    // The critic's own string, from the verdict that found this class twice.
+    expect(
+      vocabularyOf(
+        'src-tauri/src/probe.rs',
+        'const C: u8 = 3; // every_secret_is_stripped_before_the_socket holds it\n/*\nand every_secret_is_stripped_before_the_socket again.\n*/\n',
+      ).has('every_secret_is_stripped_before_the_socket'),
+    ).toBe(false);
+
+    // A URL is not a comment, so the code around one is still collected.
+    expect(
+      vocabularyOf('src/probe.ts', 'const zzq_real_binding = "https://example.test/a";').has(
+        'zzq_real_binding',
+      ),
+    ).toBe(true);
 
     // The markdown half of the same attack. Every line of a `.md` is prose, so
     // a bullet mentioning a name proves nothing about whether it was written.
@@ -714,6 +767,11 @@ describe('this guard is not vacuous', () => {
     expect(vocabularyOf('scripts/probe.sh', '# not_a_real_name here\n').has('not_a_real_name')).toBe(
       false,
     );
+    expect(
+      vocabularyOf('scripts/probe.sh', 'run_it --flag  # zzq_trailing_hash_name\n').has(
+        'zzq_trailing_hash_name',
+      ),
+    ).toBe(false);
   });
 
   it('has no scanned file that ends inside a fence', () => {

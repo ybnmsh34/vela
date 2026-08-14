@@ -24,6 +24,7 @@
  */
 
 import type { ChatEventEnvelope, CommandName, CommandReq, CommandRes } from './contract';
+import type { SandboxEventEnvelope } from './contract-sandbox';
 
 /** Which implementation is live. Shown in diagnostics; never branched on for behaviour. */
 export type AdapterKind = 'tauri' | 'browser';
@@ -42,6 +43,17 @@ export interface EventContract {
    * invoke promise settles.
    */
   'chat:event': ChatEventEnvelope;
+  /**
+   * One event for one sandbox run, from `sandbox_submit`'s supervisor thread.
+   * The name is `SANDBOX_EVENT_NAME` in `src/platform/contract-sandbox.ts`;
+   * that file says this entry is part of wiring the contract up rather than a
+   * separate nicety, because the index signature below would otherwise hand a
+   * subscriber an `unknown` and compile.
+   *
+   * Subscribe before submitting: the first line of output can arrive before the
+   * invoke promise settles, which is the whole reason the caller mints the id.
+   */
+  'sandbox:event': SandboxEventEnvelope;
   [key: string]: unknown;
 }
 

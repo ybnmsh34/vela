@@ -6,6 +6,7 @@ default-members = [
   ".",
   "crates/vela-core",
   "crates/vela-providers",
+  "crates/vela-sandbox",
   "crates/vela-secrets",
   "crates/vela-settings",
   "crates/vela-store",
@@ -27,6 +28,7 @@ thiserror = "2"
 vela-core = { path = "crates/vela-core" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
+vela-sandbox = { path = "crates/vela-sandbox" }
 vela-settings = { path = "crates/vela-settings" }
 vela-store = { path = "crates/vela-store" }
 
@@ -80,6 +82,7 @@ thiserror.workspace = true
 vela-core.workspace = true
 vela-secrets.workspace = true
 vela-providers.workspace = true
+vela-sandbox.workspace = true
 vela-settings.workspace = true
 vela-store.workspace = true
 

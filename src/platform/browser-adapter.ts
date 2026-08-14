@@ -22,6 +22,23 @@ import {
   UNTITLED_TITLE,
 } from '@/lib/navigation-text';
 
+import { DEFAULT_PROJECT_ID } from './contract-project';
+import {
+  DEFAULT_AUTO_APPROVAL_PROFILE,
+  isolationMeets,
+  type Isolation,
+  type PermissionLevel,
+  type RefusalReason,
+  type SandboxApproveReq,
+  type SandboxBackendReport,
+  type SandboxCancelReq,
+  type SandboxCancelRes,
+  type SandboxOutcome,
+  type SandboxPolicySnapshot,
+  type SandboxReleaseReq,
+  type SandboxSubmitReq,
+  type SandboxSubmitRes,
+} from './contract-sandbox';
 import {
   NO_WINDOW_CONTROLS,
   type EventContract,
@@ -567,6 +584,14 @@ function snippetOf(text: string, terms: readonly string[]): string {
   return `${before > 0 ? '…' : ''}${window.join('')}${after < words.length ? '…' : ''}`;
 }
 
+/**
+ * The most runs the fake will hold at once, mirroring `MAX_CONCURRENT_RUNS` in
+ * `src-tauri/src/ipc/sandbox.rs`. Two spellings of one number is the parallel
+ * pair this repo keeps finding, so it is named on both sides rather than
+ * inlined on either.
+ */
+const SANDBOX_MAX_CONCURRENT_RUNS = 4;
+
 export class BrowserAdapter implements PlatformAdapter {
   readonly kind = 'browser' as const;
 
@@ -595,6 +620,12 @@ export class BrowserAdapter implements PlatformAdapter {
   readonly #listeners = new Map<string, Set<(payload: unknown) => void>>();
   /** Mirrors `ChatTurns` in the host: id -> "has been cancelled". */
   readonly #turns = new Map<string, { cancelled: boolean }>();
+  /** Mirrors the host's run table: id -> lifecycle. Nothing here executes. */
+  readonly #sandboxRuns = new Map<
+    string,
+    { settled: boolean; cancelled: boolean; seq: number }
+  >();
+  #sandboxPermission: PermissionLevel = 'ask';
   /** Stands in for the SQLite `conversations` and `messages` tables. */
   readonly #conversations = new Map<string, FakeConversation>();
   #conversationSeq = 0;
@@ -650,6 +681,18 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#modelsList(payload as ModelsProviderRefReq);
       case 'models_probe':
         return this.#modelsProbe(payload as ModelsRefReq);
+      case 'sandbox_approve':
+        return this.#sandboxApprove(payload as SandboxApproveReq);
+      case 'sandbox_cancel':
+        return this.#sandboxCancel(payload as SandboxCancelReq);
+      case 'sandbox_policy':
+        return this.#sandboxPolicy();
+      case 'sandbox_release':
+        return this.#sandboxRelease(payload as SandboxReleaseReq);
+      case 'sandbox_report_document':
+        return { ok: true } satisfies Ack;
+      case 'sandbox_submit':
+        return this.#sandboxSubmit(payload as SandboxSubmitReq);
       case 'secrets_set':
         return this.#secretsSet(payload as SecretsSetReq);
       case 'secrets_delete':
@@ -1213,6 +1256,156 @@ export class BrowserAdapter implements PlatformAdapter {
     }
     turn.cancelled = true;
     return { cancelled: true };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* sandbox — mirrors `src-tauri/src/ipc/sandbox.rs`                        */
+  /*                                                                        */
+  /* **This fake runs nothing, and that is the honest mirror rather than a   */
+  /* gap.** A browser tab has no process backend, so it reports the process  */
+  /* family at `none` with every guarantee `unenforced` and an empty         */
+  /* `languages` list — which is exactly what the real host reports on a     */
+  /* machine with no WSL distribution. Every submit is therefore refused,    */
+  /* through the same ordered checks the host runs, so a surface built       */
+  /* against this fake meets the refusal paths and not only the happy one.   */
+  /* VERIFIED-BY-FAKE: nothing here is evidence about isolation.             */
+  /* ---------------------------------------------------------------------- */
+
+  #sandboxPolicy(): SandboxPolicySnapshot {
+    const nothing: SandboxBackendReport['limits'] = {
+      wallClockMs: 'unenforced',
+      memoryBytes: 'unenforced',
+      cpuMillicores: 'unenforced',
+      outputBytes: 'unenforced',
+      processes: 'unenforced',
+      fileWriteBytes: 'unenforced',
+    };
+    return {
+      permission: this.#sandboxPermission,
+      profile: DEFAULT_AUTO_APPROVAL_PROFILE,
+      backends: {
+        process: {
+          isolation: { family: 'process', level: 'none' },
+          maximumIsolation: { family: 'process', level: 'none' },
+          evidence: 'declared',
+          network: 'unenforced',
+          filesystem: 'unenforced',
+          processTree: 'unenforced',
+          limits: nothing,
+        },
+        document: {
+          isolation: { family: 'document', level: 'sameOrigin' },
+          maximumIsolation: { family: 'document', level: 'sameOrigin' },
+          evidence: 'declared',
+          network: 'unenforced',
+          filesystem: 'unenforced',
+          processTree: 'unenforced',
+          limits: nothing,
+        },
+      },
+      // Nothing can be run, so nothing is claimed. A surface reads this rather
+      // than submitting and being refused in front of the user.
+      languages: [],
+      // The guest a process run *would* find itself on, which is a property of
+      // the backend rather than of the tab this fake is in. The host answers
+      // `posix` because its backend is a Linux namespace; answering something
+      // else here would teach a surface to branch on which adapter is live.
+      guestPlatform: 'posix',
+      activeRuns: this.#sandboxRuns.size,
+      maximumConcurrentRuns: SANDBOX_MAX_CONCURRENT_RUNS,
+    };
+  }
+
+  /** The host's refusal order, mirrored. See `vela_sandbox::admission`. */
+  #sandboxRefusal(request: SandboxSubmitReq): RefusalReason {
+    if (this.#sandboxPermission === 'off') return 'permissionIsOff';
+    if (this.#sandboxRuns.size > SANDBOX_MAX_CONCURRENT_RUNS) return 'tooManyConcurrentRuns';
+    if (request.projectId !== DEFAULT_PROJECT_ID) return 'unknownProject';
+    const backends = this.#sandboxPolicy().backends;
+    const offered: Isolation =
+      request.program.kind === 'process'
+        ? backends.process.isolation
+        : backends.document.isolation;
+    if (offered.family !== request.minimumIsolation.family) return 'isolationFamilyMismatch';
+    if (!isolationMeets(offered, request.minimumIsolation)) return 'isolationUnavailable';
+    return 'languageUnsupported';
+  }
+
+  #sandboxSubmit(request: SandboxSubmitReq): SandboxSubmitRes {
+    if (request.runId.trim() === '') {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'invalid runId: must not be blank',
+        'sandbox_submit',
+      );
+    }
+    if (this.#sandboxRuns.has(request.runId)) {
+      // The one failure that rejects the invoke rather than settling the run:
+      // pushing a refusal onto that id's stream would tell a different caller
+      // their healthy run had failed.
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        `invalid runId: \`${request.runId}\` is already in flight`,
+        'sandbox_submit',
+      );
+    }
+    const run = { settled: false, cancelled: false, seq: 0 };
+    this.#sandboxRuns.set(request.runId, run);
+    const reason = this.#sandboxRefusal(request);
+    this.#scheduleFrame(() => {
+      if (run.settled) return;
+      run.settled = true;
+      const outcome: SandboxOutcome = run.cancelled
+        ? { kind: 'cancelled', reason: 'user' }
+        : { kind: 'refused', reason, mountIndex: null, protectedRoot: null };
+      this.emit('sandbox:event', {
+        runId: request.runId,
+        seq: run.seq++,
+        event: {
+          type: 'settled',
+          outcome,
+          usage: {
+            wallClockMs: 0,
+            cpuMs: null,
+            peakMemoryBytes: null,
+            outputBytes: 0,
+            droppedOutputBytes: 0,
+          },
+        },
+      });
+    });
+    return { runId: request.runId, admitted: true };
+  }
+
+  #sandboxCancel(request: SandboxCancelReq): SandboxCancelRes {
+    const run = this.#sandboxRuns.get(request.runId);
+    // `false` when the run had already settled — a race, not an error.
+    if (run === undefined || run.settled) return { cancelled: false };
+    run.cancelled = true;
+    return { cancelled: true };
+  }
+
+  #sandboxRelease(request: SandboxReleaseReq): Ack {
+    const run = this.#sandboxRuns.get(request.runId);
+    if (run !== undefined) {
+      if (run.settled) {
+        this.#sandboxRuns.delete(request.runId);
+      } else {
+        run.cancelled = true;
+      }
+    }
+    return { ok: true };
+  }
+
+  #sandboxApprove(request: SandboxApproveReq): Ack {
+    // No run in this fake ever waits for a person — every submit is refused
+    // before approval is reached — so every digest is one that was never handed
+    // out, which is the host's own answer to a mismatch.
+    throw new PlatformError(
+      'INVALID_PAYLOAD',
+      `approval digest does not match for run \`${request.runId}\``,
+      'sandbox_approve',
+    );
   }
 
   #emitChat(turnId: string, event: ChatStreamEvent): void {

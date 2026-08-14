@@ -31,6 +31,27 @@
  *    `secrets_get`, and adding one is a review-blocking change.
  */
 
+/**
+ * The sandbox surface lives in its own file — `src/platform/contract-sandbox.ts`
+ * — and joins the command map here.
+ *
+ * **Why the types are imported rather than restated.** That file is frozen and
+ * is where the reasoning lives; a second spelling of `SandboxSubmitReq` beside
+ * this map would be the parallel-list defect this repo keeps finding, one layer
+ * up. The import is type-only in both directions (that file imports {@link Ack}
+ * and {@link EmptyPayload} from here), so nothing circular survives to runtime.
+ */
+import type {
+  SandboxApproveReq,
+  SandboxCancelReq,
+  SandboxCancelRes,
+  SandboxPolicySnapshot,
+  SandboxReleaseReq,
+  SandboxReportDocumentReq,
+  SandboxSubmitReq,
+  SandboxSubmitRes,
+} from './contract-sandbox';
+
 /** Bump together with `IPC_CONTRACT_VERSION` in `src-tauri/src/ipc/mod.rs`. */
 export const IPC_CONTRACT_VERSION = 1;
 
@@ -1060,6 +1081,12 @@ export interface IpcContract {
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
+  sandbox_approve: { req: SandboxApproveReq; res: Ack };
+  sandbox_cancel: { req: SandboxCancelReq; res: SandboxCancelRes };
+  sandbox_policy: { req: EmptyPayload; res: SandboxPolicySnapshot };
+  sandbox_release: { req: SandboxReleaseReq; res: Ack };
+  sandbox_report_document: { req: SandboxReportDocumentReq; res: Ack };
+  sandbox_submit: { req: SandboxSubmitReq; res: SandboxSubmitRes };
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
   secrets_status: { req: SecretsRefReq; res: SecretsStatusRes };
@@ -1099,6 +1126,12 @@ export const COMMAND_ALLOWLIST = [
   'models_capabilities',
   'models_list',
   'models_probe',
+  'sandbox_approve',
+  'sandbox_cancel',
+  'sandbox_policy',
+  'sandbox_release',
+  'sandbox_report_document',
+  'sandbox_submit',
   'secrets_delete',
   'secrets_set',
   'secrets_status',

@@ -418,6 +418,78 @@ const COMMENT_LINE = /^\s*(\/\/[/!]?|\*|\/\*|#|\|)/;
  * measured limit rather than an oversight — closing it means parsing YAML, and
  * `.github/` is the only place it applies.
  */
+/**
+ * Index just past a quoted run beginning at `from`, and whether it really closed.
+ *
+ * Templates are the reason this is three mutually recursive functions rather
+ * than a loop. A template literal can hold `${…}`, an interpolation is ordinary
+ * code, and that code can hold another template — `checks.mjs:588` writes
+ * exactly that, and a scanner without the nesting state closes the outer literal
+ * on the inner backtick. Everything after it is then read as code, the
+ * apostrophe in `endpoint's` opens a string, and the pairing stays inverted for
+ * ninety-one lines.
+ */
+function skipQuoted(text: string, from: number, singleLine: boolean): [number, boolean] {
+  const quote = text[from];
+  if (quote === '`') return [skipTemplate(text, from), true];
+  let at = from + 1;
+  while (at < text.length) {
+    const here = text[at];
+    if (here === '\\') {
+      at += 2;
+      continue;
+    }
+    if (here === quote) return [at + 1, true];
+    // JavaScript forbids a raw newline in `'…'` and `"…"`. Stopping here turns
+    // a mis-parse into a local one instead of letting it run to end of file —
+    // and `no unterminated single-line string` below makes it audible.
+    if (singleLine && here === '\n') return [at, false];
+    at += 1;
+  }
+  return [text.length, false];
+}
+
+function skipTemplate(text: string, from: number): number {
+  let at = from + 1;
+  while (at < text.length) {
+    const here = text[at];
+    if (here === '\\') {
+      at += 2;
+      continue;
+    }
+    if (here === '`') return at + 1;
+    if (here === '$' && text[at + 1] === '{') {
+      at = skipInterpolation(text, at + 2);
+      continue;
+    }
+    at += 1;
+  }
+  return text.length;
+}
+
+function skipInterpolation(text: string, from: number): number {
+  let at = from;
+  let braces = 1;
+  while (at < text.length) {
+    const here = text[at];
+    if (here === '\\') {
+      at += 2;
+      continue;
+    }
+    if (here === '`' || here === '"' || here === "'") {
+      at = skipQuoted(text, at, here !== '`')[0];
+      continue;
+    }
+    if (here === '{') braces += 1;
+    else if (here === '}') {
+      braces -= 1;
+      if (braces === 0) return at + 1;
+    }
+    at += 1;
+  }
+  return text.length;
+}
+
 function scan(path: string, text: string): ScanResult {
   if (path.endsWith('.md')) return { code: '', endedOpen: null, openedOnLine: null };
   const rust = path.endsWith('.rs');
@@ -430,6 +502,7 @@ function scan(path: string, text: string): ScanResult {
   // string — and a heredoc in `record.sh` writes an *escaped* backtick, which
   // opened a string that ran to the end of the file.
   const shell = path.endsWith('.sh');
+  const javascript = /\.(ts|tsx|js|mjs)$/.test(path);
   const quotes = rust ? '"' : path.endsWith('.css') || shell ? '"\'' : '"\'`';
 
   const kept: string[] = [];
@@ -543,20 +616,8 @@ function scan(path: string, text: string): ScanResult {
     }
     if (quotes.includes(here)) {
       const from = at;
-      at += 1;
-      let closed = false;
-      while (at < text.length) {
-        if (text[at] === '\\') {
-          at += 2;
-          continue;
-        }
-        if (text[at] === here) {
-          at += 1;
-          closed = true;
-          break;
-        }
-        at += 1;
-      }
+      const [next, closed] = skipQuoted(text, at, javascript && here !== '`');
+      at = next;
       if (!closed && openedStringAt === null) openedStringAt = from;
       kept.push(' ');
       continue;
@@ -1000,6 +1061,43 @@ describe('this guard is not vacuous', () => {
     );
     expect(lifetimes.has('zzq_second_body')).toBe(false);
     expect(lifetimes.has('zzq_still_read')).toBe(true);
+  });
+
+  it('never reads a JavaScript string as spanning a line, because none can', () => {
+    // The control for the class the other two cannot see. A mis-parse that
+    // *terminates* leaves no unfinished file and no unbalanced fence, so both
+    // of those stay green — which is exactly how a nested template literal in
+    // `checks.mjs` inverted the pairing for ninety-one lines and let a
+    // fabricated name resolve out of a string body.
+    //
+    // JavaScript forbids a raw newline inside `'…'` and `"…"`. So if the
+    // scanner ever believes one spans a line, the scanner is wrong, and that is
+    // a fact about the language rather than a guess about this tree. A critic
+    // used exactly this signal to find the bug by hand; it is cheaper as a test.
+    const straddling: string[] = [];
+    for (const [path, text] of CONTENTS) {
+      if (!/\.(ts|tsx|js|mjs)$/.test(path)) continue;
+      let at = 0;
+      let line = 1;
+      while (at < text.length) {
+        const here = text[at];
+        if (here === '\n') (line += 1), (at += 1);
+        else if (here === '/' && text[at + 1] === '/') {
+          while (at < text.length && text[at] !== '\n') at += 1;
+        } else if (here === '"' || here === "'") {
+          const [next] = skipQuoted(text, at, true);
+          const body = text.slice(at, next);
+          if (body.includes('\n')) straddling.push(`${path}:${line}`);
+          line += (body.match(/\n/g) ?? []).length;
+          at = next;
+        } else at += 1;
+      }
+    }
+
+    expect(
+      [...new Set(straddling)],
+      'the scanner is mis-pairing quotes here, so string bodies are leaking into the vocabulary',
+    ).toEqual([]);
   });
 
   it('has no scanned file the scanner never finishes reading', () => {

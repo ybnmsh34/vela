@@ -210,17 +210,20 @@ const EXTERNAL_CRATES = new Set([
  * A claim about a guard is never in here. If a test is named, it exists.
  */
 const FOREIGN_NAMES = new Set([
-  // Rustdoc's own code-fence directives. `` ```compile_fail `` is an instruction
+  // Rustdoc's own code-fence directive. `` ```compile_fail `` is an instruction
   // to the doctest compiler, and it is discussed by eight comments across the
   // repo. Named here rather than rescued by an exception wherever fences are
   // recognised, because an exception is a hole a fabricated name can climb
   // through and a name here is just a fact about rustdoc.
+  //
+  // Its five siblings — `should_panic`, `no_run`, `ignore` and the two edition
+  // directives — were here too, and are gone. No claim in the tree used them, so
+  // they were a guess about what a future comment might say. A critic that had
+  // just passed this list flagged them as the one place it departed from
+  // "written down because it was found", and an allowlist entry nobody needs is
+  // a standing invitation to add the next one on the same reasoning. If a
+  // comment ever names one, the guard says so and it comes back with evidence.
   'compile_fail',
-  'should_panic',
-  'no_run',
-  'ignore',
-  'edition2018',
-  'edition2021',
 
   // `std`. Comments name these to say what a call does — `create_dir_all` for
   // the recursive mkdir, `set_var`/`remove_var` for the process environment the

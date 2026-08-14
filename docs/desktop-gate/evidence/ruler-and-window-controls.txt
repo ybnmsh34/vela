@@ -1,0 +1,144 @@
+RULER RE-TEST after the composer gutter fix — real WebView2, classic scrollbars
+Verified the way the last check FAILED to: sidebar at maximum, edges not centres,
+and at a width where the column is actually clamped.
+
+=== window 1400px (cssW=1384) ===
+{
+ "textLeft": 692,
+ "textRight": 1172,
+ "textWidth": 480,
+ "fieldLeft": 692,
+ "fieldRight": 1172,
+ "fieldWidth": 480,
+ "scrollerReserve": 24,
+ "leftDelta": 0,
+ "rightDelta": 0,
+ "widthDelta": 0,
+ "textCentre": 932,
+ "fieldCentre": 932,
+ "sidebar": 480
+}
+
+=== window 880px (cssW=864) ===
+{
+ "textLeft": 348,
+ "textRight": 828,
+ "textWidth": 480,
+ "fieldLeft": 348,
+ "fieldRight": 828,
+ "fieldWidth": 480,
+ "scrollerReserve": 24,
+ "leftDelta": 0,
+ "rightDelta": 0,
+ "widthDelta": 0,
+ "textCentre": 588,
+ "fieldCentre": 588,
+ "sidebar": 312
+}
+
+=== window 760px (cssW=744) ===
+{
+ "textLeft": 228,
+ "textRight": 708,
+ "textWidth": 480,
+ "fieldLeft": 228,
+ "fieldRight": 708,
+ "fieldWidth": 480,
+ "scrollerReserve": 24,
+ "leftDelta": 0,
+ "rightDelta": 0,
+ "widthDelta": 0,
+ "textCentre": 468,
+ "fieldCentre": 468,
+ "sidebar": 192
+}
+
+=== pushing narrow enough that the column MUST clamp below --vela-measure ===
+  window 700px | sidebar 132 | textW 480.0 | fieldW 480.0 | deltas L+0 R+0 W+0 | clamped=False
+  window 640px | sidebar  72 | textW 480.0 | fieldW 480.0 | deltas L+0 R+0 W+0 | clamped=False
+  window 580px | sidebar  56 | textW 424.0 | fieldW 424.0 | deltas L+0 R+0 W+0 | clamped=True
+
+=== WINDOW CONTROLS on real WebView2 ===
+buttons present: ['Minimise', 'Maximise', 'Close']
+OS state at rest        : maximized=False minimized=False visible=True
+
+-- click Maximise --
+OS state                : maximized=True minimized=False visible=True
+button label now        : Restore
+
+-- click Restore --
+OS state                : maximized=False minimized=False visible=True
+button label now        : Maximise
+
+-- click Minimise --
+OS state                : maximized=False minimized=False visible=True
+
+== WINDOW CONTROLS, re-tested against the REAL window handle ==
+   (Get-Process MainWindowHandle points at a 16x16 helper window; the earlier
+    'minimise is broken' reading was that instrument error, not the app.)
+
+at rest        : Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+  aria labels  : ['Minimise', 'Maximise', 'Close']
+
+click Maximise : clicked
+  state        : Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+  label now    : Restore
+
+click Restore  : clicked
+  state        : Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+  label now    : Maximise
+
+click Minimise : clicked
+  state        : Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+restoring for the close test...
+  state        : Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+== WINDOW CONTROLS — against the REAL window handle ==
+   Get-Process MainWindowHandle points at a 16x16 helper window; the earlier
+   'minimise is broken' reading was that instrument error, not a defect.
+
+at rest         : hwnd=9702324 iconic=False zoomed=False rect=(120,80)-(1520,980)
+aria labels     : ['Minimise', 'Maximise', 'Close']
+
+after Maximise  : hwnd=9702324 iconic=False zoomed=True rect=(-8,-8)-(2568,1400) | label: Restore
+after Restore   : hwnd=9702324 iconic=False zoomed=False rect=(120,80)-(1520,980) | label: Maximise
+after Minimise  : hwnd=9702324 iconic=True zoomed=False rect=(-32000,-32000)-(-31840,-31972)
+restored        : hwnd=9702324 iconic=False zoomed=False rect=(120,80)-(1520,980)
+
+== focus, tab order and the drag region ==
+caption buttons inside data-tauri-drag-region?
+   [{"label":"Minimise","insideDragRegion":false,"ownDragAttr":false},{"label":"Maximise","insideDragRegion":false,"ownDragAttr":false},{"label":"Close","insideDragRegion":false,"ownDragAttr":false}]
+
+drag region still present: True
+
+tab order from the top of the document:
+  tab 1 -> button :: Search everything
+⌘K
+  tab 2 -> button :: Write a guide to sharpening a kitchen kn
+  tab 3 -> button :: New conversation
+Nothing said yet
+  tab 4 -> button :: New conversation
+Nothing said yet
+  tab 5 -> button :: Explain in about 120 words why cast iron
+  tab 6 -> button :: New conversation
+Nothing said yet
+  tab 7 -> body :: VELA
+Untitled workspace
+Theme: dark
+New 
+  tab 8 -> button :: Theme: dark
+  tab 9 -> button :: Minimise  <-- caption
+
+focus ring on a caption button:
+   {"outline":"solid 2px rgb(95, 226, 214)","boxShadow":"none"}
+  focused element: button :: Minimise
+
+== close ==
+before        : ALIVE pid=6980
+after Close   : EXITED

@@ -325,16 +325,19 @@ function wireTokensAndMethods(): ReadonlySet<string> {
  * so the repair was a strict regression on a class already covered — the exact
  * shape of defect this file exists to catch, introduced by the file itself.
  *
- * So prose lines are skipped, per language, because the question differs by
- * language: `#` opens a comment in a shell script and opens an attribute in
- * Rust, where `#[serde(skip_serializing_if = "…")]` carries real names. A
- * markdown file contributes nothing at all — every line of it is prose.
+ * So comments and string bodies are removed by {@link scan}, and **there is no
+ * exception to that**. A markdown file contributes nothing at all — every line
+ * of it is prose. Rustdoc's fence directives are named in
+ * {@link RUSTDOC_DIRECTIVES} rather than rescued here, because an exception in
+ * this function is a hole a fabricated name can climb through, and a critic
+ * climbed through the fence one twice.
  *
- * Two things survive that look like exceptions and are not. A fence's **info
- * string** is kept, because ` ```compile_fail ` is rustdoc directing the
- * compiler rather than illustrating anything, and it is the only position that
- * token ever occupies. The fence **body** is dropped, so a name cannot vouch for
- * itself by starring in its own worked example.
+ * This paragraph replaced one describing two mechanisms that had already been
+ * deleted — prose skipped per line, and a fence info string kept. It survived
+ * two commits after the code it described was gone, which is a comment claiming
+ * an enforcement that does not exist, in the file whose whole subject is
+ * comments claiming enforcements that do not exist. A critic caught it. When
+ * this function changes, this comment changes in the same commit.
  */
 export function vocabularyOf(path: string, text: string): ReadonlySet<string> {
   const names = new Set<string>();
@@ -415,20 +418,24 @@ const COMMENT_LINE = /^\s*(\/\/[/!]?|\*|\/\*|#|\|)/;
  * measured limit rather than an oversight — closing it means parsing YAML, and
  * `.github/` is the only place it applies.
  */
-function withoutComments(path: string, text: string): string {
-  if (path.endsWith('.md')) return '';
+function scan(path: string, text: string): ScanResult {
+  if (path.endsWith('.md')) return { code: '', endedOpen: null, openedOnLine: null };
   const rust = path.endsWith('.rs');
   const hashComments = /\.(sh|yml|toml)$/.test(path);
   // Rust `'` is a lifetime far more often than a char literal, and a lifetime
   // has no closing quote — treating it as one would swallow the rest of the
-  // line and drop real code, which manufactures false claims. A char literal
-  // holds one character and can never contain a name, so Rust simply has no
-  // single-quote string here. Backticks are only strings in TypeScript.
-  const quotes = rust ? '"' : path.endsWith('.css') ? '"\'' : '"\'`';
+  // line and drop real code, which manufactures false claims. Backticks are
+  // only strings in TypeScript.
+  // Shell backticks are command substitution, so their contents are code, not a
+  // string — and a heredoc in `record.sh` writes an *escaped* backtick, which
+  // opened a string that ran to the end of the file.
+  const shell = path.endsWith('.sh');
+  const quotes = rust ? '"' : path.endsWith('.css') || shell ? '"\'' : '"\'`';
 
   const kept: string[] = [];
   let at = 0;
   let depth = 0;
+  let openedStringAt: number | null = null;
   while (at < text.length) {
     const here = text[at] ?? '';
     const after = text[at + 1] ?? '';
@@ -450,8 +457,52 @@ function withoutComments(path: string, text: string): string {
       at += 2;
       continue;
     }
+    // A JavaScript regex literal, which is where a lone quote lives without
+    // opening a string: `/["']/` is four characters of pattern, not the start of
+    // a string that runs to the end of the file. Eleven files in this tree stop
+    // being read partway through without this, `no-provider-leak.test.ts` among
+    // them — a scanner that quietly gives up on a file is how the char-literal
+    // inversion hid, so it is worth the one heuristic.
+    //
+    // Regex-or-division is genuinely ambiguous in JavaScript and this is the
+    // usual resolution: after a value you have division, after an operator or an
+    // opening bracket you have a pattern. Guessing wrong costs vocabulary, never
+    // laundering, because both branches only ever *remove* text.
+    if (!rust && here === '/' && /\.(ts|tsx|js|mjs)$/.test(path)) {
+      const before = kept.join('').trimEnd();
+      const previous = before.at(-1) ?? '';
+      // After a keyword you have a pattern, not division. `return /…/` is the
+      // shape that got missed, and `no-provider-leak.test.ts` opens with one.
+      const afterKeyword = /\b(?:return|typeof|case|in|of|new|delete|void|instanceof|yield|await|do|else)$/.test(
+        before,
+      );
+      if (previous === '' || afterKeyword || '(,=:[!&|?{};+-*%~^<>'.includes(previous)) {
+        let scan = at + 1;
+        let inClass = false;
+        while (scan < text.length) {
+          const ch = text[scan];
+          if (ch === '\\') (scan += 2), undefined;
+          else if (ch === '[') (inClass = true), (scan += 1);
+          else if (ch === ']') (inClass = false), (scan += 1);
+          else if (ch === '\n') break;
+          else if (ch === '/' && !inClass) {
+            scan += 1;
+            at = scan;
+            kept.push(' ');
+            break;
+          } else scan += 1;
+        }
+        if (at === scan) continue;
+      }
+    }
     if (hashComments && here === '#') {
       while (at < text.length && text[at] !== '\n') at += 1;
+      continue;
+    }
+    // A shell backslash escapes the next character wherever it appears, so
+    // `\"` outside a string is a literal quote and must not open one.
+    if (shell && here === '\\') {
+      at += 2;
       continue;
     }
     // `r"…"`, `r#"…"#`, `r##"…"##` — no escapes inside, closed by the matching
@@ -468,8 +519,32 @@ function withoutComments(path: string, text: string): string {
         continue;
       }
     }
+    // A Rust char literal, consumed whole — and this is not a nicety. `'` is not
+    // a quote here, but the `"` **inside** `'"'` was still reaching the branch
+    // below and opening a string. That string then closed on the next `"` in the
+    // file, which is the opening quote of the next real one, so from there the
+    // parity was inverted and every string body was emitted as code. Twenty such
+    // literals live in this tree; `src-tauri/src/ipc/mod.rs:164` writes
+    // `.trim_matches(['\'', '"', '\n', ' '])` and inverts everything to the end
+    // of the file. A critic planted the same fabricated name in three files and
+    // only that one laundered it.
+    //
+    // A lifetime is `'name` with no closing quote, so the shape is the whole
+    // discriminator: a char literal always closes within a few characters.
+    if (rust && here === "'") {
+      const literal = /^'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|.)|[^\\'])'/.exec(
+        text.slice(at, at + 12),
+      );
+      if (literal) {
+        at += literal[0].length;
+        kept.push(' ');
+        continue;
+      }
+    }
     if (quotes.includes(here)) {
+      const from = at;
       at += 1;
+      let closed = false;
       while (at < text.length) {
         if (text[at] === '\\') {
           at += 2;
@@ -477,17 +552,38 @@ function withoutComments(path: string, text: string): string {
         }
         if (text[at] === here) {
           at += 1;
+          closed = true;
           break;
         }
         at += 1;
       }
+      if (!closed && openedStringAt === null) openedStringAt = from;
       kept.push(' ');
       continue;
     }
     kept.push(here);
     at += 1;
   }
-  return kept.join('');
+  const openedAt = depth > 0 ? 0 : openedStringAt;
+  return {
+    code: kept.join(''),
+    endedOpen: depth > 0 ? 'block comment' : openedStringAt === null ? null : 'string',
+    // Reported as a line number, because "this file stops being read" is useless
+    // without "starting here" — the first version of this control said only
+    // which files and left eleven of them to be found by hand.
+    openedOnLine: openedAt === null ? null : text.slice(0, openedAt).split('\n').length,
+  };
+}
+
+/** What {@link scan} was still inside when it ran out of text, if anything. */
+interface ScanResult {
+  readonly code: string;
+  readonly endedOpen: 'block comment' | 'string' | null;
+  readonly openedOnLine: number | null;
+}
+
+function withoutComments(path: string, text: string): string {
+  return scan(path, text).code;
 }
 
 /** ` ```rust `, ` ```compile_fail `, or a bare ` ``` ` — inside a doc comment or not. */
@@ -872,6 +968,52 @@ describe('this guard is not vacuous', () => {
         'zzq_trailing_hash_name',
       ),
     ).toBe(false);
+  });
+
+  it('is not thrown off by a char literal holding a quote', () => {
+    // `'` is not a Rust quote here, for the lifetime reason. But the `"` inside
+    // `'"'` still opened a string, which then closed on the next `"` in the
+    // file — so from that point the parity was inverted and every string body
+    // was emitted as code. `src-tauri/src/ipc/mod.rs:164` writes
+    // `.trim_matches(['\'', '"', '\n', ' '])` and inverted everything to EOF; a
+    // critic planted one fabricated name in three files and only that one
+    // laundered it. Both directions are pinned: nothing leaks out of the string,
+    // and the real code after it is still collected.
+    const inverted = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      [
+        "let c = '\"';",
+        'const N: &str = "prose mentioning zzq_in_string_body here";',
+        'fn zzq_real_after_the_literal() {}',
+      ].join('\n'),
+    );
+    expect(inverted.has('zzq_in_string_body')).toBe(false);
+    expect(inverted.has('zzq_real_after_the_literal')).toBe(true);
+
+    // The lifetime it was excluded for still behaves, and an escaped quote
+    // char literal is the same trap wearing a backslash.
+    const lifetimes = vocabularyOf(
+      'src-tauri/src/probe.rs',
+      ["fn f<'a>(x: &'a str) {}", "let q = '\\'';", 'const M: &str = "zzq_second_body";', 'fn zzq_still_read() {}'].join(
+        '\n',
+      ),
+    );
+    expect(lifetimes.has('zzq_second_body')).toBe(false);
+    expect(lifetimes.has('zzq_still_read')).toBe(true);
+  });
+
+  it('has no scanned file the scanner never finishes reading', () => {
+    // An unterminated string or block comment swallows the rest of a file. Every
+    // such case loses vocabulary rather than laundering a name, so none is a
+    // hole — but it is the same silent-partial-exemption shape as the fence bug,
+    // and a file that quietly stops contributing is exactly how the char-literal
+    // inversion hid. Loud beats latent.
+    const unfinished = [...CONTENTS]
+      .map(([path, text]) => ({ path, ...scan(path, text) }))
+      .filter((result) => result.endedOpen !== null)
+      .map((result) => `${result.path}:${result.openedOnLine ?? 0} opens a ${result.endedOpen ?? ''}`);
+
+    expect(unfinished, 'these files stop contributing vocabulary partway through').toEqual([]);
   });
 
   it('has no scanned file that ends inside a fence', () => {

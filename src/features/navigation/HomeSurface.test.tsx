@@ -8,14 +8,17 @@ import { resetNavigationStore, useNavigationStore } from '@/state/navigation-sto
 
 import { ConversationsProvider } from './ConversationsProvider';
 import { HomeSurface } from './HomeSurface';
+import { KeyboardProvider } from '@/platform/KeyboardProvider';
 
 function mount(adapter: BrowserAdapter, secretBackend: string | null = 'memory-fake') {
   return render(
-    <PlatformProvider adapter={adapter}>
-      <ConversationsProvider>
-        <HomeSurface secretBackend={secretBackend} />
-      </ConversationsProvider>
-    </PlatformProvider>,
+    <KeyboardProvider>
+      <PlatformProvider adapter={adapter}>
+        <ConversationsProvider>
+          <HomeSurface secretBackend={secretBackend} />
+        </ConversationsProvider>
+      </PlatformProvider>
+    </KeyboardProvider>,
   );
 }
 

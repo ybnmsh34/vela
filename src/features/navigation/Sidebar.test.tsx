@@ -8,6 +8,7 @@ import { resetNavigationStore, useNavigationStore } from '@/state/navigation-sto
 
 import { ConversationsProvider } from './ConversationsProvider';
 import { Sidebar } from './Sidebar';
+import { KeyboardProvider } from '@/platform/KeyboardProvider';
 
 /** 2026-08-13, 14:00 local, so "Yesterday" is reachable in one test run. */
 const NOW = new Date(2026, 7, 13, 14, 0, 0).getTime();
@@ -15,11 +16,13 @@ const DAY = 24 * 60 * 60 * 1000;
 
 function mount(adapter: BrowserAdapter) {
   return render(
-    <PlatformProvider adapter={adapter}>
-      <ConversationsProvider>
-        <Sidebar now={() => NOW} />
-      </ConversationsProvider>
-    </PlatformProvider>,
+    <KeyboardProvider>
+      <PlatformProvider adapter={adapter}>
+        <ConversationsProvider>
+          <Sidebar now={() => NOW} />
+        </ConversationsProvider>
+      </PlatformProvider>
+    </KeyboardProvider>,
   );
 }
 

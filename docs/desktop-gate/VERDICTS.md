@@ -1397,3 +1397,52 @@ The dark capture still shows the themed pill with no trough and no arrow buttons
 fix survives the gutter change.
 
 - evidence: `evidence/ruler-and-window-controls.txt` (raw readings for everything above)
+
+
+---
+
+# TRACK 10 — CONV-1 visual, re-verified at 68a8d4f — **PASS**
+
+Re-taken because the earlier measurement had gone stale: since it was made, the tree took three
+guard repairs, a focus-containment change to both dialogs, and ~5000 lines of frozen contracts. A
+verdict about a build nobody is running any more is not a verdict.
+
+**A stale binary nearly made it one.** The `vela.exe` already running was built 08-14 01:23 against
+sources that HEAD had changed by 20:41 — `vela-providers/src/{answer,http,redact}.rs` among them.
+The critic caught it, killed it, rebuilt, and relaunched with a private `WEBVIEW2_USER_DATA_FOLDER`,
+confirming through the webview's own `--user-data-dir` that it was not sharing the shared
+`dev.vela.desktop\EBWebView` profile. Both hazards are now on the record: **check the binary is
+newer than the sources before you believe a pixel, and give every instance its own profile.**
+
+Two real turns through llama.cpp at 127.0.0.1:8033, serial, model `unsloth/Qwen3.6-27B-GGUF:Q5_K_M`.
+The second prompt deliberately contained literal `**` so the user-echo case could be separated from
+the defect.
+
+| | turn 1 | turn 2 |
+|---|---|---|
+| `<strong>` in the thinking block | 26 | 44 |
+| `<li>` | 62 (15 ul / 4 ol) | 101 |
+| `<code>` | 18 | 19 |
+| literal `**` | **0** | **0** |
+| literal `*` | **0** | **0** |
+
+The selector was proven rather than assumed — `data-scale="aside"` has exactly one non-test call
+site in the tree (`ThinkingBlock.tsx:106`), the node sits inside the toggle's `aria-controls` panel,
+and the answer's `div[data-scale="answer"]` is a sibling of the `<section>` rather than inside it.
+That check exists because two earlier attempts at this measurement counted the wrong element.
+
+The user bubble carries 4 literal `**` with `white-space: pre-wrap` and `closest('[data-scale]')`
+of `null` — outside both markdown channels, which is correct: that is the operator's own text being
+echoed, not the defect.
+
+The aside scale still holds. Thinking 13px / 20.8px / `rgb(154,162,189)`; answer 15px / 24px /
+`rgb(238,240,246)`. Nothing in the recent churn made reasoning louder than output.
+
+Screenshots in `scratchpad/shots/`, each labelled from observed state rather than intent — a
+previous round shipped mislabelled captures and a critic caught it. `07` is worth keeping: it shows
+the *answer's* bullets under a collapsed thinking bar, which is precisely the element the earlier
+miscount mistook for the thinking block.
+
+Not verified: this was a debug build against the vite dev server, not the packaged release bundle;
+and no headings appeared in either reasoning stream, so the aside heading ceiling is read from CSS
+rather than observed.

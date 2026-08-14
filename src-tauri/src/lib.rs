@@ -9,6 +9,7 @@
 //! capabilities (`capabilities/main.json`) grant nothing beyond window chrome
 //! and the event channel: no `fs`, no `shell`, no `http`, no `process`.
 
+pub mod endpoint_host;
 pub mod ipc;
 pub mod provider_host;
 pub mod state;
@@ -91,6 +92,20 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             app.manage(ipc::diagnostics::DebugLogHandle::under_data_dir(
                 app.path().app_data_dir()?,
             ));
+
+            // THE DUAL LOCAL ENDPOINT. Off unless `VELA_LOCAL_ENDPOINT` names
+            // an address, and refused rather than defaulted if the key or the
+            // provider is missing — see `endpoint_host`. It is started after
+            // the provider sync above because it serves one of those providers,
+            // and it is `manage`d rather than dropped because `ServerHandle`'s
+            // `Drop` stops the listener: a handle nobody holds is a port that
+            // closes the moment startup returns.
+            let endpoint = endpoint_host::start_if_configured(
+                &endpoint_host::ProcessEnv,
+                std::sync::Arc::clone(&app.state::<AppState>().providers),
+            );
+            eprintln!("{}", endpoint.summary());
+            app.manage(endpoint);
 
             app.manage(store);
             Ok(())

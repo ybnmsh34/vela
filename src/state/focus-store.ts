@@ -128,6 +128,30 @@ export function canTakeFocus(element: Element | null | undefined): element is HT
 }
 
 /**
+ * The Tab stops inside `root`, in the order Tab visits them.
+ *
+ * `canTakeFocus` answers *whether* an element can hold the keyboard; this adds
+ * the one further question Tab asks — **is it a stop** — and the difference is
+ * entirely `tabindex="-1"`. Three things in Vela are deliberately focusable
+ * without being tabbable, and every one of them would be a bug in this list: the
+ * sidebar's non-current rows (a roving tabindex is what stops forty
+ * conversations costing forty Tab presses), the `ground` landmark, and a
+ * dialog's own panel.
+ *
+ * Document order, not a sort by `tabindex` value. Nothing in this tree uses a
+ * positive `tabindex`, and a surface that started to would need its order
+ * reasoned about out loud rather than silently rearranged here.
+ */
+export function tabStopsWithin(root: Element | null | undefined): readonly HTMLElement[] {
+  if (!(root instanceof HTMLElement)) return [];
+  const stops: HTMLElement[] = [];
+  for (const element of root.querySelectorAll<HTMLElement>('*')) {
+    if (canTakeFocus(element) && element.tabIndex >= 0) stops.push(element);
+  }
+  return stops;
+}
+
+/**
  * Hand the keyboard back after an overlay closes.
  *
  * `preferred` is the element the overlay took focus from. It is tried first and

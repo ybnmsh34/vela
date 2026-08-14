@@ -19,6 +19,7 @@ import {
   isKeyboardHomeless,
   resetFocusStore,
   returnFocusTo,
+  tabStopsWithin,
   useFocusStore,
 } from './focus-store';
 
@@ -113,6 +114,42 @@ describe('canTakeFocus refuses everything a browser would silently refuse', () =
   it('refuses null and undefined rather than throwing', () => {
     expect(canTakeFocus(null)).toBe(false);
     expect(canTakeFocus(undefined)).toBe(false);
+  });
+});
+
+describe('the Tab stops of a container are what a browser would stop on', () => {
+  function panel(html: string): HTMLElement {
+    const box = mount(document.createElement('div'));
+    box.tabIndex = -1;
+    box.innerHTML = html;
+    return box;
+  }
+
+  it('lists them in document order', () => {
+    const box = panel('<button>one</button><input><a href="https://example.invalid">two</a>');
+    expect(tabStopsWithin(box).map((stop) => stop.tagName)).toEqual(['BUTTON', 'INPUT', 'A']);
+  });
+
+  it('excludes anything focusable-but-not-tabbable, which is the whole distinction', () => {
+    // A roving-tabindex row, and the container itself. Both can *hold* the
+    // keyboard and neither is a place Tab stops — put either in this list and
+    // the sidebar's forty rows come back as forty Tab presses.
+    const box = panel('<button tabindex="-1">roving</button><button>current</button>');
+    expect(tabStopsWithin(box).map((stop) => stop.textContent)).toEqual(['current']);
+    expect(tabStopsWithin(box)).not.toContain(box);
+  });
+
+  it('excludes a disabled control and a hidden subtree', () => {
+    const box = panel(
+      '<button disabled>off</button><div hidden><button>buried</button></div><button>live</button>',
+    );
+    expect(tabStopsWithin(box).map((stop) => stop.textContent)).toEqual(['live']);
+  });
+
+  it('answers with an empty list rather than throwing on nothing', () => {
+    expect(tabStopsWithin(panel('<p>just a sentence</p>'))).toEqual([]);
+    expect(tabStopsWithin(null)).toEqual([]);
+    expect(tabStopsWithin(undefined)).toEqual([]);
   });
 });
 

@@ -48,7 +48,8 @@
  *  - registration is an explicit table rather than a decorator writing into a
  *    module-level dict ({@link HarnessRegistry});
  *  - the shared helper package the reference relies on by convention is an
- *    injected service here, so a test can substitute it ({@link HarnessServices}).
+ *    injected service here, built per run so that the components which need the
+ *    run's project can have it ({@link HarnessServices}).
  *
  * ## What is guarded, and what is only written down
  *
@@ -121,16 +122,55 @@ import type { ProjectId } from './contract-project';
  * and so a builder can tell at a glance whether the file they read is the file
  * they were handed.
  */
-export const HARNESS_CONTRACT_VERSION = 1;
+export const HARNESS_CONTRACT_VERSION = 2;
 
 /**
- * Identifies a harness implementation. Stable across releases, because it is
- * persisted as a user setting.
+ * Identifies a harness implementation. **Stable across releases**, because the
+ * moment anything does store a user's choice, an id that moved is a user
+ * silently handed a runtime they did not pick.
  *
- * A plain string alias rather than a branded type: it round-trips through
- * settings storage as a string, and a brand would only add casts at the boundary
- * without stopping the thing worth stopping — a comparison against a literal.
- * Nothing but the registry may do that. See the header.
+ * A plain string alias rather than a branded type: it is a string wherever it is
+ * written down, and a brand would only add casts at the boundary without
+ * stopping the thing worth stopping — a comparison against a literal. Nothing
+ * but the registry may do that. See the header.
+ *
+ * ## The store this file's selection model presupposes does not exist
+ *
+ * An earlier draft of this comment said the id "is persisted as a user setting",
+ * in the present tense, and nothing persists it. `SettingsSnapshot` in
+ * `src/platform/contract.ts` carries `theme`, `telemetryEnabled`,
+ * `credentialBackend` and `providers`; `COMMAND_ALLOWLIST` has `settings_get`,
+ * `settings_set_theme`, `settings_put_provider` and `settings_delete_provider`,
+ * and no generic settings write. There is nowhere to put a chosen harness id and
+ * no command that could put it there.
+ *
+ * The consequence is not abstract and it reaches two types below.
+ * {@link HarnessSelectionRequest.requestedId} is described as the user's stored
+ * choice: until this gap closes, the only value a caller can honestly pass is
+ * `null`. {@link SelectionReason}'s `noneChosen` is described as the first-run
+ * state: until this gap closes it is *every* launch's state, so
+ * {@link HarnessSelection} answers `substituted` every time — which is why the
+ * rule that `substituted` must not be rendered as a warning matters more now
+ * than it will later.
+ *
+ * **The amendment that would carry it**, named here so ten builders ask for one
+ * thing rather than four. Two additions to `src/platform/contract.ts`, both
+ * written in straight quotes because neither exists and this repo reserves
+ * backticks for names that do: a nullable field "harnessId" on
+ * `SettingsSnapshot`, `null` meaning never chosen, sitting beside `theme` for
+ * the reason `theme` sits there; and a command "settings_set_harness" that takes
+ * that id and answers with what it wrote, in the shape `settings_set_theme`
+ * already has. It is a settings write, so it costs the five-step checklist in
+ * `docs/architecture/conventions.md` §3.3 like every other command — an
+ * amendment to that file, not something this one can do.
+ *
+ * **Required, not optional.** Without it a settings picker can be rendered and
+ * cannot be honoured, which is a selector that does nothing. It is written down
+ * rather than left implied because a stated dependency nobody built is this
+ * project's central defect class, and because this file flags its four other
+ * gaps — no skills or memory commands, no host-owned producer behind a run, no
+ * project id on `ConversationSummary`, no test behind the no-branching rule — in
+ * exactly this way, and this one was hiding inside a subordinate clause.
  */
 export type HarnessId = string;
 
@@ -277,6 +317,10 @@ export interface HarnessDescriptor {
  * can be live at once (different conversations), so an implementation that held
  * per-run state on itself would corrupt one of them. A harness instance is
  * expected to be cheap and to outlive nothing.
+ *
+ * **Called once per admitted run**, with that run's services — the bundle is per
+ * run too, and for the same reason one level down. See
+ * {@link HarnessServicesFactory} and {@link LiveRuns.start}.
  */
 export interface HarnessDefinition {
   readonly descriptor: HarnessDescriptor;
@@ -353,6 +397,10 @@ export type CreateHarnessRegistry = (
  * matter.
  */
 export type SelectionReason =
+  /**
+   * Nobody has picked one. A success state — and, until a choice can be stored
+   * at all, the reason every selection carries. See {@link HarnessId}.
+   */
   | 'noneChosen'
   /** The stored setting names a harness this build does not have. */
   | 'unknownHarnessId'
@@ -381,6 +429,10 @@ export type SelectionReason =
  * entry's requirements are met. **The answer is `substituted`, with reason
  * `noneChosen` and `requestedId: null`** — not `selected`. A caller may not
  * infer otherwise from the fact that nothing went wrong.
+ *
+ * Until the store named at {@link HarnessId} exists, that is not the commonest
+ * case but the *only* one: nothing can write a choice, so nothing can read one
+ * back, so `selected` is unreachable and every launch takes this path.
  *
  * The rule underneath it: `selected` means *the user's stored choice was
  * honoured*, and on first run there is no stored choice to honour. Every arm
@@ -415,7 +467,12 @@ export type HarnessSelection =
  * lives under.
  */
 export interface HarnessSelectionRequest {
-  /** `null` when the user has never chosen — not an error. */
+  /**
+   * `null` when the user has never chosen — not an error, and **`null` on every
+   * call today**: nothing in `src/platform/contract.ts` can store a harness
+   * choice or read one back. See {@link HarnessId} for the amendment that would
+   * change that, and for what it means until one does.
+   */
   readonly requestedId: HarnessId | null;
   readonly model: ChatCapabilities;
 }
@@ -522,14 +579,34 @@ export type ToolResultPart = Extract<ContentPartInput, { readonly kind: 'toolRes
  * `signal` aborts when the run is cancelled. A tool that ignores it delays the
  * run's terminal event; it cannot prevent one.
  *
+ * ## One executor per run — the fact this interface used to leave to a guess
+ *
+ * `execute` takes a call and a signal. It takes no project, no run and no
+ * conversation, and it does not need them, because **an executor is built for
+ * one run**: {@link HarnessServicesFactory} takes the {@link RunRequest}, so
+ * `projectId` and `runId` are fixed before any harness sees the bundle it sits
+ * in. An earlier draft asserted below that this component "is the only one
+ * holding both halves" while leaving {@link HarnessServices} ambiguous between
+ * per-app and per-run — so the assertion had no mechanism, and a builder holding
+ * a half-built executor had to guess which it was. It is per run; the factory
+ * type is what says so.
+ *
+ * Passing the two ids per call was the alternative, and it is the weaker one
+ * here. It would make the *harness* the supplier of the project on every tool
+ * call, so a harness that passed the wrong one — or that was handed a stale
+ * request — would scope a `sandbox_submit` to a project the run does not belong
+ * to, and that submit decides which of the user's directories are reachable.
+ * This file already makes the same argument for {@link RunCapabilities}: a fact
+ * that must not vary is handed in once, not re-derived at each site.
+ *
  * ## Where code execution actually happens, and why it is not visible here
  *
  * A Bash or Python tool is a `sandbox_submit` in
  * `src/platform/contract-sandbox.ts`. The executor is the component that builds
  * it, because it is the only one holding both halves: the tool's arguments, and
- * — through the composition root — {@link RunRequest.projectId}, which is what
- * decides which of the user's directories the run may be handed at all. Three
- * consequences a builder needs and this interface does not show:
+ * — through the factory that built it — {@link RunRequest.projectId}, which is
+ * what decides which of the user's directories the run may be handed at all.
+ * Four consequences a builder needs and this interface does not show:
  *
  *  - **The approval prompt lives there, not here.** That contract's unit of
  *    approval is one submitted run, and a person may sit in front of it for
@@ -541,6 +618,13 @@ export type ToolResultPart = Extract<ContentPartInput, { readonly kind: 'toolRes
  *    closed `RefusalReason` on a settled event; the executor words it and
  *    returns `isError: true`. Rejecting instead would fail the whole run for a
  *    denied permission prompt, which is a thing the user did on purpose.
+ *  - **The mount set is not the executor's to invent.** A submit for this
+ *    project needs its workspace read-write, its skills mount read-only and its
+ *    working directory if it has one, and that rule is shipped as
+ *    `projectFilesystemScope` in `src/platform/contract-sandbox.ts` rather than
+ *    described — the same reason {@link mergeRunCapabilities} is shipped here. A
+ *    rule that must not vary should not be re-derived ten times, and this one
+ *    re-derived wrongly is a read-write mount of every skill on the machine.
  *
  * None of that is enforced by anything in either file, and neither file imports
  * the other. It is written here because the alternative is ten builders each
@@ -586,7 +670,15 @@ export interface ContextChunk {
 }
 
 /**
- * Reads skills, memory and instructions on a run's behalf.
+ * Reads skills, memory and instructions on a run's behalf, **for exactly one
+ * project**.
+ *
+ * One resolver belongs to one {@link ProjectId} and is obtained from
+ * {@link HarnessRuntime.contextFor}. The whole argument for scoping it that way
+ * rather than putting a project on `index` and `load` is there, at the method
+ * that hands one out; what matters here is the consequence, which is that
+ * nothing on this interface names a project because nothing on it can vary by
+ * one.
  *
  * ## Why skill sync and memory ops are not methods on {@link RuntimeHarness}
  *
@@ -624,9 +716,10 @@ export interface ContextChunk {
  * project instructions and nothing else.
  *
  * That first implementation is buildable now and the seam for it is frozen:
- * `projectInstructions` resolves to `ProjectView.instructions` for
- * {@link RunRequest.projectId}, through `project_get` in
- * `src/platform/contract-project.ts`. Those instructions are a database column
+ * `projectInstructions` resolves to `ProjectView.instructions` for **the project
+ * this resolver was made for**, through `project_get` in
+ * `src/platform/contract-project.ts` — the same project a run in it names in
+ * {@link RunRequest.projectId}. Those instructions are a database column
  * rather than a file, so `index()` returns at most one ref for that source and
  * `estimatedTokens` is `null` until something counts it. The `skill` source has
  * a shape waiting for it there too — `ProjectView.enabledSkills` names them and
@@ -652,11 +745,26 @@ export interface ContextChunk {
  */
 export interface ContextResolver {
   /**
-   * What is available, cheaply, without bodies. The reference's skill format
-   * loads name and description for everything and the body only on activation;
-   * an index that returned bodies would make that impossible.
+   * What is available to this resolver's project, cheaply, without bodies. The
+   * reference's skill format loads name and description for everything and the
+   * body only on activation; an index that returned bodies would make that
+   * impossible.
+   *
+   * No parameter, because there is nothing left to vary: the project was fixed
+   * when the resolver was obtained. See {@link HarnessRuntime.contextFor}.
    */
   index(): Promise<readonly ContextRef[]>;
+  /**
+   * Load one ref **this resolver's own {@link index} produced**.
+   *
+   * A hand-minted ref is not a supported input and never was: {@link ContextRef}
+   * `id` is opaque to this seam, so there is no format for a caller to build one
+   * out of, and inventing one would make ten builders agree on a spelling with
+   * nothing frozen to agree on. A resolver handed a ref it does not recognise —
+   * fabricated, or indexed from another project — resolves `null` rather than
+   * guessing, which puts it on the same path as material that has genuinely gone
+   * and produces a `contextUnavailable` degradation the user can see.
+   */
   load(ref: ContextRef): Promise<ContextChunk | null>;
 }
 
@@ -740,10 +848,39 @@ export interface ContentPartCodec {
  * settings access, no conversation management, no credential question, and — the
  * one worth naming because its absence used to be a hole rather than a
  * decision — no adapter behind any of them.
+ *
+ * ## Per run, not per app — stated because leaving it unstated cost the most
+ *
+ * **A `HarnessServices` is built for one run**, from that run's
+ * {@link RunRequest}, by {@link HarnessServicesFactory}. An earlier draft left
+ * this to be inferred and the two halves of the file disagreed about the answer:
+ * {@link ToolExecutor} was asserted to hold `RunRequest.projectId`, which only a
+ * per-run bundle can, while `context` was described as one instance for the
+ * whole app, which only a per-app bundle can. A builder had no consistent rule
+ * and had to pick one — and either pick makes half the file wrong.
+ *
+ * Which members that binds, exactly:
+ *
+ *  - `tools` **must** be built per run. It turns a tool call into a
+ *    `sandbox_submit` scoped by {@link RunRequest.projectId}, and it has to
+ *    cancel the sandbox runs *this* run started. See {@link ToolExecutor}.
+ *  - `context` **is** `contextFor(request.projectId)` — the same resolver the
+ *    caller indexed {@link RunContextRequest.preload} against, which is what
+ *    makes those refs load. See {@link HarnessRuntime.contextFor}.
+ *  - `turns`, `transcript`, `parts` and `now` are ordinarily one object each for
+ *    the whole application, closed over by the factory. Sharing them is expected
+ *    rather than merely tolerated: they take no project, `parts` is pure, and a
+ *    second clock is a second answer to what time it is.
+ *
+ * A harness still holds no state that outlives one call to `start`
+ * ({@link RuntimeHarness}), so nothing here is a licence to keep run state on an
+ * implementation. It is a statement about who owns the *bundle*.
  */
 export interface HarnessServices {
   readonly turns: TurnDriver;
+  /** Built for this run. See {@link ToolExecutor} and the note above. */
   readonly tools: ToolExecutor;
+  /** `contextFor(request.projectId)`. See {@link HarnessRuntime.contextFor}. */
   readonly context: ContextResolver;
   /** See {@link TranscriptWriter}. The durability rule at {@link RunHandle} is unmeetable without it. */
   readonly transcript: TranscriptWriter;
@@ -756,6 +893,26 @@ export interface HarnessServices {
    */
   now(): number;
 }
+
+/**
+ * Builds the services for one run, from that run's request.
+ *
+ * **This type is the per-run rule, written as a type rather than as a sentence.**
+ * A bundle that were app-wide would be a value, not a function of a request; a
+ * bundle that is a function of a request cannot be built before the project and
+ * the run id are known, which is exactly the property {@link ToolExecutor} and
+ * {@link ContextResolver} both need and neither could state on its own.
+ *
+ * Called **once per admitted run**, by whatever implements {@link LiveRuns},
+ * immediately before {@link HarnessDefinition.create}. Not per turn and not per
+ * tool call: an executor rebuilt mid-run would be an executor holding a
+ * different `AbortSignal` chain than the one the run was started with.
+ *
+ * It lives at the composition root, which is the only place that holds an
+ * adapter — a harness never sees one, and this factory is why it does not have
+ * to. See {@link CreateLiveRuns} for the one call that consumes it.
+ */
+export type HarnessServicesFactory = (request: RunRequest) => HarnessServices;
 
 /* -------------------------------------------------------------------------- */
 /* the request                                                                */
@@ -871,12 +1028,19 @@ export interface RunContextRequest {
    * {@link ContextResolver.index} it loads only when the work calls for it —
    * that is the point of an index that carries no bodies.
    *
-   * **Where a caller gets these**: {@link HarnessRuntime.context}, which is the
-   * same resolver instance the harness will be handed. The caller indexes,
-   * picks, and passes refs; the harness loads them. An earlier draft exposed the
-   * resolver only *inside* {@link HarnessServices}, which left the only source
-   * of the values this field requires unreachable from the only place that can
-   * fill it in.
+   * **Where a caller gets these**: `contextFor(projectId)` on
+   * {@link HarnessRuntime}, for the same project the request names in
+   * {@link RunRequest.projectId} — which is the resolver the harness will be
+   * handed. The caller indexes, picks, and passes refs; the harness loads them.
+   * An earlier draft exposed the resolver only *inside* {@link HarnessServices},
+   * which left the only source of the values this field requires unreachable
+   * from the only place that can fill it in.
+   *
+   * Refs indexed against a *different* project's resolver do not load. They come
+   * back `null` and produce a `contextUnavailable` degradation for material that
+   * was never missing — the failure {@link HarnessRuntime.contextFor} is shaped
+   * to make hard to reach by accident, and the reason that method takes the same
+   * id this request carries.
    *
    * Empty is the ordinary answer for a plain chat run and is not a degradation.
    */
@@ -1011,6 +1175,13 @@ export type RunFailure =
  * does not have to remember it. When a run ended at a limit the stop reason
  * still describes the model's last turn; the degradation is what says the run
  * was capped.
+ *
+ * **This is the agent loop's outcome, not a sandbox run's.** The sandbox
+ * contract's terminal state is `SandboxOutcome` — eight members, including
+ * `refused` and `rendered` — and it was called `RunOutcome` until the two names
+ * were found colliding at the one place a builder holds both, a
+ * {@link ToolExecutor} implementation importing from each file. One agent run
+ * ends once, here; the many sandbox runs it submitted each ended there.
  */
 export type RunOutcome =
   | { readonly type: 'completed'; readonly stopReason: StopReason }
@@ -1286,6 +1457,12 @@ export type RunStart =
  * *wise* is the spec's Axis G concurrency question and is not decided here.
  */
 export interface LiveRuns {
+  /**
+   * Admit a run: build its services through {@link HarnessServicesFactory},
+   * build a harness from them through {@link HarnessDefinition.create}, and
+   * start it. **One services bundle and one harness instance per admitted run**,
+   * both dropped when the run is. A rejected request builds neither.
+   */
   start(request: RunRequest): RunStart;
   /** `null` once a finished run has been dropped. Not an error — ask the store. */
   get(runId: RunId): RunHandle | null;
@@ -1294,6 +1471,26 @@ export interface LiveRuns {
   /** Every run the directory still holds, finished ones included until dropped. */
   list(): readonly RunSnapshot[];
 }
+
+/**
+ * Builds the directory, at the composition root.
+ *
+ * Two arguments and the second is the point: a directory that starts runs needs
+ * a way to make each run's services, and taking a {@link HarnessServicesFactory}
+ * rather than a {@link HarnessServices} is what makes "services are per run" a
+ * thing the types say instead of a thing this file asks a builder to remember.
+ * A composition root that has only one bundle to give has to write a function
+ * that ignores its argument, which is a visible lie rather than an invisible
+ * assumption.
+ *
+ * Stated as a type for the reason {@link CreateHarnessRegistry} is: the shape of
+ * the one call that assembles this layer is part of the contract, and leaving it
+ * unnamed is how two builds assemble it two ways.
+ */
+export type CreateLiveRuns = (
+  registry: HarnessRegistry,
+  services: HarnessServicesFactory,
+) => LiveRuns;
 
 /**
  * The composed runtime: what registers, what picks, and what is running.
@@ -1305,17 +1502,51 @@ export interface HarnessRuntime {
   readonly registry: HarnessRegistry;
   readonly runs: LiveRuns;
   /**
-   * The same {@link ContextResolver} instance every harness this runtime builds
-   * will be handed.
+   * The {@link ContextResolver} for one project — the same one every harness
+   * this runtime builds for a run in that project will be handed, through
+   * {@link HarnessServices.context}.
    *
    * Exposed because a caller has to index before it can fill
    * {@link RunContextRequest.preload}, and the only other place the resolver
-   * appears is inside {@link HarnessServices}, which a caller never holds. One
-   * instance rather than two: a caller that indexed against a different resolver
-   * than the run loads from would produce refs that resolve to `null` and a
-   * `contextUnavailable` degradation for material that was never missing.
+   * appears is inside {@link HarnessServices}, which a caller never holds.
+   *
+   * ## Why this takes a project, when an earlier draft was one app-wide instance
+   *
+   * **That draft could not be implemented, and this method is the repair.** It
+   * said three things that cannot all be true at once: the resolver is a single
+   * instance built once at the composition root; `projectInstructions` resolves
+   * to `ProjectView.instructions` for {@link RunRequest.projectId}; and
+   * `index()` takes no arguments. An app-wide instance has no project, so there
+   * is no project whose instructions it could index — and the one escape left
+   * was for a caller to mint a {@link ContextRef} by hand and let `load` decode
+   * `ref.id`, which contradicts this field's own rule that the caller indexes
+   * and picks, and contradicts `ContextRef.id` being opaque to this seam. Ten
+   * builders would have had to agree on an id format with nothing frozen to
+   * agree on. A builder reaching that point stops and guesses, which is the
+   * outcome a frozen contract exists to prevent.
+   *
+   * Two repairs were available. **Rejected: a project parameter on `index` and
+   * `load`.** It keeps one instance and buys a pairing a caller can get wrong —
+   * index against project A, load against project B — so the seam would then
+   * have to say what happens, and every answer is bad: refusing needs a failure
+   * mode this file does not have, serving it crosses a project boundary that
+   * `SANDBOX_PROTECTED_ROOTS` exists to hold, and resolving `null` reports
+   * missing material that is present. **Taken: the resolver is a project's.** A
+   * resolver that *is* one project's cannot be mispaired, and every method below
+   * it loses a parameter rather than gaining one.
+   *
+   * **What the one-instance rule was protecting is kept, and it was never
+   * identity.** The property that matters is that a ref the caller indexed still
+   * loads inside the run. So: two resolvers for the same `projectId` must be
+   * interchangeable — the same refs out of `index`, the same bodies out of
+   * `load`. Memoising one per project is conforming; returning a fresh object
+   * per call is conforming. Material that has genuinely gone in between is the
+   * `contextUnavailable` case and is the only difference allowed to show.
+   *
+   * Pure and cheap, like {@link select}: it hands back a reader, it does not
+   * read. A caller may hold the result across runs in the same project.
    */
-  readonly context: ContextResolver;
+  contextFor(projectId: ProjectId): ContextResolver;
   /**
    * Pure and synchronous: it reads the registry and the model's established
    * flags and returns an outcome. It performs no I/O, so the settings surface
@@ -1328,7 +1559,41 @@ export interface HarnessRuntime {
 /* ==========================================================================
  * AMENDMENTS
  * --------------------------------------------------------------------------
- * (none)
+ * 1. 2026-08-14 — `HarnessRuntime.context` (a `ContextResolver` field) is
+ *    replaced by `contextFor(projectId)`. The old shape could not be
+ *    implemented: one app-wide resolver, a `projectInstructions` source defined
+ *    per `RunRequest.projectId`, and an `index()` with no project are three
+ *    statements that cannot all hold. A caller that read `runtime.context`
+ *    reads `runtime.contextFor(projectId)` for the project it is about to run
+ *    in; a resolver implementation loses nothing, having never had a way to
+ *    know its project before. `ContextResolver.load` now states that a ref must
+ *    have come from the same resolver's `index`, closing the hand-minted-ref
+ *    escape hatch that shape left open. Revisit: anything filling
+ *    `RunContextRequest.preload`, and any stub `HarnessRuntime`.
+ *
+ * 2. 2026-08-14 — `HarnessServices` is **per run**, and two new types say so:
+ *    `HarnessServicesFactory` (`(request: RunRequest) => HarnessServices`) and
+ *    `CreateLiveRuns`, which takes one. The rule was previously implied in
+ *    opposite directions by `ToolExecutor` (which was asserted to hold the
+ *    run's project) and by the old app-wide `context` field. `ToolExecutor` and
+ *    `ContextResolver` are unchanged in shape: the executor is bound to its run
+ *    at construction rather than told about it per call, and the reasoning is
+ *    at `ToolExecutor`. Revisit: any composition root that built one services
+ *    bundle for the application, and any `LiveRuns` implementation.
+ *
+ * 3. 2026-08-14 — `HarnessId` no longer claims the id "is persisted as a user
+ *    setting"; nothing persists it, and `src/platform/contract.ts` has neither a
+ *    field nor a command that could. The claim is replaced by the amendment
+ *    that would make it true, named there, and by what is true until it lands:
+ *    `HarnessSelectionRequest.requestedId` is `null` on every call and every
+ *    selection is `substituted` with reason `noneChosen`. No shape changed.
+ *    Revisit: any settings surface built expecting to read a stored choice.
+ *
+ * 4. 2026-08-14 — no shape here changed, but `ToolExecutor` now names
+ *    `projectFilesystemScope` in `src/platform/contract-sandbox.ts` as the one
+ *    place a run's mount set is built. A builder who had written that scope by
+ *    hand inside an executor should delete it and call the helper: the two
+ *    host-owned mounts are not a caller's to choose.
  *
  * This file is frozen: builders code against it without being able to ask, so a
  * silent edit is worse than a wrong shape. To change it, append a numbered entry

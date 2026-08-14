@@ -101,7 +101,7 @@
  */
 
 import type { Ack, EmptyPayload } from './contract';
-import type { AbsolutePath, ProjectId } from './contract-project';
+import type { AbsolutePath, ProjectId, ProjectLayout } from './contract-project';
 
 /**
  * Bump on any change to the shapes below, together with the host-side constant, once a host
@@ -109,7 +109,7 @@ import type { AbsolutePath, ProjectId } from './contract-project';
  * several phases after the chat contract has stopped moving, and one version number for two
  * cadences means every sandbox change looks like a chat-protocol break.
  */
-export const SANDBOX_CONTRACT_VERSION = 1;
+export const SANDBOX_CONTRACT_VERSION = 2;
 
 /**
  * A run's identity, minted by the caller. See {@link SandboxSubmitReq}.
@@ -317,6 +317,27 @@ export interface SandboxBackends {
 export type ProcessLanguage = 'bash' | 'python';
 
 /**
+ * Which platform a **process run's program** finds itself on.
+ *
+ * Two values rather than an OS name, because everything in this contract that depends on it
+ * depends on the split and not on the distribution: which base-environment list applies
+ * ({@link SANDBOX_BASE_ENVIRONMENT_POSIX} against
+ * {@link SANDBOX_BASE_ENVIRONMENT_WINDOWS}), whether environment names collide under case
+ * folding ({@link EnvironmentEntry}), whether a killed process has a signal number
+ * ({@link CrashedOutcome}), and what a path separator is.
+ *
+ * **It is a property of the guest, not of the host, and the two are not the same question.**
+ * At `none` and `process` the program is an ordinary child of the Vela process and they
+ * agree. At `container` and `microVm` they need not: a Linux container on a Windows host is
+ * the ordinary shape of the ambition this file states, and a host that answered this from its
+ * own OS would describe a guest that does not exist.
+ *
+ * The document family has no environment, no signals and no filesystem, so it has no guest
+ * platform to report and this appears on nothing that describes one.
+ */
+export type GuestPlatform = 'posix' | 'windows';
+
+/**
  * What Canvas renders.
  *
  * `html` and `react` execute script. `svg` and `mermaid` do not and must not: Mermaid is
@@ -338,9 +359,12 @@ export type SandboxLanguage = ProcessLanguage | DocumentLanguage;
  * Windows environment names are case-insensitive and everywhere else they are not, so
  * `PATH` and `Path` in one map are one entry on one OS and two on another — an ordered list
  * makes the collision visible and lets the rule be stated: **later entries win, and the host
- * must reject a submit whose entries collide under the target platform's own casing rules**
- * rather than pick a winner silently. Second, a map's iteration order is not part of its
- * meaning, and this one's is.
+ * must reject a submit whose entries collide under the casing rules of the platform the
+ * program will run on** rather than pick a winner silently. That is the guest's platform, and
+ * a caller reads it from {@link SandboxPolicySnapshot.guestPlatform}: a Linux guest on a
+ * Windows host takes `PATH` and `Path` as two variables, and refusing them there would refuse
+ * a submit that is correct. Second, a map's iteration order is not part of its meaning, and
+ * this one's is.
  */
 export interface EnvironmentEntry {
   readonly name: string;
@@ -348,8 +372,9 @@ export interface EnvironmentEntry {
 }
 
 /**
- * The keys the host may add to a POSIX run's environment on its own, and the complete list
- * of them for that platform.
+ * The keys the host may add to a run's environment on its own when the **guest** is POSIX,
+ * and the complete list of them for that platform. Which list applies is
+ * {@link SandboxPolicySnapshot.guestPlatform}, not the OS Vela is running on.
  *
  * **There is no "inherit the parent environment" option, and its absence is the design.**
  * The study's fix PR sanitises the child environment by *removing* named secrets
@@ -378,8 +403,21 @@ export const SANDBOX_BASE_ENVIRONMENT_POSIX = ['PATH', 'HOME', 'TMPDIR', 'LANG',
  * added `SYSTEMROOT` anyway would have been violating a frozen contract to make the product
  * work, which is the worst of the available outcomes.
  *
- * These are the keys, and no others. Neither list inherits: they are two closed sets, and
- * the host uses the one for the platform it is on.
+ * These are the keys, and no others. Neither list inherits: they are two closed sets, and the
+ * host uses the one for the platform **the program will run on**.
+ *
+ * **That is the guest's platform, not the host's, and an earlier draft said "the platform it
+ * is on".** The two agree at `none` and `process`, where the child is an ordinary host
+ * process — and they stop agreeing at exactly the classes this file states as the ambition.
+ * A Linux container on a Windows host is the ordinary shape of `container` here, and the
+ * earlier rule injects `PATHEXT`, `COMSPEC` and `SYSTEMROOT` into a Linux guest while omitting
+ * `HOME` and `TMPDIR` — which is the same failure, with the platforms swapped, that the
+ * single POSIX list produced and that this pair was written to close. A `python` that cannot
+ * find a home directory and a shell that cannot find a temporary one is the worst of the
+ * available outcomes twice over.
+ *
+ * The host knows which it is about to start, because it chose the image; the caller learns it
+ * from {@link SandboxPolicySnapshot.guestPlatform} without having to submit and be refused.
  */
 export const SANDBOX_BASE_ENVIRONMENT_WINDOWS = [
   'PATH',
@@ -612,6 +650,11 @@ export interface Mount {
  * approval prompt that cleared every rule here. Another project's root is
  * `mountOutsideProjectScope`. Nothing else under the application-data directory is
  * mountable at all.
+ *
+ * The first three of those are built by {@link projectFilesystemScope} rather than by each
+ * caller from this paragraph. A rule stated in prose in two contracts and constructed by
+ * nobody is a rule ten builders implement ten ways, and the way that gets the skills mount
+ * wrong is the destructive one.
  */
 export const SANDBOX_PROTECTED_ROOTS = [
   'credentialStore',
@@ -639,7 +682,8 @@ export type ProtectedRoot = (typeof SANDBOX_PROTECTED_ROOTS)[number];
 export interface ScratchRequest {
   /**
    * `null` — the normal case — means the host picks the location, and the program finds it
-   * through `TMPDIR` or `TEMP` depending on the platform. A non-null value is a request for
+   * through `TMPDIR` or `TEMP` depending on {@link SandboxPolicySnapshot.guestPlatform} — the
+   * platform the program runs on, which is not always Vela's. A non-null value is a request for
    * a specific guest path, honourable only where there is a namespace to place it in, so at
    * `process` and `none` it is refused with `guestPathRemapUnsupported` rather than ignored.
    */
@@ -707,6 +751,116 @@ export const NO_FILESYSTEM: FilesystemScope = {
   scratch: { guestPath: null, retainAfterSettled: false },
   outsideMounts: 'denied',
 };
+
+/**
+ * What a caller decides about the **user's own** directory, when it mounts it at all.
+ *
+ * The other two mounts a project run gets are host-owned and have exactly one correct form,
+ * so {@link projectFilesystemScope} fixes them. This one is a judgement: whether the run may
+ * write to the user's files, and what happens to them if it dies halfway through. There is no
+ * default for {@link MountMaterialisation} anywhere in this file and there is not one here —
+ * an agent editing a repository wants `bind` and its risk, and a "run this and show me what
+ * it made" flow wants `copyInCopyOut`.
+ */
+export interface WorkingDirectoryGrant {
+  readonly mode: MountMode;
+  readonly materialisation: MountMaterialisation;
+}
+
+/** What {@link projectFilesystemScope} needs that it cannot read off a {@link ProjectLayout}. */
+export interface ProjectScopeRequest {
+  /**
+   * From `project_layout` in `src/platform/contract-project.ts`, read for this run. Not
+   * cached from an earlier one: it carries the resolved working directory, and "resolved"
+   * means "as of the moment it was read".
+   */
+  readonly layout: ProjectLayout;
+  /**
+   * `null` mounts no working directory even when the project has one — the right answer for a
+   * run that has no business in the user's files. A grant mounts it **only** when the layout
+   * says `bound`; a `none` or `unavailable` working directory produces no mount either way,
+   * because mounting a path that is not there is how a run gets an empty directory where the
+   * user's files should be and writes into it.
+   */
+  readonly workingDirectory: WorkingDirectoryGrant | null;
+  /** No default: see {@link ScratchRequest.retainAfterSettled}. */
+  readonly scratch: ScratchRequest;
+}
+
+/**
+ * The filesystem scope for a run inside one project — **shipped rather than described**.
+ *
+ * Three paths, and both sibling contracts state the rule in prose: this project's workspace
+ * read-write, its skills mount read-only, its working directory if it has one
+ * (`src/platform/contract-project.ts` at the private-workspace boundary, and
+ * {@link SANDBOX_PROTECTED_ROOTS} here). Prose in two files and a constructor in none is how
+ * ten builders write ten versions of a rule that must not vary — the argument
+ * `mergeRunCapabilities` in `src/platform/contract-harness.ts` is shipped for, and it is
+ * sharper here, because the version that gets it wrong grants model-authored code a
+ * read-write mount of every skill on the machine through a directory of junctions.
+ *
+ * What is fixed, and not a caller's to pass:
+ *
+ *  - **The workspace is `readWrite` and `bind`.** It is Vela's own disposable directory, it is
+ *    what "the agent may write in its workspace" means, and a `copyIn` of it would discard
+ *    the run's work at the moment it settled — the one place in this contract where a copy
+ *    mode would silently undo the point of the mount.
+ *  - **The skills mount is `readOnly`, always, and `bind`.** {@link Mount} gives the reason
+ *    and `skillsMountMustBeReadOnly` is the refusal; passing `readWrite` here is not
+ *    expressible rather than refused. `copyIn` is not offered either: copying a tree of
+ *    junctions duplicates the machine-wide store per run.
+ *
+ * `guestPath` equals the resolved `hostPath` on every mount. That is not a default standing in
+ * for a remap: at `none` and `process` there is no namespace, so a differing guest path is
+ * `guestPathRemapUnsupported` — a refusal — and those are the only classes any backend can
+ * serve today. When a namespace backend lands, remapping becomes meaningful and this function
+ * is the one place it has to change, which is the reason it exists.
+ *
+ * **It validates nothing, and cannot.** Overlap, protected roots, resolution of the working
+ * directory's path — every one of those is decided host-side against paths the host resolved,
+ * and a renderer-side re-check would be theatre on the side of the boundary already assumed
+ * compromised, exactly as {@link ApprovalRequest} says of `requestDigest`. Two consequences a
+ * caller keeps: a `bound` working directory whose `writable` is `false` combined with a
+ * `readWrite` grant is a run that fails when it writes, so **read `WorkingDirectory.writable`
+ * and decide** rather than expecting this to quietly downgrade — a silent reduction is the one
+ * forbidden outcome — and the mounts come back in a fixed order, workspace then skills mount
+ * then working directory, so that `mountIndex` on a {@link RefusedOutcome} points at a row a
+ * surface can name.
+ */
+export function projectFilesystemScope(request: ProjectScopeRequest): FilesystemScope {
+  const { layout } = request;
+  const hostOwned: readonly Mount[] = [
+    {
+      hostPath: layout.paths.workspace,
+      guestPath: layout.paths.workspace,
+      mode: 'readWrite',
+      materialisation: 'bind',
+    },
+    {
+      hostPath: layout.paths.skillsMount,
+      guestPath: layout.paths.skillsMount,
+      mode: 'readOnly',
+      materialisation: 'bind',
+    },
+  ];
+  const grant = request.workingDirectory;
+  const working: readonly Mount[] =
+    grant !== null && layout.workingDirectory.kind === 'bound'
+      ? [
+          {
+            hostPath: layout.workingDirectory.path,
+            guestPath: layout.workingDirectory.path,
+            mode: grant.mode,
+            materialisation: grant.materialisation,
+          },
+        ]
+      : [];
+  return {
+    mounts: [...hostOwned, ...working],
+    scratch: request.scratch,
+    outsideMounts: 'denied',
+  };
+}
 
 /* -------------------------------------------------------------------------- */
 /* network                                                                    */
@@ -1037,6 +1191,18 @@ export interface SandboxPolicySnapshot {
   readonly backends: SandboxBackends;
   /** What this host can actually run, right now. Empty for a family is a legal answer. */
   readonly languages: readonly SandboxLanguage[];
+  /**
+   * The platform a process run's program will find itself on — which base-environment list
+   * the host will add, which casing rules `environmentNamesCollide` is decided under, and
+   * whether {@link CrashedOutcome} can carry a signal number. See {@link GuestPlatform}.
+   *
+   * Here rather than on {@link SandboxBackendReport} because that type is shared by both
+   * families and a document has no guest platform at all; a field that were meaningless on
+   * one arm is a field somebody fills in with a plausible-looking lie. Here for the same
+   * reason `languages` is here: the alternative is discovery by refusal, in front of the
+   * user, after they clicked run.
+   */
+  readonly guestPlatform: GuestPlatform;
   /** Runs already admitted and not yet released. Bounds what a caller can start. */
   readonly activeRuns: number;
   readonly maximumConcurrentRuns: number;
@@ -1492,8 +1658,16 @@ export interface ExitedOutcome {
 }
 
 /**
- * Killed by something outside itself. `signal` is the POSIX signal number where the platform
- * has one and `null` on Windows, which has no equivalent — not `0`, which is a signal.
+ * Killed by something outside itself. `signal` is the POSIX signal number where the **guest**
+ * has signals, and `null` where it does not — not `0`, which is a signal.
+ *
+ * **The question is `SandboxPolicySnapshot.guestPlatform`, not what Vela is running on**, and
+ * an earlier draft said "`null` on Windows". A Linux guest on a Windows host is the ordinary
+ * shape of `container` here and its processes are killed by `SIGKILL` like any other; a
+ * renderer that read the host OS would drop the one number that says whether a run was killed
+ * for memory or ended by a person. Windows *guests* have no equivalent — a termination code
+ * is not a signal, and reporting one here would put an unrelated integer in a field every
+ * consumer will read as a signal.
  */
 export interface CrashedOutcome {
   readonly kind: 'crashed';
@@ -1541,16 +1715,32 @@ export interface HostFailedOutcome {
 }
 
 /**
- * How a run ended. Exactly one of these reaches the caller, on exactly one
- * {@link SandboxSettled} event.
+ * How a sandbox run ended. Exactly one of these reaches the caller, on exactly
+ * one {@link SandboxSettled} event.
  *
  * `refused` is here rather than only being an `IpcError` on submit, and
  * {@link SandboxSubmitRes} states the whole rule: every reason in
  * {@link RefusalReason} arrives this way, without exception, so a caller has one
  * place to clean up whatever happened and the closed vocabulary always survives
  * the trip.
+ *
+ * ## Why the name carries the prefix
+ *
+ * This type was `RunOutcome`, and so is the agent loop's terminal state in
+ * `src/platform/contract-harness.ts` — three members there, eight here, and the
+ * two mean unrelated things. Across `src/platform/contract.ts` and all three
+ * frozen contracts it was the only exported name that collided, and it collided
+ * at exactly the join both files name: a `ToolExecutor` implementation imports
+ * from both, and would have got a duplicate identifier at the one place this
+ * wave most wanted a builder to have an easy time.
+ *
+ * Renaming the sandbox side rather than the harness side follows the decision
+ * already taken for {@link SandboxRunId} against that file's `RunId`: where two
+ * contracts need the same word, the sandbox takes the prefix, because a run
+ * there is the outer thing and one of them submits many of these. The harness
+ * side's `Run*` family — its events, its status, its failures — stays whole.
  */
-export type RunOutcome =
+export type SandboxOutcome =
   | ExitedOutcome
   | CrashedOutcome
   | RenderedOutcome
@@ -1569,7 +1759,7 @@ export type RunOutcome =
  */
 export interface SandboxSettled {
   readonly type: 'settled';
-  readonly outcome: RunOutcome;
+  readonly outcome: SandboxOutcome;
   readonly usage: RunUsage;
 }
 
@@ -1725,7 +1915,32 @@ void _sandboxNamesAreWellTyped;
  * instead; "nothing used it" is an acceptable answer and must be written down rather than
  * assumed.
  *
- * (No amendments yet. The file was reconciled against its two sibling contracts before the
- * freeze, not after, so the changes that produced this shape are not amendments — nothing was
- * ever coding against the earlier one.)
+ * The file was reconciled against its two sibling contracts before the freeze, so the changes
+ * that produced version 1 are not amendments — nothing was ever coding against the earlier
+ * shape. Everything below is after the freeze.
+ *
+ * 1. 2026-08-14 — `RunOutcome` is renamed {@link SandboxOutcome}. It was the only exported
+ *    name colliding across `src/platform/contract.ts` and the three frozen contracts, and it
+ *    collided with the agent loop's own terminal state in
+ *    `src/platform/contract-harness.ts` — an unrelated three-member union — at the one place
+ *    both files say a builder joins them, a `ToolExecutor` importing from both. A consumer
+ *    that spelled `RunOutcome` for a sandbox run renames it; the members and
+ *    {@link SandboxSettled} are otherwise unchanged. The reasoning, including why this side
+ *    took the prefix, is at the type.
+ *
+ * 2. 2026-08-14 — {@link SandboxPolicySnapshot} gains a required `guestPlatform` field, and
+ *    {@link GuestPlatform} is new. Three rules named the wrong machine: the base-environment
+ *    list was chosen by "the platform the host is on", `CrashedOutcome.signal` was "`null` on
+ *    Windows", and the scratch directory's variable was picked "depending on the platform".
+ *    A Linux container on a Windows host — the ordinary shape of the ambition this file
+ *    states — makes every one of those wrong in the direction that breaks the guest. A host
+ *    must now report which platform the program will run on; a caller that branched on its
+ *    own OS reads this instead. No other shape changed.
+ *
+ * 3. 2026-08-14 — {@link projectFilesystemScope}, {@link ProjectScopeRequest} and
+ *    {@link WorkingDirectoryGrant} are new, and `ProjectLayout` is now imported from
+ *    `src/platform/contract-project.ts`. The three-mount rule for a run inside a project was
+ *    prose in two contracts and code in neither. Nothing is removed and no existing caller
+ *    breaks; a caller that built that scope by hand should delete it, because the two
+ *    host-owned mounts were never its to choose.
  */

@@ -115,7 +115,7 @@ import type { Ack } from './contract';
  * no wire yet, and coupling the two would force a wire bump for a change no
  * command can carry.
  */
-export const PROJECT_CONTRACT_VERSION = 1;
+export const PROJECT_CONTRACT_VERSION = 2;
 
 /* -------------------------------------------------------------------------- */
 /* the two names the other frozen contracts import from here                  */
@@ -158,8 +158,7 @@ export type ProjectId = string;
  *
  * Not branded, for the same reason {@link ProjectId} is not. Nothing in
  * TypeScript can hold a string to being absolute; the host is what enforces it,
- * with `INVALID_PAYLOAD`, and the rules are listed above
- * {@link WorkingDirectoryBinding}.
+ * with `INVALID_PAYLOAD`, and the rules are on {@link WorkingDirectoryBinding}.
  */
 export type AbsolutePath = string;
 
@@ -210,6 +209,22 @@ export type AbsolutePath = string;
  * flag, and it is carried precisely so this constant never appears in a
  * condition under `src/features/`. It is exported so the host, the store's
  * seed, and `src/platform/browser-adapter.ts`'s fake all name the same row.
+ *
+ * ## Who creates the row, and when
+ *
+ * **The store migration that introduces the projects table**, in the same
+ * transaction, before any other row can reference it.
+ *
+ * Not lazily on first read. Two readers racing to create the fallback target
+ * produce two fallback targets, and the loser's conversations are attached to a
+ * project the UI never lists. Not on first launch either, for the same reason
+ * plus a worse one: a launch path that creates data is a launch path that can
+ * half-create it.
+ *
+ * **No test enforces this today** — there is no projects table yet. This rule
+ * used to be a doc comment attached to no declaration, sitting between two
+ * constants, which meant a builder hovering this id in an editor was told the
+ * row must really exist and not who makes it.
  */
 export const DEFAULT_PROJECT_ID: ProjectId = '00000000-0000-4000-8000-000000000001';
 
@@ -222,20 +237,6 @@ export const DEFAULT_PROJECT_ID: ProjectId = '00000000-0000-4000-8000-0000000000
  * and another in whatever surface re-derived it.
  */
 export const DEFAULT_PROJECT_NAME = 'General';
-
-/**
- * Who creates the default project, and when: **the store migration that
- * introduces the projects table**, in the same transaction, before any other
- * row can reference it.
- *
- * Not lazily on first read. Two readers racing to create the fallback target
- * produce two fallback targets, and the loser's conversations are attached to a
- * project the UI never lists. Not on first launch either, for the same reason
- * plus a worse one: a launch path that creates data is a launch path that can
- * half-create it.
- *
- * **No test enforces this today** — there is no projects table yet.
- */
 
 /**
  * Longest project name the host accepts, measured in Unicode scalar values.
@@ -372,6 +373,55 @@ export interface ProjectView {
    * skill store. This contract does not define the grammar of a skill name or
    * anything inside a skill directory; that belongs to the skills contract, and
    * restating it here would create a second source of truth that drifts.
+   *
+   * ## Two names that are one directory — decided here, because of Windows
+   *
+   * Each entry mounts at `<skillsMount>/<name>`. On the platform Vela actually
+   * ships to, `['Foo', 'foo']` is two enabled skills and one directory:
+   * {@link SkillMount} promises exactly one entry per enabled skill, and
+   * {@link ProjectPaths.skillsMount} can hold one of those two names. An earlier
+   * draft said neither which gave way nor that anything had to, so a builder
+   * writing the reconcile chose privately between silently deduping — a skill
+   * the user switched on that never mounts and never says so, which is the
+   * silently-wrong outcome conventions §9 rule 6 forbids — reporting
+   * `occupiedByUnrelatedEntry`, which misdescribes it because the occupant is
+   * ours, and two mounts racing for one path.
+   *
+   * The sibling contract settled this class for environment variable names —
+   * `src/platform/contract-sandbox.ts`, at `EnvironmentEntry`, with the refusal
+   * `environmentNamesCollide` — and the answer here has the same two halves:
+   *
+   *  1. **The write is refused.** `project_create` and `project_update` fail
+   *     with `INVALID_PAYLOAD` when two entries in this list collide under the
+   *     casing rules of the volume the skills mount lives on, byte-identical
+   *     duplicates included. Not deduplicated and not reordered: the user
+   *     enabled two things, one of them cannot exist, and the host has no way to
+   *     know which they meant. A refused write leaves the record as it was.
+   *  2. **A record that already holds a colliding pair is reported, not
+   *     repaired.** The first entry in this list's order mounts; every later
+   *     entry that collides with an earlier one is reported `unavailable` with
+   *     `nameCollidesWithAnotherEnabledSkill`. That state is reachable without
+   *     any write having been accepted, which is why it is a mount problem and
+   *     not only a payload rule: `%APPDATA%` is redirectable by policy and by
+   *     sync clients, so a project written while the application-data directory
+   *     sat on a case-sensitive volume can be read after it has moved to a
+   *     case-insensitive one.
+   *
+   * The two halves look inconsistent — refuse in one place, pick a winner in the
+   * other — and the difference is what is available to do instead. A write has a
+   * user in front of it and can be refused with nothing lost. A read has no
+   * user, no write to refuse, and a list whose whole promise is one entry per
+   * enabled skill; dropping the loser would break that promise silently, which
+   * is the outcome rule 1 exists to avoid.
+   *
+   * **The folding is the host's to decide and never the renderer's.**
+   * JavaScript's `toLowerCase` is Unicode's locale-independent case mapping;
+   * NTFS compares through an upcase table fixed when the volume was formatted;
+   * a directory flagged case-sensitive on Windows, or an APFS volume formatted
+   * case-sensitive, does not fold at all. Those answers differ on real names,
+   * and the only one that decides whether two mounts land on one path is the
+   * filesystem's. A renderer may warn about a pair it thinks looks alike; it may
+   * not conclude, and it may not pre-filter the list it sends.
    */
   readonly enabledSkills: readonly string[];
 }
@@ -446,13 +496,8 @@ export type WorkingDirectory =
  * one of them. Compare `StoreUpdateMessageReq` in `src/platform/contract.ts`,
  * which deliberately has no way to spell "set this back to nothing"; here that
  * spelling is required, so it gets a variant of its own.
- */
-export type WorkingDirectoryBinding =
-  | { readonly kind: 'none' }
-  | { readonly kind: 'path'; readonly path: AbsolutePath };
-
-/**
- * Paths the host must refuse, with `INVALID_PAYLOAD` (conventions §3.2):
+ *
+ * ## Paths the host must refuse, with `INVALID_PAYLOAD` (conventions §3.2)
  *
  *  1. Anything not absolute. A relative path is resolved against a working
  *     directory that differs between the host process, the agent, and whatever
@@ -463,6 +508,12 @@ export type WorkingDirectoryBinding =
  *  3. Any path inside another project's root, for the same reason one level
  *     down.
  *
+ * These three used to be a doc comment attached to nothing, immediately below
+ * this type, so a builder hovering the type they were about was shown one
+ * sentence and none of the rules. For a contract whose only delivery mechanism
+ * is doc comments, a rule that is not attached to a declaration is a rule with
+ * no reader.
+ *
  * **How the user produces the string is not settled by this contract, and the
  * payload is the same either way.** A native folder picker needs the `dialog`
  * capability, which `src-tauri/capabilities/main.json` does not currently
@@ -471,17 +522,25 @@ export type WorkingDirectoryBinding =
  * file manager, and adding one would mean granting a shell capability — do not
  * assume a "reveal" button exists to be wired up.
  *
- * **The seam with execution.** This path is exactly what
- * `src/platform/contract-sandbox.ts` mounts when the agentic runtime runs code
- * for this project: its `Mount.hostPath` is an {@link AbsolutePath}, this is an
- * {@link AbsolutePath}, and they are the same string with the same resolution
- * rules. A run that is meant to see the user's files gets one mount built from
- * this value and no others; a run against a project whose working directory is
- * `none` gets no mount at all and sees only its own scratch directory. Nothing
- * in this contract performs that mount, and nothing here may assume it happened
- * — the point of stating it is that a builder wiring the two together does not
- * have to invent a second path vocabulary to do it.
+ * ## The seam with execution
+ *
+ * This path is exactly what `src/platform/contract-sandbox.ts` mounts when the
+ * agentic runtime runs code for this project: its `Mount.hostPath` is an
+ * {@link AbsolutePath}, this is an {@link AbsolutePath}, and they are the same
+ * string with the same resolution rules. A run that is meant to see the user's
+ * files gets one mount built from this value and no others; a run against a
+ * project whose working directory is `none` gets no mount at all and sees only
+ * its own scratch directory. That mount, and the two host-owned ones beside it,
+ * are built by `projectFilesystemScope` in that file — from a
+ * {@link ProjectLayout}, whose {@link ProjectLayout.workingDirectory} is this
+ * binding *resolved*, so a binding that currently points at nothing produces no
+ * mount rather than an empty directory where the user's files should be.
+ * Nothing in this contract performs that mount, and nothing here may assume it
+ * happened.
  */
+export type WorkingDirectoryBinding =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'path'; readonly path: AbsolutePath };
 
 /* -------------------------------------------------------------------------- */
 /* the layout on disk                                                         */
@@ -543,7 +602,96 @@ export type WorkingDirectoryBinding =
 export interface ProjectPaths {
   /** `<app data dir>/projects/<project-id>`. */
   readonly root: AbsolutePath;
-  /** `<root>/workspace`. See {@link ProjectLayout} for what may live here. */
+  /**
+   * `<root>/workspace` — **the private agent workspace**, and the rules that
+   * govern it.
+   *
+   * They were a doc comment attached to no declaration, in a section of their
+   * own between {@link ProjectLayout} and the payloads. Everything below is what
+   * a builder needs while looking at this path, so it is attached to this path:
+   * a rule nothing declares is a rule an editor cannot show anybody.
+   *
+   * The reference calls its equivalent the "private agent workspace" and then
+   * documents an access boundary that is not one: the agent has read/write to
+   * the private directory *and* to the user's working directory, identically.
+   * There, "private" only ever meant "not somewhere the user is expected to
+   * look", which is not a boundary anyone can implement against.
+   *
+   * Vela draws the boundary around **durability and secrecy** instead, because
+   * those are the two a builder can act on:
+   *
+   *  - **Creates:** the host, and only the host, inside `project_create` and on
+   *    every {@link ProjectLayout} read that finds it missing.
+   *  - **Writes:** the agent, freely, anywhere inside it. Also the host. Nothing
+   *    else — no feature under `src/` writes here, because the renderer has no
+   *    filesystem access at all (`src-tauri/capabilities/main.json` grants no
+   *    `fs`) and getting one to write scratch files would be the wrong fix.
+   *  - **Reads:** the agent and the host. The user may read it — it is an
+   *    ordinary directory on their own disk and nothing hides it — but no Vela
+   *    surface asks them to manage it, and no feature may require them to.
+   *  - **Never contains:** any credential, token, key, or keychain material.
+   *    Secret values live in the OS keychain and travel in one direction
+   *    (conventions §0 rule 4; there is no `secrets_get` and there never will
+   *    be). A secret written into a workspace file is a secret in a plaintext
+   *    file inside a directory the agent can read back into a prompt.
+   *  - **Never contains:** the only copy of anything. The workspace is
+   *    **disposable**: deleting the entire directory must lose nothing the user
+   *    authored and break nothing another surface depends on. Anything that
+   *    fails that test belongs in the store or in the user's working directory.
+   *
+   * And one hazard specific to this layout: the workspace sits two levels below
+   * the application-data directory, which also holds `vela.db`. "The agent may
+   * write in its workspace" must never be implemented as "the agent may write
+   * under the application-data directory". The containment check is on this
+   * path, not on its ancestors.
+   *
+   * ## How a sandboxed run reaches this directory — the seam, stated once
+   *
+   * The agent does not write here with an ambient filesystem handle. It writes
+   * through `src/platform/contract-sandbox.ts`, which is deny-by-default: a run
+   * sees the union of its mounts and nothing else. So "the agent may write in
+   * its workspace" is implemented as *the caller mounts this one path*, and the
+   * two contracts have to agree about three things or a builder guesses at all
+   * three:
+   *
+   *  - **What may be mounted for a run scoped to this project.** Exactly three
+   *    paths, and it is the sandbox contract's `SANDBOX_PROTECTED_ROOTS` that
+   *    makes the rest unreachable: this project's workspace (read-write), this
+   *    project's {@link ProjectPaths.skillsMount} (**read-only, always** — see
+   *    below), and the project's working directory if it has one. Another
+   *    project's root is not mountable. `vela.db`, the settings, the keychain
+   *    and the install are not mountable by anything, at any permission level.
+   *    Those three mounts are built by `projectFilesystemScope` in that file,
+   *    from a {@link ProjectLayout}, rather than by each caller from this
+   *    paragraph.
+   *  - **Why the workspace is mountable at all when it lives inside the
+   *    application-data directory.** Because the sandbox's protected category is
+   *    the *store* — the database and settings — not the whole directory that
+   *    happens to contain it. A protected category drawn one level up would make
+   *    the private agent workspace unreachable by the agent it exists for, which
+   *    would have been discovered by a builder rather than decided by a
+   *    contract.
+   *  - **Why the skills mount is read-only through the sandbox.** The entries
+   *    under it are junctions into the machine-wide
+   *    {@link ProjectPaths.skillStore} ({@link LinkStrategy}), and every file
+   *    API follows a junction transparently. A read-write mount of that
+   *    directory is therefore a read-write mount of every skill on the machine,
+   *    granted to model-authored code, through a path that does not look like it
+   *    leads there. The sandbox contract refuses it rather than trusting each
+   *    caller to remember.
+   *
+   * None of this is wired. Both contracts say so in their own headers, and the
+   * value of writing the rule down before either exists is that the two halves
+   * cannot be built to disagree.
+   *
+   * **This contract defines no structure inside the workspace.** Not a memory
+   * directory, not an artifacts directory, not a context directory — the
+   * reference names all three and this file deliberately names none, because
+   * naming a path obliges someone to create it, and a path named by a contract
+   * and created by nobody is precisely the defect this project exists to
+   * eliminate. Whatever feature first needs a subdirectory declares it in its
+   * own contract, and says who creates it and when.
+   */
   readonly workspace: AbsolutePath;
   /**
    * `<root>/skills`. The mount root, a **sibling** of the workspace rather than
@@ -674,6 +822,21 @@ export type SkillMountProblem =
   | 'pathTooLong'
   /** Something already occupies the mount path and is not ours to replace. */
   | 'occupiedByUnrelatedEntry'
+  /**
+   * An earlier entry in {@link ProjectView.enabledSkills} already mounted at
+   * this path: two enabled names that are one directory under the mount
+   * volume's casing rules. **Distinct from `occupiedByUnrelatedEntry`, and the
+   * distinction is the whole reason this member exists** — there the occupant is
+   * a stranger and the repair is the user's, here the occupant is this project's
+   * own other skill and the repair is to disable one of the two. A UI told the
+   * wrong one of those tells the user to go and look at a directory that is
+   * exactly as Vela made it.
+   *
+   * The first entry in record order mounts and is not affected. See
+   * {@link ProjectView.enabledSkills} for why a write cannot normally produce
+   * this and how a record comes to hold one anyway.
+   */
+  | 'nameCollidesWithAnotherEnabledSkill'
   | 'permissionDenied';
 
 /**
@@ -709,6 +872,10 @@ export type SkillMountStatus =
  * mount still appears, with an `unavailable` status — dropping it from the list
  * would let a project silently run without a skill the user switched on, and
  * silently-wrong is the one forbidden outcome (conventions §9 rule 6).
+ *
+ * That count holds even where two enabled names are one directory: the later one
+ * is an entry with `nameCollidesWithAnotherEnabledSkill`, not a missing entry
+ * and not a second entry on the same path. See {@link ProjectView.enabledSkills}.
  */
 export interface SkillMount {
   readonly name: string;
@@ -770,90 +937,6 @@ export interface ProjectLayout {
 }
 
 /* -------------------------------------------------------------------------- */
-/* the private agent workspace — the boundary, stated                         */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The rules governing `<root>/workspace` — the private agent workspace.
- *
- * The reference calls its equivalent the "private agent workspace" and then
- * documents an access boundary that is not one: the agent has read/write to the
- * private directory *and* to the user's working directory, identically. There,
- * "private" only ever meant "not somewhere the user is expected to look", which
- * is not a boundary anyone can implement against.
- *
- * Vela draws the boundary around **durability and secrecy** instead, because
- * those are the two a builder can act on:
- *
- *  - **Creates:** the host, and only the host, inside `project_create` and on
- *    every {@link ProjectLayout} read that finds it missing.
- *  - **Writes:** the agent, freely, anywhere inside it. Also the host. Nothing
- *    else — no feature under `src/` writes here, because the renderer has no
- *    filesystem access at all (`src-tauri/capabilities/main.json` grants no
- *    `fs`) and getting one to write scratch files would be the wrong fix.
- *  - **Reads:** the agent and the host. The user may read it — it is an
- *    ordinary directory on their own disk and nothing hides it — but no Vela
- *    surface asks them to manage it, and no feature may require them to.
- *  - **Never contains:** any credential, token, key, or keychain material.
- *    Secret values live in the OS keychain and travel in one direction
- *    (conventions §0 rule 4; there is no `secrets_get` and there never will
- *    be). A secret written into a workspace file is a secret in a plaintext
- *    file inside a directory the agent can read back into a prompt.
- *  - **Never contains:** the only copy of anything. The workspace is
- *    **disposable**: deleting the entire directory must lose nothing the user
- *    authored and break nothing another surface depends on. Anything that fails
- *    that test belongs in the store or in the user's working directory.
- *
- * And one hazard specific to this layout: the workspace sits two levels below
- * the application-data directory, which also holds `vela.db`. "The agent may
- * write in its workspace" must never be implemented as "the agent may write
- * under the application-data directory". The containment check is on
- * {@link ProjectPaths.workspace}, not on its ancestors.
- *
- * ## How a sandboxed run reaches this directory — the seam, stated once
- *
- * The agent does not write here with an ambient filesystem handle. It writes
- * through `src/platform/contract-sandbox.ts`, which is deny-by-default: a run
- * sees the union of its mounts and nothing else. So "the agent may write in its
- * workspace" is implemented as *the caller mounts this one path*, and the two
- * contracts have to agree about three things or a builder guesses at all three:
- *
- *  - **What may be mounted for a run scoped to this project.** Exactly three
- *    paths, and it is the sandbox contract's `SANDBOX_PROTECTED_ROOTS` that
- *    makes the rest unreachable: this project's {@link ProjectPaths.workspace}
- *    (read-write), this project's {@link ProjectPaths.skillsMount} (**read-only,
- *    always** — see below), and the project's working directory if it has one.
- *    Another project's root is not mountable. `vela.db`, the settings, the
- *    keychain and the install are not mountable by anything, at any permission
- *    level.
- *  - **Why the workspace is mountable at all when it lives inside the
- *    application-data directory.** Because the sandbox's protected category is
- *    the *store* — the database and settings — not the whole directory that
- *    happens to contain it. A protected category drawn one level up would make
- *    the private agent workspace unreachable by the agent it exists for, which
- *    would have been discovered by a builder rather than decided by a contract.
- *  - **Why the skills mount is read-only through the sandbox.** The entries
- *    under it are junctions into the machine-wide {@link ProjectPaths.skillStore}
- *    ({@link LinkStrategy}), and every file API follows a junction
- *    transparently. A read-write mount of this directory is therefore a
- *    read-write mount of every skill on the machine, granted to model-authored
- *    code, through a path that does not look like it leads there. The sandbox
- *    contract refuses it rather than trusting each caller to remember.
- *
- * None of this is wired. Both contracts say so in their own headers, and the
- * value of writing the rule down before either exists is that the two halves
- * cannot be built to disagree.
- *
- * **This contract defines no structure inside the workspace.** Not a memory
- * directory, not an artifacts directory, not a context directory — the
- * reference names all three and this file deliberately names none, because
- * naming a path obliges someone to create it, and a path named by a contract
- * and created by nobody is precisely the defect this project exists to
- * eliminate. Whatever feature first needs a subdirectory declares it in its own
- * contract, and says who creates it and when.
- */
-
-/* -------------------------------------------------------------------------- */
 /* payloads                                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -896,7 +979,13 @@ export interface ProjectCreateReq {
   readonly instructions?: string | undefined;
   /** Omit to create a project with no working directory. */
   readonly workingDirectory?: WorkingDirectoryBinding | undefined;
-  /** Omit for none. Order is preserved and is the order mounts are reported in. */
+  /**
+   * Omit for none. Order is preserved and is the order mounts are reported in.
+   *
+   * Two entries that collide under the skills-mount volume's casing rules are
+   * `INVALID_PAYLOAD`, and nothing was created — see
+   * {@link ProjectView.enabledSkills} for why the refusal is not a dedupe.
+   */
   readonly enabledSkills?: readonly string[] | undefined;
 }
 
@@ -906,7 +995,10 @@ export interface ProjectCreateReq {
  * `enabledSkills` replaces the whole set rather than adding to it, matching
  * `StoreUpdateMessageReq`'s treatment of a message's parts in
  * `src/platform/contract.ts`: a patch that could only add would need a second
- * command to remove, and the two would race.
+ * command to remove, and the two would race. A replacement whose entries collide
+ * under the skills-mount volume's casing rules is `INVALID_PAYLOAD` and changes
+ * nothing, including the fields alongside it — see
+ * {@link ProjectView.enabledSkills}.
  *
  * Applying this re-reconciles the skills mount before returning, so a caller
  * that changes `enabledSkills` and then reads a {@link ProjectLayout} cannot
@@ -1059,5 +1151,30 @@ void _projectCommandNamesAreWellTyped;
  * the change is one a stub would notice. An edit above this line without a row
  * here is the change this block exists to make impossible to miss in review.
  *
- * (none yet)
+ * 1. 2026-08-14 — SkillMountProblem gains
+ *    'nameCollidesWithAnotherEnabledSkill', and ProjectView.enabledSkills states
+ *    the rule that produces it: two enabled names that are one directory under
+ *    the mount volume's casing rules. On Windows ['Foo', 'foo'] is two enabled
+ *    skills and one path, and nothing said which gave way — so a reconcile could
+ *    silently dedupe, misreport 'occupiedByUnrelatedEntry', or write two mounts
+ *    to one path. project_create and project_update now refuse a colliding list
+ *    with INVALID_PAYLOAD; a record that already holds a pair mounts the first
+ *    entry and reports the rest. Revisit: any consumer switching exhaustively on
+ *    SkillMountProblem, and any renderer that was case-folding this list itself
+ *    — it must not.
+ *
+ * 2. 2026-08-14 — no shape changed: three rule blocks that were doc comments
+ *    attached to no declaration are now attached to the declarations they are
+ *    about. The default project's seeding rule is on DEFAULT_PROJECT_ID; the
+ *    three INVALID_PAYLOAD path refusals and the execution seam are on
+ *    WorkingDirectoryBinding; the whole private-workspace boundary is on
+ *    ProjectPaths.workspace, and the section that held it is gone. A builder
+ *    hovering WorkingDirectoryBinding was previously shown one sentence and none
+ *    of its three refusal rules. Revisit: nothing in code; a reader who
+ *    bookmarked line numbers.
+ *
+ * 3. 2026-08-14 — no shape changed: WorkingDirectoryBinding and
+ *    ProjectPaths.workspace now name projectFilesystemScope in
+ *    src/platform/contract-sandbox.ts as the one place a run's three mounts are
+ *    built. The rule was prose in both contracts and code in neither.
  */

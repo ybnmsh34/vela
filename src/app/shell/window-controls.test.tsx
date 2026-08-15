@@ -324,7 +324,68 @@ describe('the capability grant matches the wire that was run', () => {
     readFileSync(join(process.cwd(), 'src-tauri', 'capabilities', 'main.json'), 'utf8'),
   ) as { permissions: string[] };
 
-  it('grants exactly the window commands the title bar calls', () => {
+  /**
+   * The whole grant, entry by entry, with the caller that needs each one.
+   *
+   * **This list is the assertion, and it is an exact set rather than a shape.**
+   * The previous version of this block asked only that the five window
+   * permissions the title bar calls were present, and `project-host-parity.test.ts`
+   * asks only that every entry is prefixed `core:event:` or `core:window:`.
+   * Both are satisfied by a grant that is strictly wider than this one:
+   * `core:window:allow-set-always-on-top`, `core:window:allow-set-position`,
+   * `core:window:allow-hide` and `core:event:allow-emit-to` were added together
+   * to `main.json` and neither test moved. A window permission is not harmless
+   * because it is a window permission — `allow-hide` alone would let the
+   * renderer hide the only window this app has, and `tauri.conf.json` declares
+   * one window and no tray icon, so nothing would be left to bring it back.
+   *
+   * So the granted set must equal this list exactly. Adding a permission to
+   * `main.json` fails here; removing one fails here. Widening the grant is
+   * still possible, but only by editing this list in the same commit, which is
+   * the review this file exists to force.
+   *
+   * This file owns the exact set rather than `src/platform/project-host-parity.test.ts`
+   * because this is the file that can say *why* each entry is granted: the
+   * callers are the seam in `src/platform/tauri-adapter.ts` and the drag region
+   * in `src/app/shell/TitleBar.tsx`, both of which are under test here. That
+   * other file keeps its prefix check, which is not this assertion said twice:
+   * it fails on any plugin-namespaced permission — `fs:`, `dialog:`, `shell:`,
+   * `http:` and anything else that is not `core:` — without anyone having to
+   * update a list, so it still bites in a commit that edits this list too.
+   */
+  const GRANTED_PERMISSIONS = [
+    // Every host push the renderer consumes — `chat:event` and `sandbox:event`,
+    // the two named in `src/platform/adapter.ts` — through `listen` in
+    // `tauri-adapter.ts`, plus the window's own `onResized` subscription.
+    'core:event:default',
+    // The drag region in `TitleBar.tsx`. Tauri's injected script turns a
+    // mousedown over `data-tauri-drag-region` into `"start_dragging"`.
+    'core:window:allow-start-dragging',
+    // The three title-bar buttons, plus the state read the maximise button
+    // needs so its icon reflects the window rather than the click.
+    'core:window:allow-minimize',
+    'core:window:allow-toggle-maximize',
+    'core:window:allow-is-maximized',
+    'core:window:allow-close',
+  ];
+
+  it('grants these permissions and nothing else', () => {
+    expect([...capabilities.permissions].sort()).toEqual([...GRANTED_PERMISSIONS].sort());
+  });
+
+  it('read a real grant, not an empty one', () => {
+    // The control. A `main.json` that lost its `permissions` key, or a
+    // `process.cwd()` that is not the repository root, must not turn the
+    // comparison above into two empty lists agreeing.
+    //
+    // No count is pinned here on purpose: a number would be a second copy of
+    // the list's length and would fail on every deliberate widening, which is
+    // the one case the exact set above is meant to let through under review.
+    expect(GRANTED_PERMISSIONS.length).toBeGreaterThan(0);
+    expect(capabilities.permissions.length).toBeGreaterThan(0);
+
+    // And the five the title bar actually calls, pinned by name rather than by
+    // membership of the list above, so that deleting one from both still fails.
     for (const permission of [
       'core:window:allow-minimize',
       'core:window:allow-toggle-maximize',
@@ -344,6 +405,12 @@ describe('the capability grant matches the wire that was run', () => {
     // two toggles on one double click — and the second one would arrive with no
     // state re-read behind it. If a future capability edit adds it, delete the
     // renderer's handler in the same commit.
+    //
+    // Kept even though the exact set above already excludes these two: this one
+    // is absolute. Adding `core:window:allow-internal-toggle-maximize` to both
+    // `main.json` and `GRANTED_PERMISSIONS` keeps the set comparison green and
+    // still fails here, which is the point — these two are not a matter of
+    // review, they are a matter of the renderer already owning the gesture.
     expect(capabilities.permissions).not.toContain('core:window:allow-internal-toggle-maximize');
     expect(capabilities.permissions).not.toContain('core:window:default');
   });

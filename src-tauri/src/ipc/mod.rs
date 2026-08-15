@@ -49,7 +49,14 @@
 //!   command in one place only will fail `cargo test` — which was not true
 //!   before `tests/handler_binding.rs`, though this file said it was.
 //! * **Secret values move in one direction only.** There is no command that
-//!   returns secret material, and adding one is a review-blocking change.
+//!   returns secret material, and adding one is a review-blocking change. The
+//!   part of that a machine holds is
+//!   [`tests::a_secret_value_cannot_be_serialised_into_any_response`]:
+//!   `vela_core::secret::SecretValue` has no `Serialize` impl, so a command
+//!   returning one does not compile. The part a machine cannot hold is a
+//!   command that calls `expose` and returns a `String`; the name check in
+//!   [`tests::no_command_returns_secret_material`] is the second line there,
+//!   and review is the first.
 
 pub mod app;
 pub mod chat;
@@ -219,14 +226,111 @@ mod tests {
         assert_eq!(unique.len(), COMMAND_ALLOWLIST.len());
     }
 
+    /// Verbs that would make a `secrets_*` command a **read**.
+    ///
+    /// Written down rather than derived, because the rule is about intent and a
+    /// reviewer has to be able to check it by reading. Absent on purpose:
+    /// "set", "delete" and "status", which are the three commands that exist,
+    /// and which the control in [`no_command_returns_secret_material`] pins so
+    /// this list cannot pass by forbidding the whole domain.
+    const SECRET_READ_VERBS: &[&str] =
+        &["get", "read", "reveal", "export", "show", "fetch", "dump"];
+
+    /// Whether a type implements [`Serialize`], answered by the compiler.
+    ///
+    /// Rust has no negative trait bounds, so this is the ordinary
+    /// inherent-beats-trait method resolution: the inherent `is_serialize` on
+    /// `Probe<T>` exists only where `T: Serialize`, and where that bound does
+    /// not hold the inherent candidate is rejected and lookup finds the blanket
+    /// trait method, which answers `false`.
+    mod serialize_probe {
+        use std::marker::PhantomData;
+
+        pub struct Probe<T>(pub PhantomData<T>);
+
+        pub trait NotSerialize {
+            fn is_serialize(&self) -> bool {
+                false
+            }
+        }
+
+        impl<T> NotSerialize for Probe<T> {}
+
+        impl<T: serde::Serialize> Probe<T> {
+            pub fn is_serialize(&self) -> bool {
+                true
+            }
+        }
+    }
+
+    #[test]
+    fn a_secret_value_cannot_be_serialised_into_any_response() {
+        // **This is the real guard behind the one-way rule**, and it is a type
+        // rather than a list. `vela_core::secret::SecretValue` derives
+        // `Deserialize` — a credential has to arrive from somewhere — and
+        // deliberately not `Serialize`. Every `#[tauri::command]` return type
+        // must be serialisable, so a command answering with a `SecretValue`, or
+        // with any struct holding one, does not compile. No allowlist edit can
+        // reach past that.
+        use serialize_probe::{NotSerialize as _, Probe};
+        use std::marker::PhantomData;
+        use vela_core::secret::SecretValue;
+
+        // The control, and the only reason the line below means anything: a
+        // probe that could not see `Serialize` at all would answer `false` for
+        // every type on earth. `SecretsStatusRes` is a real command response and
+        // must come back `true`.
+        assert!(
+            Probe::<secrets::SecretsStatusRes>(PhantomData).is_serialize(),
+            "the probe cannot detect a `Serialize` impl, so its verdict below is worthless"
+        );
+
+        assert!(
+            !Probe::<SecretValue>(PhantomData).is_serialize(),
+            "`SecretValue` has gained a `Serialize` impl; a credential can now be \
+             returned from a command, and nothing else in this file would notice"
+        );
+    }
+
     #[test]
     fn no_command_returns_secret_material() {
-        // Structural guard for the one-way rule. `secrets_get` must never
-        // appear; anything needing a secret value runs in Rust.
+        // The **second** line, not the first. The comment here used to call a
+        // single `contains(&"secrets_get")` a structural guard for the one-way
+        // rule; it was one string, and a name like "secrets_reveal" walked past
+        // it. What actually forbids a credential-carrying response is the type,
+        // in [`a_secret_value_cannot_be_serialised_into_any_response`] above.
+        //
+        // This still earns its place, because that type is not the whole rule.
+        // `SecretValue::expose` hands out a `&str`, so a command that copied the
+        // credential into a `String` and returned that would compile perfectly
+        // well. Nothing here can see that. What it can see is the name such a
+        // command would have to be given, and a name is what a reviewer reads
+        // first.
         assert!(
             !COMMAND_ALLOWLIST.contains(&"secrets_get"),
             "secret values must never cross the IPC boundary toward the renderer"
         );
+
+        for name in COMMAND_ALLOWLIST {
+            let Some(verb) = name.strip_prefix("secrets_") else {
+                continue;
+            };
+            let head = verb.split('_').next().unwrap_or(verb);
+            assert!(
+                !SECRET_READ_VERBS.contains(&head),
+                "`{name}` reads secret material; the renderer may write, delete \
+                 and ask whether one exists, never read"
+            );
+        }
+
+        // The control. The loop above is also satisfied by a `secrets_` domain
+        // with nothing in it, which is a different and much weaker claim.
+        for name in ["secrets_set", "secrets_delete", "secrets_status"] {
+            assert!(
+                COMMAND_ALLOWLIST.contains(&name),
+                "`{name}` is gone, so the loop above ranged over nothing"
+            );
+        }
     }
 
     #[test]

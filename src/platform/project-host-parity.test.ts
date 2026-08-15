@@ -84,6 +84,7 @@ import {
   PROJECT_INSTRUCTIONS_MAX_CHARS,
   PROJECT_NAME_MAX_CHARS,
 } from './contract-project';
+import { declaredCommandsIn } from './declared-commands';
 
 /* -------------------------------------------------------------------------- */
 /* the TypeScript half — closed by the compiler                               */
@@ -611,48 +612,6 @@ const everyDeclaredProjectCommandIsListed: [CommandsMissingFromTheList] extends 
   ? true
   : ['this command is declared but not listed', CommandsMissingFromTheList] = true;
 void everyDeclaredProjectCommandIsListed;
-
-/**
- * The member names of one `export interface` in a TypeScript source, in
- * declaration order.
- *
- * Line-oriented like {@link parseRustItem}, but **without that function's
- * safety net**: `pnpm verify` runs `cargo fmt --all --check` over the crate, so
- * the Rust shape is machine-enforced, and this repository has no formatter or
- * linter for TypeScript at all — `package.json` has neither, and `pnpm verify`
- * is typecheck, `cargo` and tests. So this assumes only what it must and catches
- * itself when the assumption breaks: the interface's closing `}` is in column 0
- * and each member begins its own line. Brace depth is tracked, so a member whose
- * payload type is written across several lines is read as one member and its
- * inner field names are not read as commands; doc-comment lines are dropped,
- * because `project_reconcile_skills` carries one.
- *
- * If the shape ever stops holding, this throws or returns fewer members, and the
- * control below — which asserts a known member is present and that the parser
- * finds a multi-line member in a fabricated interface — fails rather than
- * letting the comparison degrade into two empty lists agreeing.
- */
-function declaredCommandsIn(source: string, name: string): readonly string[] {
-  const at = source.search(new RegExp(`^export interface ${name} \\{$`, 'm'));
-  if (at < 0) throw new Error(`project-host-parity: no \`export interface ${name}\``);
-
-  const lines = source.slice(at).split(/\r?\n/).slice(1);
-  const end = lines.indexOf('}');
-  if (end < 0) throw new Error(`project-host-parity: unterminated ${name}`);
-
-  const members: string[] = [];
-  let depth = 0;
-  for (const line of lines.slice(0, end)) {
-    const text = line.trim();
-    if (text.startsWith('//') || text.startsWith('/*') || text.startsWith('*')) continue;
-    if (depth === 0) {
-      const member = /^([A-Za-z_][A-Za-z0-9_]*)\s*[?]?:/.exec(text);
-      if (member?.[1] !== undefined) members.push(member[1]);
-    }
-    depth += (text.match(/\{/g) ?? []).length - (text.match(/\}/g) ?? []).length;
-  }
-  return members;
-}
 
 const CONTRACT_PROJECT = readFileSync(
   join(process.cwd(), 'src', 'platform', 'contract-project.ts'),

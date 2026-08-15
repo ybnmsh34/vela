@@ -29,8 +29,8 @@ first, or the reclaim silently does not happen.
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
-| `src/platform/contract.test.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts`, `src-tauri/src/ipc/mod.rs` | Wave 1 / B7 | 2026-08-15 | three guards that do not bite: a shape-not-exact-set capability assertion, a hand-written contract key list, a one-string secrets check |
 | `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
+| `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 
 ## Released
 
@@ -46,6 +46,7 @@ first, or the reclaim silently does not happen.
 | `src-tauri/crates/vela-sandbox/**` | `4949578` (`fix/sandbox-process-limit`) | per-run process limit via cgroup v2 `pids.max`. `RLIMIT_NPROC` is per-uid, so a second concurrent run forked **zero**. Landed gate 2 green for the first time |
 | `src-tauri/crates/vela-skills/src/{mount,enablement}.rs` | `730eca5` (`fix/dead-skill-mount`) | deleted, 1237 lines with no caller. The parity test guarding them also guarded live types, so it was split and renamed rather than repointed |
 | `src-tauri/rust-toolchain.toml`, `src-tauri/tauri.conf.json`, `docs/release-posture.md` | `9baf471` (`fix/real-bundle`) | `bundle.icon` had no `.ico`, so `targets: "all"` produced nothing behind a green build. Pin verified inert for both gates. **No `reaches-user` grade** — the install landed in the MSIX container |
+| `src/platform/contract.test.ts`, `src/app/shell/window-controls.test.tsx`, `src-tauri/src/ipc/mod.rs` | `fix/guards-that-bite` | Three guards that did not bite, each hole measured at the base first. The capability grant was a **prefix shape**, so four new `core:window:` permissions passed 38/38. `contract.test.ts` checked exhaustiveness against a **hand-typed** key list. The secrets guard was one string, so `secrets_reveal` passed. Both secrets guards turn out to be real at different strengths, and the **limit is measured**: a command returning `SecretValue` is refused, one returning `String` from `expose()` compiles cleanly |
 | `src/platform/claimed-guards.test.ts` | `fix/guard-tokeniser-phase` | Fixed twice: the first fix kept a cursor and kept a hole, the second removed the cursor. A regex tokeniser's cursor has a phase, and **anything the pattern declines takes the phase with it** — so it now `split`s on backticks and matches nothing. Nine claims surfaced across both fixes, all real. An exhaustive differential over 2,441,406 strings found zero disagreements with a reference |
 
 ## Rules

@@ -14,6 +14,9 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
 | `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps |
+| `C:/Users/User/vela-w2-harness` | `wave2/click-harness` | Wave 2 / click harness |
+| `C:/Users/User/vela-w2-sched` | `wave2/schedules-surface` | Wave 2 / schedules |
+| `C:/Users/User/vela-w2-proj` | `wave2/project-instructions` | Wave 2 / projects |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -32,6 +35,7 @@ first, or the reclaim silently does not happen.
 | `src/features/models/EndpointsPanel.test.tsx`, `src/features/models/ModelWorkspace.test.tsx`, `src/app/modal-containment.test.tsx`, `src/app/memory-payload.test.tsx`, `src/features/conversation/ConversationSurface.test.tsx` | Wave 1 / load flake | 2026-08-15 | the load flake: `userEvent`'s per-input-step scheduler tick and cold `import('@/app/App')` inside a test body |
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 | `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
+| `tests/harness/desktop-click/**` | Wave 2 / click harness | 2026-08-15 | **new directory, nothing existing touched.** The scriptable way to launch Vela, click its real UI and read what it shows. `docs/desktop-gate/OWNERSHIP.md` edited for this row and the worktree table only |
 
 ## Released
 

@@ -591,9 +591,36 @@ ACE count : 6
 ```
 
 A handle that resolves to the real object is a handle on the real object, and
-everything read through it — owner, group, DACL — is real. `fix/appdata-owner-only`
-is hardening exactly this ACL; its measurements are unaffected by anything in
-this section.
+everything read through it — owner, group, DACL — is real.
+
+**That covers the root directory and nothing else.** `fix/appdata-owner-only`
+is hardening this ACL, and the honest scope of the reassurance is one clause:
+**its measurement of this directory's own ACL is unaffected; its measurements
+of the children inside it are not.** An earlier revision of this document said
+its measurements were "unaffected by anything in this section", which is
+broader than the data licenses.
+
+The nine objects recorded in that track's
+`docs/desktop-gate/evidence/appdata-root-acl/real-appdata-before.txt` were each
+resolved:
+
+```
+REAL       <root dev.vela.desktop>          REAL       skills
+CONTAINER  diagnostics                      CONTAINER  vela.db
+CONTAINER  vela.db-shm                      CONTAINER  vela.db-shm.pre-cleanup-20260815
+CONTAINER  vela.db-wal                      CONTAINER  vela.db-wal.pre-cleanup-20260815
+CONTAINER  vela.db.pre-cleanup-20260815
+
+REAL=2  CONTAINER=7   (of 9)
+```
+
+**Seven of the nine are objects this section says cannot be trusted.** The
+second entry is the sharp one: `diagnostics` is recorded there with
+`AreAccessRulesProtected : True` and annotated as hardened by an earlier fix,
+and `diagnostics` resolves into the container — so that particular hardening
+evidence may describe a container copy rather than the user's directory. This
+has been routed to that track directly, because it is a finding for them rather
+than a footnote here.
 
 ### A related documentation defect, not fixed here
 

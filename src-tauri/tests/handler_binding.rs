@@ -21,7 +21,9 @@
 //! Reachability is not read out of the source at all. [`Probe`] builds the real
 //! application with [`vela_lib::configure`] — the same function `run()` calls —
 //! on `tauri::test`'s mock runtime, and asks the assembled `invoke_handler`
-//! itself, one command name at a time, through `tauri://localhost`. The answer
+//! itself, one command name at a time, from the app's own origin (see
+//! [`Probe::own_origin`], and note that it is *asked of the app*, not assumed —
+//! assuming it silently disabled this whole file on Windows). The answer
 //! comes from the macro's own dispatch table. Tauri rejects an unregistered
 //! command with the exact string `Command {name} not found`
 //! (`tauri::webview::Webview::on_message`), and
@@ -357,8 +359,18 @@ impl Probe {
         let app = {
             let _guard = build_lock();
             std::env::set_var("XDG_DATA_HOME", home.path());
+            // `app_data_dir()` is `dirs::data_dir().join(&config.identifier)`,
+            // and `$XDG_DATA_HOME` only moves the first half — on Windows that
+            // half is `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`, which no
+            // environment variable can redirect, so this probe would otherwise
+            // open the user's real `%APPDATA%\dev.vela.desktop`. An absolute
+            // identifier replaces the base (`Path::join` semantics) and lands
+            // the whole thing in the temporary directory on every platform.
+            let mut context = tauri::generate_context!();
+            context.config_mut().identifier =
+                home.path().join("app-data").to_string_lossy().into_owned();
             let mut app = vela_lib::configure(mock_builder())
-                .build(tauri::generate_context!())
+                .build(context)
                 .expect("the shipping composition root must assemble");
             // `build` does not run `setup`; one event-loop iteration does, and
             // that is what the shipping process does on its first turn.
@@ -376,6 +388,31 @@ impl Probe {
         }
     }
 
+    /// **The app's own origin, asked of the app rather than assumed.**
+    ///
+    /// This was the literal `tauri://localhost`. That is the custom-protocol
+    /// URL on Linux and macOS only: Tauri's own protocol URL — its internal
+    /// "tauri_protocol_url" — is `http://tauri.localhost` under
+    /// `cfg!(windows)`, because custom schemes are tunnelled through http
+    /// there. A request from any other origin is
+    /// remote content, and Tauri applies the capability ACL to it *before*
+    /// consulting the dispatch table — so on Windows every probe here was
+    /// answered `… not allowed. Plugin not found` by the ACL, which
+    /// [`Probe::dispatch`] cannot distinguish from a command that ran. That
+    /// makes both direction tests pass on an app that registered nothing,
+    /// which is precisely the vacuity
+    /// [`the_probe_can_tell_a_registered_command_from_an_unregistered_one`]
+    /// exists to forbid — and it is the control that caught this.
+    ///
+    /// Asking the webview is not just a portable spelling of the constant: it
+    /// is the URL the real renderer posts from, in dev and in release, on every
+    /// platform, so it cannot drift from Tauri's own rule again.
+    fn own_origin(&self) -> tauri::Url {
+        self.webview
+            .url()
+            .expect("the assembled app's webview must report its own URL")
+    }
+
     /// Asks the assembled `invoke_handler` about one name, from the app's own
     /// origin, in the renderer's own envelope.
     ///
@@ -390,7 +427,7 @@ impl Probe {
                 cmd: command.into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "tauri://localhost".parse().unwrap(),
+                url: self.own_origin(),
                 body: tauri::ipc::InvokeBody::Json(json!({ "payload": {} })),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),

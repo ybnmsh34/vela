@@ -208,8 +208,13 @@ impl RunningApp {
         let (app, data_dir) = {
             let _guard = build_lock();
             std::env::set_var("XDG_DATA_HOME", data_home);
+            // The half of `app_data_dir()` that no OS API owns — see
+            // `isolated_identifier`. This, not `XDG_DATA_HOME`, is what keeps
+            // the test off the user's real database on Windows.
+            let mut context = tauri::generate_context!();
+            context.config_mut().identifier = isolated_identifier(data_home);
             let mut app = vela_lib::configure(mock_builder())
-                .build(tauri::generate_context!())
+                .build(context)
                 .expect("the shipping composition root must assemble");
             // `build` does not run `setup`; `run`/`run_iteration` does, and
             // `run` never returns. One iteration is what the shipping process
@@ -252,6 +257,30 @@ impl RunningApp {
         }
     }
 
+    /// **The app's own origin, asked of the app rather than assumed.**
+    ///
+    /// Anything else is a REMOTE origin, and the host must — and does — refuse
+    /// to dispatch a command for it. See `a_remote_origin_cannot_reach_a_command`.
+    ///
+    /// This used to be the literal `tauri://localhost`, with a comment saying
+    /// "on Linux the custom protocol is …". It is not that string on Windows.
+    /// Tauri's own protocol URL — its internal "tauri_protocol_url" — is
+    /// `http://tauri.localhost` under `cfg!(windows)`, because custom schemes
+    /// are tunnelled through http there. So every request this harness made on
+    /// Windows arrived as remote content, and the ACL refused all 48 commands
+    /// before the dispatch table was ever consulted. Nobody saw it: the binary
+    /// could not load at all on Windows (see `build.rs`), so this file had
+    /// never executed on the platform whose answer it hardcoded.
+    ///
+    /// Asking the webview is not merely a portable spelling of the constant —
+    /// it is the same URL the real renderer posts from, in dev and in release,
+    /// on every platform, so it cannot drift from Tauri's own rule again.
+    fn own_origin(&self) -> tauri::Url {
+        self.webview
+            .url()
+            .expect("the assembled app's webview must report its own URL")
+    }
+
     /// Invokes a command **by name**, exactly as the renderer does.
     ///
     /// Returns the command's `Ok` value, or the serialised `IpcError`.
@@ -262,11 +291,7 @@ impl RunningApp {
                 cmd: command.into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                // The app's own origin. On Linux the custom protocol is
-                // `tauri://localhost`; anything else is a REMOTE origin, and
-                // the host must — and does — refuse to dispatch a command for
-                // it. See `a_remote_origin_cannot_reach_a_command`.
-                url: "tauri://localhost".parse().unwrap(),
+                url: self.own_origin(),
                 body: tauri::ipc::InvokeBody::Json(json!({ "payload": payload })),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
@@ -394,6 +419,35 @@ fn turn(provider_id: &str, text: &str) -> Value {
 
 fn temp_home() -> tempfile::TempDir {
     tempfile::tempdir().expect("a temporary data home")
+}
+
+/// **Where this test's app keeps its data — isolation that works on Windows.**
+///
+/// `PathResolver::app_data_dir` is `dirs::data_dir().join(&config.identifier)`,
+/// and only the first half of that is redirectable by environment: on Linux
+/// `dirs::data_dir()` reads `$XDG_DATA_HOME`, which is what these tests set. On
+/// **Windows it is `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`** — an OS
+/// call that consults no environment variable at all. So on Windows the
+/// redirect did nothing, and every app built here opened the *real*
+/// `%APPDATA%\dev.vela.desktop`: the user's own database, shared with a running
+/// Vela and with every other test in this file. That is how
+/// `the_pre_fix_wiring_still_reproduces_not_found_on_demand` came to fail — the
+/// `ghost` provider it writes to "a database the live set has never been told
+/// about" was still in the real database from an earlier run, so startup had
+/// already loaded it and the pre-fix symptom could not be reproduced.
+///
+/// Nobody had seen this, because these binaries could not load on Windows at
+/// all until `build.rs` gained the application manifest.
+///
+/// So isolation comes from the other half of the path instead, which no OS API
+/// owns. `Path::join` replaces the base when the argument is absolute, so an
+/// absolute identifier resolves `app_data_dir()` to exactly this directory on
+/// every platform — no `cfg` fork, and the app-config, app-cache and app-log
+/// directories follow it. It is derived from `home` rather than randomised
+/// because `a_turn_written_through_the_shipping_commands_survives_a_cold_restart`
+/// starts two apps on one home and requires them to find the same database.
+fn isolated_identifier(home: &std::path::Path) -> String {
+    home.join("app-data").to_string_lossy().into_owned()
 }
 
 /* ========================================================================== */
@@ -668,7 +722,7 @@ fn a_command_outside_the_allowlist_is_not_dispatchable() {
 }
 
 /// **The origin control.** Remote content must not be able to reach a Vela
-/// command. This is the counterpart to the assertion that `tauri://localhost`
+/// command. This is the counterpart to the assertion that the app's own origin
 /// *can*: without it, the whole file could be passing because the host
 /// dispatches for anyone who asks.
 #[test]
@@ -679,7 +733,7 @@ fn a_remote_origin_cannot_reach_a_command() {
     // The identical command, identical payload, identical invoke key — only
     // the origin differs.
     assert!(
-        app.invoke_from("tauri://localhost", "app_info", json!({}))
+        app.invoke_from(app.own_origin().as_str(), "app_info", json!({}))
             .is_ok(),
         "the app's own origin must be able to call its own commands"
     );

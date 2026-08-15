@@ -30,7 +30,17 @@
 //!    rule, not a proxy, no interface but a down loopback. `--pid` plus
 //!    `--kill-child` is what makes teardown total: when the namespace's PID 1
 //!    dies the kernel reaps every descendant, so a double-forked grandchild has
-//!    nowhere to survive.
+//!    nowhere to survive. Of that pair, **`--pid` is the one carrying the
+//!    guarantee on this machine**, measured rather than argued: delete
+//!    `--kill-child` from the launcher and a `setsid`-detached grandchild of a
+//!    cancelled run is still reaped; delete `--pid` and leave `--kill-child`
+//!    in, and the same grandchild is still alive in the VM half a minute later,
+//!    still appending to a file on the user's disk. `--kill-child` covers the
+//!    case where `unshare` itself dies without its child noticing, which WSL's
+//!    own relay teardown appears to cover as well; it stays, because a second
+//!    mechanism for the same guarantee costs one argument.
+//!    `cancelling_stops_the_run_and_reaches_every_descendant` is the test that
+//!    holds this, and deleting `--pid` is the mutation it fails on.
 //!  - `mount --make-rprivate /` — so the unmounts below do not propagate out of
 //!    this namespace and break the user's own WSL session.
 //!  - the granted directories are bind-mounted **before** `/mnt` is taken away,
@@ -51,12 +61,20 @@
 //!    at once.
 //!  - the rootfs is remounted read-only, so the distribution the user shares
 //!    with this run cannot be modified by it.
+//!  - `prlimit --nproc=N:N` — `RLIMIT_NPROC`, set on the last process that is
+//!    still root and inherited across the `setpriv` beside it, so it is already
+//!    in force for the first instruction the program runs. It is `prlimit` and
+//!    not `ulimit -u` because the script is parsed by `/bin/sh`, which on Ubuntu
+//!    is dash, and dash's `ulimit` has no `-u`. See `report()` for what this
+//!    limit does and does not bound.
 //!  - `setpriv --reuid --regid --clear-groups --no-new-privs` — the run is uid
 //!    65534 with no supplementary groups and `PR_SET_NO_NEW_PRIVS`, which is the
 //!    kernel-level privilege denial the reference product's fix added. `sudo`
 //!    and `su` cannot raise privileges regardless of how they are invoked,
 //!    because the kernel refuses the setuid bit rather than because a list was
-//!    consulted.
+//!    consulted. Dropping to an unprivileged uid is also what makes the
+//!    `RLIMIT_NPROC` above bite: the kernel exempts `CAP_SYS_RESOURCE` from it,
+//!    so a run that stayed root would carry the limit and ignore it.
 //!
 //! **No part of the program's text is examined by any of this**, and no shell
 //! ever parses it: it is base64-encoded on the way in and decoded to a file the
@@ -174,7 +192,32 @@ impl WslBackend {
                 // Counted host-side; one `truncated` event, then output is
                 // dropped and the program runs on.
                 output_bytes: EnforcementLevel::Supervisor,
-                // `RLIMIT_NPROC`, set before privileges are dropped.
+                // `RLIMIT_NPROC`, set by `prlimit` on the last root process and
+                // inherited across the `setpriv` that drops to uid 65534. The
+                // kernel refuses the `fork` itself; nothing here consults a
+                // list, and the program's own `ulimit -u` reports the number.
+                //
+                // **What it counts is per-uid, not per-run**, and that is worth
+                // stating because it is the one place this number can surprise
+                // a caller. `RLIMIT_NPROC` is checked against the live process
+                // count for the *real uid* in the process's user namespace, and
+                // this backend does not unshare a user namespace — so the
+                // budget is over every uid-65534 process in the WSL VM, which
+                // means concurrent runs share it. Measured, two namespaces at
+                // `--nproc=8` each: nine live processes between them, not
+                // sixteen. That direction is the safe one — a run can be cut
+                // off below its own number but never above it — so the bound
+                // this field claims holds. It is not a per-run quota.
+                //
+                // A cgroup v2 `pids.max` would be exactly per-run, and it was
+                // measured here rather than assumed: it works, but only after
+                // writing `+pids` into the *root* cgroup's `subtree_control` in
+                // the distribution the user is also using, plus a per-run
+                // directory under `/sys/fs/cgroup` that a `SIGKILL`-ed run
+                // leaves behind. This file already has one regression from
+                // reaching outside the namespace into the user's live Ubuntu
+                // (see the interlock in `guest_script`); an rlimit reaches
+                // outside nothing and dies with the process.
                 processes: EnforcementLevel::Kernel,
                 // The scratch tmpfs is sized from this number, which is a real
                 // kernel bound on scratch writes — but it says nothing about
@@ -319,10 +362,6 @@ impl WslBackend {
         );
 
         push(&mut lines, format!("cd {}", sh_quote(&plan.working_directory)));
-        push(
-            &mut lines,
-            format!("ulimit -u {} 2>/dev/null || true", plan.limits.processes),
-        );
 
         // Confinement is established. Everything after this line runs as the
         // sandbox uid.
@@ -352,11 +391,29 @@ impl WslBackend {
         // observed result was `/bin/bash /vela/programfed-in`, the program path
         // with the first line of stdin welded onto it. Redirecting on the `exec`
         // that replaces the shell means the shell never reads again.
+        //
+        // **`prlimit` is on this line and not on one of its own, for the same
+        // class of reason.** The process limit has to be in force before the
+        // first instruction of the program runs, and it has to be set while
+        // this process is still root — the kernel exempts `CAP_SYS_RESOURCE`
+        // from `RLIMIT_NPROC`, so a limit set after `setpriv` would be set by
+        // somebody who cannot then be held to it. `prlimit` sets the rlimit on
+        // itself and `execvp`s the rest of the line, adding no process and no
+        // window between the two. The line it replaced was
+        // `ulimit -u N 2>/dev/null || true`, which enforced nothing at all:
+        // this script is parsed by `/bin/sh`, Ubuntu's `/bin/sh` is dash,
+        // dash's `ulimit` has no `-u`, and `2>/dev/null || true` ate
+        // `ulimit: Illegal option -u` before `set -e` could see it. Measured
+        // through `SandboxHost` with `processes: 8`, that run reported
+        // `ulimit -u` = 127929 and forked 300 processes without an error; with
+        // the line below it reports 8 and the ninth fork is refused.
         push(
             &mut lines,
             format!(
-                "exec setpriv --reuid={SANDBOX_UID} --regid={SANDBOX_GID} --clear-groups \
-                 --no-new-privs -- /usr/bin/env -i{env_args} {interpreter} /vela/program 0<&3 3<&-"
+                "exec /usr/bin/prlimit --nproc={processes}:{processes} -- \
+                 setpriv --reuid={SANDBOX_UID} --regid={SANDBOX_GID} --clear-groups \
+                 --no-new-privs -- /usr/bin/env -i{env_args} {interpreter} /vela/program 0<&3 3<&-",
+                processes = plan.limits.processes
             ),
         );
 
@@ -594,6 +651,59 @@ mod tests {
             "the interlock must come first, or a launcher that lost its \
              `unshare` unmounts the user's drives before anything notices"
         );
+    }
+
+    /// **The claim in `report()` that spent its life untested.**
+    ///
+    /// `processes` is the only limit this backend reports at `kernel` strength,
+    /// and the line behind it used to be `ulimit -u N 2>/dev/null || true` in a
+    /// script parsed by dash, whose `ulimit` has no `-u`. It printed
+    /// `ulimit: Illegal option -u` into `/dev/null` and the run went on with
+    /// `RLIMIT_NPROC` at 127929. Nothing in this file could have noticed,
+    /// because nothing in this file looked.
+    ///
+    /// The integration test
+    /// `a_forking_program_cannot_exceed_the_process_limit_it_was_granted` is
+    /// the one that measures the kernel actually refusing the fork. This one is
+    /// the cheap half: the *shape* the measurement depends on.
+    #[test]
+    fn the_process_limit_is_set_while_still_root_and_never_by_dashs_ulimit() {
+        let mut eight = plan();
+        eight.limits.processes = 8;
+        let script = WslBackend::for_distro("Ubuntu").guest_script(&eight);
+
+        assert!(
+            !script.contains("ulimit"),
+            "the script is parsed by `/bin/sh`, which is dash on Ubuntu, and dash's \
+             `ulimit` has no `-u`. Spelling the process limit that way reports \
+             `kernel` and enforces nothing:\n{script}"
+        );
+        assert!(
+            script.contains("--nproc=8:8"),
+            "the limit must carry the granted number, soft and hard:\n{script}"
+        );
+
+        // Order, not just presence. `RLIMIT_NPROC` is not checked for a process
+        // holding `CAP_SYS_RESOURCE`, so a limit set after the drop to uid
+        // 65534 would be set by somebody the kernel then declines to hold to
+        // it — and the run would look limited and not be.
+        let prlimit = script.find("prlimit").expect("the limit is set");
+        let setpriv = script.find("setpriv").expect("privileges are dropped");
+        let program = script
+            .find("/vela/program 0<&3")
+            .expect("the program is executed");
+        assert!(
+            prlimit < setpriv && setpriv < program,
+            "`prlimit` must wrap `setpriv`, which must wrap the program: the limit has \
+             to be in force before the first instruction of the program runs, and it has \
+             to be set by a process that still has the privilege to set it:\n{script}"
+        );
+
+        // And it tracks the plan rather than a constant.
+        let mut three = plan();
+        three.limits.processes = 3;
+        let three = WslBackend::for_distro("Ubuntu").guest_script(&three);
+        assert!(three.contains("--nproc=3:3"), "{three}");
     }
 
     #[test]

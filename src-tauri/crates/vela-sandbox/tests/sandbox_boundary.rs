@@ -430,13 +430,79 @@ fn stdin_reaches_the_program_and_is_then_closed() {
     assert_eq!(stdout, "fed-in\n[eof]\n");
 }
 
+/// **What "reaches every descendant" costs to actually check.**
+///
+/// The version of this test that shipped asked a run to `echo alive; sleep 120;
+/// echo NEVER` and asserted `!stdout.contains("NEVER")`. That assertion is about
+/// a pipe the host stops reading at the moment it cancels, so a descendant that
+/// survived and printed forever would satisfy it — and the whole descendant
+/// clause of the name rode on it. Removing `--kill-child` from the launcher left
+/// it green.
+///
+/// So the descendant is now watched on two channels that have nothing to do with
+/// the run's own pipes, and both have a control that fails if the channel is
+/// blind:
+///
+///  - a `setsid`-detached grandchild, reparented away from the shell and out of
+///    the launcher's process group, appending to a file in a `readWrite` grant —
+///    which is a real directory on the user's Windows disk. The test reads that
+///    file with `std::fs`, from outside the VM entirely.
+///  - `ps` in the WSL VM's **init** PID namespace, which is the parent of the
+///    run's, listing the grandchild by a marker in its command line. PID
+///    namespaces are hierarchical, so a process that survived is visible there
+///    whatever it does with its output.
+///
+/// The controls are the point: before cancelling, the file must be observed
+/// growing *and* the marker must be observed in `ps`. A test that only looked
+/// afterwards would pass on a machine where the grandchild never started.
+///
+/// **The mutation this version fails on is deleting `--pid`, not
+/// `--kill-child`.** Both were tried. Without `--kill-child` the grandchild is
+/// still reaped here — the PID namespace collapsing is what does it, and WSL's
+/// relay teardown covers the case `--kill-child` was added for — so the
+/// guarantee holds and this test is right to stay green. Without `--pid` the
+/// grandchild outlives the run and keeps writing to the user's disk, and this
+/// test says so.
 #[test]
 fn cancelling_stops_the_run_and_reaches_every_descendant() {
     let Some(backend) = boundary_backend() else {
         return;
     };
+    let distro = backend.distro().to_string();
+    let marker = format!(
+        "VELA-ORPHAN-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    );
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let beat = temp.path().join("beat");
+    let mounts = vec![Mount {
+        host_path: temp.path().to_string_lossy().into_owned(),
+        guest_path: "/work".into(),
+        mode: MountMode::ReadWrite,
+        materialisation: MountMaterialisation::Bind,
+    }];
+
     let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
-    let request = submit_of("echo alive; sleep 120; echo NEVER");
+    // The grandchild double-detaches: `setsid` gives it its own session and
+    // process group, `&` takes it off the shell's job list, and its output goes
+    // to `/dev/null` so nothing about it is observable down the run's pipes. If
+    // anything about the teardown is a process-group signal rather than the PID
+    // namespace collapsing, this is the process that survives it.
+    let mut request = submit_of(&format!(
+        "setsid /bin/sh -c 'while :; do printf x >> /work/beat; sleep 0.1; done # {marker}' \
+           </dev/null >/dev/null 2>&1 &
+         echo alive
+         sleep 120
+         echo NEVER"
+    ));
+    request.filesystem.mounts = mounts;
+    // Longer than the test needs, so that a `cancelled` outcome cannot be the
+    // wall clock wearing cancellation's name.
+    request.limits.wall_clock_ms = 120_000;
     let run_id = request.run_id.clone();
     host.submit(request).expect("admitted");
 
@@ -451,6 +517,30 @@ fn cancelling_stops_the_run_and_reaches_every_descendant() {
         collector.text(OutputStream::Stdout).contains("alive"),
         "the run never started; events {:?}",
         collector.snapshot()
+    );
+
+    // Control one: the grandchild is alive and writing where this process can
+    // see it, without the run's pipes being involved.
+    let grew = wait_until(Duration::from_secs(30), || beat_size(&beat) > 0);
+    assert!(
+        grew,
+        "the control failed: the detached grandchild never wrote to the granted \
+         directory, so the silence asserted below would prove nothing"
+    );
+    let before_cancel = beat_size(&beat);
+    assert!(
+        wait_until(Duration::from_secs(30), || beat_size(&beat) > before_cancel),
+        "the control failed: the grandchild wrote once and stopped on its own"
+    );
+
+    // Control two: it is visible from the init PID namespace, which is where
+    // this test will look for it again after the run is gone.
+    assert!(
+        wait_until_every(Duration::from_secs(30), Duration::from_millis(500), || {
+            wsl_processes_matching(&distro, &marker) > 0
+        }),
+        "the control failed: `ps` in the WSL VM never saw the grandchild, so a \
+         count of zero after cancellation would prove nothing"
     );
 
     let answer = host.cancel(SandboxCancelReq {
@@ -474,12 +564,177 @@ fn cancelling_stops_the_run_and_reaches_every_descendant() {
         "the program kept running after cancellation"
     );
 
+    // The descendant itself, from outside the run. Teardown is not instant, so
+    // this waits — but the assertion is on the answer, not on the wait, and a
+    // grandchild still there at the deadline fails it.
+    let gone = wait_until_every(Duration::from_secs(30), Duration::from_millis(500), || {
+        wsl_processes_matching(&distro, &marker) == 0
+    });
+    assert!(
+        gone,
+        "a `setsid`-detached descendant of the cancelled run is still alive in the \
+         WSL VM. `ps -A` there still matches {marker}"
+    );
+
+    // And it is not merely unlisted: it has stopped writing to the user's disk.
+    // Sampled twice across a window rather than once, because a single reading
+    // cannot tell "stopped" from "between writes".
+    let settled_size = beat_size(&beat);
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(
+        beat_size(&beat),
+        settled_size,
+        "the descendant is still appending to the granted directory after the run \
+         was cancelled and reported settled"
+    );
+
     // Cancelling a settled run is a race, not an error.
     let again = host.cancel(SandboxCancelReq {
         run_id,
         reason: CancelReason::User,
     });
     assert!(!again.cancelled);
+}
+
+/// The heartbeat file's size, or 0 before it exists. Never panics: "not there
+/// yet" and "not being written any more" are both legitimate states here.
+fn beat_size(path: &Path) -> u64 {
+    std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+/// Processes in the WSL VM's **init** PID namespace whose command line contains
+/// `marker`.
+///
+/// This is the outside view: the run's PID namespace is a child of this one, so
+/// anything still alive in it is listed here, whatever happened to the pipes,
+/// the process group or the session it was started in.
+fn wsl_processes_matching(distro: &str, marker: &str) -> usize {
+    let wsl = match std::env::var_os("SystemRoot") {
+        Some(root) => std::path::Path::new(&root)
+            .join("System32")
+            .join("wsl.exe")
+            .into_os_string(),
+        None => std::ffi::OsString::from("wsl.exe"),
+    };
+    let output = std::process::Command::new(wsl)
+        .args([
+            "--distribution",
+            distro,
+            "--exec",
+            "/usr/bin/ps",
+            "-A",
+            "-o",
+            "args=",
+        ])
+        .output()
+        .expect("`ps` inside the WSL VM");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.contains(marker))
+        .count()
+}
+
+/// **The one `kernel` claim in `WslBackend::report()` that had no test.**
+///
+/// Every other boundary property in this file is measured. `processes` was
+/// declared `EnforcementLevel::Kernel` and never checked, and the line behind it
+/// — `ulimit -u N 2>/dev/null || true`, in a script parsed by dash, whose
+/// `ulimit` has no `-u` — enforced nothing at all. A grant that said
+/// `processes: 8` produced a run whose `RLIMIT_NPROC` was 127929 and which
+/// forked three hundred processes without an error.
+///
+/// Three details of the program below are deliberate, and each of them is a
+/// thing that went wrong first:
+///
+///  - **the limit is read out of `/proc/self/limits`, not out of
+///    `$(ulimit -u)`.** A command substitution forks, and a program that has hit
+///    its process limit cannot fork — so the obvious spelling reports nothing
+///    exactly when the limit is working. The `while read` loop is builtin-only,
+///    and so is the `/proc` walk after it, for the same reason.
+///  - **the storm is run by `/bin/sh`, not by the program's own `bash`.** Bash
+///    retries a refused `fork` five times with lengthening sleeps, so a
+///    saturated limit costs half a minute per attempt; dash gives up at once and
+///    says so.
+///  - **the storm is forty processes, not three hundred.** `RLIMIT_NPROC` is
+///    per-uid across the whole WSL VM — see the note on `processes` in
+///    `WslBackend::report` — so a run that parked three hundred processes on uid
+///    65534 would push every *other* test in this file up against its own
+///    default grant of 128. A test that breaks its neighbours is not measuring
+///    the thing it names.
+///
+/// Everything asserted below holds under any amount of contention from the rest
+/// of the battery, which is why none of it is a lower bound on how much the run
+/// managed to fork: a busy VM can only make the kernel refuse the run *sooner*.
+#[test]
+fn a_forking_program_cannot_exceed_the_process_limit_it_was_granted() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+    let mut request = submit_of(
+        r#"while read -r first second soft _; do
+             if [ "$first $second" = "Max processes" ]; then
+               echo "max-processes=$soft"
+             fi
+           done < /proc/self/limits
+           /bin/sh -c 'i=0
+                       while [ $i -lt 40 ]; do sleep 300 & i=$((i+1)); done
+                       echo FORKED-FORTY-WITH-NO-ERROR' 2>&1
+           live=0
+           for entry in /proc/[0-9]*; do
+             while read -r key value _; do
+               if [ "$key" = "Uid:" ]; then
+                 if [ "$value" = "65534" ]; then live=$((live+1)); fi
+                 break
+               fi
+             done < "$entry/status"
+           done
+           echo "live-run-processes=$live""#,
+    );
+    request.limits.processes = 8;
+    host.submit(request).expect("admitted");
+
+    let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(120));
+    let stdout = collector.text(OutputStream::Stdout);
+    assert!(
+        matches!(outcome, SandboxOutcome::Exited { .. }),
+        "outcome {outcome:?}, stdout {stdout:?}"
+    );
+
+    // What the run is told — which is what a program deciding how many jobs to
+    // start would read, and what the grant handed to the caller promised.
+    assert!(
+        stdout.lines().any(|line| line.trim() == "max-processes=8"),
+        "the run's `RLIMIT_NPROC` must be the granted number. stdout {stdout:?}"
+    );
+    // What the kernel does, which is the part `EnforcementLevel::Kernel` claims.
+    assert!(
+        !stdout.contains("FORKED-FORTY-WITH-NO-ERROR"),
+        "the run forked forty processes against a grant of eight. stdout {stdout:?}"
+    );
+    // The control, and the reason this is not a test that passes on a program
+    // that never ran: the storm did not skip its work, it was *refused*, and the
+    // shell that was refused said so on the run's own stdout. A build with no
+    // limit at all prints the line above instead of this one.
+    assert!(
+        stdout.to_ascii_lowercase().contains("cannot fork"),
+        "the storm must be stopped by a refused `fork` and not by never running; \
+         dash reports that as `Cannot fork`. stdout {stdout:?}"
+    );
+
+    let live: u32 = stdout
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("live-run-processes=")?
+                .parse()
+                .ok()
+        })
+        .unwrap_or_else(|| panic!("the run must report its own process count; stdout {stdout:?}"));
+    assert!(
+        live <= 8,
+        "the run held {live} live processes against a grant of eight. stdout {stdout:?}"
+    );
 }
 
 #[test]
@@ -1118,13 +1373,20 @@ fn unreachable_backend() -> Option<WslBackend> {
 }
 
 #[track_caller]
-fn wait_until(within: Duration, mut done: impl FnMut() -> bool) -> bool {
+fn wait_until(within: Duration, done: impl FnMut() -> bool) -> bool {
+    wait_until_every(within, Duration::from_millis(10), done)
+}
+
+/// [`wait_until`] for a condition that costs something to ask — spawning
+/// `wsl.exe`, say. Same answer, three orders of magnitude fewer of them.
+#[track_caller]
+fn wait_until_every(within: Duration, interval: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + within;
     while Instant::now() < deadline {
         if done() {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(interval);
     }
     done()
 }

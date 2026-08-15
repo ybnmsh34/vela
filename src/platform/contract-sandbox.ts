@@ -976,7 +976,14 @@ export interface SandboxLimits {
    * never terminates is a wall-clock problem, and wall clock catches it.
    */
   readonly outputBytes: number;
-  /** Live processes, the run's own included. Bounds fork bombs; must be 1 for a document. */
+  /**
+   * Live processes, the run's own included. Bounds fork bombs; must be 1 for a document.
+   *
+   * A backend enforcing this with an rlimit rather than a cgroup bounds the processes of the
+   * *uid* the run executes as, which it may share with other concurrent runs — so a run can
+   * be refused a fork below its own number, and never above it. The direction matters more
+   * than the exactness: this is a ceiling on what one run can hold, not a reservation.
+   */
   readonly processes: number;
   /** Bytes written across every writable mount and the scratch directory. */
   readonly fileWriteBytes: number;

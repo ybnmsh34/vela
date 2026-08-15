@@ -1,0 +1,36 @@
+# Line endings, and the one class of file that must not have them rewritten.
+#
+# There was no `.gitattributes` here at all, so `core.autocrlf` decided — and on
+# Windows it decides CRLF. That is harmless for source, which every compiler in
+# this tree reads either way, and it is corruption for a wire capture.
+#
+# A `.sse` file is bytes an endpoint actually sent. Server-sent events are framed
+# by a blank line, so the frame boundary IS the line ending; a replay test that
+# asserts what a consumer delivered from those bytes is asserting on the exact
+# bytes. `anthropic_fixture_replay` and `google_fixture_replay` do precisely
+# that, and four of their negative controls — the ones that prove a broken
+# consumer produces specific wrong output — fail on a Windows checkout and pass
+# on Linux. They were written off as environmental for most of this project's
+# life. They are not: git was editing the evidence.
+#
+# The same argument covers `.jsonl`, which is a record per line, and the
+# recorded transcripts under `docs/regression-baseline/`, which
+# `scripts/check-transcripts.sh` compares byte for byte to prove the mock
+# harness is still deterministic. A checkout that rewrote them would make that
+# script report a behaviour change nobody made.
+#
+# `-text` rather than `text eol=lf` on purpose: these are captures, not source.
+# `eol=lf` would still let git *decide* they are text and normalise on commit;
+# `-text` says do not touch these bytes, in either direction, ever. The cost is
+# that git renders their diffs as binary, which is the correct reading of a file
+# whose value is its exact contents.
+#
+# Deliberately only these two patterns, and no `* text=auto`. Measured before
+# writing this: every one of the 36 stored objects is already pure LF, so the
+# corruption is entirely in the checkout and nothing needs re-committing. Adding
+# a repo-wide rule staged 37 unrelated transcript files for renormalisation —
+# including the ones `scripts/check-transcripts.sh` compares byte for byte to
+# prove the mock harness is deterministic. Fixing a line-ending bug by rewriting
+# the evidence that would detect one is not a fix.
+*.sse -text
+*.jsonl -text

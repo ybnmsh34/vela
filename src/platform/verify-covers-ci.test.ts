@@ -114,15 +114,47 @@ describe('the local gate is a superset of the remote one', () => {
     // code — and nobody noticed, because the draft guard meant the workflow had
     // never run. `verify` passing locally says nothing here: this container has
     // the packages, so the gap is invisible from a green local run.
+    //
+    // The rule is "a cargo job must be able to build the graph"; the apt list is
+    // only how that is true on Linux. Those were the same sentence while every
+    // job ran on `ubuntu-latest`, and the first Windows job made them different
+    // — this guard failed it, correctly by its own words and wrongly on the
+    // facts. `webkit2gtk` IS the Linux backend for the webview; `windows-latest`
+    // ships WebView2 and has no package to install, so demanding the apt step
+    // there demands a step that cannot exist.
+    //
+    // It now asks what the runner needs, and an unrecognised runner fails:
+    // "I do not know what this machine has" should be a question, not a pass.
     for (const [name, body] of ciJobs()) {
       const usesCargo = /^[ \t]*-?[ \t]*run: .*\bcargo\b/m.test(body) || /\n\s+cargo /.test(body);
       if (!usesCargo) continue;
-      expect(
-        body.includes('libwebkit2gtk-4.1-dev'),
-        `CI job "${name}" runs cargo but never installs the Tauri system ` +
-          'dependencies. It will fail in a build script before linting or ' +
-          'testing anything. Copy the "Install Tauri system dependencies" step.',
-      ).toBe(true);
+
+      const runner = /runs-on:\s*(\S+)/.exec(body)?.[1] ?? '';
+      expect(runner, `CI job "${name}" has no runs-on this test can read`).not.toBe('');
+
+      if (runner.startsWith('ubuntu')) {
+        expect(
+          body.includes('libwebkit2gtk-4.1-dev'),
+          `CI job "${name}" runs cargo on Linux but never installs the Tauri ` +
+            'system dependencies. It will fail in a build script before linting ' +
+            'or testing anything. Copy the "Install Tauri system dependencies" step.',
+        ).toBe(true);
+      } else if (runner.startsWith('windows') || runner.startsWith('macos')) {
+        // Assert the absence of the Linux step as well. Copying it here would
+        // fail on a runner with no apt, so its absence should read as a decision
+        // rather than as something nobody got round to.
+        expect(
+          body.includes('apt-get'),
+          `CI job "${name}" runs on ${runner} and installs Linux packages. The ` +
+            'webview ships with the OS there; apt-get does not exist on it.',
+        ).toBe(false);
+      } else {
+        expect.fail(
+          `CI job "${name}" runs cargo on "${runner}", which this guard cannot ` +
+            'reason about. Teach it what that runner provides before trusting a ' +
+            'green run from it.',
+        );
+      }
     }
   });
 });

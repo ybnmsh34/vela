@@ -147,6 +147,95 @@ jobs:
         run: cargo test --workspace --locked
         working-directory: src-tauri
 
+  # THE PLATFORM VELA SHIPS ON.
+  #
+  # Every job above this one runs on Linux, and Vela is a Windows desktop
+  # application. That gap is not a theoretical risk; it is the single generator
+  # of the following defects, each of which passed CI and could not execute
+  # where the product runs:
+  #
+  #  - `chat-contract-parity.test.ts` split Rust source on `'\n'` and searched
+  #    for a line equal to `'}'`. On a Windows checkout every line ends `'}\r'`,
+  #    so 28 of its 31 cases threw and the parity `contract.ts` advertises had
+  #    never once executed here.
+  #  - `no-provider-leak.test.ts` keyed its carrier allowlist off
+  #    `path.split('/')`. Windows paths are backslashed, so the allowlist matched
+  #    nothing and the guard reported its own designated carrier.
+  #  - `handler_binding` and `gate_m_assembled_app` — the only tests that ask the
+  #    assembled `invoke_handler` what the app really answers — died at process
+  #    load with `STATUS_ENTRYPOINT_NOT_FOUND`, because cargo's test binaries
+  #    never got the Common-Controls manifest `vela.exe` carries.
+  #  - The `#[cfg(windows)]` half of every gated pair, including the one holding
+  #    the rule that a skill mount is a junction and never a symlink.
+  #  - Four `*_fixture_replay` controls that fail only when git rewrites the wire
+  #    captures on checkout. See `.gitattributes`.
+  #
+  # So this job exists to make a green run mean something on the platform users
+  # have. It is `needs: static` like the others, but it deliberately does NOT
+  # gate on the Linux test jobs: when the two disagree, that disagreement is the
+  # most valuable signal this file can produce, and serialising them would hide
+  # it behind whichever failed first.
+  #
+  # What it does not cover, stated so nobody reads a green tick as more than it
+  # is: `vela-sandbox`'s escape battery needs a WSL2 distribution, which a
+  # hosted runner does not have. Those tests skip themselves and say so
+  # (`sandbox_boundary.rs` prints `SKIPPED: no WSL distribution on this
+  # machine`). The isolation boundary is therefore still verified only on a real
+  # developer machine, and this job proves the rest of the crate compiles and
+  # its non-WSL half holds.
+  test-windows:
+    name: Windows — the platform this ships on
+    runs-on: windows-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Repeated here rather than inherited from `static`: these are the two
+      # checks that read source off disk and compare it, so they are exactly the
+      # ones a line-ending or path-separator difference breaks.
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # A separate key from the Linux jobs. Sharing one would let a Linux
+          # build's artifacts answer for a Windows run.
+          prefix-key: windows
+
+      # No apt step: WebView2 ships with the runner image, and the gtk/webkit
+      # stack the Linux jobs install is the Linux backend for the same thing.
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: src-tauri
+
+      # `--locked` on purpose. If a Windows-only dependency resolution differs,
+      # that is a finding, not something to paper over with a lockfile update.
+      - name: Test workspace
+        run: cargo test --workspace --locked
+        working-directory: src-tauri
+
+      # The captures under `docs/regression-baseline/` are compared byte for
+      # byte. On a checkout that rewrote their line endings this reports a
+      # behaviour change nobody made, which is precisely the failure
+      # `.gitattributes` now prevents — so running it here is how we find out if
+      # that protection ever stops working.
+      - name: Mock transcripts are reproducible
+        shell: bash
+        run: ./scripts/check-transcripts.sh
+
   # Failing this job means a secret reached the tree. It is deliberately crude
   # and deliberately cheap: the real guarantee is that keys live only in the OS
   # keychain, and this is the tripwire behind it.

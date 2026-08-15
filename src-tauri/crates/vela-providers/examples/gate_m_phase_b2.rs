@@ -4548,7 +4548,7 @@ async fn case_11(profile: &str, ledger: &mut Vec<Verdict>) {
     doc.h("ROUND 4 — the ESCAPING peers, whose bytes contain no literal canary at all");
     doc.p(
         "  These two peers percent-decode the `key` parameter and echo the raw credential\n  \
-         back with `/` written `\\/`, which is what PHP's `"json_encode"` does by default.\n  \
+         back with `/` written `\\/`, which is what PHP's `\"json_encode\"` does by default.\n  \
          The assertion below is the PREMISE of the round-4 cases and it is the opposite of\n  \
          the one above: the canary must NOT appear literally in what these peers wrote, or\n  \
          a byte-literal scrub would have caught it and the cases would prove nothing. What\n  \

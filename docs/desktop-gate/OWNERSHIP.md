@@ -30,6 +30,9 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
+| `src-tauri/rust-toolchain.toml` | Wave 1 / B2 | 2026-08-15 | new file — pins 1.97.1 + rustfmt/clippy, so gate 2's answer stops floating with the calendar |
+| `src-tauri/tauri.conf.json` | Wave 1 / B2 | 2026-08-15 | one line added to `bundle.icon` — `icons/icon.ico`, without which the Windows bundler produces no installer at all |
+| `docs/release-posture.md` | Wave 1 / B2 | 2026-08-15 | new file — signing, updater, WebView2, elevation and uninstall posture, plus the MSIX-container finding that withdrew B2's install claim |
 
 ## Released
 

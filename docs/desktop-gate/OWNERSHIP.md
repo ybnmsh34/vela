@@ -21,7 +21,7 @@ see `docs/HANDOVER.md`).
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
-| `src/platform/claimed-guards.test.ts` | desktop (`fix/guard-tokeniser-phase`) | 2026-08-15 | backtick tokeniser loses phase on a one-character token; fix and take the fallout. The fallout was three names, all real, so no other file was touched |
+| `src/platform/claimed-guards.test.ts` | desktop (`fix/guard-tokeniser-phase`) | 2026-08-15 | backtick tokeniser loses phase; fixed twice — the first fix kept the cursor and kept a hole, the second removed the cursor. Fallout was nine claims, all real, so no other file was touched |
 
 ## Released
 

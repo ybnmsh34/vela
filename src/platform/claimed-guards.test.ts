@@ -84,24 +84,39 @@
  * in `this guard is not vacuous` below. A guard nobody has watched fail is a
  * claim, which is the thing this file exists to catch.
  *
- * The third is worse than either, and it was in {@link BACKTICKED} from this
- * file's first commit. The tokeniser required a backticked span to be between 2
- * and 160 characters, and a span outside that range does not consume its own two
- * backticks — so the cursor is left mid-pair and every later backtick on the line
- * pairs with the wrong partner. Downstream of one `` `×` `` the scan stops
- * reading tokens and starts reading the *gaps between* them. Nothing failed and
- * nothing was reported; the guard simply stopped looking, which is the defect
- * class in (1) wearing this file's own clothes.
+ * The third is worse than either, and it was in the tokeniser from this file's
+ * first commit. A backticked span had to be between 2 and 160 characters, and a
+ * span outside that range does not consume its own two backticks — so the cursor
+ * is left mid-pair and every later backtick on the line pairs with the wrong
+ * partner. Downstream of one `` `×` `` the scan stops reading tokens and starts
+ * reading the *gaps between* them. Nothing failed and nothing was reported; the
+ * guard simply stopped looking, which is the defect class in (1) wearing this
+ * file's own clothes.
  *
- * Measured at the commit that repaired it: 174 lines inside this scan carry a
+ * Measured at the commit that found it: 174 lines inside this scan carry a
  * one-character backticked token beside four or more backticks, and on 72 lines
- * the shipped tokeniser emitted at least one string that is not a backtick
- * span at all — a gap. Fifteen spans in scope are longer than 160 characters and
+ * the shipped tokeniser emitted at least one string that is not a backtick span
+ * at all — a gap. Fifteen spans in scope are longer than 160 characters and
  * desynchronise the line the same way from the other end. What all of that had
  * been hiding is three names, `encoded_spans` and `hold_back_len` at
  * `gate_m_phase_b2.rs:10352` and `max_tokens` at `anthropic/mod.rs:281`, and all
- * three are real. That is luck, not evidence, and it is the reason the control
- * below asserts the phase rather than the outcome.
+ * three are real. Luck, not evidence.
+ *
+ * **The first repair was itself the same defect, one turn further on.** It
+ * dropped the bounds and kept pairing single backticks, which reads
+ * `` ``a_name`` `` as two empty spans and never looks between them; an injected
+ * name in that form was reported by the buggy scan and *not* by its fix. It
+ * shipped alongside a sentence saying a control covered that case, and no
+ * control did. Both halves of that are this file's own thesis turned on itself.
+ *
+ * So the answer is not a better pattern. Every regex here carries a cursor, a
+ * cursor has a phase, and anything the pattern declines takes the phase with it
+ * — a bound, a run of backticks, a span that wrapped onto the next line.
+ * Chasing that with a cleverer pattern is the six-round scanner above, again.
+ * {@link backtickedSpans} splits on the backtick instead, and a rule with no
+ * cursor cannot lose phase. Six more claims turned out to be sitting on wrapped
+ * lines, invisible to *every* tokeniser this file has ever had; it reads those
+ * too.
  *
  * ## Scope, and why it is drawn here
  *
@@ -557,44 +572,84 @@ export interface Claim {
 }
 
 /**
- * **Backtick pairs, in phase.** Every backtick is consumed as the open or the
- * close of a span, and nothing is judged here: whatever sits between one and the
- * next is handed to {@link PATH_TOKEN} and {@link SENTENCE_NAME}, which decide
- * what is a claim.
+ * **Every stretch of a line that lies between two backticks**, in source order,
+ * judged by nobody here: each one goes to {@link PATH_TOKEN} and
+ * {@link SENTENCE_NAME}, which decide what is a claim.
  *
- * That division of labour is the repair. This read `` /`([^`\n]{2,160})`/g ``,
- * and **both** bounds were silent skips. A span the regex declines to match does
- * not consume its two delimiters, so the global cursor is left mid-pair and every
- * later backtick on that line pairs with the wrong partner — from there the scan
- * extracts the *gaps between* the tokens instead of the tokens.
- * `gate_m_phase_b2.rs:10352` is the shape: a paragraph about the scrubber writes
- * a lone backslash in backticks, one character, below the floor, and downstream
- * of it `encoded_spans` and `hold_back_len` were never looked at. Those were not
- * claims that passed. They were text this guard never read, for the whole life of
- * the file. The ceiling did the same to any span over 160 characters, of which
- * fifteen sat inside the scan.
+ * ## Why this is a `split` and not a regex
  *
- * A one-character token is now extracted and then ignored, because a single glyph
- * is neither path-shaped nor snake_case — `×` and `❯` in
- * `scripts/ci-retry-vitest-crash.mjs` are exactly that. Being ignored by the
- * rules is fine; being skipped by the tokeniser is not, because a skip moves the
- * cursor off every token after it. Every length test a tokeniser performs is a
- * chance to fall out of phase, so it performs none.
+ * It was `` /`([^`\n]{2,160})`/g ``, and both bounds were silent skips. A regex
+ * that declines to match a span does not consume that span's two backticks, so
+ * the global cursor is left mid-pair and every later backtick on the line pairs
+ * with the wrong partner — the scan then reads the *gaps between* the tokens
+ * instead of the tokens. `gate_m_phase_b2.rs:10352` is the shape: a paragraph
+ * about the scrubber writes a lone backslash in backticks, one character, below
+ * the floor, and downstream of it `encoded_spans` and `hold_back_len` were never
+ * looked at. Not claims that passed — text this guard never read.
  *
- * ## The one thing it does not read the way a renderer would
+ * The first repair dropped the bounds and kept the pairing, and that was still
+ * wrong, in the same direction. Pairing single backticks reads `` ``a_guard`` ``
+ * as two *empty* spans and never looks between them, so a name inside a doubled
+ * literal went unexamined. It was caught by injection: a fabricated name in that
+ * form was reported by the buggy `{2,160}` scan, by accident, and not reported by
+ * its fix. The doubled form is live house style here — `anthropic/mod.rs:281`,
+ * `emulation.rs:354`, `structured.rs:258`.
  *
- * A span delimited by a *run* of backticks. `anthropic/mod.rs:281` writes a
- * doubled-backtick literal with `max_tokens` in single backticks inside it, and
- * CommonMark calls the whole line one literal; pairing reads those interior
- * backticks as delimiters and extracts `max_tokens`, which then has to resolve
- * like anything else. That is the loud direction, and it is the same asymmetry
- * {@link wireTokensAndMethods} is argued from: an over-extracted token argues
- * with you, a skipped one does not. The quiet direction is a run-delimited span
- * whose content holds no backtick at all — its name would go unexamined. This
- * tree has no such site; that was measured, not assumed, and the phase control
- * below is where a future one would be noticed.
+ * The lesson of the two attempts is not "pick a better regex". Every regex here
+ * carries a cursor, a cursor has a phase, and a phase can be lost by any input
+ * the pattern declines: a bound, a run of three backticks, an unbalanced pair,
+ * whatever the next shape turns out to be. Chasing that with a cleverer pattern
+ * is the six-round scanner in the header all over again.
+ *
+ * **`split` has no cursor, so there is no phase to lose.** Every backtick is a
+ * boundary; every stretch between two of them is offered up; nothing is skipped,
+ * because nothing is matched. It cannot fail the way the last two did, and the
+ * reason a reviewer can be sure of that is that there is nothing to reason about.
+ *
+ * ## A third phase failure nobody had named, which this also ends
+ *
+ * A code span that wraps across two source lines leaves an **odd** number of
+ * backticks on each of them, and a cursor entering an odd line is off by one for
+ * the whole of it. `http.rs:464` closes a span that opened on line 463 and then
+ * writes `` `serde_json` ``; `vela-progress.md:2233` closes one and then names
+ * `PROVIDER-CORE.md` and `ADAPTER-OPENAI-COMPATIBLE.md`. Six such claims exist
+ * in this tree and **no** tokeniser this file has had could see any of them —
+ * not `{2,160}`, not the pairing that replaced it. They are not an edge case
+ * anybody chose; they are what wrapping a line does. Splitting has no phase to
+ * be off by one in, so it reads them.
+ *
+ * ## What it costs, which is the loud direction
+ *
+ * Splitting also offers up the gaps — the ` and ` in ``a` and `b``, the prose
+ * either side of a wrapped span. One of those could in principle be
+ * claim-shaped, and would then demand a name that prose never claimed. Two
+ * things make that payable. A gap almost always contains a space, and neither
+ * {@link PATH_TOKEN} nor {@link SENTENCE_NAME} admits a space, so the rules
+ * throw it out without being asked. And when one does get through it is a claim
+ * this guard *reports*, which argues with you, rather than a name it never
+ * looked at, which does not. That is the asymmetry
+ * {@link wireTokensAndMethods} is argued from, applied to the tokeniser.
+ *
+ * Measured over this tree: against the pairing it replaces, splitting loses
+ * nothing and adds six claims — and all six are the wrapped-span tokens above,
+ * genuinely written in backticks by their authors. **Not one added claim is a
+ * gap.** The cost that was budgeted for did not arrive.
+ *
+ * A one-character token — `×` and `❯` in `scripts/ci-retry-vitest-crash.mjs` —
+ * is offered up and then judged by nobody, because a single glyph is neither
+ * path-shaped nor snake_case. Being ignored by the rules is fine. Being skipped
+ * by the tokeniser is not, and now nothing is.
  */
-const BACKTICKED = /`([^`\n]*)`/g;
+function backtickedSpans(line: string): readonly string[] {
+  const parts = line.split('`');
+  const spans: string[] = [];
+  // Index 0 has no backtick before it and the last has none after it. Every
+  // other part is flanked by one on each side, which is the whole rule.
+  for (let index = 1; index < parts.length - 1; index += 1) {
+    spans.push(parts[index] ?? '');
+  }
+  return spans;
+}
 const DOC_LINK = /\[`([^`\]\n]+)`\]/g;
 const PATH_TOKEN =
   /^[\w.@-]+(?:\/[\w.@-]+)*\.(?:rs|ts|tsx|css|md|sh|mjs|js|json|yml|yaml|html|toml)$/;
@@ -650,7 +705,7 @@ export function claimsIn(path: string, text: string): readonly Claim[] {
         });
       }
     }
-    for (const raw of captured(line, BACKTICKED)) {
+    for (const raw of backtickedSpans(line)) {
       const token = raw.trim();
       // `into_parts()` is the same claim as `into_parts` — the parens are just
       // how a sentence says "the function". Left unnormalised they were a hole
@@ -862,23 +917,59 @@ describe('this guard is not vacuous', () => {
     expect(reported).toEqual(['src/app/contract.ts', 'src/nowhere/at/all/App.tsx']);
   });
 
-  it('keeps the tokeniser in phase past a token no rule will judge', () => {
-    // {@link BACKTICKED} was `` /`([^`\n]{2,160})`/g ``, and a span outside those
-    // bounds did not consume its own delimiters: the cursor stayed mid-pair and
-    // every later backtick on the line paired with the wrong partner, so the scan
-    // read the gaps between the tokens. Both fabricated names below sit *after*
-    // such a span, and under either bound neither is reported at all — the guard
-    // does not disagree with them, it never sees them. That is the failure this
-    // control exists for, and it is the failure the guard exists to catch.
+  it('offers up every stretch between two backticks, and skips none of them', () => {
+    // The tokeniser's contract, asserted directly rather than through a claim,
+    // because both bugs it has had were invisible at the claim level until some
+    // particular name happened to sit in the wrong place. Every regex that has
+    // stood here failed one of these rows.
     //
-    // The first line is the shape of `scripts/ci-retry-vitest-crash.mjs:82`, the
-    // site that exposed this: single glyphs beside names that matter. `×`, `❯`
-    // and `Tests` are extracted and then judged by nobody, which is correct and
-    // is not the same thing as being skipped.
+    // `{2,160}` and `{1,160}` both lose row 2, which is the shape of
+    // `scripts/ci-retry-vitest-crash.mjs:82`: a bound skips the glyph, and the
+    // skip carries the cursor off everything after it, so the scan returns gaps.
+    // A floor of one loses row 3, where the empty span is the thing skipped.
+    // Pairing single backticks — the first repair, with no bound at all — loses
+    // row 4, reading a doubled literal as two empty spans and never looking
+    // between them. Row 5 is the interior of one, which a CommonMark reading
+    // would leave whole. Row 6 is a run that closes shorter than it opened,
+    // which neither pairing nor the run rule sees. Row 7 is the second half of
+    // a span that wrapped across two source lines, which leaves an odd count on
+    // both — a cursor entering it is off by one for the rest of the line.
+    expect(backtickedSpans('no backticks here')).toEqual([]);
+    expect(backtickedSpans('a `×` b `a_b` c')).toEqual(['×', ' b ', 'a_b']);
+    expect(backtickedSpans('`' + 'x'.repeat(200) + '` and `a_b`')).toEqual([
+      'x'.repeat(200),
+      ' and ',
+      'a_b',
+    ]);
+    expect(backtickedSpans('``a_b``')).toEqual(['', 'a_b', '']);
+    expect(backtickedSpans('``holding `a_b` inside``')).toEqual([
+      '',
+      'holding ',
+      'a_b',
+      ' inside',
+      '',
+    ]);
+    expect(backtickedSpans('``a_b`')).toEqual(['', 'a_b']);
+    expect(backtickedSpans('closed here` and then `a_b` again')).toEqual([' and then ', 'a_b']);
+  });
+
+  it('reports a name that a bound, or pairing, would have stepped over', () => {
+    // The same shapes again, end to end this time, so the property is pinned at
+    // the level the guard actually reports at. None of these names is *disputed*
+    // by a broken tokeniser. Each is simply never looked at, which is the quiet
+    // failure this whole file is written against — and which two successive
+    // tokenisers here shipped.
+    //
+    // `×`, `❯` and `Tests` are offered up and then judged by nobody, which is
+    // correct, and is not the same thing as being skipped.
     const long = 'x'.repeat(200);
     const corpus = [
       '// search the log for `×`, for a `❯`, for `a_guard_the_floor_hid`, or for `Tests`',
       `// and for \`${long}\` before \`a_guard_the_ceiling_hid\``,
+      '// and ``a literal holding `a_guard_the_empty_hid` inside it``',
+      '// and ``a_guard_the_run_hid``, a literal that is nothing but a name',
+      '// and ``a_guard_the_short_close_hid` closing shorter than it opened',
+      '// a span opened on the line before closes here` and then `a_guard_the_wrap_hid`',
     ].join('\n');
 
     const reported = claimsIn('src-tauri/src/probe.rs', corpus)
@@ -888,6 +979,10 @@ describe('this guard is not vacuous', () => {
     expect(reported).toEqual([
       'named-test:a_guard_the_floor_hid',
       'named-test:a_guard_the_ceiling_hid',
+      'named-test:a_guard_the_empty_hid',
+      'named-test:a_guard_the_run_hid',
+      'named-test:a_guard_the_short_close_hid',
+      'named-test:a_guard_the_wrap_hid',
     ]);
   });
 

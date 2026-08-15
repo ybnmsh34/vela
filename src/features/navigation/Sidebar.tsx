@@ -30,6 +30,7 @@ import {
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
 import { useMemoryStore } from '@/state/memory-store';
+import { useSkillsStore } from '@/state/skills-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -74,6 +75,8 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // may not import another (`src/features/README.md`). The composition root
   // mounts it; this opens it.
   const setMemoryOpen = useMemoryStore((state) => state.setOpen);
+  // The skills pane reaches this sidebar the same way and for the same reason.
+  const setSkillsOpen = useSkillsStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -192,6 +195,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setSkillsOpen(true);
+          }}
+          aria-label="Skills"
+        >
+          <SkillsIcon />
+        </button>
       </nav>
     );
   }
@@ -251,6 +264,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
           <span>Memory</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setSkillsOpen(true);
+          }}
+        >
+          <SkillsIcon />
+          <span>Skills</span>
         </button>
       </div>
 
@@ -378,6 +401,28 @@ function MemoryIcon() {
         strokeWidth="1.4"
       />
       <path d="M6 6.4h4M6 9.6h2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A stack of sheets: a skill is a folder of files, not a setting. */
+function SkillsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M5.4 2.8h4.2l2.2 2.2v6.6a1.2 1.2 0 0 1-1.2 1.2H5.4a1.2 1.2 0 0 1-1.2-1.2V4a1.2 1.2 0 0 1 1.2-1.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.4 2.9v2.3h2.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

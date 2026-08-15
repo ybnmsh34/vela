@@ -80,4 +80,64 @@ M8  the root hardening blinded, gate run end to end
     created after prepare and depend on the root being protected.
 
 -------------------------------------------------------------------------------
-After every revert: cargo test --workspace => 63 targets, 1291 tests, 0 failed.
+ROUND 2. This machine manufactures failures under load, so every mutation below
+was run TWICE and is reported only if it reddened both times.
+
+N3  a DENY ace counted as granting  (ace::verdict)
+    cargo test -p vela-privatefs --lib
+    => 2/2 runs, 2 tests:
+       a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader
+       a_directory_carrying_a_real_deny_ace_still_reads_as_private
+    THE ONE WITH TEETH. A deny entry read as granting makes a path carrying a
+    denial for a foreign principal report as non-private -- and vela-store
+    refuses to open a database in a directory that is not private, so Vela
+    would decline to start over an ACL STRICTER than the one it demands.
+    Nothing in the workspace noticed before these two tests existed.
+
+N5  an unknown ACE layout waved through as harmless
+    => 2/2 runs: an_ace_layout_this_code_cannot_decode_is_never_called_harmless
+
+N6  a walk failure reports the root instead of the failing entry
+    => 2/2 runs: a_fault_inside_the_walk_names_the_entry_and_keeps_its_kind
+
+N7  a walk failure collapses could-not into would-not
+    => 2/2 runs: a_fault_inside_the_walk_names_the_entry_and_keeps_its_kind
+
+N8  foreign_explicit never populated
+    => 2/2 runs: an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    The strengthened control detecting that its own precondition is not met.
+
+N9  repair_entries neutered, against the STRENGTHENED control
+    => 2/2 runs: an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    The weak control (!foreign.is_empty()) let this pass: %TEMP% hands three
+    foreign principals to every directory created inside it, so the precondition
+    was ambient-true. Asserting foreign_explicit is what makes it bite for the
+    reason it claims.
+
+N10 the gate's skills/ grant made non-inheritable  ((OI)(CI)(RX) -> (RX))
+    scripts\gate-appdata-root-acl.ps1
+    => 2/2 runs: exit 1, FAIL "BEFORE skills/my-skill.md inherited BUILTIN\Users
+       FROM skills/". Previously PASS -- the check counted foreign principals,
+       which %TEMP% supplies for free. Naming the principal, and granting one
+       %TEMP% does not, is what makes it falsifiable.
+
+N4  the reparse-point skip removed
+    => 2/2 runs: NO TEST FAILED. Reported, not hidden.
+N4b the recursion descent guard (kind.is_dir()) forced open
+    => 2/2 runs: NO TEST FAILED.
+N4c BOTH removed together
+    => 2/2 runs: the_walk_does_not_follow_a_junction_out_of_the_tree
+    The two guards are redundant: FileType::is_dir() is already false for a
+    junction, so either one alone blocks descent and neither is individually
+    falsifiable. The test guards the PAIR. Both are kept and the redundancy is
+    documented on repair_entries rather than left to imply that each line is
+    separately load-bearing.
+
+Also fixed this round, found by mutation rather than by review:
+  - the junction test's first version passed with the skip deleted, because
+    repair_within descends only into directories it repaired and the junction's
+    DACL was already clean. The link is now widened after the root is protected.
+
+-------------------------------------------------------------------------------
+After every revert: cargo test --workspace => 63 targets, 1300 tests, 0 failed.
+Gate: 22 checks, 0 failures, twice.

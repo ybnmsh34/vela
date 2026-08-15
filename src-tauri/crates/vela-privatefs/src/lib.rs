@@ -199,6 +199,63 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// Reading one Windows ACE: does it hand access to somebody who is not us?
+///
+/// **Pure, and deliberately outside the `windows` implementation.** The
+/// decision this makes is integer logic over an ACE type and an access mask,
+/// and it is the single most consequential decision in this crate — it decides
+/// whether a path counts as private, which decides whether Vela starts. Inside
+/// the `unsafe` block it was unreachable by any test, and four different ways
+/// of getting it wrong left the whole workspace green. Out here it is
+/// exhaustively testable on every platform, including the ones that will never
+/// execute it.
+mod ace {
+    /// `ACCESS_ALLOWED_ACE_TYPE`. Only an *allow* ACE hands access to anyone.
+    pub const ALLOWED: u8 = 0;
+    /// `ACCESS_DENIED_ACE_TYPE`. Same memory layout, opposite meaning.
+    pub const DENIED: u8 = 1;
+
+    /// What one ACE means for "can a principal other than us reach this path".
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Verdict {
+        /// Hands nothing to anybody foreign. Either it is ours, or it is a
+        /// denial, or it grants an empty set of rights.
+        Harmless,
+        /// Hands access to a principal that is neither the account Vela runs as
+        /// nor the local system.
+        Foreign,
+        /// A layout this code does not decode — an object ACE, a callback ACE,
+        /// something added to Windows after this was written. Refused rather
+        /// than guessed at.
+        Undecodable,
+    }
+
+    /// `ours` is the caller's `EqualSid` answer: the ACE's trustee is the
+    /// running account or `NT AUTHORITY\SYSTEM`.
+    ///
+    /// # The three ways this has to be right
+    ///
+    /// - A **deny** ACE takes access away. Counting one as granting would make
+    ///   any path carrying a deny entry for a foreign principal read as
+    ///   non-private — and since `vela-store` refuses to open a database in a
+    ///   directory that is not private, **Vela would decline to start over an
+    ///   ACL that is stricter than the one it demands**. Deny entries are
+    ///   ordinary: they are what an administrator adds to lock a group out.
+    /// - An **empty mask** grants nothing. Reporting it as a foreign reader
+    ///   would be a false alarm with the same consequence.
+    /// - An **unrecognised type** must be `Undecodable`, never `Harmless`.
+    ///   Reading an object ACE with the layout of a plain one yields a
+    ///   nonsense SID and a nonsense mask; the honest answer is to refuse to
+    ///   call the path private rather than to decode it wrong or ignore it.
+    pub fn verdict(ace_type: u8, mask: u32, ours: bool) -> Verdict {
+        match ace_type {
+            ALLOWED if !ours && mask != 0 => Verdict::Foreign,
+            ALLOWED | DENIED => Verdict::Harmless,
+            _ => Verdict::Undecodable,
+        }
+    }
+}
+
 /// What the operating system says about who can reach a path.
 ///
 /// This is a **measurement**, not a restatement of what was requested. It is
@@ -216,6 +273,22 @@ pub struct Privacy {
     /// `DESKTOP-298M5DU\CodexSandboxUsers` and an app-container SID. It must be
     /// empty.
     pub foreign: Vec<String>,
+    /// The subset of [`Self::foreign`] the path carries **in its own right** —
+    /// `inherited=False` — rather than receiving from a parent.
+    ///
+    /// This is the distinction the whole repair turns on, so it is a field
+    /// rather than something a caller re-derives by reading [`Self::detail`].
+    /// Protecting a parent rewrites only the inherited portion of a child's
+    /// DACL; anything in here survives that and has to be re-stamped by
+    /// [`repair_entries`].
+    ///
+    /// It is also what a **control** in a test must assert. `%TEMP%` on the
+    /// machine this was built on already hands three foreign principals to
+    /// every directory created inside it, so "this directory has a foreign
+    /// principal" is ambient-true there and a precondition asserting only that
+    /// establishes nothing. On unix this equals [`Self::foreign`]: mode bits
+    /// are never inherited.
+    pub foreign_explicit: Vec<String>,
     /// Windows: whether the DACL is protected from inheritance
     /// (`SE_DACL_PROTECTED`). **The second quantity the defect moved** — it was
     /// measured `False`, which is why a parent's ACE reached the directory at
@@ -459,11 +532,44 @@ pub fn open_private_append(path: &Path) -> io::Result<File> {
 /// foreign are left completely alone, so the steady-state cost at every launch
 /// is one [`describe`] per entry and zero writes.
 ///
-/// **Reparse points are skipped, never followed.** `projects/<id>/skills/<name>`
-/// are junctions into the machine-wide canonical skill store; stamping a DACL
-/// *through* one would rewrite the target's ACL, which lives outside this tree
-/// and belongs to every project at once. `vela-projects::remove_tree` exists for
-/// the same reason.
+/// **Symlinks and junctions are skipped, and the reason is the walk, not the
+/// stamp.**
+///
+/// An earlier version of this said stamping a DACL through one "would rewrite
+/// the target's ACL". That is false and was measured false:
+/// `Get`/`SetNamedSecurityInfoW` with `SE_FILE_OBJECT` act on the **link
+/// object**, and a target's SDDL comes back byte-identical after the link has
+/// been hardened. The stamp is harmless.
+///
+/// What is *not* harmless is [`repair_within`] recursing through one.
+/// `projects/<id>/skills/<name>` are junctions into the machine-wide canonical
+/// skill store; descending one would walk a tree that is not this root's, and
+/// re-stamp files belonging to every project at once. That is the same hazard
+/// `vela-projects::remove_tree` exists for, and it is a property of *walking*,
+/// not of setting an ACL.
+///
+/// The skip is therefore exactly as wide as it needs to be, and no wider than
+/// the code: `FileType::is_symlink` is true on Windows for
+/// `IO_REPARSE_TAG_SYMLINK` and `IO_REPARSE_TAG_MOUNT_POINT` only. Other
+/// reparse tags — an app-execution alias, a cloud-storage placeholder — are
+/// **not** skipped, and are treated as the ordinary files they behave like.
+/// Saying "reparse points are skipped" claimed a breadth this does not have.
+///
+/// # Two guards, redundant on purpose, and neither one provable alone
+///
+/// Descent is blocked twice: this skip, and `kind.is_dir()` on the recursive
+/// call — which is already false for a junction, because `FileType` is
+/// symlink-aware. **Removing either one alone changes no observable
+/// behaviour**, which was established by mutation rather than assumed: with the
+/// skip deleted the walk still cannot descend, and with the `is_dir()` guard
+/// forced open the skip still stops it. Only removing *both* lets the walk out
+/// of the tree, and that is the mutation
+/// `the_walk_does_not_follow_a_junction_out_of_the_tree` reddens under.
+///
+/// So the test guards the **pair**, and no single-mutation test can attribute
+/// the property to one of them. That is what defence in depth means when it is
+/// working, and it is worth writing down rather than leaving a reader to infer
+/// that each line is individually load-bearing.
 ///
 /// The residual gap, stated plainly: an explicit foreign ACE on a deep entry
 /// underneath an otherwise-clean directory is not searched for. Closing it
@@ -472,10 +578,48 @@ pub fn open_private_append(path: &Path) -> io::Result<File> {
 /// its own repair pass, not a silent full-tree walk here.
 ///
 /// Returns the paths it repaired, so a caller can report them.
-pub fn repair_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
+pub fn repair_entries(dir: &Path) -> Result<Vec<PathBuf>, EntryFailure> {
     let mut repaired = Vec::new();
     repair_within(dir, 0, &mut repaired)?;
     Ok(repaired)
+}
+
+/// A failure **at a named entry**, not at the root that contains it.
+///
+/// Without the path, every fault inside a walk collapses into one message
+/// naming the directory that was being walked — which is the wrong path to put
+/// in front of a user and the wrong one to hand to `icacls`. Without the
+/// [`Failure`], a directory-listing I/O fault and a refusal to accept an ACL become
+/// the same error, which is the *could not* / *would not* collapse all over
+/// again, one call site to the right.
+#[derive(Debug)]
+pub struct EntryFailure {
+    /// The entry that failed. Always more specific than the directory the walk
+    /// started from.
+    pub path: PathBuf,
+    pub failure: Failure,
+}
+
+impl EntryFailure {
+    fn unreachable(path: impl Into<PathBuf>, error: io::Error) -> Self {
+        Self {
+            path: path.into(),
+            failure: Failure::Unreachable(error),
+        }
+    }
+
+    fn not_private(path: impl Into<PathBuf>, error: io::Error) -> Self {
+        Self {
+            path: path.into(),
+            failure: Failure::NotPrivate(error),
+        }
+    }
+}
+
+impl std::fmt::Display for EntryFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "`{}`: {}", self.path.display(), self.failure)
+    }
 }
 
 /// Bounded so a filesystem loop cannot turn a startup check into a hang.
@@ -483,38 +627,46 @@ pub fn repair_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
 /// the recursion never starts.
 const REPAIR_MAX_DEPTH: u32 = 16;
 
-fn repair_within(dir: &Path, depth: u32, repaired: &mut Vec<PathBuf>) -> io::Result<()> {
+fn repair_within(dir: &Path, depth: u32, repaired: &mut Vec<PathBuf>) -> Result<(), EntryFailure> {
     if depth >= REPAIR_MAX_DEPTH {
         return Ok(());
     }
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
+    let listing = std::fs::read_dir(dir).map_err(|error| EntryFailure::unreachable(dir, error))?;
+    for entry in listing {
+        let entry = entry.map_err(|error| EntryFailure::unreachable(dir, error))?;
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|error| EntryFailure::unreachable(&path, error))?;
         if kind.is_symlink() {
             continue;
         }
-        let path = entry.path();
         // An entry that vanished between the directory listing and here is not
         // a privacy failure. SQLite deletes a write-ahead log on checkpoint and
         // this runs at startup beside a database that may already be live.
         let before = match describe(&path) {
             Ok(report) => report,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
+            // Not being able to read who can reach a path is not the same as
+            // reading that nobody can. Fail closed, at the entry.
+            Err(error) => return Err(EntryFailure::not_private(&path, error)),
         };
         if before.foreign.is_empty() {
             continue;
         }
 
-        if kind.is_dir() {
-            imp::harden_dir(&path)?;
+        // Through `enforce`, not by hand: that is what applies the policy, then
+        // re-reads it off the filesystem, and names the principals if the
+        // enforcement call itself fails. Repairing an entry any other way would
+        // be a second implementation of the promise with its own read-back to
+        // forget — and `assuming_the_os_already_made_it_private_does_not_get_past_the_read_back`
+        // guards this path only because it is this path.
+        let harden = if kind.is_dir() {
+            imp::harden_dir
         } else {
-            imp::harden_file(&path)?;
-        }
-        let after = describe(&path)?;
-        if !after.foreign.is_empty() {
-            return Err(after.refusal(&path));
-        }
+            imp::harden_file
+        };
+        enforce(&path, harden).map_err(|error| EntryFailure::not_private(&path, error))?;
         repaired.push(path.clone());
 
         if kind.is_dir() {
@@ -606,6 +758,10 @@ mod imp {
         }
         Ok(Privacy {
             platform: "unix",
+            // Mode bits belong to the file and are never handed down from a
+            // parent, so every foreign bit is one the path carries in its own
+            // right.
+            foreign_explicit: foreign.clone(),
             foreign,
             inheritance_disabled: None,
             detail: format!("mode {mode:04o}"),
@@ -659,11 +815,10 @@ mod imp {
     use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-    /// `ACCESS_ALLOWED_ACE_TYPE`. Only an *allow* ACE hands access to anyone;
-    /// a deny ACE for a foreign principal takes access away and is not a leak.
-    const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
-    /// `ACCESS_DENIED_ACE_TYPE`. Same layout, opposite meaning.
-    const ACCESS_DENIED_ACE_TYPE: u8 = 1;
+    /// The ACE types this decoder understands, and what one means for privacy.
+    /// Kept out here so the decision is reachable by a test — see
+    /// [`super::ace`].
+    use super::ace;
 
     /// A SID, owned. Held as `u32`s because a `SID` is a structure of `DWORD`s
     /// and the API is entitled to a 4-byte-aligned pointer; a `Vec<u8>` is only
@@ -902,11 +1057,13 @@ mod imp {
                 };
 
             let mut foreign = Vec::new();
+            let mut foreign_explicit = Vec::new();
             let mut lines = vec![format!("owner={}", sid_string(owner))];
 
             if dacl.is_null() {
                 // A NULL DACL is not "no access". It is unrestricted access.
                 foreign.push("everyone (NULL DACL)".to_owned());
+                foreign_explicit.push("everyone (NULL DACL)".to_owned());
                 lines.push("dacl=NULL — unrestricted".to_owned());
             } else {
                 // `windows-sys` derives no `Default` for its raw structs — the
@@ -932,7 +1089,7 @@ mod imp {
                     let header = &*(ace as *const ACE_HEADER);
                     let inherited = ACE_FLAGS::from(header.AceFlags) & INHERITED_ACE != 0;
                     match header.AceType {
-                        ACCESS_ALLOWED_ACE_TYPE | ACCESS_DENIED_ACE_TYPE => {
+                        ace::ALLOWED | ace::DENIED => {
                             let allowed = &*(ace as *const ACCESS_ALLOWED_ACE);
                             let sid = (&allowed.SidStart) as *const u32 as PSID;
                             let name = sid_string(sid);
@@ -940,12 +1097,17 @@ mod imp {
                                 "ace type={} sid={name} mask=0x{:08x} inherited={inherited}",
                                 header.AceType, allowed.Mask
                             ));
-                            let grants =
-                                header.AceType == ACCESS_ALLOWED_ACE_TYPE && allowed.Mask != 0;
                             let ours = EqualSid(sid, user.as_psid()) != 0
                                 || EqualSid(sid, system.as_psid()) != 0;
-                            if grants && !ours {
-                                foreign.push(name);
+                            // The decision itself lives in `super::ace`, where
+                            // a test can reach it.
+                            if ace::verdict(header.AceType, allowed.Mask, ours)
+                                == ace::Verdict::Foreign
+                            {
+                                foreign.push(name.clone());
+                                if !inherited {
+                                    foreign_explicit.push(name);
+                                }
                             }
                         }
                         other => {
@@ -953,7 +1115,11 @@ mod imp {
                             // layout. Rather than misread one, refuse to call
                             // the path private.
                             lines.push(format!("ace type={other} — unrecognised layout"));
-                            foreign.push(format!("<ACE type {other}, not decoded>"));
+                            let undecodable = format!("<ACE type {other}, not decoded>");
+                            foreign.push(undecodable.clone());
+                            if !inherited {
+                                foreign_explicit.push(undecodable);
+                            }
                         }
                     }
                 }
@@ -963,6 +1129,7 @@ mod imp {
             Ok(Privacy {
                 platform: "windows",
                 foreign,
+                foreign_explicit,
                 inheritance_disabled: Some(protected),
                 detail: lines.join("; "),
             })
@@ -1028,6 +1195,209 @@ mod tests {
     }
 
     use std::path::PathBuf;
+
+    // -----------------------------------------------------------------------
+    // Reading one ACE. Pure, so it runs on every platform including the ones
+    // that will never execute the Windows branch.
+    //
+    // Every case below was a mutation that left the ENTIRE workspace green at
+    // 1291/1291 before these existed.
+    // -----------------------------------------------------------------------
+
+    /// **The one with teeth.**
+    ///
+    /// A deny ACE takes access away. Counting one as granting makes a path
+    /// carrying a denial for a foreign principal read as *not private* — and
+    /// because `vela-store` refuses to open a database in a directory that is
+    /// not private, **Vela would decline to start over an ACL stricter than the
+    /// one it demands**. Deny entries are not exotic: they are exactly what an
+    /// administrator adds to lock a group out of a folder.
+    #[test]
+    fn a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader() {
+        assert_eq!(
+            ace::verdict(ace::DENIED, 0x001f01ff, false),
+            ace::Verdict::Harmless,
+            "a denial was read as handing access to the principal it denies"
+        );
+    }
+
+    #[test]
+    fn an_allow_ace_for_a_foreign_principal_is_a_foreign_reader() {
+        assert_eq!(
+            ace::verdict(ace::ALLOWED, 0x001200a9, false),
+            ace::Verdict::Foreign
+        );
+    }
+
+    #[test]
+    fn an_allow_ace_for_us_is_harmless() {
+        assert_eq!(
+            ace::verdict(ace::ALLOWED, 0x001f01ff, true),
+            ace::Verdict::Harmless
+        );
+    }
+
+    /// An ACE granting an empty set of rights hands over nothing. Reporting it
+    /// as a reader is a false alarm with the same cost as the deny case: a
+    /// refusal to start.
+    #[test]
+    fn an_allow_ace_with_an_empty_mask_grants_nothing() {
+        assert_eq!(ace::verdict(ace::ALLOWED, 0, false), ace::Verdict::Harmless);
+    }
+
+    /// Object ACEs, callback ACEs and anything Windows gains later have a
+    /// different layout; read with this one's, the SID and mask are nonsense.
+    /// The honest answer is to refuse to call the path private — never to treat
+    /// the entry as harmless because it was not understood.
+    #[test]
+    fn an_ace_layout_this_code_cannot_decode_is_never_called_harmless() {
+        for unknown in [2u8, 5, 9, 17, 255] {
+            assert_eq!(
+                ace::verdict(unknown, 0x001f01ff, false),
+                ace::Verdict::Undecodable,
+                "ace type {unknown} was decoded as if its layout were known"
+            );
+            assert_eq!(
+                ace::verdict(unknown, 0, true),
+                ace::Verdict::Undecodable,
+                "ace type {unknown} was waved through because it looked like ours"
+            );
+        }
+    }
+
+    /// **The deny case again, on a real DACL rather than an integer.**
+    ///
+    /// The pure test above fixes the decision; this one fixes the wiring, by
+    /// putting a genuine deny entry on a genuine directory with `icacls` and
+    /// asking [`describe`] what it sees. Without both, the classifier could be
+    /// right and unreachable.
+    #[cfg(windows)]
+    #[test]
+    fn a_directory_carrying_a_real_deny_ace_still_reads_as_private() {
+        let root = scratch("deny");
+        let dir = root.join("diagnostics");
+        create_private_dir(&dir).unwrap();
+        assert!(describe(&dir).unwrap().is_private(), "control");
+
+        // Stricter than what this crate demands, not looser.
+        let status = std::process::Command::new("icacls")
+            .arg(&dir)
+            .arg("/deny")
+            .arg("*S-1-5-32-545:(OI)(CI)(R)")
+            .output()
+            .expect("icacls must be present on Windows");
+        assert!(
+            status.status.success(),
+            "could not add a deny ace: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+
+        let report = describe(&dir).unwrap();
+        assert!(
+            report.foreign.is_empty(),
+            "a deny entry was reported as a principal that can reach the path: \
+             {report:?}"
+        );
+        assert!(
+            report.is_private(),
+            "Vela would refuse to start over an ACL that is stricter than the \
+             one it asks for: {report:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **The walk must not leave the tree it was given.**
+    ///
+    /// A junction under the application-data root points at the machine-wide
+    /// canonical skill store. Descending one would re-stamp files belonging to
+    /// every project at once. The skip is what stops that — and the reason is
+    /// the recursion, not the stamp: setting an ACL by path acts on the link,
+    /// not on what it points at.
+    ///
+    /// What changes if the skip is removed: the file inside `outside` is
+    /// re-stamped, which is this test's way of saying Vela reached out of its
+    /// own directory and rewrote somebody else's permissions.
+    ///
+    /// # What this can and cannot attribute
+    ///
+    /// Getting it to bite took two goes. [`repair_within`] descends only into
+    /// directories it had to **repair**, so a junction whose own DACL is
+    /// already clean is passed over for reasons unrelated to the check under
+    /// test — the first version of this test passed with the skip deleted. The
+    /// link is therefore widened **after** the root is protected, which is the
+    /// shape a previous `icacls` on a mount point leaves behind.
+    ///
+    /// Even so, this reddens only when **both** descent guards are removed —
+    /// the symlink skip and `kind.is_dir()` on the recursive call. Each alone
+    /// is sufficient, so neither is individually falsifiable, and this test
+    /// does not claim otherwise. See [`repair_entries`] for why both are kept.
+    #[cfg(windows)]
+    #[test]
+    fn the_walk_does_not_follow_a_junction_out_of_the_tree() {
+        let root = scratch("junction");
+        let inside = root.join("app-data");
+        let outside = root.join("somewhere-else");
+        let theirs = outside.join("not-ours.txt");
+        std::fs::create_dir_all(&inside).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(&theirs, b"belongs to something else").unwrap();
+        widen(&outside);
+
+        let before_dir = describe(&outside).unwrap();
+        let before_file = describe(&theirs).unwrap();
+        assert!(
+            !before_file.foreign.is_empty(),
+            "control: the outside file has nothing to lose: {before_file:?}"
+        );
+
+        // A junction, the way `vela-projects` mounts the canonical store.
+        let link = inside.join("skills-mount");
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&outside)
+            .output()
+            .expect("cmd must be present on Windows");
+        assert!(
+            made.status.success(),
+            "could not create a junction: {}",
+            String::from_utf8_lossy(&made.stdout)
+        );
+
+        create_private_dir(&inside).unwrap();
+        // Widened after the protection, so the walk has a reason to want to
+        // repair the link — and therefore a reason to descend it.
+        widen(&link);
+        let link_report = describe(&link).unwrap();
+        assert!(
+            !link_report.foreign.is_empty(),
+            "control: the junction is already clean, so the walk would skip it \
+             for reasons that have nothing to do with the check under test: \
+             {link_report:?}"
+        );
+        assert_eq!(
+            describe(&theirs).unwrap().detail,
+            before_file.detail,
+            "control: widening the junction reached through it to the target, \
+             so this test cannot distinguish the walk from its own setup"
+        );
+
+        repair_entries(&inside).unwrap();
+
+        assert_eq!(
+            describe(&theirs).unwrap().detail,
+            before_file.detail,
+            "the walk followed a junction and rewrote a file outside the tree \
+             it was given"
+        );
+        assert_eq!(
+            describe(&outside).unwrap().detail,
+            before_dir.detail,
+            "the walk followed a junction and rewrote a directory outside the \
+             tree it was given"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// The post-condition, on the real implementation, read back off the real
     /// filesystem.

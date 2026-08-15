@@ -246,10 +246,13 @@ impl DatabaseLocation {
         // an ACE carried explicitly rather than inherited, which protecting the
         // parent does not rewrite. Nothing is touched unless the read-back says
         // it needs to be, so a healthy directory pays one `describe` per entry.
-        vela_privatefs::repair_entries(parent).map_err(|error| StoreError::NotPrivate {
-            path: parent.display().to_string(),
-            reason: error.to_string(),
-        })?;
+        //
+        // The error names **the entry**, not this directory, and keeps the same
+        // could-not/would-not split as the root. Collapsing either — reporting
+        // the root's path for a fault three levels down, or calling a
+        // directory-listing I/O error a privacy refusal — would undo one call site to the right
+        // exactly what the two branches above are for.
+        vela_privatefs::repair_entries(parent).map_err(entry_failure)?;
 
         // The files this crate owns across restarts, protected in their own
         // right rather than left to inherit. Only the ones already on disk: a
@@ -287,6 +290,32 @@ impl DatabaseLocation {
             files.push(PathBuf::from(name));
         }
         files
+    }
+}
+
+/// A failure at one entry of the walk, in the store's own vocabulary.
+///
+/// Two things have to survive the translation, and both were lost when this was
+/// an inline closure over the whole walk:
+///
+/// - **The path is the entry's**, never the directory the walk started from.
+///   Reporting the root for a fault three levels down puts the wrong path in
+///   front of the user and the wrong one into the `icacls` command they are
+///   being invited to run.
+/// - **The could-not / would-not split holds here too.** A directory-listing
+///   fault and a refusal to accept an ACL are not the same kind of event, one call site
+///   to the right any more than they are at the root.
+fn entry_failure(entry: vela_privatefs::EntryFailure) -> StoreError {
+    let path = entry.path.display().to_string();
+    match entry.failure {
+        vela_privatefs::Failure::Unreachable(error) => StoreError::Io {
+            path,
+            reason: error.to_string(),
+        },
+        vela_privatefs::Failure::NotPrivate(error) => StoreError::NotPrivate {
+            path,
+            reason: error.to_string(),
+        },
     }
 }
 
@@ -546,17 +575,31 @@ mod tests {
         let installed = skills.join("my-skill.md");
         std::fs::write(&installed, b"---\nname: my-skill\n---\n").unwrap();
 
+        // **`foreign_explicit`, not `foreign`.** `tempfile::tempdir()` lands
+        // under `%TEMP%`, which on this machine hands three foreign principals
+        // to every directory created inside it — so `!foreign.is_empty()` is
+        // ambient-true and establishes nothing about what `widen` did. With
+        // that weaker precondition this test passed with `repair_entries`
+        // fully neutered: it bit only because `widen` happens to grant a SID
+        // `%TEMP%` does not, an accident it never asserted. The explicit,
+        // non-inherited ACE is the thing under test and the thing protecting
+        // the root cannot reach.
         let before = vela_privatefs::describe(&skills).unwrap();
         assert!(
-            !before.foreign.is_empty(),
-            "control: the child was not widened, so the assertion below would \
-             pass on anything: {before:?}"
+            !before.foreign_explicit.is_empty(),
+            "control: `skills/` carries no NON-INHERITED foreign ace, so the \
+             case this test exists for — the one protecting the root does not \
+             fix — was never set up: {before:?}"
         );
         let before_file = vela_privatefs::describe(&installed).unwrap();
         assert!(
-            !before_file.foreign.is_empty(),
-            "control: the explicit ACE did not propagate to the file, so the \
-             propagation half is not under test: {before_file:?}"
+            before_file
+                .foreign
+                .iter()
+                .any(|who| before.foreign_explicit.contains(who)),
+            "control: the file did not inherit the explicit ace from `skills/`, \
+             so the propagation half is not under test: {before_file:?} vs \
+             {before:?}"
         );
 
         DatabaseLocation::in_directory(&data).prepare().unwrap();
@@ -573,6 +616,50 @@ mod tests {
             "the file `skills/` handed the ACE down to is still reachable by \
              another account: {after_file:?}"
         );
+    }
+
+    /// **A fault inside the walk names the entry, and keeps its kind.**
+    ///
+    /// Every error out of `repair_entries` used to become
+    /// `NotPrivate { path: <the root> }` — so a directory-listing fault was reported
+    /// as a privacy refusal, and a genuine refusal three levels down named the
+    /// application-data directory instead of the file that could not be
+    /// tightened. That is items 4 and 5 re-opened one call site to the right,
+    /// and `a_directory_that_cannot_be_created_is_an_io_fault_not_a_privacy_refusal`
+    /// does not cover it: it guards the create path only.
+    #[test]
+    fn a_fault_inside_the_walk_names_the_entry_and_keeps_its_kind() {
+        let entry = std::path::PathBuf::from(r"C:\data\dev.vela.desktop\skills\my-skill.md");
+
+        let io = entry_failure(vela_privatefs::EntryFailure {
+            path: entry.clone(),
+            failure: vela_privatefs::Failure::Unreachable(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "the directory listing failed",
+            )),
+        });
+        match &io {
+            StoreError::Io { path, .. } => assert_eq!(path, &entry.display().to_string()),
+            other => panic!("a listing fault became a privacy refusal: {other:?}"),
+        }
+
+        let refusal = entry_failure(vela_privatefs::EntryFailure {
+            path: entry.clone(),
+            failure: vela_privatefs::Failure::NotPrivate(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "SetNamedSecurityInfoW failed",
+            )),
+        });
+        match &refusal {
+            StoreError::NotPrivate { path, .. } => {
+                assert_eq!(
+                    path,
+                    &entry.display().to_string(),
+                    "the refusal named a directory other than the entry that failed"
+                );
+            }
+            other => panic!("a privacy refusal became an I/O fault: {other:?}"),
+        }
     }
 
     /// **A disk fault must not present as a security decision.**

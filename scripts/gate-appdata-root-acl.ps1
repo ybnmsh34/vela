@@ -68,6 +68,17 @@ function Say([string]$Text) {
   if ($OutFile) { Add-Content -Path $OutFile -Value $Text -Encoding utf8 }
 }
 
+# Setup that cannot proceed. Reports into the transcript and leaves with a
+# failing status, rather than throwing and taking the transcript with it -- the
+# same reason the database check below is guarded.
+function Bail([string]$Why) {
+  Say ""
+  Say "  SETUP FAILED  $Why"
+  Say "=============================================================="
+  Say " GATE COULD NOT RUN"
+  exit 1
+}
+
 function Check([string]$What, [bool]$Ok) {
   if ($Ok) { Say "  PASS  $What" } else { Say "  FAIL  $What"; $script:Failures += $What }
 }
@@ -139,15 +150,34 @@ New-Item -ItemType Directory -Force -Path $ScratchDir | Out-Null
 $skills = Join-Path $ScratchDir 'skills'
 New-Item -ItemType Directory -Force -Path $skills | Out-Null
 $null = & icacls $ScratchDir /grant "${group}:(OI)(CI)(RX)"
-if ($LASTEXITCODE -ne 0) { throw "icacls could not widen $ScratchDir" }
+if ($LASTEXITCODE -ne 0) { Bail "icacls could not widen $ScratchDir with $group" }
 
 # And the shape protecting the root does NOT reach: an ACE the child carries
 # EXPLICITLY. Hardening a parent rewrites only the inherited portion of a
 # child's DACL, so this one survives unless something walks for it. The file is
 # created afterwards so it is born carrying the ACE by inheritance — the
 # propagation half, not just the directory half.
-$null = & icacls $skills /grant "${group}:(OI)(CI)(RX)"
-if ($LASTEXITCODE -ne 0) { throw "icacls could not widen $skills" }
+#
+# Granted to a DIFFERENT principal from the root, and that is the whole point.
+# The root is widened with the group from the finding, which %TEMP% on this
+# machine ALREADY hands down — so "skills/ has a foreign principal" is
+# ambient-true and a check asserting only that cannot come back wrong. It
+# passed with the inheritance flags stripped. `BUILTIN\Users` appears nowhere
+# else in this tree, so every assertion about it below is provably this gate's
+# own doing.
+$childSid = 'S-1-5-32-545'
+$childGroup = (New-Object System.Security.Principal.SecurityIdentifier($childSid)).Translate(
+  [System.Security.Principal.NTAccount]).Value
+
+# The precondition that makes the precondition meaningful.
+$preexisting = @((Get-Acl -LiteralPath $skills).Access |
+  Where-Object { $_.IdentityReference.Value -eq $childGroup })
+if ($preexisting.Count -gt 0) {
+  throw "$childGroup already reaches $skills before this gate granted anything; pick another principal"
+}
+
+$null = & icacls $skills /grant "*${childSid}:(OI)(CI)(RX)"
+if ($LASTEXITCODE -ne 0) { Bail "icacls could not widen $skills with $childGroup" }
 Set-Content -Path (Join-Path $skills 'my-skill.md') -Value "---`nname: my-skill`n---" -Encoding utf8
 
 $before = Show-Acl 'BEFORE  ' $ScratchDir
@@ -170,10 +200,18 @@ Say "  BEFORE foreign: $($beforeForeign -join ', ')"
 Say "  BEFORE explicit (this gate's doing): $(@($deliberate | ForEach-Object { $_.IdentityReference.Value }) -join ', ')"
 
 $beforeSkills = Show-Acl 'BEFORE  ' $skills
-Check "BEFORE skills/ carries an EXPLICIT foreign ace (the shape inheritance cannot fix)" (
-  @($beforeSkills.Access | Where-Object { -not $_.IsInherited -and $_.IdentityReference.Value -ne $beforeSkills.Owner }).Count -gt 0)
-Check "BEFORE skills/my-skill.md inherited that ace" (
-  (Foreign-Principals (Get-Acl -LiteralPath (Join-Path $skills 'my-skill.md'))).Count -gt 0)
+Check "BEFORE skills/ carries $childGroup as a NON-INHERITED ace (the shape inheritance cannot fix)" (
+  @($beforeSkills.Access | Where-Object {
+    -not $_.IsInherited -and $_.IdentityReference.Value -eq $childGroup }).Count -gt 0)
+
+# Named principal, not a count. `Count -gt 0` here was ambient-true: strip the
+# (OI)(CI) flags so the file inherits nothing from skills/ and it still passed,
+# while claiming to establish the propagation half. Nothing but skills/ grants
+# $childGroup, so its presence on the file can only have come from skills/.
+$beforeSkillFile = Show-Acl 'BEFORE  ' (Join-Path $skills 'my-skill.md')
+Check "BEFORE skills/my-skill.md inherited $childGroup FROM skills/" (
+  @($beforeSkillFile.Access | Where-Object {
+    $_.IsInherited -and $_.IdentityReference.Value -eq $childGroup }).Count -gt 0)
 Say ""
 
 # ---------------------------------------------------------------------------
@@ -231,6 +269,12 @@ foreach ($child in @('vela.db', 'skills', 'skills\my-skill.md', 'projects')) {
     $f = Foreign-Principals $acl
     Check "$child is reachable by no foreign principal" ($f.Count -eq 0)
     if ($f.Count -gt 0) { Say "    foreign: $($f -join ', ')" }
+    # Named, as well as counted: the explicit grant this gate made itself is
+    # the one protecting the root provably cannot remove.
+    if ($child -like 'skills*') {
+      Check "$child no longer carries $childGroup" (
+        @($acl.Access | Where-Object { $_.IdentityReference.Value -eq $childGroup }).Count -eq 0)
+    }
   }
   Say ""
 }

@@ -43,12 +43,32 @@ use std::error::Error;
 
 /// Every message in an error's chain, outermost first, joined into one line.
 ///
-/// Tauri wraps a `setup` failure in `tauri::Error::Setup`, whose own `Display`
-/// is a summary; the sentence that names the folder and the accounts that can
-/// reach it is further down the chain. Reporting only the outermost message
-/// would show the user "setup failed" and discard the entire actionable part,
-/// which is the failure mode this module exists to prevent — so the chain is
-/// walked rather than trusted to have flattened itself.
+/// # What this does and does not rescue
+///
+/// An earlier version of this comment claimed Tauri wraps a `setup` failure in
+/// a summary with the actionable sentence further down the chain, so the walk
+/// was what saved it. **That is false, and it was checked only after it had
+/// been written down.** `tauri::Error` is
+///
+/// ```text
+/// #[error("error encountered during setup hook: {0}")]
+/// Setup(SetupError),
+/// ```
+///
+/// — a positional field with no `#[source]` and no `#[from]`, so the variant
+/// has no `source()` at all, and its `Display` already embeds the whole inner
+/// message. For the one error this module was written for, the walk is a
+/// **no-op**: the folder and the principals are in the outermost string
+/// already. `a_real_tauri_setup_error_reports_the_folder_and_the_principals`
+/// asserts that against a genuine `tauri::Error::Setup`, built the way
+/// `tauri`'s own `app.rs` builds it, rather than against a hand-rolled error
+/// shaped to make the walk look necessary.
+///
+/// The walk is kept because it is the right default for the *other* half of
+/// `tauri::Error`: `Json`, `Io` and `JoinError` are `#[from]` variants whose
+/// `Display` is `{0}` or a short prefix and which do carry a `source()`. It is
+/// insurance, not the mechanism — and calling it the mechanism made a true
+/// statement about the code into a false statement about the world.
 ///
 /// A link whose text is already contained in something reported above it is
 /// dropped: `Display` implementations that embed their source are common, and
@@ -156,15 +176,53 @@ mod tests {
         current
     }
 
-    /// **The actionable sentence is at the bottom of the chain, and it is the
-    /// only part worth showing.**
+    /// **The property that actually matters, against the error the process
+    /// actually produces.**
     ///
-    /// This is the shape Tauri produces: a generic outer wrapper over the
-    /// privacy refusal. What changes if `describe_chain` stops walking:
-    /// the user is told "setup failed" and nothing about which folder or which
-    /// account, which is the state this module was written to end.
+    /// A real `tauri::Error::Setup`, built the way `tauri`'s `app.rs` builds it
+    /// — `crate::Error::Setup(e.into())` over the boxed error the `setup` hook
+    /// returned — wrapping the real `StoreError::NotPrivate`. What the user is
+    /// shown must name the folder and the accounts that can reach it.
+    ///
+    /// This test exists because the one below proves something narrower than it
+    /// used to claim. `tauri::Error::Setup` has no `source()`, so no amount of
+    /// chain-walking is what rescues this path; the message survives because
+    /// the variant's `Display` embeds `{0}`. Guarding the *outcome* against the
+    /// *real* type is the only way to notice if either of those ever changes.
     #[test]
-    fn the_reported_text_keeps_the_innermost_cause_not_just_the_wrapper() {
+    fn a_real_tauri_setup_error_reports_the_folder_and_the_principals() {
+        let refusal = vela_store::StoreError::NotPrivate {
+            path: r"C:\Users\User\AppData\Roaming\dev.vela.desktop".into(),
+            reason: "windows reachable by: DESKTOP-298M5DU\\CodexSandboxUsers; \
+                     inheritance disabled: false"
+                .into(),
+        };
+        let boxed: Box<dyn Error> = Box::new(refusal);
+        let error = tauri::Error::Setup(boxed.into());
+
+        let reported = describe_chain(&error);
+
+        assert!(
+            reported.contains("dev.vela.desktop"),
+            "the folder did not reach the user: {reported}"
+        );
+        assert!(
+            reported.contains("CodexSandboxUsers"),
+            "the accounts that can reach the folder did not reach the user, \
+             which is the half that makes the message fixable: {reported}"
+        );
+        assert!(
+            reported.contains("did not open the database"),
+            "the message does not say Vela declined: {reported}"
+        );
+    }
+
+    /// The chain walk itself, on a shape that has a `source()` — which
+    /// `tauri::Error::Setup` does **not**. This guards the insurance, not the
+    /// mechanism; see `describe_chain`'s own documentation for the difference
+    /// and for why stating it the other way round was wrong.
+    #[test]
+    fn a_chain_with_a_real_source_is_walked_to_the_bottom() {
         let error = layered(&[
             "setup failed",
             "the folder holding your conversations at `C:\\…\\dev.vela.desktop` \

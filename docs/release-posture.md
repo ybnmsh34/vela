@@ -2,7 +2,21 @@
 
 What shipping Vela to a stranger's machine means **today**, on commit
 `0fa0cec` plus this branch. This is a record of the state that exists, not a
-plan for a state somebody intends. Nothing here says "will".
+plan for a state somebody intends. It proposes no signing scheme, buys nothing,
+and describes no intended future work.
+
+An earlier revision of this line claimed `Nothing here says "will"`, which was
+false about the document containing it. The future tense appears at four places
+in this document's own prose, excluding quoted source (the `HKCU` doc comment
+in §5 is Tauri's text, not this document's): three describe what an
+already-existing mechanism does the next time it runs — §2 on SmartScreen, §6
+on the two build failures recurring, §9's aside — and one is a genuine
+prediction: **§9's claim about which toolchain CI resolves, marked in place as
+a prediction because CI was not run.** That is the only forward-looking claim
+here that could turn out wrong.
+
+The rule this document actually keeps is the narrower, useful one: **no
+aspirational prose about work somebody means to do.**
 
 Everything below was re-derived from the configuration and the dependency
 sources as they stand, not from prior documentation.
@@ -38,6 +52,26 @@ Windows-specific default applies wholesale: no `signingIdentity`, no
 
 `identifier` is `dev.vela.desktop`. `productName` is `Vela`. `version` is
 `0.1.0`.
+
+### What those absent keys cost, read off the generated installer
+
+An enumeration of the configuration is not an enumeration of the result. The
+bundler expands the missing keys into empty defines in
+`target/release/nsis/x64/installer.nsi`, and those have visible consequences:
+
+- **Both installers carry the stock NSIS icon.** `installer.nsi:41`
+  `INSTALLERICON ""` and `:44` `UNINSTALLERICON ""`. `MUI_ICON` and `MUI_UNICON`
+  are only defined inside `!if "${INSTALLERICON}" != ""` (`:125-127`) and
+  `!if "${UNINSTALLERICON}" != ""` (`:152-154`), so neither is ever defined and
+  no `icon.ico` payload is present in either installer. This is **separate from**
+  the `.ico` defect in §6: that fix made the bundle build and gave the installed
+  `vela.exe` its icon; the installer and uninstaller executables a user
+  double-clicks still show the generic NSIS icon.
+- **No publisher links in Add/Remove Programs.** `COPYRIGHT ""`, `HOMEPAGE ""`
+  and `LICENSE ""` mean no `URLInfoAbout`, no `HelpLink`, no `URLUpdateInfo`, no
+  licence page in the installer, and no copyright string. Combined with §2's
+  unsigned binary, a user inspecting this app in Settings finds a publisher
+  string of `vela` and nowhere to go.
 
 ---
 
@@ -158,8 +192,13 @@ Consequences worth stating plainly:
 
 - **Installation requires a working internet connection** on any machine that
   does not already have the runtime — even though Vela is presented as an
-  offline-first product. An offline install on a fresh machine fails at this
-  step.
+  offline-first product.
+- **On download failure the install aborts; it does not degrade.** This is
+  visible in the generated script rather than inferred: `installer.nsi:55` sets
+  `INSTALLWEBVIEW2MODE "downloadBootstrapper"`, and the two failure paths under
+  it, `:561` and `:593`, both do `Abort "$(webview2AbortError)"`. So an offline
+  machine without WebView2 does not get a partly working Vela or a Vela that
+  explains itself later — it gets an installer that stops and rolls back.
 - The download is silent, so a user on a slow link sees an installer that
   appears to stall with no explanation.
 - The alternative modes exist and are not used: `embedBootstrapper` (smaller,
@@ -335,11 +374,65 @@ Two things worth flagging about what a user sees here:
   `dev.vela.desktop` identifier, not from any configured publisher name. It is
   what appears in Settings → Apps.
 - **An unrelated third-party application named "Vela" was already installed on
-  this machine** — an Electron app (version 1.1.0, `CompanyName: GitHub, Inc.`)
-  at `%LOCALAPPDATA%\Programs\vela`. Vela's NSIS installer targets
-  `%LOCALAPPDATA%\Vela`, a different directory, so the two coexist and the
-  existing app was verified untouched. But both now appear as "Vela" in the
-  installed-programs list, and the name is not distinctive.
+  this machine**, and installing ours **took its shortcuts away**. See below;
+  this is the one place this document previously claimed more than it had
+  checked.
+
+### The install damaged another application's shortcuts
+
+An Electron app also called Vela (version 1.1.0, `CompanyName: GitHub, Inc.`,
+188,790,272 bytes) was already installed at `%LOCALAPPDATA%\Programs\vela`.
+
+An earlier revision of this document said "the existing app was verified
+untouched". **That sentence was false, and the way it was false is worth more
+than the fact.** What was actually checked was the incumbent's *install
+directory*, which is indeed untouched — the two apps install to different paths
+(`%LOCALAPPDATA%\Vela` versus `%LOCALAPPDATA%\Programs\vela`) and its 188 MB of
+files are all still there. The verification was scoped to the one place the
+damage was not.
+
+The damage is in the shortcuts, which are shared namespace, not per-app:
+
+```
+C:\Users\User\Desktop\Vela.lnk
+    CreationTime  8/7/2026 1:23:16 AM      LastWriteTime 8/15/2026 5:36:42 PM
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Vela.lnk
+    CreationTime  8/7/2026 1:23:16 AM      LastWriteTime 8/15/2026 5:36:42 PM
+```
+
+Both pre-dated this install by eight days and were rewritten at the exact
+moment of it. Both now point at `C:\Users\User\AppData\Local\Vela\vela.exe`. A
+sweep of the Desktop and of both the per-user and all-users Start Menus finds
+**no shortcut anywhere still targeting** `%LOCALAPPDATA%\Programs\vela\Vela.exe`.
+The incumbent is still installed, still 188 MB, still has its own `Vela 1.1.0`
+uninstall entry — and is no longer reachable from any shortcut on this machine.
+
+The mechanism is in the generated installer, not in anything Vela configures.
+`installer.nsi:925` and `:901` both use a bare `CreateShortcut`:
+
+```
+CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+```
+
+`CreateShortcut` overwrites unconditionally. There is no existence check and no
+"is this someone else's shortcut" check; the only guard above it is a migration
+path for *our own* previously named binary.
+
+It compounds on the way out. `installer.nsi:793-798` has the uninstaller delete
+`$DESKTOP\Vela.lnk` **if it targets our exe** — which, after the overwrite, it
+does. So uninstalling Vela deletes a shortcut that belonged to a different
+application, and the incumbent's shortcut is gone one-way: our installer does
+not restore what it replaced.
+
+**This is recorded, not fixed.** It cannot be fixed from configuration:
+overwriting is the behaviour of Tauri's generated NSIS script. The real finding
+is the general one — **shipping under a `productName` that another installed
+application already uses silently annexes its shortcuts**, and "Vela" is not a
+distinctive name. Both apps now also appear as "Vela" in the installed-programs
+list.
+
+The shortcuts were left exactly as the installer left them; this document only
+read them.
 
 **The MSI was not installed.** It requires administrator rights (§5) that this
 session does not hold, and a per-machine install is the more invasive of the
@@ -510,9 +603,11 @@ quietly dropped is not.
 One consequence for CI, recorded because nobody will connect it later
 otherwise: the three jobs in `.github/workflows/ci.yml` use
 `dtolnay/rust-toolchain@stable`, and a `rust-toolchain.toml` takes precedence
-over `rustup default`. Those jobs will now resolve **1.97.1** rather than
-whatever `stable` is on the day, and rustup will download it on each run. That
-is the intended effect of pinning. The workflow file was not edited, because
+over `rustup default`. Those jobs should therefore resolve **1.97.1** rather
+than whatever `stable` is on the day, with rustup downloading it on each run.
+That is the intended effect of pinning — but **CI was not run, so this is a
+prediction, not a measurement**, and it is the one forward-looking claim in this
+document. The workflow file was not edited, because
 `src/platform/verify-covers-ci.test.ts` reads it and belongs to another builder.
 
 ---
@@ -529,12 +624,49 @@ is the intended effect of pinning. The workflow file was not edited, because
   requires administrator rights — §7.
 - **Whether the installers work on any machine other than this one.** One
   machine, one architecture (`x86_64-pc-windows-msvc`), one Windows version.
-- **Uninstall.** `uninstall.exe` was produced and never executed, so nothing is
-  known about whether it removes cleanly, and in particular nothing is known
-  about what its "Delete app data" checkbox does to
-  `%APPDATA%\dev.vela.desktop`.
+- **Uninstall, as a behaviour.** `uninstall.exe` was produced and never
+  executed, so whether it removes cleanly is unknown. What its "Delete app
+  data" checkbox *does* is no longer unknown — it is established by reading the
+  generated script, and recorded in §11 rather than left as a question.
 
 `docs/architecture/conventions.md` lists `pnpm tauri build` (with bundling) as
-"not attempted". That is superseded by this document for Windows; the file
-itself was not edited, being outside B2's claim.
+"not attempted". That entry sits under its §10 heading, which scopes the whole
+table to what was "built and verified on a headless Linux container" — so it
+remains true **of that environment** and is not stale. This document adds the
+Windows answer it never claimed to have. The file was not edited.
+
+---
+
+## 11. What the uninstaller does to the user's data
+
+Established **by reading the generated `installer.nsi` only**. The uninstaller
+was not run, and nothing below is an observation of it running.
+
+When the "Delete app data" checkbox on the uninstall confirmation page is
+ticked, and the run is not an update, `installer.nsi:818-833` does:
+
+```
+SetShellVarContext current
+RmDir /r "$APPDATA\${BUNDLEID}"
+RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+```
+
+with `:48` defining `BUNDLEID "dev.vela.desktop"`. So it recursively deletes
+**both** `%APPDATA%\dev.vela.desktop` — the conversation database, the skill
+store and the diagnostics log — and `%LOCALAPPDATA%\dev.vela.desktop`, which is
+where the WebView2 user-data directory lives. `SetShellVarContext current`
+scopes it to the uninstalling user. It also clears the installer's own registry
+keys under `HKCU`.
+
+Two things a reader should not over-read:
+
+- **The checkbox is the only thing standing between a user and their entire
+  conversation history.** It is on the uninstall confirmation page, and this
+  document does not know what it defaults to, because the page was never shown.
+- **A silent uninstall does not delete data.** `$DeleteAppDataCheckboxState` is
+  assigned in exactly one place, `:454`, by a `SendMessage ... BM_GETCHECK`
+  against the checkbox control in the confirmation page's show handler. In `/S`
+  mode that page never runs, so the variable keeps its zero-initialised value
+  and the `${If} $DeleteAppDataCheckboxState = 1` guard at `:820` is false.
+  **Untested** — no uninstall of either kind was performed.
 

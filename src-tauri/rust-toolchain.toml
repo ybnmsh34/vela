@@ -36,8 +36,17 @@
 # unable to run it.
 #
 # `targets` is deliberately NOT set. The host target is always installed, and
-# naming x86_64-pc-windows-msvc here would make the three Linux CI jobs
-# download a Windows std they cannot link against.
+# naming x86_64-pc-windows-msvc here would make the Linux CI jobs download a
+# Windows std they cannot link against.
+#
+# The exact count, since a wrong number is what this comment used to carry:
+# `.github/workflows/ci.yml` has four `runs-on: ubuntu-latest` jobs — `static`
+# (:32), `test-ts` (:80), `test-rust` (:112) and `secret-tripwire` (:254) — of
+# which exactly **two** install a toolchain, at :66 and :138. Those two are the
+# ones a `targets` entry would cost. The third `dtolnay/rust-toolchain@stable`
+# in the file, at :210, sits inside `test-windows` (`runs-on: windows-latest`,
+# :188), where naming the Windows target would be a no-op rather than a wasted
+# download.
 
 [toolchain]
 channel = "1.97.1"

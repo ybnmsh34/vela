@@ -57,6 +57,10 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
         // the endpoint cannot serve, so a restart returns every model to
         // "nothing established".
         .manage(ipc::models::CapabilityCache::new())
+        // The sandbox host, built on first use rather than here: its backend
+        // probe asks Windows which WSL distributions exist, and a launch on
+        // which nobody runs anything should not pay for that answer.
+        .manage(ipc::sandbox::SandboxState::new())
         // The system of record. Opened here rather than in `AppState` because
         // the OS application-data directory is only resolvable once the app
         // handle exists. Migrations run inside this call; if it fails, startup
@@ -176,6 +180,12 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::models::models_capabilities,
             ipc::models::models_list,
             ipc::models::models_probe,
+            ipc::sandbox::sandbox_approve,
+            ipc::sandbox::sandbox_cancel,
+            ipc::sandbox::sandbox_policy,
+            ipc::sandbox::sandbox_release,
+            ipc::sandbox::sandbox_report_document,
+            ipc::sandbox::sandbox_submit,
             ipc::schedules::schedules_create,
             ipc::schedules::schedules_delete,
             ipc::schedules::schedules_list,

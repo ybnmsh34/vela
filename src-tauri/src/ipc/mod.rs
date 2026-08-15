@@ -59,6 +59,7 @@ pub mod error;
 pub mod mcp;
 pub mod memory;
 pub mod models;
+pub mod sandbox;
 pub mod schedules;
 pub mod secrets;
 pub mod settings;
@@ -103,6 +104,12 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "models_capabilities",
     "models_list",
     "models_probe",
+    "sandbox_approve",
+    "sandbox_cancel",
+    "sandbox_policy",
+    "sandbox_release",
+    "sandbox_report_document",
+    "sandbox_submit",
     "schedules_create",
     "schedules_delete",
     "schedules_list",

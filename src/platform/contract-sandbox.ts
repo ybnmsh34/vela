@@ -61,19 +61,34 @@
  * isolation states the floor it needs in {@link SandboxSubmitReq.minimumIsolation} and is
  * refused when the host cannot reach it — never quietly served something weaker.
  *
- * Two honesty notes, stated here because a reader will otherwise infer their opposites:
+ * Two honesty notes, stated here because a reader will otherwise infer their opposites. They
+ * said the opposite until 2026-08-15 — see amendment 4 — and a reader who trusts a stale
+ * "nothing is wired up" will change a rule believing nothing is watching:
  *
- *  1. **Nothing in this file is wired up.** These command names are not in
- *     `COMMAND_ALLOWLIST` in `src/platform/contract.ts`, there is no Rust module behind
- *     them, and `BrowserAdapter` does not implement them. Wiring them is the five-step
- *     checklist in `docs/architecture/conventions.md` §3.3, and it must add each name to
- *     both allowlists in the same change or `cargo test` fails.
- *  2. **No test in this repo enforces a single rule stated below.** The rules are
- *     specifications for the implementations that will be written against them, not claims
- *     about the tree as it stands. `src/platform/claimed-guards.test.ts` exists precisely
- *     because a comment claiming an enforcement that does not exist is worse than an
- *     unguarded invariant, so: where this file says "must", read "the implementation must,
- *     and no machine is watching yet".
+ *  1. **The process half of this file is wired up; the document half is not.** All six
+ *     command names are in `COMMAND_ALLOWLIST` in `src/platform/contract.ts` and in the Rust
+ *     allowlist, which `cargo test` pins to each other; the Rust module behind them is
+ *     `src-tauri/src/ipc/sandbox.rs` over the `vela-sandbox` crate, whose backend is a WSL2
+ *     namespace that runs Bash and nothing else; `BrowserAdapter` implements all six as a
+ *     fake that runs nothing and refuses every submit `languageUnsupported`, which is what
+ *     the real host also answers on a machine with no WSL distribution. Still unbuilt:
+ *     every document command path, `python`, both copying materialisations, and any surface
+ *     that renders an approval prompt — {@link SandboxEvent} `awaitingApproval` reaches
+ *     `src/data/sandbox-repository.ts` and stops there.
+ *  2. **Some rules below are enforced by tests now, and which ones is not obvious.** As of
+ *     2026-08-15 the `vela-sandbox` crate carries 47 tests: `tests/sandbox_boundary.rs` is an
+ *     escape battery that executes real programs inside the boundary and checks the
+ *     filesystem, network, privilege and lifecycle claims from outside them, and the module
+ *     tests pin the refusal order, the path rules and the wire shape. `cargo test` fails if
+ *     the two allowlists disagree, and `src/data/sandbox-repository.test.ts` covers the
+ *     renderer seam. What no machine watches: the entire document family (no producer
+ *     exists), the four {@link RefusalReason} members no host emits —
+ *     `skillsMountMustBeReadOnly`, `guestPathRemapUnsupported`, `limitAboveHostCeiling`,
+ *     `documentGrantInvalid` — the copy-out semantics of {@link MountMaterialisation}, and
+ *     every network policy other than `denied`. `src/platform/claimed-guards.test.ts` exists
+ *     precisely because a comment claiming an enforcement that does not exist is worse than
+ *     an unguarded invariant, so: where this file states a rule in that list, read "the
+ *     implementation must, and no machine is watching yet".
  *
  * ## The seam with the other two frozen contracts
  *
@@ -2008,4 +2023,25 @@ void _sandboxNamesAreWellTyped;
  *    because React 19 ships no build that can be inlined into an opaque-origin
  *    document and no transpiler is bundled. The rule is written now so that
  *    whoever bundles one is not deciding this again.
+ *
+ * 5. 2026-08-15 — **No shape changed. The two honesty notes at the top of this file did,
+ *    because all four of their claims had become false.** They said nothing here was wired
+ *    up — not in `COMMAND_ALLOWLIST`, no Rust module, not implemented by `BrowserAdapter` —
+ *    and that no test enforced a single rule stated below. A host had since shipped: all
+ *    three wiring clauses were untrue, and 43 Rust tests were enforcing rules from this
+ *    file. Nothing is owed to a builder who coded against the old shapes, because no shape
+ *    moved; the entry is here because the notes are load-bearing in the other direction. A
+ *    reader who believes note 2 reads it as licence to change a rule with no machine
+ *    watching, discovers a red test, and concludes the test is wrong. Understating what
+ *    exists is a false claim like any other. The rewritten notes name what is enforced, what
+ *    is not, and the date they were true — so the next reader can check them rather than
+ *    trust them. {@link SANDBOX_CONTRACT_VERSION} is deliberately **not** bumped: it
+ *    versions the shapes, and a consumer pinned to 2 is still right about every one of them.
+ *
+ *    Integrator's note, recorded when track 1 and track 2 were merged: these two entries
+ *    were both written as `4` on branches that could not see each other, and the sandbox
+ *    track's became `5` here. Neither changed a shape, so no consumer is affected by the
+ *    ordering. {@link SANDBOX_CONTRACT_VERSION} reads 3 because amendment 4 bumped it;
+ *    amendment 5 still does not bump it, and the sentence above should be read as "this
+ *    entry does not bump it" rather than as a claim about the constant's current value.
  */

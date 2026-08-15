@@ -4226,6 +4226,7 @@ dependencies = [
  "vela-endpoint",
  "vela-mcp",
  "vela-providers",
+ "vela-sandbox",
  "vela-secrets",
  "vela-settings",
  "vela-skills",
@@ -4275,6 +4276,15 @@ dependencies = [
  "vela-secrets",
  "vela-store",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "vela-sandbox"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

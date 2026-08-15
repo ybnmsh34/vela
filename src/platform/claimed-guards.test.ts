@@ -84,6 +84,25 @@
  * in `this guard is not vacuous` below. A guard nobody has watched fail is a
  * claim, which is the thing this file exists to catch.
  *
+ * The third is worse than either, and it was in {@link BACKTICKED} from this
+ * file's first commit. The tokeniser required a backticked span to be between 2
+ * and 160 characters, and a span outside that range does not consume its own two
+ * backticks — so the cursor is left mid-pair and every later backtick on the line
+ * pairs with the wrong partner. Downstream of one `` `×` `` the scan stops
+ * reading tokens and starts reading the *gaps between* them. Nothing failed and
+ * nothing was reported; the guard simply stopped looking, which is the defect
+ * class in (1) wearing this file's own clothes.
+ *
+ * Measured at the commit that repaired it: 174 lines inside this scan carry a
+ * one-character backticked token beside four or more backticks, and on 72 lines
+ * the shipped tokeniser emitted at least one string that is not a backtick
+ * span at all — a gap. Fifteen spans in scope are longer than 160 characters and
+ * desynchronise the line the same way from the other end. What all of that had
+ * been hiding is three names, `encoded_spans` and `hold_back_len` at
+ * `gate_m_phase_b2.rs:10352` and `max_tokens` at `anthropic/mod.rs:281`, and all
+ * three are real. That is luck, not evidence, and it is the reason the control
+ * below asserts the phase rather than the outcome.
+ *
  * ## Scope, and why it is drawn here
  *
  * Source, the harness, the scripts, and the two docs builders are told to treat
@@ -153,6 +172,12 @@ const SCANNED_EXTENSIONS = [
  * by five files that would be unreadable if they could not say the old name.
  *
  * A claim about a guard is never in here. If a test is named, it exists.
+ *
+ * `.module.css` used to be a row above `src/tests_helper.rs`, and it is gone
+ * because it was the wrong shape of answer. A leading-dot token is a filename
+ * *suffix*, and {@link resolves} now reads it as one and holds it to the tree,
+ * so the fact is derived rather than asserted. One fewer exception is worth more
+ * than one more list entry; see the note in the path case.
  */
 const ILLUSTRATIVE = new Set([
   // shapes
@@ -163,7 +188,6 @@ const ILLUSTRATIVE = new Set([
   'Component.module.css',
   'foo.ts',
   'foo.json',
-  '.module.css',
   'src/tests_helper.rs',
   // history
   'Markdown.ts',
@@ -532,7 +556,45 @@ export interface Claim {
   readonly token: string;
 }
 
-const BACKTICKED = /`([^`\n]{2,160})`/g;
+/**
+ * **Backtick pairs, in phase.** Every backtick is consumed as the open or the
+ * close of a span, and nothing is judged here: whatever sits between one and the
+ * next is handed to {@link PATH_TOKEN} and {@link SENTENCE_NAME}, which decide
+ * what is a claim.
+ *
+ * That division of labour is the repair. This read `` /`([^`\n]{2,160})`/g ``,
+ * and **both** bounds were silent skips. A span the regex declines to match does
+ * not consume its two delimiters, so the global cursor is left mid-pair and every
+ * later backtick on that line pairs with the wrong partner — from there the scan
+ * extracts the *gaps between* the tokens instead of the tokens.
+ * `gate_m_phase_b2.rs:10352` is the shape: a paragraph about the scrubber writes
+ * a lone backslash in backticks, one character, below the floor, and downstream
+ * of it `encoded_spans` and `hold_back_len` were never looked at. Those were not
+ * claims that passed. They were text this guard never read, for the whole life of
+ * the file. The ceiling did the same to any span over 160 characters, of which
+ * fifteen sat inside the scan.
+ *
+ * A one-character token is now extracted and then ignored, because a single glyph
+ * is neither path-shaped nor snake_case — `×` and `❯` in
+ * `scripts/ci-retry-vitest-crash.mjs` are exactly that. Being ignored by the
+ * rules is fine; being skipped by the tokeniser is not, because a skip moves the
+ * cursor off every token after it. Every length test a tokeniser performs is a
+ * chance to fall out of phase, so it performs none.
+ *
+ * ## The one thing it does not read the way a renderer would
+ *
+ * A span delimited by a *run* of backticks. `anthropic/mod.rs:281` writes a
+ * doubled-backtick literal with `max_tokens` in single backticks inside it, and
+ * CommonMark calls the whole line one literal; pairing reads those interior
+ * backticks as delimiters and extracts `max_tokens`, which then has to resolve
+ * like anything else. That is the loud direction, and it is the same asymmetry
+ * {@link wireTokensAndMethods} is argued from: an over-extracted token argues
+ * with you, a skipped one does not. The quiet direction is a run-delimited span
+ * whose content holds no backtick at all — its name would go unexamined. This
+ * tree has no such site; that was measured, not assumed, and the phase control
+ * below is where a future one would be noticed.
+ */
+const BACKTICKED = /`([^`\n]*)`/g;
 const DOC_LINK = /\[`([^`\]\n]+)`\]/g;
 const PATH_TOKEN =
   /^[\w.@-]+(?:\/[\w.@-]+)*\.(?:rs|ts|tsx|css|md|sh|mjs|js|json|yml|yaml|html|toml)$/;
@@ -647,7 +709,24 @@ function resolves(claim: Claim): boolean {
       // directory the file has never been in, and the guard agreed with it
       // because *some* `contract.ts` exists. Three sites relied on that; all
       // three were wrong, and all three are corrected.
-      if (!cleaned.includes('/')) return BASENAMES.has(cleaned);
+      //
+      // A bare token that *starts* with a dot is a filename **suffix**, not a
+      // filename: `.module.css` is this repo's word for the CSS-module naming
+      // convention, and `.test.ts` for the vitest one. Nobody can write a file
+      // called `.module.css`, so as a path claim it could only ever fail, and it
+      // was kept green by a hand-written row in {@link ILLUSTRATIVE} — an
+      // exception, which the header says is a hole. Read as a suffix it is a
+      // claim again and it is held to the tree exactly like the others: some real
+      // basename has to end with it. That also keeps a genuine dotfile honest,
+      // because `.eslintrc.js` is its own suffix. A token with a slash in it is
+      // untouched — `.github/workflows/ci.yml` names a directory and a file, and
+      // is a path claim in the ordinary way.
+      if (!cleaned.includes('/')) {
+        if (cleaned.startsWith('.')) {
+          return ALL_FILES.some((path) => path.slice(path.lastIndexOf('/') + 1).endsWith(cleaned));
+        }
+        return BASENAMES.has(cleaned);
+      }
       return FILE_SET.has(cleaned) || ALL_FILES.some((path) => path.endsWith(`/${cleaned}`));
     }
     case 'named-test':
@@ -781,5 +860,51 @@ describe('this guard is not vacuous', () => {
       .map((claim) => claim.token);
 
     expect(reported).toEqual(['src/app/contract.ts', 'src/nowhere/at/all/App.tsx']);
+  });
+
+  it('keeps the tokeniser in phase past a token no rule will judge', () => {
+    // {@link BACKTICKED} was `` /`([^`\n]{2,160})`/g ``, and a span outside those
+    // bounds did not consume its own delimiters: the cursor stayed mid-pair and
+    // every later backtick on the line paired with the wrong partner, so the scan
+    // read the gaps between the tokens. Both fabricated names below sit *after*
+    // such a span, and under either bound neither is reported at all — the guard
+    // does not disagree with them, it never sees them. That is the failure this
+    // control exists for, and it is the failure the guard exists to catch.
+    //
+    // The first line is the shape of `scripts/ci-retry-vitest-crash.mjs:82`, the
+    // site that exposed this: single glyphs beside names that matter. `×`, `❯`
+    // and `Tests` are extracted and then judged by nobody, which is correct and
+    // is not the same thing as being skipped.
+    const long = 'x'.repeat(200);
+    const corpus = [
+      '// search the log for `×`, for a `❯`, for `a_guard_the_floor_hid`, or for `Tests`',
+      `// and for \`${long}\` before \`a_guard_the_ceiling_hid\``,
+    ].join('\n');
+
+    const reported = claimsIn('src-tauri/src/probe.rs', corpus)
+      .filter((claim) => !resolves(claim))
+      .map((claim) => `${claim.kind}:${claim.token}`);
+
+    expect(reported).toEqual([
+      'named-test:a_guard_the_floor_hid',
+      'named-test:a_guard_the_ceiling_hid',
+    ]);
+  });
+
+  it('reads a leading dot as a suffix, and still holds it to the tree', () => {
+    // `.module.css` is a naming convention, and was excused by an
+    // {@link ILLUSTRATIVE} row because as a *filename* it can never exist. It is
+    // now resolved the way everything else here is — against real basenames — so
+    // a convention this tree does not actually have is still reported.
+    const corpus = [
+      '// `.module.css` and `.test.ts` are conventions this tree keeps',
+      '// `.nosuch.css` is a convention nobody adopted',
+    ].join('\n');
+
+    const reported = claimsIn('src-tauri/src/probe.rs', corpus)
+      .filter((claim) => !resolves(claim))
+      .map((claim) => claim.token);
+
+    expect(reported).toEqual(['.nosuch.css']);
   });
 });

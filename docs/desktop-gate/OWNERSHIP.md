@@ -14,6 +14,7 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-dacl` | `fix/appdata-owner-only` | Wave 1 / B4a |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
+| `C:/Users/User/vela-wt-flake` | `fix/endpoints-timeout` | Wave 1 / load flake |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -31,6 +32,7 @@ first, or the reclaim silently does not happen.
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
 | `src/platform/contract.test.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts`, `src-tauri/src/ipc/mod.rs` | Wave 1 / B7 | 2026-08-15 | three guards that do not bite: a shape-not-exact-set capability assertion, a hand-written contract key list, a one-string secrets check |
 | `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
+| `src/features/models/EndpointsPanel.test.tsx`, `src/features/models/ModelWorkspace.test.tsx`, `src/app/modal-containment.test.tsx`, `src/app/memory-payload.test.tsx`, `src/features/conversation/ConversationSurface.test.tsx` | Wave 1 / load flake | 2026-08-15 | the load flake: `userEvent`'s per-input-step scheduler tick and cold `import('@/app/App')` inside a test body |
 
 ## Released
 

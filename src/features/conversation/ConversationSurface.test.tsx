@@ -19,6 +19,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
+import { App } from '@/app/App';
 import { NO_WINDOW_CONTROLS, type PlatformAdapter, type Unsubscribe } from '@/platform/adapter';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { PlatformProvider } from '@/platform/PlatformProvider';
@@ -36,6 +37,7 @@ import type {
 import { NO_CAPABILITIES } from '@/platform/contract';
 import { PlatformError } from '@/platform/errors';
 import { resetDebugLogStore, useDebugLogStore } from '@/state/debug-log-store';
+import { useNavigationStore } from '@/state/navigation-store';
 
 import { ConversationSurface } from './ConversationSurface';
 import { ConversationView } from './ConversationView';
@@ -139,8 +141,24 @@ function mount(host: ScriptedHost, capabilities?: ChatCapabilities) {
   );
 }
 
+/**
+ * `delay: null` because this helper is the only thing in this file that *types*,
+ * and it types a whole question per call. `userEvent`'s default `delay: 0`
+ * yields to the event loop once per keystroke, and on this box a `setTimeout(0)`
+ * turn costs a full Windows scheduler tick — 14.3-15.1ms measured, idle or
+ * loaded — so the default charges about a tick per character. Measured on a
+ * 27-character string: 18.9 ms/char by default against 2.2 ms/char with
+ * `delay: null` idle, and 73.8-110.1 against 10.8-31.0 ms/char under three
+ * concurrent full `vitest` runs. Nothing downstream asserts on typing timing;
+ * the composer's own draft reporting is observed through `waitFor`, which polls
+ * the DOM and does not care how the characters arrived.
+ *
+ * The click-only `userEvent.setup()` calls elsewhere in this file are left on
+ * the default deliberately: none of those tests came within 1.5s of the 5000ms
+ * ceiling across six full-suite runs under that load.
+ */
 async function ask(text: string): Promise<void> {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await user.type(screen.getByRole('textbox', { name: 'Message' }), text);
   await user.click(screen.getByRole('button', { name: 'Send' }));
 }
@@ -728,9 +746,19 @@ describe('the conversation surface: mounted in the app', () => {
    * rather than assumed, because a surface nothing mounts is a surface nobody
    * sees.
    */
+  /**
+   * `App` and the navigation store are imported at the top of this file, not
+   * here. A dynamic `import()` in a test body is charged to that test's own
+   * timeout, and this was the only test in the file that reached for `App`, so
+   * the import landed cold: the whole application module graph transformed and
+   * evaluated inside the 5000ms budget. Cold `import('@/app/App')` measured
+   * 2193ms idle on this box and 7737-25707ms under three concurrent full
+   * `vitest` runs. With the delay removed from `ask` this became the slowest
+   * test in the suite at 4315ms — 86% of the ceiling, for module loading.
+   * Hoisted, the work happens during file collection, which no per-test timeout
+   * bounds.
+   */
   it('fills the content region once a conversation is selected', async () => {
-    const { App } = await import('@/app/App');
-    const { useNavigationStore } = await import('@/state/navigation-store');
     const previous = useNavigationStore.getState().selectedConversationId;
 
     render(<App adapter={new BrowserAdapter()} />);
@@ -862,7 +890,12 @@ describe('the conversation surface: what it reports about the turn to come', () 
       expect(screen.getByLabelText('Model reply')).toHaveTextContent('first answer');
     });
 
-    const user = userEvent.setup();
+    // `delay: null` for the same reason as `ask` above: this is the second place
+    // in the file that types, and this test failed 5 of 6 full-suite runs under
+    // three concurrent `vitest` runs before the change, by exceeding the 5000ms
+    // default. The `waitFor` below is what establishes the draft was reported,
+    // and it polls the DOM rather than counting keystrokes.
+    const user = userEvent.setup({ delay: null });
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'second question');
     await waitFor(() => {
       expect(latest).toEqual(['first question', 'first answer', 'second question']);

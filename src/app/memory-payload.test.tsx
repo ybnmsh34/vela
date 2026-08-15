@@ -89,6 +89,22 @@ async function host(contextWindowTokens: number | null = 200_000): Promise<Recor
 type User = ReturnType<typeof userEvent.setup>;
 
 /**
+ * ## Why every `userEvent.setup` here passes `delay: null`
+ *
+ * These tests reach the payload through the real UI: open the memory pane, type
+ * a fact, close it, start a conversation, send a message — about ten clicks per
+ * test. `userEvent`'s default `delay: 0` yields to the event loop twice per
+ * click (pointer down, pointer up), and on this box each yield costs a full
+ * Windows scheduler tick, measured at 14.3-15.1ms whether idle or loaded.
+ *
+ * Ten `user.click` round trips measured 584ms idle and 2553 / 2894 / 4070ms
+ * under three concurrent full `vitest` runs; with `delay: null`, 138ms idle and
+ * 619 / 898 / 1276ms. Nothing here asserts on input timing, so the delay is pure
+ * cost — and the two tests that send a message failed 3/6 and 1/6 full-suite
+ * runs under that load before this change, by exceeding the 5000ms default.
+ */
+
+/**
  * The pane, scoped. The title bar has a Close of its own, so every query
  * inside the dialog is asked of the dialog.
  */
@@ -131,7 +147,7 @@ describe('a remembered fact reaches the payload', () => {
     // handed. Nothing about the pane's state, the store's rows or the block
     // builder's output is asserted here: all of those can pass while the turn
     // goes out without a word of it.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = await host();
     render(<App adapter={adapter} />);
 
@@ -161,7 +177,7 @@ describe('a remembered fact reaches the payload', () => {
     // The default state of a fresh install. An empty memory must produce an
     // absent message, not an empty one — a message with no content is a
     // payload some endpoints reject and all of them are confused by.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = await host();
     render(<App adapter={adapter} />);
 
@@ -178,7 +194,7 @@ describe('a remembered fact reaches the payload', () => {
     // The whole point of a user-editable memory: a wrong remembered fact is
     // worse than a forgotten one, because it silently steers every later
     // answer. Deleting it in the pane has to stop it reaching the model.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = await host();
     render(<App adapter={adapter} />);
 
@@ -203,7 +219,7 @@ describe('a remembered fact reaches the payload', () => {
     // from the sender, and the user finds out by losing a message. The block
     // is rendered before a single key is pressed, so the meter must already
     // know about it on an empty composer.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = await host(4_096);
     render(<App adapter={adapter} />);
 

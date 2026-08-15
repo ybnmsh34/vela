@@ -46,6 +46,23 @@ import { resetNavigationStore } from '@/state/navigation-store';
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/**
+ * ## Why every `userEvent.setup` here passes `delay: null`
+ *
+ * `userEvent`'s default `delay: 0` yields to the event loop once per simulated
+ * input step, and on this box a `setTimeout(0)` turn costs a full Windows
+ * scheduler tick — measured at 14.3-15.1ms, idle or loaded. These tests press
+ * Tab twelve times and click several more, so the default charges a tick per
+ * press for nothing: what is asserted is *where the keyboard lands*, never how
+ * long it took to get there.
+ *
+ * Measured here, against the real `App`: twelve `user.tab()` cost 520ms idle and
+ * 959 / 2859 / 3154ms under three concurrent full `vitest` runs; the same twelve
+ * with `delay: null` cost 182ms idle and 527 / 1189 / 1523ms. The two trapping
+ * tests below failed 5 of 6 full-suite runs under that load before this change,
+ * both by exceeding the 5000ms default.
+ */
+
 function report(): ModelCapabilityReport {
   return {
     providerId: 'workstation',
@@ -129,7 +146,7 @@ beforeEach(() => {
 
 describe('a modal dialog holds the keyboard it says it holds', () => {
   it('does not let Tab out of the command bar in either direction', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -158,7 +175,7 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
     // The palette is the one-focusable-child case in the running product: the
     // result rows are `option`s inside a `listbox`, so the text field is the
     // only tab stop there is. Wrapping to "the next one" has to mean itself.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -173,7 +190,7 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
   });
 
   it('wraps Tab from the delete dialog’s last control back onto its first', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -191,7 +208,7 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
   });
 
   it('wraps Shift+Tab from the delete dialog’s first control onto its last', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -204,7 +221,7 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
   });
 
   it('does not let Tab out of the delete dialog into the list it is asking about', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -229,7 +246,7 @@ describe('containing the keyboard did not cost the giving of it back', () => {
   // cannot be built on top of the restore by breaking it.
 
   it('still returns the keyboard to the composer when Escape closes the command bar', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -244,7 +261,7 @@ describe('containing the keyboard did not cost the giving of it back', () => {
   });
 
   it('still returns the keyboard when the command bar is dismissed by a click outside', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 
@@ -263,7 +280,7 @@ describe('containing the keyboard did not cost the giving of it back', () => {
   });
 
   it('still returns the keyboard to the row when the delete dialog is cancelled by a click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);
 

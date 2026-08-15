@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::casefold::CaseFolding;
 use crate::layout::ProjectPaths;
 use crate::link::{
-    copy_tree, create_link, is_reparse_point, remove_tree, trees_have_same_content, LinkStrategy,
-    SkillLinkKind,
+    copy_tree, create_link, is_reparse_point, remove_tree, stored_entry_name,
+    trees_have_same_content, LinkStrategy, SkillLinkKind,
 };
 
 /// The longest mount path this platform will accept.
@@ -46,6 +46,11 @@ pub enum SkillMountProblem {
     /// the repair is the user's; here the occupant is this project's own other
     /// skill and the repair is to disable one of the two. Told the wrong one, a
     /// user goes and looks at a directory that is exactly as Vela made it.
+    ///
+    /// Decided twice over, and the second one is the authority:
+    /// [`CaseFolding::folds`] compares the names in memory, and
+    /// [`crate::stored_entry_name`] then asks the volume which name the entry at
+    /// the mount path actually carries.
     NameCollidesWithAnotherEnabledSkill,
     PermissionDenied,
 }
@@ -164,6 +169,39 @@ pub fn reconcile_skills(
                 SkillMountProblem::NameCollidesWithAnotherEnabledSkill,
             ));
             continue;
+        }
+
+        // **The same question, asked of the volume rather than of a case
+        // table — and the reason the comparison above is allowed to be an
+        // approximation.** [`CaseFolding::folds`] compares Unicode simple
+        // lowercase in memory and can miss a pair this volume's upcase table
+        // joins into one entry. This reads the name the directory *actually*
+        // carries at the path about to be written and byte-compares it against
+        // the names already mounted in this pass.
+        //
+        // Without it a miss is not a near miss: `mount_one` below opens with
+        // `remove_tree(mount)`, which on such a pair is the *earlier* skill's
+        // entry — so the first skill is unlinked, a link is made at what the
+        // volume considers the same path, and both entries are then reported
+        // `Linked` with different `path` strings naming one directory. That is
+        // the silently-wrong outcome this module's header and conventions §9
+        // rule 6 forbid.
+        //
+        // An error is not a collision and is deliberately not treated as one:
+        // if the volume will not answer, the operation that follows fails on
+        // the same path and reports it through `problem`, which can tell
+        // `PermissionDenied` from an occupied entry.
+        if let Ok(Some(stored)) = stored_entry_name(&mount) {
+            // Byte-for-byte, deliberately: a comparison here that folded case
+            // would be the approximation this whole check exists to catch.
+            if already_mounted.contains(&stored.as_str()) {
+                mounts.push(SkillMount::unavailable(
+                    name,
+                    source_text,
+                    SkillMountProblem::NameCollidesWithAnotherEnabledSkill,
+                ));
+                continue;
+            }
         }
         // Recorded even when the mount below fails. The promise is one entry per
         // enabled skill, and a later `foo` after a failed `Foo` is still a
@@ -460,6 +498,84 @@ mod tests {
             "the later entry is reported as a collision, not as a stranger's directory \
              and not as a silent dedupe"
         );
+    }
+
+    /// The backstop that lets [`CaseFolding::folds`] be an approximation.
+    ///
+    /// **What this proves, and what it does not.** It does not exhibit a name
+    /// pair that Unicode simple lowercase and this volume's upcase table
+    /// disagree about. The usual candidates were measured on an ordinary NTFS
+    /// volume and none of them folds — U+0131 against `I`, U+017F against `S`,
+    /// U+212A against `K`, U+0130 against `i` are all two entries there, while
+    /// ASCII, `Ä`/`ä` and Cyrillic `А`/`а` are all one — so no such pair could
+    /// honestly be written down here, and whether one exists on some volume
+    /// somewhere is not settled by this test.
+    ///
+    /// What it proves is the **mechanism**, over the exact shape such a pair
+    /// would produce: an in-memory verdict of "two distinct names" laid over a
+    /// volume that holds one entry. The disagreement is supplied through the
+    /// `folding` argument — a `Sensitive` verdict on a volume measured as
+    /// `Insensitive` — because that argument is the only part of the shape a
+    /// test can produce on every machine. Given it, the reconcile asks the
+    /// filesystem, reports the second name as a collision, and leaves the first
+    /// name's mount standing.
+    #[test]
+    fn a_collision_the_case_table_misses_is_still_caught_by_the_filesystem() {
+        for mut fixture in [fixture(), copying_fixture()] {
+            if CaseFolding::probe(fixture.paths.skills_mount_path()) != CaseFolding::Insensitive {
+                // A volume that really does keep the two apart cannot have this
+                // failure, and forcing the verdict here would test nothing.
+                continue;
+            }
+            fixture.folding = CaseFolding::Sensitive;
+            fixture.install("Research", "# upper");
+
+            let mounts = fixture.reconcile(&["Research", "research"]);
+
+            assert_eq!(mounts.len(), 2);
+            assert!(
+                matches!(
+                    mounts[0].status,
+                    SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
+                ),
+                "the first name mounts, as it would on any volume"
+            );
+            assert_eq!(
+                mounts[1].status,
+                SkillMountStatus::Unavailable {
+                    problem: SkillMountProblem::NameCollidesWithAnotherEnabledSkill
+                },
+                "the in-memory comparison was told these are two names; the volume \
+                 holds one entry, and the volume is the authority"
+            );
+
+            let live = mounts
+                .iter()
+                .filter(|mount| {
+                    matches!(
+                        mount.status,
+                        SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
+                    )
+                })
+                .count();
+            assert_eq!(
+                live, 1,
+                "one directory reported by two mounts under two `path` strings is the \
+                 silently-wrong outcome, and is what the backstop exists to prevent"
+            );
+
+            let mount_root = fixture.paths.skills_mount_path();
+            assert_eq!(
+                fs::read_to_string(mount_root.join("Research").join("SKILL.md")).unwrap(),
+                "# upper",
+                "the first skill's mount survived the second skill's arrival"
+            );
+            assert_eq!(
+                fs::read_dir(mount_root).unwrap().count(),
+                1,
+                "and there is exactly one entry to survive"
+            );
+        }
     }
 
     #[test]

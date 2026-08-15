@@ -224,7 +224,10 @@ pub struct ProjectListRes {
 /// one person may not have two projects called "Notes".
 ///
 /// On success the three host-owned directories exist and skills are reconciled.
-/// On failure nothing was created — **including no row**.
+/// On failure nothing was created — **including no row**. That second half is
+/// [`roll_back_create`], held by
+/// `a_create_that_cannot_finish_leaves_neither_a_row_nor_a_directory` and
+/// `the_rollback_takes_the_tree_and_then_the_row`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCreateReq {
@@ -383,22 +386,53 @@ pub fn create(
         enabled_skills,
     })?;
 
-    // All three directories or none. A partially created project is an error,
-    // never a success with a hole in it, so a failure here takes the row back
-    // out with it — the row is what a later read would build a layout from, and
-    // a row whose directories never appeared is precisely the reference's own
-    // defect (a workspace scaffold that was commented out).
-    if let Err(error) = create_project_directories(host.app_data_dir(), project.id.as_str()) {
-        let _ = store.delete_project(&project.id);
-        return Err(layout_failed(error));
+    // All three directories or none, and **no row without them**. A partially
+    // created project is an error, never a success with a hole in it, so any
+    // failure from here to the return takes the row back out with it — the row
+    // is what a later read would build a layout from, and a row whose
+    // directories never appeared is precisely the reference's own defect (a
+    // workspace scaffold that was commented out).
+    //
+    // The first reconcile is *inside* this rather than after it, and that is the
+    // repair rather than an arrangement of the same lines. It used to sit
+    // outside, covered by nothing, which made the sentence next to it in
+    // `ProjectCreateReq` false in one arm: a `layout_of` that failed returned an
+    // error and left the row and all three directories exactly where they were.
+    if let Err(error) = create_on_disk(store, host, &project.id) {
+        roll_back_create(store, host, &project.id);
+        return Err(error);
     }
-    // Reconciling here rather than on first read is what makes the promise
-    // "on success the skills are mounted" true rather than eventual.
-    let _ = layout_of(store, host, &project.id)?;
 
     Ok(ProjectRes {
         project: store.get_project(&project.id)?.into(),
     })
+}
+
+/// The on-disk half of a create: the three directories, then the first
+/// reconcile.
+///
+/// Reconciling here rather than on first read is what makes the promise "on
+/// success the skills are mounted" true rather than eventual.
+fn create_on_disk(store: &dyn VelaStore, host: &ProjectHost, id: &ProjectId) -> IpcResult<()> {
+    create_project_directories(host.app_data_dir(), id.as_str()).map_err(layout_failed)?;
+    layout_of(store, host, id)?;
+    Ok(())
+}
+
+/// Takes a project that could not be finished back out — **directories first,
+/// row second**.
+///
+/// The same order [`delete`] removes in, for the same reason: interrupted after
+/// the row and before the tree leaves a directory under the application-data
+/// folder that nothing will ever name again, while interrupted the other way
+/// round is repaired by the next layout read.
+///
+/// Both failures are dropped on purpose. The caller is already returning the
+/// error that caused the rollback, and a rollback that reported its own trouble
+/// instead would replace the diagnosis with the symptom.
+fn roll_back_create(store: &dyn VelaStore, host: &ProjectHost, id: &ProjectId) {
+    let _ = remove_project_root(host.app_data_dir(), id.as_str());
+    let _ = store.delete_project(id);
 }
 
 pub fn update(
@@ -689,6 +723,75 @@ mod tests {
         assert!(
             layout.paths.root.ends_with(&created.summary.id),
             "directories are keyed by id, so renaming moves nothing"
+        );
+    }
+
+    #[test]
+    fn a_create_that_cannot_finish_leaves_neither_a_row_nor_a_directory() {
+        let fixture = fixture();
+        // `<app data>/projects` as a *file*: no project's directories can be
+        // made under it, whatever id the store hands back.
+        let projects = projects_root(fixture.dir.path());
+        let _ = fs::remove_dir_all(&projects);
+        fs::write(&projects, "not a directory").unwrap();
+        let before = list(&fixture.store, ProjectListReq::default())
+            .unwrap()
+            .projects
+            .len();
+
+        let refused = fixture
+            .create(ProjectCreateReq {
+                name: "Doomed".into(),
+                ..ProjectCreateReq::default()
+            })
+            .unwrap_err();
+
+        assert_eq!(refused.code, IpcErrorCode::Internal);
+        let after = list(&fixture.store, ProjectListReq::default())
+            .unwrap()
+            .projects;
+        assert_eq!(
+            after.len(),
+            before,
+            "the row went back out with the directories that could not be made"
+        );
+        assert!(!after.iter().any(|project| project.name == "Doomed"));
+        assert!(projects.is_file(), "and nothing was made beside it");
+    }
+
+    /// The rollback itself, exercised on a project that really is on disk.
+    ///
+    /// It is reached from two arms of [`create`] and only one of them can be
+    /// forced: a `create_project_directories` that fails is a file in the way,
+    /// which the test above arranges, while a `layout_of` that fails needs the
+    /// store or the disk to break in the microseconds after they both worked.
+    /// So the shared rollback is measured directly here — that it removes the
+    /// tree *and* the row, in that order — rather than left as a claim about an
+    /// arm nothing can reach.
+    #[test]
+    fn the_rollback_takes_the_tree_and_then_the_row() {
+        let fixture = fixture();
+        let created = fixture.named("Half made");
+        let id = ProjectId::new(&created.summary.id).unwrap();
+        let root = vela_projects::project_root(fixture.dir.path(), id.as_str());
+        assert!(root.is_dir(), "the project really was made first");
+
+        roll_back_create(&fixture.store, &fixture.host, &id);
+
+        assert!(
+            !root.exists(),
+            "the tree the row would have named is gone — a row deleted before its \
+             directories leaves one nothing can ever name again"
+        );
+        assert!(
+            get(
+                &fixture.store,
+                ProjectRefReq {
+                    project_id: created.summary.id.clone()
+                }
+            )
+            .is_err(),
+            "and so is the row"
         );
     }
 

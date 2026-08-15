@@ -118,9 +118,12 @@ import type { Ack } from './contract';
 
 /**
  * Bump when a shape here changes in a way a stubbed builder would notice.
- * Independent of `IPC_CONTRACT_VERSION`, which versions the wire: this file has
- * no wire yet, and coupling the two would force a wire bump for a change no
- * command can carry.
+ * Independent of `IPC_CONTRACT_VERSION`, which versions the wire. The two were
+ * held apart originally because this file had no wire at all; it has one now —
+ * eight commands, on `COMMAND_ALLOWLIST` and in `generate_handler!` — and they
+ * stay apart for the reason that outlived the first. Most of what changes here
+ * is a rule or a shape no command carries, and coupling them would spend a wire
+ * bump, and every stub's revalidation with it, on a change no wire saw.
  */
 export const PROJECT_CONTRACT_VERSION = 3;
 
@@ -790,10 +793,20 @@ export type LinkFallbackReason =
  *    available" flag: nothing may act on it.
  *  - **A junction is a reparse point, and a naive recursive delete walks
  *    through it into the canonical skill store.** Anything that removes a
- *    project root must detect reparse points and unlink rather than descend.
- *    Nothing enforces this today, and it is the single most destructive way
- *    this layout can be got wrong: one wrong delete takes every skill on the
- *    machine, not one project's copy of them.
+ *    project root must detect reparse points and unlink rather than descend. It
+ *    is the single most destructive way this layout can be got wrong: one wrong
+ *    delete takes every skill on the machine, not one project's copy of them.
+ *    **The removal that exists does enforce it**, and the sentence here that
+ *    said nothing did was left standing after that stopped being true — see
+ *    AMENDMENT 7. `vela_projects::remove_tree` in
+ *    `src-tauri/crates/vela-projects/src/link.rs` asks `is_reparse_point`
+ *    before it descends and unlinks instead; every removal in that crate goes
+ *    through it, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    is the test that holds it. What is **not** enforced is that a *second*
+ *    removal, written somewhere else, goes through that function: nothing stops
+ *    a fresh recursive delete on a project root, and that is who this paragraph
+ *    is addressed to.
  *
  * The strategy is established by **attempting the real operation** in a scratch
  * directory under the application-data directory once per launch, then removing
@@ -979,7 +992,12 @@ export interface ProjectListRes {
  * them.
  *
  * On success the three host-owned directories exist ({@link ProjectPaths}) and
- * skills are reconciled. On failure nothing was created — including no row.
+ * skills are reconciled. On failure nothing was created — including no row, and
+ * including the directories: the rollback in `src-tauri/src/ipc/project.rs`
+ * covers the whole of the create, the first reconcile with it, and takes the
+ * tree out before the row. Held by
+ * `a_create_that_cannot_finish_leaves_neither_a_row_nor_a_directory` and
+ * `the_rollback_takes_the_tree_and_then_the_row`.
  */
 export interface ProjectCreateReq {
   readonly name: string;
@@ -1040,17 +1058,30 @@ export interface ProjectUpdateReq {
  *    machine-wide {@link ProjectPaths.skillStore}; a recursive delete that
  *    descends through one of them takes every skill on the machine rather than
  *    one project's view of them. The removal must detect a reparse point and
- *    unlink it rather than walk it. Nothing enforces this — there is no host
- *    code to enforce it in — and this cross-reference exists because the
- *    warning was previously written only on the type that *creates* the link,
- *    which is not the type the builder writing the delete will be reading.
+ *    unlink it rather than walk it. **The host that now exists does exactly
+ *    that**, and the two clauses that used to stand here — that nothing
+ *    enforces it, and that there is no host code to enforce it in — were both
+ *    false by the time they were read; see AMENDMENT 7. `project_delete` calls
+ *    `vela_projects::remove_project_root`, which goes through
+ *    `vela_projects::remove_tree`, which asks `is_reparse_point` before
+ *    descending, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    goes red the moment that check stops answering truthfully. The rule is
+ *    still stated here, and this cross-reference still exists, because the
+ *    guard binds *that* removal and not the next one: the warning was
+ *    previously written only on the type that *creates* the link, which is not
+ *    the type the builder writing a second delete will be reading.
  *  - The working directory is **not touched**, and no option exists to touch
  *    it. An `alsoDeleteFiles` flag is the kind of parameter that is right
  *    ninety-nine times and unrecoverable the hundredth.
  *  - A run may be executing inside this project's workspace at the moment the
- *    delete lands. This contract does not settle that race and no host exists to
- *    lose it yet; whoever wires `src/platform/contract-sandbox.ts` to a project
- *    decides whether delete refuses while a run is live or cancels it first.
+ *    delete lands. **This contract still does not settle that race**, and the
+ *    host that now exists does not settle it either: `project_delete` removes
+ *    the root without asking whether anything is running inside it, because
+ *    nothing in this tree can yet be asked. Whoever wires
+ *    `src/platform/contract-sandbox.ts` to a project decides whether delete
+ *    refuses while a run is live or cancels it first — that decision is open,
+ *    not absent for want of a host.
  *  - Deleting {@link DEFAULT_PROJECT_ID} is refused with `INVALID_PAYLOAD`. It
  *    is the reassignment target above; there is nowhere for its conversations
  *    to go.
@@ -1075,7 +1106,7 @@ export interface ProjectMoveConversationReq {
 }
 
 /* -------------------------------------------------------------------------- */
-/* the command surface — declared, not registered                             */
+/* the command surface — declared here, and registered                        */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -1234,4 +1265,42 @@ void _projectCommandNamesAreWellTyped;
  *    narrower and is now stated as such — the renderer cannot ask which project
  *    a conversation is in, so it cannot filter a conversation list by project.
  *    Revisit: anyone who read the old paragraph as "counts are always zero".
+ *
+ * 7. 2026-08-15 — no shape changed. AMENDMENT 5 said the sweep for "claims this
+ *    file is NOT connected, where it is" had been done. It had not: it replaced
+ *    two paragraphs and left four sentences standing, and one of them was on the
+ *    most safety-critical rule here. {@link ProjectDeleteReq} said of the
+ *    reparse-point rule "Nothing enforces this — there is no host code to
+ *    enforce it in", and {@link LinkStrategy} said "Nothing enforces this
+ *    today". Both clauses were false: `vela_projects::remove_tree` asks
+ *    `is_reparse_point` before it descends, every removal in that crate goes
+ *    through it, `project_delete` reaches it through
+ *    `vela_projects::remove_project_root`, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    holds it. A missing guard is a hole and a claimed guard is a trap; a guard
+ *    denied is the third shape, and it is how a second unguarded delete gets
+ *    written by someone who read this file and believed it. Both paragraphs now
+ *    say what enforces the rule and name the test, and both keep the warning,
+ *    because the guard binds the removal that exists and not the next one.
+ *
+ *    Three smaller sentences in the same class went with them.
+ *    {@link PROJECT_CONTRACT_VERSION} said "this file has no wire yet" — eight
+ *    commands are on `COMMAND_ALLOWLIST` and in `generate_handler!` — and the
+ *    two versions stay independent for the reason that outlived that one. The
+ *    section banner three lines above {@link ProjectCommands} still read
+ *    "declared, not registered" directly above a paragraph saying all eight are
+ *    registered and answer. And {@link ProjectDeleteReq}'s note on the
+ *    delete-during-a-run race said "no host exists to lose it yet"; a host
+ *    exists and `project_delete` does not ask, so the race is now stated as
+ *    open rather than as premature.
+ *
+ *    Two things this amendment does NOT claim. Nothing stops a *second*
+ *    recursive delete being written that does not go through `remove_tree` —
+ *    that is why the warning stays. And {@link ProjectCreateReq}'s "on failure
+ *    nothing was created" was true of the directories and had a hole for the
+ *    row: a failure in the first reconcile left both standing. The host is
+ *    repaired and the sentence now names the tests; only one of the two arms
+ *    that reach that rollback can be forced in a test, and the test that
+ *    measures it says so. Revisit: nothing in code; anyone who read either
+ *    "nothing enforces this" as licence to write their own removal.
  */

@@ -197,6 +197,80 @@ pub fn remove_tree(path: &Path) -> io::Result<()> {
     fs::remove_file(path)
 }
 
+/// The name this volume **actually stored** for `path`, or `None` when nothing
+/// is there.
+///
+/// **This is the filesystem answering the question [`crate::CaseFolding::folds`]
+/// can only approximate.** `folds` compares in memory against Unicode's simple
+/// lowercase; this asks the directory. On a volume that holds `Foo` and `foo` as
+/// one entry, asking for `<root>/foo` answers `Foo` — the name the directory
+/// really carries — so a caller can tell "this path is free" from "this path is
+/// already some other name's entry". No case table of this crate's is consulted
+/// anywhere in the answer, which is the whole point: the caller compares the
+/// result byte for byte.
+///
+/// The reparse point is **not followed**: a junction answers with its own name,
+/// not with the name of what it points at. `std::fs::canonicalize` would answer
+/// with the target and is the wrong tool here for that reason.
+///
+/// An error is returned rather than folded into `None`, because "the volume
+/// would not say" is not "nothing is there", and a caller that cannot tell them
+/// apart is back to guessing.
+pub fn stored_entry_name(path: &Path) -> io::Result<Option<String>> {
+    // Asked first for two reasons: a free path is the common case and this
+    // answers it in one call, and it is what keeps a wildcard out of the
+    // enumeration below — `*` and `?` cannot appear in a stored name, and this
+    // call refuses them rather than matching something else.
+    match fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    #[cfg(windows)]
+    {
+        windows_junction::stored_name(path).map(Some)
+    }
+    #[cfg(not(windows))]
+    {
+        stored_name_by_inode(path).map(Some)
+    }
+}
+
+/// Off Windows the directory is read and the entry with `path`'s inode is the
+/// answer.
+///
+/// `readdir` yields stored names and inode identity is identity, so this is
+/// exact on a case-insensitive APFS volume exactly as it is on ext4. Directory
+/// entries are compared without following a symlink, for the reason
+/// [`stored_entry_name`] gives.
+#[cfg(not(windows))]
+fn stored_name_by_inode(path: &Path) -> io::Result<String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let wanted = fs::symlink_metadata(path)?;
+    let asked = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        if metadata.dev() == wanted.dev() && metadata.ino() == wanted.ino() {
+            return Ok(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    // Something is at the path and the directory does not list it: a race with a
+    // removal, or a filesystem that hides it. Naming an occupant here would be a
+    // guess, so answer with the name as asked and let the operation that follows
+    // report what actually happens.
+    Ok(asked)
+}
+
 /// Whether this process may create entries in `directory`, **without creating
 /// one**.
 ///
@@ -350,6 +424,59 @@ mod windows_junction {
             lp_overlapped: *mut c_void,
         ) -> i32;
         fn CloseHandle(h_object: isize) -> i32;
+        fn FindFirstFileW(lp_file_name: *const u16, lp_find_file_data: *mut FindDataW) -> isize;
+        fn FindClose(h_find_file: isize) -> i32;
+    }
+
+    /// `WIN32_FIND_DATAW`.
+    ///
+    /// Declared in full even though one field is read: the OS writes the whole
+    /// structure, so a truncated version would be a buffer overrun. Every field
+    /// is an integer or an array of them, which is what makes an all-zero value
+    /// a valid one.
+    #[repr(C)]
+    #[allow(dead_code)]
+    struct FindDataW {
+        attributes: u32,
+        creation_time: [u32; 2],
+        last_access_time: [u32; 2],
+        last_write_time: [u32; 2],
+        size_high: u32,
+        size_low: u32,
+        reserved0: u32,
+        reserved1: u32,
+        /// `cFileName[MAX_PATH]`, NUL-terminated. **The name NTFS stored**, not
+        /// the name that was asked for.
+        file_name: [u16; 260],
+        alternate_file_name: [u16; 14],
+    }
+
+    /// The name this directory really carries at `path`.
+    ///
+    /// `FindFirstFileW` enumerates the **directory entry**, so it neither
+    /// follows the reparse point nor consults any case table of ours; the
+    /// upcase table that decided which entry `path` lands on is the same one
+    /// that stored the name it returns.
+    pub(super) fn stored_name(path: &Path) -> io::Result<String> {
+        let name: Vec<u16> = path.as_os_str().encode_wide().chain(once(0)).collect();
+        // SAFETY: every field of `FindDataW` is an integer or an array of them,
+        // so all-zero is a valid value of it.
+        let mut data: FindDataW = unsafe { std::mem::zeroed() };
+        // SAFETY: `name` is NUL-terminated and outlives the call, and `data` is
+        // a live structure of exactly the size the OS writes.
+        let handle = unsafe { FindFirstFileW(name.as_ptr(), &mut data) };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: `handle` came from `FindFirstFileW` and is not used again.
+        unsafe { FindClose(handle) };
+
+        let end = data
+            .file_name
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(data.file_name.len());
+        Ok(String::from_utf16_lossy(&data.file_name[..end]))
     }
 
     pub(super) fn create(link: &Path, target: &Path) -> io::Result<()> {
@@ -572,6 +699,48 @@ mod tests {
             store.join("SKILL.md").is_file(),
             "the canonical skill must survive the project that mounted it"
         );
+    }
+
+    #[test]
+    fn the_volume_says_which_name_it_stored_rather_than_the_name_it_was_asked_for() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("Research")).unwrap();
+
+        assert_eq!(
+            stored_entry_name(&root.path().join("Research"))
+                .unwrap()
+                .as_deref(),
+            Some("Research")
+        );
+        assert_eq!(
+            stored_entry_name(&root.path().join("never-created")).unwrap(),
+            None,
+            "a free path is a free path, and is not an error"
+        );
+
+        // A junction must answer with its own name. `canonicalize` would answer
+        // with the target's, which is why it is not what this is built on.
+        let target = tree(root.path(), "store-skill");
+        let link = root.path().join("mounted");
+        create_link(&link, &target).unwrap();
+        assert_eq!(
+            stored_entry_name(&link).unwrap().as_deref(),
+            Some("mounted"),
+            "the entry is named `mounted`; what it points at is named something else"
+        );
+
+        if crate::casefold::CaseFolding::probe(root.path())
+            == crate::casefold::CaseFolding::Insensitive
+        {
+            assert_eq!(
+                stored_entry_name(&root.path().join("research"))
+                    .unwrap()
+                    .as_deref(),
+                Some("Research"),
+                "`research` and `Research` are one entry here, and the volume — not \
+                 Unicode — is the authority on which name that entry carries"
+            );
+        }
     }
 
     #[test]

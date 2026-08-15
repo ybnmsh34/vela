@@ -68,7 +68,8 @@ pub use layout::{
 };
 pub use link::{
     copy_tree, create_link, directory_is_writable, is_reparse_point, probe_link_strategy,
-    remove_tree, trees_have_same_content, LinkFallbackReason, LinkStrategy, SkillLinkKind,
+    remove_tree, stored_entry_name, trees_have_same_content, LinkFallbackReason, LinkStrategy,
+    SkillLinkKind,
 };
 pub use mount::{reconcile_skills, SkillMount, SkillMountProblem, SkillMountStatus};
 pub use workdir::{

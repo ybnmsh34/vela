@@ -76,10 +76,18 @@ impl CaseFolding {
     /// exotic ones. That asymmetry is affordable in exactly one direction, and
     /// it is the direction this is used in: this decides whether a *write* is
     /// refused with `INVALID_PAYLOAD`, and a pair it wrongly lets through is
-    /// caught by `reconcile_skills`, which learns the truth by asking the
-    /// filesystem whether the path is already there and reports
-    /// `nameCollidesWithAnotherEnabledSkill`. A pair it wrongly refuses costs
-    /// the user a rename. Nothing is ever silently deduplicated.
+    /// caught by [`crate::reconcile_skills`], which learns the truth by asking
+    /// the filesystem — [`crate::stored_entry_name`], one call per mount, on the
+    /// path it is about to write — and reports
+    /// `nameCollidesWithAnotherEnabledSkill` when the entry there is already
+    /// some earlier enabled skill's. A pair it wrongly refuses costs the user a
+    /// rename. Nothing is ever silently deduplicated.
+    ///
+    /// That second check is what makes this one safe to leave approximate, so
+    /// it is named here rather than described: it is
+    /// `a_collision_the_case_table_misses_is_still_caught_by_the_filesystem` in
+    /// `src-tauri/crates/vela-projects/src/mount.rs`, and that test also records
+    /// what it does not prove.
     ///
     /// Byte-identical names always collide, whatever the volume does.
     pub fn folds(self, left: &str, right: &str) -> bool {

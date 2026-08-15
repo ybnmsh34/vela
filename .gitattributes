@@ -19,18 +19,78 @@
 # harness is still deterministic. A checkout that rewrote them would make that
 # script report a behaviour change nobody made.
 #
+# THAT LAST SENTENCE WAS TRUE AND THE PATTERN LIST DID NOT IMPLEMENT IT. The two
+# extension rules below caught the `.sse` transcripts under
+# `docs/regression-baseline/mock-matrix/` and missed everything else in the same
+# directory, so the paragraph above described a protection that only two of the
+# five extensions in there actually had. Measured on a Windows checkout, from
+# `git ls-files -s` against `git hash-object --no-filters` (stored bytes vs disk
+# bytes) — `docs/regression-baseline/mock-matrix/` holds:
+#
+#   48 .json  ALL 48 rewritten on checkout   <- the gap
+#   43 .txt    7 rewritten on checkout; the other 36 store CRLF already
+#   12 .sse    0 rewritten (protected below)
+#    2 .md     2 rewritten on checkout
+#    1 .tsv    1 rewritten on checkout
+#
+# The `.json` files are the same class of object as the `.sse` ones and are read
+# the same way: `record-transcripts.test.ts` does `readFileSync(..., 'utf8')` on
+# each and compares it to what the harness produces today, so on Windows it
+# failed on `frontier/01-health.json` — 8 CRLF on disk against 8 LF off the
+# socket — for exactly the reason the four `*_fixture_replay` controls above did.
+#
+# The 36 `.txt` that already store CRLF are the raw `curl` captures from
+# `tests/harness/mock-provider/live-matrix/`, headers and all, so CR is part of
+# their payload. They survive today only because git's checkout filter skips a
+# blob that is already wholly CRLF; the moment one acquires a lone LF, the commit
+# filter is entitled to strip every CR in it. `-text` is what makes their bytes
+# a decision rather than an accident.
+#
+# Scoped to the directory rather than to `*.json` repo-wide: `package.json`,
+# `tsconfig*.json` and `tauri.conf.json` are source, they are edited by hand on
+# this platform, and nothing reads them byte-exactly. Scoped to `mock-matrix/`
+# rather than to all of `docs/regression-baseline/` because it is the only
+# directory under that tree that an automated gate compares byte for byte —
+# `check-transcripts.sh` diffs the whole of it and `record-transcripts.test.ts`
+# reads it byte for byte. (The other byte-exact evidence in the repo,
+# `src-tauri/crates/vela-providers/tests/fixtures/`, is `.sse` and is already
+# covered by the extension rule.) The
+# `phase-b-matrix`, `phase-b2-matrix`, `phase-c-matrix` and `local-smoke` trees
+# are captures too and no test compares them; widening to them is a real
+# argument, but it is a separate one and it should be made by whoever adds the
+# gate that would notice.
+#
+# Applying this rule does not re-commit anything: every stored object stays as
+# it is. It changes only what checkout writes, and the already-corrupted working
+# copies were repaired in place with
+# `find docs/regression-baseline/mock-matrix -type f -delete && git checkout --`
+# on that directory, which restores the stored bytes verbatim.
+#
 # `-text` rather than `text eol=lf` on purpose: these are captures, not source.
 # `eol=lf` would still let git *decide* they are text and normalise on commit;
-# `-text` says do not touch these bytes, in either direction, ever. The cost is
-# that git renders their diffs as binary, which is the correct reading of a file
-# whose value is its exact contents.
+# `-text` says do not touch these bytes, in either direction, ever.
 #
-# Deliberately only these two patterns, and no `* text=auto`. Measured before
-# writing this: every one of the 36 stored objects is already pure LF, so the
-# corruption is entirely in the checkout and nothing needs re-committing. Adding
-# a repo-wide rule staged 37 unrelated transcript files for renormalisation —
-# including the ones `scripts/check-transcripts.sh` compares byte for byte to
-# prove the mock harness is deterministic. Fixing a line-ending bug by rewriting
-# the evidence that would detect one is not a fix.
+# That paragraph used to end "the cost is that git renders their diffs as
+# binary". Measured while extending the rule, and it does not: `-text` unsets
+# `text`, it does not set `diff`, and `git check-attr text diff` on a covered
+# file reports `text: unset` / `diff: unspecified`. Git still diffs these as
+# text unless they contain NUL. The real cost is the other way round — a file
+# whose stored bytes are CRLF now checks out CRLF on every platform, and an
+# editor that "helpfully" rewrites one shows up as a genuine modification
+# instead of being silently normalised away. For a capture that is the point.
+#
+# Still no `* text=auto`, and still deliberately. Measured when the two extension
+# rules were written: every one of the 36 `.sse`/`.jsonl` stored objects is
+# already pure LF, so the corruption is entirely in the checkout and nothing
+# needs re-committing. Adding a repo-wide rule staged 37 unrelated transcript
+# files for renormalisation — including the ones `scripts/check-transcripts.sh`
+# compares byte for byte to prove the mock harness is deterministic. Fixing a
+# line-ending bug by rewriting the evidence that would detect one is not a fix.
+# Re-measured for the directory rule below: 916 of the tracked files in this
+# tree currently differ on disk from their stored bytes, which is what
+# `core.autocrlf=true` does to a Windows checkout and is harmless for all but
+# the captures. Of those 916, exactly 58 are in `mock-matrix/`; the rule below
+# takes those 58 out of the filter's reach and renormalises none of them.
 *.sse -text
 *.jsonl -text
+docs/regression-baseline/mock-matrix/** -text

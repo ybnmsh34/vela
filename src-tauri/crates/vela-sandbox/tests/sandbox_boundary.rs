@@ -52,12 +52,12 @@ impl Collector {
     }
 
     fn settled(&self) -> Option<(SandboxOutcome, RunUsage)> {
-        self.snapshot().into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.snapshot()
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Settled { outcome, usage } => Some((outcome, usage)),
                 _ => None,
-            }
-        })
+            })
     }
 
     fn text(&self, stream: OutputStream) -> String {
@@ -70,6 +70,31 @@ impl Collector {
                 _ => None,
             })
             .collect()
+    }
+
+    /// One run's output, for the tests that have two runs going at once. The
+    /// unqualified [`Collector::text`] concatenates every run this sink saw,
+    /// which is what every single-run test wants and exactly wrong here.
+    fn text_of(&self, run_id: &str, stream: OutputStream) -> String {
+        self.snapshot()
+            .into_iter()
+            .filter(|envelope| envelope.run_id == run_id)
+            .filter_map(|envelope| match envelope.event {
+                SandboxEvent::Output {
+                    stream: got, text, ..
+                } if got == stream => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn settled_of(&self, run_id: &str) -> Option<(SandboxOutcome, RunUsage)> {
+        self.snapshot().into_iter().find_map(|envelope| {
+            match (envelope.run_id == run_id, envelope.event) {
+                (true, SandboxEvent::Settled { outcome, usage }) => Some((outcome, usage)),
+                _ => None,
+            }
+        })
     }
 }
 
@@ -276,7 +301,10 @@ fn a_granted_directory_is_readable_and_the_directory_beside_it_is_not() {
         std::fs::read_to_string(granted.join("out.txt")).expect("the write landed"),
         "written-by-the-run\n"
     );
-    assert!(secret.join("keys.txt").exists(), "the sibling really exists");
+    assert!(
+        secret.join("keys.txt").exists(),
+        "the sibling really exists"
+    );
 }
 
 #[test]
@@ -365,7 +393,10 @@ fn a_program_whose_text_is_hostile_to_a_shell_still_runs_as_written() {
         matches!(outcome, SandboxOutcome::Exited { exit_code: 0 }),
         "outcome {outcome:?} stdout {stdout:?}"
     );
-    assert!(stdout.contains("'; touch /vela/pwned; #"), "stdout {stdout:?}");
+    assert!(
+        stdout.contains("'; touch /vela/pwned; #"),
+        "stdout {stdout:?}"
+    );
     assert!(stdout.contains("$(id -u)"), "stdout {stdout:?}");
     assert!(stdout.contains("done"), "stdout {stdout:?}");
 }
@@ -430,13 +461,79 @@ fn stdin_reaches_the_program_and_is_then_closed() {
     assert_eq!(stdout, "fed-in\n[eof]\n");
 }
 
+/// **What "reaches every descendant" costs to actually check.**
+///
+/// The version of this test that shipped asked a run to `echo alive; sleep 120;
+/// echo NEVER` and asserted `!stdout.contains("NEVER")`. That assertion is about
+/// a pipe the host stops reading at the moment it cancels, so a descendant that
+/// survived and printed forever would satisfy it — and the whole descendant
+/// clause of the name rode on it. Removing `--kill-child` from the launcher left
+/// it green.
+///
+/// So the descendant is now watched on two channels that have nothing to do with
+/// the run's own pipes, and both have a control that fails if the channel is
+/// blind:
+///
+///  - a `setsid`-detached grandchild, reparented away from the shell and out of
+///    the launcher's process group, appending to a file in a `readWrite` grant —
+///    which is a real directory on the user's Windows disk. The test reads that
+///    file with `std::fs`, from outside the VM entirely.
+///  - `ps` in the WSL VM's **init** PID namespace, which is the parent of the
+///    run's, listing the grandchild by a marker in its command line. PID
+///    namespaces are hierarchical, so a process that survived is visible there
+///    whatever it does with its output.
+///
+/// The controls are the point: before cancelling, the file must be observed
+/// growing *and* the marker must be observed in `ps`. A test that only looked
+/// afterwards would pass on a machine where the grandchild never started.
+///
+/// **The mutation this version fails on is deleting `--pid`, not
+/// `--kill-child`.** Both were tried. Without `--kill-child` the grandchild is
+/// still reaped here — the PID namespace collapsing is what does it, and WSL's
+/// relay teardown covers the case `--kill-child` was added for — so the
+/// guarantee holds and this test is right to stay green. Without `--pid` the
+/// grandchild outlives the run and keeps writing to the user's disk, and this
+/// test says so.
 #[test]
 fn cancelling_stops_the_run_and_reaches_every_descendant() {
     let Some(backend) = boundary_backend() else {
         return;
     };
+    let distro = backend.distro().to_string();
+    let marker = format!(
+        "VELA-ORPHAN-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    );
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let beat = temp.path().join("beat");
+    let mounts = vec![Mount {
+        host_path: temp.path().to_string_lossy().into_owned(),
+        guest_path: "/work".into(),
+        mode: MountMode::ReadWrite,
+        materialisation: MountMaterialisation::Bind,
+    }];
+
     let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
-    let request = submit_of("echo alive; sleep 120; echo NEVER");
+    // The grandchild double-detaches: `setsid` gives it its own session and
+    // process group, `&` takes it off the shell's job list, and its output goes
+    // to `/dev/null` so nothing about it is observable down the run's pipes. If
+    // anything about the teardown is a process-group signal rather than the PID
+    // namespace collapsing, this is the process that survives it.
+    let mut request = submit_of(&format!(
+        "setsid /bin/sh -c 'while :; do printf x >> /work/beat; sleep 0.1; done # {marker}' \
+           </dev/null >/dev/null 2>&1 &
+         echo alive
+         sleep 120
+         echo NEVER"
+    ));
+    request.filesystem.mounts = mounts;
+    // Longer than the test needs, so that a `cancelled` outcome cannot be the
+    // wall clock wearing cancellation's name.
+    request.limits.wall_clock_ms = 120_000;
     let run_id = request.run_id.clone();
     host.submit(request).expect("admitted");
 
@@ -451,6 +548,30 @@ fn cancelling_stops_the_run_and_reaches_every_descendant() {
         collector.text(OutputStream::Stdout).contains("alive"),
         "the run never started; events {:?}",
         collector.snapshot()
+    );
+
+    // Control one: the grandchild is alive and writing where this process can
+    // see it, without the run's pipes being involved.
+    let grew = wait_until(Duration::from_secs(30), || beat_size(&beat) > 0);
+    assert!(
+        grew,
+        "the control failed: the detached grandchild never wrote to the granted \
+         directory, so the silence asserted below would prove nothing"
+    );
+    let before_cancel = beat_size(&beat);
+    assert!(
+        wait_until(Duration::from_secs(30), || beat_size(&beat) > before_cancel),
+        "the control failed: the grandchild wrote once and stopped on its own"
+    );
+
+    // Control two: it is visible from the init PID namespace, which is where
+    // this test will look for it again after the run is gone.
+    assert!(
+        wait_until_every(Duration::from_secs(30), Duration::from_millis(500), || {
+            wsl_processes_matching(&distro, &marker) > 0
+        }),
+        "the control failed: `ps` in the WSL VM never saw the grandchild, so a \
+         count of zero after cancellation would prove nothing"
     );
 
     let answer = host.cancel(SandboxCancelReq {
@@ -474,6 +595,30 @@ fn cancelling_stops_the_run_and_reaches_every_descendant() {
         "the program kept running after cancellation"
     );
 
+    // The descendant itself, from outside the run. Teardown is not instant, so
+    // this waits — but the assertion is on the answer, not on the wait, and a
+    // grandchild still there at the deadline fails it.
+    let gone = wait_until_every(Duration::from_secs(30), Duration::from_millis(500), || {
+        wsl_processes_matching(&distro, &marker) == 0
+    });
+    assert!(
+        gone,
+        "a `setsid`-detached descendant of the cancelled run is still alive in the \
+         WSL VM. `ps -A` there still matches {marker}"
+    );
+
+    // And it is not merely unlisted: it has stopped writing to the user's disk.
+    // Sampled twice across a window rather than once, because a single reading
+    // cannot tell "stopped" from "between writes".
+    let settled_size = beat_size(&beat);
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(
+        beat_size(&beat),
+        settled_size,
+        "the descendant is still appending to the granted directory after the run \
+         was cancelled and reported settled"
+    );
+
     // Cancelling a settled run is a race, not an error.
     let again = host.cancel(SandboxCancelReq {
         run_id,
@@ -481,6 +626,336 @@ fn cancelling_stops_the_run_and_reaches_every_descendant() {
     });
     assert!(!again.cancelled);
 }
+
+/// The heartbeat file's size, or 0 before it exists. Never panics: "not there
+/// yet" and "not being written any more" are both legitimate states here.
+fn beat_size(path: &Path) -> u64 {
+    std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+/// Processes in the WSL VM's **init** PID namespace whose command line contains
+/// `marker`.
+///
+/// This is the outside view: the run's PID namespace is a child of this one, so
+/// anything still alive in it is listed here, whatever happened to the pipes,
+/// the process group or the session it was started in.
+fn wsl_processes_matching(distro: &str, marker: &str) -> usize {
+    let wsl = match std::env::var_os("SystemRoot") {
+        Some(root) => std::path::Path::new(&root)
+            .join("System32")
+            .join("wsl.exe")
+            .into_os_string(),
+        None => std::ffi::OsString::from("wsl.exe"),
+    };
+    let output = std::process::Command::new(wsl)
+        .args([
+            "--distribution",
+            distro,
+            "--exec",
+            "/usr/bin/ps",
+            "-A",
+            "-o",
+            "args=",
+        ])
+        .output()
+        .expect("`ps` inside the WSL VM");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.contains(marker))
+        .count()
+}
+
+/// **The one `kernel` claim in `WslBackend::report()` that had no test.**
+///
+/// Every other boundary property in this file is measured. `processes` was
+/// declared `EnforcementLevel::Kernel` and never checked, and the line behind it
+/// — `ulimit -u N 2>/dev/null || true`, in a script parsed by dash, whose
+/// `ulimit` has no `-u` — enforced nothing at all. A grant that said
+/// `processes: 8` produced a run whose `RLIMIT_NPROC` was 127929 and which
+/// forked three hundred processes without an error.
+///
+/// Three details of the program below are deliberate, and each of them is a
+/// thing that went wrong first:
+///
+///  - **the limit is read with the `read` builtin, never with `$(…)`.** A
+///    command substitution forks, and a program that has hit its process limit
+///    cannot fork — so the obvious spelling reports nothing exactly when the
+///    limit is working. The `/proc` walk after the storm is builtin-only for
+///    the same reason.
+///  - **the storm is run by `/bin/sh`, not by the program's own `bash`.** Bash
+///    retries a refused `fork` five times with lengthening sleeps, so a
+///    saturated limit costs half a minute per attempt; dash gives up at once and
+///    says so.
+///  - **it reads `pids.max` out of its own cgroup rather than `ulimit -u`.**
+///    That is where the limit now is, and reading it is also the assertion that
+///    the run is *in* a cgroup of its own: a run left in the root cgroup would
+///    read `/sys/fs/cgroup//pids.max`, which does not exist.
+#[test]
+fn a_forking_program_cannot_exceed_the_process_limit_it_was_granted() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+    let mut request = submit_of(PROCESS_LIMIT_PROBE);
+    request.limits.processes = 8;
+    host.submit(request).expect("admitted");
+
+    let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(120));
+    let stdout = collector.text(OutputStream::Stdout);
+    assert!(
+        matches!(outcome, SandboxOutcome::Exited { .. }),
+        "outcome {outcome:?}, stdout {stdout:?}"
+    );
+
+    // Behaviour first: what the kernel did, which is the part
+    // `EnforcementLevel::Kernel` claims.
+    assert!(
+        !stdout.contains("FORKED-FORTY-WITH-NO-ERROR"),
+        "the run forked forty processes against a grant of eight. stdout {stdout:?}"
+    );
+    // The control, and the reason this is not a test that passes on a program
+    // that never ran: the storm did not skip its work, it was *refused*, and the
+    // shell that was refused said so on the run's own stdout. A build with no
+    // limit at all prints the line above instead of this one.
+    assert!(
+        stdout.to_ascii_lowercase().contains("cannot fork"),
+        "the storm must be stopped by a refused `fork` and not by never running; \
+         dash reports that as `Cannot fork`. stdout {stdout:?}"
+    );
+    let live: u32 = probe_field(&stdout, "live-run-processes=")
+        .parse()
+        .unwrap_or_else(|_| panic!("the run must report its process count; stdout {stdout:?}"));
+    assert!(
+        (2..=8).contains(&live),
+        "the run held {live} live processes against a grant of eight, and must have \
+         held more than one or it never forked at all. stdout {stdout:?}"
+    );
+
+    // Then the mechanism, because `report()` claims a particular one. The run
+    // is in a cgroup of its own and not in the one the rest of the VM shares,
+    // and the number in it is the granted number — which is also what a program
+    // deciding how many jobs to start would read.
+    let cgroup = probe_field(&stdout, "cgroup=");
+    assert!(
+        cgroup.starts_with("/vela."),
+        "the run must be in a cgroup of its own; it is in {cgroup:?}. stdout {stdout:?}"
+    );
+    assert_eq!(
+        probe_field(&stdout, "pids-max="),
+        "8",
+        "the run's `pids.max` must be the granted number. stdout {stdout:?}"
+    );
+}
+
+/// **A limit one run can take from another is not a limit.**
+///
+/// `RLIMIT_NPROC` was the first repair for the defect above and it passed the
+/// test above, because one run in isolation is exactly the case it gets right.
+/// It counts processes per *uid* in the process's user namespace, every run here
+/// is uid 65534, and no user namespace is unshared — so a grant of 128 to two
+/// concurrent runs is 128 between them. Measured through this host at its own
+/// shipped defaults, one run holding 127 of its grant:
+///
+/// ```text
+/// m-B [Stdout] rlimit-nproc-soft=128
+/// m-B [Stderr] /vela/program: fork: Resource temporarily unavailable
+/// m-B SETTLED Exited { exit_code: 254 }
+/// ```
+///
+/// The second run was told 128 and forked **zero**. `maximum_concurrent_runs`
+/// is 4; the host delivered one. So this test is the one that says the limit is
+/// per run, and it is the one the rlimit spelling cannot pass.
+#[test]
+fn two_runs_at_once_are_each_given_the_whole_process_limit_they_were_granted() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+
+    // A takes 23 of its 24 and holds them for as long as B needs.
+    let mut holder = submit_of(
+        r#"read -r cgline < /proc/self/cgroup
+           echo "cgroup=${cgline##*::}"
+           /bin/sh -c 'i=0; while [ $i -lt 22 ]; do sleep 60 & i=$((i+1)); done'
+           echo A-IS-HOLDING
+           sleep 60"#,
+    );
+    holder.limits.processes = 24;
+    holder.limits.wall_clock_ms = 120_000;
+    let holder_id = holder.run_id.clone();
+    host.submit(holder).expect("admitted the holder");
+    assert!(
+        wait_until(Duration::from_secs(90), || collector
+            .text_of(&holder_id, OutputStream::Stdout)
+            .contains("A-IS-HOLDING")),
+        "the control failed: the first run never took its processes, so the \
+         second one was never contended with. events {:?}",
+        collector.snapshot()
+    );
+
+    let mut second = submit_of(PROCESS_LIMIT_PROBE);
+    second.limits.processes = 24;
+    let second_id = second.run_id.clone();
+    host.submit(second).expect("admitted the second run");
+    assert!(
+        wait_until(Duration::from_secs(120), || collector
+            .settled_of(&second_id)
+            .is_some()),
+        "the second run never settled; events {:?}",
+        collector.snapshot()
+    );
+
+    let stdout = collector.text_of(&second_id, OutputStream::Stdout);
+    let stderr = collector.text_of(&second_id, OutputStream::Stderr);
+    // The finding, first: how many processes the second run actually got. A
+    // missing line is itself the answer — it means the run could not fork far
+    // enough to finish printing.
+    let live: u32 = stdout
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("live-run-processes=")?
+                .parse()
+                .ok()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "the second run never reported a process count, which is what a run \
+                 that could not fork at all looks like. stdout {stdout:?} stderr {stderr:?}"
+            )
+        });
+    assert!(
+        live >= 20,
+        "the second run was granted 24 processes and got {live} while another run \
+         held its own 23. A limit the first run can spend on the second one's \
+         behalf is not the per-run bound `report()` claims. stdout {stdout:?} \
+         stderr {stderr:?}"
+    );
+    assert_eq!(
+        probe_field(&stdout, "pids-max="),
+        "24",
+        "stdout {stdout:?} stderr {stderr:?}"
+    );
+    assert_ne!(
+        probe_field(&stdout, "cgroup="),
+        probe_field(
+            &collector.text_of(&holder_id, OutputStream::Stdout),
+            "cgroup="
+        ),
+        "two concurrent runs must not share a cgroup"
+    );
+
+    host.cancel(SandboxCancelReq {
+        run_id: holder_id,
+        reason: CancelReason::User,
+    });
+}
+
+/// **A run that never started is a host failure, whatever it exits with.**
+///
+/// `host.rs` reads [`READY_SENTINEL`] as the line between the two: everything
+/// before it is the host's, everything after it is the program's. A version of
+/// the guest script printed the sentinel and *then* `exec`ed the privilege drop,
+/// so when that `exec` failed — which the per-uid process limit made routine,
+/// not exotic — the caller was handed `exited { exitCode: 126 }` for something
+/// that happened before the program's first instruction, and would have gone
+/// looking for a bug in a program that never ran.
+///
+/// This asks for a program in a language the guest has no interpreter for. It
+/// is the one failure of that shape a test can construct without a broken
+/// machine: everything else in the chain is a fixed absolute path on a
+/// read-only rootfs.
+#[test]
+fn a_run_whose_interpreter_is_missing_is_a_host_failure_and_not_an_exit_code() {
+    // Not through `submit`: `admit` refuses Python before anything is spawned,
+    // which is the correct answer and not the one under test. The launcher is
+    // asked directly for a script whose interpreter is not there.
+    let plan_of = |language| {
+        let request = submit_of("echo unreachable");
+        let SandboxProgram::Process(program) = &request.program else {
+            unreachable!("submit_of builds a process program")
+        };
+        vela_sandbox::admission::RunPlan {
+            language,
+            source: program.source.clone(),
+            stdin: None,
+            environment: Vec::new(),
+            base_environment: Vec::new(),
+            mounts: Vec::new(),
+            scratch_guest_path: "/vela/scratch".into(),
+            working_directory: "/".into(),
+            limits: DEFAULT_PROCESS_LIMITS,
+        }
+    };
+    let script = WslBackend::for_distro("Ubuntu").guest_script(&plan_of(ProcessLanguage::Python));
+
+    // The interpreter guard is above the sentinel, so the guest refuses before
+    // it claims to be ready. Read off the script rather than run it, because
+    // whether `/usr/bin/python3` exists is a property of the machine and this
+    // assertion is a property of the file.
+    let guard = script
+        .find("[ -x /usr/bin/python3 ]")
+        .expect("the guest checks its interpreter is executable");
+    let sentinel = script
+        .find("printf '")
+        .expect("the guest prints the ready sentinel");
+    assert!(
+        guard < sentinel,
+        "the interpreter check must be above the sentinel: below it, a missing \
+         interpreter is delivered to the caller as the program's own exit code:\n{script}"
+    );
+
+    // And the same for the two things that were below it and are now above it.
+    let bash = WslBackend::for_distro("Ubuntu").guest_script(&plan_of(ProcessLanguage::Bash));
+    let sentinel = bash.find("printf '").expect("the sentinel");
+    for (what, needle) in [
+        ("the privilege drop", "setpriv"),
+        ("the cgroup join", "cgroup.procs"),
+        ("the environment clearing", "env -i"),
+    ] {
+        let at = bash
+            .find(needle)
+            .unwrap_or_else(|| panic!("the script must contain `{needle}`:\n{bash}"));
+        assert!(
+            at < sentinel,
+            "{what} must happen before the ready sentinel. Below it, its failure \
+             reaches the caller as a program result:\n{bash}"
+        );
+    }
+}
+
+/// Reads `name=value` off one of [`PROCESS_LIMIT_PROBE`]'s lines.
+///
+/// Panics rather than defaulting: a missing line means the program did not get
+/// far enough to print it, which is a result and not an absence.
+#[track_caller]
+fn probe_field<'a>(stdout: &'a str, name: &str) -> &'a str {
+    stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(name))
+        .unwrap_or_else(|| panic!("no `{name}` line in stdout {stdout:?}"))
+}
+
+/// Reports the limit the run is being held to, tries hard to exceed it, and
+/// reports what it actually holds — using no `$(…)` anywhere, because a program
+/// that has reached its process limit cannot fork one.
+const PROCESS_LIMIT_PROBE: &str = r#"read -r cgline < /proc/self/cgroup
+echo "cgroup=${cgline##*::}"
+read -r pidsmax < "/sys/fs/cgroup${cgline##*::}/pids.max"
+echo "pids-max=$pidsmax"
+/bin/sh -c 'i=0
+            while [ $i -lt 40 ]; do sleep 300 & i=$((i+1)); done
+            echo FORKED-FORTY-WITH-NO-ERROR' 2>&1
+live=0
+for entry in /proc/[0-9]*; do
+  while read -r key value _; do
+    if [ "$key" = "Uid:" ]; then
+      if [ "$value" = "65534" ]; then live=$((live+1)); fi
+      break
+    fi
+  done < "$entry/status"
+done
+echo "live-run-processes=$live""#;
 
 #[test]
 fn a_run_that_will_not_finish_is_killed_at_the_wall_clock() {
@@ -570,12 +1045,13 @@ fn ask_stops_for_a_person_and_a_denial_settles_the_run_refused() {
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let digest = loop {
-        let found = collector.snapshot().into_iter().find_map(|envelope| {
-            match envelope.event {
+        let found = collector
+            .snapshot()
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::AwaitingApproval { request } => Some(request),
                 _ => None,
-            }
-        });
+            });
         if let Some(request) = found {
             // The person is shown the exact program and the whole grant.
             assert!(matches!(request.program, SandboxProgram::Process(_)));
@@ -594,7 +1070,10 @@ fn ask_stops_for_a_person_and_a_denial_settles_the_run_refused() {
             decision: ApprovalDecision::AllowOnce,
         })
         .is_err());
-    assert!(collector.settled().is_none(), "a bad digest settles nothing");
+    assert!(
+        collector.settled().is_none(),
+        "a bad digest settles nothing"
+    );
 
     host.approve(SandboxApproveReq {
         run_id,
@@ -1030,7 +1509,10 @@ fn the_policy_snapshot_says_what_this_machine_can_actually_do() {
         EnforcementLevel::Unenforced,
         "there is no cgroup behind this backend and the report must say so"
     );
-    assert_eq!(policy.backends.process.evidence, IsolationEvidence::Declared);
+    assert_eq!(
+        policy.backends.process.evidence,
+        IsolationEvidence::Declared
+    );
 
     let (empty, _) = host_with(PermissionLevel::Ask, None);
     assert!(empty.policy().languages.is_empty());
@@ -1062,33 +1544,33 @@ impl Collector {
     }
 
     fn settled_for(&self, run_id: &str) -> Option<SandboxOutcome> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Settled { outcome, .. } => Some(outcome),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// What the person was shown, if anybody was asked.
     fn prompt_for(&self, run_id: &str) -> Option<ApprovalRequest> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::AwaitingApproval { request } => Some(request),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// The grant on the `accepted` event — the one the contract's ceiling rule
     /// names, and the one a caller may act on.
     fn accepted_grant(&self, run_id: &str) -> Option<EffectiveGrant> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Accepted { grant } => Some(grant),
                 _ => None,
-            }
-        })
+            })
     }
 }
 
@@ -1118,13 +1600,20 @@ fn unreachable_backend() -> Option<WslBackend> {
 }
 
 #[track_caller]
-fn wait_until(within: Duration, mut done: impl FnMut() -> bool) -> bool {
+fn wait_until(within: Duration, done: impl FnMut() -> bool) -> bool {
+    wait_until_every(within, Duration::from_millis(10), done)
+}
+
+/// [`wait_until`] for a condition that costs something to ask — spawning
+/// `wsl.exe`, say. Same answer, three orders of magnitude fewer of them.
+#[track_caller]
+fn wait_until_every(within: Duration, interval: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + within;
     while Instant::now() < deadline {
         if done() {
             return true;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(interval);
     }
     done()
 }
@@ -1237,7 +1726,8 @@ fn a_protected_root_reached_by_another_spelling_is_still_a_protected_root() {
         let (host, collector) = host_with_settings(settings, unreachable_backend());
         let mut request = submit_of("cat /work/*");
         request.filesystem.mounts = vec![mount_of(host_path, "/work", MountMode::ReadOnly)];
-        host.submit(request).expect("well-formed: the directory is there");
+        host.submit(request)
+            .expect("well-formed: the directory is there");
 
         let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(30));
         match outcome {
@@ -1829,26 +2319,61 @@ fn a_profile_root_on_one_list_does_not_grant_the_mode_the_other_list_names() {
     let root = temp.path().to_string_lossy().into_owned();
 
     let rows: [(&str, bool, bool, MountMode, bool); 5] = [
-        ("read-only inside a readable root", true, false, MountMode::ReadOnly, false),
-        ("read-write inside a root that is only readable", true, false, MountMode::ReadWrite, true),
-        ("read-write inside a root that is only writable", false, true, MountMode::ReadWrite, true),
-        ("read-only inside a root that is only writable", false, true, MountMode::ReadOnly, true),
-        ("read-write inside a root on both lists", true, true, MountMode::ReadWrite, false),
+        (
+            "read-only inside a readable root",
+            true,
+            false,
+            MountMode::ReadOnly,
+            false,
+        ),
+        (
+            "read-write inside a root that is only readable",
+            true,
+            false,
+            MountMode::ReadWrite,
+            true,
+        ),
+        (
+            "read-write inside a root that is only writable",
+            false,
+            true,
+            MountMode::ReadWrite,
+            true,
+        ),
+        (
+            "read-only inside a root that is only writable",
+            false,
+            true,
+            MountMode::ReadOnly,
+            true,
+        ),
+        (
+            "read-write inside a root on both lists",
+            true,
+            true,
+            MountMode::ReadWrite,
+            false,
+        ),
     ];
 
     for (what, readable, writable, mode, expect_prompt) in rows {
         let mut settings = config(PermissionLevel::Approve);
-        settings.profile.readable_roots = if readable { vec![root.clone()] } else { Vec::new() };
-        settings.profile.writable_roots = if writable { vec![root.clone()] } else { Vec::new() };
+        settings.profile.readable_roots = if readable {
+            vec![root.clone()]
+        } else {
+            Vec::new()
+        };
+        settings.profile.writable_roots = if writable {
+            vec![root.clone()]
+        } else {
+            Vec::new()
+        };
         let (host, collector) = host_with_settings(settings, unreachable_backend());
 
         let mut request = submit_of("echo hi");
         let run_id = request.run_id.clone();
-        request.filesystem.mounts = vec![mount_of(
-            sub.to_string_lossy().into_owned(),
-            "/work",
-            mode,
-        )];
+        request.filesystem.mounts =
+            vec![mount_of(sub.to_string_lossy().into_owned(), "/work", mode)];
         host.submit(request).expect("admitted");
 
         assert_eq!(
@@ -2056,7 +2581,10 @@ fn the_approval_digest_changes_when_anything_the_person_was_shown_changes() {
             "no approval was requested; events {:?}",
             collector.events_for(&run_id)
         );
-        collector.prompt_for(&run_id).expect("prompt").request_digest
+        collector
+            .prompt_for(&run_id)
+            .expect("prompt")
+            .request_digest
     };
 
     // Same bytes, twice: the digest is a function of the request and not of the
@@ -2226,7 +2754,8 @@ fn the_run_sees_the_base_environment_the_callers_entries_and_nothing_else() {
     let mut got: Vec<&str> = seen.iter().map(|(name, _)| *name).collect();
     got.sort_unstable();
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "the run's environment is the caller's entries plus the base list and nothing else. \
          `{}` of the shell's own is the only allowance. stdout {stdout:?}",
         SHELL_OWN.join("`, `")
@@ -2279,7 +2808,10 @@ fn the_grant_reports_the_directory_the_run_actually_starts_in() {
     std::fs::create_dir_all(temp.path().join("inner")).expect("inner dir");
 
     let rows = [
-        ("the caller said `scratch`", ProcessWorkingDirectory::Scratch),
+        (
+            "the caller said `scratch`",
+            ProcessWorkingDirectory::Scratch,
+        ),
         (
             "a mount's own root",
             ProcessWorkingDirectory::GuestPath {
@@ -2376,10 +2908,13 @@ fn multibyte_output_crosses_the_read_buffer_without_a_replacement_character() {
     assert_eq!(usage.output_bytes as usize, expected.len());
     for envelope in collector.snapshot() {
         if let SandboxEvent::Output { text, bytes, .. } = envelope.event {
+            // `str::len` is a byte count, not a character count — which is the
+            // whole assertion: an event whose `bytes` counted `chars()` would be
+            // a third of this on the multibyte lines above.
             assert_eq!(
                 bytes,
-                text.as_bytes().len() as u64,
-                "`bytes` counts the decoded source bytes, not the length of `text`"
+                text.len() as u64,
+                "`bytes` counts the decoded source bytes, not the characters in `text`"
             );
         }
     }

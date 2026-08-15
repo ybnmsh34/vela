@@ -24,8 +24,12 @@
  * `src-tauri/src/ipc/skills.rs` exposes no way for Vela to change one.
  *
  * Nothing here knows what a project is. Enabling a skill *into* a project is
- * the mount, which lives in `src-tauri/crates/vela-skills/src/mount.rs` and has
- * no command in front of it yet — see that crate's header for why.
+ * the mount, which lives in `src-tauri/crates/vela-projects/src/mount.rs`, and
+ * `project_reconcile_skills` is the command in front of it. This sentence used
+ * to name a `mount.rs` in the *skills* crate and say it had no command yet:
+ * both halves were wrong, that module had no caller in any commit, and it has
+ * been deleted. There is no repository in this directory for the project side;
+ * the renderer reaches those commands through `src/platform/adapter.ts`.
  */
 
 import type { PlatformAdapter } from '@/platform/adapter';

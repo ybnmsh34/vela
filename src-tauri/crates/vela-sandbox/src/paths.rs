@@ -36,7 +36,7 @@ pub fn resolve_host_directory(raw: &str) -> Result<PathBuf, String> {
         return Err(format!("mount hostPath is not absolute: {raw}"));
     }
     let resolved =
-        std::fs::canonicalize(path).map_err(|_| format!("mount hostPath does not resolve"))?;
+        std::fs::canonicalize(path).map_err(|_| "mount hostPath does not resolve".to_string())?;
     if !resolved.is_dir() {
         return Err("mount hostPath is not a directory".into());
     }

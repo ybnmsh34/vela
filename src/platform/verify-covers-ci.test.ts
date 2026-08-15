@@ -59,8 +59,22 @@ const CI_GATES: ReadonlyArray<{ readonly ci: string; readonly matches: RegExp }>
   { ci: 'cargo clippy --workspace --all-targets -- -D warnings', matches: /cargo clippy --workspace --all-targets -- -D warnings/ },
   { ci: 'pnpm test', matches: /pnpm (?:run )?test(?![\w:-])/ },
   { ci: 'pnpm test:harness', matches: /pnpm (?:run )?test:harness/ },
+  // The same gate, wrapped for the Windows job only. The wrapper re-runs a
+  // vitest worker-pool CRASH — a run that printed no verdict — and passes a real
+  // test failure straight through; see `scripts/ci-retry-vitest-crash.mjs`. It
+  // is listed rather than exempted so that the harness gate cannot be swapped
+  // for something else behind the wrapper without this file noticing, and
+  // `matches` still demands that `verify` reach the unwrapped gate.
+  {
+    ci: 'node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
+    matches: /pnpm (?:run )?test:harness/,
+  },
   { ci: 'pnpm build', matches: /pnpm (?:run )?build/ },
   { ci: './scripts/check-transcripts.sh', matches: /check-transcripts\.sh/ },
+  // The same script, reached the way a Windows developer reaches it. The Linux
+  // job runs the file directly; `test-windows` runs it through `pnpm`, because
+  // pnpm hands script bodies to `cmd.exe` and that is the hop that was broken.
+  { ci: 'pnpm test:transcripts', matches: /pnpm (?:run )?test:transcripts/ },
   { ci: 'cargo build --workspace --locked', matches: /cargo build --workspace --locked/ },
   { ci: 'cargo test --workspace --locked', matches: /cargo test --workspace --locked/ },
   { ci: './scripts/secret-scan.test.sh', matches: /secret-scan\.test\.sh/ },
@@ -83,19 +97,14 @@ describe('the local gate is a superset of the remote one', () => {
   it('every gate command in the workflow is accounted for above', () => {
     // Catches the other direction: a *new* CI step that nobody listed here, and
     // which therefore silently escapes the check above.
-    // Both spellings: `- run: x` (a step with no name) and a `run:` line under
-    // a `- name:`. Missing the first form would leave a whole class of step
-    // silently unchecked, which is the exact bug this file exists to prevent.
-    const runLines = [...WORKFLOW.matchAll(/^[ \t]*-?[ \t]*run: (.+)$/gm)]
-      .map((match) => (match[1] ?? '').trim())
-      .filter((line) => line !== '|');
-    expect(runLines.length).toBeGreaterThanOrEqual(CI_GATES.length);
+    const commands = ciRunCommands();
+    expect(commands.length).toBeGreaterThanOrEqual(CI_GATES.length);
 
-    const unaccounted = runLines.filter(
-      (line) =>
-        !line.startsWith('sudo apt-get') &&
-        !line.startsWith('pnpm install') &&
-        !CI_GATES.some(({ ci }) => line.includes(ci)),
+    const unaccounted = commands.filter(
+      (command) =>
+        !command.startsWith('sudo apt-get') &&
+        !command.startsWith('pnpm install') &&
+        !CI_GATES.some(({ ci }) => isCommand(command, ci)),
     );
 
     expect(
@@ -103,6 +112,35 @@ describe('the local gate is a superset of the remote one', () => {
       'a new CI step appeared. Add it to CI_GATES and to "pnpm verify", or ' +
         'exempt it here with a reason if it is setup rather than a gate.',
     ).toEqual([]);
+  });
+
+  it('the crash-retry wrapper is confined to the one job that needs it', () => {
+    // `scripts/ci-retry-vitest-crash.mjs` re-runs a gate that crashed without
+    // reporting any verdict. That is defensible exactly where the crash happens
+    // and nowhere else: on a job that does not crash, the same wrapper is a
+    // retry on ordinary flakiness, which is how a real intermittent failure
+    // gets normalised into "just re-run it".
+    //
+    // Both the script and the workflow say "only here". Prose does not enforce
+    // itself — spreading the wrapper to the Linux harness gate left this file
+    // green, because the CI_GATES row for it is satisfied by the wrapped string
+    // wherever it appears. This is what makes "only here" true.
+    const WRAPPER = 'ci-retry-vitest-crash.mjs';
+
+    const wrappingJobs = ciJobs()
+      .filter(([, body]) => new RegExp(`run:.*${WRAPPER}`, 'u').test(body))
+      .map(([name]) => name);
+    expect(
+      wrappingJobs,
+      'the crash-retry wrapper belongs to `test-windows` alone. If another job ' +
+        'now needs it, the crash has spread and the trigger should be found ' +
+        'rather than the retry copied.',
+    ).toEqual(['test-windows']);
+
+    expect(
+      ciRunCommands().filter((command) => command.includes(WRAPPER)),
+      'the wrapper is for exactly one step, wrapping exactly the harness gate',
+    ).toEqual(['node scripts/ci-retry-vitest-crash.mjs pnpm test:harness']);
   });
 
   it('every job that runs cargo can actually build the dependency graph', () => {
@@ -158,6 +196,74 @@ describe('the local gate is a superset of the remote one', () => {
     }
   });
 });
+
+/**
+ * Every command `ci.yml` actually runs.
+ *
+ * Two blind spots used to live here, and both were the kind that make this file
+ * report a pass it has not earned.
+ *
+ * 1. It read only the `run:` line itself. A step written as `run: |` yielded the
+ *    literal `'|'`, which was filtered out and the block's actual commands were
+ *    never looked at — so an entire gate could be added to the workflow in a
+ *    block scalar and this test would say nothing. Block bodies are now read,
+ *    and backslash continuations are rejoined so a wrapped `apt-get install`
+ *    reads as the one command it is instead of as a list of package names.
+ * 2. Accounting used `line.includes(ci)`. `'pnpm test:harness'.includes('pnpm
+ *    test')` is true, so every `pnpm test:<anything>` step in the workflow was
+ *    silently absorbed by the `pnpm test` gate and never had to be listed. See
+ *    {@link isCommand}.
+ *
+ * Both spellings of a step are still handled: `- run: x` (a step with no name)
+ * and a `run:` line under a `- name:`.
+ */
+function ciRunCommands(): string[] {
+  const lines = WORKFLOW.split(/\r?\n/u);
+  const commands: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = /^([ \t]*)-?[ \t]*run:[ \t]*(.*)$/u.exec(lines[index] ?? '');
+    if (header === null) continue;
+
+    const indent = (header[1] ?? '').length;
+    const value = (header[2] ?? '').trim();
+    if (value !== '' && !/^[|>][-+]?$/u.test(value)) {
+      commands.push(value);
+      continue;
+    }
+
+    // A block scalar. Every following line indented deeper than the `run:` key
+    // belongs to it; the first line at or below that indent ends the block.
+    let pending = '';
+    for (let body = index + 1; body < lines.length; body += 1) {
+      const raw = lines[body] ?? '';
+      if (raw.trim() === '') continue;
+      if (raw.length - raw.trimStart().length <= indent) break;
+
+      const text = raw.trim();
+      const continues = text.endsWith('\\');
+      const piece = continues ? text.slice(0, -1).trim() : text;
+      pending = pending === '' ? piece : `${pending} ${piece}`;
+      if (!continues) {
+        commands.push(pending);
+        pending = '';
+      }
+    }
+    if (pending !== '') commands.push(pending);
+  }
+
+  return commands;
+}
+
+/**
+ * Whether a workflow command *is* a given gate, rather than merely containing
+ * its text. A trailing-space prefix still counts, so `cargo test --workspace
+ * --locked --no-fail-fast` is the `cargo test --workspace --locked` gate, while
+ * `pnpm test:harness` is no longer the `pnpm test` gate.
+ */
+function isCommand(command: string, ci: string): boolean {
+  return command === ci || command.startsWith(`${ci} `);
+}
 
 /** `[jobName, jobBody]` for each job in the workflow, split on the job headers. */
 function ciJobs(): Array<[string, string]> {

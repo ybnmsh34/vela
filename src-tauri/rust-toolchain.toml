@@ -41,12 +41,16 @@
 #
 # The exact count, since a wrong number is what this comment used to carry:
 # `.github/workflows/ci.yml` has four `runs-on: ubuntu-latest` jobs — `static`
-# (:32), `test-ts` (:80), `test-rust` (:112) and `secret-tripwire` (:254) — of
+# (:32), `test-ts` (:80), `test-rust` (:112) and `secret-tripwire` (:310) — of
 # which exactly **two** install a toolchain, at :66 and :138. Those two are the
 # ones a `targets` entry would cost. The third `dtolnay/rust-toolchain@stable`
-# in the file, at :210, sits inside `test-windows` (`runs-on: windows-latest`,
+# in the file, at :255, sits inside `test-windows` (`runs-on: windows-latest`,
 # :188), where naming the Windows target would be a no-op rather than a wasted
 # download.
+#
+# Line numbers are `runs-on:` lines and were re-checked after merging main at
+# 92a3d1b, which moved two of them. They are a convenience, not the claim: the
+# claim is four Linux jobs, two of which install a toolchain.
 
 [toolchain]
 channel = "1.97.1"

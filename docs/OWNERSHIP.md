@@ -1,42 +1,15 @@
-# Ownership
+# Ownership — moved
 
-Wave 1 runs several builders concurrently against the same tree. This file is
-the claim registry: before editing, claim the paths you will touch, so a
-conflict is found here rather than in a merge.
+The registry is **[`docs/desktop-gate/OWNERSHIP.md`](desktop-gate/OWNERSHIP.md)**. Claim there.
 
-A claim is a claim on *edits*. Reading anything is always allowed.
+This file existed for part of Wave 1 because the lead told two builders to claim in
+`docs/OWNERSHIP.md` without checking whether it existed. One created it; the other found the real
+registry and said so. For a while both were live.
 
-## B2 — real bundle, toolchain pin, release posture
+It is kept as a pointer rather than deleted, because the failure it represents recurs by itself: a
+second registry is worse than no registry. Two agents each claim correctly, in different files, and
+neither finds the other — so the conflict surfaces in a merge instead of before an edit, which is
+the one thing a registry exists to prevent.
 
-Branch: `fix/real-bundle`
-
-Claimed:
-
-| Path | Kind |
-| --- | --- |
-| `src-tauri/rust-toolchain.toml` | new file |
-| `docs/release-posture.md` | new file |
-| `docs/OWNERSHIP.md` | new file (this registry) |
-| `src-tauri/tauri.conf.json` | one line added to `bundle.icon` |
-
-The `tauri.conf.json` edit is a single added array element,
-`"icons/icon.ico"`. It is the defect that made `"targets": "all"` unachievable
-on Windows: the bundler refuses with ``Couldn't find a .ico icon`` when no
-`.ico` appears in `bundle.icon`, and none did, even though
-`src-tauri/icons/icon.ico` has been present on disk all along. See
-`docs/release-posture.md` §6.
-
-B2 added **no** signing keys, **no** updater keys, and did **not** narrow
-`bundle.targets` — the posture record is a record, not a plan.
-- `.github/workflows/ci.yml` — the toolchain pin changes what CI resolves (see
-  `docs/release-posture.md`), but the workflow file itself is left alone: the
-  `pnpm verify` builder owns `src/platform/verify-covers-ci.test.ts`, which
-  reads it.
-- `README.md`, `src/platform/verify-covers-ci.test.ts`, `.gitattributes` —
-  owned by the `pnpm verify` builder.
-- `src-tauri/crates/vela-sandbox/**`, `src-tauri/crates/vela-skills/**` —
-  owned by the process-limit builder. These hold all 33 known-red `cargo fmt`
-  hunks; B2 must not touch them and must not add to them.
-- `src-tauri/src/fatal.rs`, and the startup/`run()` path in
-  `src-tauri/src/lib.rs` — owned by the app-data builder. B2 read `run()` to
-  establish where the app writes its data; it changed nothing there.
+The `fix/dead-skill-mount` row that used to be here is gone because that branch merged, which its
+own rule required.

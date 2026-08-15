@@ -19,8 +19,18 @@
 //! point of the format being files.
 //!
 //! Neither command knows what a project is. Enabling a skill *into* a project
-//! is `vela_skills::mount`, and no command calls it — see that crate's header
-//! for why (there is no projects table, and `project_update` does not exist).
+//! is `project_reconcile_skills` and `project_layout` in
+//! `src-tauri/src/ipc/project.rs`, over `vela_projects::reconcile_skills` — both
+//! allowlisted, both in `generate_handler!`, both reading the `projects` table
+//! that migration `0001_initial_schema.sql` creates.
+//!
+//! This paragraph used to say the opposite: that the mount was
+//! `vela_skills::mount`, that no command called it, and that `project_update`
+//! did not exist. The first was a second implementation nobody executed and is
+//! now deleted; the other two were true once and had stopped being true without
+//! the sentence changing. It is restated here rather than quietly corrected
+//! because a comment pointing a future implementer at a dead module is the
+//! defect `src/platform/claimed-guards.test.ts` exists to make expensive.
 
 use std::path::Path;
 

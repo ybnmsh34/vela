@@ -9370,10 +9370,7 @@ fn strip_correlation(text: &str) -> String {
 
     // 2. `Debug`, in both the compact and the pretty spelling:
     //    `CorrelationId(105)` and `CorrelationId(\n    105,\n)`.
-    loop {
-        let Some(start) = out.find("CorrelationId(") else {
-            break;
-        };
+    while let Some(start) = out.find("CorrelationId(") {
         let open = start + "CorrelationId(".len();
         let mut depth = 1usize;
         let mut end = open;

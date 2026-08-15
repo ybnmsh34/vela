@@ -263,6 +263,21 @@ const FOREIGN_NAMES = new Set([
   // described. Vouched by a serde attribute's spelling was never a fact anyone
   // had decided; this line is.
   'snake_case',
+
+  // The Linux kernel's. `cgroup.subtree_control` is the cgroup-v2 interface
+  // file a parent writes `+pids` into so `pids.max` exists in its children at
+  // all; `vela-sandbox/src/wsl.rs:213,404` names it twice while stating what
+  // the sandbox costs the host. Documented at
+  // `Documentation/admin-guide/cgroup-v2.rst` in the kernel tree, which is the
+  // whole point: nothing in this workspace could ever declare it, and the
+  // comments naming it are describing somebody else's filesystem.
+  //
+  // The tenth name, and the first that arrived by merge rather than by the
+  // measurement in the header. It went loud the moment `fix/sandbox-process-
+  // limit` landed, which is the asymmetry working: a kernel filename spelled in
+  // backticks is indistinguishable from a claimed test until someone says whose
+  // it is.
+  'subtree_control',
 ]);
 
 /** Trait and derive names that resolve in rustdoc via the prelude, not this tree. */

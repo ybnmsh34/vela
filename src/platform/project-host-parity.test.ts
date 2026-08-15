@@ -9,16 +9,22 @@
  * never heard of it, the exhaustive `switch` falls through, and the user is
  * shown the wrong sentence — or none — about a skill they switched on.
  *
- * ## Which crate this reads, and why that is the point
+ * ## Which crate this reads, and why this file is now the only one
  *
- * `src/platform/skill-mount-parity.test.ts` pins the same vocabulary against
- * `src-tauri/crates/vela-skills/`. That crate's `mount` module is not what runs:
- * `src-tauri/src/ipc/skills.rs` says no command calls it. The implementation
- * behind `project_layout` and `project_reconcile_skills` is
- * `src-tauri/crates/vela-projects/`, and until this file nothing pinned its wire
- * names and nothing read its Windows branch. Two crates spelling one vocabulary
- * is the seam, so **both** are pinned rather than one, and this file is the one
- * that reads the code the user's machine runs.
+ * `src-tauri/crates/vela-skills/` used to carry a second, complete `mount`
+ * module spelling this same vocabulary, and a guard named
+ * skill-mount-parity.test.ts pinned the contract to *that* copy. No command
+ * ever called it. The implementation behind `project_layout` and
+ * `project_reconcile_skills` is `src-tauri/crates/vela-projects/`, and until
+ * this file nothing pinned its wire names and nothing read its Windows branch —
+ * a rename in the live crate went green through the guard whose name said
+ * "skill mount".
+ *
+ * The duplicate is deleted and its guard is now
+ * `src/platform/skill-store-parity.test.ts`, holding the part of `vela-skills`
+ * that is live: the store vocabulary `skills_list` and `skills_read` really
+ * answer with. **This file is the sole pin on the mount vocabulary**, which is
+ * the reason to be exact about what it does and does not cover.
  *
  * ## Three things are held here, and they fail differently
  *
@@ -87,7 +93,7 @@ import {
  * Accepts a list only when it names every member of `U` exactly once.
  *
  * The same device `src/platform/chat-contract-parity.test.ts` and
- * `src/platform/skill-mount-parity.test.ts` each carry, restated here for the
+ * `src/platform/skill-store-parity.test.ts` each carry, restated here for the
  * reason the second of those gives: exporting it would make one file's
  * type-level helper part of another file's public surface, and it is nine lines.
  */
@@ -299,9 +305,16 @@ function readRustItem(file: string, keyword: 'enum' | 'struct', name: string): R
  * implementation is wrong for one of the two, silently: this file's first draft
  * used the variant rule for everything and reported `ProjectPaths.skills_mount`
  * as the name the host sends, which would have made a real disagreement
- * unnoticeable behind a fake one. The sibling
- * `src/platform/skill-mount-parity.test.ts` has the one-rule version and gets
- * away with it only because every struct field it reads is a single word.
+ * unnoticeable behind a fake one.
+ *
+ * The sibling that is now `src/platform/skill-store-parity.test.ts` carried the
+ * one-rule version for exactly as long, and got away with it only because every
+ * struct field it reads is a single word — `scripts`, `references`, `assets`,
+ * on which the two rules agree. That is recorded rather than dropped because it
+ * is the shape of the trap, not a fact about one file: a wrong implementation
+ * that happens to be indistinguishable on today's inputs reads as correct until
+ * the first multi-word field arrives. Both files carry the two-rule version now,
+ * and both hold it with field cases of their own.
  *
  * Within the variant rule there is a second trap the sibling file records
  * failing on: the intuitive reading — split on the lowercase-to-uppercase

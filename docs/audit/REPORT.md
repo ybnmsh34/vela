@@ -11,6 +11,138 @@ Every row carries three judgements, each established by the auditor rather than 
 | **evidence** | `hardware` = run against a real window, endpoint or filesystem · `test bites` = the auditor broke the implementation and watched a named test fail · `test unproven` = tests exist, not checked that they bite · `read only` = inspected · `none` |
 | **shipped** | traced, not assumed. `reaches-user` · `behind-flag` · `tests-only` · `not-wired` · `n/a` |
 
+## Corrections
+
+This audit is itself subject to the rule it enforces: **a comment is not evidence.** Rows found to
+be false at HEAD are corrected here rather than quietly edited, so the correction is auditable.
+
+### Correction 1 — "The capability grant is guarded against growth" (2026-08-15)
+
+The original row read: *"`capabilities/main.json` … read by zero tests … Adding a permission fails
+nothing, anywhere."* Both halves are false, and the row was graded `evidence: none` — which is the
+tell. It was written from a prose sweep, not from running anything.
+
+**Two tests read the file from disk:**
+
+- `src/app/shell/window-controls.test.tsx:322-350` — asserts five permissions are present, and that
+  `core:window:allow-internal-toggle-maximize` and `core:window:default` are absent.
+- `src/platform/project-host-parity.test.ts:718-728` — asserts no permission matches
+  `/^(?:fs|dialog|shell|http):/` and every permission matches `/^core:(?:event|window):/`.
+
+**Adding a permission does fail, for the dangerous cases.** Adding `core:fs:default`,
+`shell:allow-execute`, `core:http:default` and `dialog:allow-open` together turned
+`project-host-parity.test.ts` red — 1 file failed, 103 passed. The renderer cannot be granted
+filesystem, shell, HTTP or dialog access without a named test noticing.
+
+**The real hole is narrower and still real.** The allowlist is a *prefix shape*, so any permission
+matching `^core:window:` or `^core:event:` is accepted on sight. Adding
+`core:window:allow-set-always-on-top`, `core:window:allow-set-position`, `core:window:allow-hide`
+and `core:event:allow-emit-to` left both guards green — **38/38 passing, reproduced three times.**
+The window surface can be widened silently; the plugin surface cannot.
+
+The fix is the one `docs/vela-plan-2026-08-15.md` already specifies: **an exact-set assertion, not a
+shape assertion.** The grade stays FAIL, for a defect one order narrower than the one recorded.
+
+### A note on how this correction was nearly botched
+
+The intermediate full-suite run reported **4 files / 12 tests failed** against the widened window
+grant, which would have supported the opposite conclusion. Re-running with byte-identical input
+gave **104 files / 2105 tests passed**. The failing run took 193s with 1088s of `environment` time
+against 60s and 314s for the passing one — four agents were building concurrently on the same box.
+
+The failures were contention artefacts. **On this machine, under parallel load, a single observed
+test failure is not evidence of anything** — in either direction. A mutation that "fails" once is
+not proof that a test bites. Every mutation claim in this document that rests on one observed
+failure should be re-run before it is relied on.
+
+### Correction 2 — the verification environment is inside a container (2026-08-15)
+
+**Every process in the audit session is a descendant of Claude Desktop, which is MSIX-packaged.**
+That gives the whole session a filesystem and registry view which is *not* the machine's, and it
+silently invalidated a `reaches-user` grade.
+
+An agent built Vela's NSIS installer, ran it, and recorded the app installed at
+`%LOCALAPPDATA%\Vela\vela.exe` with an HKCU uninstall entry — graded `reaches-user`. It does not.
+Established from two independent vantage points outside the process tree — a scheduled task run by
+the Task Scheduler service, and WMI `CIM_DataFile` serviced by `WmiPrvSE.exe` — each carrying a
+planted control proving it could tell a container-only file from a real one:
+
+```
+CONTROL real     Public REAL_MARKER    exists=True
+CONTROL inside   INSIDE_MARKER CLEAN   exists=False    <-- correctly blind to the container
+QUESTION         vela.exe CLEAN        exists=False
+QUESTION         vela.exe CONTAINER    exists=True
+```
+
+`Get-ChildItem C:\Users\User\AppData\Local` from outside returns no `Vela` directory at all. The
+HKCU uninstall entry is container-only and would never appear in Settings → Installed apps.
+
+**The rule the evidence supports.** A top-level name under `%LOCALAPPDATA%` or `%APPDATA%` that
+**already existed** falls through to the real location; one **first created by this session** is
+captured in `…\LocalCache\` and is invisible outside. Redirection is per-top-level-name, not
+blanket — which is why the worktrees and scratchpad have behaved coherently all along.
+
+| Container-only — measurements here are not about the machine | Real — trustworthy |
+|---|---|
+| `%LOCALAPPDATA%\Vela`, `%LOCALAPPDATA%\tauri`, `%APPDATA%\Claude` | all of `%TEMP%`, including the scratchpad |
+| **every `HKCU` key written this session** | `Desktop`, Start Menu, `C:\ProgramData`, `C:\Users\User\vela*` |
+
+**There is no rule. Capture is per path, and it is undetermined.** The boundary runs *through*
+`%APPDATA%\dev.vela.desktop`:
+
+```
+REAL       %APPDATA%\dev.vela.desktop            <- the directory itself falls through
+REAL       %APPDATA%\dev.vela.desktop\skills                 (a directory)
+CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics            (also a directory)
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db-wal
+```
+
+An earlier version of this section said "directories merge; files inside do not uniformly follow
+the parent." **That is false and is corrected here rather than edited away:** `skills` and
+`diagnostics` are both directories and they resolve opposite ways. Two samples looked like a rule
+and were not. **Probe the exact path with `GetFinalPathNameByHandle` and believe nothing broader** —
+not about a parent, not about a sibling, not about a file's type.
+
+**What a real path still gives you, in full.** A handle that resolves REAL is a handle on the real
+object, so everything read *through that handle* is real, its security descriptor included. Verified
+by opening one handle and reading both the kernel final path and the DACL through it, so no re-open
+could substitute a different object: the app-data directory's own ACL read from inside this session
+**is** the user's ACL, byte-identical to `Get-Acl`. What is *not* trustworthy is an enumeration of
+its children, which is a merged view, and any file read from it that resolves into the container.
+
+That distinction cost a second wrong conclusion. A neighbouring document generalised this into "no
+measurement of that directory describes the user's real one, including its ACL", which its own data
+contradicted — and which would have told the track that is hardening exactly that ACL that its
+evidence was worthless. **An over-correction destroys good evidence as surely as the original error
+manufactured bad evidence**, and a claim landing on an alarming conclusion needs the same scrutiny
+as one landing on a reassuring conclusion.
+
+This retired a claim that had stood all session. An agent repeatedly reported that directory
+"byte-for-byte and timestamp-for-timestamp identical" as evidence nothing had been written. It had
+compared a **container copy of the database**. Nothing was in fact damaged — the app was never
+launched and the installer does not touch that path — but the evidence was weaker than the sentence
+it carried, and it happened to land on a reassuring conclusion, which is exactly when a
+verification needs checking hardest.
+
+**The authoritative check for any path is `GetFinalPathNameByHandle`.** If it resolves under
+`…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\`, the observation is about the container.
+
+Two traps worth naming. `%LOCALAPPDATA%\Vela` is **not** a reparse point — `fsutil reparsepoint
+query` errors 4390 and `GetFileAttributes` shows no reparse bit — so nothing on disk reveals the
+mapping. And an **identical NTFS file ID at both the clean and container paths does not prove
+container-only**: `%APPDATA%\dev.vela.desktop\vela.db` shows one ID at both paths and is genuinely
+real. Identical IDs prove one file at two paths; only an outside vantage separates "real file also
+visible in the container" from "container file also visible at the clean path". That distinction
+cost one wrong intermediate conclusion in this investigation.
+
+**Consequence for the supreme rule.** `reaches-user` means an auditor clicked it in the running
+window. Installing from inside this session does not establish that a user can run the result, so
+any future install- or registry-based `reaches-user` claim must be confirmed from outside the
+container or graded UNVERIFIED. Real damage is still possible in the unredirected paths: this
+install overwrote two genuine shortcuts on the user's Desktop and Start Menu to point at a
+container-only path, which would have failed for the user with no diagnostic.
+
 ## Totals
 
 | verdict | count |
@@ -113,7 +245,7 @@ Every row carries three judgements, each established by the auditor rather than 
 | verify covers CI, reverse direction (a new CI gate must be listed) | **FAIL** | test bites | reaches-user | Two proven blind spots. M3: a gate added as `run: \|` / `pnpm lint:css` / `pnpm audit --prod` gives 13/13 pass, because the harvest regex `/^[ \t]*-?[ \t]*run: (.+)$/gm` never sees block-scalar bodies. M7: `run: pnpm test:e2e` gives 13/13 pass, because "accounted for" is `line.includes('pnpm test')`. A single-line novel gate (M2) is correctly caught. |
 | Windows CI job covers the gates that break on Windows | **FAIL** | read only | reaches-user | .github/workflows/ci.yml `test-windows` runs typecheck, `pnpm test`, cargo build/test and check-transcripts.sh — but not `pnpm test:harness` and not `pnpm build`. `pnpm test:harness` is exactly the gate that is currently red on Windows, so the job whose stated purpose is to make a green run mean something on the shipping platform omits it. |
 | `.gitattributes` covers the byte-exact evidence it names | **FAIL** | hardware | reaches-user | Protects `*.sse` and `*.jsonl`. `docs/regression-baseline/mock-matrix/` holds 48 `.json`, 43 `.txt`, 12 `.sse`, 2 `.md`, 1 `.tsv` and zero `.jsonl`; `frontier/01-health.json` measured at 8 CRLF / 8 LF on disk. The line-ending repair at HEAD stopped one extension short of the directory its own comment describes. |
-| The capability grant is guarded against growth | **FAIL** | none | not-wired | `capabilities/main.json` is named in eight prose comments (lib.rs:9, ipc/mod.rs:6, adapter.ts:73, tauri-adapter.ts:38, contract-project.ts:530 and :638, use-window-controls.ts:7, window-seam.test.ts:4) and read by zero tests. `window-seam.test.ts` cites the grant in its header and never opens the file. Adding a permission fails nothing, anywhere. |
+| The capability grant is guarded against growth | **FAIL** | test bites | reaches-user | **Corrected 2026-08-15 — the original row was false in both its reason and its conclusion; see "Correction 1" below.** Two tests do read the file. Plugin escalation is caught. The real hole is narrower: any permission matching `^core:(?:event\|window):` is accepted, so `core:window:allow-set-always-on-top`, `allow-set-position`, `allow-hide` and `core:event:allow-emit-to` were added together and both guards stayed green, 38/38, three runs. Shape assertion where an exact-set assertion is required. |
 | Bundle identifier `dev.vela.desktop` is shared by every instance | **FAIL** | hardware | reaches-user | `store_host.rs` resolves the DB from `app.path().app_data_dir()` = `%APPDATA%\dev.vela.desktop`; projects, skills, diagnostics and the WebView2 `EBWebView` profile all hang off the same root, and the identifier is hard-coded again as `KEYCHAIN_SERVICE` (vela-secrets/src/lib.rs:47). No single-instance plugin (none exist in Cargo.lock), no named mutex, no `WEBVIEW2_USER_DATA_FOLDER`. `docs/desktop-gate/VERDICTS.md:1414` records the hazard and leaves the mitigation as a manual instruction to the operator. |
 | An installable bundle has ever been produced | **FAIL** | hardware | not-wired | `src-tauri/target/release/bundle` does not exist; `target/release/wix/x64` exists and is empty, i.e. a `pnpm tauri build` on 2026-08-13 did not clear the bundler. `bundle.targets: "all"` means WiX+NSIS, both downloaded from the network at build time. No signing config, no updater config. conventions.md section 11 honestly lists it as "not attempted". |
 | Build determinism / toolchain pinning | **FAIL** | read only | reaches-user | No `rust-toolchain.toml` anywhere; `rust-version = "1.82"` is a floor and CI uses `dtolnay/rust-toolchain@stable`, which floats with the calendar. `Cargo.lock` plus `--locked` pin dependencies but not the compiler, and the MSI/NSIS toolchains are fetched over the network at build time. The JS half is properly pinned. |

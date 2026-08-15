@@ -1,6 +1,10 @@
 [package]
 name = "vela-skills"
-description = "The file-based skill store — SKILL.md parsing, progressive disclosure, and the per-project skills mount"
+# The mount is deliberately absent from this sentence. This crate carried a
+# second implementation of it until it was deleted for having no caller, and
+# `src/lib.rs` opens by saying so; a manifest still advertising it would put the
+# ambiguity back in the one place no guard reads. The mount is `vela-projects`'.
+description = "The file-based skill store — SKILL.md parsing and progressive disclosure"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

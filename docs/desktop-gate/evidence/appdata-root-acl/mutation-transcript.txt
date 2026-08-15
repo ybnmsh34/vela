@@ -220,6 +220,56 @@ Also fixed in round 3, found by review rather than by mutation:
     the corruption. Every changed file was then scanned; only that one was hit.
 
 -------------------------------------------------------------------------------
-After every revert: cargo test --workspace => 63 targets, 1303 tests, 0 failed.
+ROUND 4. Two mechanisms were entirely unguarded and one retraction had not
+taken. Each mutation run TWICE.
+
+Q1  the recursive descent deleted (`if false` on the recursive call)
+    => 2/2: the_walk_descends_into_a_directory_it_had_to_repair
+    The mechanism could be removed with 1303/1303 green. The existing
+    an_explicit_ace_on_a_subdirectory_... could not see it, because its file
+    merely INHERITS the offending ace, so protecting the subdirectory cleans it
+    without anyone descending. The new test gives the file an ace of its OWN.
+
+Q2  an unreadable ACL silently skipped -- failing OPEN (`Err(_) => continue`)
+    => 2/2: an_entry_whose_acl_cannot_be_read_stops_the_walk
+Q3  a vanished entry treated as fatal instead of stepped over
+    => 2/2: an_entry_that_vanished_mid_walk_is_stepped_over
+    Both arms carried a comment asserting the behaviour and nothing checking
+    it. Neither is provokable through the real reader -- an object's owner
+    holds implicit READ_CONTROL and `icacls /deny` on oneself does not make
+    GetNamedSecurityInfoW fail -- so the ACL READER is now injectable too,
+    for the same reason and by the same argument as the enforcer.
+
+Q4  the retracted deny-consequence reintroduced in ANOTHER crate
+    => 2/2: the_retracted_reason_for_the_deny_rule_stays_retracted
+Q6  the guard's search stops reading file contents
+    => 2/2: same test (positive control)
+Q7  the guard's walk stops descending the workspace
+    => 2/2: same test (scanned-count assertion)
+
+Q5  the guard's needle swapped for a phrase that occurs nowhere
+    => 2/2: NO TEST FAILED. Reported, not hidden. No assertion that a phrase is
+    ABSENT can detect its own needle being swapped; what it can detect is the
+    search silently finding nothing, which is how it would actually rot, and
+    Q6/Q7 cover that.
+
+WHY A TEST AND NOT A HABIT. The deny-consequence claim was retracted in round 3
+and then shipped verbatim TWICE MORE in the same file, a thousand lines below
+the retraction, in a commit whose own message said "checking took one grep".
+The round before that, the same shape one file away. Twice is a mistake; three
+times is a missing check. The grep is now a test that walks every Rust source
+in the workspace, so it is not confined to the crate that happened to be wrong.
+Running it caught its own doc comment quoting the banned phrase, which is why
+the needle is assembled from fragments rather than written out.
+
+Also fixed in round 4, found by a control refusing a bad setup:
+  - the descent test's first version widened the file with the same principal
+    and container-inherit flags as its parent, which produced NO explicit ace
+    on the file at all -- so the control fired and said so, rather than the
+    test passing for the wrong reason.
+
+-------------------------------------------------------------------------------
+After every revert: cargo test --workspace => 63 targets, 1307 tests, 0 failed.
 Gate: 22 checks, 0 failures, twice. vitest 2110/2110, twice.
-No scratch directory is left in %TEMP% by a passing run.
+No scratch directory is left in %TEMP% by a passing run (verified after a clean
+full-workspace run; a PANICKING run still leaves one, since cleanup is trailing).

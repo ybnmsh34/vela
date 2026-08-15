@@ -589,7 +589,7 @@ pub fn open_private_append(path: &Path) -> io::Result<File> {
 ///
 /// Returns the paths it repaired, so a caller can report them.
 pub fn repair_entries(dir: &Path) -> Result<Vec<PathBuf>, EntryFailure> {
-    repair_entries_with(dir, |path, is_dir| {
+    repair_entries_with(dir, describe, |path, is_dir| {
         enforce(
             path,
             if is_dir {
@@ -611,13 +611,23 @@ pub fn repair_entries(dir: &Path) -> Result<Vec<PathBuf>, EntryFailure> {
 /// rounds of review. A failure that cannot be provoked cannot be tested, and a
 /// test that cannot fail is a comment.
 ///
+/// The **ACL reader** is injectable for the same reason and by the same
+/// argument. The walk's two responses to a failed read — step over an entry
+/// that has vanished, stop for anything else — are a fail-closed decision that
+/// a comment asserted and nothing checked: replacing the second with a silent
+/// `continue` left the whole workspace green three times over. Neither arm can
+/// be provoked through the real reader, because an object's owner holds
+/// implicit `READ_CONTROL` and `icacls /deny` on oneself does not make
+/// `GetNamedSecurityInfoW` fail.
+///
 /// Production code calls [`repair_entries`].
 pub fn repair_entries_with(
     dir: &Path,
+    read_acl: impl Fn(&Path) -> io::Result<Privacy> + Copy,
     enforce_entry: impl Fn(&Path, bool) -> io::Result<()> + Copy,
 ) -> Result<Vec<PathBuf>, EntryFailure> {
     let mut repaired = Vec::new();
-    repair_within(dir, 0, &mut repaired, enforce_entry)?;
+    repair_within(dir, 0, &mut repaired, read_acl, enforce_entry)?;
     Ok(repaired)
 }
 
@@ -668,6 +678,7 @@ fn repair_within(
     dir: &Path,
     depth: u32,
     repaired: &mut Vec<PathBuf>,
+    read_acl: impl Fn(&Path) -> io::Result<Privacy> + Copy,
     enforce_entry: impl Fn(&Path, bool) -> io::Result<()> + Copy,
 ) -> Result<(), EntryFailure> {
     if depth >= REPAIR_MAX_DEPTH {
@@ -686,7 +697,7 @@ fn repair_within(
         // An entry that vanished between the directory listing and here is not
         // a privacy failure. SQLite deletes a write-ahead log on checkpoint and
         // this runs at startup beside a database that may already be live.
-        let before = match describe(&path) {
+        let before = match read_acl(&path) {
             Ok(report) => report,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             // Not being able to read who can reach a path is not the same as
@@ -708,7 +719,7 @@ fn repair_within(
         repaired.push(path.clone());
 
         if kind.is_dir() {
-            repair_within(&path, depth + 1, repaired, enforce_entry)?;
+            repair_within(&path, depth + 1, repaired, read_acl, enforce_entry)?;
         }
     }
     Ok(())
@@ -1246,10 +1257,14 @@ mod tests {
     ///
     /// A deny ACE takes access away. Counting one as granting makes a path
     /// carrying a denial for a foreign principal read as *not private* — and
-    /// because `vela-store` refuses to open a database in a directory that is
-    /// not private, **Vela would decline to start over an ACL stricter than the
-    /// one it demands**. Deny entries are not exotic: they are exactly what an
-    /// administrator adds to lock a group out of a folder.
+    /// what that costs is set out on [`ace::verdict`]: not a refusal, because
+    /// no production `describe` that can refuse ever sees an unreplaced DACL,
+    /// but a **silent repair that deletes an administrator's lockout**. Deny
+    /// entries are not exotic; they are exactly what an administrator adds to
+    /// lock a group out of a folder.
+    ///
+    /// `a_deny_ace_an_administrator_added_survives_the_walk` measures that
+    /// consequence on a real DACL. This one pins the decision itself.
     #[test]
     fn a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader() {
         assert_eq!(
@@ -1276,8 +1291,8 @@ mod tests {
     }
 
     /// An ACE granting an empty set of rights hands over nothing. Reporting it
-    /// as a reader is a false alarm with the same cost as the deny case: a
-    /// refusal to start.
+    /// as a reader is a false alarm with the same cost as the deny case: an
+    /// entry needlessly re-stamped, losing whatever its DACL said.
     #[test]
     fn an_allow_ace_with_an_empty_mask_grants_nothing() {
         assert_eq!(ace::verdict(ace::ALLOWED, 0, false), ace::Verdict::Harmless);
@@ -1301,6 +1316,94 @@ mod tests {
                 "ace type {unknown} was waved through because it looked like ours"
             );
         }
+    }
+
+    /// **A retracted claim must not come back, and this is the third time it
+    /// has.**
+    ///
+    /// The consequence of reading a deny ACE as a grant was stated wrongly — as
+    /// a refusal to start rather than a silent repair — and retracted on
+    /// [`ace::verdict`], then shipped verbatim twice more in this same file, a
+    /// thousand lines below the retraction, in a commit whose own message said
+    /// "checking took one grep". The round before that, the same shape: a
+    /// retracted claim left standing one file away from its correction.
+    ///
+    /// The wording itself is deliberately **not** quoted here. It is assembled
+    /// below from fragments, because a guard that spells out the phrase it
+    /// bans is a guard that fails on itself — which is how this test first ran.
+    ///
+    /// Twice is a mistake, three times is a missing check. Greping the tree
+    /// after a retraction is a procedure that depends on remembering; this does
+    /// not. It walks every Rust source in the workspace, so it is not confined
+    /// to the crate that happened to be wrong last time.
+    ///
+    /// The wording is distinctive enough that an innocent recurrence is
+    /// implausible. If one ever happens, rephrase — do not widen this.
+    #[test]
+    fn the_retracted_reason_for_the_deny_rule_stays_retracted() {
+        // Assembled rather than written out, so this file does not contain the
+        // string it is banning.
+        let retracted = format!("stricter than {} one it demands", "the");
+        // A positive control. An assertion that a phrase is ABSENT passes just
+        // as happily when the search is broken as when the tree is clean, so
+        // the same walk is asked for something that must be there. This does
+        // not defend against the needle being swapped for a phrase that never
+        // occurs — no absence assertion can — but it does catch the walk
+        // silently finding nothing, which is the way this would actually rot.
+        let sentinel = "PROTECTED_DACL_SECURITY_INFORMATION";
+
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("the crate sits at src-tauri/crates/<name>")
+            .to_path_buf();
+
+        let mut offenders = Vec::new();
+        let mut sentinel_hits = 0usize;
+        let mut scanned = 0usize;
+        let mut stack = vec![workspace.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(listing) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in listing.flatten() {
+                let path = entry.path();
+                let name = entry.file_name();
+                if name == "target" || name == "node_modules" || name == ".git" {
+                    continue;
+                }
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    scanned += 1;
+                    if let Ok(text) = std::fs::read_to_string(&path) {
+                        if text.contains(sentinel) {
+                            sentinel_hits += 1;
+                        }
+                        if text.contains(&retracted) {
+                            offenders.push(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            scanned > 50,
+            "only {scanned} Rust files were scanned from {} — the walk is not \
+             reaching the workspace, so this guard is vacuous",
+            workspace.display()
+        );
+        assert!(
+            sentinel_hits > 0,
+            "the walk read {scanned} files and found none containing `{sentinel}`, \
+             so it is not reading their contents and the absence below means \
+             nothing"
+        );
+        assert!(
+            offenders.is_empty(),
+            "a claim this crate retracted is being made again in: {offenders:?}"
+        );
     }
 
     /// **The deny case on a real DACL, at the one call site where it bites.**
@@ -1376,7 +1479,7 @@ mod tests {
              the enforcement step"
         );
 
-        let failure = repair_entries_with(&data, |_, _| {
+        let failure = repair_entries_with(&data, describe, |_, _| {
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
@@ -1392,6 +1495,121 @@ mod tests {
         assert!(
             matches!(failure.failure, Failure::NotPrivate(_)),
             "an ACL refusal was classified as an I/O fault: {failure:?}"
+        );
+        reset_and_remove(&root);
+    }
+
+    /// **An entry whose ACL cannot be read stops the walk.**
+    ///
+    /// Not being able to read who can reach a path is not the same as reading
+    /// that nobody can, so the walk fails closed. That arm carried a comment
+    /// saying exactly this and nothing checked it: replacing it with a silent
+    /// `continue` — an unreadable entry skipped, failing **open** — left the
+    /// whole workspace green three times over.
+    ///
+    /// Driven through the injected reader because it cannot be provoked through
+    /// the real one: an object's owner holds implicit `READ_CONTROL`, and
+    /// `icacls /deny` against oneself does not make `GetNamedSecurityInfoW`
+    /// fail. An unprovokable arm is still a decision, and a decision with a
+    /// comment and no test is the shape this repair keeps producing.
+    #[cfg(windows)]
+    #[test]
+    fn an_entry_whose_acl_cannot_be_read_stops_the_walk() {
+        let root = scratch("unreadable");
+        let data = root.join("app-data");
+        let child = data.join("skills");
+        std::fs::create_dir_all(&child).unwrap();
+        create_private_dir(&data).unwrap();
+
+        let failure = repair_entries_with(
+            &data,
+            |_| {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "GetNamedSecurityInfoW failed: Access is denied. (os error 5)",
+                ))
+            },
+            |_, _| Ok(()),
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.path, child);
+        assert!(
+            matches!(failure.failure, Failure::NotPrivate(_)),
+            "an unreadable ACL was not treated as a privacy failure: {failure:?}"
+        );
+        reset_and_remove(&root);
+    }
+
+    /// The other arm: an entry that has **gone** is stepped over, not fatal.
+    ///
+    /// SQLite deletes a write-ahead log on checkpoint, and this runs at startup
+    /// beside a database that may already be live, so a vanished entry is
+    /// ordinary. Failing closed on it would turn a routine race into a refusal
+    /// to start — which is the one place that phrase does belong.
+    #[cfg(windows)]
+    #[test]
+    fn an_entry_that_vanished_mid_walk_is_stepped_over() {
+        let root = scratch("vanished");
+        let data = root.join("app-data");
+        std::fs::create_dir_all(data.join("skills")).unwrap();
+        create_private_dir(&data).unwrap();
+
+        let repaired = repair_entries_with(
+            &data,
+            |_| Err(io::Error::from(io::ErrorKind::NotFound)),
+            |_, _| panic!("nothing should have been repaired"),
+        )
+        .expect("a vanished entry is not a privacy failure");
+
+        assert!(repaired.is_empty());
+        reset_and_remove(&root);
+    }
+
+    /// **The walk descends into a directory it had to repair.**
+    ///
+    /// [`repair_entries`] documents this affirmatively, and the residual gap it
+    /// states is phrased in terms that presuppose it — yet `if false` on the
+    /// recursive call left 1303 tests green. The whole mechanism could be
+    /// deleted unnoticed.
+    ///
+    /// It needs a file carrying its **own** explicit ACE, one level down.
+    /// `an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted` has
+    /// the file merely *inheriting*, so protecting the subdirectory fixes it
+    /// without anyone descending — which is exactly why that test did not
+    /// notice.
+    #[cfg(windows)]
+    #[test]
+    fn the_walk_descends_into_a_directory_it_had_to_repair() {
+        let root = scratch("descend");
+        let data = root.join("app-data");
+        let skills = data.join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+        let installed = skills.join("my-skill.md");
+        std::fs::write(&installed, b"---\nname: my-skill\n---\n").unwrap();
+        create_private_dir(&data).unwrap();
+
+        // Explicit on both levels: the subdirectory, and the file inside it.
+        // Protecting `skills/` rewrites only the file's INHERITED portion, so
+        // the file's own ace survives unless something walks down to it.
+        widen(&skills);
+        widen_file(&installed);
+
+        let before = describe(&installed).unwrap();
+        assert!(
+            !before.foreign_explicit.is_empty(),
+            "control: the file carries no ace of its own, so protecting its \
+             parent would clean it and this test would pass without any \
+             descent: {before:?}"
+        );
+
+        repair_entries(&data).unwrap();
+
+        let after = describe(&installed).unwrap();
+        assert!(
+            after.foreign.is_empty(),
+            "the walk stopped at `skills/` and left a file inside it reachable \
+             by another account: {after:?}"
         );
         reset_and_remove(&root);
     }
@@ -1745,10 +1963,28 @@ mod tests {
 
     #[cfg(windows)]
     fn widen(path: &Path) {
+        widen_as(path, "*S-1-5-32-545", "(OI)(CI)(RX)");
+    }
+
+    /// Widen a **file**: no container-inherit flags, which mean nothing on a
+    /// leaf, and a different principal so the ace it gains is distinguishable
+    /// from whatever it inherited from its parent.
+    ///
+    /// [`widen`] on a file that already inherits the same grant for the same
+    /// principal produces no explicit ace at all — which is exactly how the
+    /// descent test failed its own control the first time it ran, and why that
+    /// control is worth having.
+    #[cfg(windows)]
+    fn widen_file(path: &Path) {
+        widen_as(path, "*S-1-5-32-546", "(R)");
+    }
+
+    #[cfg(windows)]
+    fn widen_as(path: &Path, principal: &str, rights: &str) {
         let status = std::process::Command::new("icacls")
             .arg(path)
             .arg("/grant")
-            .arg("*S-1-5-32-545:(OI)(CI)(RX)")
+            .arg(format!("{principal}:{rights}"))
             .output()
             .expect("icacls must be present on Windows");
         assert!(

@@ -30,9 +30,9 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
-| `src-tauri/rust-toolchain.toml` | Wave 1 / B2 | 2026-08-15 | new file — pins 1.97.1 + rustfmt/clippy, so gate 2's answer stops floating with the calendar |
-| `src-tauri/tauri.conf.json` | Wave 1 / B2 | 2026-08-15 | one line added to `bundle.icon` — `icons/icon.ico`, without which the Windows bundler produces no installer at all |
-| `docs/release-posture.md` | Wave 1 / B2 | 2026-08-15 | new file — signing, updater, WebView2, elevation and uninstall posture, plus the MSIX-container finding that withdrew B2's install claim |
+| `src/platform/claimed-guards.test.ts` | Wave 1 / tokeniser | 2026-08-15 | tokeniser loses phase on a one-character backticked token and reads the gaps between real tokens |
+| `src/platform/contract.test.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts`, `src-tauri/src/ipc/mod.rs` | Wave 1 / B7 | 2026-08-15 | three guards that do not bite: a shape-not-exact-set capability assertion, a hand-written contract key list, a one-string secrets check |
+| `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
 
 ## Released
 
@@ -43,6 +43,11 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 | `docs/vela-state-2026-08-14.md` | `b02a848` | verified state read |
 | `src-tauri/crates/vela-providers/src/private_fs.rs` | `960ddce` (`wave-g/private-fs`) | compiled and wired — **awaiting critic, not yet merged** |
 | `src-tauri/src/ipc/diagnostics.rs` | `960ddce` (`wave-g/private-fs`) | fails closed on a directory that cannot be made private |
+| `scripts/run-bash.mjs`, `.gitattributes`, `.github/workflows/ci.yml`, `README.md` | `7f5cd93` (`fix/verify-on-windows`) | `pnpm verify` reaches its last gates on Windows; the launcher refuses the WSL `bash.exe` against a compiled decoy |
+| `scripts/ci-retry-vitest-crash.mjs` | `7f5cd93` | crash-retry wrapper. Took three rounds — it could launder a real regression, because its verdict check keyed only on end-of-run signals while an inline failure prints ~6.5s earlier |
+| `src-tauri/crates/vela-sandbox/**` | `4949578` (`fix/sandbox-process-limit`) | per-run process limit via cgroup v2 `pids.max`. `RLIMIT_NPROC` is per-uid, so a second concurrent run forked **zero**. Landed gate 2 green for the first time |
+| `src-tauri/crates/vela-skills/src/{mount,enablement}.rs` | `730eca5` (`fix/dead-skill-mount`) | deleted, 1237 lines with no caller. The parity test guarding them also guarded live types, so it was split and renamed rather than repointed |
+| `src-tauri/rust-toolchain.toml`, `src-tauri/tauri.conf.json`, `docs/release-posture.md` | `9baf471` (`fix/real-bundle`) | `bundle.icon` had no `.ico`, so `targets: "all"` produced nothing behind a green build. Pin verified inert for both gates. **No `reaches-user` grade** — the install landed in the MSIX container |
 
 ## Rules
 

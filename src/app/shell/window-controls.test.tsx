@@ -26,7 +26,6 @@
  * verdict belongs to the desktop session on real WebView2.
  */
 
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { act, render, screen, waitFor, within } from '@testing-library/react';
@@ -35,6 +34,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { PlatformAdapter, Unsubscribe, WindowControls } from '@/platform/adapter';
 import { BrowserAdapter } from '@/platform/browser-adapter';
+import type { CapabilitySurface } from '@/platform/capability-surface';
+import {
+  capabilitiesInFile,
+  permissionsReaching,
+  readCapabilitySurface,
+  resolveLoaded,
+  unreadableConfigsIn,
+} from '@/platform/capability-surface';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 
 import { TitleBar } from './TitleBar';
@@ -320,38 +327,104 @@ describe('close is not reachable by accident', () => {
 });
 
 describe('the capability grant matches the wire that was run', () => {
-  const capabilities = JSON.parse(
-    readFileSync(join(process.cwd(), 'src-tauri', 'capabilities', 'main.json'), 'utf8'),
-  ) as { permissions: string[] };
+  /**
+   * Read once, and read *inside* the assertions rather than while the file is
+   * being collected. A capability tree the reader refuses — a registration
+   * naming nothing, two files claiming one identifier, a TOML file nothing here
+   * can parse — has to fail a named assertion below. A collection error is a
+   * real failure too, but it arrives attributed to the file rather than to the
+   * guard, which is the difference between a message somebody acts on and a
+   * message somebody reruns.
+   */
+  let cached: CapabilitySurface | undefined;
+  const surface = (): CapabilitySurface => (cached ??= readCapabilitySurface(process.cwd()));
+  const grantedToMain = (): readonly string[] => permissionsReaching(surface().loaded, 'main');
+
+  /**
+   * **Every capability file the build loads, by name.**
+   *
+   * This list, {@link REGISTERED_CAPABILITIES} and {@link GRANTED_PERMISSIONS}
+   * are three lists over one derivation, and they are separate because they fail
+   * for three different reasons: a file appearing or disappearing, a
+   * registration changing, and the permissions themselves moving.
+   *
+   * The previous version of this block read `src-tauri/capabilities/main.json`
+   * by name. The build does not: it globs the directory and selects from what it
+   * found. A second capability file granting the main window
+   * `core:window:allow-set-always-on-top` and `core:window:allow-hide`,
+   * registered in `src-tauri/tauri.conf.json`, left this file and
+   * `src/platform/project-host-parity.test.ts` both green at 39 of 39 — the
+   * exact-set assertion below was exact about the contents of one file out of a
+   * directory nothing enumerated.
+   */
+  const CAPABILITY_FILES = ['main.json'];
+
+  /**
+   * **Every capability identifier the build ends up with, in load order.**
+   *
+   * Not filenames: the loader keys a capability by its own `identifier` field,
+   * so `main.json` could declare itself anything. This is the identifier list,
+   * and {@link CAPABILITY_FILES} above is the file list, and needing to edit
+   * both is the point — a capability renamed in place moves one of them.
+   *
+   * The registration is what makes an on-disk file live. An entry naming an
+   * identifier that no file declares is a build failure, not a silent nothing;
+   * a file no entry names is loaded by nobody and grants nothing, which is dead
+   * weight and is reported below rather than tolerated.
+   */
+  const REGISTERED_CAPABILITIES = ['main'];
 
   /**
    * The whole grant, entry by entry, with the caller that needs each one.
    *
-   * **This list is the assertion, and it is an exact set rather than a shape.**
-   * The previous version of this block asked only that the five window
-   * permissions the title bar calls were present, and `project-host-parity.test.ts`
-   * asks only that every entry is prefixed `core:event:` or `core:window:`.
-   * Both are satisfied by a grant that is strictly wider than this one:
+   * **This list is the assertion, it is an exact set rather than a shape, and it
+   * is compared against the union over every capability the build loads** —
+   * `src/platform/capability-surface.ts` derives that union from the directory
+   * listing and from `app.security.capabilities`, the way tauri-utils 2.9.3
+   * does, rather than from a path typed here.
+   *
+   * Two earlier versions of this block were narrower than the thing they
+   * described. The first asked only that the five window permissions the title
+   * bar calls were present, and `project-host-parity.test.ts` asks only that
+   * every entry is prefixed `core:event:` or `core:window:`; both are satisfied
+   * by a grant strictly wider than this one, and
    * `core:window:allow-set-always-on-top`, `core:window:allow-set-position`,
    * `core:window:allow-hide` and `core:event:allow-emit-to` were added together
-   * to `main.json` and neither test moved. A window permission is not harmless
-   * because it is a window permission — `allow-hide` alone would let the
-   * renderer hide the only window this app has, and `tauri.conf.json` declares
-   * one window and no tray icon, so nothing would be left to bring it back.
+   * to `main.json` and neither test moved. The second — the exact set — closed
+   * that and left the level above it open: the same four permissions arrive just
+   * as easily in a second file. A window permission is not harmless because it
+   * is a window permission. `allow-hide` alone would let the renderer hide the
+   * only window this app has, and `src-tauri/tauri.conf.json` declares one
+   * window and no tray icon, so nothing would be left to bring it back.
    *
-   * So the granted set must equal this list exactly. Adding a permission to
-   * `main.json` fails here; removing one fails here. Widening the grant is
-   * still possible, but only by editing this list in the same commit, which is
-   * the review this file exists to force.
+   * **What the three lists now force, exactly.** Any change that widens what the
+   * main window may call through the capability system fails one of the four
+   * assertions below: a permission added to an existing capability file, a
+   * permission added by a new capability file, a capability written inline into
+   * `src-tauri/tauri.conf.json` with no file at all, a file registered or
+   * unregistered, or a capability renamed. Each can still be done — by editing
+   * the list it moves, in the same commit, which is the review this block exists
+   * to force.
    *
-   * This file owns the exact set rather than `src/platform/project-host-parity.test.ts`
+   * **What they do not force, said plainly.** These lists say nothing about
+   * whether a permission is *needed*; that argument is the prose beside each
+   * entry and a reader has to do it. They cover the capability system only —
+   * every command in `src-tauri/src/ipc/mod.rs` reaches the renderer through the
+   * IPC allowlist instead, which is a different mechanism with different guards.
+   * And the derivation is a *copy* of the loader's resolution rules read out of
+   * the pinned sources, not a reading of a built binary: if a future tauri
+   * changes how `app.security.capabilities` resolves, this reader is what goes
+   * stale, and the version it was read from is written down in its header.
+   *
+   * This file owns the union rather than `src/platform/project-host-parity.test.ts`
    * because this is the file that can say *why* each entry is granted: the
    * callers are the seam in `src/platform/tauri-adapter.ts` and the drag region
    * in `src/app/shell/TitleBar.tsx`, both of which are under test here. That
-   * other file keeps its prefix check, which is not this assertion said twice:
-   * it fails on any plugin-namespaced permission — `fs:`, `dialog:`, `shell:`,
-   * `http:` and anything else that is not `core:` — without anyone having to
-   * update a list, so it still bites in a commit that edits this list too.
+   * other file keeps its prefix check — now over the same union — which is not
+   * this assertion said twice: it fails on any plugin-namespaced permission
+   * (`fs:`, `dialog:`, `shell:`, `http:` and anything else that is not `core:`)
+   * without anyone having to update a list, so it still bites in a commit that
+   * edits these lists too.
    */
   const GRANTED_PERMISSIONS = [
     // Every host push the renderer consumes — `chat:event` and `sandbox:event`,
@@ -369,20 +442,56 @@ describe('the capability grant matches the wire that was run', () => {
     'core:window:allow-close',
   ];
 
-  it('grants these permissions and nothing else', () => {
-    expect([...capabilities.permissions].sort()).toEqual([...GRANTED_PERMISSIONS].sort());
+  it('loads these capability files and no others', () => {
+    expect(surface().files).toEqual([...CAPABILITY_FILES].sort());
+    // A file the loader's glob skips is not a grant, but it is also not nothing:
+    // it is a capability somebody wrote that never takes effect. Reported here
+    // rather than dropped, because "it is in the directory" is what its author
+    // will believe.
+    expect(surface().ignoredFiles).toEqual([]);
+  });
+
+  it('registers every capability it ships, and ships every capability it registers', () => {
+    expect(surface().loaded.map((capability) => capability.identifier)).toEqual(
+      REGISTERED_CAPABILITIES,
+    );
+    // The other direction. `readCapabilitySurface` throws on a registration
+    // naming an identifier no file declares — the build does too — so the case
+    // left is a file nobody registered, which loads nothing and grants nothing.
+    expect([...surface().onDisk].map((capability) => capability.identifier).sort()).toEqual(
+      [...REGISTERED_CAPABILITIES].sort(),
+    );
+  });
+
+  it('points every loaded capability at the one window this app has', () => {
+    // This is what makes "the union below is what the main window holds" a
+    // statement rather than an approximation. `src-tauri/tauri.conf.json`
+    // declares exactly one window, labelled `main`; a capability aimed anywhere
+    // else grants nothing to anybody, and a glob is read wide by the derivation
+    // rather than matched, so both cases have to be excluded by hand here.
+    for (const capability of surface().loaded) {
+      expect(capability.windows, capability.source).toEqual(['main']);
+      expect(capability.webviews, capability.source).toEqual([]);
+    }
+  });
+
+  it('grants these permissions to the main window and nothing else', () => {
+    expect(grantedToMain()).toEqual([...GRANTED_PERMISSIONS].sort());
   });
 
   it('read a real grant, not an empty one', () => {
-    // The control. A `main.json` that lost its `permissions` key, or a
-    // `process.cwd()` that is not the repository root, must not turn the
-    // comparison above into two empty lists agreeing.
+    // The control. A capability file that lost its `permissions` key, a
+    // registration that selected nothing, or a `process.cwd()` that is not the
+    // repository root must not turn the comparison above into two empty lists
+    // agreeing. The reader throws rather than returning empty on the last of
+    // those; the first two are held here.
     //
-    // No count is pinned here on purpose: a number would be a second copy of
-    // the list's length and would fail on every deliberate widening, which is
-    // the one case the exact set above is meant to let through under review.
+    // No count is pinned on purpose: a number would be a second copy of the
+    // list's length and would fail on every deliberate widening, which is the
+    // one case the exact set above is meant to let through under review.
     expect(GRANTED_PERMISSIONS.length).toBeGreaterThan(0);
-    expect(capabilities.permissions.length).toBeGreaterThan(0);
+    expect(grantedToMain().length).toBeGreaterThan(0);
+    expect(surface().loaded.length).toBeGreaterThan(0);
 
     // And the five the title bar actually calls, pinned by name rather than by
     // membership of the list above, so that deleting one from both still fails.
@@ -393,7 +502,7 @@ describe('the capability grant matches the wire that was run', () => {
       'core:window:allow-close',
       'core:window:allow-start-dragging',
     ]) {
-      expect(capabilities.permissions).toContain(permission);
+      expect(grantedToMain()).toContain(permission);
     }
   });
 
@@ -407,11 +516,131 @@ describe('the capability grant matches the wire that was run', () => {
     // renderer's handler in the same commit.
     //
     // Kept even though the exact set above already excludes these two: this one
-    // is absolute. Adding `core:window:allow-internal-toggle-maximize` to both
-    // `main.json` and `GRANTED_PERMISSIONS` keeps the set comparison green and
-    // still fails here, which is the point — these two are not a matter of
+    // is absolute. Adding `core:window:allow-internal-toggle-maximize` to both a
+    // capability file and `GRANTED_PERMISSIONS` keeps the set comparison green
+    // and still fails here, which is the point — these two are not a matter of
     // review, they are a matter of the renderer already owning the gesture.
-    expect(capabilities.permissions).not.toContain('core:window:allow-internal-toggle-maximize');
-    expect(capabilities.permissions).not.toContain('core:window:default');
+    expect(grantedToMain()).not.toContain('core:window:allow-internal-toggle-maximize');
+    expect(grantedToMain()).not.toContain('core:window:default');
+  });
+});
+
+describe('the union above is derived, and the derivation can fail', () => {
+  /**
+   * Controls over `src/platform/capability-surface.ts` itself, on fabricated
+   * input rather than on the tree — the assertions above are only worth what the
+   * reader under them is worth, and every one of these is a way the reader could
+   * have quietly returned a smaller set than the build loads.
+   */
+  const capabilityFile = (identifier: string, permissions: readonly string[]): string =>
+    JSON.stringify({ identifier, windows: ['main'], permissions });
+
+  it('reads a second file as a second capability, not as a replacement', () => {
+    const onDisk = [
+      ...capabilitiesInFile(capabilityFile('main', ['core:event:default']), 'a.json'),
+      ...capabilitiesInFile(capabilityFile('probe', ['core:window:allow-hide']), 'b.json'),
+    ];
+    expect(permissionsReaching(resolveLoaded(onDisk, ['main', 'probe']), 'main')).toEqual([
+      'core:event:default',
+      'core:window:allow-hide',
+    ]);
+  });
+
+  it('counts a capability written inline in the config, which has no file at all', () => {
+    const onDisk = capabilitiesInFile(capabilityFile('main', ['core:event:default']), 'a.json');
+    const inline = { identifier: 'inline', windows: ['main'], permissions: ['shell:allow-open'] };
+    expect(permissionsReaching(resolveLoaded(onDisk, ['main', inline]), 'main')).toEqual([
+      'core:event:default',
+      'shell:allow-open',
+    ]);
+  });
+
+  it('loads the whole directory when the config selects nothing, which is the widening', () => {
+    // The branch that reads as "none" and means "all". Deleting
+    // `app.security.capabilities`, or emptying it, does not switch the app off —
+    // it hands the app every file in the directory.
+    const onDisk = [
+      ...capabilitiesInFile(capabilityFile('main', ['core:event:default']), 'a.json'),
+      ...capabilitiesInFile(capabilityFile('probe', ['core:window:allow-hide']), 'b.json'),
+    ];
+    for (const registration of [null, []]) {
+      expect(permissionsReaching(resolveLoaded(onDisk, registration), 'main')).toEqual([
+        'core:event:default',
+        'core:window:allow-hide',
+      ]);
+    }
+  });
+
+  it('throws on a registration naming a capability that does not exist', () => {
+    const onDisk = capabilitiesInFile(capabilityFile('main', ['core:event:default']), 'a.json');
+    expect(() => resolveLoaded(onDisk, ['main', 'absent'])).toThrow(/not found/);
+  });
+
+  it('throws on two capabilities claiming one identifier, as the build does', () => {
+    const onDisk = [
+      ...capabilitiesInFile(capabilityFile('main', ['core:event:default']), 'a.json'),
+      ...capabilitiesInFile(capabilityFile('main', ['core:window:allow-hide']), 'b.json'),
+    ];
+    expect(() => resolveLoaded(onDisk, ['main'])).toThrow(/identifier/);
+  });
+
+  it('reads all three file shapes, so a list is not read as one capability', () => {
+    const one = { identifier: 'one', windows: ['main'], permissions: ['core:event:default'] };
+    const two = { identifier: 'two', windows: ['main'], permissions: ['core:window:allow-hide'] };
+    expect(capabilitiesInFile(JSON.stringify(one), 'x.json')).toHaveLength(1);
+    expect(capabilitiesInFile(JSON.stringify([one, two]), 'x.json')).toHaveLength(2);
+    expect(capabilitiesInFile(JSON.stringify({ capabilities: [one, two] }), 'x.json')).toHaveLength(
+      2,
+    );
+  });
+
+  it('reads a scoped permission entry by its identifier, not as an unreadable object', () => {
+    const scoped = JSON.stringify({
+      identifier: 'scoped',
+      windows: ['main'],
+      permissions: [{ identifier: 'fs:allow-write-text-file', allow: [{ path: '$HOME/test.txt' }] }],
+    });
+    expect(permissionsReaching(capabilitiesInFile(scoped, 'x.json'), 'main')).toEqual([
+      'fs:allow-write-text-file',
+    ]);
+  });
+
+  it('errs wide on a glob and on a label that is not this window', () => {
+    const glob = JSON.stringify({
+      identifier: 'glob',
+      windows: ['admin-*'],
+      permissions: ['core:window:allow-hide'],
+    });
+    const elsewhere = JSON.stringify({
+      identifier: 'elsewhere',
+      windows: ['other'],
+      permissions: ['core:window:allow-hide'],
+    });
+    // A glob is counted against `main` whether or not it reaches it, so the
+    // reader over-reports rather than missing a grant.
+    expect(permissionsReaching(capabilitiesInFile(glob, 'x.json'), 'main')).toEqual([
+      'core:window:allow-hide',
+    ]);
+    // A literal label that is not this window reaches nothing — which is why the
+    // block above pins the window list of every loaded capability by hand.
+    expect(permissionsReaching(capabilitiesInFile(elsewhere, 'x.json'), 'main')).toEqual([]);
+  });
+
+  it('names every config file the loader reads besides tauri.conf.json', () => {
+    // The other directory the loader reads whole. A per-target overlay is merged
+    // over the base config and can set `app.security.capabilities`, so reading
+    // only `src-tauri/tauri.conf.json` while one exists is the same defect as
+    // reading one capability file out of a directory. The reader refuses rather
+    // than reading half the input; this pins what it recognises.
+    expect(unreadableConfigsIn(['tauri.conf.json', 'Cargo.toml', 'build.rs'])).toEqual([]);
+    expect(
+      unreadableConfigsIn(['tauri.conf.json', 'tauri.windows.conf.json', 'Tauri.toml']),
+    ).toEqual(['Tauri.toml', 'tauri.windows.conf.json']);
+    // Case-folded, because this tree is checked out on a filesystem that folds.
+    expect(unreadableConfigsIn(['TAURI.WINDOWS.CONF.JSON'])).toEqual(['TAURI.WINDOWS.CONF.JSON']);
+  });
+
+  it('throws rather than returning nothing when the root is wrong', () => {
+    expect(() => readCapabilitySurface(join(process.cwd(), 'no-such-directory'))).toThrow();
   });
 });

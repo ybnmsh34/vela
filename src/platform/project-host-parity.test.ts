@@ -64,6 +64,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { readCapabilitySurface } from './capability-surface';
 import type {
   LinkFallbackReason,
   LinkStrategy,
@@ -687,12 +688,33 @@ describe('the renderer has no filesystem of its own', () => {
     // "because the renderer has no filesystem access at all". The same file is
     // why there is no folder picker and no reveal-in-explorer button. Adding one
     // line here makes all three sentences false and nothing else notices.
-    const capabilities = JSON.parse(
-      readFileSync(join(process.cwd(), 'src-tauri', 'capabilities', 'main.json'), 'utf8'),
-    ) as { readonly permissions: readonly string[] };
+    //
+    // **Over the union, not over one filename.** This read
+    // `src-tauri/capabilities/main.json` by name. The build reads all of
+    // `src-tauri/capabilities/` and selects from it with
+    // `app.security.capabilities`, so a second capability file was invisible
+    // here — and a plugin permission in that second file would have been too.
+    // `src/platform/capability-surface.ts` derives what the build would load.
+    // What this loop asserts has not changed; what it asserts it over has.
+    //
+    // Every loaded capability, not only the ones aimed at the main window:
+    // `src-tauri/tauri.conf.json` declares exactly one window, so a capability
+    // carrying an `fs:` permission is a finding whatever label it names — either
+    // it reaches the renderer or it is a filesystem grant sitting in the tree
+    // waiting for a label to be renamed onto it.
+    //
+    // **This stays a prefix check** and does not become a second copy of the
+    // exact set in `src/app/shell/window-controls.test.tsx`. The two catch
+    // different mutations. That one catches a widening *inside* the `core:`
+    // namespace, which this loop waves through; this one catches a permission
+    // from a plugin nobody here has heard of, with no list for anyone to forget
+    // to update, so it still fails in the same commit that edits that list.
+    const permissions = readCapabilitySurface(process.cwd()).loaded.flatMap(
+      (capability) => capability.permissions,
+    );
 
-    expect(capabilities.permissions.length).toBeGreaterThan(0);
-    for (const permission of capabilities.permissions) {
+    expect(permissions.length).toBeGreaterThan(0);
+    for (const permission of permissions) {
       expect(permission).not.toMatch(/^(?:fs|dialog|shell|http):/);
       // Every grant is a core window or event permission, so a capability from
       // any plugin at all shows up here rather than only the four named above.

@@ -429,12 +429,33 @@ and `cargo-clippy.exe` are byte-identical
 (`CF79CFD77B0A144C56A0A6AF6BF10BCDF095A73718CD4BF2B9D4FE2D2CBDED55` for
 `rustc.exe` under both). Pinning selects the compiler that was already in use.
 
-### The clippy gate fails earlier than expected, and not in Vela's code
+### The clippy gate reaches Vela's code, and carries exactly the two known errors
 
-Running the gate as CI runs it:
+Running the gate as CI runs it, under the pin, in this worktree:
 
 ```
 $ cargo clippy --workspace --all-targets -- -D warnings
+error: unnecessary closure used to substitute value for `Option::None`
+   --> crates\vela-sandbox\src\host.rs:709:23
+    = help: ...#unnecessary_lazy_evaluations
+error: useless use of `format!`
+  --> crates\vela-sandbox\src\paths.rs:39:49
+    = note: `-D clippy::useless-format` implied by `-D warnings`
+error: could not compile `vela-sandbox` (lib) due to 2 previous errors
+EXIT=101
+```
+
+Two errors, both in `vela-sandbox`, which belongs to the process-limit builder.
+That is the known-red state, unchanged. This branch adds nothing to it: it
+contains no Rust source, and the pinned toolchain is a byte-identical compiler
+to the one previously in use (hashes above).
+
+### A failure recorded as unreproducible
+
+An earlier run of this same command in this same worktree died differently —
+before reaching Vela's code, on a third-party dependency:
+
+```
 error[E0277]: `DatetimeParseError` doesn't implement `std::fmt::Display`
   --> ...\toml_datetime-0.7.5+spec-1.1.0\src\datetime.rs:769:28
 error[E0277]: `SerializerError` doesn't implement `std::fmt::Display`
@@ -442,31 +463,49 @@ error[E0277]: `SerializerError` doesn't implement `std::fmt::Display`
 error[E0277]: `SerializerError` doesn't implement `std::fmt::Display`
   --> ...\toml_datetime-0.7.5+spec-1.1.0\src\ser.rs:80:18
 error: could not compile `toml_datetime` (lib) due to 3 previous errors
-EXIT=101
 ```
 
-This is a **third-party dependency failing to compile**, not a lint. Clippy
-therefore never reaches `vela-sandbox` or `vela-skills`, so the two clippy
-errors those crates are known to carry could not be observed or counted here —
-the gate dies before it gets to them. That is a worse failure than "two lint
-errors", because a green-looking fix to those two errors would still leave this
-gate red.
+**It does not reproduce.** Two consecutive re-runs of the identical command in
+the identical tree both compiled `toml_datetime` without complaint and went on
+to the two `vela-sandbox` lints above. Zero `E0277` in either.
 
-Three things establish that this is pre-existing and not introduced by this
-branch:
+An explanation offered for it in an earlier draft of this document was **wrong**
+and is retracted here rather than quietly deleted. That draft said
+`--all-targets` unified features such that `toml_datetime` was built "without
+the feature that provides its `Display` impls". There is no such feature. Read
+from the source on disk:
 
-- `toml_datetime 0.7.5+spec-1.1.0` is already in the committed
-  `src-tauri/Cargo.lock`, and the run did **not** modify the lockfile — the
-  failing graph is the locked graph.
-- This branch adds no Rust source and changes no dependency.
-- The pinned toolchain is a byte-identical compiler to the one previously in
-  use, per the hashes above.
+- `impl fmt::Display for DatetimeParseError` — `src/datetime.rs:754`, no `cfg`
+- `impl core::fmt::Display for SerializerError` — `src/ser.rs:27`, no `cfg`
 
-Why `cargo build --release` succeeds while this fails: `--all-targets` pulls in
-dev-dependencies and test/example targets, which unifies crate features
-differently, and `toml_datetime` is built in that configuration without the
-feature that provides its `Display` impls. Diagnosing the upstream cause is not
-B2's, and no attempt was made to fix it.
+Both are unconditional. Only `impl std::error::Error` is gated
+(`#[cfg(feature = "std")]`, `datetime.rs:768`). So no feature combination can
+produce the error that was observed, and the mechanism claimed was impossible.
+
+What has been ruled out:
+
+- **The lockfile.** `toml_datetime 0.7.5+spec-1.1.0` is the locked version and
+  no run modified `Cargo.lock`.
+- **The toolchain pin.** Removing it would select `stable`, whose `rustc.exe`
+  and `cargo-clippy.exe` are byte-identical to the pinned toolchain's. And
+  empirically the pinned tree now yields the same two `vela-sandbox` errors that
+  an unpinned tree yields, so the pin is inert for clippy as well as for `fmt`.
+- **A partially extracted or concurrently rewritten crate source.** Every file
+  under `toml_datetime-0.7.5+spec-1.1.0` carries `LastWriteTime`
+  `2026-08-13 13:02:40` — untouched hours before the failing run — and the
+  `.cargo-ok` completion marker is present.
+- **A warm/stale target directory as the *necessary* condition.** The re-runs
+  that succeeded used the same warm target directory as the run that failed.
+
+**The cause is not established.** The failing run started at 17:40:40 on a
+machine that, within the preceding thirty minutes, had already produced two
+other pressure-induced failures that were not what they looked like — an MSVC
+`C1056` from a Defender file-lock race, and a rustc OOM caused by a pagefile
+that could not grow because the disk was nearly full (§6). A third transient
+artifact of the same conditions is the most plausible reading, but it is a
+hypothesis and nothing here establishes it. Recorded as unreproducible, because
+an unreproducible failure written down as unreproducible is useful and one
+quietly dropped is not.
 
 One consequence for CI, recorded because nobody will connect it later
 otherwise: the three jobs in `.github/workflows/ci.yml` use

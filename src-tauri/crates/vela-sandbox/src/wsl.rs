@@ -30,7 +30,17 @@
 //!    rule, not a proxy, no interface but a down loopback. `--pid` plus
 //!    `--kill-child` is what makes teardown total: when the namespace's PID 1
 //!    dies the kernel reaps every descendant, so a double-forked grandchild has
-//!    nowhere to survive.
+//!    nowhere to survive. Of that pair, **`--pid` is the one carrying the
+//!    guarantee on this machine**, measured rather than argued: delete
+//!    `--kill-child` from the launcher and a `setsid`-detached grandchild of a
+//!    cancelled run is still reaped; delete `--pid` and leave `--kill-child`
+//!    in, and the same grandchild is still alive in the VM half a minute later,
+//!    still appending to a file on the user's disk. `--kill-child` covers the
+//!    case where `unshare` itself dies without its child noticing, which WSL's
+//!    own relay teardown appears to cover as well; it stays, because a second
+//!    mechanism for the same guarantee costs one argument.
+//!    `cancelling_stops_the_run_and_reaches_every_descendant` is the test that
+//!    holds this, and deleting `--pid` is the mutation it fails on.
 //!  - `mount --make-rprivate /` — so the unmounts below do not propagate out of
 //!    this namespace and break the user's own WSL session.
 //!  - the granted directories are bind-mounted **before** `/mnt` is taken away,
@@ -51,12 +61,20 @@
 //!    at once.
 //!  - the rootfs is remounted read-only, so the distribution the user shares
 //!    with this run cannot be modified by it.
+//!  - a cgroup v2 `pids.max` on a cgroup created for this run and joined by it,
+//!    which is the process limit and the only thing enforcing it. It is not
+//!    `ulimit -u` — the script is parsed by dash, whose `ulimit` has no `-u` —
+//!    and it is not `RLIMIT_NPROC`, which counts per uid across the whole VM and
+//!    so is a budget concurrent runs take from each other rather than a limit.
+//!    `report()` has the measurements for both.
 //!  - `setpriv --reuid --regid --clear-groups --no-new-privs` — the run is uid
 //!    65534 with no supplementary groups and `PR_SET_NO_NEW_PRIVS`, which is the
 //!    kernel-level privilege denial the reference product's fix added. `sudo`
 //!    and `su` cannot raise privileges regardless of how they are invoked,
 //!    because the kernel refuses the setuid bit rather than because a list was
-//!    consulted.
+//!    consulted. It is also what puts the cgroup out of the run's reach: every
+//!    file under `/sys/fs/cgroup` is root-owned, so a run at uid 65534 can
+//!    neither raise its own `pids.max` nor write itself into another cgroup.
 //!
 //! **No part of the program's text is examined by any of this**, and no shell
 //! ever parses it: it is base64-encoded on the way in and decoded to a file the
@@ -174,7 +192,37 @@ impl WslBackend {
                 // Counted host-side; one `truncated` event, then output is
                 // dropped and the program runs on.
                 output_bytes: EnforcementLevel::Supervisor,
-                // `RLIMIT_NPROC`, set before privileges are dropped.
+                // A cgroup v2 `pids.max`, on a cgroup holding this run and
+                // nothing else. The kernel refuses the `fork`, and the number
+                // it refuses at is this run's own — not a share of anything.
+                //
+                // **`RLIMIT_NPROC` is the obvious way to spell this and it does
+                // not hold.** It refuses the fork at exactly the granted
+                // number, so it looks right; but it counts per *uid* within the
+                // process's user namespace, every run here is uid 65534, and no
+                // user namespace is unshared — so it is one budget for the
+                // whole machine. Measured at this host's own defaults
+                // (`maximum_concurrent_runs: 4`, `processes: 128`): with one
+                // run holding 127, a second run granted 128 forked **zero**
+                // times and failed at `setuid` with `EAGAIN`. A `kernel` claim
+                // whose delivered value is decided by whatever else is running
+                // is not the per-run guarantee the other three `kernel`s on
+                // this report are, so this one is a cgroup.
+                //
+                // What the cgroup costs, stated rather than discovered later:
+                // `+pids` on the root cgroup's `subtree_control` in the
+                // distribution the user is also using, and a directory under
+                // `/sys/fs/cgroup` per run that the *next* run sweeps, because
+                // a killed run cannot sweep its own. `guest_script` has the
+                // detail. Both are additive and neither takes anything away
+                // from the user's own session, which is the difference between
+                // this and the regression the interlock in `guest_script`
+                // exists to prevent.
+                //
+                // One honest edge: `pids.max` counts *tasks*, so a program's
+                // threads count against it and `RLIMIT_NPROC` would not have
+                // counted them. That is stricter than the field's wording, and
+                // stricter is the direction that cannot mislead.
                 processes: EnforcementLevel::Kernel,
                 // The scratch tmpfs is sized from this number, which is a real
                 // kernel bound on scratch writes — but it says nothing about
@@ -232,7 +280,10 @@ impl WslBackend {
         // Grants first: the bind has to be taken while `/mnt` still reaches the
         // drive, and it survives the unmount below because it is not under it.
         for mount in &plan.mounts {
-            push(&mut lines, format!("mkdir -p {}", sh_quote(&mount.guest_path)));
+            push(
+                &mut lines,
+                format!("mkdir -p {}", sh_quote(&mount.guest_path)),
+            );
             push(
                 &mut lines,
                 format!(
@@ -244,10 +295,7 @@ impl WslBackend {
             if mount.mode == MountMode::ReadOnly {
                 push(
                     &mut lines,
-                    format!(
-                        "mount -o remount,ro,bind {}",
-                        sh_quote(&mount.guest_path)
-                    ),
+                    format!("mount -o remount,ro,bind {}", sh_quote(&mount.guest_path)),
                 );
             }
         }
@@ -318,18 +366,93 @@ impl WslBackend {
             "mount -o remount,ro,bind / 2>/dev/null || true".into(),
         );
 
-        push(&mut lines, format!("cd {}", sh_quote(&plan.working_directory)));
         push(
             &mut lines,
-            format!("ulimit -u {} 2>/dev/null || true", plan.limits.processes),
+            format!("cd {}", sh_quote(&plan.working_directory)),
         );
 
-        // Confinement is established. Everything after this line runs as the
-        // sandbox uid.
+        // **The process limit, and the whole of it.**
+        //
+        // A cgroup v2 `pids.max` on a cgroup this run alone is in. The kernel
+        // refuses the `fork`; there is no list and nothing to consult.
+        //
+        // The line this replaced was `ulimit -u N 2>/dev/null || true`, which
+        // reported `kernel` and enforced nothing: this script is parsed by
+        // `/bin/sh`, Ubuntu's `/bin/sh` is dash, dash's `ulimit` has no `-u`,
+        // and the redirect ate `ulimit: Illegal option -u` before `set -e`
+        // could see it. Measured through `SandboxHost` with `processes: 8`,
+        // that run reported `ulimit -u` = 127929 and forked three hundred
+        // processes without an error.
+        //
+        // **`RLIMIT_NPROC` was the obvious repair and it is the wrong one.** It
+        // works — the fork is refused, at exactly the granted number — but it
+        // counts processes *per uid* in the process's user namespace, and this
+        // backend runs every run as uid 65534 without unsharing a user
+        // namespace. So the number is a budget shared by every run on the
+        // machine, not a per-run limit. Measured at this host's own defaults —
+        // `maximum_concurrent_runs: 4`, `processes: 128` — two concurrent runs
+        // gave: the first held 127, and **the second, granted 128, forked
+        // nothing at all**, three times out of three, exiting 254 or 126 with
+        // `setpriv: failed to execute /usr/bin/env: Resource temporarily
+        // unavailable` — because `setuid` itself checks `RLIMIT_NPROC` and
+        // fails `EAGAIN`. A host that advertises four concurrent runs would
+        // have delivered one, and the other three as program-looking failures.
+        //
+        // Every line below is therefore load-bearing, and none of them may fail
+        // quietly:
+        //
+        //  - `+pids` on the root cgroup's `subtree_control` is what makes
+        //    `pids.max` exist in a child cgroup at all. It is additive, it is
+        //    idempotent, it restricts nothing by itself, and it is what
+        //    systemd distributions already have. It is **not** undone at the
+        //    end: undoing it would race every other run. It is the one piece
+        //    of state this backend leaves in the user's distribution, and it
+        //    is written down here rather than discovered later.
+        //  - the sweep removes cgroups left by earlier runs. A run cannot
+        //    remove its own — it `exec`s away and is then killed — so somebody
+        //    has to, and the next run is the cheapest somebody. Two guards keep
+        //    it off a live run: `rmdir` on a cgroup that still holds a process
+        //    fails, and the age filter keeps it off one a concurrent run has
+        //    just created and not yet joined. Ten seconds, because that window
+        //    is two adjacent shell builtins wide and a minute — `find`'s
+        //    coarsest unit — let a burst of runs accumulate sixty-three
+        //    cgroups before any of them aged into being swept.
+        //  - `mktemp -d` rather than a name derived from the run id: it is
+        //    atomic against a concurrent run, and it needs nothing from the
+        //    caller that could collide or need quoting.
+        //
+        // There is no `|| true` on the four lines that matter. `set -e` is
+        // still in force and the ready sentinel is still below them, so a host
+        // that cannot hold this limit fails the run's *start* — the caller gets
+        // `hostFailed`/`backendStartFailed` — rather than running a program
+        // that `report()` claims is bounded and is not.
         push(
             &mut lines,
-            format!("printf %s {} | base64 -d", base64_encode(READY_SENTINEL.as_bytes())),
+            "echo +pids > /sys/fs/cgroup/cgroup.subtree_control".into(),
         );
+        push(
+            &mut lines,
+            "find /sys/fs/cgroup -maxdepth 1 -name 'vela.*' ! -newermt '-10 seconds' \
+             -exec rmdir {} + 2>/dev/null || true"
+                .into(),
+        );
+        push(
+            &mut lines,
+            "vela_cgroup=$(mktemp -d /sys/fs/cgroup/vela.XXXXXXXX)".into(),
+        );
+        // `mktemp` makes it `0700`, which would leave the run unable to read the
+        // limit it is being held to. Everything inside is root-owned and `0644`,
+        // and creating an entry needs write on the directory, so `0755` is
+        // readable and nothing more: measured, a run at uid 65534 cannot raise
+        // its own `pids.max`, cannot make a nested cgroup, and cannot write
+        // itself into another one.
+        push(&mut lines, "chmod 0755 \"$vela_cgroup\"".into());
+        push(
+            &mut lines,
+            format!("echo {} > \"$vela_cgroup/pids.max\"", plan.limits.processes),
+        );
+        push(&mut lines, "echo $$ > \"$vela_cgroup/cgroup.procs\"".into());
+
         let mut env_args = String::new();
         for entry in plan.base_environment.iter().chain(plan.environment.iter()) {
             env_args.push(' ');
@@ -342,21 +465,44 @@ impl WslBackend {
             // that adding it is a decision and not an accident.
             ProcessLanguage::Python => "/usr/bin/python3",
         };
-        // **`0<&3 3<&-` belongs on this line and nowhere else.**
+
+        // **The sentinel is emitted from inside the confinement, by the last
+        // process before the program, and that is the point of this shape.**
         //
-        // The caller's stdin is parked on fd 3 by the launcher, because fd 0 is
-        // carrying this script into `sh`. The obvious move — an earlier
+        // `host.rs` promises that anything going wrong before `READY_SENTINEL`
+        // is a host failure and not a program result. An earlier version of
+        // this file printed the sentinel and *then* `exec`ed the privilege
+        // drop, which handed the caller `exited { exitCode: 126 }` — a program
+        // result — for a failure that happened before the program's first
+        // instruction. So the drop to uid 65534, the environment clearing and
+        // the cgroup join all happen above; the shell that prints the sentinel
+        // is already unprivileged, already in the cgroup, already holding
+        // exactly the environment the run was granted.
+        //
+        // What is left after the sentinel is one `execve` of a fixed absolute
+        // path, and the `[ -x … ]` guard above it turns even that into a
+        // pre-sentinel refusal: on a read-only rootfs an interpreter that is
+        // executable when it is checked is executable when it is run.
+        //
+        // **`0<&3 3<&-` belongs on that `exec` and nowhere else.** The caller's
+        // stdin is parked on fd 3 by the launcher, because fd 0 is carrying
+        // this script into `sh`. The obvious move — an earlier
         // `exec 0<&3 3<&-` on a line of its own — is wrong in a way that only
         // shows up with a non-empty stdin: `sh` is *still reading the script
         // from fd 0*, so the next thing it parses is the caller's input. The
         // observed result was `/bin/bash /vela/programfed-in`, the program path
-        // with the first line of stdin welded onto it. Redirecting on the `exec`
-        // that replaces the shell means the shell never reads again.
+        // with the first line of stdin welded onto it.
+        let confined = format!(
+            "[ -x {interpreter} ] || exit 99; printf '{}'; \
+             exec {interpreter} /vela/program 0<&3 3<&-",
+            sh_printf_format(READY_SENTINEL.as_bytes())
+        );
         push(
             &mut lines,
             format!(
                 "exec setpriv --reuid={SANDBOX_UID} --regid={SANDBOX_GID} --clear-groups \
-                 --no-new-privs -- /usr/bin/env -i{env_args} {interpreter} /vela/program 0<&3 3<&-"
+                 --no-new-privs -- /usr/bin/env -i{env_args} /bin/sh -c {}",
+                sh_quote(&confined)
             ),
         );
 
@@ -423,6 +569,29 @@ fn wsl_executable() -> std::ffi::OsString {
 /// stock distribution.
 const SANDBOX_UID: u32 = 65534;
 const SANDBOX_GID: u32 = 65534;
+
+/// A POSIX `printf` **format** string that emits exactly `bytes`.
+///
+/// Derived from the bytes rather than written beside them, so that the sentinel
+/// the guest prints and the sentinel [`READY_SENTINEL`] names cannot drift: a
+/// hand-typed `\001VELA_SANDBOX_READY\001\n` agrees with the constant on the
+/// day it is written and stops agreeing on the day the constant changes.
+///
+/// Everything outside a small alphanumeric set becomes a three-digit octal
+/// escape, which POSIX `printf` expands in the format operand. The output is
+/// free of single quotes by construction, so it can be embedded in a
+/// single-quoted word without further thought.
+pub fn sh_printf_format(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for &byte in bytes {
+        if byte.is_ascii_alphanumeric() || byte == b'_' {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("\\{byte:03o}"));
+        }
+    }
+    out
+}
 
 /// Single-quote for POSIX `sh`. The only character with meaning inside single
 /// quotes is the single quote, and this is the standard way to spell it.
@@ -540,13 +709,19 @@ mod tests {
     fn a_read_only_grant_is_remounted_read_only_and_a_writable_one_is_not() {
         let backend = WslBackend::for_distro("Ubuntu");
         let read_only = backend.guest_script(&plan());
-        assert!(read_only.contains("remount,ro,bind '/vela/work'"), "{read_only}");
+        assert!(
+            read_only.contains("remount,ro,bind '/vela/work'"),
+            "{read_only}"
+        );
 
         let mut writable = plan();
         writable.mounts[0].mode = MountMode::ReadWrite;
         let script = backend.guest_script(&writable);
         assert!(!script.contains("remount,ro,bind '/vela/work'"), "{script}");
-        assert!(script.contains("mount --bind '/mnt/c/Users/User/proj' '/vela/work'"), "{script}");
+        assert!(
+            script.contains("mount --bind '/mnt/c/Users/User/proj' '/vela/work'"),
+            "{script}"
+        );
     }
 
     /// **The regression this file exists to never repeat.**
@@ -593,6 +768,121 @@ mod tests {
             interlock < first_mount,
             "the interlock must come first, or a launcher that lost its \
              `unshare` unmounts the user's drives before anything notices"
+        );
+    }
+
+    /// **The claim in `report()` that spent its life untested.**
+    ///
+    /// `processes` is the only limit this backend reports at `kernel` strength,
+    /// and the line behind it used to be `ulimit -u N 2>/dev/null || true` in a
+    /// script parsed by dash, whose `ulimit` has no `-u`. It printed
+    /// `ulimit: Illegal option -u` into `/dev/null` and the run went on with
+    /// `RLIMIT_NPROC` at 127929. Nothing in this file could have noticed,
+    /// because nothing in this file looked.
+    ///
+    /// The integration test
+    /// `a_forking_program_cannot_exceed_the_process_limit_it_was_granted` is
+    /// the one that measures the kernel actually refusing the fork. This one is
+    /// the cheap half: the *shape* the measurement depends on.
+    #[test]
+    fn the_process_limit_is_a_per_run_cgroup_and_never_dashs_ulimit() {
+        let mut eight = plan();
+        eight.limits.processes = 8;
+        let script = WslBackend::for_distro("Ubuntu").guest_script(&eight);
+
+        assert!(
+            !script.contains("ulimit"),
+            "the script is parsed by `/bin/sh`, which is dash on Ubuntu, and dash's \
+             `ulimit` has no `-u`. Spelling the process limit that way reports \
+             `kernel` and enforces nothing:\n{script}"
+        );
+        // Not `RLIMIT_NPROC` either, however it is spelled: it counts per uid
+        // across the whole VM, so two runs at 128 do not get 128 each — the
+        // second gets whatever the first left, which was measured at zero.
+        assert!(
+            !script.contains("prlimit") && !script.contains("nproc"),
+            "`RLIMIT_NPROC` is a machine-wide budget shared by every run, not a \
+             per-run limit; `report()` claims a per-run one:\n{script}"
+        );
+        assert!(
+            script.contains("echo 8 > \"$vela_cgroup/pids.max\""),
+            "the limit must carry the granted number:\n{script}"
+        );
+
+        // Order, and all three of these are load-bearing. The cgroup must be
+        // created and joined, the privileges dropped, and only then the
+        // sentinel printed — because `host.rs` reads the sentinel as "nothing
+        // that follows is the host's fault any more".
+        let join = script
+            .find("cgroup.procs")
+            .expect("the run joins its cgroup");
+        let setpriv = script.find("setpriv").expect("privileges are dropped");
+        let sentinel = script.find("printf '").expect("the sentinel is printed");
+        let program = script
+            .find("/vela/program 0<&3")
+            .expect("the program is executed");
+        assert!(
+            join < setpriv && setpriv < sentinel && sentinel < program,
+            "the limit and the privilege drop must both be above the ready sentinel: \
+             a failure after it is delivered to the caller as a program result, and \
+             neither of these is the program:\n{script}"
+        );
+
+        // No `|| true` may hide a cgroup step. A run whose limit could not be
+        // set must fail to start, not run unbounded under a `kernel` claim.
+        for required in [
+            "echo +pids > /sys/fs/cgroup/cgroup.subtree_control",
+            "vela_cgroup=$(mktemp -d /sys/fs/cgroup/vela.XXXXXXXX)",
+            "echo $$ > \"$vela_cgroup/cgroup.procs\"",
+        ] {
+            let line = script
+                .lines()
+                .find(|line| line.trim() == required)
+                .unwrap_or_else(|| panic!("the script must contain `{required}`:\n{script}"));
+            assert!(
+                !line.contains("|| true") && !line.contains("2>/dev/null"),
+                "`{line}` must be allowed to fail the run. `set -e` and the sentinel \
+                 below it are what turn a machine that cannot hold this limit into a \
+                 backend start failure instead of a false `kernel` claim"
+            );
+        }
+
+        // And it tracks the plan rather than a constant.
+        let mut three = plan();
+        three.limits.processes = 3;
+        let three = WslBackend::for_distro("Ubuntu").guest_script(&three);
+        assert!(
+            three.contains("echo 3 > \"$vela_cgroup/pids.max\""),
+            "{three}"
+        );
+    }
+
+    /// The sentinel the guest prints is the one [`READY_SENTINEL`] names.
+    ///
+    /// It is spelled as a `printf` format now rather than base64 through a
+    /// pipeline, because the shell that prints it is inside the cgroup and a
+    /// run granted `processes: 1` cannot fork the pipeline. Derived from the
+    /// constant, so the two cannot drift; this test is the proof that the
+    /// derivation is right.
+    #[test]
+    fn the_ready_sentinel_the_guest_prints_is_the_one_the_host_waits_for() {
+        assert_eq!(
+            sh_printf_format(READY_SENTINEL.as_bytes()),
+            "\\001VELA_SANDBOX_READY\\001\\012"
+        );
+        assert_eq!(sh_printf_format(b"a'b"), "a\\047b");
+        assert_eq!(sh_printf_format(b"100%"), "100\\045");
+        assert!(
+            !sh_printf_format(READY_SENTINEL.as_bytes()).contains('\''),
+            "the format is embedded in a single-quoted word"
+        );
+        // In the script it arrives inside a `sh_quote`d word, so the quotes
+        // around the format are spelled `'\''`. The bytes between them are the
+        // thing this test is about.
+        let script = WslBackend::for_distro("Ubuntu").guest_script(&plan());
+        assert!(
+            script.contains("printf '\\''\\001VELA_SANDBOX_READY\\001\\012'\\''"),
+            "{script}"
         );
     }
 

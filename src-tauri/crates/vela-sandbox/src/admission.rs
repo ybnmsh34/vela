@@ -177,7 +177,11 @@ pub fn admit(
             RefusalReason::TooManyConcurrentRuns,
         )));
     }
-    if !config.known_projects.iter().any(|id| id == &request.project_id) {
+    if !config
+        .known_projects
+        .iter()
+        .any(|id| id == &request.project_id)
+    {
         return Ok(Admission::Refused(SandboxOutcome::refused(
             RefusalReason::UnknownProject,
         )));
@@ -424,7 +428,9 @@ fn within_profile(
         // appearing there does not make the path readable.
         match mount.mode {
             MountMode::ReadOnly => inside(&profile.readable_roots),
-            MountMode::ReadWrite => inside(&profile.writable_roots) && inside(&profile.readable_roots),
+            MountMode::ReadWrite => {
+                inside(&profile.writable_roots) && inside(&profile.readable_roots)
+            }
         }
     })
 }
@@ -484,7 +490,10 @@ fn environment_collides(
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_')
             || entry.name.as_bytes()[0].is_ascii_digit()
         {
-            return Err(format!("environment name is not a variable: {}", entry.name));
+            return Err(format!(
+                "environment name is not a variable: {}",
+                entry.name
+            ));
         }
         if entry.value.contains('\0') {
             return Err("environment value contains a NUL".into());

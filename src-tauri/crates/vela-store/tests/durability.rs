@@ -180,6 +180,99 @@ fn a_database_left_by_an_older_build_is_upgraded_in_place_and_its_content_indexe
     assert_eq!(store.search_messages("Earth", 10).unwrap().len(), 1);
 }
 
+/// The wave-i integration guard, on a real file.
+///
+/// Schedules (track 7) and memory (track 9) were developed on separate
+/// branches and each shipped "the next migration" as `0003`. Schedules kept
+/// version 3 and memory was renumbered to 4, which means the interesting
+/// database is not a fresh one — it is one that a *pre-memory* build already
+/// migrated and filled. That database must gain `memory_entries` without
+/// losing its schedules and without its existing ledger rows being rewritten.
+///
+/// `migrations::tests::a_database_migrated_before_memory_landed_gains_it_without_disturbing_schedules`
+/// makes the same argument in memory; this one makes it against a file that is
+/// closed and reopened, with rows in it.
+#[test]
+fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules() {
+    use vela_store::{
+        Cadence, MemoryCategory, MemoryRepository, MemoryScope, NewMemoryEntry, ScheduleRepository,
+    };
+
+    const NOON: i64 = 1_700_000_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(vela_store::DATABASE_FILE_NAME);
+
+    // Stand the database up at exactly the schema the pre-merge build shipped:
+    // versions 1..=3, the last of which is `schedules`. These three entries are
+    // byte-identical to that build's, so the checksums recorded here are the
+    // ones it would have recorded.
+    // The pre-merge `SqliteStore` does not exist in this tree, so the schedule
+    // row goes in by hand — exactly as the older-build test above writes its
+    // conversation. `open()` cannot be used here: it migrates on open, which is
+    // the very thing under test.
+    let pre_merge = &MIGRATIONS[..3];
+    assert_eq!(pre_merge.last().unwrap().name, "schedules");
+    let ledger_before = {
+        let mut old = rusqlite::Connection::open(&path).unwrap();
+        old.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let applied =
+            vela_store::migrations::apply_list(&mut old, pre_merge, &FixedClock::default()).unwrap();
+        assert_eq!(applied, vec![1, 2, 3]);
+
+        old.execute(
+            "INSERT INTO schedules
+                 (id, title, prompt, cadence, next_run_at, created_at, updated_at)
+             VALUES ('sched_old', 'weekly review', 'what happened this week?', 'weekly', ?1, 1, 1)",
+            [NOON],
+        )
+        .unwrap();
+
+        vela_store::migrations::applied(&old).unwrap()
+    }; // quitting the pre-merge app
+
+    let schedule_id = vela_store::ScheduleId::new("sched_old").unwrap();
+
+    // The merged build opens the same file.
+    let store = open(dir.path());
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 4, "memory is the fourth migration");
+
+    // The old feature is intact — the row, not just the table.
+    let schedule = store.get_schedule(&schedule_id).unwrap();
+    assert_eq!(schedule.title, "weekly review");
+    assert_eq!(schedule.cadence, Cadence::Weekly);
+
+    // The new feature works on this upgraded database, not only on a fresh one.
+    let entry = store
+        .create_memory_entry(NewMemoryEntry::new(
+            MemoryScope::Global,
+            MemoryCategory::TechPrefs,
+            "prefers Rust",
+        ))
+        .unwrap();
+    let listed = store.list_memory_entries(&MemoryScope::Global).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, entry.id);
+
+    // The ledger gained exactly one row, and did not rewrite the three it had.
+    let ledger_after = {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        vela_store::migrations::applied(&conn).unwrap()
+    };
+    assert_eq!(
+        ledger_after.keys().copied().collect::<Vec<_>>(),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(ledger_after[&3].name, "schedules");
+    assert_eq!(ledger_after[&4].name, "memory");
+    for version in [1, 2, 3] {
+        assert_eq!(
+            ledger_after[&version], ledger_before[&version],
+            "migration {version} was rewritten by the upgrade"
+        );
+    }
+}
+
 /// A schedule is only a schedule if it is still there after the app is closed.
 /// The unit tests run in memory and cannot say this; this one writes a real
 /// file, drops the connection, reopens it, and fires the schedule from the

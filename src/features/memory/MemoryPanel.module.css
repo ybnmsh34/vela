@@ -1,0 +1,183 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* Same rule the other dialogs keep: a pane taller than a scaled-up window
+     must overflow downwards into a scroll, not symmetrically off both edges
+     where its heading cannot be reached. This one holds a list, so it is the
+     dialog most likely to be tall. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-overlay-md), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.intro,
+.note,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.footnote {
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.composerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vela-space-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  flex: 1;
+}
+
+.fieldLabel {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.input,
+.rowInput,
+.select {
+  width: 100%;
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  resize: vertical;
+}
+
+.save {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  background: var(--vela-accent);
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-on-accent);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Bounded so a long memory list cannot push the footnote — which is the
+     sentence saying nothing is captured automatically — off the screen. */
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+}
+
+.category {
+  grid-column: 1 / -1;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.rowActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+}
+
+.pin,
+.forget {
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.pinned {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.forget:hover {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}

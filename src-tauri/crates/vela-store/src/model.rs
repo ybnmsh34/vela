@@ -1019,6 +1019,210 @@ impl ScheduleRun {
 }
 
 // ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+id_newtype!(
+    /// Identifier of a [`MemoryEntry`].
+    MemoryEntryId, "mem", "memoryEntry"
+);
+
+/// Which memory space an entry belongs to.
+///
+/// An enum with a payload rather than the single `project:<id>` string
+/// `docs/vela-feature-spec.md` MEM-1 writes, for the reason
+/// `migrations/0003_memory.sql` gives: the string spelling cannot carry a
+/// foreign key, and a project entry whose project is gone is a row no read path
+/// can ever reach.
+///
+/// **The read path selects strictly one of these and never merges them.** That
+/// is MEM-2's whole claim — "no cross-scope leakage in either direction" — and
+/// [`crate::repository::MemoryRepository::list_memory_entries`] is where it is
+/// implemented. `vela-store`'s own
+/// `project_memory_and_global_memory_never_see_each_other` test is what makes
+/// the sentence true rather than aspirational.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum MemoryScope {
+    /// Chats that belong to no project.
+    Global,
+    /// One project's own space. `project_id` is the payload of the discriminant.
+    Project {
+        #[serde(rename = "projectId")]
+        project_id: ProjectId,
+    },
+}
+
+impl MemoryScope {
+    pub fn project(id: ProjectId) -> Self {
+        Self::Project { project_id: id }
+    }
+
+    pub(crate) const fn as_db(&self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Project { .. } => "project",
+        }
+    }
+
+    pub(crate) fn project_id(&self) -> Option<&ProjectId> {
+        match self {
+            Self::Global => None,
+            Self::Project { project_id } => Some(project_id),
+        }
+    }
+
+    pub(crate) fn from_db(kind: &str, project_id: Option<String>) -> StoreResult<Self> {
+        match (kind, project_id) {
+            ("global", None) => Ok(Self::Global),
+            ("project", Some(id)) => Ok(Self::Project {
+                project_id: ProjectId::new(id)?,
+            }),
+            (other, _) => Err(StoreError::corrupt(format!(
+                "unusable memory scope `{other}`"
+            ))),
+        }
+    }
+}
+
+/// The four things the reference says it captures, plus `Other`.
+///
+/// A closed enum rather than free text because the category is what groups the
+/// rendered memory block, and a category the user can spell two ways is two
+/// headings for one idea. `Other` exists so an extraction pass that cannot
+/// place a fact still stores it instead of dropping it — a dropped fact is the
+/// silently-wrong outcome, a fact under `Other` is a visible one.
+///
+/// Spelled camelCase in the database as well as on the wire so a row read by a
+/// human and a row read by the renderer say the same word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MemoryCategory {
+    /// Role, projects, professional context.
+    RoleContext,
+    /// Communication preferences and working style.
+    CommsPrefs,
+    /// Technical preferences and coding style.
+    TechPrefs,
+    /// Details of ongoing work.
+    ProjectDetails,
+    Other,
+}
+
+impl MemoryCategory {
+    pub(crate) const fn as_db(self) -> &'static str {
+        match self {
+            Self::RoleContext => "roleContext",
+            Self::CommsPrefs => "commsPrefs",
+            Self::TechPrefs => "techPrefs",
+            Self::ProjectDetails => "projectDetails",
+            Self::Other => "other",
+        }
+    }
+
+    pub(crate) fn from_db(value: &str) -> StoreResult<Self> {
+        Ok(match value {
+            "roleContext" => Self::RoleContext,
+            "commsPrefs" => Self::CommsPrefs,
+            "techPrefs" => Self::TechPrefs,
+            "projectDetails" => Self::ProjectDetails,
+            "other" => Self::Other,
+            other => {
+                return Err(StoreError::corrupt(format!(
+                    "unknown memory category `{other}`"
+                )))
+            }
+        })
+    }
+}
+
+/// Longest single memory entry, in Unicode scalar values.
+///
+/// A memory is one fact, not a document: MEM-1's self-maintenance rule is "one
+/// line per entry, detail moves to topic files". This bound is what stops a
+/// pasted essay becoming a row that eats the injection budget on its own.
+/// Counted in scalars, not bytes, so the host and the renderer refuse the same
+/// strings.
+pub const MEMORY_CONTENT_MAX_CHARS: usize = 2_000;
+
+/// One remembered fact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryEntry {
+    pub id: MemoryEntryId,
+    pub scope: MemoryScope,
+    pub category: MemoryCategory,
+    pub content: String,
+    /// Ranked ahead of everything unpinned when the injection budget is short.
+    pub pinned: bool,
+    /// Where this came from, when it is known. `None` for an entry the user
+    /// typed themselves, and for one whose source conversation has since been
+    /// deleted — those are different histories with the same absence, and this
+    /// type does not pretend to tell them apart.
+    pub source_conversation_id: Option<ConversationId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewMemoryEntry {
+    pub scope: MemoryScope,
+    pub category: MemoryCategory,
+    pub content: String,
+    pub pinned: bool,
+    pub source_conversation_id: Option<ConversationId>,
+}
+
+impl NewMemoryEntry {
+    pub fn new(scope: MemoryScope, category: MemoryCategory, content: impl Into<String>) -> Self {
+        Self {
+            scope,
+            category,
+            content: content.into(),
+            pinned: false,
+            source_conversation_id: None,
+        }
+    }
+
+    pub fn from_conversation(mut self, id: ConversationId) -> Self {
+        self.source_conversation_id = Some(id);
+        self
+    }
+
+    pub fn pinned(mut self) -> Self {
+        self.pinned = true;
+        self
+    }
+
+    pub(crate) fn validate(&self) -> StoreResult<()> {
+        validate_memory_content(&self.content)
+    }
+}
+
+/// An amendment. `None` means "leave it alone" — the same discipline
+/// [`ProjectPatch`] keeps, and for the same reason: a patch that cannot
+/// distinguish "unset" from "set to empty" makes every caller guess.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoryPatch {
+    pub category: Option<MemoryCategory>,
+    pub content: Option<String>,
+    pub pinned: Option<bool>,
+}
+
+pub(crate) fn validate_memory_content(content: &str) -> StoreResult<()> {
+    if content.trim().is_empty() {
+        return Err(StoreError::invalid("content", "must not be blank"));
+    }
+    if content.chars().count() > MEMORY_CONTENT_MAX_CHARS {
+        return Err(StoreError::invalid(
+            "content",
+            format!("must be at most {MEMORY_CONTENT_MAX_CHARS} characters"),
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
+import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
@@ -28,6 +29,10 @@ export function App({ adapter }: AppProps) {
         <AppShell>
           <Workspace />
         </AppShell>
+        {/* Mounted here rather than in the sidebar that opens it, because one
+            feature may not import another. It renders nothing until the user
+            asks for it — and until then it does not read the host either. */}
+        <MemorySurface />
       </KeyboardProvider>
     </PlatformProvider>
   );
@@ -128,7 +133,7 @@ function Transcript({
   readonly onAssistantMessages: (texts: readonly string[]) => void;
 }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
-  const { selection, capabilities, attachments } = useSelectedModel();
+  const { selection, capabilities, attachments, report } = useSelectedModel();
 
   return (
     <ConversationSurface
@@ -140,6 +145,7 @@ function Transcript({
       modelLabel={selection?.modelLabel ?? null}
       capabilities={capabilities}
       attachments={attachments}
+      contextWindowTokens={report?.contextWindowTokens ?? null}
       onPendingTurn={onPendingTurn}
     />
   );

@@ -29,6 +29,7 @@ import {
 } from 'react';
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
+import { useMemoryStore } from '@/state/memory-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -69,6 +70,10 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   const setSidebarWidth = useNavigationStore((state) => state.setSidebarWidth);
   const toggleSidebar = useNavigationStore((state) => state.toggleSidebar);
   const openPalette = useNavigationStore((state) => state.openPalette);
+  // Only a boolean is set: the memory pane is another feature, and one feature
+  // may not import another (`src/features/README.md`). The composition root
+  // mounts it; this opens it.
+  const setMemoryOpen = useMemoryStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -177,6 +182,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <SearchIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setMemoryOpen(true);
+          }}
+          aria-label="Memory"
+        >
+          <MemoryIcon />
+        </button>
       </nav>
     );
   }
@@ -226,6 +241,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           <SearchIcon />
           <span>Search conversations</span>
           <ShortcutHint keyName="K" className={styles.kbd} />
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setMemoryOpen(true);
+          }}
+        >
+          <MemoryIcon />
+          <span>Memory</span>
         </button>
       </div>
 
@@ -335,6 +360,24 @@ function SearchIcon() {
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
       <circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
       <path d="M10.2 10.2 13.4 13.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MemoryIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <rect
+        x="3.2"
+        y="3.2"
+        width="9.6"
+        height="9.6"
+        rx="2.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path d="M6 6.4h4M6 9.6h2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

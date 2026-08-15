@@ -72,16 +72,17 @@ pub use error::{StoreError, StoreResult};
 pub use location::{DatabaseLocation, DATABASE_FILE_NAME};
 pub use migrations::{AppliedMigration, Migration, MIGRATIONS, SCHEMA_VERSION};
 pub use model::{
-    Advance, Cadence, ContentPart, Conversation, ConversationId, ConversationPatch, Message,
-    MessageId, MessagePatch, MessageRole, MessageStatus, NewConversation, NewMessage, NewProject,
+    Advance, Cadence, ContentPart, Conversation, ConversationId, ConversationPatch, MemoryCategory,
+    MemoryEntry, MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId, MessagePatch,
+    MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage, NewProject,
     NewSchedule, Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId, SchedulePatch,
     ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus, SecretRefName, Setting,
-    SettingEntry, StopReason, Timestamp, TokenUsage,
+    SettingEntry, StopReason, Timestamp, TokenUsage, MEMORY_CONTENT_MAX_CHARS,
 };
 pub use repository::{
-    ConversationQuery, ConversationRepository, HasLocation, MessageQuery, MessageRepository,
-    ProjectFilter, ProjectRepository, ScheduleRepository, SearchHit, SearchHitKind,
-    SettingsRepository, UsageTotals, VelaStore,
+    ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,
+    MessageRepository, ProjectFilter, ProjectRepository, ScheduleRepository, SearchHit,
+    SearchHitKind, SettingsRepository, UsageTotals, VelaStore,
 };
 pub use scheduler::{poll_once, run_now, FiredRun, PollReport};
 pub use sqlite::SqliteStore;

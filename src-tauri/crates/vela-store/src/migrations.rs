@@ -68,6 +68,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "schedules",
         sql: include_str!("migrations/0003_schedules.sql"),
     },
+    Migration {
+        version: 4,
+        name: "memory",
+        sql: include_str!("migrations/0004_memory.sql"),
+    },
 ];
 
 /// The schema version this build produces and understands.
@@ -307,6 +312,7 @@ mod tests {
             "message_search",
             "schedules",
             "schedule_runs",
+            "memory_entries",
         ] {
             let count: i64 = conn
                 .query_row(
@@ -317,6 +323,90 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "migration did not create `{table}`");
         }
+    }
+
+    /// The integration guard for the wave-i merge, where two branches each
+    /// added "the next migration" and both called it `0003`. Schedules kept
+    /// version 3 (it was already on the integration branch); memory was
+    /// renumbered to 4. A fresh database would pass either way — it runs the
+    /// whole list top to bottom — so the failure mode this pins down is only
+    /// visible on a database that already exists: the upgrade must add the
+    /// *new* step without re-running, renaming or overwriting the old one.
+    #[test]
+    fn a_database_migrated_before_memory_landed_gains_it_without_disturbing_schedules() {
+        let mut conn = fresh();
+
+        // Exactly what the pre-memory build shipped: versions 1..=3, the last
+        // of which is `schedules`. These entries are byte-identical to that
+        // build's, so their checksums are too.
+        let pre_merge = &MIGRATIONS[..3];
+        assert_eq!(pre_merge.last().unwrap().name, "schedules");
+        apply_list(&mut conn, pre_merge, &FixedClock::new(1_000, 10)).unwrap();
+        let before = applied(&conn).unwrap();
+        assert_eq!(before.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+
+        // Now the merged build opens that same database.
+        let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
+        assert_eq!(
+            applied_now,
+            vec![4],
+            "only the newly added migration may run against an existing database"
+        );
+
+        let after = applied(&conn).unwrap();
+        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        assert_eq!(after[&3].name, "schedules");
+        assert_eq!(after[&4].name, "memory");
+        assert_ne!(
+            after[&3].checksum, after[&4].checksum,
+            "two migrations sharing a checksum means one file is included twice"
+        );
+        for version in [1, 2, 3] {
+            assert_eq!(
+                after[&version], before[&version],
+                "migration {version} was rewritten by the upgrade"
+            );
+        }
+
+        // Both branches' tables, on one database, after an upgrade rather than
+        // a fresh create.
+        for table in ["schedules", "schedule_runs", "memory_entries"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "`{table}` is missing after the upgrade");
+        }
+    }
+
+    /// Every shipped migration must occupy its own version and its own file.
+    #[test]
+    fn no_two_shipped_migrations_share_a_version_or_a_body() {
+        let mut versions: Vec<u32> = MIGRATIONS.iter().map(|m| m.version).collect();
+        versions.sort_unstable();
+        versions.dedup();
+        assert_eq!(
+            versions.len(),
+            MIGRATIONS.len(),
+            "two migrations claim the same version"
+        );
+
+        let mut checksums: Vec<String> = MIGRATIONS.iter().map(|m| m.checksum()).collect();
+        checksums.sort();
+        checksums.dedup();
+        assert_eq!(
+            checksums.len(),
+            MIGRATIONS.len(),
+            "two migrations have identical SQL; one of them is including the wrong file"
+        );
+
+        let mut names: Vec<&str> = MIGRATIONS.iter().map(|m| m.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), MIGRATIONS.len(), "two migrations share a name");
     }
 
     #[test]

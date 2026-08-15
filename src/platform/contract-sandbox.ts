@@ -264,6 +264,15 @@ export function isolationMeets(offered: Isolation, required: Isolation): boolean
  * `unenforced` — the value was accepted, recorded, and does nothing. The number still
  * travels so that the UI can show what was asked for, and this level is why it must never be
  * shown without qualification.
+ *
+ * **`kernel` is a claim about one run.** A backend may report it only where the kernel holds
+ * the bound against that run's own objects — its namespaces, its cgroup, its descriptors —
+ * and not where the bound is a machine-wide counter other runs draw on too. The levels appear
+ * side by side in {@link LimitEnforcement}, so a reader takes four `kernel`s to be four
+ * guarantees of the same shape; a limit whose delivered value depends on what else is running
+ * is not that, however genuinely the kernel refuses it. This is written down because it was
+ * got wrong: `processes` was once held with a per-uid rlimit shared by every run on the
+ * machine, and two concurrent runs each granted 128 received 127 and zero.
  */
 export type EnforcementLevel = 'kernel' | 'supervisor' | 'unenforced';
 
@@ -979,10 +988,10 @@ export interface SandboxLimits {
   /**
    * Live processes, the run's own included. Bounds fork bombs; must be 1 for a document.
    *
-   * A backend enforcing this with an rlimit rather than a cgroup bounds the processes of the
-   * *uid* the run executes as, which it may share with other concurrent runs — so a run can
-   * be refused a fork below its own number, and never above it. The direction matters more
-   * than the exactness: this is a ceiling on what one run can hold, not a reservation.
+   * This one is per run, and a backend that cannot deliver it per run must report it
+   * `unenforced` rather than `kernel` — see {@link EnforcementLevel}. A backend counting
+   * tasks rather than processes (a cgroup does) counts a threaded program's threads against
+   * it, which is stricter than this wording and is the direction that cannot mislead.
    */
   readonly processes: number;
   /** Bytes written across every writable mount and the scratch directory. */

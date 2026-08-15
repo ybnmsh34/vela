@@ -71,6 +71,31 @@ impl Collector {
             })
             .collect()
     }
+
+    /// One run's output, for the tests that have two runs going at once. The
+    /// unqualified [`Collector::text`] concatenates every run this sink saw,
+    /// which is what every single-run test wants and exactly wrong here.
+    fn text_of(&self, run_id: &str, stream: OutputStream) -> String {
+        self.snapshot()
+            .into_iter()
+            .filter(|envelope| envelope.run_id == run_id)
+            .filter_map(|envelope| match envelope.event {
+                SandboxEvent::Output {
+                    stream: got, text, ..
+                } if got == stream => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn settled_of(&self, run_id: &str) -> Option<(SandboxOutcome, RunUsage)> {
+        self.snapshot().into_iter().find_map(|envelope| {
+            match (envelope.run_id == run_id, envelope.event) {
+                (true, SandboxEvent::Settled { outcome, usage }) => Some((outcome, usage)),
+                _ => None,
+            }
+        })
+    }
 }
 
 fn config(permission: PermissionLevel) -> SandboxConfig {
@@ -646,51 +671,26 @@ fn wsl_processes_matching(distro: &str, marker: &str) -> usize {
 /// Three details of the program below are deliberate, and each of them is a
 /// thing that went wrong first:
 ///
-///  - **the limit is read out of `/proc/self/limits`, not out of
-///    `$(ulimit -u)`.** A command substitution forks, and a program that has hit
-///    its process limit cannot fork — so the obvious spelling reports nothing
-///    exactly when the limit is working. The `while read` loop is builtin-only,
-///    and so is the `/proc` walk after it, for the same reason.
+///  - **the limit is read with the `read` builtin, never with `$(…)`.** A
+///    command substitution forks, and a program that has hit its process limit
+///    cannot fork — so the obvious spelling reports nothing exactly when the
+///    limit is working. The `/proc` walk after the storm is builtin-only for
+///    the same reason.
 ///  - **the storm is run by `/bin/sh`, not by the program's own `bash`.** Bash
 ///    retries a refused `fork` five times with lengthening sleeps, so a
 ///    saturated limit costs half a minute per attempt; dash gives up at once and
 ///    says so.
-///  - **the storm is forty processes, not three hundred.** `RLIMIT_NPROC` is
-///    per-uid across the whole WSL VM — see the note on `processes` in
-///    `WslBackend::report` — so a run that parked three hundred processes on uid
-///    65534 would push every *other* test in this file up against its own
-///    default grant of 128. A test that breaks its neighbours is not measuring
-///    the thing it names.
-///
-/// Everything asserted below holds under any amount of contention from the rest
-/// of the battery, which is why none of it is a lower bound on how much the run
-/// managed to fork: a busy VM can only make the kernel refuse the run *sooner*.
+///  - **it reads `pids.max` out of its own cgroup rather than `ulimit -u`.**
+///    That is where the limit now is, and reading it is also the assertion that
+///    the run is *in* a cgroup of its own: a run left in the root cgroup would
+///    read `/sys/fs/cgroup//pids.max`, which does not exist.
 #[test]
 fn a_forking_program_cannot_exceed_the_process_limit_it_was_granted() {
     let Some(backend) = boundary_backend() else {
         return;
     };
     let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
-    let mut request = submit_of(
-        r#"while read -r first second soft _; do
-             if [ "$first $second" = "Max processes" ]; then
-               echo "max-processes=$soft"
-             fi
-           done < /proc/self/limits
-           /bin/sh -c 'i=0
-                       while [ $i -lt 40 ]; do sleep 300 & i=$((i+1)); done
-                       echo FORKED-FORTY-WITH-NO-ERROR' 2>&1
-           live=0
-           for entry in /proc/[0-9]*; do
-             while read -r key value _; do
-               if [ "$key" = "Uid:" ]; then
-                 if [ "$value" = "65534" ]; then live=$((live+1)); fi
-                 break
-               fi
-             done < "$entry/status"
-           done
-           echo "live-run-processes=$live""#,
-    );
+    let mut request = submit_of(PROCESS_LIMIT_PROBE);
     request.limits.processes = 8;
     host.submit(request).expect("admitted");
 
@@ -701,13 +701,8 @@ fn a_forking_program_cannot_exceed_the_process_limit_it_was_granted() {
         "outcome {outcome:?}, stdout {stdout:?}"
     );
 
-    // What the run is told — which is what a program deciding how many jobs to
-    // start would read, and what the grant handed to the caller promised.
-    assert!(
-        stdout.lines().any(|line| line.trim() == "max-processes=8"),
-        "the run's `RLIMIT_NPROC` must be the granted number. stdout {stdout:?}"
-    );
-    // What the kernel does, which is the part `EnforcementLevel::Kernel` claims.
+    // Behaviour first: what the kernel did, which is the part
+    // `EnforcementLevel::Kernel` claims.
     assert!(
         !stdout.contains("FORKED-FORTY-WITH-NO-ERROR"),
         "the run forked forty processes against a grant of eight. stdout {stdout:?}"
@@ -721,21 +716,235 @@ fn a_forking_program_cannot_exceed_the_process_limit_it_was_granted() {
         "the storm must be stopped by a refused `fork` and not by never running; \
          dash reports that as `Cannot fork`. stdout {stdout:?}"
     );
-
-    let live: u32 = stdout
-        .lines()
-        .find_map(|line| {
-            line.trim()
-                .strip_prefix("live-run-processes=")?
-                .parse()
-                .ok()
-        })
-        .unwrap_or_else(|| panic!("the run must report its own process count; stdout {stdout:?}"));
+    let live: u32 = probe_field(&stdout, "live-run-processes=")
+        .parse()
+        .unwrap_or_else(|_| panic!("the run must report its process count; stdout {stdout:?}"));
     assert!(
-        live <= 8,
-        "the run held {live} live processes against a grant of eight. stdout {stdout:?}"
+        (2..=8).contains(&live),
+        "the run held {live} live processes against a grant of eight, and must have \
+         held more than one or it never forked at all. stdout {stdout:?}"
+    );
+
+    // Then the mechanism, because `report()` claims a particular one. The run
+    // is in a cgroup of its own and not in the one the rest of the VM shares,
+    // and the number in it is the granted number — which is also what a program
+    // deciding how many jobs to start would read.
+    let cgroup = probe_field(&stdout, "cgroup=");
+    assert!(
+        cgroup.starts_with("/vela."),
+        "the run must be in a cgroup of its own; it is in {cgroup:?}. stdout {stdout:?}"
+    );
+    assert_eq!(
+        probe_field(&stdout, "pids-max="),
+        "8",
+        "the run's `pids.max` must be the granted number. stdout {stdout:?}"
     );
 }
+
+/// **A limit one run can take from another is not a limit.**
+///
+/// `RLIMIT_NPROC` was the first repair for the defect above and it passed the
+/// test above, because one run in isolation is exactly the case it gets right.
+/// It counts processes per *uid* in the process's user namespace, every run here
+/// is uid 65534, and no user namespace is unshared — so a grant of 128 to two
+/// concurrent runs is 128 between them. Measured through this host at its own
+/// shipped defaults, one run holding 127 of its grant:
+///
+/// ```text
+/// m-B [Stdout] rlimit-nproc-soft=128
+/// m-B [Stderr] /vela/program: fork: Resource temporarily unavailable
+/// m-B SETTLED Exited { exit_code: 254 }
+/// ```
+///
+/// The second run was told 128 and forked **zero**. `maximum_concurrent_runs`
+/// is 4; the host delivered one. So this test is the one that says the limit is
+/// per run, and it is the one the rlimit spelling cannot pass.
+#[test]
+fn two_runs_at_once_are_each_given_the_whole_process_limit_they_were_granted() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+
+    // A takes 23 of its 24 and holds them for as long as B needs.
+    let mut holder = submit_of(
+        r#"read -r cgline < /proc/self/cgroup
+           echo "cgroup=${cgline##*::}"
+           /bin/sh -c 'i=0; while [ $i -lt 22 ]; do sleep 60 & i=$((i+1)); done'
+           echo A-IS-HOLDING
+           sleep 60"#,
+    );
+    holder.limits.processes = 24;
+    holder.limits.wall_clock_ms = 120_000;
+    let holder_id = holder.run_id.clone();
+    host.submit(holder).expect("admitted the holder");
+    assert!(
+        wait_until(Duration::from_secs(90), || collector
+            .text_of(&holder_id, OutputStream::Stdout)
+            .contains("A-IS-HOLDING")),
+        "the control failed: the first run never took its processes, so the \
+         second one was never contended with. events {:?}",
+        collector.snapshot()
+    );
+
+    let mut second = submit_of(PROCESS_LIMIT_PROBE);
+    second.limits.processes = 24;
+    let second_id = second.run_id.clone();
+    host.submit(second).expect("admitted the second run");
+    assert!(
+        wait_until(Duration::from_secs(120), || collector
+            .settled_of(&second_id)
+            .is_some()),
+        "the second run never settled; events {:?}",
+        collector.snapshot()
+    );
+
+    let stdout = collector.text_of(&second_id, OutputStream::Stdout);
+    let stderr = collector.text_of(&second_id, OutputStream::Stderr);
+    // The finding, first: how many processes the second run actually got. A
+    // missing line is itself the answer — it means the run could not fork far
+    // enough to finish printing.
+    let live: u32 = stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("live-run-processes=")?.parse().ok())
+        .unwrap_or_else(|| {
+            panic!(
+                "the second run never reported a process count, which is what a run \
+                 that could not fork at all looks like. stdout {stdout:?} stderr {stderr:?}"
+            )
+        });
+    assert!(
+        live >= 20,
+        "the second run was granted 24 processes and got {live} while another run \
+         held its own 23. A limit the first run can spend on the second one's \
+         behalf is not the per-run bound `report()` claims. stdout {stdout:?} \
+         stderr {stderr:?}"
+    );
+    assert_eq!(
+        probe_field(&stdout, "pids-max="),
+        "24",
+        "stdout {stdout:?} stderr {stderr:?}"
+    );
+    assert_ne!(
+        probe_field(&stdout, "cgroup="),
+        probe_field(
+            &collector.text_of(&holder_id, OutputStream::Stdout),
+            "cgroup="
+        ),
+        "two concurrent runs must not share a cgroup"
+    );
+
+    host.cancel(SandboxCancelReq {
+        run_id: holder_id,
+        reason: CancelReason::User,
+    });
+}
+
+/// **A run that never started is a host failure, whatever it exits with.**
+///
+/// `host.rs` reads [`READY_SENTINEL`] as the line between the two: everything
+/// before it is the host's, everything after it is the program's. A version of
+/// the guest script printed the sentinel and *then* `exec`ed the privilege drop,
+/// so when that `exec` failed — which the per-uid process limit made routine,
+/// not exotic — the caller was handed `exited { exitCode: 126 }` for something
+/// that happened before the program's first instruction, and would have gone
+/// looking for a bug in a program that never ran.
+///
+/// This asks for a program in a language the guest has no interpreter for. It
+/// is the one failure of that shape a test can construct without a broken
+/// machine: everything else in the chain is a fixed absolute path on a
+/// read-only rootfs.
+#[test]
+fn a_run_whose_interpreter_is_missing_is_a_host_failure_and_not_an_exit_code() {
+    // Not through `submit`: `admit` refuses Python before anything is spawned,
+    // which is the correct answer and not the one under test. The launcher is
+    // asked directly for a script whose interpreter is not there.
+    let plan_of = |language| {
+        let request = submit_of("echo unreachable");
+        let SandboxProgram::Process(program) = &request.program else {
+            unreachable!("submit_of builds a process program")
+        };
+        vela_sandbox::admission::RunPlan {
+            language,
+            source: program.source.clone(),
+            stdin: None,
+            environment: Vec::new(),
+            base_environment: Vec::new(),
+            mounts: Vec::new(),
+            scratch_guest_path: "/vela/scratch".into(),
+            working_directory: "/".into(),
+            limits: DEFAULT_PROCESS_LIMITS,
+        }
+    };
+    let script = WslBackend::for_distro("Ubuntu").guest_script(&plan_of(ProcessLanguage::Python));
+
+    // The interpreter guard is above the sentinel, so the guest refuses before
+    // it claims to be ready. Read off the script rather than run it, because
+    // whether `/usr/bin/python3` exists is a property of the machine and this
+    // assertion is a property of the file.
+    let guard = script
+        .find("[ -x /usr/bin/python3 ]")
+        .expect("the guest checks its interpreter is executable");
+    let sentinel = script
+        .find("printf '")
+        .expect("the guest prints the ready sentinel");
+    assert!(
+        guard < sentinel,
+        "the interpreter check must be above the sentinel: below it, a missing \
+         interpreter is delivered to the caller as the program's own exit code:\n{script}"
+    );
+
+    // And the same for the two things that were below it and are now above it.
+    let bash = WslBackend::for_distro("Ubuntu").guest_script(&plan_of(ProcessLanguage::Bash));
+    let sentinel = bash.find("printf '").expect("the sentinel");
+    for (what, needle) in [
+        ("the privilege drop", "setpriv"),
+        ("the cgroup join", "cgroup.procs"),
+        ("the environment clearing", "env -i"),
+    ] {
+        let at = bash
+            .find(needle)
+            .unwrap_or_else(|| panic!("the script must contain `{needle}`:\n{bash}"));
+        assert!(
+            at < sentinel,
+            "{what} must happen before the ready sentinel. Below it, its failure \
+             reaches the caller as a program result:\n{bash}"
+        );
+    }
+}
+
+/// Reads `name=value` off one of [`PROCESS_LIMIT_PROBE`]'s lines.
+///
+/// Panics rather than defaulting: a missing line means the program did not get
+/// far enough to print it, which is a result and not an absence.
+#[track_caller]
+fn probe_field<'a>(stdout: &'a str, name: &str) -> &'a str {
+    stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(name))
+        .unwrap_or_else(|| panic!("no `{name}` line in stdout {stdout:?}"))
+}
+
+/// Reports the limit the run is being held to, tries hard to exceed it, and
+/// reports what it actually holds — using no `$(…)` anywhere, because a program
+/// that has reached its process limit cannot fork one.
+const PROCESS_LIMIT_PROBE: &str = r#"read -r cgline < /proc/self/cgroup
+echo "cgroup=${cgline##*::}"
+read -r pidsmax < "/sys/fs/cgroup${cgline##*::}/pids.max"
+echo "pids-max=$pidsmax"
+/bin/sh -c 'i=0
+            while [ $i -lt 40 ]; do sleep 300 & i=$((i+1)); done
+            echo FORKED-FORTY-WITH-NO-ERROR' 2>&1
+live=0
+for entry in /proc/[0-9]*; do
+  while read -r key value _; do
+    if [ "$key" = "Uid:" ]; then
+      if [ "$value" = "65534" ]; then live=$((live+1)); fi
+      break
+    fi
+  done < "$entry/status"
+done
+echo "live-run-processes=$live""#;
 
 #[test]
 fn a_run_that_will_not_finish_is_killed_at_the_wall_clock() {

@@ -96,6 +96,21 @@ pub fn same_family(a: Isolation, b: Isolation) -> bool {
     )
 }
 
+/// How a guarantee is held. See the TypeScript contract for the three levels.
+///
+/// **`Kernel` is a claim about *this run*, and a backend may only report it for
+/// a bound the kernel holds against this run's own objects** — its namespaces,
+/// its cgroup, its file descriptors. It is not the right level for a bound that
+/// happens to be enforced by the kernel against something shared: a limit
+/// counted machine-wide, over a uid or a device that other runs also use,
+/// delivers a number decided by whatever else is running, and a caller reading
+/// four `Kernel`s alongside each other will read four per-run guarantees.
+///
+/// That distinction is written down because it was got wrong here. `processes`
+/// was held with `RLIMIT_NPROC`, which is per-uid across a whole machine; every
+/// run used the same uid; the kernel really did refuse the fork, so the level
+/// looked defensible. Measured, two concurrent runs each granted 128 processes
+/// received 127 and **zero**. The repair was a per-run cgroup, not a footnote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EnforcementLevel {

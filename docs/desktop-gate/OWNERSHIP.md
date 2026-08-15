@@ -13,6 +13,7 @@ see `docs/HANDOVER.md`).
 |---|---|---|
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-privatefs` | `wave-g/private-fs` | wave-G builder |
+| `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | wave-1 B7 builder |
 
 ## Active claims
 
@@ -20,6 +21,12 @@ see `docs/HANDOVER.md`).
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
+| `src/app/shell/window-controls.test.tsx` | desktop / wave-1 B7 | 2026-08-15 | the capability grant becomes an exact set, not a prefix shape |
+| `src/platform/contract.test.ts` | desktop / wave-1 B7 | 2026-08-15 | exhaustiveness read off `IpcContract` instead of a hand-typed copy |
+| `src/platform/declared-commands.ts` | desktop / wave-1 B7 | 2026-08-15 | new; the interface-member reader, shared by the two tests that need it |
+| `src/platform/contract.ts` | desktop / wave-1 B7 | 2026-08-15 | doc comment only — the allowlist and `IpcContract` are unchanged |
+| `src/platform/project-host-parity.test.ts` | desktop / wave-1 B7 | 2026-08-15 | `declaredCommandsIn` moved out to the shared module; assertions unchanged |
+| `src-tauri/src/ipc/mod.rs` | desktop / wave-1 B7 | 2026-08-15 | the secrets guard: one string becomes a type probe plus a name pattern |
 
 ## Released
 

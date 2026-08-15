@@ -1690,10 +1690,20 @@ export const COMMAND_ALLOWLIST = [
 ] as const;
 
 /**
- * Compile-time proof that the allowlist contains only real commands. The
- * reverse direction (every command is listed) is asserted at runtime in
- * `contract.test.ts`, because TypeScript cannot check exhaustiveness of a
- * `readonly` tuple against a key union without a type-level equality hack.
+ * Compile-time proof that the allowlist contains only real commands.
+ *
+ * The reverse direction — every declared command is listed — is held twice in
+ * `src/platform/contract.test.ts`: once at `pnpm typecheck` by an `Exclude`
+ * annotation, and once at `pnpm test` by reading {@link IpcContract}'s members
+ * back out of this file's source, since an interface has no runtime value to
+ * enumerate.
+ *
+ * This paragraph used to say that the reverse direction was asserted at runtime
+ * and that TypeScript could not express it. Both halves were wrong: the runtime
+ * assertion compared the allowlist against a hand-typed copy of the key list in
+ * the test file, so it could not see a command missing from either real list,
+ * and the annotation this sentence called impossible is nine lines and now sits
+ * next to it.
  */
 const _allowlistIsWellTyped: readonly CommandName[] = COMMAND_ALLOWLIST;
 void _allowlistIsWellTyped;

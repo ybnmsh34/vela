@@ -12,7 +12,17 @@ see `docs/HANDOVER.md`).
 | path | branch | holder |
 |---|---|---|
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
-| `C:/Users/User/vela-wt-privatefs` | `wave-g/private-fs` | wave-G builder |
+| `C:/Users/User/vela-wt-bundle` | `fix/real-bundle` | Wave 1 / B2 |
+| `C:/Users/User/vela-wt-dacl` | `fix/appdata-owner-only` | Wave 1 / B4a |
+| `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
+| `C:/Users/User/vela-wt-tokeniser` | `fix/guard-tokeniser-phase` | Wave 1 / tokeniser |
+
+`vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
+`fix/sandbox-process-limit`, `fix/verify-on-windows` and `fix/dead-skill-mount` once each was
+merged and confirmed an ancestor of `HEAD` with `git merge-base --is-ancestor` — **not** with
+`git branch --merged`, whose output this session has already misread once. Note `git worktree
+remove` fails with *"Directory not empty"* when `node_modules` is a junction; unlink the junction
+with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently does not happen.
 
 ## Active claims
 
@@ -47,3 +57,15 @@ see `docs/HANDOVER.md`).
 6. A claim is released by moving its row to **Released** with the sha that finished it.
 7. A builder never grades its own work, and the lead never grades its own either. Critics are
    fresh-context and run the commands themselves.
+8. **This file is the only registry.** `docs/OWNERSHIP.md` was created during Wave 1 because the
+   lead sent two builders to that path without checking it existed. A second registry is worse
+   than none: two agents each claim correctly, in different files, and neither finds the other.
+   That file now points here.
+9. **Use a uniquely-named scratch subdirectory.** A critic's scratch clone was replaced mid-run by
+   another agent's clone of a different repository state — different reflog origin, different
+   `node_modules` shape, and a HEAD commit absent from this object store. It noticed only because
+   it checked its workspace identity. **Verify at the end that the directory you measured is the
+   one you created**, and prefer a name carrying the branch and a stamp.
+10. Linked worktrees share one object store. A transient `Permission denied` writing a loose object
+   has been seen under concurrent git use; `git fsck --connectivity-only` reported dangling objects
+   only, no broken links. If you see it, verify the object landed rather than assuming either way.

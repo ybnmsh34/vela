@@ -12,17 +12,16 @@ see `docs/HANDOVER.md`).
 | path | branch | holder |
 |---|---|---|
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
-| `C:/Users/User/vela-wt-bundle` | `fix/real-bundle` | Wave 1 / B2 |
 | `C:/Users/User/vela-wt-dacl` | `fix/appdata-owner-only` | Wave 1 / B4a |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
-| `C:/Users/User/vela-wt-tokeniser` | `fix/guard-tokeniser-phase` | Wave 1 / tokeniser |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
-`fix/sandbox-process-limit`, `fix/verify-on-windows` and `fix/dead-skill-mount` once each was
-merged and confirmed an ancestor of `HEAD` with `git merge-base --is-ancestor` — **not** with
-`git branch --merged`, whose output this session has already misread once. Note `git worktree
-remove` fails with *"Directory not empty"* when `node_modules` is a junction; unlink the junction
-with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently does not happen.
+`fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
+and `fix/guard-tokeniser-phase` once each was merged and confirmed an ancestor of `HEAD` with
+`git merge-base --is-ancestor` — **not** with `git branch --merged`, whose output this session has
+already misread once. Note `git worktree remove` fails with *"Directory not empty"* when
+`node_modules` is a junction; unlink the junction with `[System.IO.Directory]::Delete(path, false)`
+first, or the reclaim silently does not happen.
 
 ## Active claims
 
@@ -30,7 +29,6 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 |---|---|---|---|
 | `src/platform/no-provider-leak.test.ts` | desktop | 2026-08-14 | carrier allowlist never matches on Windows |
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
-| `src/platform/claimed-guards.test.ts` | Wave 1 / tokeniser | 2026-08-15 | tokeniser loses phase on a one-character backticked token and reads the gaps between real tokens |
 | `src/platform/contract.test.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts`, `src-tauri/src/ipc/mod.rs` | Wave 1 / B7 | 2026-08-15 | three guards that do not bite: a shape-not-exact-set capability assertion, a hand-written contract key list, a one-string secrets check |
 | `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
 
@@ -48,6 +46,7 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 | `src-tauri/crates/vela-sandbox/**` | `4949578` (`fix/sandbox-process-limit`) | per-run process limit via cgroup v2 `pids.max`. `RLIMIT_NPROC` is per-uid, so a second concurrent run forked **zero**. Landed gate 2 green for the first time |
 | `src-tauri/crates/vela-skills/src/{mount,enablement}.rs` | `730eca5` (`fix/dead-skill-mount`) | deleted, 1237 lines with no caller. The parity test guarding them also guarded live types, so it was split and renamed rather than repointed |
 | `src-tauri/rust-toolchain.toml`, `src-tauri/tauri.conf.json`, `docs/release-posture.md` | `9baf471` (`fix/real-bundle`) | `bundle.icon` had no `.ico`, so `targets: "all"` produced nothing behind a green build. Pin verified inert for both gates. **No `reaches-user` grade** — the install landed in the MSIX container |
+| `src/platform/claimed-guards.test.ts` | `fix/guard-tokeniser-phase` | Fixed twice: the first fix kept a cursor and kept a hole, the second removed the cursor. A regex tokeniser's cursor has a phase, and **anything the pattern declines takes the phase with it** — so it now `split`s on backticks and matches nothing. Nine claims surfaced across both fixes, all real. An exhaustive differential over 2,441,406 strings found zero disagreements with a reference |
 
 ## Rules
 

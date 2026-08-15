@@ -38,6 +38,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use vela_core::protocol::WireProtocol;
 use vela_lib::ipc::chat;
 use vela_lib::provider_host::ProviderHost;
 use vela_providers::model::Degradation;
@@ -226,10 +227,14 @@ fn configure(host: &ProviderHost, id: &str, base_url: &str, model: Option<&str>)
 
 /// What `chat_send` spawns, minus the window sink and the spawn.
 fn send(host: &ProviderHost, provider_id: &str, model_id: &str) -> Vec<StreamEvent> {
+    ask(host, provider_id, model_id, "hello")
+}
+
+fn ask(host: &ProviderHost, provider_id: &str, model_id: &str, prompt: &str) -> Vec<StreamEvent> {
     let router = host
         .router_for(provider_id, model_id)
         .expect("the chosen endpoint is configured");
-    let request = ChatRequest::new(model_id).with_message(ChatMessage::user("hello"));
+    let request = ChatRequest::new(model_id).with_message(ChatMessage::user(prompt));
     let mut sink: Vec<StreamEvent> = Vec::new();
     tauri::async_runtime::block_on(chat::run_turn(
         router,
@@ -409,6 +414,189 @@ fn a_single_configured_endpoint_answers_exactly_as_it_did_before() {
         "a turn that worked first time must not claim it was retried: {:?}",
         response.degradations
     );
+}
+
+/// **Live endpoint. `#[ignore]`d, and it must stay that way.**
+///
+/// Everything above is a fixture: it proves what the host does, and nothing
+/// about a model. This one runs the same routed path — `router_for` into
+/// `run_turn` — against a real server, so that "a turn round-trips through the
+/// router" is a statement about a model answering rather than about a script
+/// replaying.
+///
+/// It proves the **happy path only**. A live model that works tells you nothing
+/// about what happens when one does not; every degradation claim in this wave
+/// comes from the mock matrix and from the fixtures above, never from here.
+///
+/// Same shape as `vela-providers/tests/live_reasoning_tool_probe.rs`: not in
+/// the default suite, because it needs a server and costs real generation time,
+/// and a machine without one must not go red.
+///
+/// ```text
+/// VELA_LIVE_BASE_URL=http://127.0.0.1:8033/v1 \
+/// VELA_LIVE_MODEL_ID='unsloth/Qwen3.6-27B-GGUF:Q5_K_M' \
+///   cargo test --test routed_turn -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "requires a live OpenAI-compatible endpoint; set VELA_LIVE_BASE_URL"]
+fn a_routed_turn_round_trips_through_a_live_endpoint() {
+    let Ok(base_url) = std::env::var("VELA_LIVE_BASE_URL") else {
+        eprintln!("VELA_LIVE_BASE_URL unset — nothing was contacted and nothing is claimed");
+        return;
+    };
+    let model_id = std::env::var("VELA_LIVE_MODEL_ID")
+        .expect("VELA_LIVE_MODEL_ID must name the model the endpoint serves");
+
+    let host = host();
+    configure(&host, "live", &base_url, Some(&model_id));
+    // A question worth thinking about, so the reasoning channel has something
+    // in it to be separate from.
+    let events = ask(
+        &host,
+        "live",
+        &model_id,
+        "A rope burns unevenly and takes exactly one hour.          With two such ropes and a lighter, measure 45 minutes.          Answer in one sentence.",
+    );
+
+    let answer = answer_text(&events);
+    let reasoning: String = events
+        .iter()
+        .filter_map(|event| match event {
+            StreamEvent::ReasoningDelta { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    eprintln!("--- reasoning ({} chars) ---\n{reasoning}", reasoning.len());
+    eprintln!("--- answer ({} chars) ---\n{answer}", answer.len());
+
+    let terminals = terminals(&events);
+    assert_eq!(terminals.len(), 1, "one turn, one ending");
+    assert!(
+        matches!(terminals[0], StreamEvent::Done { .. }),
+        "the live turn failed: {:?}",
+        terminals[0]
+    );
+    assert!(!answer.trim().is_empty(), "a turn must produce an answer");
+
+    // The separation, on a model that really deliberates. Markup in the answer
+    // channel would mean the splitter leaked across frame boundaries.
+    for marker in ["<think>", "</think>"] {
+        assert!(
+            !answer.contains(marker),
+            "reasoning markup reached the answer channel: {answer}"
+        );
+    }
+
+    let response = done(&events).expect("a completed turn ends in Done");
+    assert!(
+        !response
+            .degradations
+            .iter()
+            .any(|degradation| matches!(degradation, Degradation::FailedOver { .. })),
+        "a turn that worked first time must not claim it was retried: {:?}",
+        response.degradations
+    );
+}
+
+/// **The other half of "the user declares it": declaring it wrong.**
+///
+/// A protocol the user chooses is a protocol the user can choose *badly*, and
+/// the failure mode that would make the whole design indefensible is a silent
+/// one — a request in the wrong dialect producing something rather than a
+/// refusal. The fixture serves the OpenAI-compatible route and answers
+/// everything else `404`, which is what an endpoint that does not speak a
+/// dialect looks like.
+///
+/// # A measured surprise, recorded because it changes the argument
+///
+/// This was first written as a **live** probe against the llama.cpp server on
+/// this machine, declaring its `/v1` base URL as the Messages protocol and
+/// expecting a refusal. It did not refuse. It answered — correctly, with the
+/// reasoning channel populated — because that build serves `/v1/messages`
+/// *and* `/v1/chat/completions` from the same base URL.
+///
+/// That is not a hole in this test; it is the strongest available evidence for
+/// why the protocol has to be declared. Deriving it from the address is not
+/// merely forbidden by conventions §0.3, it is **not well defined**: one
+/// address was a correct address for two protocols at once, so no rule reading
+/// that URL could have produced an answer that was right about both.
+#[test]
+fn declaring_a_protocol_the_endpoint_does_not_serve_fails_loudly() {
+    let endpoint = Fixture::start(Behaviour::Answers("this box only speaks one dialect"));
+
+    let host = host();
+    host.install(
+        &ProviderConfig::local("mistaken", "The box, described wrongly", &endpoint.base_url)
+            .expect("a valid URL")
+            .with_model("m")
+            .with_protocol(WireProtocol::AnthropicMessages),
+    )
+    .expect("a client can be built");
+
+    let events = send(&host, "mistaken", "m");
+
+    assert_eq!(
+        endpoint.completions(),
+        0,
+        "a Messages-shaped turn must not arrive at the completions route"
+    );
+    assert_eq!(
+        answer_text(&events),
+        "",
+        "nothing may reach the answer channel from a request the endpoint refused"
+    );
+    let terminals = terminals(&events);
+    assert_eq!(terminals.len(), 1, "one turn, one ending: {events:?}");
+    let StreamEvent::Error { error } = terminals[0] else {
+        panic!(
+            "a dialect the endpoint does not serve must refuse, not answer: {:?}",
+            terminals[0]
+        );
+    };
+
+    // The refusal has to be *about the endpoint*, it has to name which one, and
+    // it has to name the route the declared protocol required — which is the
+    // mismatch, concretely: the user said Messages, Vela asked for
+    // `/v1/messages`, and the box had nothing there.
+    let rendered = format!("{error:?}");
+    for expected in [
+        format!("127.0.0.1:{}", port_of(&endpoint.base_url)),
+        "/v1/messages".to_owned(),
+    ] {
+        assert!(
+            rendered.contains(&expected),
+            "the refusal must name `{expected}`, or a user with three configured \
+             backends cannot tell what went wrong: {rendered}"
+        );
+    }
+
+    // MEASURED, and recorded because it is a real limit rather than a passing
+    // detail. The error is:
+    //
+    //   ModelNotFound { model_id: "m", diagnosis: { cause: ModelNotServed,
+    //     status: 404, endpoint: { authority: "http://127.0.0.1:…",
+    //     path: "/v1/messages" } } }
+    //
+    // Nothing is silently produced and the evidence is all there — but the
+    // *cause vocabulary* says `model_not_served`, and the renderer's sentence
+    // for that (`notices.ts`) is "The endpoint does not serve this model." The
+    // model is fine. The dialect is wrong. Closing that needs a new closed
+    // `Cause` variant plus the adapter rule that a 404 on a protocol's own
+    // entry route is a protocol failure and not a model one — a change across
+    // three adapters and the renderer's error vocabulary, which is a separate
+    // piece of work from this one. The assertion above pins what is true today
+    // so the gap cannot be mistaken for a fix.
+    assert!(matches!(
+        error,
+        vela_providers::ProviderError::ModelNotFound { .. }
+    ));
+}
+
+fn port_of(base_url: &str) -> String {
+    base_url
+        .trim_start_matches("http://127.0.0.1:")
+        .trim_end_matches("/v1")
+        .to_owned()
 }
 
 /// A candidate list is not a licence to shop the prompt around. An endpoint

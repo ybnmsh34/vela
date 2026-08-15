@@ -32,22 +32,28 @@
 //! settings write would send the UI back to "nothing established" and make the
 //! endpoint pay for another round of discovery probes.
 //!
-//! # What this host can build, and what it deliberately cannot
+//! # What this host builds, and what decides it
 //!
-//! Every configured provider is built as a [`CompatProvider`] — the
-//! OpenAI-shaped backend that llama.cpp, Ollama, LM Studio, vLLM and most
-//! hosted APIs answer, and the one all four mock-matrix profiles speak.
+//! [`ProviderHost::build`] is the only place in Vela that chooses an adapter,
+//! and it chooses on exactly one input: `ProviderConfig::protocol`, which the
+//! **user set**. All three adapters in the provider core are reachable from
+//! here — the OpenAI-compatible one, the Messages one, and the
+//! `generateContent` one.
 //!
-//! `AnthropicProvider` and `GoogleProvider` exist in the provider core and are
-//! **not** reachable from here. That is a stated limitation, not an oversight:
-//! selecting them would require the host to decide which wire dialect an
-//! endpoint speaks, and the only honest way to decide that is to let the user
-//! say so. `ProviderConfig` has no field for it — by design, per its own
-//! load-bearing rule that nothing in it is provider-specific — and inventing
-//! one from the URL would be exactly the "branch on backend identity" that
-//! `docs/architecture/conventions.md` §0.3 forbids. Adding a user-visible
-//! protocol choice is a settings-surface change; when it lands, it becomes one
-//! more arm of the `match` in [`ProviderHost::build`].
+//! This paragraph used to say the other two were unreachable, and it named the
+//! blocker correctly: selecting them requires the host to know which wire
+//! dialect an endpoint speaks, and deriving that from the URL would be exactly
+//! the "branch on backend identity" that `docs/architecture/conventions.md`
+//! §0.3 forbids. The resolution is not a cleverer derivation. It is that the
+//! user says, in a chooser the endpoints form draws from a list this host
+//! sends. See [`vela_core::protocol`] for why a declared wire *format* is not
+//! the vendor enum `ProviderConfig` forbids, and for how the renderer holds a
+//! protocol id without ever being able to spell one.
+//!
+//! Nothing here reads a hostname, a path, a port, a model name or a response
+//! shape to make this decision, and a test in this module pins that: two
+//! endpoints at the same address, differing only in what the user declared,
+//! must build different clients.
 //!
 //! # Honesty
 //!
@@ -58,9 +64,12 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderDescriptor;
 use vela_providers::http::{HttpTransport, ReqwestTransport};
-use vela_providers::{CompatProvider, Provider, ProviderRegistry, Router};
+use vela_providers::{
+    AnthropicProvider, CompatProvider, GoogleProvider, Provider, ProviderRegistry, Router,
+};
 use vela_secrets::SecretStore;
 use vela_settings::{ProviderConfig, SettingsService};
 use vela_store::SettingsRepository;
@@ -311,20 +320,41 @@ impl ProviderHost {
 
     /// Turns one stored configuration into one live provider.
     ///
-    /// The single `match`-shaped decision in the host. See the module docs for
-    /// why every arm is the OpenAI-compatible one today.
+    /// The single `match`-shaped decision in the host, and the **only** place in
+    /// Vela that chooses an adapter. It reads exactly one thing:
+    /// `config.protocol`, which the user set. It does not look at the URL, the
+    /// hostname, the port, the model name, or anything the endpoint has said —
+    /// deriving the dialect from any of those is the "branch on backend
+    /// identity" `conventions.md` §0.3 forbids, and it would be a guess that
+    /// fails silently on every gateway and proxy.
+    ///
+    /// The `match` is exhaustive on purpose ([`WireProtocol`] is deliberately
+    /// not `#[non_exhaustive]`), so a protocol added with no adapter behind it
+    /// is a compile error rather than a quiet fall-through to the default.
+    ///
+    /// All three constructors take the same five arguments. That is not a
+    /// coincidence to be tidied away — it is the seam the provider core was
+    /// built around, and it is why this decision is four lines rather than four
+    /// code paths.
     fn build(&self, config: &ProviderConfig) -> IpcResult<Arc<dyn Provider>> {
         let transport = self.transport.clone()?;
         let descriptor = ProviderDescriptor::new(&config.id, &config.display_name, config.kind)?
             .with_auth(config.auth_policy());
+        let base_url = config.base_url.as_str();
+        let auth = config.auth.clone();
+        let secrets = Arc::clone(&self.secrets);
 
-        Ok(Arc::new(CompatProvider::new(
-            descriptor,
-            config.base_url.as_str(),
-            config.auth.clone(),
-            Arc::clone(&self.secrets),
-            transport,
-        )))
+        Ok(match config.protocol {
+            WireProtocol::OpenAiCompatible => Arc::new(CompatProvider::new(
+                descriptor, base_url, auth, secrets, transport,
+            )) as Arc<dyn Provider>,
+            WireProtocol::AnthropicMessages => Arc::new(AnthropicProvider::new(
+                descriptor, base_url, auth, secrets, transport,
+            )),
+            WireProtocol::GoogleGenerativeLanguage => Arc::new(GoogleProvider::new(
+                descriptor, base_url, auth, secrets, transport,
+            )),
+        })
     }
 
     /* ---------------------------------------------------------------- lock */
@@ -500,6 +530,69 @@ mod tests {
             "a required credential that is absent must make the provider unusable"
         );
         assert!(descriptor.is_usable(true));
+    }
+
+    /// **The decision this host exists to make, asserted on the wire.**
+    ///
+    /// Three endpoints at the *same address*, differing in nothing but what the
+    /// user declared, producing three different requests. That is §0.3's "never
+    /// derive the backend from the URL" as an experiment rather than a promise:
+    /// if the URL decided anything, all three rows would address the same path.
+    #[test]
+    fn the_protocol_the_user_declared_decides_where_the_request_lands() {
+        for (protocol, expected) in [
+            (WireProtocol::OpenAiCompatible, "/chat/completions"),
+            (WireProtocol::AnthropicMessages, "/messages"),
+            (
+                WireProtocol::GoogleGenerativeLanguage,
+                ":streamGenerateContent",
+            ),
+        ] {
+            let transport = Arc::new(ScriptedTransport::new(Vec::new()));
+            let host = ProviderHost::new(Arc::new(MemoryStore::new()), transport.clone());
+            host.install(
+                &ProviderConfig::local("x", "X", "http://127.0.0.1:8080/v1")
+                    .unwrap()
+                    .with_protocol(protocol),
+            )
+            .unwrap();
+
+            let mut sink: Vec<vela_providers::StreamEvent> = Vec::new();
+            let _ = tauri::async_runtime::block_on(
+                host.get("x").unwrap().stream(
+                    vela_providers::ChatRequest::new("m")
+                        .with_message(vela_providers::ChatMessage::user("hi")),
+                    &mut sink,
+                    &vela_providers::RequestContext::new(),
+                ),
+            );
+
+            let urls: Vec<String> = transport
+                .recorded()
+                .iter()
+                .map(|request| request.url.redacted().to_string())
+                .collect();
+            assert!(
+                urls.iter().any(|url| url.contains(expected)),
+                "a `{protocol:?}` endpoint must address `{expected}`; it addressed {urls:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_protocol_in_the_catalogue_builds_something() {
+        // The other half of the exhaustiveness argument. The `match` in `build`
+        // cannot compile with a variant missing, and this catches the reverse:
+        // an option offered to the user that the host refuses to construct.
+        let host = host();
+        for protocol in WireProtocol::ALL {
+            let config = ProviderConfig::local("x", "X", "http://127.0.0.1:8080/v1")
+                .unwrap()
+                .with_protocol(*protocol);
+            host.install(&config)
+                .unwrap_or_else(|error| panic!("{protocol:?} could not be built: {error:?}"));
+            assert!(host.get("x").is_some());
+        }
     }
 
     #[test]

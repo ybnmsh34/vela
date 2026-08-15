@@ -31,6 +31,7 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use vela_core::auth::{AuthMode, AuthRequirement};
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderKind;
 use vela_lib::ipc::secrets::{SecretRefDto, SecretsSetReq};
 use vela_lib::ipc::settings::SettingsPutProviderReq;
@@ -122,6 +123,7 @@ fn observe(doc: &Value, case: &Value) -> Value {
         id: id.to_owned(),
         display_name: display_name.to_owned(),
         kind,
+        protocol: WireProtocol::default(),
         base_url: text(input, "baseUrl").to_owned(),
         model_id: None,
         auth,

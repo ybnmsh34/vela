@@ -13,10 +13,18 @@
 //! "is_ollama", no per-vendor sub-struct, no enum of known vendors. A backend
 //! Vela has never heard of is described exactly as well as one it ships with —
 //! which is the whole premise of a model-agnostic client.
+//!
+//! [`ProviderConfig::protocol`] is the one field that has to be argued for
+//! against that rule rather than assumed compatible with it, and the argument
+//! is in [`vela_core::protocol`]: a wire protocol is a *format* many parties
+//! serve, not an identity, and — decisively — **the user declares it**. Nothing
+//! in this crate or above it infers it from a URL, a model name, a header or a
+//! response shape. A field Vela reads is not a branch Vela took.
 
 use serde::{Deserialize, Serialize};
 use vela_core::auth::{AuthMode, AuthPolicy, AuthRequirement, CredentialCheck};
 use vela_core::credential::Auth;
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderKind;
 use vela_core::secret::SecretRef;
 
@@ -37,6 +45,14 @@ pub struct ProviderConfig {
     /// What the user calls it. Free text; never parsed.
     pub display_name: String,
     pub kind: ProviderKind,
+    /// Which wire protocol this endpoint speaks — **the user's declaration**,
+    /// not Vela's guess. See [`vela_core::protocol`] for why an explicit field
+    /// is the only shape §0.3 permits, and why the URL may not be consulted.
+    ///
+    /// `#[serde(default)]` so every row written before this field existed still
+    /// loads, as the OpenAI-compatible client it was already built as.
+    #[serde(default)]
+    pub protocol: WireProtocol,
     pub base_url: EndpointUrl,
     /// The credential binding. [`Auth::None`] is valid and is the default.
     #[serde(default)]
@@ -64,6 +80,7 @@ impl ProviderConfig {
             id: id.into(),
             display_name: display_name.into(),
             kind: ProviderKind::Local,
+            protocol: WireProtocol::default(),
             base_url: EndpointUrl::parse(base_url)?,
             auth: Auth::None,
             auth_requirement: AuthRequirement::NotRequired,
@@ -87,6 +104,12 @@ impl ProviderConfig {
 
     pub fn with_model(mut self, model_id: impl Into<String>) -> Self {
         self.model_id = Some(model_id.into());
+        self
+    }
+
+    /// Record which wire protocol the user says this endpoint speaks.
+    pub fn with_protocol(mut self, protocol: WireProtocol) -> Self {
+        self.protocol = protocol;
         self
     }
 
@@ -231,6 +254,7 @@ mod tests {
                 "id",
                 "kind",
                 "modelId",
+                "protocol",
             ]
         );
 
@@ -300,5 +324,52 @@ mod tests {
         assert_eq!(config.auth, Auth::None);
         assert_eq!(config.auth_requirement, AuthRequirement::NotRequired);
         assert!(config.is_usable(false));
+    }
+
+    #[test]
+    fn a_stored_row_from_before_the_protocol_field_still_means_what_it_meant() {
+        // The upgrade path. Every row in an existing database was built as an
+        // OpenAI-compatible client; a row that loaded as anything else would
+        // repoint an endpoint the user had already configured, silently, on the
+        // first turn after an update.
+        let config: ProviderConfig = serde_json::from_str(
+            r#"{"id":"box","displayName":"Box","kind":"local","baseUrl":"http://127.0.0.1:8080/v1"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.protocol, WireProtocol::OpenAiCompatible);
+    }
+
+    #[test]
+    fn the_protocol_is_carried_verbatim_and_is_never_derived_from_the_address() {
+        // The §0.3 property, as an assertion rather than a promise: two
+        // endpoints whose URLs point at the *same* place, differing only in what
+        // the user said they speak — and the difference survives a round trip.
+        // Nothing anywhere reads `baseUrl` to decide this.
+        let url = "https://gateway.example.test/v1";
+        let compat = ProviderConfig::local("a", "A", url).unwrap();
+        let messages = ProviderConfig::local("b", "B", url)
+            .unwrap()
+            .with_protocol(WireProtocol::AnthropicMessages);
+
+        assert_eq!(compat.base_url, messages.base_url);
+        assert_ne!(compat.protocol, messages.protocol);
+
+        for original in [compat, messages] {
+            let encoded = serde_json::to_string(&original).unwrap();
+            let decoded: ProviderConfig = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded.protocol, original.protocol);
+        }
+    }
+
+    #[test]
+    fn every_protocol_produces_a_configuration_that_validates() {
+        // A protocol that could be chosen and then refused would be a chooser
+        // entry that cannot be saved.
+        for protocol in WireProtocol::ALL {
+            let config = ProviderConfig::local("p", "P", "http://127.0.0.1:8080/v1")
+                .unwrap()
+                .with_protocol(*protocol);
+            assert_eq!(config.clone().validated().unwrap().protocol, *protocol);
+        }
     }
 }

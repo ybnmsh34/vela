@@ -14,7 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createSettingsRepository } from '@/data/settings-repository';
 import { usePlatform } from '@/platform/PlatformProvider';
-import type { ProviderView, SettingsPutProviderReq } from '@/platform/contract';
+import type {
+  ProviderView,
+  SettingsPutProviderReq,
+  WireProtocolOption,
+} from '@/platform/contract';
 import { toPlatformError, type IpcErrorCode } from '@/platform/errors';
 
 export type ProvidersState =
@@ -24,6 +28,12 @@ export type ProvidersState =
       readonly providers: readonly ProviderView[];
       /** `os-keychain` or `memory-fake`, verbatim from the host. Never inferred. */
       readonly credentialBackend: string;
+      /**
+       * The protocol choices, verbatim from the host. Carried, never
+       * enumerated: this hook could not name one if it wanted to, which is what
+       * makes a fourth protocol zero lines of renderer change.
+       */
+      readonly protocols: readonly WireProtocolOption[];
     }
   | { readonly status: 'error'; readonly code: IpcErrorCode; readonly message: string };
 
@@ -56,6 +66,7 @@ export function useProviders(): ProvidersController {
         status: 'ready',
         providers: snapshot.providers,
         credentialBackend: snapshot.credentialBackend,
+        protocols: snapshot.protocols,
       });
     } catch (thrown) {
       if (generation.current !== mine) return;

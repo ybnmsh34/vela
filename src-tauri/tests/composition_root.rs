@@ -29,6 +29,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 use vela_core::auth::{AuthMode, AuthRequirement};
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderKind;
 use vela_lib::ipc::chat::{self, ChatMessageInput, ChatSendReq};
 use vela_lib::ipc::content::ContentPartDto;
@@ -209,6 +210,7 @@ impl Host {
                 id: id.to_owned(),
                 display_name: "The user's endpoint".into(),
                 kind: ProviderKind::Local,
+                protocol: WireProtocol::default(),
                 base_url: base_url.to_owned(),
                 model_id: Some("fixture-model".into()),
                 auth: AuthMode::None,
@@ -313,6 +315,7 @@ fn the_pre_fix_wiring_reproduces_not_found_on_demand() {
             id: "my-box".into(),
             display_name: "The user's endpoint".into(),
             kind: ProviderKind::Local,
+            protocol: WireProtocol::default(),
             base_url: endpoint.base_url.clone(),
             model_id: None,
             auth: AuthMode::None,

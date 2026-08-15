@@ -21,11 +21,31 @@
  * specification for what a valid endpoint is — including which field it blames
  * first when two are wrong — and a second implementation here would be a second
  * thing to drift. The form submits, and renders the host's refusal.
+ *
+ * ## The protocol chooser, and why it is the odd one out
+ *
+ * `KIND_CHOICES` and `AUTH_CHOICES` below are written here because they are
+ * closed vocabularies the renderer is *supposed* to know: where a thing runs
+ * and what shape its credential takes are UI concepts.
+ *
+ * The protocol list is not. It arrives as `protocols` — data the host sends on
+ * the settings snapshot — and this file renders whatever it is given without
+ * ever naming an entry. That is conventions §0.3 held for the one field most
+ * likely to break it: an endpoint's wire dialect is a backend identity, and a
+ * renderer that could spell one could branch on one. Adding a fourth protocol
+ * is a variant in `vela_core::protocol` and **zero lines here**.
  */
 
 import { useId, useState, type FormEvent } from 'react';
 
-import type { AuthMode, ProviderKind, ProviderView, SettingsPutProviderReq } from '@/platform/contract';
+import type {
+  AuthMode,
+  ProviderKind,
+  ProviderView,
+  SettingsPutProviderReq,
+  WireProtocolId,
+  WireProtocolOption,
+} from '@/platform/contract';
 import { toPlatformError } from '@/platform/errors';
 
 import styles from './EndpointForm.module.css';
@@ -49,19 +69,32 @@ const KIND_CHOICES: readonly { readonly value: ProviderKind; readonly label: str
 interface EndpointFormProps {
   /** The endpoint being edited, or `null` to add a new one. */
   readonly editing?: ProviderView | null;
+  /**
+   * The protocol choices, straight off the settings snapshot. An empty list
+   * renders no chooser at all — a host with nothing to offer must not produce
+   * an empty dropdown for the user to puzzle over.
+   */
+  readonly protocols?: readonly WireProtocolOption[];
   readonly onSave: (config: SettingsPutProviderReq) => Promise<unknown>;
   /** Called with the credential the user typed, if they typed one. */
   readonly onStoreCredential?: (providerId: string, value: string) => Promise<void>;
   readonly onCancel?: () => void;
 }
 
-export function EndpointForm({ editing = null, onSave, onStoreCredential, onCancel }: EndpointFormProps) {
+export function EndpointForm({
+  editing = null,
+  protocols = [],
+  onSave,
+  onStoreCredential,
+  onCancel,
+}: EndpointFormProps) {
   const ids = {
     name: useId(),
     id: useId(),
     url: useId(),
     model: useId(),
     kind: useId(),
+    protocol: useId(),
     auth: useId(),
     header: useId(),
     credential: useId(),
@@ -73,6 +106,12 @@ export function EndpointForm({ editing = null, onSave, onStoreCredential, onCanc
   const [baseUrl, setBaseUrl] = useState(editing?.baseUrl ?? '');
   const [modelId, setModelId] = useState(editing?.modelId ?? '');
   const [kind, setKind] = useState<ProviderKind>(editing?.kind ?? 'local');
+  // The endpoint's own choice when editing; otherwise whatever the host listed
+  // first. Not a name written here — the host decides which is the safe start,
+  // because the host is the layer allowed to know what any of them are.
+  const [protocol, setProtocol] = useState<WireProtocolId | null>(
+    editing?.protocol ?? protocols[0]?.id ?? null,
+  );
   const [authKind, setAuthKind] = useState<AuthKind>(editing?.authMode.type ?? 'none');
   const [headerName, setHeaderName] = useState(headerOf(editing?.authMode));
   const [credential, setCredential] = useState('');
@@ -93,6 +132,9 @@ export function EndpointForm({ editing = null, onSave, onStoreCredential, onCanc
         id: effectiveId,
         displayName: displayName.trim(),
         kind,
+        // Omitted when the host offered nothing to choose from, so the host's
+        // own default stands rather than the renderer inventing one.
+        ...(protocol === null ? {} : { protocol }),
         baseUrl: baseUrl.trim(),
         ...(modelId.trim() === '' ? {} : { modelId: modelId.trim() }),
         auth,
@@ -214,6 +256,35 @@ export function EndpointForm({ editing = null, onSave, onStoreCredential, onCanc
           ))}
         </select>
       </div>
+
+      {/* Rendered only when the host offered something to choose. Every option,
+          and every word of it, comes off the snapshot: this component cannot
+          name a protocol, so it cannot branch on one. */}
+      {protocols.length === 0 || protocol === null ? null : (
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor={ids.protocol}>
+            What it speaks
+          </label>
+          <select
+            id={ids.protocol}
+            className={styles.input}
+            value={protocol}
+            onChange={(event) => {
+              setProtocol(event.target.value);
+            }}
+          >
+            {protocols.map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+          <p className={styles.hint}>
+            {protocols.find((choice) => choice.id === protocol)?.summary ??
+              'Vela asks rather than guessing: the address does not say which of these an endpoint serves.'}
+          </p>
+        </div>
+      )}
 
       <div className={styles.field}>
         <label className={styles.label} htmlFor={ids.auth}>

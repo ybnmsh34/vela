@@ -95,9 +95,18 @@ interface RunRecord {
   terminal: boolean;
   /**
    * `null` only inside the synchronous window between the record being created
-   * and `RuntimeHarness.start` returning. A harness that emits `runStarted`
-   * synchronously can reach a listener that cancels, which lands in that window;
-   * `pendingCancel` is what makes that cancel take effect rather than vanish.
+   * and `RuntimeHarness.start` returning — a window nothing can reach into as
+   * `start` below is now ordered, because no handle for this record exists until
+   * `start` has returned. It stays nullable because it has to: `emit` closes over
+   * the record, `start` takes `emit`, and the controller is what `start`
+   * returns, so there is no order in which the field is populated at
+   * construction.
+   *
+   * `pendingCancel` is what makes a cancel taken in that window take effect
+   * rather than vanish. It is the answer if the window ever reopens — a harness
+   * that emitted `runStarted` synchronously to a listener that cancelled would
+   * land in it — and it is deliberately kept rather than deleted along with the
+   * ordering that made it live, because the alternative is a silent no-op.
    */
   controller: RunController | null;
   pendingCancel: boolean;
@@ -257,16 +266,31 @@ export const createLiveRuns: CreateLiveRuns = (registry, services): LiveRuns => 
         controller: null,
         pendingCancel: false,
       };
-      records.set(request.runId, record);
-      const handle = handleFor(record);
-      handles.set(request.runId, handle);
-
       const emit: RunEmit = (event) => {
         emitInto(record, event);
       };
+
+      // **Built before it is published, and that ordering is the whole of it.**
+      // `create` and `start` belong to the harness, not to this file: a third
+      // party's implementation may throw synchronously, and the throw is left to
+      // escape — a caller that handed in a broken definition has a bug in its own
+      // wiring, and swallowing it would start a run that never runs.
+      //
+      // What must not survive that throw is a record. Inserted first — as this
+      // did — the run is left in the directory with `status: running` and no
+      // controller, nothing clears it because only `runFinished` leaves
+      // `running`, and `liveInConversation` then answers `conversationBusy` for
+      // that conversation for the rest of the session. The two harnesses this
+      // build ships cannot reach it; a third one can, and the cost of being
+      // wrong is a conversation the user can never send in again.
       const harness = definition.create(bundle);
-      record.controller = harness.start(request, emit);
-      if (record.pendingCancel) void record.controller.cancel();
+      const controller = harness.start(request, emit);
+
+      records.set(request.runId, record);
+      const handle = handleFor(record);
+      handles.set(request.runId, handle);
+      record.controller = controller;
+      if (record.pendingCancel) void controller.cancel();
 
       return { outcome: 'started', handle };
     },

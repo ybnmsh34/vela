@@ -127,6 +127,65 @@ describe('admission', () => {
     expect(second.outcome).toBe('started');
   });
 
+  it('leaves no record behind when a harness throws out of create or start', () => {
+    // A `HarnessDefinition` is somebody else's code — `create` is a factory and
+    // `start` runs whatever that factory built — so both can throw
+    // synchronously. The throw is allowed to escape: a caller that registered a
+    // broken definition has a bug in its own wiring.
+    //
+    // What must not survive it is a record. Inserted before `create`, the run is
+    // left `status: running` with no controller and nothing that can clear it —
+    // only `runFinished` leaves `running`, and a harness that never started
+    // emits nothing — so `liveInConversation` answers `conversationBusy` for
+    // that conversation for the rest of the session. Neither harness this build
+    // ships can reach it; a third-party one can, and the cost is a conversation
+    // the user can never send in again.
+    for (const broken of [
+      {
+        descriptor: {
+          id: 'broken',
+          displayName: 'Broken',
+          capabilities: { multiStep: false, toolExecution: false, auxiliaryModel: false },
+          requiresModelCapabilities: [],
+        },
+        create: () => {
+          throw new Error('create exploded');
+        },
+      },
+      {
+        descriptor: {
+          id: 'broken',
+          displayName: 'Broken',
+          capabilities: { multiStep: false, toolExecution: false, auxiliaryModel: false },
+          requiresModelCapabilities: [],
+        },
+        create: () => ({
+          start: () => {
+            throw new Error('start exploded');
+          },
+        }),
+      },
+    ] as const) {
+      const working = createManualHarness('manual');
+      const registry = createHarnessRegistry([broken, working.definition]);
+      const runs = createLiveRuns(registry, () => inertServices());
+
+      expect(() =>
+        runs.start(runRequest({ runId: 'a', conversationId: 'c1', harnessId: 'broken' })),
+      ).toThrow();
+
+      // The conversation is not poisoned, the id is not spent, and the
+      // directory never claims a run it does not have.
+      expect(runs.list()).toEqual([]);
+      expect(runs.get('a')).toBeNull();
+      expect(runs.forConversation('c1')).toBeNull();
+      const second = runs.start(
+        runRequest({ runId: 'a', conversationId: 'c1', harnessId: 'manual' }),
+      );
+      expect(second.outcome).toBe('started');
+    }
+  });
+
   it('runs against different conversations are live at the same time', () => {
     const { runs } = setup();
     started(runs, runRequest({ runId: 'a', conversationId: 'c1', harnessId: 'manual' }));

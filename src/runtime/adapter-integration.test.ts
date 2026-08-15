@@ -106,12 +106,18 @@ describe('the runtime over the real adapter', () => {
     expect(assistant[0]?.parts).toEqual([{ kind: 'text', text: 'echo this back' }]);
   });
 
-  it('leaves a row marked streaming when a run is cancelled mid-turn', async () => {
+  it('closes the row out as cancelled when a run is cancelled mid-turn', async () => {
     // "A run that is killed mid-turn therefore leaves a row marked `streaming`,
     // which is exactly the state `StoredMessageStatus` has for it and is
     // readable rather than absent." Here the run is cancelled rather than
     // killed, so the loop gets to close the row out as `cancelled` — the
     // stronger of the two, and the one a user can tell apart from a crash.
+    //
+    // The name says `cancelled` because that is what the assertion at the foot
+    // of this test makes. It used to say `streaming`, which is the *other* case
+    // — the one a reload produces, where nothing gets to run — and the comment
+    // above explaining the divergence was doing work a name should never leave
+    // to a comment.
     const adapter = new BrowserAdapter({ scheduleFrame: (run) => setTimeout(run, 50) });
     await adapter.invoke('settings_put_provider', {
       id: PROVIDER,

@@ -13,7 +13,12 @@
 
 export { ConversationSurface } from './ConversationSurface';
 export { ConversationView } from './ConversationView';
-export { useConversation, type Conversation, type ConversationEntry } from './use-conversation';
+export {
+  useConversation,
+  type AgentMode,
+  type Conversation,
+  type ConversationEntry,
+} from './use-conversation';
 export { turnFromParts, type TurnState } from './turn-stream';
 /** Tool results out of stored parts, for a transcript restored from the store. */
 export { collectToolResults, type ToolResultView } from './tool-calls';

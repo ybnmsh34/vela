@@ -36,11 +36,14 @@ import { resetNavigationStore } from '@/state/navigation-store';
  */
 const WINDOW_TOKENS = 4_096;
 
-function report(contextWindowTokens: number | null): ModelCapabilityReport {
+function report(
+  contextWindowTokens: number | null,
+  capabilities: Partial<ModelCapabilityReport['capabilities']> = {},
+): ModelCapabilityReport {
   return {
     providerId: 'workstation',
     modelId: 'local-model',
-    capabilities: { ...NO_CAPABILITIES, streaming: true },
+    capabilities: { ...NO_CAPABILITIES, streaming: true, ...capabilities },
     structuredOutput: false,
     toolCallsEmulated: false,
     contextWindowTokens,
@@ -50,8 +53,16 @@ function report(contextWindowTokens: number | null): ModelCapabilityReport {
   };
 }
 
-async function host(contextWindowTokens: number | null = WINDOW_TOKENS): Promise<BrowserAdapter> {
-  const adapter = new BrowserAdapter();
+async function host(
+  contextWindowTokens: number | null = WINDOW_TOKENS,
+  options: { readonly toolCalls?: boolean; readonly frameDelayMs?: number } = {},
+): Promise<BrowserAdapter> {
+  const adapter =
+    options.frameDelayMs === undefined
+      ? new BrowserAdapter()
+      : new BrowserAdapter({
+          scheduleFrame: (run) => setTimeout(run, options.frameDelayMs),
+        });
   await adapter.invoke('settings_put_provider', {
     id: 'workstation',
     displayName: 'The workstation',
@@ -59,7 +70,9 @@ async function host(contextWindowTokens: number | null = WINDOW_TOKENS): Promise
     baseUrl: 'http://127.0.0.1:8080/v1',
     modelId: 'local-model',
   });
-  adapter.seedCapabilities(report(contextWindowTokens));
+  adapter.seedCapabilities(
+    report(contextWindowTokens, options.toolCalls === true ? { toolCalls: true } : {}),
+  );
   return adapter;
 }
 
@@ -273,5 +286,124 @@ describe('a conversation is a record, not a session', () => {
     expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
     expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'a message worth keeping' }]);
     expect(messages[1]?.status).toBe('complete');
+  });
+});
+
+describe('the agent runtime is reachable from the app', () => {
+  // ── THE LOAD-BEARING TESTS ────────────────────────────────────────────────
+  // `src/runtime/` — a harness registry, a live-run directory with replay, an
+  // agent loop that executes tool calls and feeds them back, and real parallel
+  // subagents — shipped with **three importers, all of them its own tests**.
+  // Every module was correct and separately proven. Nothing in `src/app`,
+  // `src/features`, `src/components`, `src/state` or `src/main.tsx` so much as
+  // named it, which is this project's central defect class with a bigger blast
+  // radius than the two above.
+  //
+  // The joint is `App.tsx`: it builds one `HarnessRuntime` over the adapter and
+  // hands it to the conversation surface, which starts a run through
+  // `LiveRuns.start` when the user asks for one. These tests fail if that prop
+  // is removed, and neither of them is a test of the runtime.
+
+  it('offers no agent control on a model that cannot request a tool', async () => {
+    // The control, and the reason the rest of this file did not change: the
+    // affordance is gated on the capability struct, exactly as the attach
+    // button is, so an unprobed or non-tool-calling endpoint sees nothing new.
+    // A toggle offered here would promise a fan-out the model cannot produce.
+    const user = userEvent.setup();
+    render(<App adapter={await host()} />);
+    await openConversation(user);
+
+    expect(screen.queryByTestId('composer-agent-toggle')).toBeNull();
+  });
+
+  it('runs the turn through the live-run directory, which writes the row as it goes', async () => {
+    // The distinguishing evidence, and the reason it is this assertion rather
+    // than "an answer appeared": both paths end with an answer on screen and a
+    // `complete` row in the store. Only the runtime path writes the row **while
+    // the turn is still streaming** — `RunHandle` in
+    // `src/platform/contract-harness.ts` makes that a rule ("a harness must
+    // write the transcript as the run goes"), and the agent loop opens a
+    // `streaming` row when the turn opens and closes it when it ends. The
+    // ordinary send path writes nothing until the turn has settled, so a row
+    // observed mid-stream cannot have come from it.
+    const user = userEvent.setup();
+    const adapter = await host(WINDOW_TOKENS, { toolCalls: true, frameDelayMs: 25 });
+    render(<App adapter={adapter} />);
+    await openConversation(user);
+
+    await user.click(screen.getByTestId('composer-agent-toggle'));
+
+    await user.click(composer());
+    await user.paste('delegate this');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    const conversationId = (await adapter.invoke('store_list_conversations', {}))
+      .conversations[0]?.id;
+    expect(conversationId).toBeDefined();
+
+    // Mid-turn: the reply is on screen as a row the user could still lose, and
+    // it is already in the store.
+    await waitFor(async () => {
+      const { messages } = await adapter.invoke('store_list_messages', {
+        conversationId: conversationId as string,
+      });
+      expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+      expect(messages[1]?.status).toBe('streaming');
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false');
+      },
+      { timeout: 5_000 },
+    );
+
+    const { messages } = await adapter.invoke('store_list_messages', {
+      conversationId: conversationId as string,
+    });
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(messages[1]?.status).toBe('complete');
+    expect(messages[1]?.stopReason).toBe('endTurn');
+    expect(messages[1]?.parts).toEqual([{ kind: 'text', text: 'delegate this' }]);
+    // …and exactly one assistant row. Two would mean this surface wrote its own
+    // copy on top of the one the run wrote, which is the failure the claim in
+    // `use-conversation.ts` is there to prevent.
+    expect(messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(screen.getByRole('log')).toHaveTextContent('delegate this');
+  });
+
+  it('stops the run — not just the turn — and closes the row out as cancelled', async () => {
+    // `stop` has two things it could cancel now, and only one of them ends the
+    // loop: `ChatCancelReq` stops the turn in flight and leaves the harness free
+    // to open the next one. So the composer's Stop has to reach
+    // `RunController.cancel`, and the evidence that it did is the row: the loop
+    // gets to close it out as `cancelled`, which a killed run cannot do.
+    const user = userEvent.setup();
+    const adapter = await host(WINDOW_TOKENS, { toolCalls: true, frameDelayMs: 40 });
+    render(<App adapter={adapter} />);
+    await openConversation(user);
+
+    await user.click(screen.getByTestId('composer-agent-toggle'));
+    await user.click(composer());
+    await user.paste('a much longer sentence to stream slowly');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    const stop = await screen.findByRole('button', { name: 'Stop' });
+    await user.click(stop);
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false');
+      },
+      { timeout: 5_000 },
+    );
+
+    const conversationId = (await adapter.invoke('store_list_conversations', {}))
+      .conversations[0]?.id;
+    const { messages } = await adapter.invoke('store_list_messages', {
+      conversationId: conversationId as string,
+    });
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(messages[1]?.status).toBe('cancelled');
   });
 });

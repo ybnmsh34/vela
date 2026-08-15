@@ -5,13 +5,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { NO_CAPABILITIES } from '@/platform/contract';
 
 import { Composer } from './Composer';
+import type { AgentMode } from './use-conversation';
 
 interface Handlers {
   readonly onSend: ReturnType<typeof vi.fn>;
   readonly onCancel: ReturnType<typeof vi.fn>;
 }
 
-function mount(overrides: { streaming?: boolean; blockedReason?: string | null } = {}): Handlers {
+function mount(
+  overrides: {
+    streaming?: boolean;
+    blockedReason?: string | null;
+    agent?: AgentMode;
+  } = {},
+): Handlers {
   const onSend = vi.fn();
   const onCancel = vi.fn();
   render(
@@ -19,6 +26,7 @@ function mount(overrides: { streaming?: boolean; blockedReason?: string | null }
       capabilities={NO_CAPABILITIES}
       streaming={overrides.streaming ?? false}
       blockedReason={overrides.blockedReason ?? null}
+      {...(overrides.agent === undefined ? {} : { agent: overrides.agent })}
       onSend={onSend}
       onCancel={onCancel}
     />,
@@ -108,5 +116,42 @@ describe('the composer keyboard contract', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     await user.type(box(), 'x');
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  });
+});
+
+describe('the agent toggle', () => {
+  const agent = (
+    overrides: Partial<AgentMode> = {},
+  ): AgentMode & { readonly setEnabled: ReturnType<typeof vi.fn> } => ({
+    available: true,
+    enabled: false,
+    ...overrides,
+    setEnabled: vi.fn(),
+  });
+
+  it('is absent entirely when a run could do nothing a plain send cannot', () => {
+    // The same rule the attach control follows: no affordance rather than a
+    // disabled one. A disabled toggle is a promise the model cannot keep, and a
+    // composer rendered with no runtime behind it is in exactly that state.
+    mount();
+    expect(screen.queryByRole('button', { name: 'Run this turn as an agent' })).toBeNull();
+  });
+
+  it('reports its state where a screen reader and a stylesheet can both read it', () => {
+    mount({ agent: agent({ enabled: true }) });
+    expect(screen.getByRole('button', { name: 'Run this turn as an agent' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The mode changes what pressing Send does, so it is said in words too.
+    expect(screen.getByText(/Agent mode/)).toBeInTheDocument();
+  });
+
+  it('hands the flip back to whoever owns the state', async () => {
+    const user = userEvent.setup();
+    const mode = agent();
+    mount({ agent: mode });
+    await user.click(screen.getByRole('button', { name: 'Run this turn as an agent' }));
+    expect(mode.setEnabled).toHaveBeenCalledWith(true);
   });
 });

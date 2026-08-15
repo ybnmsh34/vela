@@ -101,8 +101,18 @@ export interface SubagentToolkitOptions {
    * interleaved with work the user never asked to see. What that id *is* — a
    * real conversation created through `store_create_conversation`, or a
    * synthetic one — is the composition root's decision, not this file's.
+   *
+   * **May answer a promise**, because one of those two decisions is a host call.
+   * A root that creates a real conversation cannot answer synchronously, and a
+   * root that mints a synthetic id still can — the union is what lets both be
+   * expressed without this file knowing which was chosen. A rejection is a
+   * refusal like any other here: the child never starts and the model is told
+   * so, rather than the parent dying for it.
    */
-  readonly newConversationId: (parentConversationId: string, index: number) => string;
+  readonly newConversationId: (
+    parentConversationId: string,
+    index: number,
+  ) => string | Promise<string>;
   /** The child's ceilings, derived from the parent's. Identity by default. */
   readonly limitsFor?: ((parent: RunLimits) => RunLimits) | undefined;
   /**
@@ -178,9 +188,22 @@ export function createSubagentToolkit(options: SubagentToolkitOptions): Subagent
               ? request.tools?.filter((tool) => tool.name !== SUBAGENT_TOOL_NAME)
               : request.tools;
 
+          let childConversationId: string;
+          try {
+            childConversationId = await options.newConversationId(request.conversationId, index);
+          } catch {
+            // Somewhere for the child's transcript to go is a precondition, not
+            // a detail: without it the child's first `append` fails and the
+            // child dies as a `harnessFault`. A refusal here is the same shape
+            // as every other refusal in this file — an error result the parent
+            // can read — rather than a rejection that would kill the parent too.
+            depths.delete(childRunId);
+            return errorResult(call.callId, 'subagent could not be given a conversation');
+          }
+
           const childRequest: RunRequest = {
             runId: childRunId,
-            conversationId: options.newConversationId(request.conversationId, index),
+            conversationId: childConversationId,
             projectId: request.projectId,
             harnessId: request.harnessId,
             models: request.models,

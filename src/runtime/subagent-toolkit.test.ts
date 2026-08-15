@@ -56,7 +56,13 @@ interface World {
  * A parent whose first turn asks for two subagents and whose second turn wraps
  * up, and children that hang until a test releases them.
  */
-function world(maxDepth = 1): World {
+function world(
+  maxDepth = 1,
+  newConversationId: (parent: string, index: number) => string | Promise<string> = (
+    parent,
+    index,
+  ) => `${parent}/sub-${String(index)}`,
+): World {
   const turns = new FakeTurnDriver();
   const childTurns: string[] = [];
   const childSends: ChatSendReq[] = [];
@@ -92,7 +98,7 @@ function world(maxDepth = 1): World {
   const toolkit = createSubagentToolkit({
     maxDepth,
     newRunId: (parent, index) => `${parent}/sub-${index}`,
-    newConversationId: (parent, index) => `${parent}/sub-${index}`,
+    newConversationId,
   });
 
   const runtime = createHarnessRuntime({
@@ -357,5 +363,84 @@ describe('the depth ceiling', () => {
       content: 'spawn_subagent requires a non-empty "task" string',
       isError: true,
     });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe('where a child writes is the composition root’s call, and it may be a host call', () => {
+  // `newConversationId` may answer a promise, and in the shipping wiring it does:
+  // `src/runtime/app-runtime.ts` creates a real conversation through
+  // `store_create_conversation`, because a synthetic id has nowhere to write —
+  // `store_append_message` resolves the conversation before it writes, so the
+  // child's first turn would fail its append and die as a `harnessFault` before
+  // its first token.
+
+  it('awaits an id that arrives asynchronously, and the child runs in it', async () => {
+    const w = world(1, async (parent, index) => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return `stored:${parent}:${String(index)}`;
+    });
+    const finished = w.startParent();
+    await flush();
+
+    expect(w.runtime.runs.list().map((snapshot) => snapshot.conversationId)).toEqual([
+      'conv-1',
+      'stored:conv-1:1',
+      'stored:conv-1:2',
+    ]);
+
+    for (const turnId of w.childTurns) {
+      w.turns.emit(turnId, {
+        type: 'done',
+        response: chatResponse({ parts: [{ kind: 'text', text: 'x' }] }),
+      });
+    }
+    await finished;
+  });
+
+  it('refuses the child as a tool result when the id cannot be minted', async () => {
+    // A rejection here is a refusal like every other refusal in this file: the
+    // parent is told one subagent could not start, rather than dying for it.
+    const w = world(1, () => Promise.reject(new Error('the store said no')));
+    const finished = w.startParent();
+    await flush();
+
+    // No child was admitted, so the parent's own run is the only one there is…
+    expect(w.runtime.runs.list().map((snapshot) => snapshot.runId)).toEqual([PARENT_RUN]);
+    expect(w.childTurns).toEqual([]);
+
+    // …and the loop carried straight on to its second turn with two error
+    // results in hand.
+    const parentSecondTurn = w.turns.sent.find((request) => request.turnId === `${PARENT_RUN}:2`);
+    expect(parentSecondTurn?.messages.slice(2)).toEqual([
+      {
+        role: 'tool',
+        text: '',
+        parts: [
+          {
+            kind: 'toolResult',
+            callId: 'c1',
+            content: 'subagent could not be given a conversation',
+            isError: true,
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        text: '',
+        parts: [
+          {
+            kind: 'toolResult',
+            callId: 'c2',
+            content: 'subagent could not be given a conversation',
+            isError: true,
+          },
+        ],
+      },
+    ]);
+
+    const outcome = await finished;
+    expect(outcome.outcome).toEqual({ type: 'completed', stopReason: 'endTurn' });
   });
 });

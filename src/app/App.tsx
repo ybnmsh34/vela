@@ -3,12 +3,14 @@
  * provider. Keep it boring: wiring, not logic.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { ConversationSurface } from '@/features/conversation';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
-import { PlatformProvider } from '@/platform/PlatformProvider';
+import { PlatformProvider, usePlatform } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
+import type { HarnessRuntime } from '@/platform/contract-harness';
+import { createAgentRuntime } from '@/runtime/app-runtime';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { AppShell } from './shell/AppShell';
@@ -70,14 +72,31 @@ export function App({ adapter }: AppProps) {
  * image (GATE M Part 2 proved it against a real model) and the hook could
  * produce one; the renderer never put one in the payload. Both halves worked.
  * The joint is here, and it is one line.
+ *
+ * ## The third joint: the agent runtime
+ *
+ * `src/runtime/` is a whole agent loop — a registry, a live-run directory with
+ * replay, a harness that executes tool calls and feeds them back, and real
+ * parallel subagents. It shipped reachable from **nothing but its own tests**,
+ * which is the same defect as the two above with a bigger blast radius.
+ *
+ * It is built **here**, once, and handed down. Not inside the surface that uses
+ * it: `App` remounts the transcript on `key={conversationId}`, so a runtime
+ * built down there would take its directory — and every run in flight — with it
+ * every time the user clicked another conversation. Not a module singleton
+ * either (conventions §4). One runtime per adapter, above the remount, which is
+ * what `HarnessRuntime` in `src/platform/contract-harness.ts` means by "built
+ * once at the composition root and passed down".
  */
 function Workspace() {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const [turnTexts, setTurnTexts] = useState<readonly string[] | null>(null);
+  const adapter = usePlatform();
+  const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>
-      <Transcript onPendingTurn={setTurnTexts} />
+      <Transcript onPendingTurn={setTurnTexts} runtime={runtime} />
     </ModelWorkspace>
   );
 }
@@ -96,7 +115,13 @@ function Workspace() {
  * nothing. Handing the id down is the whole connection: given one, the surface
  * reads the conversation back and writes each settled turn to it.
  */
-function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonly string[]) => void }) {
+function Transcript({
+  onPendingTurn,
+  runtime,
+}: {
+  readonly onPendingTurn: (texts: readonly string[]) => void;
+  readonly runtime: HarnessRuntime;
+}) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const { selection, capabilities, attachments } = useSelectedModel();
 
@@ -109,6 +134,7 @@ function Transcript({ onPendingTurn }: { readonly onPendingTurn: (texts: readonl
       modelLabel={selection?.modelLabel ?? null}
       capabilities={capabilities}
       attachments={attachments}
+      runtime={runtime}
       onPendingTurn={onPendingTurn}
     />
   );

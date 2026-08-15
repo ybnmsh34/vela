@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { NO_CAPABILITIES, type ChatCapabilities } from '@/platform/contract';
+import type { HarnessRuntime } from '@/platform/contract-harness';
 
 import { ConversationView } from './ConversationView';
 import { TurnAttachmentsProvider, type TurnAttachments } from './turn-attachments';
@@ -66,6 +67,16 @@ interface ConversationSurfaceProps {
    * surface mounted on its own in a test is in. It is not "the tray is empty".
    */
   readonly attachments?: TurnAttachments | null;
+  /**
+   * The agent runtime, built once at the composition root.
+   *
+   * Handed in for the same reason the capability struct and the attachment tray
+   * are: this surface is one of several that could hold a run, the directory has
+   * to outlive any one of them, and a component that built its own would be a
+   * second directory nothing else can see. Omitted means **no agent affordance
+   * at all** — the state a surface mounted on its own in a test is in.
+   */
+  readonly runtime?: HarnessRuntime | null;
 }
 
 export function ConversationSurface({
@@ -77,12 +88,15 @@ export function ConversationSurface({
   initialEntries,
   onPendingTurn,
   attachments = null,
+  runtime = null,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
     conversationId,
     providerId,
     modelId,
     attachments,
+    capabilities,
+    runtime,
     ...(initialEntries === undefined ? {} : { initialEntries }),
   });
 

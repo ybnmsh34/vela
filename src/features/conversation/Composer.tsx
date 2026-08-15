@@ -41,15 +41,28 @@ import type { ChatCapabilities } from '@/platform/contract';
 import { useFocusAnchor } from '@/state/focus-store';
 
 import { useTurnAttachments } from './turn-attachments';
+import type { AgentMode } from './use-conversation';
 import styles from './Composer.module.css';
 
 const MAX_TEXTAREA_HEIGHT = 320;
+
+/** No runtime, no affordance — the state a composer rendered on its own is in. */
+const NO_AGENT: AgentMode = { available: false, enabled: false, setEnabled: () => undefined };
 
 interface ComposerProps {
   readonly capabilities: ChatCapabilities;
   readonly streaming: boolean;
   /** Blocks sending, e.g. no model chosen yet. `null` when sending is fine. */
   readonly blockedReason: string | null;
+  /**
+   * Whether this turn runs through the agent runtime.
+   *
+   * Rendered on the same rule as the attach control above it: the toggle exists
+   * only when {@link AgentMode.available} says a run could actually do something
+   * a plain send cannot, and that answer is a capability answer. A disabled
+   * toggle would be a promise the model cannot keep.
+   */
+  readonly agent?: AgentMode;
   readonly onSend: (text: string) => void;
   readonly onCancel: () => void;
   /**
@@ -68,6 +81,7 @@ export function Composer({
   capabilities,
   streaming,
   blockedReason,
+  agent = NO_AGENT,
   onSend,
   onCancel,
   onDraftChange,
@@ -168,6 +182,23 @@ export function Composer({
         />
 
         <div className={styles.actions}>
+          {/* Same rule, one capability along: offered only when a run through
+              the agent runtime could do something this send cannot. */}
+          {agent.available ? (
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label="Run this turn as an agent"
+              aria-pressed={agent.enabled}
+              data-testid="composer-agent-toggle"
+              onClick={() => {
+                agent.setEnabled(!agent.enabled);
+              }}
+            >
+              <AgentGlyph />
+            </button>
+          ) : null}
+
           {/* Rendered only when the capability struct says the model takes
               images. Never gated on a backend identity. */}
           {capabilities.vision ? (
@@ -216,6 +247,8 @@ export function Composer({
           <>
             <kbd>Esc</kbd> to stop
           </>
+        ) : agent.enabled ? (
+          <>Agent mode · this turn may take several steps and run tools</>
         ) : (
           <>
             <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
@@ -223,6 +256,17 @@ export function Composer({
         )}
       </p>
     </form>
+  );
+}
+
+function AgentGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none">
+      <rect x="2.5" y="5" width="11" height="8.5" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 2.25v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="5.9" cy="9.1" r="1" fill="currentColor" />
+      <circle cx="10.1" cy="9.1" r="1" fill="currentColor" />
+    </svg>
   );
 }
 

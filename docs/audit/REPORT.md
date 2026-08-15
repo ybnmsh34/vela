@@ -55,6 +55,57 @@ test failure is not evidence of anything** — in either direction. A mutation t
 not proof that a test bites. Every mutation claim in this document that rests on one observed
 failure should be re-run before it is relied on.
 
+### Correction 2 — the verification environment is inside a container (2026-08-15)
+
+**Every process in the audit session is a descendant of Claude Desktop, which is MSIX-packaged.**
+That gives the whole session a filesystem and registry view which is *not* the machine's, and it
+silently invalidated a `reaches-user` grade.
+
+An agent built Vela's NSIS installer, ran it, and recorded the app installed at
+`%LOCALAPPDATA%\Vela\vela.exe` with an HKCU uninstall entry — graded `reaches-user`. It does not.
+Established from two independent vantage points outside the process tree — a scheduled task run by
+the Task Scheduler service, and WMI `CIM_DataFile` serviced by `WmiPrvSE.exe` — each carrying a
+planted control proving it could tell a container-only file from a real one:
+
+```
+CONTROL real     Public REAL_MARKER    exists=True
+CONTROL inside   INSIDE_MARKER CLEAN   exists=False    <-- correctly blind to the container
+QUESTION         vela.exe CLEAN        exists=False
+QUESTION         vela.exe CONTAINER    exists=True
+```
+
+`Get-ChildItem C:\Users\User\AppData\Local` from outside returns no `Vela` directory at all. The
+HKCU uninstall entry is container-only and would never appear in Settings → Installed apps.
+
+**The rule the evidence supports.** A top-level name under `%LOCALAPPDATA%` or `%APPDATA%` that
+**already existed** falls through to the real location; one **first created by this session** is
+captured in `…\LocalCache\` and is invisible outside. Redirection is per-top-level-name, not
+blanket — which is why the worktrees and scratchpad have behaved coherently all along.
+
+| Container-only — measurements here are not about the machine | Real — trustworthy |
+|---|---|
+| `%LOCALAPPDATA%\Vela`, `%LOCALAPPDATA%\tauri`, `%APPDATA%\Claude` | all of `%TEMP%`, including the scratchpad |
+| **every `HKCU` key written this session** | `%APPDATA%\dev.vela.desktop`, `%LOCALAPPDATA%\dev.vela.desktop` |
+| | `Desktop`, Start Menu, `C:\ProgramData`, `C:\Users\User\vela*` |
+
+**The authoritative check for any path is `GetFinalPathNameByHandle`.** If it resolves under
+`…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\`, the observation is about the container.
+
+Two traps worth naming. `%LOCALAPPDATA%\Vela` is **not** a reparse point — `fsutil reparsepoint
+query` errors 4390 and `GetFileAttributes` shows no reparse bit — so nothing on disk reveals the
+mapping. And an **identical NTFS file ID at both the clean and container paths does not prove
+container-only**: `%APPDATA%\dev.vela.desktop\vela.db` shows one ID at both paths and is genuinely
+real. Identical IDs prove one file at two paths; only an outside vantage separates "real file also
+visible in the container" from "container file also visible at the clean path". That distinction
+cost one wrong intermediate conclusion in this investigation.
+
+**Consequence for the supreme rule.** `reaches-user` means an auditor clicked it in the running
+window. Installing from inside this session does not establish that a user can run the result, so
+any future install- or registry-based `reaches-user` claim must be confirmed from outside the
+container or graded UNVERIFIED. Real damage is still possible in the unredirected paths: this
+install overwrote two genuine shortcuts on the user's Desktop and Start Menu to point at a
+container-only path, which would have failed for the user with no diagnostic.
+
 ## Totals
 
 | verdict | count |

@@ -51,6 +51,32 @@ describe('the committed mock-matrix transcripts', () => {
         });
         const fresh = await response.text();
         const committed = readFileSync(join(outputRoot, name, capture.file), 'utf8');
+
+        // Two different faults reach this assertion, and they have opposite
+        // remedies — so name which one before advising anything.
+        //
+        // If the only difference is CRLF, the capture is *not* stale: git
+        // converted it on checkout. `.gitattributes` marks this directory
+        // `-text` to stop that, but an attribute added after a file is already
+        // in the working tree does not rewrite it, and git's stat cache means
+        // `git status` keeps reporting clean while the bytes on disk differ
+        // from the blob. Measured here: 58 of 106 files in that state, all
+        // CRLF on disk and pure LF in the object store.
+        //
+        // Re-recording would "fix" it by overwriting a baseline that was
+        // correct, replacing evidence recorded at a known past moment with a
+        // capture taken now — which is the one property a regression baseline
+        // has. The remedy is to restore the bytes git already holds.
+        if (fresh !== committed && fresh === committed.replaceAll('\r\n', '\n')) {
+          expect.fail(
+            `${name}/${capture.file} differs from the harness only in line endings, so it is ` +
+              `NOT stale — your working tree was converted on checkout. Do not re-record. ` +
+              `Restore the committed bytes:\n` +
+              `    rm -rf docs/regression-baseline/mock-matrix\n` +
+              `    git checkout -- docs/regression-baseline/mock-matrix`,
+          );
+        }
+
         expect(fresh, `${name}/${capture.file} is stale — re-run record-transcripts.ts`).toBe(
           committed,
         );

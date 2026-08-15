@@ -530,6 +530,27 @@ function historyMessages(history: readonly ConversationEntry[]): ChatMessageInpu
 }
 
 /**
+ * Every settled assistant answer in the transcript, oldest first.
+ *
+ * Reported outward for whatever wants to read what the model produced rather
+ * than what will be sent — Canvas is the first, and it scans these for fenced
+ * blocks it can draw. Derived from the same traversal as {@link historyMessages}
+ * for the reason {@link pendingTurnTexts} gives about the meter: a second
+ * opinion about which turns count is a second thing to drift.
+ *
+ * A turn that is still streaming is excluded, because an unclosed fence is not
+ * an artifact yet and re-reading a half-written one on every token is a run per
+ * token. The parser reports that state and Canvas reads it, but keeping the
+ * unsettled turn out of the list at all means the question never has to be asked
+ * twice.
+ */
+export function assistantTexts(history: readonly ConversationEntry[]): readonly string[] {
+  return historyMessages(history)
+    .filter((message) => message.role === 'assistant')
+    .map((message) => message.text);
+}
+
+/**
  * `parts` is omitted entirely when there are none — the host composes `text`
  * then `parts`, and an empty array is a field on the wire that means nothing.
  */

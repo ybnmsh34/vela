@@ -109,7 +109,7 @@ import type { AbsolutePath, ProjectId, ProjectLayout } from './contract-project'
  * several phases after the chat contract has stopped moving, and one version number for two
  * cadences means every sandbox change looks like a chat-protocol break.
  */
-export const SANDBOX_CONTRACT_VERSION = 2;
+export const SANDBOX_CONTRACT_VERSION = 3;
 
 /**
  * A run's identity, minted by the caller. See {@link SandboxSubmitReq}.
@@ -534,6 +534,41 @@ export type DocumentProgram =
   | {
       readonly kind: 'document';
       readonly language: 'html' | 'react';
+      /**
+       * **What `source` is, per language, and who turns it into a frame.**
+       * Amendment 4 records why this had to be said; this is the rule.
+       *
+       *  - `html` — a fragment or a whole page. Either is legal, because the
+       *    surface owns the document skeleton regardless (it has to: a
+       *    `Content-Security-Policy` meta is honoured only until the first
+       *    element that is not one, so a page whose skeleton came from the model
+       *    could put anything ahead of the policy).
+       *  - `react` — **a complete ES module, authored in JSX, whose default
+       *    export is a component taking no props.** Not a bare expression: a
+       *    model writing anything past a paragraph declares a constant or a
+       *    second component, and an expression has nowhere to put either, nor an
+       *    import the day a bundled library is offered. Not a whole HTML
+       *    document either — that is what the `html` arm is, and two arms meaning
+       *    "a document" is what made this question askable. No props, because
+       *    the thing that renders it is Vela and Vela has nothing to pass.
+       *
+       * **The surface transpiles, never the host.** This file's central rule is
+       * that what a run may do is decided by what it is given, by a component
+       * that never reads its source; a host that transpiled JSX would be parsing
+       * model-authored source, which is the filter this contract refuses to be.
+       * The transpiled module also has to end up *inside* the frame, and the
+       * only thing that can put it there is the thing that builds the frame.
+       *
+       * A `react` source that does not parse is `sourceRejectedByParser` on a
+       * {@link DocumentFailedOutcome} — it could not be turned into a frame at
+       * all — and is reported after `accepted`, like any other render failure.
+       *
+       * One consequence a caller must not be surprised by: `{ language:
+       * 'react', scripts: 'denied' }` is legal, submittable, and draws an empty
+       * frame. It is not refused, because refusing it would mean the host had an
+       * opinion about what the source does; a surface offering that combination
+       * should say what it will produce.
+       */
       readonly source: string;
       readonly scripts: DocumentScripts;
     }
@@ -1943,4 +1978,34 @@ void _sandboxNamesAreWellTyped;
  *    prose in two contracts and code in neither. Nothing is removed and no existing caller
  *    breaks; a caller that built that scope by hand should delete it, because the two
  *    host-owned mounts were never its to choose.
+ *
+ * 4. 2026-08-15 — {@link DocumentProgram}'s `source` gains a stated meaning per
+ *    language, and the JSX transpilation step gains an owner. No shape changed:
+ *    the field is the same `readonly source: string` it was, and no existing
+ *    caller breaks. What changed is that it now says something.
+ *
+ *    It had to. `readonly source: string` on the `react` arm admitted three
+ *    readings — a whole HTML document, an ES module with a default export, or a
+ *    bare component expression — and said nothing about who turns JSX into
+ *    something a frame can run. Every one of those readings produces a working
+ *    Canvas on its own and none of them interoperates with the others, so the
+ *    first host and the first surface would each have picked one privately and
+ *    the mismatch would have surfaced as a blank frame with no error. That is
+ *    this project's central defect class in its purest form: two halves that
+ *    each work.
+ *
+ *    The decision, with the reasoning at the field: a `react` source is a
+ *    complete ES module in JSX with a default export taking no props, and the
+ *    **surface** transpiles it, because this contract's whole architecture is
+ *    that the component deciding what a run may do never reads the program.
+ *    A caller that had assumed "bare expression" wraps it in `export default
+ *    () => (…)`; a caller that had assumed "whole document" was using the wrong
+ *    arm and wants `html`.
+ *
+ *    Recorded by the Canvas builder, who needed the answer and could not find
+ *    it. **Nothing implements the `react` arm yet** — the Canvas host's
+ *    `languages` omits `react` and refuses one with `languageUnsupported` —
+ *    because React 19 ships no build that can be inlined into an opaque-origin
+ *    document and no transpiler is bundled. The rule is written now so that
+ *    whoever bundles one is not deciding this again.
  */

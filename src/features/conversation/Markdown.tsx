@@ -9,7 +9,7 @@
 import { memo } from 'react';
 
 import { CodeBlock } from './CodeBlock';
-import { parseMarkdown, type Block, type Span } from './markdown-parser';
+import { parseMarkdown, type Block, type Span } from '@/lib/markdown-parser';
 import styles from './Markdown.module.css';
 
 /**

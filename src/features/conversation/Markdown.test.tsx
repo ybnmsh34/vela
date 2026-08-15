@@ -43,7 +43,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { Markdown } from './Markdown';
-import { parseMarkdown, spansToText } from './markdown-parser';
+import { parseMarkdown, spansToText } from '@/lib/markdown-parser';
 
 const REPO_ROOT = process.cwd();
 

@@ -1,0 +1,62 @@
+/* A row, not a grid with a fixed second column: the transcript keeps its own
+   reading measure and the panel takes a share of what is left, so a narrow
+   window does not end up with a 480px panel and a 200px transcript.
+   `min-width: 0` on the main region is what lets it shrink at all — without it a
+   flex child refuses to go below its content width and the panel is pushed off
+   the screen. */
+.split {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Bounded on both ends. Too narrow and an artifact is a postage stamp; wider
+   than this and it stops being a side panel. */
+.panelSlot {
+  flex: 0 1 var(--vela-panel-measure);
+  min-width: 0;
+  max-width: 50%;
+  min-height: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) var(--vela-space-2);
+  border-left: 1px solid var(--vela-border);
+  background: var(--vela-surface);
+}
+
+.chip {
+  max-width: var(--vela-rail-width);
+  padding: var(--vela-space-1) var(--vela-space-2);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-pill);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+.chip:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}

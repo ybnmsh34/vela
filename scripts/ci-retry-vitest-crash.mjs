@@ -60,8 +60,8 @@
  *     rather than a prediction. A third attempt buys silence, not a verdict.
  *   - Every retry prints a `::warning::` annotation, so the crash rate stays
  *     visible in the CI run summary instead of being quietly absorbed. If those
- *     warnings become common, that is the signal to fix the pool, not to raise
- *     the attempt count.
+ *     warnings become common, that is the signal to go and find the trigger,
+ *     not to raise the attempt count.
  *
  * WHAT THIS CANNOT PROMISE, STATED PLAINLY. A DETERMINISTIC regression cannot be
  * laundered by this wrapper: exiting 0 requires the second attempt to exit 0 too,
@@ -81,7 +81,7 @@
  * only if both attempts crashed, or if vitest reported a failing test. Search the
  * log for `×`, for a `❯` beside a `.test.ts` name, or for a `Tests` line. If any
  * of the three is there, vitest reported on the suite and the failure is real
- * and is about your change.
+ * and is about your change. ONLY IF NONE OF THE THREE IS THERE, and you see
  * `ERR_IPC_CHANNEL_CLOSED` twice, you hit the crash twice in a row and a re-run
  * is legitimate. If that stops being rare, find the trigger; do not raise the
  * attempt count.
@@ -252,7 +252,8 @@ process.stderr.write(
   `\nci-retry: ${String(MAX_ATTEMPTS)} attempts, every one of them killed by the ` +
     `vitest worker-pool crash (ERR_IPC_CHANNEL_CLOSED) before any test summary ` +
     `was printed. No verdict was produced, so this is reported as a failure ` +
-    `rather than guessed at. Re-run the job; if it happens a third time, the ` +
-    `pool bug has stopped being rare and needs fixing rather than retrying.\n`,
+    `rather than guessed at. Re-run the job. If it happens a third time, the ` +
+    `crash has stopped being rare and the trigger needs finding rather than ` +
+    `retrying; it is not established whose it is. See the header of this file.\n`,
 );
 process.exit(last.code);

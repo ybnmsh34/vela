@@ -20,13 +20,20 @@
  * proves the listening socket belongs to the pid it spawned (see
  * `assertPortBelongsTo` in `cdp.mjs`).
  *
- * **2. Saying which kind of click was delivered.** `--via os` is a real
- * `SendInput` press and release into the system input queue, aimed at a screen
- * point and verified by asking the window what it hit. `--via cdp` is
- * `Input.dispatchMouseEvent`, which enters the browser's input pipeline before
- * hit-testing and produces trusted events, but is not OS input. Both are real
- * in a sense worth distinguishing, so every click result carries `via` and the
- * evidence for it. Neither is `element.click()`, which this harness never does.
+ * **2. Saying which kind of click was delivered.** `--via os` (the default) is a
+ * real `SendInput` press and release into the system input queue, aimed at a
+ * screen point. `--via message` posts `WM_LBUTTONDOWN`/`UP` to the WebView2
+ * window: the target window's own message loop, but not the input queue.
+ * `--via cdp` is `Input.dispatchMouseEvent`, which enters the browser's input
+ * pipeline before hit-testing and produces trusted events, but is not OS input.
+ * Every click result carries `via` and `isOsInput` so no verdict can hide which
+ * it used. None is `element.click()`, which this harness never does.
+ *
+ * **And a click is only "clicked" if the window says the queried element was
+ * hit** — decided from the node the `mousedown` was dispatched at, never from a
+ * later `elementFromPoint`, and never by an ancestor relation. See `pointerHit`
+ * in `page.mjs` for the two ways that went wrong and what each of them graded
+ * as present.
  *
  * **3. Reporting absence.** A harness that cannot say "not there" grades every
  * unwired feature as present. `find` and `click` exit 3 when nothing matches and
@@ -680,7 +687,10 @@ commands.find = async (flags) => {
 commands.click = async (flags) => {
   const session = await requireSession();
   const query = queryFrom(flags);
-  const via = String(flags.via ?? 'cdp');
+  // `os` by default. It is the only mechanism that is what a user's mouse does,
+  // it self-tests before every use, and it works here — the earlier default of
+  // `cdp` existed only because a bug in this harness made SendInput look dead.
+  const via = String(flags.via ?? 'os');
   if (!['cdp', 'message', 'os'].includes(via)) {
     throw new HarnessError(EXIT.USAGE, '--via must be cdp, message or os');
   }
@@ -800,7 +810,10 @@ commands.click = async (flags) => {
 
   const changed =
     before && after ? before.hash !== after.hash || before.elements !== after.elements : null;
-  const landedOnTarget = hit.landed === true && hit.onTarget !== false;
+  // `onTarget === true` is required, not merely "not false". A null answer
+  // means the question could not be decided, and an undecided click is not a
+  // clicked one.
+  const landedOnTarget = hit.landed === true && hit.onTarget === true;
   const payload = {
     clicked: landedOnTarget,
     via,
@@ -811,18 +824,26 @@ commands.click = async (flags) => {
     before,
     after,
     changed,
+    changedMeans:
+      'the watched surface differs before and after. It is a DJB2 hash of innerText plus an ' +
+      'element count, so ANY re-render moves it — including one caused by something other than ' +
+      'this click, such as an overlay dismissing itself. It corroborates; it never establishes. ' +
+      'Only `hit` establishes that the click reached the element.',
     targetAfter: afterTarget,
     verdict: delivery.os?.blocked
       ? `NOTHING WAS CLICKED — ${delivery.os.blockedReason}`
       : !hit.landed
         ? 'NO POINTER EVENT REACHED THE WINDOW — the click did not land'
         : hit.onTarget === false
-          ? 'a pointer event landed, but on a different element than the one queried'
-          : changed === null
-            ? 'the click landed on the queried element'
-            : changed
-              ? 'the click landed on the queried element and the surface changed'
-              : 'the click landed on the queried element and the surface did not change',
+          ? `a pointer event landed, but its target was ${hit.eventTarget?.tag ?? 'another element'}, ` +
+            'not the element queried nor anything inside it. THE QUERIED ELEMENT WAS NOT CLICKED.'
+          : hit.onTarget === null
+            ? 'a pointer event landed but the queried element could not be re-read, so on-target is undecided'
+            : changed === null
+              ? 'the click landed on the queried element'
+              : changed
+                ? 'the click landed on the queried element, and the watched surface also changed'
+                : 'the click landed on the queried element and the watched surface did not change',
   };
   if (!landedOnTarget) {
     // A click that did not land must not exit 0. This is the difference between
@@ -955,27 +976,54 @@ commands.appdata = async (flags) => {
   const session = readSession();
   const identifier = String(flags.identifier ?? session?.identifier ?? SHIPPING_IDENTIFIER);
   const dir = join(process.env.APPDATA ?? '', identifier);
-  const resolved = await psJson(join(HERE, 'final-path.ps1'), [dir]);
   const listing = await powershell(
     `if (Test-Path ${JSON.stringify(dir)}) { ` +
-      `Get-ChildItem -LiteralPath ${JSON.stringify(dir)} -Force -Recurse -File | ` +
-      'ForEach-Object { [ordered]@{ path = $_.FullName; length = $_.Length; lastWrite = $_.LastWriteTimeUtc.ToString("o") } } | ' +
+      `Get-ChildItem -LiteralPath ${JSON.stringify(dir)} -Force -Recurse | ` +
+      'ForEach-Object { [ordered]@{ path = $_.FullName; directory = $_.PSIsContainer; ' +
+      'length = $(if ($_.PSIsContainer) { $null } else { $_.Length }); ' +
+      'lastWrite = $_.LastWriteTimeUtc.ToString("o") } } | ' +
       'ConvertTo-Json -Compress -Depth 4 } else { "[]" }',
   );
-  let files = [];
+  let entries = [];
   if (listing) {
     const parsed = JSON.parse(listing);
-    files = Array.isArray(parsed) ? parsed : [parsed];
+    entries = Array.isArray(parsed) ? parsed : [parsed];
   }
+
+  // EVERY entry is resolved, not only the root. MSIX redirection is
+  // copy-on-write per entry: on this machine the `dev.vela.desktop` directory
+  // resolves to the real path while `vela.db` inside it resolves into the
+  // container. Resolving only the root reported "real" and hid exactly the
+  // thing worth knowing — which is what the first version of this command did.
+  const resolved = await psJson(join(HERE, 'final-path.ps1'), [
+    dir,
+    ...entries.map((entry) => entry.path),
+  ]);
+  const redirected = (resolved ?? []).filter((row) => row.inMsixContainer);
+  const rootRow = (resolved ?? []).find((row) => row.expanded === dir);
+
   return {
     identifier,
     requestedDirectory: dir,
-    resolved,
     method:
-      'CreateFileW(FILE_FLAG_BACKUP_SEMANTICS) + GetFinalPathNameByHandleW — the kernel’s answer, ' +
-      'not the path that was asked for.',
-    fileCount: files.length,
-    files,
+      'CreateFileW(FILE_FLAG_BACKUP_SEMANTICS) + GetFinalPathNameByHandleW on the directory AND ' +
+      'on every entry inside it — the kernel’s answer, not the path that was asked for.',
+    entryCount: entries.length,
+    resolved,
+    entries,
+    summary: {
+      rootIsReal: rootRow ? rootRow.inMsixContainer === false : null,
+      entriesResolved: (resolved ?? []).length,
+      entriesInContainer: redirected.length,
+      note:
+        redirected.length > 0 && rootRow?.inMsixContainer === false
+          ? 'THE DIRECTORY IS REAL AND SOME OF ITS CONTENTS ARE NOT. Redirection is per entry, so a ' +
+            'run driven from inside this container reads and writes the container copies listed above, ' +
+            'not the files a human would see.'
+          : redirected.length > 0
+            ? 'This directory is inside the container and is invisible to the real machine.'
+            : 'Nothing here resolved into a container.',
+    },
   };
 };
 
@@ -1068,10 +1116,10 @@ Reading
   screenshot --out FILE             webview contents as PNG
 
 Driving
-  click <query> [--via cdp|message|os] [--nth N] [--watch CSS] [--settle ms]
-        cdp      CDP Input domain — browser input pipeline, ahead of hit-testing (default)
+  click <query> [--via os|message|cdp] [--nth N] [--watch CSS] [--settle ms]
+        os       Win32 SendInput into the system input queue — what a mouse does (default)
         message  Win32 WM_LBUTTONDOWN/UP posted to the WebView2 window, cursor really over it
-        os       Win32 SendInput into the system input queue; self-tested, refuses if filtered
+        cdp      CDP Input domain — browser input pipeline, ahead of hit-testing
   type  <query> --value "..." [--clear] [--enter]   (--value is typed; --text queries)
   key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
   eval  --expr "..." | --file FILE

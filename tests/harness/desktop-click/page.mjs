@@ -193,9 +193,11 @@ export const BOOTSTRAP = String.raw`(() => {
         devicePixelRatio: window.devicePixelRatio,
         screenOrigin: { x: window.screenX, y: window.screenY },
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        topmostAtPoint: hit
-          ? { tag: hit.tagName, coversTarget: el === hit || el.contains(hit) || hit.contains(el) }
-          : null,
+        /* coversTarget asks whether the pixel belongs to the queried element,
+           so the test is identity-or-descendant. An ancestor clause here read
+           as "covered" for every container the point fell through to, up to and
+           including BODY, which is to say for everything. */
+        topmostAtPoint: hit ? { tag: hit.tagName, coversTarget: el === hit || el.contains(hit) } : null,
       };
     },
 
@@ -268,9 +270,13 @@ export const BOOTSTRAP = String.raw`(() => {
      */
     armPointerRecorder() {
       window.__velaHarnessPointer = null;
+      /* The live node, kept beside the serialisable record. This is what
+         decides on-target; see pointerHit. Never returned by value. */
+      window.__velaHarnessPointerNode = null;
       if (!window.__velaHarnessRecorderInstalled) {
         window.addEventListener('mousedown', (event) => {
           const target = event.target;
+          window.__velaHarnessPointerNode = target;
           window.__velaHarnessPointer = {
             isTrusted: event.isTrusted,
             clientX: event.clientX,
@@ -289,17 +295,42 @@ export const BOOTSTRAP = String.raw`(() => {
       return true;
     },
 
-    /** What the recorder saw, and whether it was on the element we aimed at. */
+    /**
+     * What the recorder saw, and whether it was on the element we aimed at.
+     *
+     * **The answer comes from the node the event was dispatched at**, captured
+     * at mousedown, and not from a fresh elementFromPoint. Two failures made
+     * that necessary, and both reported a click that never happened:
+     *
+     * - An ancestor clause (hit.contains(el)) made on-target nearly
+     *   unfalsifiable, because document.body contains everything. A button
+     *   with pointer-events: none — the exact shape of an unwired control —
+     *   passed while its handler never ran.
+     * - Re-hit-testing *after* the settle delay reads the DOM as it is now, not
+     *   as it was when the button went down. An overlay that removes itself on
+     *   mousedown is gone by the time the question is asked, so the point
+     *   resolves to the button that was never clicked.
+     *
+     * Identity-or-descendant only: a click on a child span of the queried
+     * button is on target; a click on its parent, or on anything covering it,
+     * is not.
+     */
     pointerHit(index) {
       const record = window.__velaHarnessPointer || null;
       if (!record) return { landed: false, onTarget: null, record: null };
       const el = store.nodes[index];
+      const node = window.__velaHarnessPointerNode || null;
       let onTarget = null;
-      if (el) {
-        const hit = document.elementFromPoint(record.clientX, record.clientY);
-        onTarget = Boolean(hit && (hit === el || el.contains(hit) || hit.contains(el)));
-      }
-      return { landed: true, onTarget, record };
+      if (el) onTarget = Boolean(node && (node === el || el.contains(node)));
+      return {
+        landed: true,
+        onTarget,
+        record,
+        decidedFrom: 'the event target captured at mousedown',
+        eventTarget: node
+          ? { tag: node.tagName, isQueriedElement: node === el, isInsideQueried: Boolean(el && el.contains(node)) }
+          : null,
+      };
     },
   };
 

@@ -35,7 +35,7 @@ node tests/harness/desktop-click/vela-drive.mjs doctor      # safe to launch?
 node tests/harness/desktop-click/vela-drive.mjs up          # build + launch + attach
 node tests/harness/desktop-click/vela-drive.mjs mount       # did the renderer mount?
 node tests/harness/desktop-click/vela-drive.mjs find  --role button --name "New conversation"
-node tests/harness/desktop-click/vela-drive.mjs click --role button --name "New conversation" --via message --watch nav
+node tests/harness/desktop-click/vela-drive.mjs click --role button --name "New conversation" --watch nav
 node tests/harness/desktop-click/vela-drive.mjs read  --selector nav
 node tests/harness/desktop-click/vela-drive.mjs down        # stop, and prove it stopped
 ```
@@ -58,15 +58,26 @@ listening socket is the pid it spawned — or one of its descendants, because th
 port is opened by `msedgewebview2.exe`, a child of the app. That ancestry check
 runs on **every** command, not just `up`.
 
-**2. `SendInput` is inert in this process tree.** It returns "2 events accepted"
-and delivers nothing: a `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE` to the centre
-of the virtual screen leaves the cursor exactly where it was, with
-`GetLastError() == 203`. The legacy mouse-event entry point in user32 behaves
-the same way — it funnels into the same injection path. `SetCursorPos` **does**
-work and produces a real trusted `mousemove` in the window, and
-`PostMessage(WM_LBUTTONDOWN/UP)` **does** work. `--via os` runs that self-test before every click and refuses rather than
-delivering a silent no-op; read its `sendInputSelfTest` block if you need to
-re-establish this on a different machine, where it may well pass.
+**2. PowerShell 5.1 discards a write to a nested value-type field, in silence.**
+`$input.mi.dwFlags = 2` mutates a temporary copy of `mi` and throws it away, so
+every `INPUT` reached `SendInput` all-zero. The API accepted the count it was
+handed, returned success, and delivered nothing — and the first version of this
+harness read that as "the environment filters injected input" and said so, in
+this file, to six other tracks. **It was wrong. `SendInput` works here.** Every
+`INPUT` is now assembled inside the `Add-Type` C# block with the flags as
+parameters, so there is no nested field for a script to assign to:
+
+```
+-Mode selftest  ->  "structAsBuilt": "size=40 type=0 dwFlags=32769 dx=32768 dy=32768",
+                    "parkedAt": {"x":200,"y":200}, "cursorAfter": {"x":1280,"y":720},
+                    "injectionWorks": true
+```
+
+`lastWin32Error: 203` comes back identically from the call that works and the
+call that did nothing; it is stale residue and is reported without being
+interpreted. Two lessons kept: the self-test runs before every `--via os` click
+and refuses rather than delivering a silent no-op, and it prints the struct it
+built, so an empty one can never again be mistaken for a hostile environment.
 
 **3. A real click goes wherever the cursor is.** The first version of this
 harness aimed at the button, landed on a Chrome window that was in front, and
@@ -129,7 +140,7 @@ screenshot --out FILE               webview contents as PNG (not the window fram
 ### Driving
 
 ```
-click <query> [--via cdp|message|os] [--nth N] [--watch CSS] [--settle ms]
+click <query> [--via os|message|cdp] [--nth N] [--watch CSS] [--settle ms]
 type  <query> --value "..." [--clear] [--enter]
 key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
 eval  --expr "..." | --file FILE
@@ -157,19 +168,40 @@ Three mechanisms, three different claims. Every result carries `via`,
 
 | `--via` | what happens | `isOsInput` |
 |---|---|---|
-| `cdp` (default) | `Input.dispatchMouseEvent` at the element's viewport point. Enters the browser's input pipeline **ahead of hit-testing**, so the page sees a trusted event that React handles exactly as a user's. Not an OS message; does not need the window focused or visible. | `false` |
+| `os` (default) | `SendInput` — `MOUSEEVENTF_LEFTDOWN` then `LEFTUP` into the system input queue, with the cursor really at the element's screen point. Windows decides which window receives it. **This is what a user's mouse does.** Self-tested first, and it refuses rather than delivering a no-op. | `true` |
 | `message` | The window is raised, the cursor is really moved onto the element (so `:hover` and `:active` are real), ownership of the pixel is checked, then `WM_MOUSEMOVE`/`WM_LBUTTONDOWN`/`WM_LBUTTONUP` are posted to the WebView2 child window. The message goes through that window's own message loop and Chromium hit-tests the client coordinates as it would for a user click — but it never entered the system input queue, and the *window* was chosen by the harness rather than by the input stack. | `false` |
-| `os` | `SendInput` into the system input queue. The real thing. Self-tested first; **refuses on this machine**, see note 2 above. | `true` |
+| `cdp` | `Input.dispatchMouseEvent` at the element's viewport point. Enters the browser's input pipeline **ahead of hit-testing**, so the page sees a trusted event that React handles exactly as a user's. Not an OS message; does not need the window focused or visible. | `false` |
 
 **None of them is `element.click()`.** The harness never dispatches a synthetic
 DOM event.
 
-Whichever mechanism is used, the click is verified the same way and not by
-assertion: a capture-phase `mousedown` listener on `window` records what the
-*engine* says it hit, and the result reports `hit.landed`, `hit.onTarget`,
-`hit.record.isTrusted` and the coordinates the page received. A click that did
-not land exits 7. `--watch CSS` fingerprints a surface before and after so
-`changed` answers "did clicking it do anything".
+### How the verdict is decided, and the two ways it was wrong
+
+A capture-phase `mousedown` listener on `window` records **the node the event
+was dispatched at**, and `onTarget` is `node === queried || queried.contains(node)`.
+Nothing else decides it. `clicked` requires `onTarget === true`; anything else
+exits 7.
+
+Two earlier versions of that one line reported clicks that never happened, and
+both are now regression cases in `verdicts.test.mjs`:
+
+- **An ancestor clause.** `hit.contains(el)` was in the disjunction, and
+  `document.body` contains everything — so a press that fell *through* the
+  queried element onto a container graded as on-target. A button with
+  `pointer-events: none`, which is exactly the shape of a control that is drawn
+  but not wired, passed while its handler never ran. Measured again after the
+  fix, with a real `SendInput` click: `exit 7`, `eventTarget: UL`, no handler.
+- **Re-hit-testing after the settle delay.** `elementFromPoint` was called again
+  once the dust settled, which reads the DOM as it is *now*. An overlay that
+  removes itself on `mousedown` is gone by then, so the point resolved to the
+  button underneath and the harness reported a click on it — with `changed:
+  true` supplied by the overlay's own removal. Now: `exit 7`, `eventTarget:
+  DIV`, only the overlay's handler fired.
+
+`--watch CSS` fingerprints a surface before and after, and `changed` is a DJB2
+hash of `innerText` plus an element count. **It corroborates and never
+establishes** — any re-render moves it, including one caused by something other
+than the click. The result says so in its own `changedMeans` field.
 
 ## What this drives: dev bytes or production bytes
 
@@ -194,10 +226,13 @@ installer does".
 
 ## Where the data goes, measured
 
-`appdata` opens the directory and asks the kernel
+`appdata` opens the directory **and every entry inside it** and asks the kernel
 (`CreateFileW(FILE_FLAG_BACKUP_SEMANTICS)` + `GetFinalPathNameByHandleW`) rather
 than believing the path it was given, because inside an MSIX container those are
-different answers.
+different answers. Resolving only the root is not enough and the first version
+of this command did exactly that: the root answers "real" while the database
+inside it does not, so the finding below was invisible from the shipped
+command. It now reports `entriesInContainer` and says which.
 
 `--app-data isolated` (default) builds with `TAURI_CONFIG` merging
 `{"identifier":"dev.vela.harness"}`, so the app writes to
@@ -258,9 +293,6 @@ Stated rather than left to be discovered:
   `dev.vela.desktop` untouched. But launching against the shipping identifier
   would have mutated state other tracks are working on, so it was not done.
 - **The release binary.** Never built, never driven. See "What neither is".
-- **`--via os` has never delivered a click here**, because `SendInput` is
-  filtered in this process tree. Its self-test has been exercised; its delivery
-  path has not.
 - **The window-hiding event was not explained**, only detected and worked
   around.
 - **Nothing has been driven through Tauri IPC end to end against a live model.**
@@ -293,6 +325,8 @@ script: it fails on *both* directions of drift, not only on absence.
 | `page.mjs` | everything that runs *inside* the window, as source strings |
 | `os-input.ps1` | Win32: raise, the `SendInput` self-test, and the two delivery modes |
 | `final-path.ps1` | `GetFinalPathNameByHandle` — where a path really is |
+| `verdicts.test.mjs` | the regression cases for the three ways this reported a click that never happened |
+| `vitest.config.mjs` | their project; `pnpm test:click-harness`, and inside `pnpm verify` |
 
 No dependencies beyond Node 22+ (global `WebSocket` and `fetch`) and Windows
 PowerShell. Nothing here is imported by the app, and `pnpm build` never sees it.

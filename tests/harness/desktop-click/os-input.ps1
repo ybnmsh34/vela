@@ -94,6 +94,63 @@ public static class VelaOsInput
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
+    // -----------------------------------------------------------------------
+    // EVERY `INPUT` IS BUILT HERE, AND NEVER IN POWERSHELL.
+    //
+    // Windows PowerShell 5.1 silently discards a write to a nested value-type
+    // field: `$input.mi.dwFlags = 2` mutates a temporary copy of `mi` and
+    // throws it away, leaving the struct all-zero. `SendInput` then accepts the
+    // events and delivers nothing — it returns the count it was given and
+    // `GetLastError` reports a stale 203 — which is indistinguishable from an
+    // environment that filters injected input. This harness read it as exactly
+    // that and told six other tracks that SendInput does not work on this
+    // machine. It does. The struct was empty.
+    //
+    // The flags are parameters and the assembly is C#, so the failure cannot
+    // recur: there is no nested field for a script to assign to.
+    // -----------------------------------------------------------------------
+
+    private static INPUT Mouse(uint flags, int dx, int dy)
+    {
+        INPUT input = new INPUT();
+        input.type = INPUT_MOUSE;
+        input.mi.dwFlags = flags;
+        input.mi.dx = dx;
+        input.mi.dy = dy;
+        input.mi.mouseData = 0;
+        input.mi.time = 0;
+        input.mi.dwExtraInfo = IntPtr.Zero;
+        return input;
+    }
+
+    public static int Size() { return Marshal.SizeOf(typeof(INPUT)); }
+
+    /// The bytes the harness is about to hand the API, so a caller can assert
+    /// the struct is populated without moving anything. This is the check that
+    /// would have caught the empty-struct defect the first time.
+    public static string DescribeMouseInput(uint flags, int dx, int dy)
+    {
+        INPUT input = Mouse(flags, dx, dy);
+        return string.Format("size={0} type={1} dwFlags={2} dx={3} dy={4}",
+            Size(), input.type, input.mi.dwFlags, input.mi.dx, input.mi.dy);
+    }
+
+    /// Absolute move, in the 0..65535 virtual-screen space SendInput expects.
+    public static uint MoveAbsolute(int nx, int ny)
+    {
+        INPUT[] events = new INPUT[] { Mouse(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, nx, ny) };
+        return SendInput(1, events, Size());
+    }
+
+    public static uint LeftClick()
+    {
+        INPUT[] events = new INPUT[] {
+            Mouse(MOUSEEVENTF_LEFTDOWN, 0, 0),
+            Mouse(MOUSEEVENTF_LEFTUP, 0, 0),
+        };
+        return SendInput(2, events, Size());
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -311,13 +368,12 @@ try {
     $parked = New-Object VelaOsInput+POINT
     [void][VelaOsInput]::GetCursorPos([ref]$parked)
 
-    $move = New-Object VelaOsInput+INPUT
-    $move.type = [VelaOsInput]::INPUT_MOUSE
-    $move.mi.dwFlags = [VelaOsInput]::MOUSEEVENTF_MOVE -bor [VelaOsInput]::MOUSEEVENTF_ABSOLUTE
-    $move.mi.dx = 32768   # dead centre of the virtual screen, in 0..65535 space
-    $move.mi.dy = 32768
-    $size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][VelaOsInput+INPUT])
-    $sent = [VelaOsInput]::SendInput(1, @($move), $size)
+    # 32768,32768 is dead centre of the virtual screen in the 0..65535 space
+    # SendInput's absolute mode uses. The struct is assembled in C#; see the
+    # comment on VelaOsInput.Mouse for why that is not a style preference.
+    $struct = [VelaOsInput]::DescribeMouseInput(
+      ([VelaOsInput]::MOUSEEVENTF_MOVE -bor [VelaOsInput]::MOUSEEVENTF_ABSOLUTE), 32768, 32768)
+    $sent = [VelaOsInput]::MoveAbsolute(32768, 32768)
     $lastError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
     Start-Sleep -Milliseconds 150
     $after = New-Object VelaOsInput+POINT
@@ -325,14 +381,18 @@ try {
 
     $moved = ($after.X -ne $parked.X) -or ($after.Y -ne $parked.Y)
     $report.sendInputSelfTest = [ordered]@{
-      structSize      = $size
+      structSize      = [VelaOsInput]::Size()
+      structAsBuilt   = $struct
       parkedAt        = [ordered]@{ x = $parked.X; y = $parked.Y }
       sendInputReturn = [int]$sent
       lastWin32Error  = $lastError
       cursorAfter     = [ordered]@{ x = $after.X; y = $after.Y }
       injectionWorks  = [bool]$moved
-      note            = if ($moved) { 'SendInput moved the cursor: injected input reaches the desktop.' } else { 'SendInput reported success and the cursor did not move: injected input is being filtered in this process tree. Any sendinput click would be a silent no-op.' }
+      note            = if ($moved) { 'SendInput moved the cursor: injected input reaches the desktop.' } else { 'SendInput reported success and the cursor did not move. Check structAsBuilt FIRST: an all-zero struct is a harness bug, not a filtered environment, and this harness once mistook one for the other.' }
     }
+    # `lastWin32Error` is reported and deliberately not interpreted: 203 comes
+    # back identically from the call that works and the call that does nothing,
+    # so it is stale residue and never evidence.
     [void][VelaOsInput]::SetCursorPos($before.X, $before.Y)
     $report | ConvertTo-Json -Compress -Depth 6
     exit 0
@@ -369,20 +429,15 @@ try {
     $report.blocked = $true
     $report.blockedReason = "the window under ($X,$Y) belongs to pid $underPid, which is not pid $RequirePid nor a descendant. Nothing was sent."
   } elseif ($Mode -eq 'sendinput') {
-    $down = New-Object VelaOsInput+INPUT
-    $down.type = [VelaOsInput]::INPUT_MOUSE
-    $down.mi.dwFlags = [VelaOsInput]::MOUSEEVENTF_LEFTDOWN
-    $up = New-Object VelaOsInput+INPUT
-    $up.type = [VelaOsInput]::INPUT_MOUSE
-    $up.mi.dwFlags = [VelaOsInput]::MOUSEEVENTF_LEFTUP
-    $size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][VelaOsInput+INPUT])
-    $sent = [VelaOsInput]::SendInput(2, @($down, $up), $size)
+    $sent = [VelaOsInput]::LeftClick()
     $report.detail = [ordered]@{
       api             = 'SendInput'
       eventsRequested = 2
       eventsAccepted  = [int]$sent
+      downAsBuilt     = [VelaOsInput]::DescribeMouseInput([VelaOsInput]::MOUSEEVENTF_LEFTDOWN, 0, 0)
+      upAsBuilt       = [VelaOsInput]::DescribeMouseInput([VelaOsInput]::MOUSEEVENTF_LEFTUP, 0, 0)
       lastWin32Error  = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-      caveat          = 'SendInput returning 2 is NOT evidence that anything was delivered; run -Mode selftest.'
+      caveat          = 'SendInput returning 2 is NOT evidence that anything was delivered; the page-side pointer recorder is. `downAsBuilt` is here so an all-zero struct can never again be read as a filtered environment.'
     }
     $report.delivered = ($sent -eq 2)
   } else {

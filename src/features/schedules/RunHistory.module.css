@@ -1,0 +1,63 @@
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+}
+
+.note {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-xs);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text);
+}
+
+/* Below the table rather than above it: the caption is a caveat about what the
+   rows mean, and a reader who has no rows yet is shown the empty note instead. */
+.caption {
+  caption-side: bottom;
+  padding-top: var(--vela-space-2);
+  color: var(--vela-text-muted);
+  text-align: left;
+}
+
+.table th {
+  padding: var(--vela-space-1) var(--vela-space-2);
+  border-bottom: 1px solid var(--vela-border);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-2xs);
+  font-weight: var(--vela-weight-medium);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.table td {
+  padding: var(--vela-space-2);
+  border-bottom: 1px solid var(--vela-border);
+  vertical-align: top;
+}
+
+.status {
+  color: var(--vela-text-muted);
+}
+
+.failed {
+  color: var(--vela-danger);
+}

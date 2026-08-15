@@ -30,6 +30,7 @@ import {
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
 import { useMemoryStore } from '@/state/memory-store';
+import { useSchedulesStore } from '@/state/schedules-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -74,6 +75,9 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // may not import another (`src/features/README.md`). The composition root
   // mounts it; this opens it.
   const setMemoryOpen = useMemoryStore((state) => state.setOpen);
+  // The same seam, for the same reason: the schedules pane is a third feature
+  // and this one may not import it either.
+  const setSchedulesOpen = useSchedulesStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -192,6 +196,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setSchedulesOpen(true);
+          }}
+          aria-label="Schedules"
+        >
+          <ScheduleIcon />
+        </button>
       </nav>
     );
   }
@@ -251,6 +265,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
           <span>Memory</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setSchedulesOpen(true);
+          }}
+        >
+          <ScheduleIcon />
+          <span>Schedules</span>
         </button>
       </div>
 
@@ -378,6 +402,23 @@ function MemoryIcon() {
         strokeWidth="1.4"
       />
       <path d="M6 6.4h4M6 9.6h2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** A clock face. Drawn from the same 16-unit box and stroke weight as the rest. */
+function ScheduleIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="5.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 5.2V8l2.2 1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

@@ -9,6 +9,7 @@ import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
+import { SchedulesSurface } from '@/features/schedules';
 import { PlatformProvider, usePlatform } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
 import type { HarnessRuntime } from '@/platform/contract-harness';
@@ -35,6 +36,12 @@ export function App({ adapter }: AppProps) {
             feature may not import another. It renders nothing until the user
             asks for it — and until then it does not read the host either. */}
         <MemorySurface />
+        {/* The same shape, and it closes the same kind of hole: the five
+            `schedules_*` commands were registered, allowlisted and tested on
+            the host side with no renderer caller at all, so the poll thread ran
+            every thirty seconds over a table nothing could add a row to. This
+            line and the sidebar button are the joint. */}
+        <SchedulesSurface />
       </KeyboardProvider>
     </PlatformProvider>
   );

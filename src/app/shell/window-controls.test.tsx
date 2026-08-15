@@ -40,6 +40,7 @@ import {
   permissionsReaching,
   readCapabilitySurface,
   resolveLoaded,
+  unreadableConfigsIn,
 } from '@/platform/capability-surface';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 
@@ -623,6 +624,20 @@ describe('the union above is derived, and the derivation can fail', () => {
     // A literal label that is not this window reaches nothing — which is why the
     // block above pins the window list of every loaded capability by hand.
     expect(permissionsReaching(capabilitiesInFile(elsewhere, 'x.json'), 'main')).toEqual([]);
+  });
+
+  it('names every config file the loader reads besides tauri.conf.json', () => {
+    // The other directory the loader reads whole. A per-target overlay is merged
+    // over the base config and can set `app.security.capabilities`, so reading
+    // only `src-tauri/tauri.conf.json` while one exists is the same defect as
+    // reading one capability file out of a directory. The reader refuses rather
+    // than reading half the input; this pins what it recognises.
+    expect(unreadableConfigsIn(['tauri.conf.json', 'Cargo.toml', 'build.rs'])).toEqual([]);
+    expect(
+      unreadableConfigsIn(['tauri.conf.json', 'tauri.windows.conf.json', 'Tauri.toml']),
+    ).toEqual(['Tauri.toml', 'tauri.windows.conf.json']);
+    // Case-folded, because this tree is checked out on a filesystem that folds.
+    expect(unreadableConfigsIn(['TAURI.WINDOWS.CONF.JSON'])).toEqual(['TAURI.WINDOWS.CONF.JSON']);
   });
 
   it('throws rather than returning nothing when the root is wrong', () => {

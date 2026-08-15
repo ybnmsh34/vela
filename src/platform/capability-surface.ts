@@ -91,11 +91,23 @@
  *   how this repo's tokeniser guard was wrong six times running. So `admin-*` is
  *   counted against the main window even though it does not reach it.
  *
- * One narrowing is *not* modelled wide, because there is no wide reading of it:
- * a `.toml` capability file is loaded by the build and cannot be parsed here —
- * this repo has no TOML parser in `package.json`. {@link readCapabilitySurface}
- * throws on one rather than skipping it, which is the same choice made about a
- * file it cannot read anywhere else in this tree.
+ * Two inputs are *not* modelled wide either, because there is no wide reading of
+ * them. {@link readCapabilitySurface} throws on each rather than reading past
+ * it, which is the choice this tree makes everywhere about evidence it cannot
+ * read:
+ *
+ * - **A `.toml` capability file.** The build loads it and this repo has no TOML
+ *   parser in `package.json`.
+ * - **A second config file.** tauri-utils 2.9.3, src/config/parse.rs, fn
+ *   read_platform: the base config is merged with a per-target overlay — named
+ *   tauri.windows.conf.json on Windows, with a sibling for each other target —
+ *   and the base itself can be tauri.conf.json5 or Tauri.toml depending on
+ *   which format features the graph turns on. An overlay may set
+ *   `app.security.capabilities`, so reading only `src-tauri/tauri.conf.json`
+ *   while one exists would be exactly the defect at the top of this file, one
+ *   file further out. {@link unreadableConfigsIn} names every such file, for
+ *   every target and every format, whether or not the feature behind it is on
+ *   here; none of them exists in this tree today.
  *
  * Nothing outside a test imports this, so it is not in the shipped bundle.
  */
@@ -141,6 +153,47 @@ const CONFIG_FILE = ['src-tauri', 'tauri.conf.json'] as const;
 const SCHEMA_FOLDER_NAME = 'schemas';
 /** Rule 2. `json5` is absent because the config-json5 feature is off here. */
 const LOADED_EXTENSIONS = ['.json', '.toml'] as const;
+
+/**
+ * Every config file tauri would read besides `src-tauri/tauri.conf.json`: the
+ * two alternate base formats and the per-target overlay of each of the three
+ * formats, from tauri-utils 2.9.3, src/config/parse.rs, fn into_file_name and fn
+ * into_platform_file_name. Listed for all five targets and all three formats
+ * rather than for this build's target and enabled features, because which of
+ * them is live is a question about a feature graph and being wrong about it
+ * costs the whole guard.
+ */
+const OTHER_CONFIG_FILES = [
+  'tauri.conf.json5',
+  'Tauri.toml',
+  'tauri.macos.conf.json',
+  'tauri.windows.conf.json',
+  'tauri.linux.conf.json',
+  'tauri.android.conf.json',
+  'tauri.ios.conf.json',
+  'tauri.macos.conf.json5',
+  'tauri.windows.conf.json5',
+  'tauri.linux.conf.json5',
+  'tauri.android.conf.json5',
+  'tauri.ios.conf.json5',
+  'Tauri.macos.toml',
+  'Tauri.windows.toml',
+  'Tauri.linux.toml',
+  'Tauri.android.toml',
+  'Tauri.ios.toml',
+] as const;
+
+/**
+ * Which of {@link OTHER_CONFIG_FILES} appear in a directory listing.
+ *
+ * Compared without case, because this tree is checked out on a case-insensitive
+ * filesystem and a file spelled `tauri.windows.conf.JSON` would be opened by the
+ * loader and missed by an exact comparison.
+ */
+export function unreadableConfigsIn(names: readonly string[]): readonly string[] {
+  const known = new Set(OTHER_CONFIG_FILES.map((name) => name.toLowerCase()));
+  return names.filter((name) => known.has(name.toLowerCase())).sort();
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -339,6 +392,16 @@ export function readCapabilitySurface(repoRoot: string): CapabilitySurface {
     }
     const source = `src-tauri/capabilities/${file}`;
     onDisk.push(...capabilitiesInFile(readFileSync(join(directory, ...file.split('/')), 'utf8'), source));
+  }
+
+  const strays = unreadableConfigsIn(readdirSync(join(repoRoot, CONFIG_FILE[0])));
+  if (strays.length > 0) {
+    throw new Error(
+      `src-tauri/ holds ${strays.join(', ')}, which the loader reads as well as ` +
+        'tauri.conf.json — an overlay is merged over the base config and may set ' +
+        'app.security.capabilities. This reader merges nothing. Teach it to, or ' +
+        'do not add a second config; do not let it read half the input.',
+    );
   }
 
   const config: unknown = JSON.parse(readFileSync(join(repoRoot, ...CONFIG_FILE), 'utf8'));

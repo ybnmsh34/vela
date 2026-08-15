@@ -37,10 +37,27 @@
  * The vocabulary is closed and the **renderer** words it: `SkillProblem` in
  * `src/platform/contract.ts` is a fourteen-variant union transcribed from
  * `src-tauri/crates/vela-skills/src/document.rs`, and {@link PROBLEM_LABELS} is
- * a total map over it, so a variant added on either side fails `pnpm typecheck`
- * here rather than reaching a user as a raw wire token. Each sentence is
- * derived from the check that produces it in `document.rs`, not from the
- * variant's spelling: the length limits are `NAME_MAX_CHARS` and
+ * a total map over it.
+ *
+ * **What that does and does not buy, measured in both directions.** A variant
+ * added to the *TypeScript* union with no sentence here fails `pnpm typecheck`,
+ * and the error names this file: `TS2741: Property … is missing in type … but
+ * required in type 'Record<SkillProblem, string>'`. A variant added in *Rust*
+ * does not reach this file at all — the union has not widened, so the map is
+ * still total and `pnpm typecheck` exits **0**. That direction is caught one
+ * gate later, at `pnpm test`, by `src/platform/skill-store-parity.test.ts`,
+ * which reads the crate's source off disk and compares the wire names; its
+ * `agrees on why a directory is not a skill` is the assertion that goes red.
+ *
+ * The distinction is worth the paragraph because it is the difference between
+ * the first gate in `pnpm verify` and the third, and because an earlier draft of
+ * this comment claimed both directions for `pnpm typecheck` — overstating a
+ * guard's reach, which is the failure `skill-store-parity.test.ts` spends its
+ * own header on. Both directions above were re-measured by adding a probe
+ * variant to each side in turn.
+ *
+ * Each sentence is derived from the check that produces it in `document.rs`,
+ * not from the variant's spelling: the length limits are `NAME_MAX_CHARS` and
  * `DESCRIPTION_MAX_CHARS`, and both count characters rather than bytes.
  */
 

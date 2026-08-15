@@ -138,16 +138,36 @@ describe('the skills pane', () => {
   });
 
   it('goes back to the list without re-reading the skill', async () => {
+    // The half this test was named for and did not assert. Leaving the detail
+    // view is a pure state change — the list is already in hand — and a pane
+    // that spent `skills_read` on the way out would look **identical** on
+    // screen. Only the call count can see it, which is why the DOM assertions
+    // below are not enough on their own: they passed against a `clearSelection`
+    // that re-read every time, twice.
+    const reads: string[] = [];
+    class CountingHost extends BrowserAdapter {
+      override async invoke(command: never, payload: never): Promise<never> {
+        if ((command as string) === 'skills_read') {
+          reads.push((payload as { name: string }).name);
+        }
+        return super.invoke(command, payload);
+      }
+    }
     const user = userEvent.setup();
-    mount(new BrowserAdapter());
+    mount(new CountingHost() as BrowserAdapter);
 
     await user.click(await screen.findByRole('button', { name: /commit-messages/u }));
     await screen.findByText('Instructions');
+    // The control. A recorder that recorded nothing would make the assertion
+    // after the back-navigation true by construction, which is the shape of
+    // vacuity this file already carries two other guards against.
+    expect(reads).toEqual(['commit-messages']);
 
     await user.click(screen.getByRole('button', { name: '← All skills' }));
 
     expect(await screen.findByRole('button', { name: /half-written/u })).toBeInTheDocument();
     expect(screen.queryByText('Instructions')).not.toBeInTheDocument();
+    expect(reads, 'going back to the list spent a second read').toEqual(['commit-messages']);
   });
 
   it('reports a store it could not read instead of drawing it as empty', async () => {

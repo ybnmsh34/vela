@@ -14,6 +14,7 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-dacl` | `fix/appdata-owner-only` | Wave 1 / B4a |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
+| `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -31,6 +32,7 @@ first, or the reclaim silently does not happen.
 | `docs/references/*` | desktop | 2026-08-14 | Phase 1 reference studies, under correction after a PASS |
 | `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
+| `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
 
 ## Released
 

@@ -623,6 +623,21 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         }
         if (!mounted.current) return;
 
+        // **Nothing starts until every write this surface has queued has
+        // landed**, and both halves of that matter.
+        //
+        // A run opens its assistant row the instant the first turn opens, and it
+        // does so off this chain — the harness holds the writer directly. So
+        // without the barrier the answer's row can be written before the
+        // question's, and the record reads in an order the conversation never
+        // happened in. And on a retry the deletions queued a moment ago would
+        // race the rows the new run is about to write, which is the one
+        // interleaving that can delete an answer the user is waiting for.
+        //
+        // `enqueue` attaches its own `catch`, so this never rejects: a store that
+        // refuses a write is not a reason to refuse to answer.
+        await writes.current;
+
         const started = runtime.runs.start({
           runId,
           conversationId,
@@ -767,18 +782,41 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       (entry) => entry.kind === 'assistant' && agentEntries.current.has(entry.id),
     );
     if (conversationId !== null) {
-      const anchor = messageIds.current.get(lastUser.id);
       enqueue(async () => {
-        if (viaRun && anchor !== undefined) {
-          const stored = await transcript.list(conversationId);
-          const from = stored.findIndex((message) => message.id === anchor);
-          if (from !== -1) {
-            for (const message of stored.slice(from)) await transcript.remove(message.id);
-          }
+        if (viaRun) {
+          // **The anchor is read here, on the chain, and not where `retry` was
+          // called.** The question's own append is a link *ahead* of this one, so
+          // read a moment too early it is `undefined` — and the id-keyed loop
+          // below can never find a row a harness wrote, so the old answer
+          // survived the retry and the transcript came back holding two, with
+          // the answer filed before the question.
+          //
+          // The barrier in `startRun` is what actually closes that window: a run
+          // cannot write a row before the question is in the store, so it cannot
+          // finish before it either, so `retry` can never reach a state where a
+          // run's rows exist and the anchor does not. **This read is therefore
+          // not load-bearing on its own and does not go red when it is put
+          // back** — it is here so the branch is total, rather than resting on
+          // an argument made in another function that a later edit could quietly
+          // invalidate.
+          const anchor = messageIds.current.get(lastUser.id);
           for (const entry of dropped) {
             messageIds.current.delete(entry.id);
             claimed.current.delete(entry.id);
             agentEntries.current.delete(entry.id);
+          }
+          // No anchor means the question's append did not merely lag, it failed
+          // — `enqueue` swallows, and the record already holds an answer with no
+          // question in front of it. Store order is the only handle on where the
+          // dropped tail begins, and a guessed boundary would take a turn the
+          // user is keeping: an earlier agent turn's rows are indistinguishable
+          // from this one's, because a run reports none of the ids it writes.
+          // So nothing is deleted, and the retry appends beside the orphan.
+          if (anchor === undefined) return;
+          const stored = await transcript.list(conversationId);
+          const from = stored.findIndex((message) => message.id === anchor);
+          if (from !== -1) {
+            for (const message of stored.slice(from)) await transcript.remove(message.id);
           }
           return;
         }

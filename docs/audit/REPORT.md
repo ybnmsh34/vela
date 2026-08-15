@@ -87,21 +87,36 @@ blanket — which is why the worktrees and scratchpad have behaved coherently al
 | `%LOCALAPPDATA%\Vela`, `%LOCALAPPDATA%\tauri`, `%APPDATA%\Claude` | all of `%TEMP%`, including the scratchpad |
 | **every `HKCU` key written this session** | `Desktop`, Start Menu, `C:\ProgramData`, `C:\Users\User\vela*` |
 
-**The rule holds for directories and fails for the files inside them.** A second agent probed
-`%APPDATA%\dev.vela.desktop` path by path and the boundary runs *through* it:
+**There is no rule. Capture is per path, and it is undetermined.** The boundary runs *through*
+`%APPDATA%\dev.vela.desktop`:
 
 ```
-REAL       %APPDATA%\dev.vela.desktop            <- the directory falls through
-REAL       %APPDATA%\dev.vela.desktop\skills
+REAL       %APPDATA%\dev.vela.desktop            <- the directory itself falls through
+REAL       %APPDATA%\dev.vela.desktop\skills                 (a directory)
+CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics            (also a directory)
 CONTAINER  %APPDATA%\dev.vela.desktop\vela.db
 CONTAINER  %APPDATA%\dev.vela.desktop\vela.db-wal
-CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics\exchanges.jsonl
 ```
 
-Directories merge; files inside do not uniformly follow the parent. So a directory's own ACL can be
-the real one while a listing of its children is a **merged** view, and a file read from it may be a
-container copy. The precise capture behaviour is **undetermined** and must not be guessed at —
-probe the exact path with `GetFinalPathNameByHandle` and believe nothing broader.
+An earlier version of this section said "directories merge; files inside do not uniformly follow
+the parent." **That is false and is corrected here rather than edited away:** `skills` and
+`diagnostics` are both directories and they resolve opposite ways. Two samples looked like a rule
+and were not. **Probe the exact path with `GetFinalPathNameByHandle` and believe nothing broader** —
+not about a parent, not about a sibling, not about a file's type.
+
+**What a real path still gives you, in full.** A handle that resolves REAL is a handle on the real
+object, so everything read *through that handle* is real, its security descriptor included. Verified
+by opening one handle and reading both the kernel final path and the DACL through it, so no re-open
+could substitute a different object: the app-data directory's own ACL read from inside this session
+**is** the user's ACL, byte-identical to `Get-Acl`. What is *not* trustworthy is an enumeration of
+its children, which is a merged view, and any file read from it that resolves into the container.
+
+That distinction cost a second wrong conclusion. A neighbouring document generalised this into "no
+measurement of that directory describes the user's real one, including its ACL", which its own data
+contradicted — and which would have told the track that is hardening exactly that ACL that its
+evidence was worthless. **An over-correction destroys good evidence as surely as the original error
+manufactured bad evidence**, and a claim landing on an alarming conclusion needs the same scrutiny
+as one landing on a reassuring conclusion.
 
 This retired a claim that had stood all session. An agent repeatedly reported that directory
 "byte-for-byte and timestamp-for-timestamp identical" as evidence nothing had been written. It had

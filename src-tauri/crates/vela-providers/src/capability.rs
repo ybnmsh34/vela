@@ -89,6 +89,25 @@ pub struct ModelCapabilities {
     pub reasoning: Support,
     pub model_listing: Support,
     pub usage_reporting: Support,
+    /// **Reads "the endpoint accounts for cached input", not "prompts to this
+    /// endpoint get cached".**
+    ///
+    /// All three adapters probe this the same way: `Supported` means the usage
+    /// of a probe turn carried a cached-input field — `cache_read_input_tokens`,
+    /// `cachedContentTokenCount`, `prompt_tokens_details.cached_tokens`. The
+    /// field being *present* is the measurement. A count of zero is expected on
+    /// a first-of-its-kind prompt and is not a "no".
+    ///
+    /// That is a weaker claim than the flag's name, and the gap does not
+    /// survive the trip to the UI: each finding's `note` says which of the two
+    /// was established, but `ipc::models::CapabilityFindingView` drops notes at
+    /// the IPC boundary, so only the boolean out of [`Self::to_descriptor`]
+    /// crosses. Nothing in `src/` branches on `promptCaching` today, so nothing
+    /// is wrong now — this is a note for whoever wires it up. Anything that
+    /// needs "will a cache hit actually save this user money" has to measure
+    /// reuse, which means sending the same prompt twice and is a different,
+    /// flakier probe: a multi-slot runtime can serve the repeat from a cold
+    /// slot and report a false "no".
     pub prompt_caching: Support,
     /// The model's context window in tokens, when the endpoint reports one.
     /// `None` means unknown — never a guessed default.
@@ -245,6 +264,41 @@ mod tests {
         assert_eq!(capabilities.findings.len(), 1);
         assert_eq!(capabilities.findings[0].evidence, Evidence::Probed);
         assert_eq!(capabilities.get(Capability::Vision), Support::Unsupported);
+    }
+
+    /// **A note is a diagnostic, not a sentence anyone is shown.**
+    ///
+    /// `ipc::models::CapabilityFindingView` carries `capability`, `support` and
+    /// `evidence` and drops the note at the IPC boundary;
+    /// `src/features/models/capability-rows.ts` writes the capability panel's
+    /// prose out of those three enums. [`ModelCapabilities::to_descriptor`] —
+    /// the only other thing that crosses — never carried a note at all.
+    ///
+    /// Pinned here because adapters write those strings against a belief about
+    /// where they go, and the wrong belief produces the wrong strings: notes
+    /// worded as user copy if a reader thinks they are displayed, or careless
+    /// ones if a reader thinks nobody reads them. They are read — by whoever is
+    /// debugging why a capability came out the way it did.
+    #[test]
+    fn a_finding_note_never_reaches_the_flag_set_the_ui_branches_on() {
+        const NOTE_CANARY: &str = "note/CANARY-9f3c1e7b";
+        let mut capabilities = ModelCapabilities::unknown("m");
+        capabilities.set(
+            Capability::ToolCalling,
+            Support::Unsupported,
+            Evidence::Probed,
+            NOTE_CANARY,
+        );
+        assert_eq!(
+            capabilities.findings[0].note, NOTE_CANARY,
+            "the note is kept — this test is about where it goes, not whether it exists"
+        );
+
+        let crossing = serde_json::to_string(&capabilities.to_descriptor()).unwrap();
+        assert!(
+            !crossing.contains("CANARY"),
+            "the flag set the UI branches on must carry no adapter free text: {crossing}"
+        );
     }
 
     #[test]

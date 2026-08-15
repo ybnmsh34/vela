@@ -387,13 +387,41 @@ impl OpenAiCompatibleProvider {
     /// Step 4 of the probe: does this endpoint call tools?
     ///
     /// `ToolChoice::Required` forces the issue — but only an endpoint that
-    /// *finished* its answer can be said to have declined. An answer cut off by
-    /// the output budget is asked again once, with a budget big enough that a
-    /// second truncation is itself worth reporting.
+    /// *said* it had finished can be read as having declined. An answer that
+    /// ran out of budget, or that stopped without saying why, is asked once
+    /// more with a budget big enough that a second such answer means something.
+    ///
+    /// # Both attempts stream, whenever step 3 says streaming works
+    ///
+    /// `Timeouts::probing()` allows 15 s. Against a **non-streamed** body that
+    /// is a deadline on the entire completion, because none of the body arrives
+    /// until generation has finished — and it therefore grows with the budget,
+    /// which is what made raising 64 → 256 dangerous. Measured on the 27B local
+    /// model, a turn that spends all 256 tokens (three runs):
+    ///
+    /// | transport | headers at | worst gap between chunks | wall clock |
+    /// |---|---|---|---|
+    /// | non-streamed | 9.485 / 9.537 / 9.514 s | — | 9.49 s |
+    /// | streamed | 0.241 / 0.259 / 0.241 s | 0.050 / 0.050 / 0.051 s | 9.49 s |
+    ///
+    /// Non-streamed leaves **1.57×** of the 15 s: a model much over half again
+    /// slower times out, and the timeout lands on `Support::Unknown` with no
+    /// agent toggle — this commit's own symptom, reached by another road. At
+    /// [`TOOL_PROBE_BUDGET_RETRY`] it would be about 38 s and never arrive.
+    /// Streamed, the same 15 s is `first_byte` against the headers (**58×**
+    /// margin) and then `stall` against each gap (**294×**). Note the identical
+    /// wall clock: streaming makes nothing faster. It makes the deadline
+    /// measure inter-chunk latency, which does not grow with the budget,
+    /// instead of total generation time, which does.
+    ///
+    /// The fallback is not academic: an endpoint probed as unable to stream has
+    /// to be asked the non-streamed way or it cannot be asked at all. It keeps
+    /// the old exposure, and there is nothing better to give it.
     async fn probe_tool_calling(
         &self,
         model_id: &str,
         reasoning: Support,
+        streaming: Support,
         context: &RequestContext,
     ) -> (Support, String) {
         let first = if reasoning == Support::Supported {
@@ -401,30 +429,43 @@ impl OpenAiCompatibleProvider {
         } else {
             TOOL_PROBE_BUDGET
         };
+        let stream = streaming == Support::Supported;
         let attempt = self
-            .tool_probe_attempt(model_id, first, false, context)
+            .tool_probe_attempt(model_id, first, stream, context)
             .await;
 
-        let (outcome, budget, retried) = match attempt {
-            Ok(ToolProbe::Truncated) => (
-                self.tool_probe_attempt(model_id, TOOL_PROBE_BUDGET_RETRY, true, context)
+        // Two first-attempt outcomes are worth one more question, and they are
+        // the two that establish nothing: an answer cut off by the budget, and
+        // an answer that stopped without saying why.
+        let (outcome, budget, asked_again) = match attempt {
+            Ok(inconclusive @ (ToolProbe::Truncated | ToolProbe::Inconclusive)) => (
+                self.tool_probe_attempt(model_id, TOOL_PROBE_BUDGET_RETRY, stream, context)
                     .await,
                 TOOL_PROBE_BUDGET_RETRY,
-                true,
+                Some(inconclusive),
             ),
-            other => (other, first, false),
+            other => (other, first, None),
         };
 
         match outcome {
             Ok(outcome) => {
                 let (support, note) = outcome.conclude(budget);
-                if retried {
-                    (
+                match asked_again {
+                    Some(ToolProbe::Truncated) => (
                         support,
-                        format!("{note} (asked again after the first attempt stopped at its {first}-token budget)"),
-                    )
-                } else {
-                    (support, note)
+                        format!(
+                            "{note} (asked again after a first attempt that stopped at its \
+                             {first}-token budget)"
+                        ),
+                    ),
+                    Some(_) => (
+                        support,
+                        format!(
+                            "{note} (asked again after a first attempt at {first} tokens that \
+                             said nothing about why it stopped)"
+                        ),
+                    ),
+                    None => (support, note),
                 }
             }
             Err(ProviderError::CapabilityUnsupported { .. }) => (
@@ -540,19 +581,17 @@ const TOOL_PROBE_BUDGET_WHEN_REASONING: u32 = 256;
 /// truncation is itself an answer worth reporting ([`Support::Unknown`]).
 ///
 /// **What it costs a user probing a slow local model:** one extra generation of
-/// at most this many tokens, and nothing at all unless the first attempt
-/// truncated. On the 27B model above — about 28 tokens/second — that is up to
-/// roughly 37 seconds of generation.
+/// at most this many tokens, and nothing at all unless the first attempt came
+/// back inconclusive. On the 27B model above — about 28 tokens/second — that is
+/// up to roughly 37 seconds of generation.
 ///
-/// That number is why the retry **streams** and the first attempt does not.
-/// `Timeouts::probing()` gives a body 15 seconds; a non-streamed body arrives
-/// only once generation has finished, so a 1024-token non-streamed retry would
-/// reliably time out on hardware that slow. Streamed, the same deadline
-/// measures the gap between two chunks — about 36 ms while a model is
-/// generating — and the probe gets an answer instead. Measured end to end
-/// against that endpoint under `Timeouts::probing()`: nine probe runs, eight
-/// answered on the first attempt in 11–12 s, one truncated and took the retry,
-/// finishing the whole probe in 22.1 s.
+/// That number is why both attempts stream wherever streaming is available: a
+/// non-streamed body arrives only once generation has finished, so the 15 s
+/// `Timeouts::probing()` allows would be a deadline on the whole completion and
+/// this budget would blow it outright. See [`probe_tool_calling`] for the
+/// measured margins.
+///
+/// [`probe_tool_calling`]: OpenAiCompatibleProvider::probe_tool_calling
 const TOOL_PROBE_BUDGET_RETRY: u32 = 1024;
 
 /// What one tool-probe attempt established.
@@ -565,15 +604,37 @@ enum ToolProbe {
     /// The answer hit the output budget before the endpoint either produced a
     /// call or finished declining to. **Evidence of nothing.**
     Truncated,
-    /// The endpoint finished its answer and produced no call.
+    /// The endpoint said it had finished, and produced no call.
     Declined,
+    /// No call, and nothing that says whether the endpoint had finished: no
+    /// `finish_reason`, and no token count to compare against the budget.
+    /// **Also evidence of nothing** — it is simply the case where not even the
+    /// truncation test can run.
+    Inconclusive,
 }
 
 impl ToolProbe {
-    /// The capability this attempt supports, and the note the capability panel
-    /// shows the user — which has to say *which* of the two failures happened,
-    /// because "was asked and said no" and "was cut off before it could answer"
-    /// are different facts about the endpoint.
+    /// The capability this attempt supports, and the diagnostic note recorded
+    /// beside it.
+    ///
+    /// # Where these strings actually go
+    ///
+    /// **Not to the user.** `ipc::models::CapabilityFindingView` carries
+    /// `capability`, `support` and `evidence` and drops the note at the IPC
+    /// boundary; `src/features/models/capability-rows.ts` writes every sentence
+    /// the capability panel shows out of those three enums. These strings reach
+    /// the debug log and a developer reading `ModelCapabilities`, and nothing
+    /// else. That is not licence to be careless with them — a note is the only
+    /// record of *why* a verdict was reached, and one that asserts more than
+    /// was observed misleads the next person to debug this — but it does mean
+    /// they are not user-facing copy and must not be written as if they were.
+    ///
+    /// # What each note may claim
+    ///
+    /// Only what the attempt established. "Finished its answer" is a fact about
+    /// the endpoint that requires the endpoint to have said so, which is why
+    /// [`ToolProbe::Declined`] and [`ToolProbe::Inconclusive`] are separate
+    /// outcomes with separate sentences rather than one arm covering both.
     fn conclude(self, budget: u32) -> (Support, String) {
         match self {
             ToolProbe::Native => (
@@ -588,7 +649,9 @@ impl ToolProbe {
             ),
             ToolProbe::Declined => (
                 Support::Unsupported,
-                "accepted a forced tool call, finished its answer, and produced none".to_owned(),
+                "accepted a forced tool call, reported that it had finished its answer, and \
+                 produced none"
+                    .to_owned(),
             ),
             // Not `Unsupported`. `Unsupported` would switch
             // `needs_tool_emulation` on and start describing tools in the prompt
@@ -601,6 +664,26 @@ impl ToolProbe {
                      tool call — a truncated answer is not evidence that the endpoint has none"
                 ),
             ),
+            // `Unsupported` on the weaker evidence, and the note says exactly
+            // how weak it is rather than inventing a completion the endpoint
+            // never reported.
+            //
+            // Why not `Unknown` here, when `Unknown` is the right answer for a
+            // truncation? Because the two are not symmetrical downstream.
+            // `Unknown` withholds the affordance *and* leaves
+            // `needs_tool_emulation` false, so such an endpoint gets no tools at
+            // all — neither native nor emulated. `Unsupported` gets emulated
+            // ones, which work. This arm is only reached after the question was
+            // put twice, the second time with `TOOL_PROBE_BUDGET_RETRY`, so an
+            // endpoint that was merely being cut off has had four times the
+            // room and still said nothing. Whoever revisits this: the note is
+            // the record that the verdict outran the evidence, on purpose.
+            ToolProbe::Inconclusive => (
+                Support::Unsupported,
+                "produced no tool call, and reported neither why it stopped nor how many tokens \
+                 it spent — so a refusal could not be told apart from an answer cut short"
+                    .to_owned(),
+            ),
         }
     }
 }
@@ -611,29 +694,45 @@ impl ToolProbe {
 /// outright. Everything else is checked for truncation *first*, because a
 /// half-emitted call is malformed for the same reason an empty answer is empty:
 /// the budget ran out, not the endpoint's ability.
+///
+/// The last branch is the one that took two goes to get right. "Produced no
+/// call" and "declined to call" are not the same claim: the second says the
+/// endpoint reached the end of what it wanted to say, and only the endpoint can
+/// establish that. [`StopReason::EndTurn`] is it saying so. Without that — no
+/// `finish_reason`, and no usage to weigh against the budget — the honest
+/// answer is [`ToolProbe::Inconclusive`], which asks again rather than
+/// asserting a refusal on a silence.
 fn classify_tool_probe(response: &ChatResponse, budget: u32) -> ToolProbe {
     if response.tool_calls.iter().any(|call| call.is_ok()) {
         ToolProbe::Native
     } else if ran_out_of_budget(response, budget) {
         ToolProbe::Truncated
-    } else if response.tool_calls.is_empty() {
+    } else if !response.tool_calls.is_empty() {
+        ToolProbe::Malformed
+    } else if response.stop_reason == StopReason::EndTurn {
         ToolProbe::Declined
     } else {
-        ToolProbe::Malformed
+        ToolProbe::Inconclusive
     }
 }
 
 /// Did this answer stop because it hit the output budget?
 ///
-/// Two signals, because an endpoint may send either, both or neither:
+/// Two signals, either of which settles it:
 ///
-/// * the `finish_reason` it reported, already normalised to
+/// * the `finish_reason` the endpoint reported, already normalised to
 ///   [`StopReason::MaxTokens`] by `stream::map_stop_reason` (`"length"` and
 ///   `"max_tokens"` both land there);
 /// * a completion count that reached the cap the request set. A model cannot
 ///   emit more output tokens than it was given, so spending all of them *is*
-///   truncation — this is arithmetic, not a guess, and it covers the endpoints
-///   that report usage but leave `finish_reason` null.
+///   truncation — this is arithmetic, not a guess, and it covers endpoints that
+///   report usage but leave `finish_reason` null.
+///
+/// **Returning `false` does not mean the answer was complete.** An endpoint may
+/// send neither signal, and one that reports its token count a little short of
+/// the cap — off by the last token, or excluding reasoning tokens — sends a
+/// misleading one. Neither case can be settled here, so neither is guessed at:
+/// they fall through to [`ToolProbe::Inconclusive`], which asks again instead.
 fn ran_out_of_budget(response: &ChatResponse, budget: u32) -> bool {
     response.stop_reason == StopReason::MaxTokens
         || response
@@ -787,9 +886,12 @@ impl Provider for OpenAiCompatibleProvider {
                 // with no finding to say otherwise. A count of zero on a
                 // first-of-its-kind prompt is expected and is not a "no": the
                 // field being *there* is what says the endpoint accounts for
-                // reuse. (Measuring reuse itself would mean sending the same
-                // prompt twice and would report a false "no" whenever a
-                // multi-slot runtime served the repeat from a cold slot.)
+                // reuse.
+                //
+                // What that does and does not establish is written down on
+                // `ModelCapabilities::prompt_caching`, along with why measuring
+                // reuse directly would be the flakier probe. Read it before
+                // making anything in `src/` branch on this flag.
                 let (caching_support, caching_note) = match response.usage.cached_input_tokens {
                     Some(cached) => (
                         Support::Supported,
@@ -834,10 +936,17 @@ impl Provider for OpenAiCompatibleProvider {
             }
         }
 
-        // 4. Tool calling — asked *after* step 3, because what step 3 learned
-        //    about reasoning decides how much budget the question needs.
+        // 4. Tool calling — asked *after* step 3, and shaped by it twice: what
+        //    step 3 learned about reasoning decides how much budget the
+        //    question needs, and what it learned about streaming decides which
+        //    transport can carry it inside the probing deadline.
         let (tool_support, tool_note) = self
-            .probe_tool_calling(model_id, capabilities.reasoning, context)
+            .probe_tool_calling(
+                model_id,
+                capabilities.reasoning,
+                capabilities.streaming,
+                context,
+            )
             .await;
         capabilities.set(
             Capability::ToolCalling,
@@ -1299,9 +1408,9 @@ mod tests {
         ])
     }
 
-    /// The wire capture: 200, empty content, no tool calls, the whole budget
-    /// spent on `reasoning_content`, `finish_reason: "length"`.
-    fn truncated_tool_probe(budget: u32) -> CannedResponse {
+    /// The wire capture on the non-streamed transport — the shape the probe
+    /// used to send, and still sends to an endpoint that cannot stream.
+    fn truncated_tool_probe_json(budget: u32) -> CannedResponse {
         CannedResponse::ok(
             &json!({
                 "id": "c",
@@ -1326,9 +1435,9 @@ mod tests {
         )
     }
 
-    /// The same shape on the streamed transport the retry uses: deliberation,
-    /// no answer, no call, `finish_reason: "length"`.
-    fn truncated_tool_probe_streamed(budget: u32) -> CannedResponse {
+    /// The same shape on the streamed transport both attempts now use:
+    /// deliberation, no answer, no call, `finish_reason: "length"`.
+    fn truncated_tool_probe(budget: u32) -> CannedResponse {
         CannedResponse::sse(vec![
             "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"Thinking \
              Process:\\n1. The user wants the weather in Berlin.\"}}]}\n\n",
@@ -1359,11 +1468,27 @@ mod tests {
     }
 
     /// The true negative: an endpoint that was handed a forced call, wrote its
-    /// whole answer, stopped of its own accord, and called nothing.
+    /// whole answer, **said it had finished** — `finish_reason: "stop"` — and
+    /// called nothing.
     fn declined_tool_probe() -> CannedResponse {
-        CannedResponse::ok(&completion(
-            "I'm afraid I can't look up live weather. Berlin is usually mild in spring.",
-        ))
+        CannedResponse::sse(vec![
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"I can't look up live \
+             weather. Berlin is usually mild in spring.\"}}]}\n\n",
+            "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":274,\"completion_tokens\":18,\
+             \"prompt_tokens_details\":{\"cached_tokens\":0}}}\n\n",
+            "data: [DONE]\n\n",
+        ])
+    }
+
+    /// The shape that has no signal at all: an answer, no call, **no
+    /// `finish_reason` and no usage**. Nothing here says whether the endpoint
+    /// reached the end of what it wanted to say or was cut off holding it.
+    fn silent_tool_probe() -> CannedResponse {
+        CannedResponse::sse(vec![
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Let me think about \
+             Berlin\"}}]}\n\n",
+        ])
     }
 
     /// `max_tokens` on the nth recorded `chat/completions` request.
@@ -1405,7 +1530,7 @@ mod tests {
             // Both attempts truncate, so nothing here can be mistaken for a
             // late success: the only thing under test is how truncation reads.
             Ok(truncated_tool_probe(TOOL_PROBE_BUDGET_WHEN_REASONING)),
-            Ok(truncated_tool_probe_streamed(TOOL_PROBE_BUDGET_RETRY)),
+            Ok(truncated_tool_probe(TOOL_PROBE_BUDGET_RETRY)),
             Ok(CannedResponse::ok(&completion("transparent"))),
             Ok(CannedResponse::ok(&completion("{\"answer\":\"ok\"}"))),
         ]));
@@ -1445,7 +1570,8 @@ mod tests {
         assert_eq!(finding.evidence, Evidence::Probed);
         assert!(
             finding.note.contains("budget") && finding.note.contains("truncated"),
-            "the note is user-visible and has to say which failure this was: {}",
+            "the note is the only record of why this verdict was reached, and has to say which \
+             failure it was: {}",
             finding.note
         );
     }
@@ -1477,6 +1603,28 @@ mod tests {
             .await
             .unwrap();
 
+        let chats = chat_requests(&transport);
+
+        // Asserted before the verdict, because this is the assertion that fails
+        // first if the transport regresses. `Timeouts::probing()` allows 15 s;
+        // against a non-streamed body that is a deadline on the whole
+        // completion, and it grows with the budget — 9.5 s of it at 256 tokens
+        // on the endpoint this was measured against, and hopeless at 1024.
+        // Streamed, the same 15 s covers the headers (0.24 s) and then each gap
+        // between chunks (0.05 s), neither of which gets longer as the budget
+        // does.
+        for (index, label) in [(1usize, "first attempt"), (2, "retry")] {
+            let body: Value = serde_json::from_slice(chats[index].body.as_ref().unwrap()).unwrap();
+            assert_eq!(
+                body["stream"], true,
+                "the {label} must stream, or its deadline scales with the budget"
+            );
+            assert!(
+                body["tools"].is_array() && body["tool_choice"] == "required",
+                "the {label} asks the forced-call question"
+            );
+        }
+
         assert_eq!(
             capabilities.tool_calling,
             Support::Supported,
@@ -1485,7 +1633,6 @@ mod tests {
         );
         assert!(capabilities.to_descriptor().tool_calls);
 
-        let chats = chat_requests(&transport);
         assert_eq!(
             budget_of(&chats[1]),
             u64::from(TOOL_PROBE_BUDGET_WHEN_REASONING),
@@ -1497,21 +1644,159 @@ mod tests {
             "a retry at the same budget would only truncate again"
         );
 
-        let retry: Value = serde_json::from_slice(chats[2].body.as_ref().unwrap()).unwrap();
-        assert_eq!(
-            retry["stream"], true,
-            "the retry streams: `Timeouts::probing()` gives a non-streamed body 15 seconds to \
-             arrive, and on a slow local model a 1024-token completion does not"
-        );
-        assert!(
-            retry["tools"].is_array() && retry["tool_choice"] == "required",
-            "the retry asks the same question, only with more room"
-        );
-
         let note = tool_finding(&capabilities).note;
         assert!(
             note.contains("asked again"),
             "the note says the answer took a second attempt: {note}"
+        );
+    }
+
+    /// An endpoint that cannot stream still has to be asked. Step 3 is what
+    /// establishes that, and step 4 falls back to the non-streamed transport
+    /// rather than sending an `Accept: text/event-stream` it already knows will
+    /// not be answered.
+    #[tokio::test]
+    async fn the_tool_probe_falls_back_to_a_non_streamed_turn_when_streaming_was_refused() {
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(props(8_192)),
+            Ok(model_listing()),
+            // Step 3 fails, so `streaming` is `Unsupported` by the time step 4
+            // has to choose a transport.
+            Ok(CannedResponse::error(
+                400,
+                &json!({"error": {"message": "streaming is not available",
+                                  "code": "streaming_not_supported"}})
+                .to_string(),
+            )),
+            Ok(truncated_tool_probe_json(TOOL_PROBE_BUDGET)),
+            Ok(truncated_tool_probe_json(TOOL_PROBE_BUDGET_RETRY)),
+            Ok(CannedResponse::ok(&completion("transparent"))),
+            Ok(CannedResponse::ok(&completion("{\"answer\":\"ok\"}"))),
+        ]));
+        let provider = OpenAiCompatibleProvider::new(
+            descriptor(),
+            "http://127.0.0.1:9/v1",
+            Auth::None,
+            Arc::new(MemoryStore::new()),
+            transport.clone(),
+        );
+
+        let capabilities = provider
+            .probe_capabilities("m", &RequestContext::new())
+            .await
+            .unwrap();
+
+        assert_eq!(capabilities.streaming, Support::Unsupported);
+        let chats = chat_requests(&transport);
+        for (index, label) in [(1usize, "first attempt"), (2, "retry")] {
+            let body: Value = serde_json::from_slice(chats[index].body.as_ref().unwrap()).unwrap();
+            assert_ne!(
+                body["stream"], true,
+                "the {label} must not stream at an endpoint probed as unable to"
+            );
+        }
+        assert_eq!(
+            budget_of(&chats[1]),
+            u64::from(TOOL_PROBE_BUDGET),
+            "no reasoning channel was established either, so the small budget applies"
+        );
+        assert_eq!(
+            capabilities.tool_calling,
+            Support::Unknown,
+            "and truncation still reads as truncation on this transport — findings {:#?}",
+            capabilities.findings
+        );
+    }
+
+    /// **The gap the truncation test cannot close.** An endpoint may report
+    /// neither a `finish_reason` nor a token count — `ran_out_of_budget` says
+    /// so itself — and then nothing distinguishes a refusal from an answer cut
+    /// short. Asserting the endpoint "finished its answer" there is the same
+    /// class of claim this whole commit exists to remove, so the probe asks
+    /// again instead.
+    #[tokio::test]
+    async fn an_answer_that_says_nothing_about_why_it_stopped_is_asked_again_not_called_a_refusal()
+    {
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(props(131_072)),
+            Ok(model_listing()),
+            Ok(reasoning_turn()),
+            Ok(silent_tool_probe()),
+            Ok(tool_call_turn()),
+            Ok(CannedResponse::ok(&completion("transparent"))),
+            Ok(CannedResponse::ok(&completion("{\"answer\":\"ok\"}"))),
+        ]));
+        let provider = OpenAiCompatibleProvider::new(
+            descriptor(),
+            "http://127.0.0.1:9/v1",
+            Auth::None,
+            Arc::new(MemoryStore::new()),
+            transport.clone(),
+        );
+
+        let capabilities = provider
+            .probe_capabilities("m", &RequestContext::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            capabilities.tool_calling,
+            Support::Supported,
+            "the second attempt produced the call the first was silent about — findings {:#?}",
+            capabilities.findings
+        );
+        assert_eq!(
+            chat_requests(&transport).len(),
+            5,
+            "plain, tool, retry, vision, structured"
+        );
+        let note = tool_finding(&capabilities).note;
+        assert!(
+            note.contains("said nothing about why it stopped"),
+            "the note names the reason for the second attempt, and it is not truncation: {note}"
+        );
+    }
+
+    /// …and when the second attempt is just as silent, the verdict goes back to
+    /// `Unsupported` — but the note says what was actually seen instead of
+    /// claiming a completion the endpoint never reported.
+    #[tokio::test]
+    async fn a_probe_that_stays_silent_twice_never_claims_the_endpoint_finished_its_answer() {
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(props(131_072)),
+            Ok(model_listing()),
+            Ok(reasoning_turn()),
+            Ok(silent_tool_probe()),
+            Ok(silent_tool_probe()),
+            Ok(CannedResponse::ok(&completion("transparent"))),
+            Ok(CannedResponse::ok(&completion("{\"answer\":\"ok\"}"))),
+        ]));
+        let provider = OpenAiCompatibleProvider::new(
+            descriptor(),
+            "http://127.0.0.1:9/v1",
+            Auth::None,
+            Arc::new(MemoryStore::new()),
+            transport.clone(),
+        );
+
+        let capabilities = provider
+            .probe_capabilities("m", &RequestContext::new())
+            .await
+            .unwrap();
+
+        // `Unsupported` on purpose: `Unknown` would leave this endpoint with no
+        // tools at all, native or emulated. The note carries the caveat.
+        assert_eq!(capabilities.tool_calling, Support::Unsupported);
+        assert!(capabilities.needs_tool_emulation());
+
+        let note = tool_finding(&capabilities).note;
+        assert!(
+            !note.contains("finished"),
+            "nothing established that the endpoint finished anything: {note}"
+        );
+        assert!(
+            note.contains("reported neither why it stopped nor how many tokens it spent"),
+            "the note has to say what was missing: {note}"
         );
     }
 
@@ -1582,6 +1867,61 @@ mod tests {
         finished.stop_reason = StopReason::EndTurn;
         finished.usage.output_tokens = Some(31);
         assert_eq!(classify_tool_probe(&finished, 256), ToolProbe::Declined);
+    }
+
+    /// Only the endpoint can establish that it finished, and the only way it
+    /// does so is `finish_reason`. Everything else is a silence, and the two
+    /// silences below are exactly the ones a token count cannot settle.
+    #[test]
+    fn a_stop_the_endpoint_never_reported_is_not_a_refusal() {
+        // Neither signal: no `finish_reason`, no usage. `ran_out_of_budget`
+        // cannot run, so nothing at all is known about why this stopped.
+        let silent = ChatResponse::empty();
+        assert_eq!(
+            classify_tool_probe(&silent, 256),
+            ToolProbe::Inconclusive,
+            "a 200 that says nothing is not the endpoint declining"
+        );
+
+        // One token short of the cap, with no `finish_reason`. Endpoints do
+        // miscount — the last token, or reasoning tokens left out — so `255 of
+        // 256` is exactly as consistent with truncation as with completion.
+        let mut nearly_spent = ChatResponse::empty();
+        nearly_spent.usage.output_tokens = Some(255);
+        assert_eq!(
+            classify_tool_probe(&nearly_spent, 256),
+            ToolProbe::Inconclusive,
+            "a count just under the cap settles nothing on its own"
+        );
+
+        // The same count, with the endpoint saying it stopped of its own
+        // accord. *That* settles it.
+        let mut nearly_spent_and_said_so = nearly_spent.clone();
+        nearly_spent_and_said_so.stop_reason = StopReason::EndTurn;
+        assert_eq!(
+            classify_tool_probe(&nearly_spent_and_said_so, 256),
+            ToolProbe::Declined
+        );
+    }
+
+    /// The note attached to each outcome may claim only what that outcome
+    /// established. `Declined` is the one entitled to say "finished".
+    #[test]
+    fn only_a_reported_completion_licenses_a_note_that_says_the_endpoint_finished() {
+        for outcome in [
+            ToolProbe::Native,
+            ToolProbe::Malformed,
+            ToolProbe::Truncated,
+            ToolProbe::Inconclusive,
+        ] {
+            let (_, note) = outcome.conclude(256);
+            assert!(
+                !note.contains("finished"),
+                "{outcome:?} did not establish a completion, so its note must not assert one: \
+                 {note}"
+            );
+        }
+        assert!(ToolProbe::Declined.conclude(256).1.contains("finished"));
     }
 
     /// A well-formed call is positive proof and outranks everything; a call cut
@@ -1655,6 +1995,20 @@ mod tests {
         assert!(
             finding.note.contains("cached-input accounting"),
             "the note says what was seen: {}",
+            finding.note
+        );
+
+        // `reasoning_turn()` reports `cached_tokens: 0`, and `Supported` is
+        // still the right answer. This flag means "the endpoint accounts for
+        // cached input", not "this prompt was served from cache" — a
+        // first-of-its-kind prompt caches nothing by definition, so demanding a
+        // non-zero count here would report `Unsupported` for every endpoint
+        // that does cache. The distinction survives in the note and nowhere
+        // else, which is written down on `ModelCapabilities::prompt_caching`.
+        assert!(
+            finding.note.contains("0 token(s) cached"),
+            "the measurement is the field's presence, and the note has to say the count it \
+             actually saw: {}",
             finding.note
         );
     }

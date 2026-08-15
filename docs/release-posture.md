@@ -6,20 +6,31 @@ plan for a state somebody intends. It proposes no signing scheme, buys nothing,
 and describes no intended future work.
 
 An earlier revision of this line claimed `Nothing here says "will"`, which was
-false about the document containing it. The future tense appears at four places
-in this document's own prose, excluding quoted source (the `HKCU` doc comment
-in §5 is Tauri's text, not this document's): three describe what an
-already-existing mechanism does the next time it runs — §2 on SmartScreen, §6
-on the two build failures recurring, §9's aside — and one is a genuine
-prediction: **§9's claim about which toolchain CI resolves, marked in place as
-a prediction because CI was not run.** That is the only forward-looking claim
-here that could turn out wrong.
+false about the document containing it. Four places in this document's own
+prose look forward, excluding quoted source (the `HKCU` doc comment in §5 is
+Tauri's text): three say what an already-existing mechanism does the next time
+it runs — §2 on SmartScreen, §6 on the two build failures recurring, §9's aside
+— and one is a genuine prediction: **§9's claim about which toolchain CI
+resolves, marked in place as a prediction because CI was not run.** That is the
+only claim here that could turn out wrong on its own terms.
+
+Conditional "would" is used throughout and is not in that count: it describes
+counterfactuals that follow from mechanisms read out of the code — what the
+uninstaller would delete, what a user without WebView2 would hit — and each is
+labelled with whether it was executed. Mostly it was not.
 
 The rule this document actually keeps is the narrower, useful one: **no
 aspirational prose about work somebody means to do.**
 
 Everything below was re-derived from the configuration and the dependency
 sources as they stand, not from prior documentation.
+
+> **Start with §12.** The work behind this record ran inside an MSIX container,
+> which silently redirected the filesystem and registry. Vela was **not**
+> installed on the user's machine, and two verifications in earlier revisions
+> of this document were aimed at a vantage that could not see what they claimed
+> to check. §12 says what that costs and what survives it. The build findings
+> in §6 are unaffected.
 
 ---
 
@@ -342,7 +353,15 @@ Recorded because they will recur on this machine and both disguise themselves:
 
 ---
 
-## 7. The installer was run, and what it did
+## 7. The installer was run — inside a container, which is not the machine
+
+> **Read §12 before this section.** Every process in the session that produced
+> this record was a descendant of an MSIX-packaged host, and the install landed
+> in that package's private file and registry namespace. **Vela was never
+> installed on the user's machine.** The properties of the *installer* recorded
+> below are real and were measured. The conclusion "a user now has Vela
+> installed" is **not** established, and an earlier revision of this document
+> asserted it.
 
 ```
 > Start-Process Vela_0.1.0_x64-setup.exe -ArgumentList "/S" -Wait
@@ -351,7 +370,9 @@ installer exit code = 0
 
 Run from a **non-elevated** shell — `IsInRole(Administrator)` returned `False`
 — and no UAC prompt appeared. That is the direct evidence for §5's claim that
-the NSIS installer needs no administrator rights.
+the NSIS installer needs no administrator rights. It is also the one class of
+claim this environment cannot corrupt: the installer either demanded elevation
+or it did not, and it did not.
 
 What it produced:
 
@@ -428,11 +449,40 @@ not restore what it replaced.
 overwriting is the behaviour of Tauri's generated NSIS script. The real finding
 is the general one — **shipping under a `productName` that another installed
 application already uses silently annexes its shortcuts**, and "Vela" is not a
-distinctive name. Both apps now also appear as "Vela" in the installed-programs
-list.
+distinctive name.
 
-The shortcuts were left exactly as the installer left them; this document only
-read them.
+### The shortcut damage is real, and worse than the rest of the install
+
+This is the one part of the install that was **not** contained (§12). The two
+`.lnk` files resolve to the user's actual profile:
+
+```
+C:\Users\User\Desktop\Vela.lnk
+    -> \\?\C:\Users\User\Desktop\Vela.lnk                       REAL
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Vela.lnk
+    -> \\?\...\Start Menu\Programs\Vela.lnk                     REAL
+```
+
+while their new target does not:
+
+```
+C:\Users\User\AppData\Local\Vela\vela.exe
+    -> \\?\C:\Users\User\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Vela\vela.exe
+```
+
+So the install wrote **real shortcuts pointing at a path that does not exist
+outside the container**. For the user, both shortcuts were silently retargeted
+away from a working 188 MB application to something that cannot resolve — and a
+dead `.lnk` fails with a generic Windows "cannot find" dialog naming a path the
+user never chose and cannot find, with nothing identifying Vela as the cause.
+The uninstaller would not repair it either: per `installer.nsi:793-798` it
+deletes the shortcut rather than restoring what was there.
+
+The shortcuts were read, never modified, by this document. They have since been
+repointed at the user's other application by the coordinator.
+
+Both apps would also have appeared as "Vela" in the installed-programs list —
+except that ours never reached it (§12).
 
 **The MSI was not installed.** It requires administrator rights (§5) that this
 session does not hold, and a per-machine install is the more invasive of the
@@ -486,11 +536,40 @@ the only ways to change what that API returns are to edit the user's shell
 registry or to run as a different user, both of which are worse than the problem.
 
 **The app was therefore never launched, and this item cannot claim "reaches a
-user" for the running application.** The installer reached a user; the running
-app did not. The finding was established without a single destructive launch —
-`%APPDATA%\dev.vela.desktop` was byte-for-byte and timestamp-for-timestamp
-identical before and after the install, and still carries its ACL entries
-unchanged.
+user" for the running application.** Nor, as it turns out, for the installed
+one (§7, §12). The finding was established without a single destructive launch.
+
+### What the "unchanged" evidence for that directory is actually worth
+
+Throughout this work, `%APPDATA%\dev.vela.desktop` was enumerated before and
+after each step and reported byte-for-byte and timestamp-for-timestamp
+identical, with its ACL entry count unchanged. **That comparison was made
+through the container's merged view, and most of what it compared was not the
+user's data.** Resolving each entry with `GetFinalPathNameByHandle` (§12):
+
+```
+REAL       %APPDATA%\dev.vela.desktop            <- the directory falls through
+REAL       %APPDATA%\dev.vela.desktop\skills
+CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics
+CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics\exchanges.jsonl
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db-wal
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db.pre-cleanup-20260815
+```
+
+The directory is real and merges; individual entries inside it do not all
+resolve the same way. So "the database is unchanged" describes a **container
+copy of the database**, and the user's real one was never visible from here.
+
+This does not mean anything was damaged. Nothing in this work launched Vela or
+wrote to that path, and the installer demonstrably does not touch it. But the
+*evidence offered* was weaker than the sentence it was offered for, in exactly
+the way §7's install claim was — and it is corrected here rather than left
+standing because it happened to reach a reassuring conclusion.
+
+It follows that **no measurement of that directory taken from inside this
+environment describes the user's real directory**, including any measurement of
+its ACL. That is worth knowing for anyone whose task depended on one.
 
 ### A related documentation defect, not fixed here
 
@@ -614,9 +693,16 @@ document. The workflow file was not edited, because
 
 ## 10. What this document does not establish
 
+- **The installed application, on a real machine.** The install landed inside an
+  MSIX container and is absent from the user's filesystem and registry — §12.
+  Every statement here about "the installed app" describes files and registry
+  entries in a private namespace, except the two shortcuts, which are real and
+  were damaged.
 - **The running application.** Never launched — §8. Everything here about the
-  installed app describes files, registry entries and shortcuts on disk, not
-  observed behaviour of the program.
+  installed app describes files, registry entries and shortcuts, not observed
+  behaviour of the program.
+- **The contents of the user's real `%APPDATA%\dev.vela.desktop`.** Never
+  visible from this environment — §8, §12.
 - **The no-WebView2 install path.** This machine has the runtime — §4.
 - **The SmartScreen dialog.** Not reproduced; a locally built file carries no
   Mark-of-the-Web and the install was silent — §2.
@@ -658,6 +744,15 @@ where the WebView2 user-data directory lives. `SetShellVarContext current`
 scopes it to the uninstalling user. It also clears the installer's own registry
 keys under `HKCU`.
 
+**That path is real** (§12): `%APPDATA%\dev.vela.desktop` resolves to
+`\\?\C:\Users\User\AppData\Roaming\dev.vela.desktop`, not into the container.
+So this is not a hypothetical about a sandbox — an uninstaller running on a
+user's machine with that box ticked deletes their genuine conversation
+database, skill store and diagnostics log. What exactly a *container-scoped*
+uninstall would destroy is undetermined, because the directory merges while
+several entries inside it are container copies. **No uninstall of either kind
+was run, and none should be run to find out.**
+
 Two things a reader should not over-read:
 
 - **The checkbox is the only thing standing between a user and their entire
@@ -669,4 +764,80 @@ Two things a reader should not over-read:
   mode that page never runs, so the variable keeps its zero-initialised value
   and the `${If} $DeleteAppDataCheckboxState = 1` guard at `:820` is false.
   **Untested** — no uninstall of either kind was performed.
+
+---
+
+## 12. The environment invalidated part of this record
+
+Every process that produced this document was a descendant of an MSIX-packaged
+host application, which gives its descendants a private, redirected view of the
+filesystem and registry. **An install performed from inside it does not land on
+the machine**, and nothing on disk advertises this: the redirection is a
+bind-filter path mapping, not a reparse point, so directory listings, file
+attributes and `fsutil reparsepoint` all look ordinary.
+
+### The check that settles it
+
+`GetFinalPathNameByHandle` on an open handle returns the true backing path. If
+it resolves under `…\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\`,
+the object is container-only. Measured from inside:
+
+```
+CONTAINER  %LOCALAPPDATA%\Vela              -> ...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Vela
+CONTAINER  %LOCALAPPDATA%\Vela\vela.exe     -> ...\LocalCache\Local\Vela\vela.exe
+REAL       %LOCALAPPDATA%\Programs\vela     (the incumbent Electron app)
+REAL       %LOCALAPPDATA%\dev.vela.desktop
+REAL       C:\Users\User\Desktop\Vela.lnk
+REAL       %APPDATA%\Microsoft\Windows\Start Menu\Programs\Vela.lnk
+REAL       C:\Users\User\vela-wt-bundle\...  (the worktree)
+REAL       %TEMP%
+```
+
+Confirmed independently from two vantage points **outside** the container — a
+Task Scheduler job and a WMI `CIM_DataFile` query serviced by `WmiPrvSE.exe` —
+each carrying a planted control proving the vantage could tell a container-only
+file from a real one. From outside, `%LOCALAPPDATA%` contains
+`dev.vela.desktop` and `vela-updater` and **no `Vela` directory at all**.
+
+**Registry too.** Every `HKCU` write in this session is container-only. Read
+from the real hive outside, `HKCU\…\Uninstall\Vela` does not exist, and neither
+does any HKLM equivalent. So §7's uninstall entry — `DisplayName: Vela`,
+`Publisher: vela` — would never appear in the user's Settings → Installed apps.
+
+### What this costs, and what survives
+
+Withdrawn: **the installed application never reached a user.** `%LOCALAPPDATA%\Vela\vela.exe`
+exists only in a namespace that disappears with the container. B2 therefore has
+**no `reaches-user` grade for the installed app**, on top of having none for the
+running app (§8).
+
+Standing, because these are properties of the installer rather than of where
+its output landed: it runs to completion and exits 0; it requires no elevation;
+it targets `%LOCALAPPDATA%` with `HKCU`-only registration; it creates the
+shortcuts; it writes a binary differing from the compiler's output by exactly
+the 3-byte provenance marker. And §6 is untouched — the `.ico` defect, the
+build failure, the fix, and both artifacts are files in the worktree, which is
+real.
+
+**The installer is not broken. The measurement was.** Nothing here is evidence
+against the bundle.
+
+### The rule, and its limit
+
+The pattern the evidence supports is that a top-level name which already
+existed falls through to the real location, while one first created inside the
+session is captured. It is **not** that simple one level down:
+`%APPDATA%\dev.vela.desktop` is real as a directory, yet `vela.db`,
+`vela.db-wal` and `diagnostics` inside it resolve into the container while
+`skills` does not (§8). Directories merge; individual files do not uniformly
+follow their parent. The precise capture rule was not determined and should not
+be guessed at.
+
+**For any future verification on this machine: resolve the path with
+`GetFinalPathNameByHandle` before believing a filesystem or registry
+observation.** Two findings in this document — the install and the
+"unchanged" data directory — were verifications aimed at a vantage that could
+not see the object they were about. This is the same class as §8's
+`SHGetKnownFolderPath` result: an environment fact that silently invalidates a
+measurement while every command still exits 0.
 

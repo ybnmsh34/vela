@@ -6,9 +6,14 @@
  * A skill is a directory of files the user owns and edits with their own
  * editor. `src-tauri/src/ipc/skills.rs` exposes two commands and both of them
  * read — there is no write, no upload and no delete to put a control in front
- * of — so this pane says where the store is and shows what is in it, and the
- * footnote says out loud that Vela does not change it. A pane that implied
- * otherwise would be promising an affordance that does not exist.
+ * of — so this pane shows what is in the store and the footnote says out loud
+ * that Vela does not change it. A pane that implied otherwise would be
+ * promising an affordance that does not exist.
+ *
+ * It does **not** print the store's path, and that is an omission rather than a
+ * decision to leave unstated: no command this pane calls returns one, and
+ * inventing the path in the renderer would mean a sentence on screen that
+ * nothing verified against the directory the host actually read.
  *
  * ## Two levels, two views, and the reason they are not one
  *
@@ -24,15 +29,19 @@
  * gets a row like any other, carrying a sentence saying what is wrong with it
  * instead of a description. A surface that filtered `kind === 'invalid'` out
  * would be tidier and would mean a user who mistyped a frontmatter key watches
- * their skill disappear with nothing anywhere saying why — losing work without
- * being told, which conventions §9 rule 6 forbids and which the host already
- * refuses to do.
+ * their skill disappear with nothing anywhere saying why. The host already
+ * refuses that — `a_broken_skill_is_listed_with_its_problem_rather_than_dropped`
+ * in `src-tauri/crates/vela-skills/src/store.rs` holds it against real
+ * directories — and this is the layer that could still throw it away.
  *
  * The vocabulary is closed and the **renderer** words it: `SkillProblem` in
  * `src/platform/contract.ts` is a fourteen-variant union transcribed from
  * `src-tauri/crates/vela-skills/src/document.rs`, and {@link PROBLEM_LABELS} is
  * a total map over it, so a variant added on either side fails `pnpm typecheck`
- * here rather than reaching a user as a raw wire token.
+ * here rather than reaching a user as a raw wire token. Each sentence is
+ * derived from the check that produces it in `document.rs`, not from the
+ * variant's spelling: the length limits are `NAME_MAX_CHARS` and
+ * `DESCRIPTION_MAX_CHARS`, and both count characters rather than bytes.
  */
 
 import { useRef } from 'react';
@@ -51,20 +60,20 @@ import { useSkills, type SkillsController } from './use-skills';
  * is what makes the compiler ask for the sentence instead.
  */
 const PROBLEM_LABELS: Record<SkillProblem, string> = {
-  noSkillFile: 'This directory has no SKILL.md file in it.',
+  noSkillFile: 'This folder has no SKILL.md file in it.',
   unreadable: 'Its SKILL.md file could not be read from disk.',
   noFrontmatter: 'Its SKILL.md does not start with a --- frontmatter block.',
   unterminatedFrontmatter: 'Its frontmatter block is opened but never closed.',
   unsupportedFrontmatterSyntax:
-    'Its frontmatter uses YAML beyond the plain key-value lines this format allows.',
+    'Its frontmatter uses YAML beyond the key-value lines and one level of nesting this reader accepts.',
   duplicateFrontmatterKey: 'Its frontmatter sets the same key twice.',
-  missingName: 'Its frontmatter has no name.',
+  missingName: 'Its frontmatter has no name, or the name is empty.',
   missingDescription: 'Its frontmatter has no description.',
   nameIsNotWellFormed:
-    'Its name must be lowercase letters, digits and single hyphens.',
+    'Its name may only be lowercase letters, digits and single hyphens, and may not begin or end with a hyphen.',
   nameTooLong: 'Its name is longer than 64 characters.',
-  nameDoesNotMatchDirectory: 'Its name does not match the directory it is in.',
-  descriptionIsEmpty: 'Its description is empty.',
+  nameDoesNotMatchDirectory: 'Its name does not match the folder it is in.',
+  descriptionIsEmpty: 'Its description is empty or only whitespace.',
   descriptionTooLong: 'Its description is longer than 1024 characters.',
   nameIsNotASinglePathSegment: 'Its name is not a single path segment.',
 };

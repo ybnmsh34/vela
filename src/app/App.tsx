@@ -36,11 +36,13 @@ export function App({ adapter }: AppProps) {
             feature may not import another. It renders nothing until the user
             asks for it — and until then it does not read the host either. */}
         <MemorySurface />
-        {/* The fifth joint, and the first one caught before it shipped:
-            `src/data/skills-repository.ts` was written, correct and tested, and
-            its only importer in the tree was its own test file — so `skills_list`
-            and `skills_read` were reachable from nothing a user could press. This
-            line is what makes the skill store visible in the window. */}
+        {/* The fifth joint, and the same shape as the four above:
+            `src/data/skills-repository.ts` was written, correct and covered by
+            its own tests, and its only importer in the tree was that test file
+            — so `skills_list` and `skills_read` were reachable from nothing a
+            user could press. This line is what makes the skill store visible in
+            the window; `src/app/skills-reachable.test.tsx` is what says so, and
+            fails if this line goes. */}
         <SkillsSurface />
       </KeyboardProvider>
     </PlatformProvider>

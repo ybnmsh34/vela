@@ -131,7 +131,7 @@
    onto a ground `contrast.test.ts` does not audit them against, and the
    sentence in `.rowProblem` is what actually carries the meaning. */
 .rowBroken {
-  border-left: var(--vela-space-1) solid var(--vela-warning);
+  border-left: 3px solid var(--vela-warning);
 }
 
 .rowProblem {

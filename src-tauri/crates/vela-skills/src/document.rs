@@ -173,10 +173,20 @@ impl ParsedFrontmatter {
 /// only platform that matters, with a problem code about the mount rather than
 /// about the name. One rule, both platforms, refused early.
 ///
-/// This is also what keeps the junction call in `crate::mount` safe. That call
-/// hands two paths to `mklink /J` through a command line, and a name carrying a
-/// quote would be an argument-injection hole; a quote is refused here, three
-/// layers before it could reach a command line.
+/// **This rule used to be load-bearing for a second reason, and is not any
+/// more.** This crate carried its own mount, which made the junction by handing
+/// two paths to `mklink /J` through a command line — so a name carrying a quote
+/// was an argument-injection hole, and refusing `"` here was the layer that
+/// closed it. That mount is deleted. The one that runs, `vela_projects::link`,
+/// never builds a command line at all: it writes the reparse point directly with
+/// `DeviceIoControl`, for exactly this reason, in as many words.
+///
+/// So `"`, `<`, `>`, `|`, `?` and `*` are refused here on the naming argument
+/// alone — a store must not hand out a name that cannot exist on the machine the
+/// product ships to. The live mount's own segment check is a *different* set
+/// (`/`, `\`, `:`, NUL, plus leading or trailing whitespace and a trailing dot,
+/// which this one does not catch), and neither is a superset of the other. Two
+/// checks, two reasons, and no claim here that the other one covers this.
 pub fn is_single_path_segment(name: &str) -> bool {
     if name.is_empty() || name == "." || name == ".." {
         return false;

@@ -21,15 +21,23 @@
  * `src-tauri/crates/vela-projects/`, and the headless fake is in
  * `src/platform/browser-adapter.ts`.
  *
- * There is still **no parity test for this file's shapes**. `contract.ts`'s
- * chat shapes are pinned to Rust by `src/platform/chat-contract-parity.test.ts`;
- * this file has no counterpart, so a field renamed on one side and not the other
- * is caught by `tsc` on the renderer and by nothing at all across the bridge.
- * What *is* now enforced is behaviour: the rules with a test are the ones whose
- * sentence names it, and that phrasing stays deliberate.
- * `src/platform/claimed-guards.test.ts` is why: a comment naming a guard that
- * does not exist is worse than no guard at all, because every later builder
- * reads the claim and builds on it.
+ * **This file's shapes now have a parity test, and this paragraph replaces one
+ * that said they did not.** `src/platform/project-host-parity.test.ts` is the
+ * counterpart: it imports the unions below, reads
+ * `src-tauri/crates/vela-projects/` off disk, applies each item's own
+ * `#[serde(rename_all = …)]`, and compares. A field renamed on one side and not
+ * the other now fails `pnpm test` in the Rust-first direction and `pnpm
+ * typecheck` in the TypeScript-first one.
+ *
+ * Worth knowing what that test is *not*: name parity, not semantic parity. And
+ * it was not always the file that read the live crate — the guard that carried
+ * "skill mount" in its name pinned this contract to a duplicate implementation
+ * in `src-tauri/crates/vela-skills/` that no command called, and stayed green
+ * through a real rename in the crate that ships. The duplicate is deleted.
+ * `src/platform/claimed-guards.test.ts` is why the wording here is kept exact:
+ * a comment naming a guard that does not exist is worse than no guard at all,
+ * because every later builder reads the claim and builds on it — and a comment
+ * denying a guard that *does* exist sends the next builder to write it twice.
  *
  * ## One dependency this contract still does not have
  *

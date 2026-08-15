@@ -1299,7 +1299,7 @@ export interface McpListToolsRes {
  *
  * A closed vocabulary the **renderer** words. Transcribed from
  * `SkillProblem` in `src-tauri/crates/vela-skills/src/document.rs`, and
- * `src/platform/skill-mount-parity.test.ts` is what keeps the two lists equal:
+ * `src/platform/skill-store-parity.test.ts` is what keeps the two lists equal:
  * a Rust variant added without its twin here fails `pnpm test`, and one added
  * here without its twin there fails `pnpm typecheck`.
  *

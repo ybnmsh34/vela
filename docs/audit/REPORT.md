@@ -11,6 +11,50 @@ Every row carries three judgements, each established by the auditor rather than 
 | **evidence** | `hardware` = run against a real window, endpoint or filesystem · `test bites` = the auditor broke the implementation and watched a named test fail · `test unproven` = tests exist, not checked that they bite · `read only` = inspected · `none` |
 | **shipped** | traced, not assumed. `reaches-user` · `behind-flag` · `tests-only` · `not-wired` · `n/a` |
 
+## Corrections
+
+This audit is itself subject to the rule it enforces: **a comment is not evidence.** Rows found to
+be false at HEAD are corrected here rather than quietly edited, so the correction is auditable.
+
+### Correction 1 — "The capability grant is guarded against growth" (2026-08-15)
+
+The original row read: *"`capabilities/main.json` … read by zero tests … Adding a permission fails
+nothing, anywhere."* Both halves are false, and the row was graded `evidence: none` — which is the
+tell. It was written from a prose sweep, not from running anything.
+
+**Two tests read the file from disk:**
+
+- `src/app/shell/window-controls.test.tsx:322-350` — asserts five permissions are present, and that
+  `core:window:allow-internal-toggle-maximize` and `core:window:default` are absent.
+- `src/platform/project-host-parity.test.ts:718-728` — asserts no permission matches
+  `/^(?:fs|dialog|shell|http):/` and every permission matches `/^core:(?:event|window):/`.
+
+**Adding a permission does fail, for the dangerous cases.** Adding `core:fs:default`,
+`shell:allow-execute`, `core:http:default` and `dialog:allow-open` together turned
+`project-host-parity.test.ts` red — 1 file failed, 103 passed. The renderer cannot be granted
+filesystem, shell, HTTP or dialog access without a named test noticing.
+
+**The real hole is narrower and still real.** The allowlist is a *prefix shape*, so any permission
+matching `^core:window:` or `^core:event:` is accepted on sight. Adding
+`core:window:allow-set-always-on-top`, `core:window:allow-set-position`, `core:window:allow-hide`
+and `core:event:allow-emit-to` left both guards green — **38/38 passing, reproduced three times.**
+The window surface can be widened silently; the plugin surface cannot.
+
+The fix is the one `docs/vela-plan-2026-08-15.md` already specifies: **an exact-set assertion, not a
+shape assertion.** The grade stays FAIL, for a defect one order narrower than the one recorded.
+
+### A note on how this correction was nearly botched
+
+The intermediate full-suite run reported **4 files / 12 tests failed** against the widened window
+grant, which would have supported the opposite conclusion. Re-running with byte-identical input
+gave **104 files / 2105 tests passed**. The failing run took 193s with 1088s of `environment` time
+against 60s and 314s for the passing one — four agents were building concurrently on the same box.
+
+The failures were contention artefacts. **On this machine, under parallel load, a single observed
+test failure is not evidence of anything** — in either direction. A mutation that "fails" once is
+not proof that a test bites. Every mutation claim in this document that rests on one observed
+failure should be re-run before it is relied on.
+
 ## Totals
 
 | verdict | count |
@@ -113,7 +157,7 @@ Every row carries three judgements, each established by the auditor rather than 
 | verify covers CI, reverse direction (a new CI gate must be listed) | **FAIL** | test bites | reaches-user | Two proven blind spots. M3: a gate added as `run: \|` / `pnpm lint:css` / `pnpm audit --prod` gives 13/13 pass, because the harvest regex `/^[ \t]*-?[ \t]*run: (.+)$/gm` never sees block-scalar bodies. M7: `run: pnpm test:e2e` gives 13/13 pass, because "accounted for" is `line.includes('pnpm test')`. A single-line novel gate (M2) is correctly caught. |
 | Windows CI job covers the gates that break on Windows | **FAIL** | read only | reaches-user | .github/workflows/ci.yml `test-windows` runs typecheck, `pnpm test`, cargo build/test and check-transcripts.sh — but not `pnpm test:harness` and not `pnpm build`. `pnpm test:harness` is exactly the gate that is currently red on Windows, so the job whose stated purpose is to make a green run mean something on the shipping platform omits it. |
 | `.gitattributes` covers the byte-exact evidence it names | **FAIL** | hardware | reaches-user | Protects `*.sse` and `*.jsonl`. `docs/regression-baseline/mock-matrix/` holds 48 `.json`, 43 `.txt`, 12 `.sse`, 2 `.md`, 1 `.tsv` and zero `.jsonl`; `frontier/01-health.json` measured at 8 CRLF / 8 LF on disk. The line-ending repair at HEAD stopped one extension short of the directory its own comment describes. |
-| The capability grant is guarded against growth | **FAIL** | none | not-wired | `capabilities/main.json` is named in eight prose comments (lib.rs:9, ipc/mod.rs:6, adapter.ts:73, tauri-adapter.ts:38, contract-project.ts:530 and :638, use-window-controls.ts:7, window-seam.test.ts:4) and read by zero tests. `window-seam.test.ts` cites the grant in its header and never opens the file. Adding a permission fails nothing, anywhere. |
+| The capability grant is guarded against growth | **FAIL** | test bites | reaches-user | **Corrected 2026-08-15 — the original row was false in both its reason and its conclusion; see "Correction 1" below.** Two tests do read the file. Plugin escalation is caught. The real hole is narrower: any permission matching `^core:(?:event\|window):` is accepted, so `core:window:allow-set-always-on-top`, `allow-set-position`, `allow-hide` and `core:event:allow-emit-to` were added together and both guards stayed green, 38/38, three runs. Shape assertion where an exact-set assertion is required. |
 | Bundle identifier `dev.vela.desktop` is shared by every instance | **FAIL** | hardware | reaches-user | `store_host.rs` resolves the DB from `app.path().app_data_dir()` = `%APPDATA%\dev.vela.desktop`; projects, skills, diagnostics and the WebView2 `EBWebView` profile all hang off the same root, and the identifier is hard-coded again as `KEYCHAIN_SERVICE` (vela-secrets/src/lib.rs:47). No single-instance plugin (none exist in Cargo.lock), no named mutex, no `WEBVIEW2_USER_DATA_FOLDER`. `docs/desktop-gate/VERDICTS.md:1414` records the hazard and leaves the mitigation as a manual instruction to the operator. |
 | An installable bundle has ever been produced | **FAIL** | hardware | not-wired | `src-tauri/target/release/bundle` does not exist; `target/release/wix/x64` exists and is empty, i.e. a `pnpm tauri build` on 2026-08-13 did not clear the bundler. `bundle.targets: "all"` means WiX+NSIS, both downloaded from the network at build time. No signing config, no updater config. conventions.md section 11 honestly lists it as "not attempted". |
 | Build determinism / toolchain pinning | **FAIL** | read only | reaches-user | No `rust-toolchain.toml` anywhere; `rust-version = "1.82"` is a floor and CI uses `dtolnay/rust-toolchain@stable`, which floats with the calendar. `Cargo.lock` plus `--locked` pin dependencies but not the compiler, and the MSI/NSIS toolchains are fetched over the network at build time. The JS half is properly pinned. |

@@ -79,7 +79,7 @@
  *
  * IF YOU ARE A MAINTAINER LOOKING AT THIS BECAUSE THE STEP WENT RED: it fails now
  * only if both attempts crashed, or if vitest reported a failing test. Search the
- * log for `×`, for a `❯` beside a `.test.ts` name, or for a `Tests` line. If any
+ * log for `×`, for a `❯` beside a test-file name, or for a `Tests` line. If any
  * of the three is there, vitest reported on the suite and the failure is real
  * and is about your change. ONLY IF NONE OF THE THREE IS THERE, and you see
  * `ERR_IPC_CHANNEL_CLOSED` twice, you hit the crash twice in a row and a re-run

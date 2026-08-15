@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use vela_core::auth::{AuthMode, AuthRequirement};
 use vela_core::credential::Auth;
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderKind;
 use vela_secrets::SecretStore;
 use vela_settings::endpoint::EndpointUrl;
@@ -70,6 +71,17 @@ pub struct SettingsPutProviderReq {
     pub id: String,
     pub display_name: String,
     pub kind: ProviderKind,
+    /// Which wire protocol the user says this endpoint speaks, chosen from the
+    /// list `settings_get` hands the form. Omitting it means the shape most
+    /// local runtimes serve, which is what every row written before this field
+    /// existed already was.
+    ///
+    /// This command **passes the value through**. It does not read it, does not
+    /// compare it to anything, and — the part that matters — does not derive it
+    /// from `base_url`. The one place it is read is the composition root, which
+    /// is not the boundary and is not the UI.
+    #[serde(default)]
+    pub protocol: WireProtocol,
     pub base_url: String,
     #[serde(default)]
     pub model_id: Option<String>,
@@ -98,6 +110,7 @@ impl TryFrom<SettingsPutProviderReq> for ProviderConfig {
             id,
             display_name: req.display_name,
             kind: req.kind,
+            protocol: req.protocol,
             base_url: EndpointUrl::parse(&req.base_url)?,
             auth_requirement: req.auth_requirement,
             model_id: req.model_id.map(|model| model.trim().to_owned()),
@@ -260,6 +273,7 @@ mod tests {
             id: "llamacpp".into(),
             display_name: "llama.cpp".into(),
             kind: ProviderKind::Local,
+            protocol: WireProtocol::default(),
             base_url: "http://127.0.0.1:8080/v1".into(),
             model_id: None,
             auth: AuthMode::None,
@@ -321,6 +335,7 @@ mod tests {
             id: "acme".into(),
             display_name: "Acme".into(),
             kind: ProviderKind::RemoteApi,
+            protocol: WireProtocol::default(),
             base_url: "https://api.example.test/v1".into(),
             model_id: Some("some-model".into()),
             auth: AuthMode::BearerToken,
@@ -365,6 +380,7 @@ mod tests {
             id: "acme".into(),
             display_name: "Acme".into(),
             kind: ProviderKind::RemoteApi,
+            protocol: WireProtocol::default(),
             base_url: "https://api.example.test/v1".into(),
             model_id: None,
             auth: AuthMode::BearerToken,
@@ -530,6 +546,7 @@ mod tests {
                 id: "lab".into(),
                 display_name: "Lab box".into(),
                 kind: ProviderKind::Local,
+                protocol: WireProtocol::default(),
                 base_url: "http://192.168.1.50:8080/v1".into(),
                 model_id: None,
                 auth: AuthMode::None,
@@ -592,6 +609,7 @@ mod tests {
             id: "acme".into(),
             display_name: "Acme".into(),
             kind: ProviderKind::RemoteApi,
+            protocol: WireProtocol::default(),
             base_url: "https://api.example.test/v1".into(),
             model_id: None,
             auth: AuthMode::BearerToken,

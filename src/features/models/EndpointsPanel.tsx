@@ -27,7 +27,11 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { DebugLogSwitch } from '@/features/diagnostics';
-import type { ProviderView, SettingsPutProviderReq } from '@/platform/contract';
+import type {
+  ProviderView,
+  SettingsPutProviderReq,
+  WireProtocolOption,
+} from '@/platform/contract';
 import { returnFocusTo } from '@/state/focus-store';
 
 import { EndpointForm } from './EndpointForm';
@@ -98,6 +102,7 @@ export function EndpointsPanel({
                 <li key={view.id} className={styles.row}>
                   <EndpointRow
                     view={view}
+                    protocols={state.protocols}
                     editing={editing === view.id}
                     onEdit={() => {
                       setEditing(editing === view.id ? null : view.id);
@@ -114,6 +119,7 @@ export function EndpointsPanel({
 
           {adding ? (
             <EndpointForm
+              protocols={state.protocols}
               onSave={onSave}
               onStoreCredential={onStoreCredential}
               onCancel={() => {
@@ -144,6 +150,8 @@ export function EndpointsPanel({
 
 interface EndpointRowProps {
   readonly view: ProviderView;
+  /** Carried straight through to the edit form. Never read here. */
+  readonly protocols: readonly WireProtocolOption[];
   readonly editing: boolean;
   readonly onEdit: () => void;
   readonly onSave: (config: SettingsPutProviderReq) => Promise<unknown>;
@@ -154,6 +162,7 @@ interface EndpointRowProps {
 
 function EndpointRow({
   view,
+  protocols,
   editing,
   onEdit,
   onSave,
@@ -204,6 +213,7 @@ function EndpointRow({
       {editing ? (
         <EndpointForm
           editing={view}
+          protocols={protocols}
           onSave={onSave}
           onStoreCredential={onStoreCredential}
           onCancel={onEdit}

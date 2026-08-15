@@ -19,9 +19,11 @@
 pub mod auth;
 pub mod credential;
 pub mod error;
+pub mod protocol;
 pub mod provider;
 pub mod secret;
 
 pub use credential::Auth;
 pub use error::{CoreError, CoreResult};
+pub use protocol::WireProtocol;
 pub use secret::{SecretRef, SecretValue};

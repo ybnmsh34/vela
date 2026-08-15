@@ -27,6 +27,8 @@ function view(overrides: Partial<ProviderView> = {}): ProviderView {
     id: 'workstation',
     displayName: 'The workstation',
     kind: 'local',
+    // An opaque token the host chose; this feature only ever carries it.
+    protocol: 'someProtocolTheHostNamed',
     baseUrl: 'http://127.0.0.1:8080/v1',
     modelId: 'some-model',
     auth: { type: 'none' },

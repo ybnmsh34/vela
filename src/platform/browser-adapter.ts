@@ -133,6 +133,8 @@ import {
   type TokenUsage,
   type ThemePreference,
   type UiLayout,
+  type WireProtocolId,
+  type WireProtocolOption,
 } from './contract';
 import {
   DEFAULT_PROJECT_ID,
@@ -406,6 +408,33 @@ function bindAuth(providerId: string, mode: AuthMode): ProviderAuth {
     }
   }
 }
+
+/**
+ * The protocols this fake can actually speak, which is one: its own.
+ *
+ * Deliberately **not** a transcription of `vela_core::protocol::catalogue()`,
+ * and the reason is the rule this file lives under rather than an oversight.
+ * `browser-adapter.ts` is renderer source, and conventions §0.3 says renderer
+ * source may not name a backend — `src/platform/no-provider-leak.test.ts`
+ * enforces exactly that, over this file among others.
+ *
+ * It is also the honest answer. This fake has no HTTP client and no adapters;
+ * there is nothing behind a protocol choice here, so advertising three would be
+ * a claim about capabilities it does not have. It advertises the one dialect it
+ * really implements, says so in the label, and echoes back whatever id it was
+ * handed — so a component driven against the fake exercises the round trip
+ * without either side pretending the fake can reach a model.
+ */
+const PROTOCOLS: readonly WireProtocolOption[] = [
+  {
+    id: 'browserFake',
+    label: 'In-memory fake',
+    summary: 'The browser fake answers everything itself. No endpoint is contacted.',
+  },
+];
+
+/** What an omitted `protocol` means here. Mirrors the host's `#[serde(default)]`. */
+const DEFAULT_PROTOCOL: WireProtocolId = PROTOCOLS[0]?.id ?? '';
 
 /** Mirrors `vela_core::auth::AuthMode::field_label`. */
 function credentialFieldLabel(mode: AuthMode): string | null {
@@ -1064,6 +1093,7 @@ export class BrowserAdapter implements PlatformAdapter {
       providers: [...this.#providers.keys()]
         .sort()
         .map((id) => this.#viewOf(this.#providers.get(id) as SettingsPutProviderReq)),
+      protocols: PROTOCOLS,
     };
   }
 
@@ -1168,6 +1198,9 @@ export class BrowserAdapter implements PlatformAdapter {
       id: stored.id,
       displayName: stored.displayName,
       kind: stored.kind,
+      // Echoed exactly as it arrived, and defaulted exactly as `#[serde(default)]`
+      // does in the host: absent means the shape most local runtimes serve.
+      protocol: stored.protocol ?? DEFAULT_PROTOCOL,
       baseUrl: url.href,
       modelId: stored.modelId ?? null,
       auth,

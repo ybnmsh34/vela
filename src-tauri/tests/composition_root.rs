@@ -29,6 +29,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 use vela_core::auth::{AuthMode, AuthRequirement};
+use vela_core::protocol::WireProtocol;
 use vela_core::provider::ProviderKind;
 use vela_lib::ipc::chat::{self, ChatMessageInput, ChatSendReq};
 use vela_lib::ipc::content::ContentPartDto;
@@ -209,6 +210,7 @@ impl Host {
                 id: id.to_owned(),
                 display_name: "The user's endpoint".into(),
                 kind: ProviderKind::Local,
+                protocol: WireProtocol::default(),
                 base_url: base_url.to_owned(),
                 model_id: Some("fixture-model".into()),
                 auth: AuthMode::None,
@@ -221,10 +223,13 @@ impl Host {
     /// What `chat_send` does, minus the window sink and the spawn.
     fn send(&self, request: ChatSendReq) -> Result<Vec<StreamEvent>, vela_lib::ipc::IpcError> {
         let built: ChatRequest = chat::build_request(&request)?;
-        let provider = chat::resolve_provider(self.state.providers.as_ref(), &request.provider_id)?;
+        let router = self
+            .state
+            .providers
+            .router_for(&request.provider_id, built.model_id.as_str())?;
         let mut sink: Vec<StreamEvent> = Vec::new();
         tauri::async_runtime::block_on(chat::run_turn(
-            provider,
+            router,
             built,
             RequestContext::new(),
             &mut sink,
@@ -310,6 +315,7 @@ fn the_pre_fix_wiring_reproduces_not_found_on_demand() {
             id: "my-box".into(),
             display_name: "The user's endpoint".into(),
             kind: ProviderKind::Local,
+            protocol: WireProtocol::default(),
             base_url: endpoint.base_url.clone(),
             model_id: None,
             auth: AuthMode::None,

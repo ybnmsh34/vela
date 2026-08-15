@@ -246,10 +246,50 @@ export interface SecurityPosture {
  * Branch on these flags, never on `id`. Adding a backend must require zero
  * changes under `src/`.
  */
+/**
+ * Which wire protocol an endpoint speaks, as an **opaque token**.
+ *
+ * A `string`, and deliberately not a union of literals. This is the whole of
+ * how conventions §0.3 survives a protocol chooser: the rule is that the UI
+ * branches on capability flags and never on a backend identity, and that adding
+ * a backend requires zero changes under `src/`. A union here would put the
+ * three names in the renderer's vocabulary, and a vocabulary is all a branch
+ * needs — `protocol === 'anthropicMessages'` would then be one keystroke and
+ * one code review away, and a fourth protocol would be a renderer change.
+ *
+ * So the renderer holds one of these exactly as it holds a `providerId`: it
+ * receives it, forwards it, compares it to another one it also received, and
+ * can never spell one. The list of what exists, and the words to show for each,
+ * arrive as data on {@link SettingsSnapshot.protocols}.
+ *
+ * Mirrors `vela_core::protocol::WireProtocol`, which is where the names live
+ * and where they are allowed to live.
+ */
+export type WireProtocolId = string;
+
+/**
+ * One entry in the protocol chooser, as the host supplies it.
+ *
+ * The host owning this wording is the same arrangement as
+ * {@link ProviderView.credentialFieldLabel}, and for the same reason: the
+ * renderer must be able to label a choice it is not allowed to know the name
+ * of. These are Vela's own words about Vela's own build — nothing here is
+ * endpoint-supplied text.
+ */
+export interface WireProtocolOption {
+  readonly id: WireProtocolId;
+  /** What to show in the chooser. */
+  readonly label: string;
+  /** One sentence of help under it. */
+  readonly summary: string;
+}
+
 export interface ProviderView {
   readonly id: string;
   readonly displayName: string;
   readonly kind: ProviderKind;
+  /** What the user said this endpoint speaks. Carried, never inspected. */
+  readonly protocol: WireProtocolId;
   readonly baseUrl: string;
   readonly modelId: string | null;
   readonly auth: ProviderAuth;
@@ -277,6 +317,15 @@ export interface SettingsSnapshot {
   /** `os-keychain` or `memory-fake`. Displayed verbatim; never inferred. */
   readonly credentialBackend: string;
   readonly providers: readonly ProviderView[];
+  /**
+   * The protocols this build can speak, with the words to show for each.
+   *
+   * Data, not vocabulary. The endpoints form renders this list and sends back
+   * whichever `id` was picked; it never enumerates the possibilities itself,
+   * which is what keeps "adding a backend requires zero changes under `src/`"
+   * true for this field.
+   */
+  readonly protocols: readonly WireProtocolOption[];
 }
 
 export interface SettingsSetThemeReq {
@@ -291,6 +340,12 @@ export interface SettingsPutProviderReq {
   readonly id: string;
   readonly displayName: string;
   readonly kind: ProviderKind;
+  /**
+   * One of {@link SettingsSnapshot.protocols}. Omit for the shape most local
+   * runtimes serve, which is what an endpoint configured before this field
+   * existed already was.
+   */
+  readonly protocol?: WireProtocolId;
   readonly baseUrl: string;
   readonly modelId?: string;
   /** Omit for an endpoint with no authentication. */

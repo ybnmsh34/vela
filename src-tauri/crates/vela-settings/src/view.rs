@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use vela_core::auth::{AuthMode, CredentialCheck};
+use vela_core::protocol::WireProtocolOption;
 
 use crate::appearance::ThemePreference;
 use crate::provider_config::ProviderConfig;
@@ -68,6 +69,18 @@ pub struct SettingsSnapshot {
     /// screenshot can never be mistaken for evidence about a real keychain.
     pub credential_backend: String,
     pub providers: Vec<ProviderView>,
+    /// The wire protocols a user may choose from, with the words to show them.
+    ///
+    /// **This is what keeps conventions §0.3 true for the protocol chooser.**
+    /// The renderer holds a protocol id exactly as it holds a provider id — an
+    /// opaque token it forwards and never spells — so it cannot branch on one,
+    /// and adding a fourth protocol is zero lines under `src/`. It draws this
+    /// list; it does not know one.
+    ///
+    /// On the snapshot rather than behind a command of its own because this is
+    /// already "everything a settings screen needs, in one read", and a second
+    /// round trip for a fixed list would be a second thing to fall out of step.
+    pub protocols: Vec<WireProtocolOption>,
 }
 
 #[cfg(test)]

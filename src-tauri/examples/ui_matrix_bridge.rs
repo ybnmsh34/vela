@@ -75,6 +75,7 @@ use vela_lib::store_host::StoreHandle;
 use vela_providers::http::{HttpTransport, ReqwestTransport};
 use vela_providers::model::{ToolChoice, ToolDefinition};
 use vela_providers::provider::{RequestContext, Timeouts};
+use vela_providers::{Candidate, Router};
 use vela_secrets::{MemoryStore, SecretStore};
 use vela_store::{DatabaseLocation, SqliteStore};
 
@@ -351,7 +352,14 @@ fn dispatch(
                     )])
                     .with_tool_choice(ToolChoice::Auto);
             }
+            // Deliberately a **one-candidate** router rather than
+            // `ProviderHost::router_for`. This bridge exists to pin what one
+            // matrix profile does; it has all four configured at once, so a
+            // failover would let a profile's recorded behaviour depend on which
+            // of its siblings happened to be registered beside it. The retry,
+            // backoff and first-output rules are still the real ones.
             let provider = chat::resolve_provider(state.providers.as_ref(), &send.provider_id)?;
+            let router = Router::new(vec![Candidate::new(provider, built.model_id.clone())]);
             let cancel = turns.begin(&send.turn_id).ok_or_else(|| {
                 IpcError::invalid(format!(
                     "invalid turnId: `{}` is already streaming",
@@ -368,7 +376,7 @@ fn dispatch(
                     turn_id: turn_id.clone(),
                 };
                 chat::run_turn(
-                    provider,
+                    router,
                     built,
                     RequestContext::new().with_cancel(cancel),
                     &mut sink,

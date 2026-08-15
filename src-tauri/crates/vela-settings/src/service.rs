@@ -207,6 +207,10 @@ impl<'a, S: SettingsRepository + ?Sized> SettingsService<'a, S> {
             telemetry_enabled: self.telemetry()?.is_enabled(),
             credential_backend: self.credential_backend().to_owned(),
             providers,
+            // Not stored and not configurable: it is what this build can
+            // construct, which is a property of the binary rather than of the
+            // user's database.
+            protocols: vela_core::protocol::catalogue(),
         })
     }
 }

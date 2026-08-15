@@ -157,7 +157,10 @@ describe('a request body over the 8 MiB cap', () => {
     return envelope.replace('""', `"${'x'.repeat(bytes - envelope.length)}"`);
   }
 
-  async function post(url: string, body: string): Promise<{ status: number; raw: string }> {
+  async function post(
+    url: string,
+    body: string,
+  ): Promise<{ status: number; raw: string; connection: string | null }> {
     const response = await fetch(`${url}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -165,7 +168,11 @@ describe('a request body over the 8 MiB cap', () => {
       // undici would otherwise keep the pooled socket open past the test.
       keepalive: false,
     });
-    return { status: response.status, raw: await response.text() };
+    return {
+      status: response.status,
+      raw: await response.text(),
+      connection: response.headers.get('connection'),
+    };
   }
 
   it('answers 413 with the documented invalid_json code — not a connection reset', async () => {
@@ -193,6 +200,18 @@ describe('a request body over the 8 MiB cap', () => {
   it('still answers a body that reaches the drain cap, then closes the connection', async () => {
     // Past MAX + DRAIN the server stops reading. It must still deliver the
     // response before the socket goes away.
+    //
+    // WINDOWS. This is the case the sibling test above does not reach, and it
+    // failed here — `TypeError: fetch failed / read ECONNRESET`, zero response
+    // bytes — for the whole life of this file, on the platform Vela ships on.
+    // The cause was in the server, not here: it closed the socket abortively
+    // (`request.destroy()`) with the client's refused upload still unread, TCP
+    // answered that with RST, and RST makes the peer throw away a response it
+    // had already received. Linux usually lost that race slowly enough for the
+    // client to read the bytes first, so CI never saw it. The expectation below
+    // is therefore left exactly as it was — it was right, and asserting only
+    // "413 or a reset" would have made the platform bug permanent. See
+    // `sendBodyTooLarge` in server.ts for the measurements and the fix.
     const mock = await start({ profile: 'hostile' });
     const enormous = bodyOfSize(MAX_BODY_BYTES + OVERSIZE_DRAIN_BYTES + 1024 * 1024);
 
@@ -202,6 +221,10 @@ describe('a request body over the 8 MiB cap', () => {
     expect((JSON.parse(response.raw) as { error: { code: string } }).error.code).toBe(
       'invalid_json',
     );
+    // The connection is being closed rather than reused, and the client is told
+    // so in the response instead of finding out from a reset. Pins the
+    // hand-written header block that the half-close fix introduced.
+    expect(response.connection).toBe('close');
   });
 
   it('leaves the server serving afterwards', async () => {

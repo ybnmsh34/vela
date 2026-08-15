@@ -207,6 +207,20 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # These two were missing while every other gate in `pnpm verify` was here,
+      # and `test:harness` was the one gate KNOWN to be red on Windows: two
+      # deterministic failures, `record-transcripts.test.ts` on a byte
+      # comparison against CRLF-translated `.json` captures, and `server.test.ts`
+      # on a 413 the client could not read because the server closed the socket
+      # abortively. A job whose stated purpose is to make a green run mean
+      # something on the shipping platform cannot skip the gate that is failing
+      # there; that is not a Windows job, it is a Windows job with the Windows
+      # part removed. Both defects are fixed, so both gates run here now.
+      - name: GATE M Part 1 — mock capability matrix
+        run: pnpm test:harness
+      - name: Frontend build
+        run: pnpm build
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -232,9 +246,20 @@ jobs:
       # behaviour change nobody made, which is precisely the failure
       # `.gitattributes` now prevents — so running it here is how we find out if
       # that protection ever stops working.
+      #
+      # Invoked as `pnpm test:transcripts` rather than as `./scripts/…` under
+      # `shell: bash`. Both run the same script; only this one runs it the way a
+      # Windows developer does. `shell: bash` hands the step to Git Bash, which
+      # is a shell no Windows developer's `pnpm verify` has: pnpm runs script
+      # bodies through `cmd.exe`, where `./scripts/check-transcripts.sh` is
+      # `'.' is not recognized as an internal or external command`. So this
+      # step passing under `shell: bash` proved the script and hid the fact that
+      # nobody on the shipping platform could reach it. `pnpm test:transcripts`
+      # goes through `scripts/run-bash.mjs`, which is the part that has to keep
+      # working. The Linux job still runs `./scripts/check-transcripts.sh`
+      # directly, so the script keeps its own unmediated coverage.
       - name: Mock transcripts are reproducible
-        shell: bash
-        run: ./scripts/check-transcripts.sh
+        run: pnpm test:transcripts
 
   # Failing this job means a secret reached the tree. It is deliberately crude
   # and deliberately cheap: the real guarantee is that keys live only in the OS

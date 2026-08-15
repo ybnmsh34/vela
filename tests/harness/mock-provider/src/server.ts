@@ -91,12 +91,25 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
  * `request.destroy()` in the same turn. The socket went down while the client
  * was still uploading, so the client observed `ECONNRESET` and zero response
  * bytes; the 413 branch was unreachable dead code (GATE M Part 1, EDGE-PROBES
- * probe 1). A response written onto a half-closed socket is not a response.
- * The only way to hand the client a readable answer is to let it finish
- * sending, so we keep consuming and discarding. This constant bounds that
- * generosity: an endless upload is still an endless upload.
+ * probe 1). Letting the client finish sending is what makes the answer readable
+ * on an ordinary keep-alive connection. This constant bounds that generosity:
+ * an endless upload is still an endless upload.
+ *
+ * It is NOT the only way to hand the client a readable answer — this comment
+ * used to say it was, and a body past the cap was still answered with a reset
+ * because of it. Past the cap the connection is closed rather than reused, and
+ * closing it politely is a half-close, not a destroy. See
+ * {@link sendBodyTooLarge}.
  */
 const OVERSIZE_DRAIN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * How long a socket may sit half-closed after the over-cap 413 has been written,
+ * before we give up and destroy it. See {@link sendBodyTooLarge}: the polite
+ * close is a FIN, and a FIN only completes when the peer stops writing. A client
+ * that never stops is the case this bounds.
+ */
+const OVERSIZE_LINGER_MS = 5_000;
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body, null, 2);
@@ -189,15 +202,64 @@ function sendBodyTooLarge(
 
   // We stopped reading while the client was still writing. Say so in the
   // response so the client does not reuse the connection, flush the body, and
-  // only take the socket down once those bytes are on the wire.
+  // only then take the socket down.
+  //
+  // HOW THE SOCKET GOES DOWN IS THE WHOLE PROBLEM, and it took a Windows run to
+  // see it. This used to end with `request.destroy()`. `destroy()` is an
+  // ABORTIVE close: it calls `closesocket()` on a socket whose receive queue
+  // still holds the upload we refused, and TCP answers unread data with RST.
+  // A peer that receives RST discards whatever is sitting unread in its own
+  // receive buffer — including a response that is already on the wire. So the
+  // client got `ECONNRESET` and *zero* bytes, which is the identical defect the
+  // comment on OVERSIZE_DRAIN_BYTES says was fixed. It was only half fixed: the
+  // 413 became reachable for a body that ends before the drain cap, and stayed
+  // unreachable for one that does not. That half was never exercised where it
+  // breaks: the test below is green on the Linux runners and red here, and only
+  // the Windows result was measured — whether Linux is reliably safe or merely
+  // wins the race is not established, and does not change the fix.
+  // RFC 9112 §9.6 describes this exactly and prescribes the fix: half-close.
+  //
+  // Measured on Windows 11 with a raw `net` client (no HTTP layer), server
+  // writes 480 bytes then closes while the client is still uploading 24 MiB:
+  //
+  //   socket.destroy()  -> client received    0 / 480 bytes, ECONNRESET
+  //   socket.end()      -> client received  480 / 480 bytes, clean FIN
+  //
+  // `end()` is a half-close: it shuts down our write direction only, so the
+  // bytes we already queued are delivered and acknowledged. Nothing about the
+  // drain cap changes — we still stop reading, and the client still stalls
+  // against a closed window. We just stop erasing our own answer on the way out.
+  //
+  // The socket has to be detached from Node's HTTP layer first. Node reacts to a
+  // `Connection: close` response by calling `socket.destroySoon()` when the
+  // response finishes, and `destroySoon()` is `end()` followed immediately by
+  // `destroy()` — the abortive close again, from inside http rather than from
+  // here. Detaching hands us the socket, and the response is written verbatim.
   const payload = JSON.stringify(error.body satisfies OpenAiErrorBody, null, 2);
-  response.writeHead(error.status, {
-    'content-type': 'application/json; charset=utf-8',
-    'content-length': String(Buffer.byteLength(payload)),
-    connection: 'close',
-  });
-  response.end(payload, () => {
-    request.destroy();
+  const socket = request.socket;
+  response.detachSocket(socket);
+
+  socket.write(
+    'HTTP/1.1 413 Payload Too Large\r\n' +
+      'content-type: application/json; charset=utf-8\r\n' +
+      `content-length: ${String(Buffer.byteLength(payload))}\r\n` +
+      'connection: close\r\n' +
+      '\r\n' +
+      payload,
+    () => {
+      socket.end();
+    },
+  );
+
+  // The FIN completes when the client stops writing and closes its side. One
+  // that never does would leave this socket half-open forever, so it is bounded.
+  // Unref'd: a lingering socket must never be the reason a process stays up.
+  const linger = setTimeout(() => {
+    socket.destroy();
+  }, OVERSIZE_LINGER_MS);
+  linger.unref();
+  socket.once('close', () => {
+    clearTimeout(linger);
   });
 }
 

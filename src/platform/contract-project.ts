@@ -800,13 +800,20 @@ export type LinkFallbackReason =
  *    said nothing did was left standing after that stopped being true — see
  *    AMENDMENT 7. `vela_projects::remove_tree` in
  *    `src-tauri/crates/vela-projects/src/link.rs` asks `is_reparse_point`
- *    before it descends and unlinks instead; every removal in that crate goes
- *    through it, and
+ *    before it descends and unlinks instead, and
  *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
- *    is the test that holds it. What is **not** enforced is that a *second*
- *    removal, written somewhere else, goes through that function: nothing stops
- *    a fresh recursive delete on a project root, and that is who this paragraph
- *    is addressed to.
+ *    is the test that holds it. Every removal of anything a *project* owns goes
+ *    through it. **Six calls in that crate do not**, and they are counted here
+ *    rather than covered by a rounder sentence, because "every removal goes
+ *    through it" is the claim a seventh gets written under. Four are in
+ *    `CaseFolding::probe`, taking out the probe directory it just made; two are
+ *    in `create_link`, taking out the half-made directory it unwinds when the
+ *    reparse write is refused. Every one of them removes a directory the same
+ *    function created moments earlier and knows the whole contents of, and none
+ *    of them can be pointed at a mount. What is **not** enforced is that a
+ *    *seventh*, written somewhere else, goes through `remove_tree`: nothing
+ *    stops a fresh recursive delete on a project root, and that is who this
+ *    paragraph is addressed to.
  *
  * The strategy is established by **attempting the real operation** in a scratch
  * directory under the application-data directory once per launch, then removing
@@ -1303,4 +1310,32 @@ void _projectCommandNamesAreWellTyped;
  *    that reach that rollback can be forced in a test, and the test that
  *    measures it says so. Revisit: nothing in code; anyone who read either
  *    "nothing enforces this" as licence to write their own removal.
+ *
+ * 8. 2026-08-15 — no shape changed; three repairs to AMENDMENT 7's own work,
+ *    two of them found by a critic reproducing it.
+ *
+ *    {@link LinkStrategy} said "every removal in that crate goes through it".
+ *    Six do not — four in `casefold.rs` and two in `link.rs` — and while none of
+ *    them can reach a mount, an overstatement is exactly what a seventh direct
+ *    removal gets written under. The paragraph now names the exceptions and what
+ *    makes them safe.
+ *
+ *    The critic also found, on ordinary volumes, the disagreeing name pairs
+ *    AMENDMENT 7 said could not be exhibited: 8.3 short-name aliasing on NTFS
+ *    (`RESEAR~1` against the long name it abbreviates), and dotless i against
+ *    `I` on FAT32. So the hazard behind `nameCollidesWithAnotherEnabledSkill` is
+ *    not hypothetical and was never only about exotic Unicode — a long skill
+ *    name is enough. Nothing in the rule changes; what changes is that
+ *    "unlikely" is no longer any part of its justification.
+ *
+ *    Last, the host's answer to "what is at this mount path" was one error for
+ *    two opposite situations — the volume declining to say whether anything is
+ *    there, which is safe to walk into, and the volume declining to *name* what
+ *    is there, which is not, because the entry is still removable and removing
+ *    it can mean removing the skill mounted a moment earlier. They are separate
+ *    answers now, with separate handling; the second refuses the mount with
+ *    `occupiedByUnrelatedEntry`. Revisit: nobody — no wire shape moved. A
+ *    project on a volume that refuses to enumerate its own skills mount will
+ *    report that problem for every skill after the first, rather than mounting
+ *    them over each other.
  */

@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::casefold::CaseFolding;
 use crate::layout::ProjectPaths;
 use crate::link::{
-    copy_tree, create_link, is_reparse_point, remove_tree, stored_entry_name,
-    trees_have_same_content, LinkStrategy, SkillLinkKind,
+    copy_tree, create_link, is_reparse_point, occupant_of, remove_tree, trees_have_same_content,
+    LinkStrategy, MountOccupant, SkillLinkKind,
 };
 
 /// The longest mount path this platform will accept.
@@ -49,7 +49,7 @@ pub enum SkillMountProblem {
     ///
     /// Decided twice over, and the second one is the authority:
     /// [`CaseFolding::folds`] compares the names in memory, and
-    /// [`crate::stored_entry_name`] then asks the volume which name the entry at
+    /// [`crate::occupant_of`] then asks the volume which name the entry at
     /// the mount path actually carries.
     NameCollidesWithAnotherEnabledSkill,
     PermissionDenied,
@@ -171,37 +171,10 @@ pub fn reconcile_skills(
             continue;
         }
 
-        // **The same question, asked of the volume rather than of a case
-        // table — and the reason the comparison above is allowed to be an
-        // approximation.** [`CaseFolding::folds`] compares Unicode simple
-        // lowercase in memory and can miss a pair this volume's upcase table
-        // joins into one entry. This reads the name the directory *actually*
-        // carries at the path about to be written and byte-compares it against
-        // the names already mounted in this pass.
-        //
-        // Without it a miss is not a near miss: `mount_one` below opens with
-        // `remove_tree(mount)`, which on such a pair is the *earlier* skill's
-        // entry — so the first skill is unlinked, a link is made at what the
-        // volume considers the same path, and both entries are then reported
-        // `Linked` with different `path` strings naming one directory. That is
-        // the silently-wrong outcome this module's header and conventions §9
-        // rule 6 forbid.
-        //
-        // An error is not a collision and is deliberately not treated as one:
-        // if the volume will not answer, the operation that follows fails on
-        // the same path and reports it through `problem`, which can tell
-        // `PermissionDenied` from an occupied entry.
-        if let Ok(Some(stored)) = stored_entry_name(&mount) {
-            // Byte-for-byte, deliberately: a comparison here that folded case
-            // would be the approximation this whole check exists to catch.
-            if already_mounted.contains(&stored.as_str()) {
-                mounts.push(SkillMount::unavailable(
-                    name,
-                    source_text,
-                    SkillMountProblem::NameCollidesWithAnotherEnabledSkill,
-                ));
-                continue;
-            }
+        // The same question, asked of the volume rather than of a case table.
+        if let Some(problem) = refusal_for(&occupant_of(&mount), &already_mounted) {
+            mounts.push(SkillMount::unavailable(name, source_text, problem));
+            continue;
         }
         // Recorded even when the mount below fails. The promise is one entry per
         // enabled skill, and a later `foo` after a failed `Foo` is still a
@@ -226,6 +199,63 @@ pub fn reconcile_skills(
     }
 
     mounts
+}
+
+/// Whether the volume's answer about a mount path forbids writing to it, given
+/// the names this pass has already mounted.
+///
+/// **This is the backstop that lets [`CaseFolding::folds`] be an
+/// approximation.** `folds` compares Unicode simple lowercase in memory and can
+/// miss a pair this volume's upcase table joins into one entry. This asks the
+/// directory what it actually holds at the path about to be written, and
+/// byte-compares — a comparison here that folded case would be the
+/// approximation the whole check exists to catch.
+///
+/// Without it a miss is not a near miss: `mount_one` opens with
+/// `remove_tree(mount)`, which on such a pair is the *earlier* skill's entry, so
+/// the first skill is unlinked, a link is made at what the volume considers the
+/// same path, and both entries are then reported `Linked` with different `path`
+/// strings naming one directory — the silently-wrong outcome this module's
+/// header and conventions §9 rule 6 forbid.
+///
+/// The two refusals the volume itself can make are handled oppositely, and that
+/// asymmetry is the whole reason [`MountOccupant`] has four members:
+///
+///  - [`MountOccupant::Indeterminate`] — it would not say whether anything is
+///    there — is walked into. Whatever refused that question refuses the
+///    removal too, so nothing is destroyed by trying, and `problem` then
+///    reports the real error and can still tell `PermissionDenied` from an
+///    occupied entry. Guessing here would only replace a diagnosis with a guess.
+///  - [`MountOccupant::PresentButUnnamed`] — something is there and it would
+///    not say what — is **not**. The entry is real and removable; only the
+///    question was refused. Proceeding is exactly the overwrite this function
+///    exists to prevent, with the volume's answer withheld instead of wrong.
+///
+/// That refusal is deliberately conservative in two ways worth writing down.
+/// `already_mounted` carries names whose mount *failed*, so a pass can refuse on
+/// account of an earlier name that never created anything; and on a volume that
+/// will not enumerate its own mount root at all, every skill after the first
+/// comes back `occupiedByUnrelatedEntry` rather than mounting. Both are loud,
+/// both are recoverable by disabling a skill, and both are the cheap side of a
+/// trade whose expensive side is one skill's mount silently replacing another's.
+fn refusal_for(occupant: &MountOccupant, already_mounted: &[&str]) -> Option<SkillMountProblem> {
+    match occupant {
+        MountOccupant::Free | MountOccupant::Indeterminate => None,
+        // The entry there is one this pass already mounted: two enabled names,
+        // one directory, whatever `folds` said about them.
+        MountOccupant::Named(stored) if already_mounted.contains(&stored.as_str()) => {
+            Some(SkillMountProblem::NameCollidesWithAnotherEnabledSkill)
+        }
+        // Named, and not ours from this pass: this name's own mount from an
+        // earlier reconcile, or a stranger's directory. Both are the
+        // remove-and-re-point case, and `mount_one` reports a stranger it
+        // cannot replace.
+        MountOccupant::Named(_) => None,
+        // Nothing has been mounted yet, so there is nothing of this pass's to
+        // destroy and the ordinary path is safe.
+        MountOccupant::PresentButUnnamed if already_mounted.is_empty() => None,
+        MountOccupant::PresentButUnnamed => Some(SkillMountProblem::OccupiedByUnrelatedEntry),
+    }
 }
 
 /// Removes every entry under the mount root that no enabled name claims.
@@ -500,27 +530,47 @@ mod tests {
         );
     }
 
-    /// The backstop that lets [`CaseFolding::folds`] be an approximation.
+    /// The backstop that lets [`CaseFolding::folds`] be an approximation,
+    /// over a pair this volume really does treat as one entry.
     ///
-    /// **What this proves, and what it does not.** It does not exhibit a name
-    /// pair that Unicode simple lowercase and this volume's upcase table
-    /// disagree about. The usual candidates were measured on an ordinary NTFS
-    /// volume and none of them folds — U+0131 against `I`, U+017F against `S`,
-    /// U+212A against `K`, U+0130 against `i` are all two entries there, while
-    /// ASCII, `Ä`/`ä` and Cyrillic `А`/`а` are all one — so no such pair could
-    /// honestly be written down here, and whether one exists on some volume
-    /// somewhere is not settled by this test.
+    /// **8.3 short-name aliasing is the cheapest real instance of the hazard.**
+    /// `RESEAR~1` and the long name it abbreviates are one directory entry on an
+    /// ordinary NTFS volume, and Unicode simple lowercase calls them two, so
+    /// `folds` waves them through — no exotic character required, just a skill
+    /// whose name is long. An earlier version of this test said no such pair
+    /// could be exhibited; it was looking only at Unicode case mappings, and a
+    /// critic found this one and FAT32 pairs besides. What is measured rather
+    /// than assumed is whether the volume generates an alias at all, since that
+    /// is a per-volume setting.
     ///
-    /// What it proves is the **mechanism**, over the exact shape such a pair
-    /// would produce: an in-memory verdict of "two distinct names" laid over a
-    /// volume that holds one entry. The disagreement is supplied through the
-    /// `folding` argument — a `Sensitive` verdict on a volume measured as
-    /// `Insensitive` — because that argument is the only part of the shape a
-    /// test can produce on every machine. Given it, the reconcile asks the
-    /// filesystem, reports the second name as a collision, and leaves the first
-    /// name's mount standing.
+    /// The forced case below covers the machines where it does not, and covers
+    /// the general shape: any in-memory verdict of "two distinct names" laid
+    /// over a volume that holds one entry. It supplies the disagreement through
+    /// the `folding` argument, which is the only channel by which one can reach
+    /// `reconcile_skills` on a machine with no aliasing and no FAT32 to hand.
     #[test]
     fn a_collision_the_case_table_misses_is_still_caught_by_the_filesystem() {
+        // The real pair, with nothing forced.
+        for fixture in [fixture(), copying_fixture()] {
+            const LONG: &str = "Research Notes Long Name";
+            fixture.install(LONG, "# long");
+            fixture.reconcile(&[LONG]);
+
+            let Some(alias) =
+                crate::link::short_name_alias(&fixture.paths.skills_mount_path().join(LONG))
+            else {
+                continue; // this volume makes no 8.3 alias; nothing to test here
+            };
+            assert!(
+                !fixture.folding.folds(LONG, &alias),
+                "the premise: `{alias}` and `{LONG}` are two different skills in memory"
+            );
+
+            let mounts = fixture.reconcile(&[LONG, &alias]);
+            assert_collision_was_caught(&mounts, &fixture, LONG, "# long");
+        }
+
+        // The same shape, forced, for a volume that hands out no alias.
         for mut fixture in [fixture(), copying_fixture()] {
             if CaseFolding::probe(fixture.paths.skills_mount_path()) != CaseFolding::Insensitive {
                 // A volume that really does keep the two apart cannot have this
@@ -531,51 +581,112 @@ mod tests {
             fixture.install("Research", "# upper");
 
             let mounts = fixture.reconcile(&["Research", "research"]);
-
-            assert_eq!(mounts.len(), 2);
-            assert!(
-                matches!(
-                    mounts[0].status,
-                    SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
-                ),
-                "the first name mounts, as it would on any volume"
-            );
-            assert_eq!(
-                mounts[1].status,
-                SkillMountStatus::Unavailable {
-                    problem: SkillMountProblem::NameCollidesWithAnotherEnabledSkill
-                },
-                "the in-memory comparison was told these are two names; the volume \
-                 holds one entry, and the volume is the authority"
-            );
-
-            let live = mounts
-                .iter()
-                .filter(|mount| {
-                    matches!(
-                        mount.status,
-                        SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
-                    )
-                })
-                .count();
-            assert_eq!(
-                live, 1,
-                "one directory reported by two mounts under two `path` strings is the \
-                 silently-wrong outcome, and is what the backstop exists to prevent"
-            );
-
-            let mount_root = fixture.paths.skills_mount_path();
-            assert_eq!(
-                fs::read_to_string(mount_root.join("Research").join("SKILL.md")).unwrap(),
-                "# upper",
-                "the first skill's mount survived the second skill's arrival"
-            );
-            assert_eq!(
-                fs::read_dir(mount_root).unwrap().count(),
-                1,
-                "and there is exactly one entry to survive"
-            );
+            assert_collision_was_caught(&mounts, &fixture, "Research", "# upper");
         }
+    }
+
+    /// The first name mounted, the second was reported, and one directory is
+    /// named by exactly one of them.
+    fn assert_collision_was_caught(
+        mounts: &[SkillMount],
+        fixture: &Fixture,
+        first: &str,
+        body: &str,
+    ) {
+        assert_eq!(mounts.len(), 2);
+        assert!(
+            matches!(
+                mounts[0].status,
+                SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
+            ),
+            "the first name mounts, as it would on any volume"
+        );
+        assert_eq!(
+            mounts[1].status,
+            SkillMountStatus::Unavailable {
+                problem: SkillMountProblem::NameCollidesWithAnotherEnabledSkill
+            },
+            "the names were two in memory; the volume holds one entry, and it is the authority"
+        );
+
+        let live = mounts
+            .iter()
+            .filter(|mount| {
+                matches!(
+                    mount.status,
+                    SkillMountStatus::Linked { .. } | SkillMountStatus::Copied { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            live, 1,
+            "one directory reported by two mounts under two `path` strings is the silently-wrong outcome the backstop exists to prevent"
+        );
+
+        let mount_root = fixture.paths.skills_mount_path();
+        assert_eq!(
+            fs::read_to_string(mount_root.join(first).join("SKILL.md")).unwrap(),
+            body,
+            "the first skill's mount survived the second skill's arrival"
+        );
+        assert_eq!(
+            fs::read_dir(mount_root).unwrap().count(),
+            1,
+            "and there is exactly one entry to survive"
+        );
+    }
+
+    /// Every answer the volume can give, and what each one licenses.
+    ///
+    /// The two refusal shapes are the reason this is a table rather than a
+    /// reading of the branch: neither can be produced on demand on an ordinary
+    /// machine — `PresentButUnnamed` needs an ACL granting traverse and
+    /// withholding list on the mount root, and `Indeterminate` needs the
+    /// existence question itself refused — so the decision they drive is tested
+    /// where it is made rather than left to a scenario nobody can build. What
+    /// this does not prove is that [`occupant_of`] really answers
+    /// `PresentButUnnamed` in that ACL state; it proves what `reconcile_skills`
+    /// does when it does.
+    #[test]
+    fn what_the_volume_says_about_the_path_decides_whether_it_may_be_written() {
+        let nothing: &[&str] = &[];
+        let earlier: &[&str] = &["Research"];
+
+        assert_eq!(refusal_for(&MountOccupant::Free, earlier), None);
+        assert_eq!(
+            refusal_for(&MountOccupant::Named("Research".into()), earlier),
+            Some(SkillMountProblem::NameCollidesWithAnotherEnabledSkill),
+            "the entry is one this pass already mounted, whatever `folds` said"
+        );
+        assert_eq!(
+            refusal_for(&MountOccupant::Named("research".into()), earlier),
+            None,
+            "byte-for-byte: a case-folding comparison here would reintroduce the \
+             approximation this check exists to catch"
+        );
+        assert_eq!(
+            refusal_for(&MountOccupant::Named("leftover".into()), earlier),
+            None,
+            "this name's own earlier mount, or a stranger — both are remove-and-re-point"
+        );
+        assert_eq!(
+            refusal_for(&MountOccupant::Indeterminate, earlier),
+            None,
+            "walked into on purpose: the removal that follows fails the same way and \
+             reports the real error, so nothing is lost by trying"
+        );
+        assert_eq!(
+            refusal_for(&MountOccupant::PresentButUnnamed, earlier),
+            Some(SkillMountProblem::OccupiedByUnrelatedEntry),
+            "something is there, the volume withheld its name, and removing it could \
+             be removing the skill mounted a moment ago — the one answer that cannot \
+             be acted on"
+        );
+        assert_eq!(
+            refusal_for(&MountOccupant::PresentButUnnamed, nothing),
+            None,
+            "with nothing mounted yet there is nothing of this pass's to destroy"
+        );
     }
 
     #[test]

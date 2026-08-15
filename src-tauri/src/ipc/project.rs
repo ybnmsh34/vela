@@ -419,20 +419,55 @@ fn create_on_disk(store: &dyn VelaStore, host: &ProjectHost, id: &ProjectId) -> 
     Ok(())
 }
 
-/// Takes a project that could not be finished back out — **directories first,
-/// row second**.
+/// One half of taking a project back apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RollbackStep {
+    /// The project root, and the three host-owned directories inside it.
+    Tree,
+    /// The record.
+    Row,
+}
+
+impl RollbackStep {
+    /// Performs the step, reporting nothing. See [`roll_back_create`] for why
+    /// failures are dropped here and not propagated.
+    fn take(self, store: &dyn VelaStore, host: &ProjectHost, id: &ProjectId) {
+        match self {
+            Self::Tree => {
+                let _ = remove_project_root(host.app_data_dir(), id.as_str());
+            }
+            Self::Row => {
+                let _ = store.delete_project(id);
+            }
+        }
+    }
+}
+
+/// **The tree, and then the row.**
 ///
-/// The same order [`delete`] removes in, for the same reason: interrupted after
-/// the row and before the tree leaves a directory under the application-data
-/// folder that nothing will ever name again, while interrupted the other way
-/// round is repaired by the next layout read.
+/// A constant rather than two statements in an order, for the reason
+/// `NATIVE_LINK_STRATEGY` in `vela-projects` is one: the order *is* the rule
+/// here, and a rule spelled as the sequence two lines happen to be in is a rule
+/// a reviewer cannot see and a test cannot hold. Interrupted after the row and
+/// before the tree leaves a directory under the application-data folder that
+/// nothing will ever name again; interrupted the other way round leaves a
+/// project whose directories the next layout read repairs. Only one of those is
+/// recoverable, which is why this is not an arbitrary order.
+///
+/// [`delete`] takes a project apart in the same order and says so, and holds it
+/// one degree more strongly than this can: it propagates the tree's failure, so
+/// there the row is only ever reached once the tree is gone.
+const ROLLBACK_ORDER: [RollbackStep; 2] = [RollbackStep::Tree, RollbackStep::Row];
+
+/// Takes a project that could not be finished back out, in [`ROLLBACK_ORDER`].
 ///
 /// Both failures are dropped on purpose. The caller is already returning the
 /// error that caused the rollback, and a rollback that reported its own trouble
 /// instead would replace the diagnosis with the symptom.
 fn roll_back_create(store: &dyn VelaStore, host: &ProjectHost, id: &ProjectId) {
-    let _ = remove_project_root(host.app_data_dir(), id.as_str());
-    let _ = store.delete_project(id);
+    for step in ROLLBACK_ORDER {
+        step.take(store, host, id);
+    }
 }
 
 pub fn update(
@@ -759,40 +794,66 @@ mod tests {
         assert!(projects.is_file(), "and nothing was made beside it");
     }
 
-    /// The rollback itself, exercised on a project that really is on disk.
+    /// The rollback's order, and that each half of it does what it is named for.
     ///
-    /// It is reached from two arms of [`create`] and only one of them can be
-    /// forced: a `create_project_directories` that fails is a file in the way,
-    /// which the test above arranges, while a `layout_of` that fails needs the
-    /// store or the disk to break in the microseconds after they both worked.
-    /// So the shared rollback is measured directly here — that it removes the
-    /// tree *and* the row, in that order — rather than left as a claim about an
-    /// arm nothing can reach.
+    /// **The order cannot be observed from outside and this test says so rather
+    /// than implying otherwise.** Both steps are unconditional and both swallow
+    /// their failures, so every end state a caller can see is identical under
+    /// either order — swapping the two lines used to leave this test green. The
+    /// order only matters to an interruption *between* them, and nothing in a
+    /// single-threaded test can stand there. So the order is held where it is
+    /// readable — as [`ROLLBACK_ORDER`] — and this asserts that constant
+    /// alongside the effect of each step, which is what stops the constant from
+    /// being two labels in a row.
     #[test]
     fn the_rollback_takes_the_tree_and_then_the_row() {
+        assert_eq!(
+            ROLLBACK_ORDER,
+            [RollbackStep::Tree, RollbackStep::Row],
+            "a row deleted before its directories leaves a tree nothing can name again",
+        );
+
+        let fixture = fixture();
+        let created = fixture.named("Half made");
+        let id = ProjectId::new(&created.summary.id).unwrap();
+        let reference = ProjectRefReq {
+            project_id: created.summary.id.clone(),
+        };
+        let root = vela_projects::project_root(fixture.dir.path(), id.as_str());
+        assert!(root.is_dir(), "the project really was made first");
+
+        RollbackStep::Tree.take(&fixture.store, &fixture.host, &id);
+        assert!(!root.exists(), "the tree step takes the tree");
+        assert!(
+            get(&fixture.store, reference.clone()).is_ok(),
+            "and leaves the row for the step that follows it"
+        );
+
+        RollbackStep::Row.take(&fixture.store, &fixture.host, &id);
+        assert!(
+            get(&fixture.store, reference).is_err(),
+            "the row step takes the row"
+        );
+    }
+
+    #[test]
+    fn the_whole_rollback_leaves_neither_the_tree_nor_the_row() {
         let fixture = fixture();
         let created = fixture.named("Half made");
         let id = ProjectId::new(&created.summary.id).unwrap();
         let root = vela_projects::project_root(fixture.dir.path(), id.as_str());
-        assert!(root.is_dir(), "the project really was made first");
+        assert!(root.is_dir());
 
         roll_back_create(&fixture.store, &fixture.host, &id);
 
-        assert!(
-            !root.exists(),
-            "the tree the row would have named is gone — a row deleted before its \
-             directories leaves one nothing can ever name again"
-        );
-        assert!(
-            get(
-                &fixture.store,
-                ProjectRefReq {
-                    project_id: created.summary.id.clone()
-                }
-            )
-            .is_err(),
-            "and so is the row"
-        );
+        assert!(!root.exists());
+        assert!(get(
+            &fixture.store,
+            ProjectRefReq {
+                project_id: created.summary.id.clone()
+            }
+        )
+        .is_err());
     }
 
     #[test]

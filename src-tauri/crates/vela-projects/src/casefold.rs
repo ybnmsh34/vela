@@ -77,8 +77,8 @@ impl CaseFolding {
     /// it is the direction this is used in: this decides whether a *write* is
     /// refused with `INVALID_PAYLOAD`, and a pair it wrongly lets through is
     /// caught by [`crate::reconcile_skills`], which learns the truth by asking
-    /// the filesystem — [`crate::stored_entry_name`], one call per mount, on the
-    /// path it is about to write — and reports
+    /// the filesystem — [`crate::occupant_of`], one call per mount, on the path it
+    /// is about to write — and reports
     /// `nameCollidesWithAnotherEnabledSkill` when the entry there is already
     /// some earlier enabled skill's. A pair it wrongly refuses costs the user a
     /// rename. Nothing is ever silently deduplicated.

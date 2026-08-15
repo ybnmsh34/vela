@@ -197,6 +197,39 @@ pub fn remove_tree(path: &Path) -> io::Result<()> {
     fs::remove_file(path)
 }
 
+/// What the volume says is at a path.
+///
+/// Four members and not two, because the two failure shapes call for opposite
+/// actions and collapsing them into one `Err` is what let a real hole hide. See
+/// [`occupant_of`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MountOccupant {
+    /// Nothing is there.
+    Free,
+    /// Something is there, and this is the name the volume stored it under —
+    /// which is not necessarily the name that was asked for.
+    Named(String),
+    /// **Something is there and the volume would not say what it is called.**
+    ///
+    /// The dangerous answer, and the reason this is a member rather than an
+    /// error. A caller that goes on to remove-and-recreate can succeed here:
+    /// the entry is real and removable, and only the *question* was refused. So
+    /// a caller that would have been told `Named(<some earlier name>)` and
+    /// stopped instead proceeds and destroys it.
+    ///
+    /// Reachable on Windows through an ACL on the parent directory that grants
+    /// traverse but withholds `FILE_LIST_DIRECTORY`: opening the child answers,
+    /// enumerating it does not.
+    PresentButUnnamed,
+    /// The volume would not say whether anything is there at all.
+    ///
+    /// Safe to walk into, and that is the difference from
+    /// [`MountOccupant::PresentButUnnamed`]: whatever refused *this* question
+    /// refuses the removal that follows too, so nothing is destroyed by trying
+    /// and the caller gets to report the real error rather than a guess.
+    Indeterminate,
+}
+
 /// The name this volume **actually stored** for `path`, or `None` when nothing
 /// is there.
 ///
@@ -213,26 +246,61 @@ pub fn remove_tree(path: &Path) -> io::Result<()> {
 /// not with the name of what it points at. `std::fs::canonicalize` would answer
 /// with the target and is the wrong tool here for that reason.
 ///
-/// An error is returned rather than folded into `None`, because "the volume
-/// would not say" is not "nothing is there", and a caller that cannot tell them
-/// apart is back to guessing.
-pub fn stored_entry_name(path: &Path) -> io::Result<Option<String>> {
-    // Asked first for two reasons: a free path is the common case and this
-    // answers it in one call, and it is what keeps a wildcard out of the
-    // enumeration below — `*` and `?` cannot appear in a stored name, and this
-    // call refuses them rather than matching something else.
+/// **Neither failure is reported as an error**, and that is the point of the
+/// four-member answer. "The volume would not say whether anything is there" and
+/// "something is there and the volume would not name it" are one `Err` and two
+/// opposite instructions to a caller: the first is safe to walk into and the
+/// second is not. A caller handed one `Err` for both either treats every
+/// refusal as a collision, which turns an odd ACL into a project whose skills
+/// all refuse to mount, or treats none as one, which is a silent overwrite.
+pub fn occupant_of(path: &Path) -> MountOccupant {
+    // Asked first for three reasons: a free path is the common case and this
+    // answers it in one call; it separates the two failure shapes, because
+    // reaching the naming step at all means something is there; and it is what
+    // keeps a wildcard out of the enumeration below — `*` and `?` cannot appear
+    // in a stored name, and this call refuses them rather than matching
+    // something else.
     match fs::symlink_metadata(path) {
         Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return MountOccupant::Free,
+        Err(_) => return MountOccupant::Indeterminate,
     }
+
+    let named = {
+        #[cfg(windows)]
+        {
+            windows_junction::stored_name(path)
+        }
+        #[cfg(not(windows))]
+        {
+            stored_name_by_inode(path)
+        }
+    };
+    match named {
+        Ok(name) => MountOccupant::Named(name),
+        Err(_) => MountOccupant::PresentButUnnamed,
+    }
+}
+
+/// The volume's short-name alias for `path` — `RESEAR~1` for a long name — or
+/// `None` where it makes none.
+///
+/// Crate-visible test scaffolding and not exported: it exists so a test can get
+/// hold of a **real** pair of names that this volume treats as one entry and
+/// that [`crate::CaseFolding::folds`] treats as two, without inventing one and
+/// without forcing an argument. Always `None` off Windows, and `None` on a
+/// Windows volume with 8.3 generation switched off — which is why every use of
+/// it asks rather than assumes.
+#[cfg(test)]
+pub(crate) fn short_name_alias(path: &Path) -> Option<String> {
     #[cfg(windows)]
     {
-        windows_junction::stored_name(path).map(Some)
+        windows_junction::short_name(path)
     }
     #[cfg(not(windows))]
     {
-        stored_name_by_inode(path).map(Some)
+        let _ = path;
+        None
     }
 }
 
@@ -242,7 +310,7 @@ pub fn stored_entry_name(path: &Path) -> io::Result<Option<String>> {
 /// `readdir` yields stored names and inode identity is identity, so this is
 /// exact on a case-insensitive APFS volume exactly as it is on ext4. Directory
 /// entries are compared without following a symlink, for the reason
-/// [`stored_entry_name`] gives.
+/// [`occupant_of`] gives.
 #[cfg(not(windows))]
 fn stored_name_by_inode(path: &Path) -> io::Result<String> {
     use std::os::unix::fs::MetadataExt;
@@ -458,6 +526,27 @@ mod windows_junction {
     /// upcase table that decided which entry `path` lands on is the same one
     /// that stored the name it returns.
     pub(super) fn stored_name(path: &Path) -> io::Result<String> {
+        Ok(text(&find_entry(path)?.file_name))
+    }
+
+    /// The volume's 8.3 alias for `path`, when it makes one.
+    ///
+    /// **Test scaffolding, and the reason it earns its place in the module it
+    /// is testing:** short-name aliasing is a pair of names that are one
+    /// directory entry and that Unicode simple lowercase calls distinct —
+    /// `RESEAR~1` and the long name it abbreviates — on an ordinary NTFS
+    /// volume, with no exotic character and no forced argument. It is the
+    /// cheapest real instance of the hazard [`stored_name`] exists to catch.
+    /// `None` where the volume does not generate one, which is a per-volume
+    /// setting and so is measured rather than assumed.
+    #[cfg(test)]
+    pub(super) fn short_name(path: &Path) -> Option<String> {
+        let alias = text(&find_entry(path).ok()?.alternate_file_name);
+        (!alias.is_empty()).then_some(alias)
+    }
+
+    /// The directory entry for `path`, exactly as the volume stores it.
+    fn find_entry(path: &Path) -> io::Result<FindDataW> {
         let name: Vec<u16> = path.as_os_str().encode_wide().chain(once(0)).collect();
         // SAFETY: every field of `FindDataW` is an integer or an array of them,
         // so all-zero is a valid value of it.
@@ -470,13 +559,16 @@ mod windows_junction {
         }
         // SAFETY: `handle` came from `FindFirstFileW` and is not used again.
         unsafe { FindClose(handle) };
+        Ok(data)
+    }
 
-        let end = data
-            .file_name
+    /// A NUL-terminated UTF-16 field of `WIN32_FIND_DATAW`, as a `String`.
+    fn text(field: &[u16]) -> String {
+        let end = field
             .iter()
             .position(|unit| *unit == 0)
-            .unwrap_or(data.file_name.len());
-        Ok(String::from_utf16_lossy(&data.file_name[..end]))
+            .unwrap_or(field.len());
+        String::from_utf16_lossy(&field[..end])
     }
 
     pub(super) fn create(link: &Path, target: &Path) -> io::Result<()> {
@@ -707,15 +799,13 @@ mod tests {
         fs::create_dir(root.path().join("Research")).unwrap();
 
         assert_eq!(
-            stored_entry_name(&root.path().join("Research"))
-                .unwrap()
-                .as_deref(),
-            Some("Research")
+            occupant_of(&root.path().join("Research")),
+            MountOccupant::Named("Research".to_string())
         );
         assert_eq!(
-            stored_entry_name(&root.path().join("never-created")).unwrap(),
-            None,
-            "a free path is a free path, and is not an error"
+            occupant_of(&root.path().join("never-created")),
+            MountOccupant::Free,
+            "a free path is a free path, and is not a refusal"
         );
 
         // A junction must answer with its own name. `canonicalize` would answer
@@ -724,8 +814,8 @@ mod tests {
         let link = root.path().join("mounted");
         create_link(&link, &target).unwrap();
         assert_eq!(
-            stored_entry_name(&link).unwrap().as_deref(),
-            Some("mounted"),
+            occupant_of(&link),
+            MountOccupant::Named("mounted".to_string()),
             "the entry is named `mounted`; what it points at is named something else"
         );
 
@@ -733,10 +823,8 @@ mod tests {
             == crate::casefold::CaseFolding::Insensitive
         {
             assert_eq!(
-                stored_entry_name(&root.path().join("research"))
-                    .unwrap()
-                    .as_deref(),
-                Some("Research"),
+                occupant_of(&root.path().join("research")),
+                MountOccupant::Named("Research".to_string()),
                 "`research` and `Research` are one entry here, and the volume — not \
                  Unicode — is the authority on which name that entry carries"
             );

@@ -482,6 +482,19 @@ The release binary compiles and links — including the real `keyring` backend �
 be *run*: `tao` panics initialising GTK because there is no display server. Producing an
 installable bundle additionally needs the platform bundler toolchain, which was not attempted.
 
+**On Windows it has since been attempted, and the table above does not cover it.** See
+`docs/release-posture.md`. Two things there change what a reader should expect. `bundle.icon`
+listed four PNGs and no `.ico`, so `"targets": "all"` completed the whole release compile, printed
+`Built application at: …\vela.exe`, and then produced **no installer at all** — a bundling failure
+sitting behind a green `cargo build`, which is why "compiles" is not evidence that anything ships.
+And the MSI and NSIS targets disagree about who may install: the MSI is `perMachine` and needs
+elevation, the NSIS installer is `currentUser` and does not.
+
+**No `reaches-user` claim was earned for the installed application, on any platform.** The Windows
+install was performed from inside an MSIX-packaged process, so its output landed in that package's
+container: from outside the process tree `%LOCALAPPDATA%\Vela` does not exist. That is a limit of
+the measurement, not of the installer.
+
 **Therefore: no claim about the running application — startup time, idle memory, window
 chrome, OS notifications, keychain round-trips — may be made from this environment.** "It
 compiles" is the strongest honest statement available here about the desktop shell.

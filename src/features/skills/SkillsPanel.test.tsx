@@ -13,7 +13,7 @@
  * half of the assertion this file makes about the renderer half.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -144,11 +144,19 @@ describe('the skills pane', () => {
     // screen. Only the call count can see it, which is why the DOM assertions
     // below are not enough on their own: they passed against a `clearSelection`
     // that re-read every time, twice.
+    // Both halves of what `clearSelection` promises are counted. Its docstring
+    // says "back to the list, without re-reading it" — *it* being the list — so
+    // a `clearSelection` that re-fetched `skills_list` would break the sentence
+    // while every assertion about the body still passed.
     const reads: string[] = [];
+    const lists: string[] = [];
     class CountingHost extends BrowserAdapter {
       override async invoke(command: never, payload: never): Promise<never> {
         if ((command as string) === 'skills_read') {
           reads.push((payload as { name: string }).name);
+        }
+        if ((command as string) === 'skills_list') {
+          lists.push('skills_list');
         }
         return super.invoke(command, payload);
       }
@@ -159,16 +167,18 @@ describe('the skills pane', () => {
     await user.click(await screen.findByRole('button', { name: /commit-messages/u }));
     await screen.findByText('Instructions');
     // The control, and not decoration: a recorder that recorded nothing would
-    // make the assertion after the back-navigation true by construction. This
+    // make the assertions after the back-navigation true by construction. This
     // test asserted its own name vacuously until the pane was mutated to
     // re-read on every back-navigation and 18/18 stayed green, twice.
     expect(reads).toEqual(['commit-messages']);
+    expect(lists).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: '← All skills' }));
 
     expect(await screen.findByRole('button', { name: /half-written/u })).toBeInTheDocument();
     expect(screen.queryByText('Instructions')).not.toBeInTheDocument();
     expect(reads, 'going back to the list spent a second read').toEqual(['commit-messages']);
+    expect(lists, 'going back to the list re-enumerated the store').toHaveLength(1);
   });
 
   it('reports a store it could not read instead of drawing it as empty', async () => {
@@ -274,6 +284,19 @@ describe('the skills pane', () => {
     // Two reads in flight resolve in whatever order the host answers. Without
     // the ticket in `use-skills.ts` the slower answer wins, and the pane draws
     // one skill's instructions under another skill's name.
+    //
+    // ## The release order is the whole test, and it was the wrong way round
+    //
+    // This test released the **stale** read first and the current one second.
+    // In that order a pane with no ticket at all sets the stale detail and then
+    // has it overwritten a microtask later by the current one, so the DOM comes
+    // to rest correct either way — measured, and deleting the ticket left
+    // 13/13 green, twice. The ticket exists for exactly one case, a stale
+    // answer arriving **last**, and that was the case the test never produced.
+    //
+    // Reversing the two lines below reddens it on the same deletion, also
+    // measured twice. That four-cell matrix is what says the assertion is about
+    // the mechanism rather than about the ordering of two lines in a fake.
     const answers = new Map<string, () => void>();
     class SlowHost extends BrowserAdapter {
       override async invoke(command: never, payload: never): Promise<never> {
@@ -301,11 +324,29 @@ describe('the skills pane', () => {
       expect(answers.has('half-written')).toBe(true);
     });
 
-    // Now let the *first* read finish. It is stale and must land nowhere.
-    answers.get('commit-messages')?.();
+    // Current read first, stale read **last**. The stale answer is the one that
+    // has to land nowhere, and it can only be shown to land nowhere if it is
+    // the one still arriving after the pane has settled.
     answers.get('half-written')?.();
+    answers.get('commit-messages')?.();
 
-    expect(await screen.findByText(/There are no instructions to show/u)).toBeInTheDocument();
+    // Both continuations are microtask chains, so one macrotask turn drains
+    // them. Waiting explicitly rather than with `findByText` is deliberate: a
+    // polling query can observe the moment *between* the two answers and pass
+    // or fail depending on which one it caught, which is how the failure above
+    // was reported at two different lines on two machines. These assertions
+    // describe where the pane came to rest.
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+
+    // The heading and the body have to agree — that pairing is the defect this
+    // test is named for, and asserting only the body would still pass on a pane
+    // showing the right instructions under the wrong name.
+    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('half-written');
+    expect(screen.getByText(/There are no instructions to show/u)).toBeInTheDocument();
     expect(screen.queryByText(/Say what changed and why/u)).not.toBeInTheDocument();
   });
 });

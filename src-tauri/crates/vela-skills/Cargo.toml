@@ -1,0 +1,14 @@
+[package]
+name = "vela-skills"
+description = "The file-based skill store — SKILL.md parsing, progressive disclosure, and the per-project skills mount"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

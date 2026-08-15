@@ -9,6 +9,7 @@ default-members = [
   "crates/vela-providers",
   "crates/vela-secrets",
   "crates/vela-settings",
+  "crates/vela-skills",
   "crates/vela-store",
 ]
 resolver = "2"
@@ -30,6 +31,7 @@ vela-mcp = { path = "crates/vela-mcp" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
 vela-settings = { path = "crates/vela-settings" }
+vela-skills = { path = "crates/vela-skills" }
 vela-store = { path = "crates/vela-store" }
 
 # ---------------------------------------------------------------------------
@@ -84,6 +86,7 @@ vela-mcp.workspace = true
 vela-secrets.workspace = true
 vela-providers.workspace = true
 vela-settings.workspace = true
+vela-skills.workspace = true
 vela-store.workspace = true
 
 [features]

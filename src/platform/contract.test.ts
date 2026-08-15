@@ -29,6 +29,8 @@ describe('IPC contract', () => {
       'settings_get',
       'settings_put_provider',
       'settings_set_theme',
+      'skills_list',
+      'skills_read',
       'store_append_message',
       'store_autotitle_conversation',
       'store_create_conversation',

@@ -922,3 +922,86 @@ fn the_assembled_app_writes_a_database_file_to_the_application_data_directory() 
         "the database must live under the application-data directory"
     );
 }
+
+/* ========================================================================== */
+/* 5 — the skill store, through the real command                              */
+/* ========================================================================== */
+
+/// A skill file on the real disk, parsed by the real command, dispatched
+/// through the real `invoke_handler`.
+///
+/// This is the whole of what `skills_list` and `skills_read` claim, driven end
+/// to end: the store directory exists because `setup` made it, a skill file
+/// written into it is parsed by `vela_skills::SkillStore`, the listing carries the
+/// description and **not** the body, the body arrives only when a second
+/// command asks for one skill by name, and a traversal is refused by the host
+/// rather than by anything in the renderer.
+///
+/// The fixture skill is named after this process and removed at the end,
+/// because on Windows `app_data_dir()` is the user's own `%APPDATA%` and this
+/// test has no business leaving a skill in it.
+#[test]
+fn a_skill_on_disk_is_listed_and_read_through_the_assembled_app() {
+    let home = temp_home();
+    let app = RunningApp::start(home.path());
+
+    let store = app.data_dir().join(vela_skills::SKILL_STORE_DIRECTORY_NAME);
+    assert!(
+        store.is_dir(),
+        "the store must exist before any command reads it, and `setup` is what makes that true: {}",
+        store.display()
+    );
+
+    let name = format!("gate-m-fixture-{}", std::process::id());
+    let directory = store.join(&name);
+    std::fs::create_dir_all(&directory).expect("a fixture skill directory");
+    std::fs::write(
+        directory.join(vela_skills::SKILL_FILE_NAME),
+        format!(
+            "---\nname: {name}\ndescription: A fixture skill. Use when proving the wiring.\n---\n\n# Fixture\n\nOnly a read returns this sentence.\n"
+        ),
+    )
+    .expect("a fixture skill file");
+
+    let listed = app.ok("skills_list", json!({}));
+    let entries = listed
+        .get("skills")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mine = entries
+        .iter()
+        .find(|entry| entry.get("directory").and_then(Value::as_str) == Some(name.as_str()))
+        .unwrap_or_else(|| panic!("the fixture skill was not listed; saw {entries:?}"));
+
+    assert_eq!(mine.get("kind").and_then(Value::as_str), Some("skill"));
+    assert_eq!(
+        mine.get("description").and_then(Value::as_str),
+        Some("A fixture skill. Use when proving the wiring.")
+    );
+    assert!(
+        !listed
+            .to_string()
+            .contains("Only a read returns this sentence"),
+        "the first level of disclosure carried the body: {listed}"
+    );
+
+    let read = app.ok("skills_read", json!({ "name": name }));
+    assert_eq!(read.get("kind").and_then(Value::as_str), Some("skill"));
+    assert!(
+        read.get("body")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("Only a read returns this sentence"),
+        "the second level did not carry the body: {read}"
+    );
+
+    let refused = app.err("skills_read", json!({ "name": "../escape" }));
+    assert_eq!(
+        refused.get("code").and_then(Value::as_str),
+        Some("INVALID_PAYLOAD"),
+        "a traversal must be refused by the host: {refused}"
+    );
+
+    std::fs::remove_dir_all(&directory).expect("the fixture skill is removed");
+}

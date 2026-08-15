@@ -60,6 +60,7 @@ pub mod mcp;
 pub mod models;
 pub mod secrets;
 pub mod settings;
+pub mod skills;
 pub mod store;
 pub mod transcript;
 pub mod ui;
@@ -102,6 +103,8 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "settings_get",
     "settings_put_provider",
     "settings_set_theme",
+    "skills_list",
+    "skills_read",
     "store_append_message",
     "store_autotitle_conversation",
     "store_create_conversation",

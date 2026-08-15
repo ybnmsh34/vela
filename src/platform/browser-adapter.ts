@@ -78,6 +78,10 @@ import {
   type SettingsSetThemeReq,
   type SettingsSetThemeRes,
   type SettingsSnapshot,
+  type SkillListing,
+  type SkillsListRes,
+  type SkillsReadReq,
+  type SkillsReadRes,
   type StoreAppendMessageReq,
   type StoreConversationRefReq,
   type StoreCreateConversationReq,
@@ -704,6 +708,10 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#storeListMessages(payload as StoreListMessagesReq);
       case 'store_delete_message':
         return this.#storeDeleteMessage(payload as StoreMessageRefReq);
+      case 'skills_list':
+        return this.#skillsList();
+      case 'skills_read':
+        return this.#skillsRead(payload as SkillsReadReq);
       case 'ui_get_layout':
         return this.#layout;
       case 'ui_set_layout':
@@ -713,6 +721,72 @@ export class BrowserAdapter implements PlatformAdapter {
         throw new PlatformError('UNKNOWN_COMMAND', `unhandled command \`${String(exhaustive)}\``);
       }
     }
+  }
+
+  /**
+   * The canonical skill store, faked.
+   *
+   * **VERIFIED-BY-FAKE, and narrowly.** These are canned records, not parsed
+   * files: this adapter has no filesystem and deliberately no second copy of
+   * the SKILL.md parser, because a fake parser that drifts from
+   * `src-tauri/crates/vela-skills/src/document.rs` would teach the UI a format
+   * the host does not read. What it proves is the protocol shape and that every
+   * status the UI must render is reachable in a browser — the valid case, the
+   * unparseable one, the unknown name and the traversal attempt. It proves
+   * nothing whatsoever about any real skill on any real disk.
+   *
+   * The broken entry is here on purpose. A fake that only ever answers with
+   * healthy rows is how a renderer ends up with no design for the row that says
+   * "this skill is installed and cannot be read".
+   */
+  readonly #skills: readonly SkillListing[] = [
+    {
+      kind: 'skill',
+      directory: 'commit-messages',
+      name: 'commit-messages',
+      description: 'Writes commit messages in this repository’s house style. Use when committing.',
+    },
+    { kind: 'invalid', directory: 'half-written', problem: 'missingDescription' },
+  ];
+
+  readonly #skillBodies: ReadonlyMap<string, string> = new Map([
+    [
+      'commit-messages',
+      '# Commit messages\n\nSay what changed and why. One subject line, then the reasoning.\n',
+    ],
+  ]);
+
+  #skillsList(): SkillsListRes {
+    return { skills: this.#skills };
+  }
+
+  #skillsRead(request: SkillsReadReq): SkillsReadRes {
+    // Refused before anything is joined onto a path, which is the host's rule
+    // and the reason the host has it — see `SkillProblem` in `contract.ts`.
+    // Mirrors `is_single_path_segment` in
+    // `src-tauri/crates/vela-skills/src/document.rs`.
+    if (
+      request.name === '' ||
+      request.name === '.' ||
+      request.name === '..' ||
+      /[/\\<>:"|?*]/.test(request.name)
+    ) {
+      throw new PlatformError('INVALID_PAYLOAD', 'a skill name must be one path segment');
+    }
+    const found = this.#skills.find((skill) => skill.directory === request.name);
+    if (found === undefined) {
+      throw new PlatformError('NOT_FOUND', 'no such skill');
+    }
+    if (found.kind === 'invalid') {
+      return { kind: 'invalid', problem: found.problem };
+    }
+    return {
+      kind: 'skill',
+      name: found.name,
+      description: found.description,
+      body: this.#skillBodies.get(found.directory) ?? '',
+      resources: { scripts: [], references: [], assets: [] },
+    };
   }
 
   #appInfo(): AppInfo {

@@ -218,22 +218,35 @@ jobs:
       # part removed. Both defects are fixed, so both gates run here now.
       #
       # Wrapped, and ONLY here. Adding this gate to a Windows job also imports a
-      # vitest defect that only shows up on Windows: 5 runs in 32 on the machine
-      # this was fixed on (1 in 16 on another) die inside vitest's own worker
-      # pool with `ERR_IPC_CHANNEL_CLOSED` from tinypool. The run does not fail
-      # — it STOPS. Ten of the twelve test files print a result, two print
-      # nothing, and no `Tests N passed` summary is emitted at all. So the gate
-      # returns no verdict, which is not a red to be waved through and not a
-      # green either; the only thing that produces a verdict is running it
-      # again. `scripts/ci-retry-vitest-crash.mjs` does exactly that and nothing
-      # else: it retries once, only on that signature, only when no test
-      # reported a failure, and prints a `::warning::` every time so the rate
-      # stays visible rather than being absorbed. A run with a genuinely failing
-      # test is passed straight through on the first attempt.
+      # crash that so far only shows up on Windows: about 14% of runs (9 in 64,
+      # and 5 in 32 and 1 in 16 on two other machines) die with
+      # `ERR_IPC_CHANNEL_CLOSED` from tinypool, inside vitest's own worker pool.
+      # The run does not fail — it STOPS. Typically only 7-8 of the 12 test files
+      # ever report, four or five are left unverified, and no `Tests N passed`
+      # summary is emitted at all. So the gate returns no verdict: not a red to
+      # be waved through, not a green either, and the only thing that produces a
+      # verdict is running it again. `scripts/ci-retry-vitest-crash.mjs` does
+      # exactly that and nothing else — it retries once, only on that signature,
+      # only when vitest reported no failing test, and prints a `::warning::`
+      # every time so the rate stays visible rather than being absorbed.
       #
-      # This is deliberately not a general retry and deliberately not applied to
-      # `pnpm verify` or to the Linux job, where the crash does not occur. If the
-      # warnings stop being rare, fix the pool — do not raise the attempt count.
+      # "Reported no failing test" means the INLINE markers as well as the
+      # end-of-run summary. The first version of that check read only the
+      # summary, which the crash by definition prevents from ever being printed,
+      # so it would retry a run that had already printed a real regression and
+      # could turn it green. Read the header of that script before touching it.
+      #
+      # The bound it cannot exceed, stated so nobody over-reads a green: a
+      # DETERMINISTIC regression cannot survive this, because exiting 0 needs the
+      # second attempt to pass too. A NON-DETERMINISTIC one still can, and this
+      # suite has real TCP and multi-megabyte bodies in it, so that class is not
+      # hypothetical and is load-correlated with the crash itself.
+      #
+      # Deliberately not a general retry, and deliberately not applied to
+      # `pnpm verify` or to the Linux gate above. The trigger is NOT established
+      # as an upstream defect — the files it eats are consistently the heaviest,
+      # which points at resource pressure in our own harness. Find it and delete
+      # this wrapper; do not raise the attempt count.
       - name: GATE M Part 1 — mock capability matrix
         run: node scripts/ci-retry-vitest-crash.mjs pnpm test:harness
       - name: Frontend build

@@ -114,6 +114,35 @@ describe('the local gate is a superset of the remote one', () => {
     ).toEqual([]);
   });
 
+  it('the crash-retry wrapper is confined to the one job that needs it', () => {
+    // `scripts/ci-retry-vitest-crash.mjs` re-runs a gate that crashed without
+    // reporting any verdict. That is defensible exactly where the crash happens
+    // and nowhere else: on a job that does not crash, the same wrapper is a
+    // retry on ordinary flakiness, which is how a real intermittent failure
+    // gets normalised into "just re-run it".
+    //
+    // Both the script and the workflow say "only here". Prose does not enforce
+    // itself — spreading the wrapper to the Linux harness gate left this file
+    // green, because the CI_GATES row for it is satisfied by the wrapped string
+    // wherever it appears. This is what makes "only here" true.
+    const WRAPPER = 'ci-retry-vitest-crash.mjs';
+
+    const wrappingJobs = ciJobs()
+      .filter(([, body]) => new RegExp(`run:.*${WRAPPER}`, 'u').test(body))
+      .map(([name]) => name);
+    expect(
+      wrappingJobs,
+      'the crash-retry wrapper belongs to `test-windows` alone. If another job ' +
+        'now needs it, the crash has spread and the trigger should be found ' +
+        'rather than the retry copied.',
+    ).toEqual(['test-windows']);
+
+    expect(
+      ciRunCommands().filter((command) => command.includes(WRAPPER)),
+      'the wrapper is for exactly one step, wrapping exactly the harness gate',
+    ).toEqual(['node scripts/ci-retry-vitest-crash.mjs pnpm test:harness']);
+  });
+
   it('every job that runs cargo can actually build the dependency graph', () => {
     // The failure this catches, found at Phase B integration: `static` ran
     // `cargo clippy` on a bare runner. Clippy builds before it lints, the graph

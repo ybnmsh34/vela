@@ -25,6 +25,25 @@
 //! form: no HTTP status, no `finish_reason`, no vendor error string, no backend
 //! identity. Re-mapping it here would add a second place for the two models to
 //! drift apart, and drift is how provider detail leaks.
+//!
+//! # A turn runs against a router, not against a provider
+//!
+//! [`chat_send`] resolves a [`vela_providers::Router`] rather than a single
+//! [`Provider`], and that is the difference between the two shapes:
+//!
+//! * A provider is one endpoint, tried once. A refused connection was the end
+//!   of the turn, whatever else the user had configured.
+//! * A router is the ordered candidate list from
+//!   [`ProviderHost::router_for`], with bounded retries, growing backoff, the
+//!   endpoint's own `Retry-After` honoured, and — the rule that matters most —
+//!   **no failover once any output has reached the screen**, because splicing a
+//!   second answer onto a half-drawn first one is worse than the error it was
+//!   avoiding.
+//!
+//! `resolve_provider` still exists and is still the right thing for
+//! `models_list` and `models_probe`: listing models on *this* endpoint is a
+//! question about that endpoint, and answering it from a different one would be
+//! a lie. Failover is for a turn, not for a question about a box.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -35,6 +54,7 @@ use vela_providers::event::{EventSink, StreamEvent};
 use vela_providers::model::{ChatMessage, ChatRequest, ContentPart, MessageRole};
 use vela_providers::model::{ToolChoice, ToolDefinition};
 use vela_providers::provider::{CancelToken, Provider, RequestContext};
+use vela_providers::Router;
 
 use super::content::{to_provider_parts, ContentPartDto};
 use super::{IpcError, IpcResult};
@@ -381,10 +401,16 @@ impl EventSink for TerminalTracking<'_> {
 /// Drives one turn to completion, guaranteeing the sink sees exactly one
 /// terminal event.
 ///
+/// Takes a [`Router`] rather than a provider: a turn is addressed to the
+/// endpoint the user chose and may be *retried* there or *failed over* from
+/// there, and the rules for when it may be are the router's, not this layer's.
+/// A single-endpoint turn is the one-candidate case of the same thing and gets
+/// bounded retry and backoff for free.
+///
 /// Split out from the command so it can be tested with a `Vec<StreamEvent>`
-/// sink and an in-process provider — no window, no runtime, no endpoint.
+/// sink and in-process providers — no window, no runtime, no endpoint.
 pub async fn run_turn(
-    provider: std::sync::Arc<dyn Provider>,
+    router: Router,
     request: ChatRequest,
     context: RequestContext,
     sink: &mut dyn EventSink,
@@ -393,7 +419,7 @@ pub async fn run_turn(
         inner: sink,
         saw_terminal: false,
     };
-    let outcome = provider.stream(request, &mut tracking, &context).await;
+    let outcome = router.stream(request, &mut tracking, &context).await;
     if let Err(error) = outcome {
         if !tracking.saw_terminal {
             tracking.emit(StreamEvent::Error { error });
@@ -435,7 +461,11 @@ pub fn chat_send<R: Runtime>(
     payload: ChatSendReq,
 ) -> IpcResult<ChatSendRes> {
     let request = build_request(&payload)?;
-    let provider = resolve_provider(state.providers.as_ref(), &payload.provider_id)?;
+    // Resolved before the turn id is claimed, so an unconfigured endpoint is a
+    // refusal rather than a claimed id with nothing behind it.
+    let router = state
+        .providers
+        .router_for(&payload.provider_id, request.model_id.as_str())?;
 
     let cancel = turns.begin(&payload.turn_id).ok_or_else(|| {
         IpcError::invalid(format!(
@@ -453,7 +483,7 @@ pub fn chat_send<R: Runtime>(
             turn_id: turn_id.clone(),
         };
         run_turn(
-            provider,
+            router,
             request,
             RequestContext::new().with_cancel(cancel),
             &mut sink,
@@ -484,7 +514,7 @@ pub fn chat_cancel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vela_providers::EchoProvider;
+    use vela_providers::{Candidate, EchoProvider};
 
     fn request(turn: &str) -> ChatSendReq {
         ChatSendReq {
@@ -759,7 +789,12 @@ mod tests {
         let built = build_request(&request("t1")).expect("valid");
         let mut sink: Vec<StreamEvent> = Vec::new();
 
-        tauri::async_runtime::block_on(run_turn(provider, built, RequestContext::new(), &mut sink));
+        tauri::async_runtime::block_on(run_turn(
+            Router::new(vec![Candidate::new(provider, "some-model")]),
+            built,
+            RequestContext::new(),
+            &mut sink,
+        ));
 
         let terminals = sink.iter().filter(|event| event.is_terminal()).count();
         assert_eq!(terminals, 1, "events: {sink:?}");
@@ -780,12 +815,145 @@ mod tests {
         let mut sink: Vec<StreamEvent> = Vec::new();
 
         tauri::async_runtime::block_on(run_turn(
-            provider,
+            Router::new(vec![Candidate::new(provider, "some-model")]),
             built,
             RequestContext::new().with_cancel(cancel),
             &mut sink,
         ));
 
         assert_eq!(sink.iter().filter(|e| e.is_terminal()).count(), 1);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* routing                                                            */
+    /* ------------------------------------------------------------------ */
+
+    fn empty_host() -> ProviderHost {
+        ProviderHost::new(
+            Arc::new(vela_secrets::MemoryStore::new()),
+            Arc::new(vela_providers::http::testing::ScriptedTransport::new(
+                Vec::new(),
+            )),
+        )
+    }
+
+    #[test]
+    fn a_turn_addressed_to_an_unconfigured_endpoint_gets_no_router_at_all() {
+        // Same answer `resolve_provider` gives, at the surface that actually
+        // sends turns. A router that quietly dropped the missing primary and
+        // ran the *other* endpoints would send the user's prompt somewhere
+        // they never pointed it.
+        let error = empty_host().router_for("absent", "m").unwrap_err();
+        assert_eq!(error.code, super::super::IpcErrorCode::NotFound);
+    }
+
+    #[test]
+    fn the_endpoint_the_user_chose_is_the_first_candidate_and_the_rest_follow_it() {
+        let host = empty_host();
+        // Configured out of alphabetical order, and asked for last-in-order.
+        host.install(
+            &vela_settings::ProviderConfig::local("aaa", "A", "http://127.0.0.1:8081/v1")
+                .unwrap()
+                .with_model("model-a"),
+        )
+        .unwrap();
+        host.install(
+            &vela_settings::ProviderConfig::local("zzz", "Z", "http://127.0.0.1:8082/v1")
+                .unwrap()
+                .with_model("model-z"),
+        )
+        .unwrap();
+
+        let router = host.router_for("zzz", "chosen-model").unwrap();
+        assert_eq!(
+            router.candidate_ids(),
+            vec!["zzz".to_string(), "aaa".to_string()],
+            "the chosen endpoint leads; nothing outranks it"
+        );
+        assert_eq!(
+            router.candidate_models(),
+            vec!["chosen-model".to_string(), "model-a".to_string()],
+            "the primary answers about the model the user picked; a fallback \
+             about its own, because `chosen-model` is not a name on that box"
+        );
+    }
+
+    #[test]
+    fn an_endpoint_with_no_model_of_its_own_is_not_a_fallback() {
+        let host = empty_host();
+        host.install(
+            &vela_settings::ProviderConfig::local("primary", "P", "http://127.0.0.1:8081/v1")
+                .unwrap(),
+        )
+        .unwrap();
+        // No `.with_model(..)`: nothing records what to ask this box for.
+        host.install(
+            &vela_settings::ProviderConfig::local("silent", "S", "http://127.0.0.1:8082/v1")
+                .unwrap(),
+        )
+        .unwrap();
+
+        let router = host.router_for("primary", "m").unwrap();
+        assert_eq!(
+            router.candidate_ids(),
+            vec!["primary".to_string()],
+            "Vela does not invent a model name for a box that never named one"
+        );
+    }
+
+    #[test]
+    fn a_fallback_that_cannot_authenticate_is_left_out_rather_than_asked() {
+        // Left in, it would answer `AuthFailed` — which the router never fails
+        // over — and a "the box you chose is down" turn would surface as a
+        // credential error about an endpoint the user did not choose.
+        let host = empty_host();
+        host.install(
+            &vela_settings::ProviderConfig::local("primary", "P", "http://127.0.0.1:8081/v1")
+                .unwrap(),
+        )
+        .unwrap();
+        host.install(
+            &vela_settings::ProviderConfig::local("locked", "L", "https://api.example.test/v1")
+                .unwrap()
+                .with_auth(
+                    &vela_core::auth::AuthMode::BearerToken,
+                    vela_core::auth::AuthRequirement::Required,
+                )
+                .unwrap()
+                .with_model("model-l"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            host.router_for("primary", "m").unwrap().candidate_ids(),
+            vec!["primary".to_string()]
+        );
+    }
+
+    #[test]
+    fn the_endpoint_the_user_chose_is_never_filtered_out_of_its_own_turn() {
+        // The mirror of the two tests above. A missing required credential on
+        // the *selected* endpoint is the error the user needs to read, not a
+        // reason to route their prompt to somebody else.
+        let host = empty_host();
+        host.install(
+            &vela_settings::ProviderConfig::local("locked", "L", "https://api.example.test/v1")
+                .unwrap()
+                .with_auth(
+                    &vela_core::auth::AuthMode::BearerToken,
+                    vela_core::auth::AuthRequirement::Required,
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        host.install(
+            &vela_settings::ProviderConfig::local("other", "O", "http://127.0.0.1:8082/v1")
+                .unwrap()
+                .with_model("model-o"),
+        )
+        .unwrap();
+
+        let router = host.router_for("locked", "m").unwrap();
+        assert_eq!(router.candidate_ids()[0], "locked");
     }
 }

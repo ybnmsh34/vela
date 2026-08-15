@@ -118,23 +118,43 @@ where
     }
 }
 
-/// Wraps a sink and remembers whether anything the user can *see* has been
-/// emitted yet.
+/// Wraps the caller's sink for the duration of one **routed** turn.
 ///
-/// The router uses this for the one failover rule that cannot be derived from
-/// the error taxonomy: once a single character has reached the screen, moving
-/// to another candidate would replay the turn and the user would watch the
-/// answer restart. After first visible output, an error is surfaced instead.
-pub struct CommitTrackingSink<'a> {
+/// Two jobs, both about not lying to the user:
+///
+/// 1. **It remembers whether anything the user can *see* has been emitted.**
+///    This is the one failover rule that cannot be derived from the error
+///    taxonomy: once a single character has reached the screen, moving to
+///    another candidate would replay the turn and the user would watch the
+///    answer restart. After first visible output, an error is surfaced instead.
+/// 2. **It withholds every terminal event a candidate produces** and hands the
+///    router [`finish`](Self::finish) to emit exactly one of its own. Both
+///    halves of that are load-bearing:
+///
+///    * A candidate that failed emits `Error` before the router has decided
+///      anything — [`CompatProvider`](crate::compat::CompatProvider) does
+///      exactly this. Forwarded, the renderer would draw a failed turn and
+///      then receive the `Done` of the candidate that actually worked. Two
+///      terminal events for one turn is a state its reducer has no meaning for.
+///    * The router's own [`Degradation`]s — `FailedOver` above all — are known
+///      only *after* the last candidate returns. The `Done` a provider emits
+///      cannot carry them, so a re-emitted `Done` is the only way "this answer
+///      took N attempts" ever reaches the screen.
+///
+/// The same shape as `compat`'s private `SuppressingSink`, one layer up, and
+/// for the same reason: whoever may retry owns the terminal event.
+pub struct RoutedTurnSink<'a> {
     inner: &'a mut dyn EventSink,
     committed: bool,
+    finished: bool,
 }
 
-impl<'a> CommitTrackingSink<'a> {
+impl<'a> RoutedTurnSink<'a> {
     pub fn new(inner: &'a mut dyn EventSink) -> Self {
         Self {
             inner,
             committed: false,
+            finished: false,
         }
     }
 
@@ -142,18 +162,28 @@ impl<'a> CommitTrackingSink<'a> {
     pub fn committed(&self) -> bool {
         self.committed
     }
+
+    /// Emit the one terminal event of this turn.
+    pub fn finish(&mut self, event: StreamEvent) {
+        debug_assert!(event.is_terminal(), "finish takes a terminal event");
+        debug_assert!(!self.finished, "a turn terminates exactly once");
+        self.finished = true;
+        self.inner.emit(event);
+    }
 }
 
-impl EventSink for CommitTrackingSink<'_> {
+impl EventSink for RoutedTurnSink<'_> {
     fn emit(&mut self, event: StreamEvent) {
         match &event {
+            // Withheld — see the type docs. `finish` is the only door.
+            StreamEvent::Done { .. } | StreamEvent::Error { .. } => return,
             StreamEvent::TextDelta { text } | StreamEvent::ReasoningDelta { text } => {
                 if !text.is_empty() {
                     self.committed = true;
                 }
             }
             StreamEvent::ToolCallDelta { .. } => self.committed = true,
-            _ => {}
+            StreamEvent::Usage { .. } => {}
         }
         self.inner.emit(event);
     }
@@ -280,7 +310,7 @@ mod tests {
     #[test]
     fn the_commit_tracker_only_trips_on_visible_output() {
         let mut inner = CollectingSink::new();
-        let mut sink = CommitTrackingSink::new(&mut inner);
+        let mut sink = RoutedTurnSink::new(&mut inner);
         sink.emit(StreamEvent::Usage {
             usage: TokenUsage::default(),
         });
@@ -291,6 +321,38 @@ mod tests {
         assert!(!sink.committed(), "an empty delta shows the user nothing");
         sink.emit(StreamEvent::TextDelta { text: "a".into() });
         assert!(sink.committed(), "a character reached the screen");
+    }
+
+    #[test]
+    fn a_candidates_own_terminal_event_never_reaches_the_caller() {
+        // The defect this prevents: candidate one fails and emits `Error`,
+        // candidate two answers and emits `Done`, and the renderer is handed
+        // two terminal events for one turn.
+        let mut inner = CollectingSink::new();
+        {
+            let mut sink = RoutedTurnSink::new(&mut inner);
+            sink.emit(StreamEvent::Error {
+                error: ProviderError::malformed(crate::diagnostic::Cause::SyntheticTestFailure),
+            });
+            sink.emit(StreamEvent::TextDelta { text: "hi".into() });
+            sink.emit(StreamEvent::Done {
+                response: Box::new(ChatResponse::empty()),
+            });
+            sink.finish(StreamEvent::Done {
+                response: Box::new(ChatResponse::empty()),
+            });
+        }
+        assert_eq!(
+            inner.events.iter().filter(|e| e.is_terminal()).count(),
+            1,
+            "exactly one terminal event, and it is the router's own: {:?}",
+            inner.events
+        );
+        assert_eq!(inner.text(), "hi", "ordinary output still passes through");
+        assert!(matches!(
+            inner.events.last(),
+            Some(StreamEvent::Done { .. })
+        ));
     }
 
     #[test]

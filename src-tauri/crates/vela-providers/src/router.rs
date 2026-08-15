@@ -13,13 +13,20 @@
 //!    in front of them. After first visible output the error is surfaced.
 //! 3. **Bounded, backed-off retries.** Attempts are capped, the delay grows,
 //!    and the endpoint's own `Retry-After` wins over Vela's guess.
+//! 4. **One turn, one terminal event.** A candidate that fails emits its own
+//!    `Error` and a candidate that succeeds emits its own `Done`; forwarding
+//!    both would hand the renderer two endings for one turn. Every candidate's
+//!    terminal event is withheld by [`RoutedTurnSink`] and this file emits
+//!    exactly one — which is also the only place [`Degradation::FailedOver`]
+//!    can be attached, because nothing below the router knows an earlier
+//!    candidate was tried.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::diagnostic::{Cause, Diagnosis};
 use crate::error::{ProviderError, ProviderResult};
-use crate::event::{CommitTrackingSink, EventSink};
+use crate::event::{EventSink, RoutedTurnSink, StreamEvent};
 use crate::model::{ChatRequest, ChatResponse, Degradation};
 use crate::provider::{Provider, RequestContext};
 
@@ -82,6 +89,19 @@ pub struct Router {
     policy: RetryPolicy,
 }
 
+/// Hand-written because a [`Candidate`] holds an `Arc<dyn Provider>`, which
+/// cannot be `Debug`. What a reader of a panic or a log actually wants is the
+/// *order* anyway: which endpoints, in which sequence, for which models.
+impl std::fmt::Debug for Router {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Router")
+            .field("candidates", &self.candidate_ids())
+            .field("models", &self.candidate_models())
+            .field("policy", &self.policy)
+            .finish()
+    }
+}
+
 impl Router {
     pub fn new(candidates: Vec<Candidate>) -> Self {
         Self {
@@ -99,15 +119,63 @@ impl Router {
         self.candidates.is_empty()
     }
 
+    /// The endpoints this router will try, in order, by the id they are
+    /// configured under.
+    ///
+    /// Present so that a candidate list can be **asserted on** rather than
+    /// inferred from which sockets happened to receive traffic. The ordering is
+    /// decided one layer up, in the composition root, and a decision no test
+    /// can read is a decision nothing pins.
+    pub fn candidate_ids(&self) -> Vec<String> {
+        self.candidates
+            .iter()
+            .map(|candidate| candidate.provider.descriptor().id.clone())
+            .collect()
+    }
+
+    /// The model each candidate will be asked for, in the same order. Not the
+    /// same list twice: a fallback answers about its own model, not the one the
+    /// user picked on the endpoint they chose.
+    pub fn candidate_models(&self) -> Vec<String> {
+        self.candidates
+            .iter()
+            .map(|candidate| candidate.model_id.clone())
+            .collect()
+    }
+
     /// Run `request` against the candidates in order.
     ///
     /// The request's `model_id` is replaced by each candidate's, so one
     /// conversation can fail over between backends that name their models
     /// differently.
+    ///
+    /// `sink` sees exactly one terminal event — the router's own — whatever
+    /// happens below. See rule 4 in the module docs.
     pub async fn stream(
         &self,
         request: ChatRequest,
         sink: &mut dyn EventSink,
+        context: &RequestContext,
+    ) -> ProviderResult<ChatResponse> {
+        let mut routed = RoutedTurnSink::new(sink);
+        let outcome = self.route(request, &mut routed, context).await;
+        match &outcome {
+            // The response the *router* assembled, not the one a candidate
+            // emitted: only this one carries `FailedOver`.
+            Ok(response) => routed.finish(StreamEvent::Done {
+                response: Box::new(response.clone()),
+            }),
+            Err(error) => routed.finish(StreamEvent::Error {
+                error: error.clone(),
+            }),
+        }
+        outcome
+    }
+
+    async fn route(
+        &self,
+        request: ChatRequest,
+        sink: &mut RoutedTurnSink<'_>,
         context: &RequestContext,
     ) -> ProviderResult<ChatResponse> {
         if self.candidates.is_empty() {
@@ -125,13 +193,12 @@ impl Router {
                 context.cancel.err_if_cancelled()?;
                 attempts_used += 1;
 
-                let mut tracking = CommitTrackingSink::new(sink);
                 let mut attempt_request = request.clone();
                 attempt_request.model_id = candidate.model_id.clone();
 
                 match candidate
                     .provider
-                    .stream(attempt_request, &mut tracking, context)
+                    .stream(attempt_request, &mut *sink, context)
                     .await
                 {
                     Ok(mut response) => {
@@ -145,7 +212,7 @@ impl Router {
                     Err(error) => {
                         // Rule 2. Anything else would replay the answer in
                         // front of the user.
-                        if tracking.committed() {
+                        if sink.committed() {
                             return Err(error);
                         }
                         let retryable = error.allows_retry()
@@ -197,6 +264,11 @@ mod tests {
     use vela_core::provider::{ProviderDescriptor, ProviderKind};
 
     /// A provider that answers from a script. Each call takes the next entry.
+    ///
+    /// It emits its own terminal event on both paths — `Done` on success,
+    /// `Error` on failure — because that is what every real adapter in this
+    /// crate does, and the router's whole terminal-event discipline is about
+    /// what happens to those.
     struct Scripted {
         descriptor: ProviderDescriptor,
         outcomes: Vec<Result<&'static str, ProviderError>>,
@@ -265,6 +337,9 @@ mod tests {
                     sink.emit(StreamEvent::TextDelta { text: text.into() });
                     let mut response = ChatResponse::empty();
                     response.parts = vec![crate::model::ContentPart::text(text)];
+                    sink.emit(StreamEvent::Done {
+                        response: Box::new(response.clone()),
+                    });
                     Ok(response)
                 }
                 Some(Err(error)) => {
@@ -273,6 +348,9 @@ mod tests {
                             text: "partial ".into(),
                         });
                     }
+                    sink.emit(StreamEvent::Error {
+                        error: error.clone(),
+                    });
                     Err(error)
                 }
                 None => Err(ProviderError::malformed(Cause::SyntheticTestFailure)),
@@ -323,6 +401,102 @@ mod tests {
             .degradations
             .iter()
             .any(|d| matches!(d, Degradation::FailedOver { .. })));
+    }
+
+    /// **The event a whole renderer surface was written for.**
+    ///
+    /// `src/features/conversation/notices.ts` renders "Retried before it worked
+    /// — this answer took N attempts" off `Degradation::FailedOver`, and the
+    /// renderer reads degradations off the `Done` event and nowhere else. The
+    /// router used to push `FailedOver` onto its *return value* only — after
+    /// the winning candidate had already emitted a `Done` that could not know
+    /// about it — so the sentence was unreachable no matter how many candidates
+    /// failed first.
+    #[tokio::test]
+    async fn the_attempt_count_reaches_the_screen_and_not_only_the_return_value() {
+        let first = Scripted::new("a", vec![Err(transport_error())]);
+        let second = Scripted::new("b", vec![Ok("answer from the second")]);
+        let router = Router::new(vec![
+            Candidate::new(first, "model-a"),
+            Candidate::new(second, "model-b"),
+        ])
+        .with_policy(RetryPolicy {
+            max_attempts_per_candidate: 1,
+            ..fast_policy()
+        });
+
+        let mut sink = CollectingSink::new();
+        router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap();
+
+        let emitted = sink.response().expect("a turn ends with a Done");
+        assert_eq!(
+            emitted.degradations,
+            vec![Degradation::FailedOver { attempts: 2 }],
+            "the Done the renderer reads must carry the attempt count"
+        );
+        assert_eq!(emitted.answer_text(), "answer from the second");
+    }
+
+    /// One turn, one ending. Rule 4.
+    #[tokio::test]
+    async fn a_failed_candidate_never_puts_its_own_ending_in_front_of_the_user() {
+        let first = Scripted::new("a", vec![Err(transport_error())]);
+        let second = Scripted::new("b", vec![Ok("the real answer")]);
+        let router = Router::new(vec![
+            Candidate::new(first, "model-a"),
+            Candidate::new(second, "model-b"),
+        ])
+        .with_policy(RetryPolicy {
+            max_attempts_per_candidate: 1,
+            ..fast_policy()
+        });
+
+        let mut sink = CollectingSink::new();
+        router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap();
+
+        let terminals: Vec<&StreamEvent> = sink.events.iter().filter(|e| e.is_terminal()).collect();
+        assert_eq!(
+            terminals.len(),
+            1,
+            "the failed candidate's Error must not reach the renderer: {:?}",
+            sink.events
+        );
+        assert!(matches!(terminals[0], StreamEvent::Done { .. }));
+        assert_eq!(sink.text(), "the real answer");
+    }
+
+    /// The failing half of the same rule: a turn that ends badly still ends
+    /// exactly once, and the sink's last event is the error the caller gets.
+    #[tokio::test]
+    async fn a_turn_that_no_candidate_answers_still_terminates_exactly_once() {
+        let only = Scripted::new("a", vec![Err(transport_error())]);
+        let router = Router::new(vec![Candidate::new(only, "m")]).with_policy(RetryPolicy {
+            max_attempts_per_candidate: 1,
+            ..fast_policy()
+        });
+
+        let mut sink = CollectingSink::new();
+        let error = router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap_err();
+
+        assert_eq!(sink.events.iter().filter(|e| e.is_terminal()).count(), 1);
+        assert!(matches!(
+            sink.events.last(),
+            Some(StreamEvent::Error { .. })
+        ));
+        assert_eq!(
+            sink.error(),
+            Some(&error),
+            "the same error, not a second one"
+        );
     }
 
     #[tokio::test]

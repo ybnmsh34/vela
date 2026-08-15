@@ -60,7 +60,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use vela_core::provider::ProviderDescriptor;
 use vela_providers::http::{HttpTransport, ReqwestTransport};
-use vela_providers::{CompatProvider, Provider, ProviderRegistry};
+use vela_providers::{CompatProvider, Provider, ProviderRegistry, Router};
 use vela_secrets::SecretStore;
 use vela_settings::{ProviderConfig, SettingsService};
 use vela_store::SettingsRepository;
@@ -240,6 +240,71 @@ impl ProviderHost {
     ) -> IpcResult<SyncReport> {
         let configs = SettingsService::new(settings, self.secrets.as_ref()).providers()?;
         Ok(self.sync(configs))
+    }
+
+    /* ---------------------------------------------------------- candidates */
+
+    /// The [`Router`] one turn addressed to `provider_id` runs against.
+    ///
+    /// # The ordering, and why it is this and not something cleverer
+    ///
+    /// 1. **The endpoint the user chose is always first, with the model they
+    ///    chose.** Nothing reorders it, ranks it or scores it. A turn goes
+    ///    where the user pointed it.
+    /// 2. **Every other configured endpoint follows, in id order**, so the
+    ///    fallback set is the same on every turn and in every session. There is
+    ///    no learned preference, no latency ranking and no health memory — all
+    ///    three would make "where did my prompt go" unanswerable.
+    /// 3. **A fallback uses its own configured `modelId`, or it is not a
+    ///    fallback.** `model-a` is not a model name on backend B, and inventing
+    ///    one from the user's selection would be Vela guessing. An endpoint
+    ///    with no model recorded is skipped — visibly nothing, rather than a
+    ///    request that is wrong in a way only the endpoint can see.
+    /// 4. **A fallback whose required credential is missing is skipped.** It
+    ///    could only answer `AuthFailed`, which by the router's first rule is
+    ///    never failed over — so leaving it in would turn "the box you chose is
+    ///    down" into "your key was rejected", about an endpoint the user did
+    ///    not pick.
+    ///
+    /// The *selected* endpoint is deliberately not filtered by (3) or (4): if
+    /// the endpoint a user pointed at cannot authenticate, that is the error
+    /// they need to see, not a reason to quietly ask somebody else.
+    ///
+    /// `ProviderKind` is not consulted anywhere here. It exists "for
+    /// grouping/iconography only — never for behaviour"
+    /// ([`vela_core::provider::ProviderKind`]), and a failover policy that read
+    /// it would be behaviour derived from backend identity.
+    pub fn router_for(&self, provider_id: &str, model_id: &str) -> IpcResult<Router> {
+        let live = self.read();
+        if live.registry.get(provider_id).is_none() {
+            return Err(IpcError::not_found(format!(
+                "no provider configured with id `{provider_id}`"
+            )));
+        }
+
+        let mut order = vec![(provider_id.to_owned(), model_id.to_owned())];
+        for (id, config) in &live.installed {
+            if id == provider_id {
+                continue;
+            }
+            let Some(fallback_model) = config.model_id.as_deref() else {
+                continue;
+            };
+            if !config.is_usable(self.credential_present(config)) {
+                continue;
+            }
+            order.push((id.clone(), fallback_model.to_owned()));
+        }
+        Ok(live.registry.route(&order))
+    }
+
+    /// Whether the credential store holds an entry for this configuration.
+    /// A *presence* question, never a read of the value — same shape as
+    /// [`vela_settings::SettingsService::credential_present`].
+    fn credential_present(&self, config: &ProviderConfig) -> bool {
+        config
+            .secret_ref()
+            .is_some_and(|reference| self.secrets.contains(reference))
     }
 
     /* --------------------------------------------------------------- build */

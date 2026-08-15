@@ -221,10 +221,13 @@ impl Host {
     /// What `chat_send` does, minus the window sink and the spawn.
     fn send(&self, request: ChatSendReq) -> Result<Vec<StreamEvent>, vela_lib::ipc::IpcError> {
         let built: ChatRequest = chat::build_request(&request)?;
-        let provider = chat::resolve_provider(self.state.providers.as_ref(), &request.provider_id)?;
+        let router = self
+            .state
+            .providers
+            .router_for(&request.provider_id, built.model_id.as_str())?;
         let mut sink: Vec<StreamEvent> = Vec::new();
         tauri::async_runtime::block_on(chat::run_turn(
-            provider,
+            router,
             built,
             RequestContext::new(),
             &mut sink,

@@ -280,7 +280,10 @@ impl WslBackend {
         // Grants first: the bind has to be taken while `/mnt` still reaches the
         // drive, and it survives the unmount below because it is not under it.
         for mount in &plan.mounts {
-            push(&mut lines, format!("mkdir -p {}", sh_quote(&mount.guest_path)));
+            push(
+                &mut lines,
+                format!("mkdir -p {}", sh_quote(&mount.guest_path)),
+            );
             push(
                 &mut lines,
                 format!(
@@ -292,10 +295,7 @@ impl WslBackend {
             if mount.mode == MountMode::ReadOnly {
                 push(
                     &mut lines,
-                    format!(
-                        "mount -o remount,ro,bind {}",
-                        sh_quote(&mount.guest_path)
-                    ),
+                    format!("mount -o remount,ro,bind {}", sh_quote(&mount.guest_path)),
                 );
             }
         }
@@ -366,7 +366,10 @@ impl WslBackend {
             "mount -o remount,ro,bind / 2>/dev/null || true".into(),
         );
 
-        push(&mut lines, format!("cd {}", sh_quote(&plan.working_directory)));
+        push(
+            &mut lines,
+            format!("cd {}", sh_quote(&plan.working_directory)),
+        );
 
         // **The process limit, and the whole of it.**
         //
@@ -446,10 +449,7 @@ impl WslBackend {
         push(&mut lines, "chmod 0755 \"$vela_cgroup\"".into());
         push(
             &mut lines,
-            format!(
-                "echo {} > \"$vela_cgroup/pids.max\"",
-                plan.limits.processes
-            ),
+            format!("echo {} > \"$vela_cgroup/pids.max\"", plan.limits.processes),
         );
         push(&mut lines, "echo $$ > \"$vela_cgroup/cgroup.procs\"".into());
 
@@ -709,13 +709,19 @@ mod tests {
     fn a_read_only_grant_is_remounted_read_only_and_a_writable_one_is_not() {
         let backend = WslBackend::for_distro("Ubuntu");
         let read_only = backend.guest_script(&plan());
-        assert!(read_only.contains("remount,ro,bind '/vela/work'"), "{read_only}");
+        assert!(
+            read_only.contains("remount,ro,bind '/vela/work'"),
+            "{read_only}"
+        );
 
         let mut writable = plan();
         writable.mounts[0].mode = MountMode::ReadWrite;
         let script = backend.guest_script(&writable);
         assert!(!script.contains("remount,ro,bind '/vela/work'"), "{script}");
-        assert!(script.contains("mount --bind '/mnt/c/Users/User/proj' '/vela/work'"), "{script}");
+        assert!(
+            script.contains("mount --bind '/mnt/c/Users/User/proj' '/vela/work'"),
+            "{script}"
+        );
     }
 
     /// **The regression this file exists to never repeat.**
@@ -807,7 +813,9 @@ mod tests {
         // created and joined, the privileges dropped, and only then the
         // sentinel printed — because `host.rs` reads the sentinel as "nothing
         // that follows is the host's fault any more".
-        let join = script.find("cgroup.procs").expect("the run joins its cgroup");
+        let join = script
+            .find("cgroup.procs")
+            .expect("the run joins its cgroup");
         let setpriv = script.find("setpriv").expect("privileges are dropped");
         let sentinel = script.find("printf '").expect("the sentinel is printed");
         let program = script
@@ -843,7 +851,10 @@ mod tests {
         let mut three = plan();
         three.limits.processes = 3;
         let three = WslBackend::for_distro("Ubuntu").guest_script(&three);
-        assert!(three.contains("echo 3 > \"$vela_cgroup/pids.max\""), "{three}");
+        assert!(
+            three.contains("echo 3 > \"$vela_cgroup/pids.max\""),
+            "{three}"
+        );
     }
 
     /// The sentinel the guest prints is the one [`READY_SENTINEL`] names.

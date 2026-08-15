@@ -52,12 +52,12 @@ impl Collector {
     }
 
     fn settled(&self) -> Option<(SandboxOutcome, RunUsage)> {
-        self.snapshot().into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.snapshot()
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Settled { outcome, usage } => Some((outcome, usage)),
                 _ => None,
-            }
-        })
+            })
     }
 
     fn text(&self, stream: OutputStream) -> String {
@@ -301,7 +301,10 @@ fn a_granted_directory_is_readable_and_the_directory_beside_it_is_not() {
         std::fs::read_to_string(granted.join("out.txt")).expect("the write landed"),
         "written-by-the-run\n"
     );
-    assert!(secret.join("keys.txt").exists(), "the sibling really exists");
+    assert!(
+        secret.join("keys.txt").exists(),
+        "the sibling really exists"
+    );
 }
 
 #[test]
@@ -390,7 +393,10 @@ fn a_program_whose_text_is_hostile_to_a_shell_still_runs_as_written() {
         matches!(outcome, SandboxOutcome::Exited { exit_code: 0 }),
         "outcome {outcome:?} stdout {stdout:?}"
     );
-    assert!(stdout.contains("'; touch /vela/pwned; #"), "stdout {stdout:?}");
+    assert!(
+        stdout.contains("'; touch /vela/pwned; #"),
+        "stdout {stdout:?}"
+    );
     assert!(stdout.contains("$(id -u)"), "stdout {stdout:?}");
     assert!(stdout.contains("done"), "stdout {stdout:?}");
 }
@@ -806,7 +812,12 @@ fn two_runs_at_once_are_each_given_the_whole_process_limit_they_were_granted() {
     // enough to finish printing.
     let live: u32 = stdout
         .lines()
-        .find_map(|line| line.trim().strip_prefix("live-run-processes=")?.parse().ok())
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("live-run-processes=")?
+                .parse()
+                .ok()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "the second run never reported a process count, which is what a run \
@@ -1034,12 +1045,13 @@ fn ask_stops_for_a_person_and_a_denial_settles_the_run_refused() {
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let digest = loop {
-        let found = collector.snapshot().into_iter().find_map(|envelope| {
-            match envelope.event {
+        let found = collector
+            .snapshot()
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::AwaitingApproval { request } => Some(request),
                 _ => None,
-            }
-        });
+            });
         if let Some(request) = found {
             // The person is shown the exact program and the whole grant.
             assert!(matches!(request.program, SandboxProgram::Process(_)));
@@ -1058,7 +1070,10 @@ fn ask_stops_for_a_person_and_a_denial_settles_the_run_refused() {
             decision: ApprovalDecision::AllowOnce,
         })
         .is_err());
-    assert!(collector.settled().is_none(), "a bad digest settles nothing");
+    assert!(
+        collector.settled().is_none(),
+        "a bad digest settles nothing"
+    );
 
     host.approve(SandboxApproveReq {
         run_id,
@@ -1494,7 +1509,10 @@ fn the_policy_snapshot_says_what_this_machine_can_actually_do() {
         EnforcementLevel::Unenforced,
         "there is no cgroup behind this backend and the report must say so"
     );
-    assert_eq!(policy.backends.process.evidence, IsolationEvidence::Declared);
+    assert_eq!(
+        policy.backends.process.evidence,
+        IsolationEvidence::Declared
+    );
 
     let (empty, _) = host_with(PermissionLevel::Ask, None);
     assert!(empty.policy().languages.is_empty());
@@ -1526,33 +1544,33 @@ impl Collector {
     }
 
     fn settled_for(&self, run_id: &str) -> Option<SandboxOutcome> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Settled { outcome, .. } => Some(outcome),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// What the person was shown, if anybody was asked.
     fn prompt_for(&self, run_id: &str) -> Option<ApprovalRequest> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::AwaitingApproval { request } => Some(request),
                 _ => None,
-            }
-        })
+            })
     }
 
     /// The grant on the `accepted` event — the one the contract's ceiling rule
     /// names, and the one a caller may act on.
     fn accepted_grant(&self, run_id: &str) -> Option<EffectiveGrant> {
-        self.events_for(run_id).into_iter().find_map(|envelope| {
-            match envelope.event {
+        self.events_for(run_id)
+            .into_iter()
+            .find_map(|envelope| match envelope.event {
                 SandboxEvent::Accepted { grant } => Some(grant),
                 _ => None,
-            }
-        })
+            })
     }
 }
 
@@ -1708,7 +1726,8 @@ fn a_protected_root_reached_by_another_spelling_is_still_a_protected_root() {
         let (host, collector) = host_with_settings(settings, unreachable_backend());
         let mut request = submit_of("cat /work/*");
         request.filesystem.mounts = vec![mount_of(host_path, "/work", MountMode::ReadOnly)];
-        host.submit(request).expect("well-formed: the directory is there");
+        host.submit(request)
+            .expect("well-formed: the directory is there");
 
         let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(30));
         match outcome {
@@ -2300,26 +2319,61 @@ fn a_profile_root_on_one_list_does_not_grant_the_mode_the_other_list_names() {
     let root = temp.path().to_string_lossy().into_owned();
 
     let rows: [(&str, bool, bool, MountMode, bool); 5] = [
-        ("read-only inside a readable root", true, false, MountMode::ReadOnly, false),
-        ("read-write inside a root that is only readable", true, false, MountMode::ReadWrite, true),
-        ("read-write inside a root that is only writable", false, true, MountMode::ReadWrite, true),
-        ("read-only inside a root that is only writable", false, true, MountMode::ReadOnly, true),
-        ("read-write inside a root on both lists", true, true, MountMode::ReadWrite, false),
+        (
+            "read-only inside a readable root",
+            true,
+            false,
+            MountMode::ReadOnly,
+            false,
+        ),
+        (
+            "read-write inside a root that is only readable",
+            true,
+            false,
+            MountMode::ReadWrite,
+            true,
+        ),
+        (
+            "read-write inside a root that is only writable",
+            false,
+            true,
+            MountMode::ReadWrite,
+            true,
+        ),
+        (
+            "read-only inside a root that is only writable",
+            false,
+            true,
+            MountMode::ReadOnly,
+            true,
+        ),
+        (
+            "read-write inside a root on both lists",
+            true,
+            true,
+            MountMode::ReadWrite,
+            false,
+        ),
     ];
 
     for (what, readable, writable, mode, expect_prompt) in rows {
         let mut settings = config(PermissionLevel::Approve);
-        settings.profile.readable_roots = if readable { vec![root.clone()] } else { Vec::new() };
-        settings.profile.writable_roots = if writable { vec![root.clone()] } else { Vec::new() };
+        settings.profile.readable_roots = if readable {
+            vec![root.clone()]
+        } else {
+            Vec::new()
+        };
+        settings.profile.writable_roots = if writable {
+            vec![root.clone()]
+        } else {
+            Vec::new()
+        };
         let (host, collector) = host_with_settings(settings, unreachable_backend());
 
         let mut request = submit_of("echo hi");
         let run_id = request.run_id.clone();
-        request.filesystem.mounts = vec![mount_of(
-            sub.to_string_lossy().into_owned(),
-            "/work",
-            mode,
-        )];
+        request.filesystem.mounts =
+            vec![mount_of(sub.to_string_lossy().into_owned(), "/work", mode)];
         host.submit(request).expect("admitted");
 
         assert_eq!(
@@ -2527,7 +2581,10 @@ fn the_approval_digest_changes_when_anything_the_person_was_shown_changes() {
             "no approval was requested; events {:?}",
             collector.events_for(&run_id)
         );
-        collector.prompt_for(&run_id).expect("prompt").request_digest
+        collector
+            .prompt_for(&run_id)
+            .expect("prompt")
+            .request_digest
     };
 
     // Same bytes, twice: the digest is a function of the request and not of the
@@ -2697,7 +2754,8 @@ fn the_run_sees_the_base_environment_the_callers_entries_and_nothing_else() {
     let mut got: Vec<&str> = seen.iter().map(|(name, _)| *name).collect();
     got.sort_unstable();
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "the run's environment is the caller's entries plus the base list and nothing else. \
          `{}` of the shell's own is the only allowance. stdout {stdout:?}",
         SHELL_OWN.join("`, `")
@@ -2750,7 +2808,10 @@ fn the_grant_reports_the_directory_the_run_actually_starts_in() {
     std::fs::create_dir_all(temp.path().join("inner")).expect("inner dir");
 
     let rows = [
-        ("the caller said `scratch`", ProcessWorkingDirectory::Scratch),
+        (
+            "the caller said `scratch`",
+            ProcessWorkingDirectory::Scratch,
+        ),
         (
             "a mount's own root",
             ProcessWorkingDirectory::GuestPath {
@@ -2847,10 +2908,13 @@ fn multibyte_output_crosses_the_read_buffer_without_a_replacement_character() {
     assert_eq!(usage.output_bytes as usize, expected.len());
     for envelope in collector.snapshot() {
         if let SandboxEvent::Output { text, bytes, .. } = envelope.event {
+            // `str::len` is a byte count, not a character count — which is the
+            // whole assertion: an event whose `bytes` counted `chars()` would be
+            // a third of this on the multibyte lines above.
             assert_eq!(
                 bytes,
-                text.as_bytes().len() as u64,
-                "`bytes` counts the decoded source bytes, not the length of `text`"
+                text.len() as u64,
+                "`bytes` counts the decoded source bytes, not the characters in `text`"
             );
         }
     }

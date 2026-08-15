@@ -59,14 +59,16 @@ fn its_body_is_the_second_level_and_arrives_only_when_asked_for() {
 
 #[test]
 fn its_optional_frontmatter_is_read_without_being_required() {
-    let source = std::fs::read_to_string(
-        fixture_store().root().join("hello-vela").join("SKILL.md"),
-    )
-    .expect("the example file");
+    let source =
+        std::fs::read_to_string(fixture_store().root().join("hello-vela").join("SKILL.md"))
+            .expect("the example file");
     let frontmatter = vela_skills::parse_frontmatter(&source).expect("valid frontmatter");
 
     assert_eq!(frontmatter.get("license"), Some("Apache-2.0"));
-    assert_eq!(frontmatter.get("metadata.display-name"), Some("Hello, Vela"));
+    assert_eq!(
+        frontmatter.get("metadata.display-name"),
+        Some("Hello, Vela")
+    );
     // And the required pair is still what validation is built on.
     assert_eq!(frontmatter.get("name"), Some("hello-vela"));
 }

@@ -395,13 +395,7 @@ impl SandboxHost {
         });
     }
 
-    fn settle(
-        &self,
-        run_id: &str,
-        handle: &RunHandle,
-        outcome: SandboxOutcome,
-        usage: RunUsage,
-    ) {
+    fn settle(&self, run_id: &str, handle: &RunHandle, outcome: SandboxOutcome, usage: RunUsage) {
         {
             let mut control = handle.control.lock().expect("run control lock");
             if control.settled {
@@ -410,11 +404,7 @@ impl SandboxHost {
             control.settled = true;
         }
         self.emit(run_id, handle, SandboxEvent::Settled { outcome, usage });
-        let released = handle
-            .control
-            .lock()
-            .expect("run control lock")
-            .released;
+        let released = handle.control.lock().expect("run control lock").released;
         if released {
             self.runs.lock().expect("run table lock").remove(run_id);
         }
@@ -494,10 +484,7 @@ impl SandboxHost {
                             break Some(SandboxOutcome::refused(RefusalReason::ApprovalDenied))
                         }
                         None => {
-                            control = handle
-                                .waiters
-                                .wait(control)
-                                .expect("approval wait");
+                            control = handle.waiters.wait(control).expect("approval wait");
                         }
                     }
                 }
@@ -518,13 +505,7 @@ impl SandboxHost {
         self.execute(&run_id, &handle, &plan, started_at);
     }
 
-    fn execute(
-        &self,
-        run_id: &str,
-        handle: &RunHandle,
-        plan: &RunPlan,
-        started_at: Instant,
-    ) {
+    fn execute(&self, run_id: &str, handle: &RunHandle, plan: &RunPlan, started_at: Instant) {
         let Some(backend) = &self.backend else {
             self.settle(
                 run_id,
@@ -668,7 +649,9 @@ impl SandboxHost {
             let wait = if terminal.is_some() {
                 Duration::from_millis(200)
             } else {
-                deadline.saturating_duration_since(now).min(Duration::from_millis(100))
+                deadline
+                    .saturating_duration_since(now)
+                    .min(Duration::from_millis(100))
             };
             match receiver.recv_timeout(wait) {
                 Ok(Pump::Chunk { stream, bytes }) => {
@@ -706,7 +689,7 @@ impl SandboxHost {
         }
 
         let status = reap(handle);
-        let outcome = terminal.unwrap_or_else(|| match status {
+        let outcome = terminal.unwrap_or(match status {
             Some(code) => SandboxOutcome::Exited { exit_code: code },
             // A Windows launcher has no signal to report, and the guest is the
             // thing that would have one. `null` rather than `0`, which is a
@@ -761,7 +744,13 @@ fn spawn_pump<R: Read + Send + 'static>(
                         continue;
                     }
                     let chunk: Vec<u8> = pending.drain(..split).collect();
-                    if sender.send(Pump::Chunk { stream, bytes: chunk }).is_err() {
+                    if sender
+                        .send(Pump::Chunk {
+                            stream,
+                            bytes: chunk,
+                        })
+                        .is_err()
+                    {
                         return;
                     }
                 }

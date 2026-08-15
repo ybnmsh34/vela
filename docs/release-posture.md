@@ -543,9 +543,14 @@ one (§7, §12). The finding was established without a single destructive launch
 
 Throughout this work, `%APPDATA%\dev.vela.desktop` was enumerated before and
 after each step and reported byte-for-byte and timestamp-for-timestamp
-identical, with its ACL entry count unchanged. **That comparison was made
-through the container's merged view, and most of what it compared was not the
-user's data.** Resolving each entry with `GetFinalPathNameByHandle` (§12):
+identical, with its ACL entry count unchanged. Those are two different
+measurements and they are not worth the same.
+
+**The enumeration of children was made through the container's merged view, and
+most of what it compared was not the user's data.** The ACL entry count is a
+property of the directory object itself, which is real, and that measurement
+stands — see the single-handle check below. Resolving each entry with
+`GetFinalPathNameByHandle` (§12):
 
 ```
 REAL       %APPDATA%\dev.vela.desktop            <- the directory falls through
@@ -567,9 +572,28 @@ wrote to that path, and the installer demonstrably does not touch it. But the
 the way §7's install claim was — and it is corrected here rather than left
 standing because it happened to reach a reassuring conclusion.
 
-It follows that **no measurement of that directory taken from inside this
-environment describes the user's real directory**, including any measurement of
-its ACL. That is worth knowing for anyone whose task depended on one.
+What follows from this is narrower than an earlier revision claimed. It follows
+that **an enumeration of that directory's children is a merged view, and a file
+read out of it may be a container copy.** It does **not** follow that
+measurements of the directory object itself are invalid, and an earlier
+revision of this document said it did — an over-correction that told another
+track its central measurement was worthless when it is in fact sound.
+
+**The directory's own security descriptor is real, and a measurement of it
+stands.** Verified by opening a *single* handle and reading both the kernel's
+final path and the security descriptor through that same handle, so no re-open
+could substitute a different object:
+
+```
+kernel final path : \\?\C:\Users\User\AppData\Roaming\dev.vela.desktop   <- REAL
+SDDL via THIS handle == (Get-Acl <same path>).Sddl : True
+ACE count : 6
+```
+
+A handle that resolves to the real object is a handle on the real object, and
+everything read through it — owner, group, DACL — is real. `fix/appdata-owner-only`
+is hardening exactly this ACL; its measurements are unaffected by anything in
+this section.
 
 ### A related documentation defect, not fixed here
 
@@ -829,9 +853,20 @@ existed falls through to the real location, while one first created inside the
 session is captured. It is **not** that simple one level down:
 `%APPDATA%\dev.vela.desktop` is real as a directory, yet `vela.db`,
 `vela.db-wal` and `diagnostics` inside it resolve into the container while
-`skills` does not (§8). Directories merge; individual files do not uniformly
-follow their parent. The precise capture rule was not determined and should not
-be guessed at.
+`skills` does not (§8).
+
+**Some directories merge and some do not.** `skills` and `diagnostics` are both
+directories, both immediate children of the same real parent, and they resolve
+opposite ways — `skills` real, `diagnostics` container. Neither is a reparse
+point; both report `Attributes=Directory` and nothing more. An earlier revision
+of this section said "directories merge; individual files do not uniformly
+follow their parent", which is refuted by `diagnostics` and would lead a reader
+to conclude that `diagnostics` is real. Two samples looked like a rule and were
+not.
+
+The precise capture rule was not determined and should not be guessed at:
+**probe the exact path you care about**, and do not infer a child's status from
+its parent's, its siblings', or whether it is a file or a directory.
 
 **For any future verification on this machine: resolve the path with
 `GetFinalPathNameByHandle` before believing a filesystem or registry

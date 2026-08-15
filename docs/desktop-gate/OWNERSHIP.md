@@ -91,7 +91,7 @@ reassuring one: **a mutation that reddens once is not proof that a test bites** 
 can pass its mutation proof purely because the machine was loaded.
 
 **`Set-Content -Encoding utf8` writes a BOM in Windows PowerShell 5.1.** A mutated `main.json`
-became unparseable and surfaced as `SyntaxError: Unexpected token '﻿'` inside `JSON.parse` —
+became unparseable and surfaced as `SyntaxError: Unexpected token U+FEFF` inside `JSON.parse` —
 **a test failure, not a write error**, at exactly the moment the builder was looking for one. Safe
 writes on this box: Python with `newline='\n'`, or the Write/Edit tools. Not `Set-Content` or
 `Out-File` from 5.1. Byte-check after writing a file another tool will parse.

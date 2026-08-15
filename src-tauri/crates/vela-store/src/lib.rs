@@ -77,7 +77,8 @@ pub use model::{
     MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage, NewProject,
     NewSchedule, Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId, SchedulePatch,
     ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus, SecretRefName, Setting,
-    SettingEntry, StopReason, Timestamp, TokenUsage, MEMORY_CONTENT_MAX_CHARS,
+    SettingEntry, StopReason, Timestamp, TokenUsage, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME,
+    MEMORY_CONTENT_MAX_CHARS,
 };
 pub use repository::{
     ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,

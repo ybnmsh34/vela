@@ -7,37 +7,44 @@
  * workspace**, and the **skills mount** the workspace reads skills through.
  * This file declares all of it and implements none of it.
  *
- * ## What this file is not
+ * ## What this file is, as of AMENDMENT 5 — and what is still only declared
  *
- * **It is not wired to anything, and no comment below may imply otherwise.**
- * `src/platform/contract.ts` is the live IPC contract: a name becomes a real
- * command by appearing in its `COMMAND_ALLOWLIST` *and* in `generate_handler!`
- * in `src-tauri/src/lib.rs`, and two tests hold that pairing
- * (`rust_and_typescript_allowlists_are_identical` and
- * `src-tauri/tests/handler_binding.rs`). Nothing here is on either list. The
- * shapes in {@link ProjectCommands} are the agreed payloads for commands that
- * do not exist yet; calling one today fails with `UNKNOWN_COMMAND` at the
- * renderer, before it reaches the host.
+ * **All eight commands in {@link ProjectCommands} are now wired**, and this
+ * paragraph replaces one that said the opposite. A name becomes a real command
+ * by appearing in `COMMAND_ALLOWLIST` in `src/platform/contract.ts` *and* in
+ * `generate_handler!` in `src-tauri/src/lib.rs`; three tests hold that pairing
+ * (`rust_and_typescript_allowlists_are_identical`,
+ * `src-tauri/tests/handler_binding.rs`, and — from this file's own vocabulary —
+ * `src/platform/browser-adapter-projects.test.ts`, which walks
+ * {@link PROJECT_COMMAND_NAMES} and asserts every one of them is allowlisted).
+ * The host implementation is `src-tauri/src/ipc/project.rs` over
+ * `src-tauri/crates/vela-projects/`, and the headless fake is in
+ * `src/platform/browser-adapter.ts`.
  *
- * There is likewise no parity test for this file. `contract.ts`'s chat shapes
- * are pinned to Rust by `src/platform/chat-contract-parity.test.ts`; this file
- * has no counterpart, and cannot have one until there is Rust to compare it
- * against. Every rule stated below is therefore **unenforced** unless the
- * sentence naming it also names the thing that enforces it. That phrasing is
- * deliberate and `src/platform/claimed-guards.test.ts` is why: a comment naming
- * a guard that does not exist is worse than no guard at all, because every
- * later builder reads the claim and builds on it.
+ * There is still **no parity test for this file's shapes**. `contract.ts`'s
+ * chat shapes are pinned to Rust by `src/platform/chat-contract-parity.test.ts`;
+ * this file has no counterpart, so a field renamed on one side and not the other
+ * is caught by `tsc` on the renderer and by nothing at all across the bridge.
+ * What *is* now enforced is behaviour: the rules with a test are the ones whose
+ * sentence names it, and that phrasing stays deliberate.
+ * `src/platform/claimed-guards.test.ts` is why: a comment naming a guard that
+ * does not exist is worse than no guard at all, because every later builder
+ * reads the claim and builds on it.
  *
- * ## One dependency this contract does not have yet
+ * ## One dependency this contract still does not have
  *
  * `ConversationSummary` in `src/platform/contract.ts` carries **no project
- * id**. Everything below that relates a conversation to a project —
- * {@link ProjectSummary.conversationCount}, {@link ProjectSummary.lastActiveAtMs},
- * `project_move_conversation`, and the reassignment rule in
- * {@link ProjectDeleteReq} — presupposes an amendment to that file adding one.
- * Until that amendment lands, those fields describe an empty relation: a host
- * that reports `conversationCount: 0` for every project is not lying, it is
- * reporting the truth about a link nobody has built.
+ * id**, and that has not changed. What did change is that the relation itself is
+ * no longer empty: `conversations.project_id` has existed in the store's schema
+ * since its first migration, so {@link ProjectSummary.conversationCount} and
+ * {@link ProjectSummary.lastActiveAtMs} are derived from real rows,
+ * `project_move_conversation` really files a conversation, and the reassignment
+ * rule in {@link ProjectDeleteReq} really runs. The missing piece is narrower
+ * than the earlier draft claimed and is worth stating exactly: **the renderer
+ * cannot ask which project a conversation is in.** It can move one and it can
+ * read a count; it cannot filter a conversation list by project or show the
+ * project a conversation belongs to without an amendment to `contract.ts`
+ * adding that field.
  *
  * ## Grounding
  *
@@ -111,11 +118,14 @@ import type { Ack } from './contract';
 
 /**
  * Bump when a shape here changes in a way a stubbed builder would notice.
- * Independent of `IPC_CONTRACT_VERSION`, which versions the wire: this file has
- * no wire yet, and coupling the two would force a wire bump for a change no
- * command can carry.
+ * Independent of `IPC_CONTRACT_VERSION`, which versions the wire. The two were
+ * held apart originally because this file had no wire at all; it has one now —
+ * eight commands, on `COMMAND_ALLOWLIST` and in `generate_handler!` — and they
+ * stay apart for the reason that outlived the first. Most of what changes here
+ * is a rule or a shape no command carries, and coupling them would spend a wire
+ * bump, and every stub's revalidation with it, on a change no wire saw.
  */
-export const PROJECT_CONTRACT_VERSION = 2;
+export const PROJECT_CONTRACT_VERSION = 3;
 
 /* -------------------------------------------------------------------------- */
 /* the two names the other frozen contracts import from here                  */
@@ -212,8 +222,9 @@ export type AbsolutePath = string;
  *
  * ## Who creates the row, and when
  *
- * **The store migration that introduces the projects table**, in the same
- * transaction, before any other row can reference it.
+ * **A store migration**, in one transaction, before any other row can reference
+ * it — `src-tauri/crates/vela-store/src/migrations/0005_project_workspace.sql`,
+ * held by `the_default_project_is_seeded_by_a_migration_rather_than_at_first_read`.
  *
  * Not lazily on first read. Two readers racing to create the fallback target
  * produce two fallback targets, and the loser's conversations are attached to a
@@ -221,10 +232,10 @@ export type AbsolutePath = string;
  * plus a worse one: a launch path that creates data is a launch path that can
  * half-create it.
  *
- * **No test enforces this today** — there is no projects table yet. This rule
- * used to be a doc comment attached to no declaration, sitting between two
- * constants, which meant a builder hovering this id in an editor was told the
- * row must really exist and not who makes it.
+ * It is migration **3** rather than the migration that introduced the projects
+ * table, which is what this paragraph used to require. Migration 1 had already
+ * shipped and is checksummed, so it cannot be edited; what transfers is the part
+ * of the rule that was load-bearing, and AMENDMENT 4 records the departure.
  */
 export const DEFAULT_PROJECT_ID: ProjectId = '00000000-0000-4000-8000-000000000001';
 
@@ -782,10 +793,27 @@ export type LinkFallbackReason =
  *    available" flag: nothing may act on it.
  *  - **A junction is a reparse point, and a naive recursive delete walks
  *    through it into the canonical skill store.** Anything that removes a
- *    project root must detect reparse points and unlink rather than descend.
- *    Nothing enforces this today, and it is the single most destructive way
- *    this layout can be got wrong: one wrong delete takes every skill on the
- *    machine, not one project's copy of them.
+ *    project root must detect reparse points and unlink rather than descend. It
+ *    is the single most destructive way this layout can be got wrong: one wrong
+ *    delete takes every skill on the machine, not one project's copy of them.
+ *    **The removal that exists does enforce it**, and the sentence here that
+ *    said nothing did was left standing after that stopped being true — see
+ *    AMENDMENT 7. `vela_projects::remove_tree` in
+ *    `src-tauri/crates/vela-projects/src/link.rs` asks `is_reparse_point`
+ *    before it descends and unlinks instead, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    is the test that holds it. Every removal of anything a *project* owns goes
+ *    through it. **Six calls in that crate do not**, and they are counted here
+ *    rather than covered by a rounder sentence, because "every removal goes
+ *    through it" is the claim a seventh gets written under. Four are in
+ *    `CaseFolding::probe`, taking out the probe directory it just made; two are
+ *    in `create_link`, taking out the half-made directory it unwinds when the
+ *    reparse write is refused. Every one of them removes a directory the same
+ *    function created moments earlier and knows the whole contents of, and none
+ *    of them can be pointed at a mount. What is **not** enforced is that a
+ *    *seventh*, written somewhere else, goes through `remove_tree`: nothing
+ *    stops a fresh recursive delete on a project root, and that is who this
+ *    paragraph is addressed to.
  *
  * The strategy is established by **attempting the real operation** in a scratch
  * directory under the application-data directory once per launch, then removing
@@ -971,7 +999,12 @@ export interface ProjectListRes {
  * them.
  *
  * On success the three host-owned directories exist ({@link ProjectPaths}) and
- * skills are reconciled. On failure nothing was created — including no row.
+ * skills are reconciled. On failure nothing was created — including no row, and
+ * including the directories: the rollback in `src-tauri/src/ipc/project.rs`
+ * covers the whole of the create, the first reconcile with it, and takes the
+ * tree out before the row. Held by
+ * `a_create_that_cannot_finish_leaves_neither_a_row_nor_a_directory` and
+ * `the_rollback_takes_the_tree_and_then_the_row`.
  */
 export interface ProjectCreateReq {
   readonly name: string;
@@ -1032,17 +1065,30 @@ export interface ProjectUpdateReq {
  *    machine-wide {@link ProjectPaths.skillStore}; a recursive delete that
  *    descends through one of them takes every skill on the machine rather than
  *    one project's view of them. The removal must detect a reparse point and
- *    unlink it rather than walk it. Nothing enforces this — there is no host
- *    code to enforce it in — and this cross-reference exists because the
- *    warning was previously written only on the type that *creates* the link,
- *    which is not the type the builder writing the delete will be reading.
+ *    unlink it rather than walk it. **The host that now exists does exactly
+ *    that**, and the two clauses that used to stand here — that nothing
+ *    enforces it, and that there is no host code to enforce it in — were both
+ *    false by the time they were read; see AMENDMENT 7. `project_delete` calls
+ *    `vela_projects::remove_project_root`, which goes through
+ *    `vela_projects::remove_tree`, which asks `is_reparse_point` before
+ *    descending, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    goes red the moment that check stops answering truthfully. The rule is
+ *    still stated here, and this cross-reference still exists, because the
+ *    guard binds *that* removal and not the next one: the warning was
+ *    previously written only on the type that *creates* the link, which is not
+ *    the type the builder writing a second delete will be reading.
  *  - The working directory is **not touched**, and no option exists to touch
  *    it. An `alsoDeleteFiles` flag is the kind of parameter that is right
  *    ninety-nine times and unrecoverable the hundredth.
  *  - A run may be executing inside this project's workspace at the moment the
- *    delete lands. This contract does not settle that race and no host exists to
- *    lose it yet; whoever wires `src/platform/contract-sandbox.ts` to a project
- *    decides whether delete refuses while a run is live or cancels it first.
+ *    delete lands. **This contract still does not settle that race**, and the
+ *    host that now exists does not settle it either: `project_delete` removes
+ *    the root without asking whether anything is running inside it, because
+ *    nothing in this tree can yet be asked. Whoever wires
+ *    `src/platform/contract-sandbox.ts` to a project decides whether delete
+ *    refuses while a run is live or cancels it first — that decision is open,
+ *    not absent for want of a host.
  *  - Deleting {@link DEFAULT_PROJECT_ID} is refused with `INVALID_PAYLOAD`. It
  *    is the reassignment target above; there is nowhere for its conversations
  *    to go.
@@ -1067,23 +1113,26 @@ export interface ProjectMoveConversationReq {
 }
 
 /* -------------------------------------------------------------------------- */
-/* the command surface — declared, not registered                             */
+/* the command surface — declared here, and registered                        */
 /* -------------------------------------------------------------------------- */
 
 /**
  * The payload map for the project commands, in the shape `IpcContract` uses in
  * `src/platform/contract.ts`, so that merging this in later is mechanical.
  *
- * **None of these are registered and none of them work.** A command becomes
- * real by being added to `IpcContract` and `COMMAND_ALLOWLIST` in
- * `src/platform/contract.ts`, implemented in `src-tauri/src/ipc/`, listed in
- * the Rust allowlist, registered in `generate_handler!`, and implemented in
- * `src/platform/browser-adapter.ts` — the five steps in conventions §3.3. This
- * file performs none of them. Until it does, `isAllowedCommand` returns `false`
- * for every name below and the renderer refuses the call locally.
+ * **All eight are registered and all eight answer.** A command becomes real by
+ * being added to `IpcContract` and `COMMAND_ALLOWLIST` in
+ * `src/platform/contract.ts`, implemented in `src-tauri/src/ipc/`, listed in the
+ * Rust allowlist, registered in `generate_handler!`, and implemented in
+ * `src/platform/browser-adapter.ts` — the five steps in conventions §3.3. All
+ * five are done for every name below; see AMENDMENT 5.
  *
- * The reason to freeze the shapes anyway is the only reason to freeze anything:
- * ten builders stubbing against `project_create` all mean the same payload.
+ * What is **not** done is any behaviour these names imply beyond what
+ * `src-tauri/src/ipc/project.rs` and `src-tauri/crates/vela-projects/` actually
+ * implement. In particular `project_reconcile_skills` and `project_layout` are
+ * the same operation under two names on both sides of the bridge, because
+ * reading a layout has to reconcile or its mount list describes the last write
+ * rather than the disk.
  */
 export interface ProjectCommands {
   project_create: { req: ProjectCreateReq; res: ProjectRes };
@@ -1111,8 +1160,11 @@ export type ProjectCommandRes<C extends ProjectCommandName> = ProjectCommands[C]
  * `COMMAND_ALLOWLIST` keeps in `src/platform/contract.ts`, so that whatever
  * parses that list can parse this one when these commands are promoted.
  *
- * This is a list of names to *use consistently*, not a list of names that
- * resolve. See {@link ProjectCommands}.
+ * Every name here now resolves, and
+ * `src/platform/browser-adapter-projects.test.ts` walks this list and asserts
+ * `isAllowedCommand` for each — so a name added here and forgotten in
+ * `COMMAND_ALLOWLIST` fails `pnpm test`, and the Rust half of that pairing fails
+ * `cargo test`. See {@link ProjectCommands}.
  */
 export const PROJECT_COMMAND_NAMES = [
   'project_create',
@@ -1177,4 +1229,132 @@ void _projectCommandNamesAreWellTyped;
  *    ProjectPaths.workspace now name projectFilesystemScope in
  *    src/platform/contract-sandbox.ts as the one place a run's three mounts are
  *    built. The rule was prose in both contracts and code in neither.
+ *
+ * 4. 2026-08-15 — no shape changed: DEFAULT_PROJECT_ID's seeding rule said the
+ *    row is created by "the store migration that introduces the projects table".
+ *    That migration is 0001_initial_schema.sql, which shipped without the row
+ *    and is checksummed — editing it makes every existing database refuse to
+ *    open, so the rule as written could not be obeyed. The seed is therefore in
+ *    0005_project_workspace.sql, which also adds the working_directory and
+ *    enabled_skills columns. What the rule was protecting is intact and is what
+ *    the test asserts: a migration creates the row, in one transaction, before
+ *    any read can see a database without it — not a first-launch path and not a
+ *    lazy create. Revisit: nothing in code. Anyone reading the old sentence
+ *    should know the guarantee did not weaken, only the file changed.
+ *
+ * 5. 2026-08-15 — no shape changed, but the file's status did, and this is the
+ *    loud one. The header said "It is not wired to anything, and no comment
+ *    below may imply otherwise", and ProjectCommands said "None of these are
+ *    registered and none of them work". Both are now false: all eight commands
+ *    are in IpcContract and COMMAND_ALLOWLIST in src/platform/contract.ts, in
+ *    the Rust allowlist and generate_handler!, implemented in
+ *    src-tauri/src/ipc/project.rs over the new src-tauri/crates/vela-projects
+ *    crate, and implemented in src/platform/browser-adapter.ts. Leaving those
+ *    two paragraphs standing would have been the same defect this project keeps
+ *    finding, pointed the other way — a comment claiming something is NOT
+ *    connected when it is, which is how a later builder comes to write a second
+ *    implementation. Revisit: any builder who stubbed a project command on the
+ *    assumption that it returns UNKNOWN_COMMAND.
+ *
+ *    Two things this amendment deliberately does NOT claim. There is still no
+ *    parity test pinning these shapes to Rust, so a field renamed on one side
+ *    only is caught by nothing; and project_layout and project_reconcile_skills
+ *    are one operation under two names, because reading a layout has to
+ *    reconcile anyway.
+ *
+ * 6. 2026-08-15 — no shape changed: the header's "One dependency this contract
+ *    does not have yet" overstated the gap. It said conversationCount,
+ *    lastActiveAtMs, project_move_conversation and ProjectDeleteReq's
+ *    reassignment rule all "presuppose an amendment" to contract.ts adding a
+ *    project id to ConversationSummary. They do not: conversations.project_id
+ *    has been in the schema since 0001_initial_schema.sql, so all four are
+ *    derived from real rows by the host. What genuinely needs that amendment is
+ *    narrower and is now stated as such — the renderer cannot ask which project
+ *    a conversation is in, so it cannot filter a conversation list by project.
+ *    Revisit: anyone who read the old paragraph as "counts are always zero".
+ *
+ * 7. 2026-08-15 — no shape changed. AMENDMENT 5 said the sweep for "claims this
+ *    file is NOT connected, where it is" had been done. It had not: it replaced
+ *    two paragraphs and left four sentences standing, and one of them was on the
+ *    most safety-critical rule here. {@link ProjectDeleteReq} said of the
+ *    reparse-point rule "Nothing enforces this — there is no host code to
+ *    enforce it in", and {@link LinkStrategy} said "Nothing enforces this
+ *    today". Both clauses were false: `vela_projects::remove_tree` asks
+ *    `is_reparse_point` before it descends, every removal in that crate goes
+ *    through it, `project_delete` reaches it through
+ *    `vela_projects::remove_project_root`, and
+ *    `removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store`
+ *    holds it. A missing guard is a hole and a claimed guard is a trap; a guard
+ *    denied is the third shape, and it is how a second unguarded delete gets
+ *    written by someone who read this file and believed it. Both paragraphs now
+ *    say what enforces the rule and name the test, and both keep the warning,
+ *    because the guard binds the removal that exists and not the next one.
+ *
+ *    Three smaller sentences in the same class went with them.
+ *    {@link PROJECT_CONTRACT_VERSION} said "this file has no wire yet" — eight
+ *    commands are on `COMMAND_ALLOWLIST` and in `generate_handler!` — and the
+ *    two versions stay independent for the reason that outlived that one. The
+ *    section banner three lines above {@link ProjectCommands} still read
+ *    "declared, not registered" directly above a paragraph saying all eight are
+ *    registered and answer. And {@link ProjectDeleteReq}'s note on the
+ *    delete-during-a-run race said "no host exists to lose it yet"; a host
+ *    exists and `project_delete` does not ask, so the race is now stated as
+ *    open rather than as premature.
+ *
+ *    Two things this amendment does NOT claim. Nothing stops a *second*
+ *    recursive delete being written that does not go through `remove_tree` —
+ *    that is why the warning stays. And {@link ProjectCreateReq}'s "on failure
+ *    nothing was created" was true of the directories and had a hole for the
+ *    row: a failure in the first reconcile left both standing. The host is
+ *    repaired and the sentence now names the tests; only one of the two arms
+ *    that reach that rollback can be forced in a test, and the test that
+ *    measures it says so. Revisit: nothing in code; anyone who read either
+ *    "nothing enforces this" as licence to write their own removal.
+ *
+ * 8. 2026-08-15 — no shape changed; three repairs to AMENDMENT 7's own work,
+ *    two of them found by a critic reproducing it.
+ *
+ *    {@link LinkStrategy} said "every removal in that crate goes through it".
+ *    Six do not — four in `casefold.rs` and two in `link.rs` — and while none of
+ *    them can reach a mount, an overstatement is exactly what a seventh direct
+ *    removal gets written under. The paragraph now names the exceptions and what
+ *    makes them safe.
+ *
+ *    The critic also found, on ordinary volumes, the disagreeing name pairs
+ *    AMENDMENT 7 said could not be exhibited: 8.3 short-name aliasing on NTFS
+ *    (`RESEAR~1` against the long name it abbreviates), and dotless i against
+ *    `I` on FAT32. So the hazard behind `nameCollidesWithAnotherEnabledSkill` is
+ *    not hypothetical and was never only about exotic Unicode — a long skill
+ *    name is enough. Nothing in the rule changes; what changes is that
+ *    "unlikely" is no longer any part of its justification.
+ *
+ *    Last, the host's answer to "what is at this mount path" was one error for
+ *    two opposite situations — the volume declining to say whether anything is
+ *    there, which is safe to walk into, and the volume declining to *name* what
+ *    is there, which is not, because the entry is still removable and removing
+ *    it can mean removing the skill mounted a moment earlier. They are separate
+ *    answers now, with separate handling; the second refuses the mount with
+ *    `occupiedByUnrelatedEntry`. Revisit: nobody — no wire shape moved. A
+ *    project on a volume that refuses to enumerate its own skills mount will
+ *    report that problem for every skill after the first, rather than mounting
+ *    them over each other.
+ *
+ * 9. 2026-08-15 — no shape changed, and nothing in this file was rewritten: a
+ *    filename this contract cites twice was corrected by the integrator, and
+ *    the correction is recorded here rather than made silently.
+ *
+ *    The seed migration was written as `0003_project_workspace.sql` on this
+ *    track. Three Phase 3 branches each added "the next migration" and all
+ *    three numbered it `0003` — schedules kept 3, memory became 4, and this one
+ *    became **5** when the tracks were merged. The file is now
+ *    `0005_project_workspace.sql`; the two references above say so.
+ *
+ *    Nothing about the rule AMENDMENT 4 records moved. The seed is still
+ *    created by a migration, in one transaction, before any read can see a
+ *    database without it, and
+ *    `the_default_project_is_seeded_by_a_migration_rather_than_at_first_read`
+ *    still holds it. What changed is which numbered file the reader should open
+ *    — and `a_database_migrated_before_projects_landed_gains_them_without_disturbing_memory`
+ *    now proves the seed also reaches a database that a pre-projects build had
+ *    already brought to version 4. Revisit: nobody.
  */

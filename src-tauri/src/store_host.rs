@@ -100,8 +100,15 @@ mod tests {
 
     #[test]
     fn the_database_file_sits_inside_the_application_data_directory() {
-        let location =
-            DatabaseLocation::in_directory("/home/someone/.local/share/dev.vela.desktop");
-        assert!(location.describe().ends_with("/dev.vela.desktop/vela.db"));
+        let directory = std::path::Path::new("/home/someone/.local/share/dev.vela.desktop");
+        let location = DatabaseLocation::in_directory(directory);
+        let path = location.path().expect("a file location has a path");
+
+        // Compared as path components rather than as a string. The separator
+        // `join` inserts is the host's, so a string test written with `/` is a
+        // test that only passes off Windows — which is the one platform this
+        // application ships to.
+        assert_eq!(path.file_name().unwrap(), vela_store::DATABASE_FILE_NAME);
+        assert_eq!(path.parent().unwrap(), directory);
     }
 }

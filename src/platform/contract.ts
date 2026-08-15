@@ -51,6 +51,22 @@ import type {
   SandboxSubmitReq,
   SandboxSubmitRes,
 } from './contract-sandbox';
+/**
+ * The project surface, on the same terms and for the same reason: its shapes
+ * are argued in `src/platform/contract-project.ts` and imported rather than
+ * restated here.
+ */
+import type {
+  ProjectCreateReq,
+  ProjectDeleteReq,
+  ProjectLayoutRes,
+  ProjectListReq,
+  ProjectListRes,
+  ProjectMoveConversationReq,
+  ProjectRefReq,
+  ProjectRes,
+  ProjectUpdateReq,
+} from './contract-project';
 
 /** Bump together with `IPC_CONTRACT_VERSION` in `src-tauri/src/ipc/mod.rs`. */
 export const IPC_CONTRACT_VERSION = 1;
@@ -1558,6 +1574,21 @@ export interface IpcContract {
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
+  /**
+   * The project surface. Its request and response shapes live in
+   * `src/platform/contract-project.ts`, which is where they are argued; only the
+   * command-to-payload mapping is here, because this is the file the allowlist
+   * and the Rust parity test read. See that file's AMENDMENTS 5 for what changed
+   * when these stopped being declared-but-unregistered.
+   */
+  project_create: { req: ProjectCreateReq; res: ProjectRes };
+  project_delete: { req: ProjectDeleteReq; res: Ack };
+  project_get: { req: ProjectRefReq; res: ProjectRes };
+  project_layout: { req: ProjectRefReq; res: ProjectLayoutRes };
+  project_list: { req: ProjectListReq; res: ProjectListRes };
+  project_move_conversation: { req: ProjectMoveConversationReq; res: Ack };
+  project_reconcile_skills: { req: ProjectRefReq; res: ProjectLayoutRes };
+  project_update: { req: ProjectUpdateReq; res: ProjectRes };
   sandbox_approve: { req: SandboxApproveReq; res: Ack };
   sandbox_cancel: { req: SandboxCancelReq; res: SandboxCancelRes };
   sandbox_policy: { req: EmptyPayload; res: SandboxPolicySnapshot };
@@ -1616,6 +1647,14 @@ export const COMMAND_ALLOWLIST = [
   'models_capabilities',
   'models_list',
   'models_probe',
+  'project_create',
+  'project_delete',
+  'project_get',
+  'project_layout',
+  'project_list',
+  'project_move_conversation',
+  'project_reconcile_skills',
+  'project_update',
   'sandbox_approve',
   'sandbox_cancel',
   'sandbox_policy',

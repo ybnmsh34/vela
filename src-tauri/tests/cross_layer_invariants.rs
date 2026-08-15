@@ -134,3 +134,34 @@ fn a_credential_reaches_the_keychain_and_never_sqlite_a_debug_line_or_the_render
     }
     assert!(checked > 0, "vacuous: no files scanned");
 }
+
+/// **The canonical skill store has one location, and two crates now name it.**
+///
+/// `vela-skills` owns reading the store; `vela-projects` owns mounting from it
+/// into a project. Both resolve it themselves and they do not share a constant:
+/// `vela_skills::SkillStore::under_data_dir` joins `SKILL_STORE_DIRECTORY_NAME`,
+/// `vela_projects::skill_store` joins a bare `"skills"` literal. They agree
+/// today, and nothing but this test says they have to.
+///
+/// The two were developed on separate branches and only met when Phase 3 was
+/// integrated, so the agreement is a coincidence of the merge rather than a
+/// property either crate enforces. If either spelling moves, the host creates
+/// one directory at launch and mounts from another, and the symptom is every
+/// enabled skill reporting `skillNotFound` on a machine where the skill is
+/// plainly installed — a failure with no error anywhere near its cause.
+#[test]
+fn the_skill_store_directory_is_the_same_one_in_both_crates_that_resolve_it() {
+    let data_dir = std::path::Path::new("/anywhere/dev.vela.desktop");
+
+    let mounted_from = vela_projects::skill_store(data_dir);
+    let read_by = vela_skills::SkillStore::under_data_dir(data_dir)
+        .root()
+        .to_path_buf();
+
+    assert_eq!(
+        mounted_from, read_by,
+        "the directory projects mount from and the one the skill store reads \
+         have diverged; the host would create one and mount the other"
+    );
+    assert_eq!(mounted_from.parent().unwrap(), data_dir);
+}

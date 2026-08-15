@@ -235,7 +235,14 @@ fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules(
     // The merged build opens the same file.
     let store = open(dir.path());
     assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
-    assert_eq!(SCHEMA_VERSION, 4, "memory is the fourth migration");
+    assert_eq!(
+        MIGRATIONS[3].name, "memory",
+        "memory is still the fourth migration"
+    );
+    assert_eq!(
+        SCHEMA_VERSION, 5,
+        "the project workspace landed on top of it as the fifth"
+    );
 
     // The old feature is intact — the row, not just the table.
     let schedule = store.get_schedule(&schedule_id).unwrap();
@@ -254,18 +261,110 @@ fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules(
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, entry.id);
 
-    // The ledger gained exactly one row, and did not rewrite the three it had.
+    // The ledger gained the outstanding steps and rewrote none of the three it
+    // already had.
     let ledger_after = {
         let conn = rusqlite::Connection::open(&path).unwrap();
         vela_store::migrations::applied(&conn).unwrap()
     };
     assert_eq!(
         ledger_after.keys().copied().collect::<Vec<_>>(),
-        vec![1, 2, 3, 4]
+        vec![1, 2, 3, 4, 5]
     );
     assert_eq!(ledger_after[&3].name, "schedules");
     assert_eq!(ledger_after[&4].name, "memory");
+    assert_eq!(ledger_after[&5].name, "project_workspace");
     for version in [1, 2, 3] {
+        assert_eq!(
+            ledger_after[&version], ledger_before[&version],
+            "migration {version} was rewritten by the upgrade"
+        );
+    }
+}
+
+/// The same argument one step later, on a real file: a database a post-memory
+/// build brought to version 4, with rows in both features, gains the project
+/// workspace when the merged build opens it.
+///
+/// `migrations::tests::a_database_migrated_before_projects_landed_gains_them_without_disturbing_memory`
+/// makes this case in memory. This one closes and reopens an actual file, which
+/// is the only way to say anything about the path a user's database takes.
+#[test]
+fn a_database_from_before_the_projects_merge_gains_them_and_keeps_memory_and_schedules() {
+    use vela_store::{MemoryRepository, MemoryScope, ProjectRepository, ScheduleRepository};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(vela_store::DATABASE_FILE_NAME);
+
+    let ledger_before = {
+        let mut old = rusqlite::Connection::open(&path).unwrap();
+        old.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let pre_projects = &MIGRATIONS[..4];
+        assert_eq!(pre_projects.last().unwrap().name, "memory");
+        let applied =
+            vela_store::migrations::apply_list(&mut old, pre_projects, &FixedClock::default())
+                .unwrap();
+        assert_eq!(applied, vec![1, 2, 3, 4]);
+
+        // A database in use, not an empty shell: one row in each feature that
+        // shipped before this step, plus a project of the user's own so the
+        // seed has something to coexist with.
+        old.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at)
+             VALUES ('proj_sails', 'Sails', 1, 1)",
+            [],
+        )
+        .unwrap();
+        old.execute(
+            "INSERT INTO schedules
+                 (id, title, prompt, cadence, next_run_at, created_at, updated_at)
+             VALUES ('sched_old', 'weekly review', 'what happened?', 'weekly', 10, 1, 1)",
+            [],
+        )
+        .unwrap();
+        old.execute(
+            "INSERT INTO memory_entries
+                 (id, scope_kind, category, content, created_at, updated_at)
+             VALUES ('mem_old', 'global', 'techPrefs', 'prefers Rust', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        vela_store::migrations::applied(&old).unwrap()
+    }; // quitting the pre-projects app
+
+    // The merged build opens the same file.
+    let store = open(dir.path());
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+
+    // Everything that was already there is still there.
+    let schedule = store
+        .get_schedule(&vela_store::ScheduleId::new("sched_old").unwrap())
+        .unwrap();
+    assert_eq!(schedule.title, "weekly review");
+    assert_eq!(store.list_memory_entries(&MemoryScope::Global).unwrap().len(), 1);
+
+    // And the step that just ran did its job: the seed exists, and the user's
+    // own project was neither replaced nor duplicated by it.
+    let mut names: Vec<String> = store
+        .list_projects(Default::default())
+        .unwrap()
+        .into_iter()
+        .map(|project| project.name)
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["General".to_string(), "Sails".to_string()]);
+
+    let ledger_after = {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        vela_store::migrations::applied(&conn).unwrap()
+    };
+    assert_eq!(
+        ledger_after.keys().copied().collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5]
+    );
+    assert_eq!(ledger_after[&5].name, "project_workspace");
+    for version in [1, 2, 3, 4] {
         assert_eq!(
             ledger_after[&version], ledger_before[&version],
             "migration {version} was rewritten by the upgrade"

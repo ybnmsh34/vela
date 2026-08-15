@@ -7,6 +7,7 @@ default-members = [
   "crates/vela-core",
   "crates/vela-endpoint",
   "crates/vela-mcp",
+  "crates/vela-projects",
   "crates/vela-providers",
   "crates/vela-sandbox",
   "crates/vela-secrets",
@@ -31,6 +32,7 @@ thiserror = "2"
 vela-core = { path = "crates/vela-core" }
 vela-endpoint = { path = "crates/vela-endpoint" }
 vela-mcp = { path = "crates/vela-mcp" }
+vela-projects = { path = "crates/vela-projects" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
 vela-sandbox = { path = "crates/vela-sandbox" }
@@ -87,6 +89,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 vela-core.workspace = true
 vela-mcp.workspace = true
+vela-projects.workspace = true
 vela-secrets.workspace = true
 vela-providers.workspace = true
 vela-sandbox.workspace = true

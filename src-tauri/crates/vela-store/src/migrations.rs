@@ -73,6 +73,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "memory",
         sql: include_str!("migrations/0004_memory.sql"),
     },
+    Migration {
+        version: 5,
+        name: "project_workspace",
+        sql: include_str!("migrations/0005_project_workspace.sql"),
+    },
 ];
 
 /// The schema version this build produces and understands.
@@ -325,13 +330,18 @@ mod tests {
         }
     }
 
-    /// The integration guard for the wave-i merge, where two branches each
-    /// added "the next migration" and both called it `0003`. Schedules kept
-    /// version 3 (it was already on the integration branch); memory was
-    /// renumbered to 4. A fresh database would pass either way — it runs the
-    /// whole list top to bottom — so the failure mode this pins down is only
-    /// visible on a database that already exists: the upgrade must add the
-    /// *new* step without re-running, renaming or overwriting the old one.
+    /// The integration guard for the wave-i merge, where three branches each
+    /// added "the next migration" and all three called it `0003`. Schedules
+    /// kept version 3 (it was already on the integration branch); memory was
+    /// renumbered to 4 and the project workspace to 5. A fresh database would
+    /// pass whatever the numbering was — it runs the whole list top to bottom —
+    /// so the failure mode this pins down is only visible on a database that
+    /// already exists: the upgrade must add the *new* steps without re-running,
+    /// renaming or overwriting the old ones.
+    ///
+    /// The expected version list is spelled out rather than derived, so the next
+    /// branch to add a migration has to look at this test and decide that its
+    /// step really does belong on this path.
     #[test]
     fn a_database_migrated_before_memory_landed_gains_it_without_disturbing_schedules() {
         let mut conn = fresh();
@@ -349,14 +359,15 @@ mod tests {
         let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
         assert_eq!(
             applied_now,
-            vec![4],
-            "only the newly added migration may run against an existing database"
+            vec![4, 5],
+            "only the steps this database has not seen may run against it"
         );
 
         let after = applied(&conn).unwrap();
-        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
         assert_eq!(after[&3].name, "schedules");
         assert_eq!(after[&4].name, "memory");
+        assert_eq!(after[&5].name, "project_workspace");
         assert_ne!(
             after[&3].checksum, after[&4].checksum,
             "two migrations sharing a checksum means one file is included twice"
@@ -380,6 +391,76 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "`{table}` is missing after the upgrade");
         }
+    }
+
+    /// One step further along the same path: a database that a *post-memory*
+    /// build already brought to version 4 must gain the project workspace
+    /// without disturbing either of the two features that landed before it.
+    ///
+    /// This is the case the previous test cannot make. That one starts at 3, so
+    /// memory and the project workspace both run in the same call and a bug
+    /// that applied them in the wrong order, or skipped one, could still leave
+    /// the database looking right. Starting at 4 isolates the single new step.
+    #[test]
+    fn a_database_migrated_before_projects_landed_gains_them_without_disturbing_memory() {
+        let mut conn = fresh();
+
+        // What the post-memory, pre-projects build shipped: versions 1..=4.
+        let pre_projects = &MIGRATIONS[..4];
+        assert_eq!(pre_projects.last().unwrap().name, "memory");
+        apply_list(&mut conn, pre_projects, &FixedClock::new(1_000, 10)).unwrap();
+
+        // Rows in both of the features that already exist, so this is an
+        // upgrade of a database in use rather than of an empty shell.
+        conn.execute(
+            "INSERT INTO schedules
+                 (id, title, prompt, cadence, next_run_at, created_at, updated_at)
+             VALUES ('sched_1', 'weekly review', 'what happened?', 'weekly', 10, 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_entries
+                 (id, scope_kind, category, content, created_at, updated_at)
+             VALUES ('mem_1', 'global', 'techPrefs', 'prefers Rust', 1, 1)",
+            [],
+        )
+        .unwrap();
+        let before = applied(&conn).unwrap();
+        assert_eq!(before.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+
+        let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
+        assert_eq!(applied_now, vec![5], "exactly one step was outstanding");
+
+        let after = applied(&conn).unwrap();
+        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(after[&5].name, "project_workspace");
+        for version in [1, 2, 3, 4] {
+            assert_eq!(
+                after[&version], before[&version],
+                "migration {version} was rewritten by the upgrade"
+            );
+        }
+
+        // Neither earlier feature's rows were touched.
+        let schedules: i64 = conn
+            .query_row("SELECT count(*) FROM schedules", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(schedules, 1, "the schedule did not survive the upgrade");
+        let memory: i64 = conn
+            .query_row("SELECT count(*) FROM memory_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(memory, 1, "the memory entry did not survive the upgrade");
+
+        // And the new step did what it is for.
+        let default_name: String = conn
+            .query_row(
+                "SELECT name FROM projects WHERE id = ?1",
+                [crate::model::DEFAULT_PROJECT_ID],
+                |r| r.get(0),
+            )
+            .expect("the upgrade must seed the default project");
+        assert_eq!(default_name, crate::model::DEFAULT_PROJECT_NAME);
     }
 
     /// Every shipped migration must occupy its own version and its own file.
@@ -499,6 +580,77 @@ mod tests {
             leftover, 0,
             "the failed migration's transaction must roll back"
         );
+    }
+
+    /// The default project must exist **before any row can reference it**, and
+    /// a migration is the only place that can promise that.
+    ///
+    /// The alternative — creating it lazily on first read — has two readers
+    /// racing to create the fallback target, producing two fallback targets and
+    /// attaching the loser's conversations to a project the UI never lists.
+    /// This drives the real migration list against a raw connection, so it
+    /// fails if the seed is ever moved out of the schema and into startup code.
+    #[test]
+    fn the_default_project_is_seeded_by_a_migration_rather_than_at_first_read() {
+        let mut conn = fresh();
+        apply(&mut conn, &FixedClock::default()).unwrap();
+
+        let (id, name): (String, String) = conn
+            .query_row(
+                "SELECT id, name FROM projects WHERE id = ?1",
+                [crate::model::DEFAULT_PROJECT_ID],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("the migrations must leave the default project in place");
+        assert_eq!(id, crate::model::DEFAULT_PROJECT_ID);
+        assert_eq!(name, crate::model::DEFAULT_PROJECT_NAME);
+
+        let total: i64 = conn
+            .query_row("SELECT count(*) FROM projects", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 1, "the seed creates one row, not one per launch");
+    }
+
+    /// A database that already holds user projects, upgraded in place, keeps
+    /// them and gains the default. The project workspace step is the first
+    /// schema step this project has shipped that inserts a row rather than only
+    /// shaping tables, so the in-place path is worth proving rather than
+    /// assuming.
+    ///
+    /// It was written as migration 3 on its own branch and became 5 in the
+    /// wave-i merge, behind schedules and memory — which is why a database
+    /// stopped at 2 now climbs three steps rather than one.
+    #[test]
+    fn upgrading_an_existing_database_seeds_the_default_without_disturbing_what_is_there() {
+        let mut conn = fresh();
+        apply_list(&mut conn, &MIGRATIONS[..2], &FixedClock::default()).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, created_at, updated_at)
+             VALUES ('proj_existing', 'Sails', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        let applied_now = apply(&mut conn, &FixedClock::default()).unwrap();
+        assert_eq!(applied_now, vec![3, 4, 5]);
+
+        let names: Vec<String> = conn
+            .prepare("SELECT name FROM projects ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(names, vec!["General".to_string(), "Sails".to_string()]);
+
+        let skills: String = conn
+            .query_row(
+                "SELECT enabled_skills FROM projects WHERE id = 'proj_existing'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(skills, "[]", "the new column's default reaches old rows");
     }
 
     /// Structural guard for rule 0.4: config may name a keychain entry, never

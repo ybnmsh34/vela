@@ -77,3 +77,28 @@ with `[System.IO.Directory]::Delete(path, false)` first, or the reclaim silently
 10. Linked worktrees share one object store. A transient `Permission denied` writing a loose object
    has been seen under concurrent git use; `git fsck --connectivity-only` reported dangling objects
    only, no broken links. If you see it, verify the object landed rather than assuming either way.
+
+## Two hazards that manufacture red, and why they are dangerous
+
+Both produce a failing test for a reason unrelated to the change under test. That is worse than a
+crash, because a red is what you are looking for when you mutation-test — so both arrive disguised
+as the exact evidence you came for.
+
+**Parallel load fabricates failures.** A full `vitest` run with a fixed mutation gave `4 files /
+12 tests failed`; the very next run, byte-identical input, gave `104 / 2105 passed`. The failing
+run spent 1088s in `environment` against 314s. Two further agents and the lead have each hit it
+independently. **Reproduce anything red at least twice.** The direction that matters more is the
+reassuring one: **a mutation that reddens once is not proof that a test bites** — a vacuous guard
+can pass its mutation proof purely because the machine was loaded.
+
+**`Set-Content -Encoding utf8` writes a BOM in Windows PowerShell 5.1.** A mutated `main.json`
+became unparseable and surfaced as `SyntaxError: Unexpected token '﻿'` inside `JSON.parse` —
+**a test failure, not a write error**, at exactly the moment the builder was looking for one. Safe
+writes on this box: Python with `newline='\n'`, or the Write/Edit tools. Not `Set-Content` or
+`Out-File` from 5.1. Byte-check after writing a file another tool will parse.
+
+**Corroboration of a hazard is not corroboration of an instance.** When one agent reports an
+unexplained red and another has independently seen the load hazard, that establishes the hazard
+exists — not that this red was it. An unnamed single failure stays unestablished until a **name**
+repeats. Capture the failing test name (`--reporter=verbose`, or tee the whole log) rather than
+filtering to the summary, so a recurrence can be compared.

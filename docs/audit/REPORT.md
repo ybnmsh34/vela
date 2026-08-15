@@ -143,6 +143,55 @@ container or graded UNVERIFIED. Real damage is still possible in the unredirecte
 install overwrote two genuine shortcuts on the user's Desktop and Start Menu to point at a
 container-only path, which would have failed for the user with no diagnostic.
 
+## What Wave 1 closed, and what it did not (2026-08-15)
+
+Six branches merged. Rows are listed here rather than edited in place, so the original grade and
+the thing that closed it stay side by side.
+
+**Closed, each by a merged commit and a critic PASS:**
+
+| row | closed by |
+|---|---|
+| verify covers CI, reverse direction — `run: \|` block bodies | `7f5cd93` |
+| verify-covers-ci: gates written inside a `run: \|` block | `7f5cd93` |
+| Windows CI job covers the gates that break on Windows | `7f5cd93` |
+| `.gitattributes` covers the byte-exact evidence it names | `7f5cd93` |
+| `pnpm verify` is runnable on Windows | `7f5cd93` |
+| `processes` limit reported `kernel`-enforced | `4949578` |
+| An installable bundle has ever been produced | `9baf471` |
+| Build determinism / toolchain pinning | `9baf471` |
+| `vela-skills::mount` and `::enablement` are a dead duplicate | `730eca5` |
+| `skill-mount-parity.test.ts` guards the shipped mount | `730eca5` |
+| `contract.test.ts`: claimed runtime exhaustiveness of `IpcContract` | `ca22700` |
+
+**Closed in part, and the remainder is worse than the part:**
+
+*The capability grant is guarded against growth* (`ca22700`). The shape-versus-exact-set hole is
+closed — adding a permission to `main.json` now reddens a named test in both directions. But both
+guards read **one filename** and the product loads a **directory**: a second capability file,
+registered in `tauri.conf.json`, widens the window's real surface with both tests green. Neither
+the file nor its registration is asserted anywhere. Open, and recorded in the plan.
+
+**Deliberately not listed as closed yet:** *`pnpm verify` runs to completion on Windows*. That is a
+different row from *is runnable on Windows* above — the latter is about `'.' is not recognized`,
+which `scripts/run-bash.mjs` fixes, and the former is about the whole nine-link chain finishing.
+Every gate has been observed green individually, which is exactly the kind of evidence this
+document exists to distrust. It is graded when the chain has been run end to end and not before.
+
+**Not closed, and Wave 1 did not touch them:**
+
+*Bundle identifier `dev.vela.desktop` is shared by every instance.* Still no single-instance
+plugin, no named mutex, no `WEBVIEW2_USER_DATA_FOLDER`. Blocked behind the app-data track, which
+owns the startup path.
+
+*`ci.yml`'s claim that check-transcripts detects a lost `.gitattributes`.* The audit measured this
+false — with the attribute removed, a CRLF checkout regenerated as LF gives `git diff --quiet`
+CLEAN, because autocrlf normalises on read, so the step catches only the opposite case. The
+sentence survives verbatim at `ci.yml:278-279`, **inside a comment block that `7f5cd93` rewrote at
+length**. A correction that lands all around a false sentence and leaves it standing is the shape
+this wave found three times over; it is on the backlog rather than quietly fixed here, because
+whoever fixes it should re-run the measurement rather than take the audit's word or mine.
+
 ## Totals
 
 | verdict | count |

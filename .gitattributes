@@ -61,10 +61,24 @@
 # gate that would notice.
 #
 # Applying this rule does not re-commit anything: every stored object stays as
-# it is. It changes only what checkout writes, and the already-corrupted working
-# copies were repaired in place with
-# `find docs/regression-baseline/mock-matrix -type f -delete && git checkout --`
-# on that directory, which restores the stored bytes verbatim.
+# it is. It changes only what checkout writes — so a tree that already holds
+# converted copies keeps them: an attribute added after a file is in the working
+# tree does not rewrite it, and git's stat cache means `git status` goes on
+# reporting clean while the bytes differ from the blob.
+#
+# Repair a tree in that state by deleting only the **tracked** files, then
+# checking out. This directory is also where `live-matrix/record.sh`,
+# `edge-probes.sh` and `assertion-control.sh` write their `curl` output, none of
+# it gitignored and none of it regenerable from git or from the mock harness —
+# so a blanket delete of the directory destroys work.
+#
+#   bash:       git ls-files -z -- docs/regression-baseline/mock-matrix | xargs -0 rm -f
+#   PowerShell: git ls-files -- docs/regression-baseline/mock-matrix | ForEach-Object { Remove-Item -Force $_ }
+#   then:       git checkout -- docs/regression-baseline/mock-matrix
+#
+# An earlier version of this comment said `find … -type f -delete`, which has
+# the same destructive property. `record-transcripts.test.ts` prints the same
+# remedy when it detects this state; keep the two in step.
 #
 # `-text` rather than `text eol=lf` on purpose: these are captures, not source.
 # `eol=lf` would still let git *decide* they are text and normalise on commit;

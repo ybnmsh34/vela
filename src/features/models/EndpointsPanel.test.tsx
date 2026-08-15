@@ -17,6 +17,34 @@ import { PlatformProvider } from '@/platform/PlatformProvider';
 import { EndpointsPanel } from './EndpointsPanel';
 import { useProviders } from './use-providers';
 
+/**
+ * ## Why every `userEvent.setup` here passes `delay: null`
+ *
+ * `userEvent`'s default is `delay: 0`, which is not "no delay": it yields to the
+ * event loop once per simulated input step — per keystroke, and twice more per
+ * click for pointer down and up. On Windows a `setTimeout(0)` turn costs one
+ * scheduler tick, and this box measures that tick at **14.3–15.1ms** whether the
+ * machine is idle or loaded (100 turns: 1490ms idle, 1449/1509/1432ms under
+ * three concurrent full `vitest` runs). So the default charges roughly a tick
+ * per character to type a URL, and nothing in this file asserts anything about
+ * typing *timing* — the delay buys these tests nothing and costs them seconds.
+ *
+ * Measured on this tree, same box, `https://api.example.test/v1` (27 chars):
+ *
+ * | | idle | under 3× load |
+ * |---|---|---|
+ * | `user.type`, default | 18.9 ms/char | 73.8 / 110.1 / 109.5 ms/char |
+ * | `user.type`, `delay: null` | 2.2 ms/char | 10.8 / 15.7 / 31.0 ms/char |
+ * | ten `user.click` | 584ms | 2894 / 4070 / 2553ms |
+ * | ten `user.click`, `delay: null` | 138ms | 619 / 898 / 1276ms |
+ *
+ * Six of this file's nine tests failed at least once across six full-suite runs
+ * under that load before this change; the two that never did are the two that
+ * type nothing, and they pay the same per-click tick. A per-test `timeout`
+ * override treats the symptom and, worse, raises the ceiling that catches a real
+ * hang. `delay: null` removes the cost instead.
+ */
+
 function Harness() {
   const providers = useProviders();
   return (
@@ -54,7 +82,7 @@ describe('adding an endpoint with no authentication', () => {
   it('renders no credential field at all, because there is no credential', async () => {
     // Not an empty optional input. Absent. A field that is rendered and ignored
     // is a question the user still has to answer in their head.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount(new BrowserAdapter());
     await user.click(await screen.findByRole('button', { name: 'Add an endpoint' }));
 
@@ -66,7 +94,7 @@ describe('adding an endpoint with no authentication', () => {
   });
 
   it('saves, with no error, no warning badge and no nagging about loopback', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = new BrowserAdapter();
     mount(adapter);
 
@@ -93,7 +121,7 @@ describe('adding an endpoint with no authentication', () => {
   it('does surface the risk when a keyless endpoint is out on the network', async () => {
     // The signal that matters: reachable by others, no door. The host computes
     // it; this asserts the UI shows it.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount(new BrowserAdapter());
 
     await addEndpoint(user, { name: 'Lab box', address: 'http://192.168.1.50:8080/v1' });
@@ -109,7 +137,7 @@ describe('adding an endpoint with no authentication', () => {
 
 describe('adding an endpoint that does take a key', () => {
   it('reveals the credential field only once a credential shape is chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount(new BrowserAdapter());
     await user.click(await screen.findByRole('button', { name: 'Add an endpoint' }));
 
@@ -119,7 +147,7 @@ describe('adding an endpoint that does take a key', () => {
   });
 
   it('stores the key out of reach and reports only that one exists', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = new BrowserAdapter();
     mount(adapter);
 
@@ -133,16 +161,17 @@ describe('adding an endpoint that does take a key', () => {
     expect(JSON.stringify(snapshot)).not.toContain('sk-live-canary');
   });
 
-  // Ten seconds, and the number is measured rather than guessed. This case types
-  // two whole endpoints through `userEvent`, which dispatches a real event per
-  // keystroke, and it lands at 5050-5081ms against vitest's 5000ms default — so
-  // it passes alone and fails under load. A critic caught it flaking in 3 of 4
-  // runs on a contended machine and 0 of 8 on an idle one, which is the worst
-  // shape a test can have: it does not fail for the author, only for whoever is
-  // running something else at the time, and the natural reading of a red guard
-  // suite is that the guard broke.
-  it('distinguishes "does not insist on one" from "waiting for one"', { timeout: 10_000 }, async () => {
-    const user = userEvent.setup();
+  // This case types two whole endpoints, 68 characters in all, and it used to
+  // carry `{ timeout: 10_000 }`. The override did not work: across six
+  // full-suite runs under three concurrent `vitest` runs it failed 6/6 anyway —
+  // four times by running past the ten seconds (10007, 10048, 10076ms) and twice
+  // by exhausting `findByText`'s own one-second budget at 4232 and 4702ms. A
+  // ceiling raised to cover a cost that scales with the load is a ceiling that
+  // will be raised again; it also stops the suite noticing a real hang for twice
+  // as long. The cost is removed at source instead (see `delay: null` above),
+  // which puts this test back under the 5000ms default with room to spare.
+  it('distinguishes "does not insist on one" from "waiting for one"', async () => {
+    const user = userEvent.setup({ delay: null });
     mount(new BrowserAdapter());
 
     await addEndpoint(user, { name: 'Optional', address: 'https://api.example.test/v1' });
@@ -163,7 +192,7 @@ describe('adding an endpoint that does take a key', () => {
 
 describe('the endpoint list', () => {
   it('reports the host’s refusal without inventing its own validation', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount(new BrowserAdapter());
 
     await addEndpoint(user, { name: 'Broken', address: 'file:///etc/passwd' });
@@ -173,7 +202,7 @@ describe('the endpoint list', () => {
   });
 
   it('removes an endpoint and its key together', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const adapter = new BrowserAdapter();
     mount(adapter);
 

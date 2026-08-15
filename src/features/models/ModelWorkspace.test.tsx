@@ -13,10 +13,12 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { App } from '@/app/App';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 import { NO_CAPABILITIES, type ChatCapabilities, type ModelCapabilityReport } from '@/platform/contract';
 import { resetModelStore } from '@/state/model-store';
+import { useNavigationStore } from '@/state/navigation-store';
 
 import { ModelWorkspace } from './ModelWorkspace';
 
@@ -235,6 +237,25 @@ describe('capability-driven affordances', () => {
 });
 
 describe('mounted in the real application root', () => {
+  /**
+   * `App` and the navigation store are imported at the top of this file rather
+   * than inside the test, and that is a timing fix, not a tidy-up.
+   *
+   * A dynamic `import()` in a test body is charged to that test's timeout, and
+   * this file is otherwise the only place in the tree that never touches `App`,
+   * so the import lands cold: the whole application module graph is transformed
+   * and evaluated inside the 5000ms budget. Measured on this box, cold
+   * `import('@/app/App')` costs **2193ms idle** and **7737 / 12550 / 25707ms**
+   * under three concurrent full `vitest` runs. That is the mechanism behind this
+   * test being seen to fail with "Test timed out in 5000ms" during a `cargo
+   * build` while passing 12/12 twice in isolation; it has nothing to do with
+   * `userEvent`, which this test does not use.
+   *
+   * Hoisted, the same work is done during file collection, which no per-test
+   * timeout bounds, and the test itself measures 872-1449ms under the same load.
+   * `memory-payload.test.tsx` and `modal-containment.test.tsx` already import
+   * `App` this way; this file was the exception.
+   */
   it('hands the chosen model’s capability struct to the transcript surface', async () => {
     // The wiring test. `App` joins navigation, models and the conversation
     // surface; if the capability struct stops reaching the transcript, every
@@ -246,10 +267,8 @@ describe('mounted in the real application root', () => {
     // The workspace lives in the content region, which the navigation surface
     // fills with the home screen until a conversation is open.
     const conversation = adapter.seedConversation({ title: 'An open conversation' });
-    const { useNavigationStore } = await import('@/state/navigation-store');
     useNavigationStore.getState().select(conversation.id);
 
-    const { App } = await import('@/app/App');
     render(<App adapter={adapter} />);
 
     // The workspace mounted around the transcript…

@@ -19,6 +19,7 @@ import type {
   MalformedToolCallReason,
   TransportFailure,
 } from '@/platform/contract';
+import type { RunDegradation } from '@/platform/contract-harness';
 
 export type NoticeTone = 'info' | 'warning';
 
@@ -112,6 +113,64 @@ export function describeDegradation(degradation: Degradation): Notice {
         tone: 'info',
         title: 'Retried before it worked',
         detail: `This answer took ${String(degradation.attempts)} attempt${degradation.attempts === 1 ? '' : 's'}.`,
+      };
+  }
+}
+
+/**
+ * What an **agent run** had to give up, as opposed to what the endpoint did.
+ *
+ * A second function rather than a second arm on {@link describeDegradation},
+ * because `RunDegradation` is a separate union from `Degradation` and the
+ * contract is explicit about why: the latter mirrors a Rust enum, and merging
+ * them would break the parity test that keeps the two honest. They are rendered
+ * side by side and never merged.
+ *
+ * Total, like its neighbour: a new variant fails the type check here rather than
+ * rendering as a blank.
+ *
+ * `contextUnavailable` is the one this file was extended for, and it is a
+ * `warning` for the reason the tone rule gives — tone is about consequence. A
+ * reply written without the instructions the user typed into their project is a
+ * reply that looks right and is not the one they asked for, and until this
+ * existed the run reported that fact to nobody: `use-conversation.ts` dropped
+ * every `degraded` event on the floor.
+ */
+export function describeRunDegradation(degradation: RunDegradation): Notice {
+  switch (degradation.kind) {
+    case 'auxiliaryModelUnavailable':
+      return {
+        tone: 'info',
+        title: 'One model did all of it',
+        detail:
+          'No second model was assigned for Vela’s own internal steps, so the model answering you ran those too.',
+      };
+    case 'stepLimitReached':
+      return {
+        tone: 'warning',
+        title: 'The run stopped at its step limit',
+        detail: `This run was allowed ${String(degradation.steps)} step${degradation.steps === 1 ? '' : 's'} and used all of them, so it stopped where it was rather than finishing.`,
+      };
+    case 'toolCallLimitReached':
+      return {
+        tone: 'warning',
+        title: 'The run stopped at its tool-call limit',
+        detail: `This run was allowed ${String(degradation.calls)} tool call${degradation.calls === 1 ? '' : 's'} and used all of them, so it stopped where it was rather than finishing.`,
+      };
+    case 'wallClockLimitReached':
+      return {
+        tone: 'warning',
+        title: 'The run ran out of time',
+        detail: `This run passed its ${String(Math.round(degradation.elapsedMs / 1000))}-second budget and stopped where it was rather than finishing.`,
+      };
+    case 'contextUnavailable':
+      return {
+        tone: 'warning',
+        // `ContextRef.title` is documented as the user's own text — the name of
+        // their file, or a fixed label for material that has no name of its own.
+        // Quoting it is how a user tells which of several sources went missing.
+        title: 'Something this run was given could not be read',
+        detail: `Vela could not read “${degradation.ref.title}”, so this reply was written without it.`,
       };
   }
 }

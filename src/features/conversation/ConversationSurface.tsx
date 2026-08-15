@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { NO_CAPABILITIES, type ChatCapabilities } from '@/platform/contract';
 import type { HarnessRuntime } from '@/platform/contract-harness';
+import type { ProjectId } from '@/platform/contract-project';
 
 import { ConversationView } from './ConversationView';
 import { TurnAttachmentsProvider, type TurnAttachments } from './turn-attachments';
@@ -102,6 +103,17 @@ interface ConversationSurfaceProps {
    * at all** — the state a surface mounted on its own in a test is in.
    */
   readonly runtime?: HarnessRuntime | null;
+  /**
+   * Which project a run started here belongs to — `RunRequest.projectId`, and
+   * the project whose instructions the run is handed.
+   *
+   * Handed in for the same reason everything else on this interface is: the
+   * project is chosen elsewhere and this surface must not reach for it. **There
+   * is no default.** Omitting it, or passing `null`, means an agent run has
+   * nowhere to belong and is refused with a sentence rather than run against a
+   * guess — see `use-conversation.ts`, where the guess used to live.
+   */
+  readonly projectId?: ProjectId | null;
 }
 
 export function ConversationSurface({
@@ -116,6 +128,7 @@ export function ConversationSurface({
   attachments = null,
   contextWindowTokens = null,
   runtime = null,
+  projectId = null,
 }: ConversationSurfaceProps) {
   const conversation = useConversation({
     conversationId,
@@ -125,6 +138,7 @@ export function ConversationSurface({
     contextWindowTokens,
     capabilities,
     runtime,
+    projectId,
     ...(initialEntries === undefined ? {} : { initialEntries }),
   });
 

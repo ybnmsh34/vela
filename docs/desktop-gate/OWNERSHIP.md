@@ -14,6 +14,7 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
 | `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps |
+| `C:/Users/User/vela-w2-proj` | `wave2/project-instructions` | Wave 2 / project instructions |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -32,6 +33,8 @@ first, or the reclaim silently does not happen.
 | `src/features/models/EndpointsPanel.test.tsx`, `src/features/models/ModelWorkspace.test.tsx`, `src/app/modal-containment.test.tsx`, `src/app/memory-payload.test.tsx`, `src/features/conversation/ConversationSurface.test.tsx` | Wave 1 / load flake | 2026-08-15 | the load flake: `userEvent`'s per-input-step scheduler tick and cold `import('@/app/App')` inside a test body |
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 | `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
+| `src/runtime/app-runtime.ts`, `src/runtime/project-context.ts`, `src/runtime/project-context.test.ts`, `src/runtime/app-runtime.test.ts`, `src/data/projects-repository.ts`, `src/state/project-store.ts`, `src/features/projects/`, `src/app/App.tsx`, `src/app/project-instructions.test.tsx`, `src/features/conversation/use-conversation.ts`, `src/features/conversation/ConversationSurface.tsx`, `src/features/conversation/ConversationView.tsx`, `src/features/conversation/MessageTurn.tsx`, `src/features/conversation/TurnNotices.tsx`, `src/features/conversation/notices.ts`, `src/features/conversation/agent-run.test.tsx`, `src/features/navigation/Sidebar.tsx`, `src/features/memory/MemoryPanel.tsx`, `src/platform/contract-harness.ts` | Wave 2 / project instructions | 2026-08-16 | `readProjectInstructions` answered `null` for every project under a false comment, so the whole project-context layer was dead; and `App.tsx` passed `DEFAULT_PROJECT_ID` literally while `use-conversation.ts` fell through to the same constant, so one project's context served every run |
+| `src/features/canvas/CanvasSurface.tsx` | Wave 2 / project instructions | 2026-08-16 | **overlaps `wave2/canvas-host-boundary` in `C:/Users/User/vela-w2-canvas` — read before merging either.** Three lines: `projectId` widened to `ProjectId \| null` and the panel not opened on `null`, because the composition root now passes the host-derived project and has no constant to fall back on before that read lands |
 
 ## Released
 

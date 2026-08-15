@@ -7,8 +7,9 @@
  */
 
 import type { Degradation, ToolCallOutcome } from '@/platform/contract';
+import type { RunDegradation } from '@/platform/contract-harness';
 
-import { describeDegradation } from './notices';
+import { describeDegradation, describeRunDegradation } from './notices';
 import { ToolCallList } from './ToolCallList';
 import type { ToolResultView } from './tool-calls';
 import type { ToolCallProgress } from './turn-stream';
@@ -20,6 +21,32 @@ export function DegradationNotes({ items }: { readonly items: readonly Degradati
     <ul className={styles.notes} aria-label="What Vela had to change for this model">
       {items.map((degradation, index) => {
         const notice = describeDegradation(degradation);
+        return (
+          <li key={index} className={styles.note} data-tone={notice.tone}>
+            <span className={styles.noteTitle}>{notice.title}</span>
+            <span className={styles.noteDetail}>{notice.detail}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * What the **run** had to give up, drawn in the same place and the same shape as
+ * what the endpoint did.
+ *
+ * A separate list rather than a merged one, because the two unions are separate
+ * on purpose (`describeRunDegradation` says why). Same label, because the user's
+ * question — "what did Vela change for this reply?" — does not distinguish them,
+ * and two headings that read identically would be worse than one list.
+ */
+export function RunDegradationNotes({ items }: { readonly items: readonly RunDegradation[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className={styles.notes} aria-label="What Vela had to change for this run">
+      {items.map((degradation, index) => {
+        const notice = describeRunDegradation(degradation);
         return (
           <li key={index} className={styles.note} data-tone={notice.tone}>
             <span className={styles.noteTitle}>{notice.title}</span>

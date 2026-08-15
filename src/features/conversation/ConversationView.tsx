@@ -134,6 +134,7 @@ export function ConversationView({
                     key={entry.id}
                     id={entry.id}
                     turn={entry.turn}
+                    runDegradations={entry.runDegradations}
                     onRetry={conversation.streaming ? undefined : conversation.retry}
                   />
                 ),

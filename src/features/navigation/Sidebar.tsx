@@ -30,6 +30,7 @@ import {
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
 import { useMemoryStore } from '@/state/memory-store';
+import { useProjectStore } from '@/state/project-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -72,8 +73,10 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   const openPalette = useNavigationStore((state) => state.openPalette);
   // Only a boolean is set: the memory pane is another feature, and one feature
   // may not import another (`src/features/README.md`). The composition root
-  // mounts it; this opens it.
+  // mounts it; this opens it. The projects pane is reached the same way, for
+  // the same reason.
   const setMemoryOpen = useMemoryStore((state) => state.setOpen);
+  const setProjectsOpen = useProjectStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -192,6 +195,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setProjectsOpen(true);
+          }}
+          aria-label="Projects"
+        >
+          <ProjectsIcon />
+        </button>
       </nav>
     );
   }
@@ -251,6 +264,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <MemoryIcon />
           <span>Memory</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setProjectsOpen(true);
+          }}
+        >
+          <ProjectsIcon />
+          <span>Projects</span>
         </button>
       </div>
 
@@ -378,6 +401,20 @@ function MemoryIcon() {
         strokeWidth="1.4"
       />
       <path d="M6 6.4h4M6 9.6h2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProjectsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M2.4 5.2v7.2a1 1 0 0 0 1 1h9.2a1 1 0 0 0 1-1V6.4a1 1 0 0 0-1-1H8L6.6 3.6H3.4a1 1 0 0 0-1 1Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

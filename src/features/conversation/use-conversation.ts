@@ -56,11 +56,12 @@ import {
   mergeRunCapabilities,
   type ContextRef,
   type HarnessRuntime,
+  type RunDegradation,
   type RunFailure,
   type RunHandle,
   type RunOutcome,
 } from '@/platform/contract-harness';
-import { DEFAULT_PROJECT_ID, type ProjectId } from '@/platform/contract-project';
+import type { ProjectId } from '@/platform/contract-project';
 import { PlatformError } from '@/platform/errors';
 import { subagentToolDefinition } from '@/runtime/subagent-toolkit';
 import { useMemoryStore } from '@/state/memory-store';
@@ -80,7 +81,28 @@ export type ConversationEntry =
        */
       readonly parts?: readonly ContentPartInput[];
     }
-  | { readonly kind: 'assistant'; readonly id: string; readonly turn: TurnState };
+  | {
+      readonly kind: 'assistant';
+      readonly id: string;
+      readonly turn: TurnState;
+      /**
+       * What the **run** that produced this turn had to give up, when it was a
+       * run rather than an ordinary send.
+       *
+       * Here rather than inside {@link TurnState} because that is a pure
+       * reduction over the six normalised chat events and a `RunDegradation` is
+       * not one of them; it arrives on the run's own event stream, next to
+       * `runFinished`. Absent for an ordinary send, and for a run that gave
+       * nothing up.
+       *
+       * **This field is why the layer is not still dead at the last hop.** The
+       * loop has always emitted `degraded`, and this surface has always dropped
+       * it — so a run that went without material the user wrote said so to
+       * nobody. The rest of the project-instructions path could have been fixed
+       * end to end and a user would still have seen an ordinary-looking answer.
+       */
+      readonly runDegradations?: readonly RunDegradation[];
+    };
 
 /** No attachments, as a shared constant so `send` allocates nothing per turn. */
 const NO_PARTS: readonly ContentPartInput[] = [];
@@ -107,6 +129,25 @@ const NO_HARNESS = {
 const RUN_REJECTED = {
   code: 'RUN_BUSY',
   message: 'Another run is already going in this conversation.',
+} as const;
+
+/**
+ * The third, and the one that replaced a silent default.
+ *
+ * `RunRequest.projectId` is required and decides which project's instructions
+ * the run is handed. There is no value this surface may invent for it: reaching
+ * for `DEFAULT_PROJECT_ID` is how every run in every project came to read the
+ * default project's context, and it reads as working right up until the user
+ * has a second project.
+ *
+ * Refusing is a *transient* state in the shipped app rather than a wall — the
+ * composition root asks the host which projects exist as it mounts — so the
+ * sentence says what the user should do about it, which is wait or look at why
+ * the read failed.
+ */
+const NO_PROJECT = {
+  code: 'NO_PROJECT',
+  message: 'Vela does not know which project this conversation is in yet, so an agent run has nowhere to belong. Open Projects to check.',
 } as const;
 
 export interface UseConversationOptions {
@@ -148,8 +189,18 @@ export interface UseConversationOptions {
    * {@link UseConversationOptions.attachments} follows, for the same reason.
    */
   readonly runtime?: HarnessRuntime | null;
-  /** Which project an agent run belongs to. See `RunRequest.projectId`. */
-  readonly projectId?: ProjectId;
+  /**
+   * Which project an agent run belongs to. See `RunRequest.projectId`.
+   *
+   * **`null`/omitted has no default and never had a defensible one.** This
+   * option used to fall through to `DEFAULT_PROJECT_ID`, and since `App.tsx`
+   * passed nothing, *every* run in *every* project was started against the
+   * default project's context. With one project that is invisible; with two it
+   * is every conversation silently reading the wrong instructions. An agent run
+   * without a project is now refused with a sentence, which is a state a user
+   * can see and a test can assert.
+   */
+  readonly projectId?: ProjectId | null;
   /** Defaults to `requestAnimationFrame`. */
   readonly scheduleCommit?: (run: () => void) => void;
   /** Substituted in tests; defaults to one built over the platform adapter. */
@@ -232,7 +283,7 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
   const supplied = options.initialEntries;
   const runtime = options.runtime ?? null;
   const capabilities = options.capabilities ?? NO_CAPABILITIES;
-  const projectId = options.projectId ?? DEFAULT_PROJECT_ID;
+  const projectId = options.projectId ?? null;
 
   const [entries, setEntries] = useState<readonly ConversationEntry[]>(() => supplied ?? []);
   const [streaming, setStreaming] = useState(false);
@@ -333,10 +384,20 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
    * Read the user's memory on the way in.
    *
    * The **global** scope, always, because nothing in the renderer knows which
-   * project a conversation belongs to: `ConversationSummary` carries no project
-   * id and there is no project surface. The host's project scope is real and
-   * tested; it is not reachable from here yet, and this hook does not pretend
-   * otherwise by inventing one.
+   * project a *conversation* belongs to: `ConversationSummary` carries no
+   * project id. The host's project scope is real and tested; it is not reachable
+   * from here, and this hook does not pretend otherwise by inventing one.
+   *
+   * The second half of that sentence used to be "and there is no project
+   * surface", which stopped being true when one was built
+   * (`src/features/projects/`). It changes nothing here, and the reason it
+   * changes nothing is worth writing down rather than leaving to be rediscovered:
+   * what that surface knows is which project the **window** is in, which is not
+   * the same question. Scoping this conversation's memory to the window's
+   * current project would attach a user's remembered facts to whichever project
+   * happened to be selected when they opened the conversation. That needs
+   * `project_move_conversation` to have a surface, or `ConversationSummary` to
+   * carry the id.
    *
    * A failed read leaves memory empty and the turn goes without it. That is a
    * deliberate degradation and it is **not** surfaced anywhere today — unlike
@@ -496,6 +557,21 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
    * that the stream already closed: a provider failure arrives as `chat.error`
    * first, and the error it carries is the one worth rendering.
    */
+  /**
+   * Record what a run gave up, against the entry that run is drawing.
+   *
+   * Appended rather than replaced: a run can degrade more than once, and each is
+   * about a different thing it went without.
+   */
+  const noteDegradation = useCallback((runId: string, degradation: RunDegradation) => {
+    setEntries((current) =>
+      current.map((entry) => {
+        if (entry.kind !== 'assistant' || entry.id !== runId) return entry;
+        return { ...entry, runDegradations: [...(entry.runDegradations ?? []), degradation] };
+      }),
+    );
+  }, []);
+
   const settleRun = useCallback((runId: string, outcome: RunOutcome) => {
     setEntries((current) =>
       current.map((entry) => {
@@ -691,6 +767,14 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
           messageIds.current.set(userId, written.id);
         });
 
+        // Before the harness is even asked. A run belongs to a project, its
+        // context resolver is a project's, and there is nothing this surface may
+        // substitute: see `NO_PROJECT`.
+        if (projectId === null) {
+          refuseTurn(runId, NO_PROJECT);
+          return;
+        }
+
         // `requestedId` is `null` on every call: nothing in `contract.ts` can
         // store a harness choice, so every selection comes back `substituted`
         // with reason `noneChosen` — a success state, and not something to
@@ -702,9 +786,17 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         }
         const definition = selection.definition;
 
-        // The caller indexes and picks; the harness loads. With no project
-        // command in the allowlist this is empty today, and the wiring is here so
-        // that it stops being empty without this file changing.
+        // The caller indexes and picks; the harness loads. This is no longer
+        // empty: `contextFor` resolves the project's instructions through
+        // `project_get`, so a project the user has written instructions for
+        // yields one ref here and the harness loads it into the system message.
+        //
+        // The `catch` is a floor, not the failure path. A resolver that cannot
+        // read still returns its ref and answers `null` at load, which is what
+        // produces the `contextUnavailable` the user sees; this only catches a
+        // resolver that rejects outright, and refusing to answer at all because
+        // a *source of extra material* could not be listed would be a chat the
+        // user cannot have for a reason they cannot see.
         let preload: readonly ContextRef[] = [];
         try {
           preload = await runtime.contextFor(projectId).index();
@@ -787,6 +879,15 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
               return;
             }
 
+            if (event.type === 'degraded') {
+              // Drained first, so the note lands *after* whatever text has
+              // arrived rather than being overwritten by the queued events a
+              // later drain replays over this entry.
+              drain(runId);
+              noteDegradation(runId, event.degradation);
+              return;
+            }
+
             if (event.type !== 'runFinished') return;
             drain(runId);
             ended = true;
@@ -809,6 +910,7 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
       drain,
       enqueue,
       modelId,
+      noteDegradation,
       projectId,
       providerId,
       refuseTurn,

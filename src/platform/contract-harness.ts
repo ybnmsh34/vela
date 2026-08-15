@@ -735,13 +735,18 @@ export interface ContextChunk {
  * ## What carries them instead
  *
  * The host. Skills and memory are files, reached through `<domain>_<verb>`
- * commands owned by whatever contract owns those surfaces. **Today there are
- * none**: `COMMAND_ALLOWLIST` has nothing for skills or memory, so a builder
- * wiring this up will be implementing a resolver over something that does not
- * exist yet, and the honest first implementation is one backed by the run's own
- * project instructions and nothing else.
+ * commands owned by whatever contract owns those surfaces. **They exist**:
+ * `COMMAND_ALLOWLIST` carries `skills_list`, `skills_read`, and the five
+ * `memory_*` commands. The two sentences that stood here said the opposite —
+ * that the allowlist had nothing for either — and they were read and believed;
+ * see AMENDMENT 6.
  *
- * That first implementation is buildable now and the seam for it is frozen:
+ * The first implementation is still the one backed by the run's own project
+ * instructions and nothing else, and it is the one that exists
+ * (`src/runtime/project-context.ts`). That is now a choice about scope rather
+ * than a report about what can be called.
+ *
+ * Its seam is frozen:
  * `projectInstructions` resolves to `ProjectView.instructions` for **the project
  * this resolver was made for**, through `project_get` in
  * `src/platform/contract-project.ts` — the same project a run in it names in
@@ -749,9 +754,10 @@ export interface ContextChunk {
  * rather than a file, so `index()` returns at most one ref for that source and
  * `estimatedTokens` is `null` until something counts it. The `skill` source has
  * a shape waiting for it there too — `ProjectView.enabledSkills` names them and
- * `ProjectLayout.mounts` says which ones actually mounted — but no command
- * reads a skill's *body*, so a resolver cannot serve that source yet and must
- * not pretend to by returning refs it cannot load.
+ * `ProjectLayout.mounts` says which ones actually mounted — and `skills_read`
+ * answers a skill's `body`, so that arm is buildable rather than blocked. What
+ * still holds unconditionally is the rule the old sentence was reaching for: a
+ * resolver must not return refs it cannot load.
  *
  * ## Read-only, deliberately
  *
@@ -1641,6 +1647,23 @@ export interface HarnessRuntime {
  *    rest of this file's rules are held or unheld exactly as before. Revisit:
  *    nothing — this corrects a statement about which guards exist, which is the
  *    one kind of sentence in here that goes stale by being right at the time.
+ *
+ * 6. 2026-08-16 — **no shape and no rule changed.** `ContextResolver`'s header
+ *    said `COMMAND_ALLOWLIST` "has nothing for skills or memory" and that "no
+ *    command reads a skill's *body*". Both are false against the allowlist in
+ *    `src/platform/contract.ts`, which carries `skills_list`, `skills_read`
+ *    (whose response's `skill` arm has a `body`) and the five `memory_*`
+ *    commands. The claim was load-bearing in the worst way: it was copied into
+ *    `src/runtime/project-context.ts` and, in the neighbouring form "the
+ *    allowlist has no command that reads a project", into
+ *    `src/runtime/app-runtime.ts`, where it justified returning `null` for every
+ *    project — so the `projectInstructions` arm this file specifies was dead in
+ *    the product. Corrected to say which commands exist and to keep the rule
+ *    that was underneath it: a resolver must not return refs it cannot load.
+ *    HARNESS_CONTRACT_VERSION is left at 3 — nothing compares it to anything,
+ *    no shape moved, and entries 3, 4 and 5 are likewise prose-only. Revisit:
+ *    anything that decided not to implement a `ContextResolver` arm because
+ *    this file said the command for it did not exist.
  *
  * This file is frozen: builders code against it without being able to ask, so a
  * silent edit is worse than a wrong shape. To change it, append a numbered entry

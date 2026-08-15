@@ -9,10 +9,11 @@ import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
+import { ProjectsSurface, useActiveProjectId } from '@/features/projects';
 import { PlatformProvider, usePlatform } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
 import type { HarnessRuntime } from '@/platform/contract-harness';
-import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
+import type { ProjectId } from '@/platform/contract-project';
 import { createAgentRuntime } from '@/runtime/app-runtime';
 import { useNavigationStore } from '@/state/navigation-store';
 
@@ -32,9 +33,10 @@ export function App({ adapter }: AppProps) {
           <Workspace />
         </AppShell>
         {/* Mounted here rather than in the sidebar that opens it, because one
-            feature may not import another. It renders nothing until the user
-            asks for it — and until then it does not read the host either. */}
+            feature may not import another. Each renders nothing until the user
+            asks for it — and until then neither reads the host either. */}
         <MemorySurface />
+        <ProjectsSurface />
       </KeyboardProvider>
     </PlatformProvider>
   );
@@ -89,12 +91,23 @@ export function App({ adapter }: AppProps) {
  * `src/features/README.md` sets and the reason the markdown parser both of them
  * read now lives in `src/lib/`.
  *
- * `DEFAULT_PROJECT_ID` is passed literally, and that is a statement about what
- * is not built rather than a shortcut. The project feature does not exist, so
- * there is exactly one project and this is its id; `contract-project.ts` says no
- * code under `src/` should *compare* against that constant, and nothing here
- * does. When projects arrive, this line reads the selected one and nothing
- * downstream changes.
+ * ## The joint that was a constant, and what it cost
+ *
+ * `DEFAULT_PROJECT_ID` used to be passed here literally, justified by a comment
+ * saying the project feature did not exist so there was exactly one project.
+ * The consequence was not one wrong id. It was that **every conversation in
+ * every project ran as the default one** — and with a single project that is
+ * indistinguishable from working, which is why it survived. `useActiveProjectId`
+ * replaces it: the id comes from `project_list`, from the summary the host flags
+ * `isDefault`, and moves when the user picks another in the projects pane.
+ * Nothing here compares against the constant, which is the rule
+ * `contract-project.ts` states; the difference is that nothing here *is* the
+ * constant either.
+ *
+ * `null` — before that read lands, or after it fails — is passed down as `null`
+ * rather than being papered over. The conversation surface refuses an agent run
+ * without a project and says so; the canvas panel does not open. A fallback here
+ * would be the same defect with a different spelling.
  *
  * ## The fourth joint: the agent runtime
  *
@@ -117,14 +130,16 @@ function Workspace() {
   const [answers, setAnswers] = useState<readonly string[]>(NO_ANSWERS);
   const adapter = usePlatform();
   const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
+  const projectId = useActiveProjectId();
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>
-      <CanvasSurface assistantTexts={answers} projectId={DEFAULT_PROJECT_ID}>
+      <CanvasSurface assistantTexts={answers} projectId={projectId}>
         <Transcript
           onPendingTurn={setTurnTexts}
           onAssistantMessages={setAnswers}
           runtime={runtime}
+          projectId={projectId}
         />
       </CanvasSurface>
     </ModelWorkspace>
@@ -152,10 +167,12 @@ function Transcript({
   onPendingTurn,
   onAssistantMessages,
   runtime,
+  projectId,
 }: {
   readonly onPendingTurn: (texts: readonly string[]) => void;
   readonly onAssistantMessages: (texts: readonly string[]) => void;
   readonly runtime: HarnessRuntime;
+  readonly projectId: ProjectId | null;
 }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const { selection, capabilities, attachments, report } = useSelectedModel();
@@ -172,6 +189,7 @@ function Transcript({
       attachments={attachments}
       contextWindowTokens={report?.contextWindowTokens ?? null}
       runtime={runtime}
+      projectId={projectId}
       onPendingTurn={onPendingTurn}
     />
   );

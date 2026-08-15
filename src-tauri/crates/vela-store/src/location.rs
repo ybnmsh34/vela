@@ -72,9 +72,19 @@ impl DatabaseLocation {
     /// # What must be private, and why the directory is nearly all of it
     ///
     /// The root, `vela.db`, `vela.db-wal`, `vela.db-shm`, and the `skills/`,
-    /// `projects/` and `diagnostics/` subdirectories beside them. The `-wal` is
-    /// not a lesser file than the database: on the machine this was measured on
-    /// it held 2.6 MB of conversation text that had not yet been checkpointed.
+    /// `projects/` and `diagnostics/` subdirectories beside them.
+    ///
+    /// **The `-wal` is not a lesser file than the database.** It holds
+    /// committed transactions that have not been checkpointed into the main
+    /// file yet — conversation text under another name — which is a fact about
+    /// how SQLite works and needs no measurement to support it. An earlier
+    /// version of this sentence gave a size and called it un-checkpointed live
+    /// data; that figure was copied from the audit rather than measured here,
+    /// and the only object of that size in this project's own evidence is a
+    /// `.pre-cleanup-` **backup**, which by definition is not live. Removed
+    /// rather than corrected: no claim on this page needs a number to be true,
+    /// and every candidate number came from a path that resolves into a
+    /// container.
     ///
     /// Hardening the **root** covers most of that, for a reason worth stating
     /// precisely rather than approximately. Windows ACL inheritance is

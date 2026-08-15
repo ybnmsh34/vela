@@ -299,6 +299,59 @@ that would have caught all of them: WHEN A GUARD IS BUILT FROM A DEFECT, THE
 MUTATION THAT PROVES IT MUST BE THE DEFECT'S OWN BYTES, TAKEN FROM GIT. Those
 bytes existed the whole time.
 
+-------------------------------------------------------------------------------
+ROUND 6. A figure this branch introduced, contradicted by its own evidence.
+
+Five sites in this branch's source said the write-ahead log was 2.6 MB, and two
+said the database was 315 KB. This file's sibling, real-appdata-before.txt,
+records:
+
+    ...\vela.db                            315,392 bytes
+    ...\vela.db-wal                         98,912 bytes   <- LIVE
+    ...\vela.db-wal.pre-cleanup-20260815  2,603,872 bytes   <- a BACKUP
+
+The live write-ahead log is 98 KB. The only 2.6 MB object is a pre-cleanup
+backup, which by definition is not un-checkpointed live data -- so
+location.rs asserted as measured the opposite of what the measurement shows.
+Stacked on that: both figures come from paths that resolve into the container,
+which the header of real-appdata-before.txt now says must not be quoted.
+
+Provenance, established rather than guessed:
+    $ git log --oneline -S'2.6 MB' -- docs/audit
+      92cdb06  Audit: grade all 264 aspects of the app against evidence
+    $ git log --oneline -S'2.6 MB' -- src-tauri
+      317c977  (this branch)
+The figure entered in the audit and this branch copied it into source. It is
+absent from src-tauri at the merge base.
+
+THE REPAIR CHOSEN, AND WHY NOT THE OTHERS.
+  Rejected -- state it with date and provenance: the audit's measurement cannot
+    be tied to a specific object or moment, and the "un-checkpointed live data"
+    reading is contradicted by the later measurement regardless of attribution.
+  Rejected -- quote what the evidence holds (98 KB live, 2.6 MB backup): both
+    numbers come from container-resolved paths, so quoting them would break the
+    rule this project just wrote down one file away.
+  CHOSEN -- remove the figure. No claim on any of the seven sites needs a number
+    to be true. That the -wal is not a lesser file than the database follows
+    from how SQLite works, not from its size on one machine.
+
+The guard added in rounds 4-5 now carries all three retracted claims, since this
+is the second instance of one class: a real measurement of one object written
+down as a measurement of another (the first was the `diagnostics` row). Proved
+against the defects' own bytes, out of git, never retyped:
+
+  QS1  the 2.6 MB sentence exactly as it shipped, wrapped  => 2/2 RED
+       (bytes: git cat-file -p e04c4e0:.../vela-store/src/location.rs)
+  QS2  the 315 KB + 2.6 MB sentence as it shipped, wrapped => 2/2 RED
+       (bytes: git cat-file -p e04c4e0:.../vela-store/src/lib.rs)
+  QW1  the round-3 phrase, re-proved after generalising    => 2/2 RED
+  Q6   guard stops reading contents                        => 2/2 RED
+  Q7   guard stops descending                              => 2/2 RED
+
+docs/audit/REPORT.md and docs/audit/security.md still carry the figure. They are
+dated records of what the audit measured and are left alone, as with every other
+historical document in this track.
+
 WHY A TEST AND NOT A HABIT. The deny-consequence claim was retracted in round 3
 and then shipped verbatim TWICE MORE in the same file, a thousand lines below
 the retraction, in a commit whose own message said "checking took one grep".

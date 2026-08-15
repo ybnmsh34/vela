@@ -170,7 +170,7 @@
 //!
 //! **The `diagnostics` subdirectory was the only thing that fix was ever
 //! applied to.** The audit that followed measured the directory *containing*
-//! it — the application-data root, holding `vela.db`, its 2.6 MB `-wal`, and
+//! it — the application-data root, holding `vela.db`, its `-wal`, and
 //! `skills/` — and found the identical inherited ACE this crate had been
 //! written to remove, still there:
 //!
@@ -193,8 +193,8 @@
 //! made private is established by the desktop gate quoted above, which drove
 //! the real `debug_log_set` and read the result back — and the defect is a
 //! statement about the **root**, which is the row that is real: the directory
-//! holding `vela.db` and its 2.6 MB write-ahead log was reachable by a second
-//! local group, and this crate was never called on it.
+//! holding `vela.db` and its write-ahead log was reachable by a second local
+//! group, and this crate was never called on it.
 //!
 //! A mechanism is not a policy: this crate kept its promise everywhere it was
 //! *called*, and the lesson is that the call site is part of the fix. It is now
@@ -1375,8 +1375,30 @@ mod tests {
         }
 
         // Assembled rather than written out, so this file does not contain the
-        // string it is banning.
-        let retracted = flattened(&format!("stricter than {} one it demands", "the"));
+        // strings it is banning.
+        //
+        // Two claims, retracted for two different reasons and guarded together
+        // because they failed the same way: a real measurement of one thing
+        // written down as a measurement of another.
+        let retracted: Vec<(String, &str)> = vec![
+            (
+                flattened(&format!("stricter than {} one it demands", "the")),
+                "the deny-ACE consequence, which is a silent repair rather than \
+                 a refusal to start",
+            ),
+            (
+                flattened(&format!("2{}6 MB", ".")),
+                "a write-ahead log size copied from the audit rather than \
+                 measured here; the only object of that size in this project's \
+                 evidence is a `.pre-cleanup-` backup, and every candidate \
+                 number came from a container-resolved path",
+            ),
+            (
+                flattened(&format!("315 {}B", "K")),
+                "a database size, same provenance and same container-resolved \
+                 measurement as the one above",
+            ),
+        ];
         // A positive control. An assertion that a phrase is ABSENT passes just
         // as happily when the search is broken as when the tree is clean, so
         // the same walk is asked for something that must be there.
@@ -1396,7 +1418,7 @@ mod tests {
             .expect("the crate sits at src-tauri/crates/<name>")
             .to_path_buf();
 
-        let mut offenders = Vec::new();
+        let mut offenders: Vec<String> = Vec::new();
         let mut sentinel_hits = 0usize;
         let mut scanned = 0usize;
         let mut stack = vec![workspace.clone()];
@@ -1419,8 +1441,10 @@ mod tests {
                         if flat.contains(sentinel) {
                             sentinel_hits += 1;
                         }
-                        if flat.contains(&retracted) {
-                            offenders.push(path);
+                        for (needle, why) in &retracted {
+                            if flat.contains(needle) {
+                                offenders.push(format!("{} — {why}", path.display()));
+                            }
                         }
                     }
                 }

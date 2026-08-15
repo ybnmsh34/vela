@@ -33,7 +33,7 @@
 //! as private**, and the difference was live on a real machine: `%APPDATA%` is
 //! per-user by convention, but its ACL is whatever the parent hands down, and
 //! there it handed down `CodexSandboxUsers ReadAndExecute` to a directory
-//! holding 315 KB of database and a 2.6 MB write-ahead log. Per-user is where
+//! holding the database and its write-ahead log. Per-user is where
 //! the OS files it. Private is a property somebody has to enforce and then
 //! check. `DatabaseLocation::prepare` does both, on every launch, and treats
 //! failure as fatal — the argument for that is written out on `prepare`.

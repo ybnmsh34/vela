@@ -6,7 +6,7 @@
 //! `vela-privatefs` was written for a measured finding on
 //! `%APPDATA%\dev.vela.desktop\diagnostics`, and it fixed it. It was applied to
 //! **that subdirectory only**. The audit that followed measured the directory
-//! containing it — the one holding `vela.db`, its 2.6 MB write-ahead log and
+//! containing it — the one holding `vela.db`, its write-ahead log and
 //! `skills/` — and found the identical inherited ACE still there:
 //!
 //! ```text
@@ -39,8 +39,8 @@
 //! needs and cannot get from a scratch copy: what is under test is the
 //! *transition* from a widened directory to a private one, and a scratch
 //! directory widened with the identical `icacls` grant reproduces that exactly.
-//! Pointing an automated ACL rewrite at a live 315 KB database to prove it is
-//! safe is not a trade worth making.
+//! Pointing an automated ACL rewrite at a user's live conversation database to
+//! prove it is safe is not a trade worth making.
 //!
 //! `#[ignore]`d, and it takes its target from the environment rather than
 //! choosing one, so an ordinary `cargo test` can never write into any

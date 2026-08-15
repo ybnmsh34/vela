@@ -147,6 +147,7 @@ export function ConversationView({
         capabilities={capabilities}
         streaming={conversation.streaming}
         blockedReason={conversation.blockedReason}
+        agent={conversation.agent}
         onSend={conversation.send}
         onCancel={conversation.stop}
         onDraftChange={onDraftChange}

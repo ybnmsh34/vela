@@ -159,6 +159,16 @@
   background: var(--vela-bg-inset);
 }
 
+/* A toggle that is on has to read as on without its label: the state changes
+   what pressing Send does, and a control that looks identical either way is a
+   mode the user cannot see they are in. Driven off `aria-pressed` rather than a
+   second class so the accessible state and the visible one cannot diverge. */
+.iconButton[aria-pressed='true'] {
+  color: var(--vela-accent);
+  border-color: var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
 .hint {
   margin: 0 auto;
   width: 100%;

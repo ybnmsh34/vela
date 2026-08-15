@@ -75,7 +75,7 @@ impl LinkStrategy {
 /// Not by reading a policy key: Developer Mode being on does not guarantee the
 /// process token carries the privilege, and a registry read that disagrees with
 /// the filesystem is a guess dressed as a fact. That is the lesson
-/// `src-tauri/crates/vela-providers/src/private_fs.rs` was written to record —
+/// `src-tauri/crates/vela-privatefs/src/lib.rs` was written to record —
 /// its Windows branch assumed and the desktop gate measured something else.
 ///
 /// Called once per launch. Cheap (one directory create, one link, two removals)

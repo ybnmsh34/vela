@@ -820,7 +820,7 @@ export type LinkFallbackReason =
  * it — not by reading a policy key. Developer Mode being on does not guarantee
  * the process token carries the privilege, and a registry read that disagrees
  * with the filesystem is a guess dressed as a fact. That is the same lesson
- * `src-tauri/crates/vela-providers/src/private_fs.rs` was written to record: its
+ * `src-tauri/crates/vela-privatefs/src/lib.rs` was written to record: its
  * Windows branch assumed the application-data directory was already per-user,
  * the desktop gate measured it and found another installer's inherited ACE
  * granting a second local group read access, and the repair was to stop

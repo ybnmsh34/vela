@@ -29,7 +29,7 @@
 //! case-sensitive on Windows does not fold at all, and a case-sensitive APFS
 //! volume does not either. So [`probe_case_folding`] creates a file and asks
 //! the volume, in the same spirit as the link probe in `crate::mount` and for
-//! the reason `src-tauri/crates/vela-providers/src/private_fs.rs` records: a
+//! the reason `src-tauri/crates/vela-privatefs/src/lib.rs` records: a
 //! setting that disagrees with the filesystem is a guess dressed as a fact.
 
 use std::fs;

@@ -19,6 +19,7 @@
 //! | Usage accounting is honest | Token counts are `Option`; `None` means "not reported", never `0` |
 //! | No SQL leaks out | Callers depend on [`repository`] traits; [`sqlite`] is the only module with queries |
 //! | **No credential ever lands on disk** | The schema has no column that can hold one; a setting may name a keychain entry ([`SecretRefName`]) and nothing more |
+//! | **No other account can read what is on disk** | `DatabaseLocation::prepare` makes the directory owner-only on every launch — `0700` on unix, an inheritance-protected DACL on Windows — tightens `vela.db`, `-wal` and `-shm` inside it, reads the result back off the filesystem, and **refuses to open the database** if it is not private |
 //!
 //! ## Where the database lives
 //!
@@ -27,6 +28,15 @@
 //! path API and passes it in; tests pass a temporary directory or ask for
 //! [`DatabaseLocation::InMemory`]. The store itself has no opinion about
 //! operating systems, which is what makes the whole layer testable headlessly.
+//!
+//! "The real per-user application-data directory" is **true and is not the same
+//! as private**, and the difference was live on a real machine: `%APPDATA%` is
+//! per-user by convention, but its ACL is whatever the parent hands down, and
+//! there it handed down `CodexSandboxUsers ReadAndExecute` to a directory
+//! holding 315 KB of database and a 2.6 MB write-ahead log. Per-user is where
+//! the OS files it. Private is a property somebody has to enforce and then
+//! check. `DatabaseLocation::prepare` does both, on every launch, and treats
+//! failure as fatal — the argument for that is written out on `prepare`.
 //!
 //! ## Example
 //!

@@ -18,6 +18,13 @@ vela-core.workspace = true
 # everywhere, including on a machine with no system SQLite at all.
 rusqlite = { version = "0.37", features = ["bundled", "blob"] }
 uuid = { version = "1", features = ["v4"] }
+# The database holds every conversation the user has ever had, and on Windows
+# the directory it sits in inherits its ACL from `%APPDATA%` — which, on the
+# machine this was measured on, granted a second local group read access. This
+# crate does not decide *where* it lives (that is still injected), but it does
+# decide *what must be true of it*, and it enforces that itself rather than
+# trusting a caller to remember. See `location::DatabaseLocation::prepare`.
+vela-privatefs.workspace = true
 
 [features]
 default = []

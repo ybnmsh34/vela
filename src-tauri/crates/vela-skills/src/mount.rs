@@ -37,7 +37,7 @@
 //! result back, once, rather than by reading a policy key. Developer Mode being
 //! on does not guarantee the process token carries the privilege, and a
 //! registry read that disagrees with the filesystem is a guess dressed as a
-//! fact — the lesson `src-tauri/crates/vela-providers/src/private_fs.rs` was
+//! fact — the lesson `src-tauri/crates/vela-privatefs/src/lib.rs` was
 //! written to record.
 //!
 //! **One honest limitation.** [`LinkFallbackReason::FilesystemDoesNotSupportLinks`]

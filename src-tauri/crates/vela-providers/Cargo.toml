@@ -31,24 +31,16 @@ reqwest = { version = "0.12", default-features = false, features = [
   "charset",
 ] }
 
-# The Win32 half of `private_fs`. There is no way to express "this directory is
-# reachable by its owner and nobody else" on Windows through `std::fs`: the
-# concept is a DACL, and setting one — with inheritance *disabled*, which is the
-# whole point — means `SetNamedSecurityInfoW`. Reading it back means
-# `GetNamedSecurityInfoW` plus `GetAce`, because the promise this module makes is
-# a measurement and not a restatement of what was requested.
+# `private_fs` used to be a module in this crate, and the Win32 dependency it
+# needs used to be declared here. It moved out when a second crate needed the
+# same promise: `vela-store` protects the application-data root that holds every
+# conversation, and it cannot depend on this crate to get there — the provider
+# seam carries an HTTP client and a Tokio runtime, and it already dev-depends on
+# `vela-store` in the other direction.
 #
-# `cfg(windows)` so no unix build pulls a line of this in. The feature list is
-# exactly the four namespaces `private_fs::imp` imports from, plus
-# `Win32_Foundation` for `LocalFree`/`CloseHandle`/`WIN32_ERROR`.
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
-  "Win32_Foundation",
-  "Win32_Security",
-  "Win32_Security_Authorization",
-  "Win32_Storage_FileSystem",
-  "Win32_System_Threading",
-] }
+# Re-exported below under its old name so every existing call site and doc link
+# (`vela_providers::private_fs::…`, `crate::private_fs::…`) still resolves.
+vela-privatefs.workspace = true
 
 [dev-dependencies]
 # `net` is dev-only and buys one thing: `tests/wire_auth_headers.rs` opens a

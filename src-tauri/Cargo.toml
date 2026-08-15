@@ -7,6 +7,7 @@ default-members = [
   "crates/vela-core",
   "crates/vela-endpoint",
   "crates/vela-mcp",
+  "crates/vela-privatefs",
   "crates/vela-projects",
   "crates/vela-providers",
   "crates/vela-sandbox",
@@ -32,6 +33,7 @@ thiserror = "2"
 vela-core = { path = "crates/vela-core" }
 vela-endpoint = { path = "crates/vela-endpoint" }
 vela-mcp = { path = "crates/vela-mcp" }
+vela-privatefs = { path = "crates/vela-privatefs" }
 vela-projects = { path = "crates/vela-projects" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
@@ -64,6 +66,10 @@ path = "src/main.rs"
 
 [dev-dependencies]
 tempfile = "3"
+# `tests/gate_appdata_root_acl.rs` reads ACLs back through the same crate the
+# store hardens with, so the gate and the shell disagree loudly if either is
+# wrong. Production code reaches it through `vela_providers::private_fs`.
+vela-privatefs.workspace = true
 # The mock runtime, so the gate can build and drive the REAL application —
 # `run()`'s own builder configuration, its `setup`, and its `invoke_handler` —
 # with no window and no display server. `tauri`'s `test` feature is `[]`: it

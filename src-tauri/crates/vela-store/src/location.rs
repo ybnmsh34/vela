@@ -7,6 +7,16 @@
 //! the directory in, while tests hand in a `tempfile::TempDir` or ask for
 //! [`DatabaseLocation::InMemory`]. That is what makes the whole data layer
 //! testable headlessly with no filesystem assumptions.
+//!
+//! **Injected is not the same as unexamined.** The store has no opinion about
+//! *where* the directory is; it has a firm one about *what must be true of it*.
+//! It must be reachable by the account Vela is running as and by nobody else,
+//! because it holds every conversation the user has ever had — and on the
+//! Windows machine this was measured on it was not, having inherited a second
+//! local group's read access from a parent under `%APPDATA%`. That is enforced
+//! by `DatabaseLocation::prepare` on every launch, using the same
+//! [`vela_privatefs`] the debug log uses, and it is the one thing here that is
+//! deliberately *not* injectable — see `prepare_with`.
 
 use std::path::{Path, PathBuf};
 
@@ -52,23 +62,178 @@ impl DatabaseLocation {
         }
     }
 
-    /// Creates the containing directory if needed. A first run on a clean
-    /// machine has no application-data directory yet, and failing to open the
-    /// database because of a missing parent would be a confusing first
-    /// impression.
+    /// Creates the containing directory if needed, **reachable by this account
+    /// and nobody else**, and tightens the database files already in it.
+    ///
+    /// A first run on a clean machine has no application-data directory yet,
+    /// and failing to open the database because of a missing parent would be a
+    /// confusing first impression. Everything below is about the other case.
+    ///
+    /// # What must be private, and why the directory is nearly all of it
+    ///
+    /// The root, `vela.db`, `vela.db-wal`, `vela.db-shm`, and the `skills/`,
+    /// `projects/` and `diagnostics/` subdirectories beside them. The `-wal` is
+    /// not a lesser file than the database: on the machine this was measured on
+    /// it held 2.6 MB of conversation text that had not yet been checkpointed.
+    ///
+    /// Hardening the **root** covers almost all of that, for a reason worth
+    /// stating rather than assuming. Windows ACL inheritance is *static*: when
+    /// `create_private_dir` protects a directory, the security system rewrites
+    /// the DACL of every existing non-protected child at that moment, and
+    /// stamps the same two ACEs onto every entry created afterwards. So
+    /// `skills/` and `projects/` — which `vela-projects` creates with a plain
+    /// `create_dir_all` — are born private, and so is each `-wal` SQLite spins
+    /// up and throws away. This runs from `SqliteStore::open`, which the host
+    /// calls **first** in `setup`, before the skill store, the project host or
+    /// the diagnostics handle exist, so there is no entry that predates the
+    /// protection within a single launch.
+    ///
+    /// That claim is measured, not argued:
+    /// `the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else`
+    /// opens a real database and reads the siblings' ACLs back off the disk.
+    ///
+    /// The gap the root does not close is a child with its **own** protected
+    /// DACL — inheritance cannot reach one of those. `vela.db` and its siblings
+    /// are therefore tightened individually as well: they are the files this
+    /// crate owns across restarts, and a leaf protected in its own right cannot
+    /// be widened tomorrow by widening the parent.
+    ///
+    /// # An existing installation is repaired, not merely accepted
+    ///
+    /// This is the case that matters, because it is the one that exists. The
+    /// directory measured for the audit was already there, already full of
+    /// conversations, and already carrying
+    /// `CodexSandboxUsers ReadAndExecute (inherited)` from a parent under
+    /// `%APPDATA%` that other software had widened. Vela did not create that
+    /// ACE and cannot stop it being re-applied to `%APPDATA%` — it can only
+    /// refuse to let it *reach in*, which is what
+    /// `PROTECTED_DACL_SECURITY_INFORMATION` does. `create_private_dir` applies
+    /// the same repair to an existing directory as to a new one and re-reads
+    /// the result either way, so tightening on startup is not a side effect of
+    /// creation; it is the point.
+    ///
+    /// # If it cannot be made private, the database is not opened
+    ///
+    /// **This stops startup.** It is the largest consequence anything in this
+    /// crate reaches for, so here is the case for it and the case against.
+    ///
+    /// The case against is real. A user with three years of conversations, on a
+    /// host where the DACL cannot be tightened — a domain policy that
+    /// re-asserts inheritance, a roaming profile on a share, a volume with no
+    /// ACL support at all — opens Vela and gets nothing. And refusing does not
+    /// un-leak a byte: the transcripts are already on that disk, already
+    /// readable by whoever could read them this morning. Vela declining to open
+    /// them closes no window that is currently open. That argument deserves to
+    /// be answered rather than waved past.
+    ///
+    /// It is answered on three counts.
+    ///
+    /// **The exposure that continuing would create is Vela's own.** The
+    /// existing leak is not this crate's to undo, true. But every turn the user
+    /// takes after startup writes *new* prompts and answers into that file, and
+    /// that is entirely Vela's doing. If a debug log that silently stays
+    /// readable is worse than no debug log — the reasoning `vela-privatefs` was
+    /// built on — then the same reasoning applies with more force to the corpus
+    /// the log is a sample of. Refusing does not fix the past; it declines to
+    /// keep adding to it.
+    ///
+    /// **The two failure modes are not comparable in cost.** Harden-and-carry-on
+    /// fails silently, permanently, and towards disclosure: a green light over a
+    /// store another local account is reading, for as long as the user keeps
+    /// using the app. Refusing fails loudly, immediately, and towards nothing
+    /// disclosed — and it is reversible from a shell in one command. A
+    /// mistake in the first direction is discovered by whoever reads the file.
+    /// A mistake in the second is discovered by the user, at once, with the
+    /// path and the offending principals named in the message.
+    ///
+    /// **It is not a new failure surface.** `prepare` could already abort
+    /// startup: a directory that cannot be *created* has always been fatal
+    /// here, and `store_host::open` has always documented refusing to start as
+    /// the honest failure when there is no system of record. A directory that
+    /// cannot be made *private* now joins it, through the same return value and
+    /// the same call path. Nothing new was invented to carry this decision.
+    ///
+    /// The refusal is [`StoreError::NotPrivate`], separate from
+    /// [`StoreError::Io`] so that *would not* is never read as *could not*, and
+    /// it carries the reason `vela-privatefs` produced — which names the path,
+    /// every principal that can reach it, and whether inheritance is disabled.
+    /// The user's data is untouched: nothing is moved, copied or deleted on
+    /// this path, so backing it up or fixing the ACL by hand and relaunching
+    /// are both available.
     pub(crate) fn prepare(&self) -> StoreResult<()> {
+        self.prepare_with(vela_privatefs::create_private_dir)
+    }
+
+    /// [`Self::prepare`] with the directory hardening supplied by the caller.
+    ///
+    /// The seam exists for one reason, the same one
+    /// `vela_privatefs::create_private_dir_with` exists for: what a caller does
+    /// when the platform *cannot* deliver the promise has to be drivable
+    /// without persuading a real machine to fail. Injecting a refusing enforcer
+    /// is how `a_directory_that_cannot_be_made_private_is_refused_not_opened`
+    /// shows that this returns `Err` and leaves no database behind.
+    ///
+    /// Production code calls [`Self::prepare`]. Note what is *not* injectable:
+    /// the per-file tightening below, and the fact that a failure is fatal. The
+    /// directory is injected because *which* directory is the caller's business
+    /// — that is this crate's founding rule. What must be true of it is not,
+    /// because an enforcement step a caller can forget is how the defect this
+    /// repairs came to exist: `vela-privatefs` kept its promise perfectly, and
+    /// was simply never called on this directory.
+    pub(crate) fn prepare_with(
+        &self,
+        harden_dir: impl FnOnce(&Path) -> std::io::Result<()>,
+    ) -> StoreResult<()> {
         let Self::File(path) = self else {
             return Ok(());
         };
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|error| StoreError::Io {
-                    path: parent.display().to_string(),
-                    reason: error.to_string(),
-                })?;
+        let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+            return Ok(());
+        };
+
+        // Creates it if missing, repairs its DACL if it is not, and re-reads
+        // the result off the filesystem before returning `Ok`.
+        harden_dir(parent).map_err(|error| StoreError::NotPrivate {
+            path: parent.display().to_string(),
+            reason: error.to_string(),
+        })?;
+
+        // The files this crate owns across restarts, protected in their own
+        // right rather than left to inherit. Only the ones already on disk: a
+        // sibling SQLite has not created yet will inherit from the directory
+        // above, which the read-back inside `harden_dir` has just confirmed is
+        // protected.
+        for sibling in self.sibling_files() {
+            if !sibling.exists() {
+                continue;
             }
+            vela_privatefs::make_file_private(&sibling).map_err(|error| {
+                StoreError::NotPrivate {
+                    path: sibling.display().to_string(),
+                    reason: error.to_string(),
+                }
+            })?;
         }
         Ok(())
+    }
+
+    /// The database file and the two SQLite keeps beside it.
+    ///
+    /// `-wal` holds committed transactions that have not been checkpointed into
+    /// the main file yet, and `-shm` is its index. Both are conversation text
+    /// under another name, which is why they are listed here rather than
+    /// treated as scratch.
+    fn sibling_files(&self) -> Vec<PathBuf> {
+        let Self::File(path) = self else {
+            return Vec::new();
+        };
+        let mut files = vec![path.clone()];
+        for suffix in ["-wal", "-shm"] {
+            let mut name = path.as_os_str().to_owned();
+            name.push(suffix);
+            files.push(PathBuf::from(name));
+        }
+        files
     }
 }
 
@@ -103,5 +268,345 @@ mod tests {
         assert!(location.is_in_memory());
         assert_eq!(location.path(), None);
         location.prepare().unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // Privacy. Every assertion below re-reads the path off the filesystem
+    // through `vela_privatefs::describe` — the same reader `Get-Acl` and `stat`
+    // agree with — rather than restating what `prepare` was asked to do.
+    // -----------------------------------------------------------------------
+
+    /// Widen a path so a principal that is not its owner can reach it: the
+    /// state the audit measured, expressed in whatever the platform spells it
+    /// in.
+    ///
+    /// Duplicated from `vela-privatefs`'s own tests on purpose. It is the
+    /// *control* — the thing that makes the assertion after it mean something —
+    /// and a control that a crate imports from the crate under test is a
+    /// control that stops being independent the moment that crate is wrong.
+    /// Ten lines of `icacls` is a cheap price for that.
+    #[cfg(windows)]
+    fn widen(path: &Path) {
+        let output = std::process::Command::new("icacls")
+            .arg(path)
+            .arg("/grant")
+            .arg("*S-1-5-32-545:(OI)(CI)(RX)")
+            .output()
+            .expect("icacls must be present on Windows");
+        assert!(
+            output.status.success(),
+            "could not widen {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn widen(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        let mode = permissions.mode() & 0o7777;
+        permissions.set_mode(mode | 0o055);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+
+    /// The post-condition on a clean machine: the directory Vela's database
+    /// will sit in is reachable by this account and nobody else, and its DACL
+    /// is not open to whatever a parent decides tomorrow.
+    #[test]
+    fn the_directory_prepare_creates_is_reachable_by_nobody_else() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        DatabaseLocation::in_directory(&data).prepare().unwrap();
+
+        let report = vela_privatefs::describe(&data).unwrap();
+        assert!(
+            report.is_private(),
+            "the directory holding every conversation is reachable by someone \
+             else: {report:?}"
+        );
+    }
+
+    /// **The audit finding, executed, and then repaired.**
+    ///
+    /// This is the case that actually exists on users' machines: the directory
+    /// is already there, already holds a database, and already carries a
+    /// foreign principal's read access inherited from a parent under
+    /// `%APPDATA%`. Creating it is not the interesting half — repairing it is.
+    ///
+    /// What changes if the fix is absent: `after.foreign` stays non-empty. That
+    /// is the same field, filled from the same real ACEs, that
+    /// `DESKTOP-298M5DU\CodexSandboxUsers` showed up in on the machine the
+    /// finding came from.
+    #[test]
+    fn an_existing_directory_a_non_owner_can_read_is_tightened_not_accepted() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+
+        // The pre-fix body of `prepare`, verbatim, plus a database sitting in
+        // it from previous launches.
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join(DATABASE_FILE_NAME), b"SQLite format 3\0").unwrap();
+        widen(&data);
+
+        let before = vela_privatefs::describe(&data).unwrap();
+        assert!(
+            !before.foreign.is_empty(),
+            "the control did not produce a directory a non-owner can reach, so \
+             the assertion below would pass on anything: {before:?}"
+        );
+
+        DatabaseLocation::in_directory(&data).prepare().unwrap();
+
+        let after = vela_privatefs::describe(&data).unwrap();
+        assert!(
+            after.is_private(),
+            "an existing loose directory was accepted rather than tightened — \
+             this is the audit finding, unfixed: {after:?}"
+        );
+    }
+
+    /// The database file itself, not only the directory around it — and with
+    /// every byte still in it. A "fix" that reached privacy by deleting the
+    /// user's conversations would be a far worse bug than the one it closed,
+    /// and only this asserts otherwise.
+    #[test]
+    fn an_existing_database_a_non_owner_can_read_is_tightened_without_losing_a_byte() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        std::fs::create_dir_all(&data).unwrap();
+
+        let database = data.join(DATABASE_FILE_NAME);
+        let wal = data.join(format!("{DATABASE_FILE_NAME}-wal"));
+        std::fs::write(&database, b"conversation number one").unwrap();
+        std::fs::write(&wal, b"conversation number two, not yet checkpointed").unwrap();
+        widen(&database);
+        widen(&wal);
+
+        for path in [&database, &wal] {
+            let before = vela_privatefs::describe(path).unwrap();
+            assert!(
+                !before.foreign.is_empty(),
+                "control: {} was already private, so the assertion below proves \
+                 nothing: {before:?}",
+                path.display()
+            );
+        }
+
+        DatabaseLocation::in_directory(&data).prepare().unwrap();
+
+        for path in [&database, &wal] {
+            let after = vela_privatefs::describe(path).unwrap();
+            assert!(
+                after.is_private(),
+                "{} was left readable by another account: {after:?}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            std::fs::read(&database).unwrap(),
+            b"conversation number one",
+            "tightening destroyed the database"
+        );
+        assert_eq!(
+            std::fs::read(&wal).unwrap(),
+            b"conversation number two, not yet checkpointed",
+            "tightening destroyed the write-ahead log"
+        );
+    }
+
+    /// **The claim that hardening the root is most of the work, measured.**
+    ///
+    /// `skills/` and `projects/` are created by `vela-projects` with a plain
+    /// `create_dir_all`, after `SqliteStore::open` has run. Nothing tightens
+    /// them individually and nothing should have to: on Windows, inheritance
+    /// from a protected parent is what makes them private, both for entries
+    /// that already existed when the root was hardened and for entries created
+    /// afterwards. This drives both halves and reads the ACLs back.
+    ///
+    /// Windows-only, because the mechanism is Windows-only. On unix a child's
+    /// mode bits are its own — `create_dir_all` gives it whatever the umask
+    /// says — and what protects the tree there is that nobody else can
+    /// *traverse* a `0700` root to reach the child at all. Two different
+    /// mechanisms, the same end; asserting the Windows one on unix would be
+    /// asserting something false.
+    #[cfg(windows)]
+    #[test]
+    fn the_subdirectories_beside_the_database_inherit_the_root_they_sit_in() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+
+        // An existing installation: `skills/` is already there, and already
+        // carries the inherited ACE the audit measured on it.
+        std::fs::create_dir_all(data.join("skills")).unwrap();
+        widen(&data);
+        assert!(
+            !vela_privatefs::describe(&data.join("skills"))
+                .unwrap()
+                .foreign
+                .is_empty(),
+            "control: skills/ was not widened by widening its parent"
+        );
+
+        DatabaseLocation::in_directory(&data).prepare().unwrap();
+
+        // Created afterwards, exactly as `vela-projects` creates them.
+        std::fs::create_dir_all(data.join("projects")).unwrap();
+        std::fs::create_dir_all(data.join("diagnostics")).unwrap();
+
+        for child in ["skills", "projects", "diagnostics"] {
+            let report = vela_privatefs::describe(&data.join(child)).unwrap();
+            assert!(
+                report.foreign.is_empty(),
+                "`{child}` beside the database is reachable by another \
+                 account: {report:?}"
+            );
+        }
+    }
+
+    /// **The siblings SQLite creates on its own, measured on a real database.**
+    ///
+    /// `prepare` runs before any connection is opened, so the `-wal` and `-shm`
+    /// carrying uncheckpointed conversation text are created by SQLite, after
+    /// the fact, by code this crate does not control. Their privacy rests
+    /// entirely on the root having been hardened first. Nothing about that is
+    /// worth believing without reading it back off the disk.
+    ///
+    /// Note the quantity: `foreign`, not `is_private()`. A file that inherits
+    /// from a protected parent is unreachable by anyone else *and* reports
+    /// `inheritance_disabled: Some(false)`, because its safety is delegated
+    /// rather than its own — see `vela_privatefs`' module docs.
+    #[cfg(windows)]
+    #[test]
+    fn the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else() {
+        use crate::repository::{ConversationRepository, MessageRepository};
+        use crate::{NewConversation, NewMessage, SqliteStore};
+
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        std::fs::create_dir_all(&data).unwrap();
+        widen(&data);
+
+        let store = SqliteStore::open(DatabaseLocation::in_directory(&data)).unwrap();
+        let chat = store
+            .create_conversation(NewConversation::titled("something the user would not say twice"))
+            .unwrap();
+        store
+            .append_message(NewMessage::user(chat.id.clone(), "and something they typed"))
+            .unwrap();
+
+        let wal = data.join(format!("{DATABASE_FILE_NAME}-wal"));
+        assert!(
+            wal.is_file(),
+            "no write-ahead log was created, so this test measured nothing"
+        );
+
+        for name in [
+            DATABASE_FILE_NAME.to_owned(),
+            format!("{DATABASE_FILE_NAME}-wal"),
+            format!("{DATABASE_FILE_NAME}-shm"),
+        ] {
+            let path = data.join(&name);
+            if !path.exists() {
+                continue;
+            }
+            let report = vela_privatefs::describe(&path).unwrap();
+            assert!(
+                report.foreign.is_empty(),
+                "`{name}` holds conversation text and is reachable by another \
+                 account: {report:?}"
+            );
+        }
+        drop(store);
+    }
+
+    /// **Failing closed, at the seam the whole decision turns on.**
+    ///
+    /// When the platform cannot make the directory private, `prepare` returns
+    /// [`StoreError::NotPrivate`] — not `Io`, because *would not* is not
+    /// *could not* — and `SqliteStore::open` never gets as far as a connection.
+    /// No database file is left behind for a later launch to find and trust.
+    ///
+    /// What changes if the fix is absent: `prepare` returns `Ok`, the database
+    /// opens over a directory nothing protected, and the user's conversations
+    /// accumulate in a file another local account is reading.
+    #[test]
+    fn a_directory_that_cannot_be_made_private_is_refused_not_opened() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        let location = DatabaseLocation::in_directory(&data);
+
+        let error = location
+            .prepare_with(|path| {
+                // What a locked-down host looks like from here: the directory
+                // is creatable, and its ACL is not ours to set.
+                std::fs::create_dir_all(path)?;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
+                ))
+            })
+            .unwrap_err();
+
+        match &error {
+            StoreError::NotPrivate { path, reason } => {
+                assert_eq!(path, &data.display().to_string());
+                assert!(reason.contains("SetNamedSecurityInfoW"), "{reason}");
+            }
+            other => panic!("expected a privacy refusal, got {other:?}"),
+        }
+        assert!(
+            !data.join(DATABASE_FILE_NAME).exists(),
+            "a database was created at a path Vela had already refused"
+        );
+    }
+
+    /// The refusal a user actually reads. It has to say which folder, and it
+    /// has to say Vela declined rather than failed — those are different
+    /// instructions to whoever has to fix it.
+    #[test]
+    fn the_refusal_names_the_folder_and_says_vela_declined_rather_than_failed() {
+        let error = StoreError::NotPrivate {
+            path: r"C:\Users\User\AppData\Roaming\dev.vela.desktop".into(),
+            reason: "reachable by: DESKTOP-298M5DU\\CodexSandboxUsers".into(),
+        };
+        let message = error.to_string();
+        assert!(message.contains(r"C:\Users\User\AppData\Roaming\dev.vela.desktop"));
+        assert!(message.contains("did not open the database"));
+        assert!(message.contains("CodexSandboxUsers"));
+    }
+
+    /// **The pre-fix `prepare`, driven through the fix's own wiring.**
+    ///
+    /// Its entire body was `create_dir_all` and no opinion about who could read
+    /// the result. Injected as the hardening step, it succeeds — and the
+    /// read-back inside `vela_privatefs` catches the directory anyway. Without
+    /// that verification this call would return `Ok` over a directory a
+    /// non-owner can read, which is precisely what shipped.
+    #[test]
+    fn create_dir_all_and_no_opinion_does_not_get_past_the_read_back() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+
+        let error = DatabaseLocation::in_directory(&data)
+            .prepare_with(|path| {
+                vela_privatefs::create_private_dir_with(path, |path| {
+                    // `location.rs:65` as it stood, plus the state the audit
+                    // measured on a real machine.
+                    std::fs::create_dir_all(path)?;
+                    widen(path);
+                    Ok(())
+                })
+            })
+            .unwrap_err();
+
+        assert!(
+            matches!(error, StoreError::NotPrivate { .. }),
+            "expected a privacy refusal, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains("could not be made private"),
+            "{error}"
+        );
     }
 }

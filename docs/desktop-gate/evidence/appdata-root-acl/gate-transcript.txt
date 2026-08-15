@@ -1,0 +1,131 @@
+﻿==============================================================
+ GATE — application-data root ACL
+ scratch  : C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768
+ widen as : DESKTOP-298M5DU\CodexSandboxUsers
+ machine  : DESKTOP-298M5DU   user: User
+ when     : 2026-08-15T14:30:20.4612816+03:00
+==============================================================
+
+NOTE: this gate never touches C:\Users\User\AppData\Roaming\dev.vela.desktop.
+
+--- 1. BEFORE: a widened directory with a database already in it --------
+BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=False
+      DESKTOP-298M5DU\CodexSandboxUsers          Modify, Synchronize            inherited=True
+      S-1-5-21-334268411-1552034672-3966210088-2644424740 Modify, Synchronize            inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;OICI;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-334268411-1552034672-3966210088-2644424740)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)
+
+  PASS  BEFORE names at least one foreign principal (else the test proves nothing)
+  PASS  BEFORE has inheritance enabled, as the real directory did
+  BEFORE foreign: DESKTOP-298M5DU\CodexSandboxUsers, S-1-5-21-334268411-1552034672-3966210088-2644424740, BUILTIN\Administrators
+
+--- 2. Driving the real SqliteStore::open ------------------------------
+  |    Compiling vela-privatefs v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-privatefs)
+  |    Compiling vela-projects v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-projects)
+  |    Compiling vela-skills v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-skills)
+  |    Compiling vela-store v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-store)
+  |    Compiling vela-providers v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-providers)
+  |    Compiling vela-endpoint v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-endpoint)
+  |    Compiling vela-settings v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri\crates\vela-settings)
+  |    Compiling vela-app v0.1.0 (C:\Users\User\vela-wt-dacl\src-tauri)
+  |     Finished `test` profile [unoptimized + debuginfo] target(s) in 18.39s
+  |      Running tests\gate_appdata_root_acl.rs (target\debug\deps\gate_appdata_root_acl-1afb6d1764b5f3ca.exe)
+  | 
+  | running 1 test
+  | VELA_ACL_DIRECTORY=C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768
+  | BEFORE platform=windows private=false inheritance_disabled=Some(false)
+  | BEFORE foreign=S-1-5-21-1337097237-1456437254-2378116049-1006
+  | BEFORE foreign=S-1-5-21-1337097237-1456437254-2378116049-1006
+  | BEFORE foreign=S-1-5-21-334268411-1552034672-3966210088-2644424740
+  | BEFORE foreign=S-1-5-32-544
+  | BEFORE detail=owner=S-1-5-21-1337097237-1456437254-2378116049-1001; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1006 mask=0x001200a9 inherited=false; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1006 mask=0x001301bf inherited=true; ace type=0 sid=S-1-5-21-334268411-1552034672-3966210088-2644424740 mask=0x001301bf inherited=true; ace type=0 sid=S-1-5-18 mask=0x001f01ff inherited=true; ace type=0 sid=S-1-5-32-544 mask=0x001f01ff inherited=true; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1001 mask=0x001f01ff inherited=true
+  | AFTER-DIR platform=windows private=true inheritance_disabled=Some(true)
+  | AFTER-DIR foreign=<none>
+  | AFTER-DIR detail=owner=S-1-5-21-1337097237-1456437254-2378116049-1001; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1001 mask=0x001f01ff inherited=false; ace type=0 sid=S-1-5-18 mask=0x001f01ff inherited=false
+  | AFTER-FILE platform=windows private=false inheritance_disabled=Some(false)
+  | AFTER-FILE foreign=<none>
+  | AFTER-FILE detail=owner=S-1-5-21-1337097237-1456437254-2378116049-1001; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1001 mask=0x001f01ff inherited=true; ace type=0 sid=S-1-5-18 mask=0x001f01ff inherited=true
+  | AFTER-FILE-wal platform=windows private=false inheritance_disabled=Some(false)
+  | AFTER-FILE-wal foreign=<none>
+  | AFTER-FILE-wal detail=owner=S-1-5-21-1337097237-1456437254-2378116049-1001; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1001 mask=0x001f01ff inherited=true; ace type=0 sid=S-1-5-18 mask=0x001f01ff inherited=true
+  | AFTER-FILE-shm platform=windows private=false inheritance_disabled=Some(false)
+  | AFTER-FILE-shm foreign=<none>
+  | AFTER-FILE-shm detail=owner=S-1-5-21-1337097237-1456437254-2378116049-1001; ace type=0 sid=S-1-5-21-1337097237-1456437254-2378116049-1001 mask=0x001f01ff inherited=true; ace type=0 sid=S-1-5-18 mask=0x001f01ff inherited=true
+  | test appdata_root_acl_evidence_driver ... ok
+  | 
+  | test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+  | 
+  PASS  the evidence driver passed
+
+--- 3. AFTER: Get-Acl, independently ----------------------------------
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=False
+      DESKTOP-298M5DU\User                       FullControl                    inherited=False
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)
+
+  PASS  AFTER has inheritance DISABLED (AreAccessRulesProtected: True)
+  PASS  AFTER names no foreign principal
+  PASS  every principal that could reach it BEFORE is gone
+
+--- 3b. AFTER: the database, and a directory created after hardening ---
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768\vela.db
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;FA;;;SY)
+  PASS  vela.db is reachable by no foreign principal
+
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768\skills
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;OICIID;FA;;;SY)
+  PASS  skills is reachable by no foreign principal
+
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-2d5bf768\projects
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;OICIID;FA;;;SY)
+  PASS  projects is reachable by no foreign principal
+
+--- 3c. The WAL and SHM, measured in-process while they existed -------
+  PASS  AFTER-FILE-wal was measured by the driver
+    AFTER-FILE-wal foreign=<none>
+  PASS  AFTER-FILE-wal named no foreign principal
+  PASS  AFTER-FILE-shm was measured by the driver
+    AFTER-FILE-shm foreign=<none>
+  PASS  AFTER-FILE-shm named no foreign principal
+  NOTE  vela.db-wal absent — SQLite removed it on clean close, as expected
+  NOTE  vela.db-shm absent — SQLite removed it on clean close, as expected
+
+  PASS  the database survived the hardening with its bytes intact
+
+--- 4. CONTROL: the same reader on a directory nobody hardened ---------
+CONTROL   C:\Users\User\AppData\Local\Temp\vela-gate-control-cb45c5ba
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=False
+      DESKTOP-298M5DU\CodexSandboxUsers          Modify, Synchronize            inherited=True
+      S-1-5-21-334268411-1552034672-3966210088-2644424740 Modify, Synchronize            inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;OICI;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-334268411-1552034672-3966210088-2644424740)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)
+
+  PASS  CONTROL reports inheritance enabled
+  PASS  CONTROL reports a foreign principal, so a clean AFTER means something
+  CONTROL foreign: DESKTOP-298M5DU\CodexSandboxUsers, S-1-5-21-334268411-1552034672-3966210088-2644424740, BUILTIN\Administrators
+
+==============================================================
+ GATE PASSED

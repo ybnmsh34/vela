@@ -1,14 +1,19 @@
 //! Making a path reachable by its owner and nobody else — on every platform
 //! Vela ships on, and **measured rather than assumed**.
 //!
-//! # Why this module exists at all
+//! # Who needs it
 //!
-//! The debug log ([`crate::debuglog`]) holds **raw upstream bodies** — the
-//! endpoint text [`crate::diagnostic`] exists to keep out of every error Vela
-//! renders. Prompts and answers, verbatim. The two halves of keeping that
-//! private are the *directory* it lives in and the *file* itself, and neither
-//! half is the property on its own: a `0600` log inside a world-listable
-//! directory still publishes its name, its size and its timestamps.
+//! Two crates, which is why this is a crate and not a module inside either.
+//!
+//! | Caller | What it protects |
+//! |---|---|
+//! | `vela-providers` (`debuglog`, via `vela-app`'s `ipc::diagnostics`) | `<app data>/diagnostics` and the opt-in debug log inside it — raw upstream bodies, prompts and answers verbatim |
+//! | `vela-store` (`DatabaseLocation::prepare`) | `<app data>` itself — `vela.db` and its `-wal`/`-shm` siblings, which hold **every conversation the user has ever had**, plus `skills/` and `projects/` beside them |
+//!
+//! The two halves of keeping any of that private are the *directory* it lives
+//! in and the *file* itself, and neither half is the property on its own: a
+//! `0600` database inside a world-listable directory still publishes its name,
+//! its size and its timestamps.
 //!
 //! Both halves used to be written twice — the directory in `vela-app`'s
 //! `ipc::diagnostics`, the file here — and both copies carried the same
@@ -39,7 +44,7 @@
 //! *assumed* the OS had already done the equivalent, and an assumption about
 //! another installer's ACLs is not a security property.
 //!
-//! So: one module, one promise, three implementations of it.
+//! So: one crate, one promise, three implementations of it.
 //!
 //! | Platform | How the promise is kept |
 //! |---|---|
@@ -60,14 +65,58 @@
 //!
 //! # Failing closed
 //!
-//! If the path cannot be made private, the caller gets `Err`, and
-//! `diagnostics::debug_log_set` turns that into a refusal to enable the log at
-//! all. **A debug log that silently stays readable by another account is worse
-//! than no debug log.** The feature is opt-in and off by default, so refusing
-//! costs a user a diagnostic aid they can obtain other ways; enabling anyway
-//! would cost them every prompt and answer in the session, silently, with the
-//! switch cheerfully reporting `enabled: true`. The user is told which path
-//! failed and why, so the refusal is actionable rather than mysterious.
+//! **Nothing here returns `Ok` over a path it could not verify.** That is the
+//! whole contract, and both callers turn it into a refusal — but they refuse
+//! different things, and the second one costs more, so it is argued where it
+//! is taken rather than asserted here.
+//!
+//! `diagnostics::debug_log_set` refuses to enable the log. **A debug log that
+//! silently stays readable by another account is worse than no debug log.**
+//! The feature is opt-in and off by default, so refusing costs a user a
+//! diagnostic aid they can obtain other ways; enabling anyway would cost them
+//! every prompt and answer in the session, silently, with the switch cheerfully
+//! reporting `enabled: true`.
+//!
+//! `DatabaseLocation::prepare` refuses to open the database, **which stops
+//! startup**. That is a much larger consequence and it is defended at length on
+//! `prepare` itself, in `vela-store/src/location.rs` — including what a user
+//! with an existing installation sees, and why the alternative (harden, shrug,
+//! carry on) is the one that cannot be made safe.
+//!
+//! In both cases the user is told which path failed and which principals can
+//! reach it, so the refusal is actionable rather than mysterious.
+//!
+//! # What "private" means for a directory versus a file
+//!
+//! [`Privacy::is_private`] demands two things: no foreign principal, **and** a
+//! DACL that is not open to inheritance. The second clause is what makes a
+//! *root* trustworthy — it is precisely the bit that was `False` on the
+//! measured machine, and it is why a parent's ACE reached in at all.
+//!
+//! A file that Vela creates *inside* an already-protected directory is a
+//! different case, and the distinction is load-bearing rather than pedantic.
+//! Windows inheritance is **static**: when [`create_private_dir`] protects a
+//! directory, the security system rewrites the DACL of every existing
+//! non-protected child then and there, and stamps the same two ACEs onto every
+//! entry created afterwards. Such a child ends up with `foreign` empty and
+//! `inheritance_disabled == Some(false)` — it is unreachable by anyone else,
+//! but it is unreachable *because of its parent*, so `is_private()` reports
+//! `false` for it. That is not a false alarm; it is the honest reading of a
+//! path whose safety is delegated.
+//!
+//! So the rule the callers follow:
+//!
+//! - A **root** gets [`create_private_dir`] and must satisfy `is_private()`.
+//! - A **file this crate is responsible for across restarts** — the debug log,
+//!   the database and its siblings — additionally gets [`make_file_private`],
+//!   which protects the leaf in its own right so that widening the parent
+//!   tomorrow cannot widen it.
+//! - A file the *operating system or SQLite* creates inside a protected root
+//!   between those calls (a fresh `-wal`, a `-shm`) is covered by inheritance
+//!   alone. `foreign` is the quantity that must be empty for it, and
+//!   `the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else` in
+//!   `vela-store` measures exactly that, on a real database, rather than
+//!   asserting it.
 //!
 //! # Honesty (conventions.md §10)
 //!
@@ -106,10 +155,33 @@
 //! ```
 //!
 //! `D:PAI` — `P` for protected — is the Windows spelling of the promise at the
-//! top of this file, and the log file inside came out the same way. The
-//! remaining honesty note is narrower and still real: **the Windows branch has
-//! been measured on exactly one machine**, one Windows build, one account that
-//! is a member of `Administrators`. Nothing here has been exercised on a
+//! top of this file, and the log file inside came out the same way.
+//!
+//! **The `diagnostics` subdirectory was the only thing that fix was ever
+//! applied to.** The audit that followed measured the directory *containing*
+//! it — the application-data root, holding `vela.db`, its 2.6 MB `-wal`, and
+//! `skills/` — and found the identical inherited ACE this crate had been
+//! written to remove, still there:
+//!
+//! ```text
+//! C:\Users\User\AppData\Roaming\dev.vela.desktop
+//!   Protected           : False
+//!   DESKTOP-298M5DU\CodexSandboxUsers  ReadAndExecute, Synchronize  inherited=True
+//! C:\Users\User\AppData\Roaming\dev.vela.desktop\diagnostics
+//!   Protected           : True
+//!   NT AUTHORITY\SYSTEM                FullControl                  inherited=False
+//!   DESKTOP-298M5DU\User               FullControl                  inherited=False
+//! ```
+//!
+//! The debug log was private and the transcripts beside it were not. A
+//! mechanism is not a policy: this crate kept its promise everywhere it was
+//! *called*, and the lesson is that the call site is part of the fix. It is now
+//! called on the root, by `DatabaseLocation::prepare`, before anything else in
+//! `setup` touches that directory.
+//!
+//! The remaining honesty note is narrower and still real: **the Windows branch
+//! has been measured on exactly one machine**, one Windows build, one account
+//! that is a member of `Administrators`. Nothing here has been exercised on a
 //! domain-joined host, on a network share, or as a standard user.
 
 use std::fs::File;
@@ -156,8 +228,8 @@ impl Privacy {
             format!(
                 "`{}` could not be made private on this machine \
                  ({} reachable by: {}; inheritance disabled: {}; {}). \
-                 Vela will not write raw provider exchanges to a path another \
-                 account can read.",
+                 Vela will not keep your conversations, or the raw provider \
+                 exchanges behind them, at a path another account can read.",
                 path.display(),
                 self.platform,
                 if self.foreign.is_empty() {
@@ -231,12 +303,28 @@ pub fn create_private_dir_with(
 /// `diagnostics::debug_log_set` establishes it before any sink is installed.
 pub fn open_private_append(path: &Path) -> io::Result<File> {
     let file = imp::open_append(path)?;
+    make_file_private(path)?;
+    Ok(file)
+}
+
+/// Tighten a file that **already exists**, without opening it — or fail.
+///
+/// The same enforcement [`open_private_append`] applies, minus the opening.
+/// That distinction is the reason this exists: `vela-store` must harden
+/// `vela.db` and its `-wal`/`-shm` siblings *before* SQLite opens them, and
+/// opening a database file for append in order to set its ACL would be an
+/// absurd way to acquire a handle it then has to throw away.
+///
+/// Returns [`io::ErrorKind::NotFound`] if the path is not there. Callers that
+/// mean "tighten it if it exists" must say so; a silent no-op on a missing path
+/// is how a check stops checking.
+pub fn make_file_private(path: &Path) -> io::Result<()> {
     imp::harden_file(path)?;
     let report = describe(path)?;
     if !report.is_private() {
         return Err(report.refusal(path));
     }
-    Ok(file)
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -684,8 +772,8 @@ mod imp {
             io::ErrorKind::Unsupported,
             format!(
                 "Vela has no way to make `{}` private on this platform, and \
-                 will not write raw provider exchanges to a path it cannot \
-                 protect",
+                 will not keep your conversations, or the raw provider \
+                 exchanges behind them, at a path it cannot protect",
                 path.display()
             ),
         )

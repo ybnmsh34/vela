@@ -4225,6 +4225,7 @@ dependencies = [
  "vela-core",
  "vela-endpoint",
  "vela-mcp",
+ "vela-privatefs",
  "vela-projects",
  "vela-providers",
  "vela-sandbox",
@@ -4264,6 +4265,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vela-privatefs"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "vela-projects"
 version = "0.1.0"
 dependencies = [
@@ -4283,9 +4291,9 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "vela-core",
+ "vela-privatefs",
  "vela-secrets",
  "vela-store",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4340,6 +4348,7 @@ dependencies = [
  "thiserror 2.0.20",
  "uuid",
  "vela-core",
+ "vela-privatefs",
 ]
 
 [[package]]

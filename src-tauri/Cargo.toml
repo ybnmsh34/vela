@@ -5,6 +5,7 @@ members = ["crates/*"]
 default-members = [
   ".",
   "crates/vela-core",
+  "crates/vela-endpoint",
   "crates/vela-mcp",
   "crates/vela-providers",
   "crates/vela-secrets",
@@ -27,6 +28,7 @@ serde_json = "1"
 thiserror = "2"
 
 vela-core = { path = "crates/vela-core" }
+vela-endpoint = { path = "crates/vela-endpoint" }
 vela-mcp = { path = "crates/vela-mcp" }
 vela-secrets = { path = "crates/vela-secrets" }
 vela-providers = { path = "crates/vela-providers" }
@@ -88,6 +90,10 @@ vela-providers.workspace = true
 vela-settings.workspace = true
 vela-skills.workspace = true
 vela-store.workspace = true
+# The dual local endpoint. It has no runtime and no provider registry of its
+# own; `src/endpoint_host.rs` is the join, and it is the only place in the
+# workspace that calls `vela_endpoint::server::serve`.
+vela-endpoint.workspace = true
 
 [features]
 default = ["os-keychain"]

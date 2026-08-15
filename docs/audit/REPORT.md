@@ -164,13 +164,31 @@ the thing that closed it stay side by side.
 | `skill-mount-parity.test.ts` guards the shipped mount | `730eca5` |
 | `contract.test.ts`: claimed runtime exhaustiveness of `IpcContract` | `ca22700` |
 
-**Closed in part, and the remainder is worse than the part:**
+**The capability grant, closed in two stages, and the second was the larger hole.**
 
-*The capability grant is guarded against growth* (`ca22700`). The shape-versus-exact-set hole is
-closed — adding a permission to `main.json` now reddens a named test in both directions. But both
-guards read **one filename** and the product loads a **directory**: a second capability file,
-registered in `tauri.conf.json`, widens the window's real surface with both tests green. Neither
-the file nor its registration is asserted anywhere. Open, and recorded in the plan.
+Stage one (`ca22700`) replaced a prefix shape with an exact set, so adding a permission to
+`main.json` reddens a named test in both directions. Stage two (`ef82726`) closed what that left:
+both guards read **one filename** while Tauri globs `capabilities/**/*` **unconditionally**, so a
+second file registered in `tauri.conf.json` widened the window's real surface with both tests green
+at 39/39 — a premise a critic reproduced from prose with its own independently written probe.
+
+The resolution rules were read from the pinned crates rather than the docs site, and one is
+**inverted from the intuitive reading**: `"capabilities": []` or a missing key means **all**, not
+none (`tauri-utils acl/mod.rs:358`, with `#[serde(default)]` on the field). A guard built on the
+safe-seeming assumption would have asserted exactly backwards, and no compile could have caught it.
+Also established: the key is the `identifier` field rather than the filename; an untagged object
+entry inlines a capability with **no file at all**; and the config itself is not one file, since
+`read_platform` merges a per-target overlay over the base — which the builder found in its own
+first commit while fixing the first instance.
+
+**A recognised defect class came out of this: a guard reading one file from a directory the product
+reads whole.** Three instances, one per track that went looking — the capability grant, the Tauri
+config, and `verify-covers-ci.test.ts` reading `ci.yml` while GitHub Actions runs every workflow in
+the directory. The third is on the backlog.
+
+**Also closed since:** *the wave-long load artefact* (`64c970e`) — two mechanisms, neither fixable
+by a timeout, with a critic measuring 9 distinct tests failing at base and 0 after. It was blocking
+`pnpm verify` at gate 3 in two runs of three.
 
 **A could-not-establish, now established — and the audit guessed the right way.** This document's
 own open-question list says it could not determine whether `pnpm lint:rust` passes, because clippy

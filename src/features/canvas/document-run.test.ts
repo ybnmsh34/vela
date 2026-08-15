@@ -13,31 +13,36 @@
  *     `isolationFamilyMismatch` rather than a coercion.
  *  3. `isolationMeets` refuses a family mismatch and refuses an unknown level in
  *     either direction — the `-1` case the contract ships that function for.
- *  4. Auto-approval is decided **over the request**, never over the backend, and
- *     the shipped profile therefore auto-approves nothing Canvas can submit.
+ *
+ * The fourth — auto-approval decided **over the request**, never over the
+ * backend — used to be here too. It moved to `document-host-double.test.ts` with
+ * the function it tests, because approval is a host decision and the only caller
+ * of the TypeScript copy is now the fake host.
  *
  * **VERIFIED-BY-CONSTRUCTION.** These assert what Vela's own submit builder
- * produces and what a validator says about it. No host has ever seen one of
- * these requests, because the six `sandbox_*` commands are not wired; see the
- * header of `document-host.ts`.
+ * produces and what a validator says about it. A real host *does* now see these
+ * requests — `CanvasSurface` submits them through
+ * `src/data/sandbox-repository.ts` — and refuses every one of them, because no
+ * host in this tree serves a document run. The six `sandbox_*` commands are
+ * wired; what is unbuilt is the document command path, `python`, both copying
+ * materialisations and the approval surface. See the header of
+ * `document-host-double.ts`.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_AUTO_APPROVAL_PROFILE,
   DEFAULT_DOCUMENT_LIMITS,
   DEFAULT_PROCESS_LIMITS,
   NO_FILESYSTEM,
   isolationMeets,
-  type AutoApprovalProfile,
   type DocumentProgram,
   type Isolation,
   type SandboxSubmitReq,
 } from '@/platform/contract-sandbox';
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
 
-import { CANVAS_ISOLATION_FLOOR, autoApproves, documentRefusal, documentSubmit, withScripts } from './document-run';
+import { CANVAS_ISOLATION_FLOOR, documentRefusal, documentSubmit, withScripts } from './document-run';
 
 const SVG: DocumentProgram = {
   kind: 'document',
@@ -166,57 +171,6 @@ describe('isolationMeets, including the case it is a shipped function for', () =
     const unknown = { family: 'document', level: 'somethingNewer' } as unknown as Isolation;
     expect(isolationMeets(unknown, CANVAS_ISOLATION_FLOOR)).toBe(false);
     expect(isolationMeets(CANVAS_ISOLATION_FLOOR, unknown)).toBe(false);
-  });
-});
-
-describe('automatic approval is decided over the request', () => {
-  it('auto-approves nothing Canvas can submit, under the profile Vela ships', () => {
-    expect(autoApproves(DEFAULT_AUTO_APPROVAL_PROFILE, submit())).toBe(false);
-    expect(autoApproves(DEFAULT_AUTO_APPROVAL_PROFILE, submit(HTML))).toBe(false);
-  });
-
-  it('approves once the request itself demands the floor the profile names', () => {
-    const profile: AutoApprovalProfile = {
-      ...DEFAULT_AUTO_APPROVAL_PROFILE,
-      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
-      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
-    };
-    expect(autoApproves(profile, submit())).toBe(true);
-  });
-
-  it('does not approve a run that merely lands on a capable backend', () => {
-    // The distinction the contract calls "not academic". A caller that named a
-    // floor of `sameOrigin` asked for nothing, and must not sail through on the
-    // strength of what the machine happens to be able to do.
-    const profile: AutoApprovalProfile = {
-      ...DEFAULT_AUTO_APPROVAL_PROFILE,
-      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
-      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
-    };
-    const weak: SandboxSubmitReq = {
-      ...submit(),
-      minimumIsolation: { family: 'document', level: 'sameOrigin' },
-    };
-    expect(autoApproves(profile, weak)).toBe(false);
-  });
-
-  it('never approves a run that asked for the network', () => {
-    const profile: AutoApprovalProfile = {
-      ...DEFAULT_AUTO_APPROVAL_PROFILE,
-      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
-      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
-    };
-    const noisy: SandboxSubmitReq = { ...submit(), network: { kind: 'allowed' } };
-    expect(autoApproves(profile, noisy)).toBe(false);
-  });
-
-  it('never approves a limit above the profile ceiling', () => {
-    const profile: AutoApprovalProfile = {
-      ...DEFAULT_AUTO_APPROVAL_PROFILE,
-      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
-      maximumLimits: { ...DEFAULT_DOCUMENT_LIMITS, wallClockMs: 1 },
-    };
-    expect(autoApproves(profile, submit())).toBe(false);
   });
 });
 

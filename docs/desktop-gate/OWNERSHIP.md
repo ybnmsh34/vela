@@ -14,6 +14,7 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
 | `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
 | `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps |
+| `C:/Users/User/vela-w2-canvas` | `wave2/canvas-host-boundary` | Wave 2 / canvas host boundary |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -32,6 +33,7 @@ first, or the reclaim silently does not happen.
 | `src/features/models/EndpointsPanel.test.tsx`, `src/features/models/ModelWorkspace.test.tsx`, `src/app/modal-containment.test.tsx`, `src/app/memory-payload.test.tsx`, `src/features/conversation/ConversationSurface.test.tsx` | Wave 1 / load flake | 2026-08-15 | the load flake: `userEvent`'s per-input-step scheduler tick and cold `import('@/app/App')` inside a test body |
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 | `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
+| `src/features/canvas/**`, `src/data/sandbox-repository.ts`, `src/data/sandbox-repository.test.ts`, `src/app/App.tsx`, `src/app/canvas-wiring.test.tsx`, `src/runtime/reachable.test.ts`, `src/platform/contract-sandbox.ts` (amendment 6 + honesty note 1 only) | Wave 2 / canvas host boundary | 2026-08-16 | `CanvasSurface` built `new LocalDocumentHost()`, so `permissionIsOff`, the approval, the digest and the wall clock were held by the renderer they constrain. It now takes a `SandboxRepository` built at the composition root. `LocalDocumentHost` demoted to `document-host-double.ts`; `autoApproves` moved there with it. **No shape changed in `contract-sandbox.ts`** — one clause of honesty note 1 was narrowed because the wiring falsified it |
 
 ## Released
 

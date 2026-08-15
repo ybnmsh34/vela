@@ -146,6 +146,66 @@ describe('the agentic runtime is wired into the product', () => {
     ).toEqual([]);
   });
 
+  /**
+   * The same defect, found one directory over, named rather than generalised.
+   *
+   * `src/data/sandbox-repository.ts` was a complete and tested door to the six
+   * `sandbox_*` commands whose only importers were its own test and two other
+   * tests, while `src/features/canvas/CanvasSurface.tsx` built a renderer-side
+   * host instead — so the sandbox contract's permission level, approval decision
+   * and request digest were all decided inside the process that contract exists
+   * to constrain. Wiring it up is worth nothing if it can silently come loose.
+   *
+   * **It is one named module rather than a walk of `src/data`, and that is a
+   * deliberate limit on this guard.** `mcp-repository.ts` and
+   * `skills-repository.ts` are off the graph too; widening the walk would turn
+   * this into a red test about two defects nobody is fixing in this change, and
+   * a red that is not about your change is a red people learn to route around.
+   * Widening it is the correct next move, once those two have callers.
+   */
+  it('reaches the sandbox door from src/main.tsx', () => {
+    const door = 'src/data/sandbox-repository.ts';
+    expect(existsSync(join(REPO_ROOT, door)), `${door} moved; fix this guard`).toBe(true);
+    expect(
+      REACHABLE.has(join(REPO_ROOT, door)),
+      `${door} is the renderer's only door to the six sandbox_* commands. Nothing ` +
+        'on the import graph reaches it, which means whatever surface used to ' +
+        'submit through it is deciding for itself again.',
+    ).toBe(true);
+  });
+
+  /**
+   * And the assertion above is **weaker than it looks**, which was measured
+   * rather than reasoned about.
+   *
+   * The walk reads import specifiers, and a specifier is a specifier whether the
+   * binding is a value or a type. Severing the composition root's call —
+   * deleting `createSandboxRepository` from `App.tsx` and handing `CanvasSurface`
+   * a stub — left the guard above **green in two consecutive runs**, because
+   * `use-document-run.ts` and `CanvasPanel.tsx` still `import type { SandboxRepository }`
+   * from that module. Type imports vanish at build time; they keep a module on
+   * this graph while nothing at runtime ever enters it. That is the original
+   * defect wearing the guard written against it.
+   *
+   * So the door is held the way the runtime is held: by where the *factory* is
+   * called. One call, in the composition root, and nowhere else — a feature that
+   * built its own would satisfy both assertions above and be back to a host it
+   * can reach into.
+   */
+  it('builds the sandbox door once, at the composition root', () => {
+    const builders = shippingModules(SRC_ROOT)
+      .filter((file) => file !== join(SRC_ROOT, 'data', 'sandbox-repository.ts'))
+      .filter((file) => /\bcreateSandboxRepository\s*\(/.test(readFileSync(file, 'utf8')))
+      .map(asRepoPath);
+
+    expect(
+      builders,
+      'the renderer door to the sandbox commands is built once, at the ' +
+        'composition root, and handed down — a surface that builds its own host ' +
+        'is how the boundary ended up inside the process it constrains',
+    ).toEqual(['src/app/App.tsx']);
+  });
+
   it('names its exemption, and the exemption is still off the graph', () => {
     // An exemption that has stopped applying reads exactly like a clean tree, so
     // it is asserted in both directions rather than trusted.

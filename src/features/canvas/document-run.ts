@@ -27,8 +27,6 @@
 import {
   DEFAULT_DOCUMENT_LIMITS,
   NO_FILESYSTEM,
-  isolationMeets,
-  type AutoApprovalProfile,
   type DocumentProgram,
   type DocumentScripts,
   type Isolation,
@@ -111,50 +109,13 @@ export function documentRefusal(request: SandboxSubmitReq): RefusalReason | null
   return null;
 }
 
-/**
- * Would this submit run without asking a person, under this profile?
- *
- * **The comparison is over the request and never over the backend**, which the
- * contract calls out as the distinction that is not academic: reading it against
- * the backend would auto-approve a run whose caller never demanded containment,
- * on the strength of a guarantee it did not request and cannot rely on. So the
- * only isolation value read here is `request.minimumIsolation`.
- *
- * With `DEFAULT_AUTO_APPROVAL_PROFILE` this answers `false` for every submit
- * Canvas can make, because that profile's document floor is `ownRendererProcess`
- * and {@link CANVAS_ISOLATION_FLOOR} is one rank below it. That is the contract's
- * intended behaviour and not a placeholder — a user who selects `approve` is
- * prompted exactly as if they had selected `ask`, until the isolation exists to
- * make the automatic answer defensible.
+/*
+ * `autoApproves` used to live here. It is now in `document-host-double.ts`,
+ * because approval is a host decision — `within_profile` in
+ * `src-tauri/crates/vela-sandbox/src/admission.rs` is the one that decides it —
+ * and once `CanvasSurface` was wired to `src/data/sandbox-repository.ts` its only
+ * caller in this tree was the fake host. A decision procedure sitting in shipping
+ * renderer code with no shipping caller is the defect this feature was repaired
+ * for, one size smaller. Its tests moved with it, including the one that holds
+ * the contract's "over the request, never over the backend" rule.
  */
-export function autoApproves(profile: AutoApprovalProfile, request: SandboxSubmitReq): boolean {
-  const floor: Isolation =
-    request.minimumIsolation.family === 'document'
-      ? { family: 'document', level: profile.minimumIsolation.document }
-      : { family: 'process', level: profile.minimumIsolation.process };
-  if (!isolationMeets(request.minimumIsolation, floor)) return false;
-  if (request.network.kind !== 'denied') return false;
-  if (!profile.languages.includes(request.program.language)) return false;
-
-  // "The two lists are checked independently and neither implies the other."
-  // Read strictly, that makes a `readWrite` mount need both entries — it is
-  // read access as well as write access, and `writableRoots` is explicitly not
-  // a way to grant reading. A Canvas submit carries no mounts at all, so this
-  // loop never runs for the surface in this feature; it is here because a
-  // half-implemented rule is the thing the next caller inherits.
-  for (const mount of request.filesystem.mounts) {
-    if (!profile.readableRoots.includes(mount.hostPath)) return false;
-    if (mount.mode === 'readWrite' && !profile.writableRoots.includes(mount.hostPath)) return false;
-  }
-
-  const limits = request.limits;
-  const ceilings = profile.maximumLimits;
-  return (
-    limits.wallClockMs <= ceilings.wallClockMs &&
-    limits.memoryBytes <= ceilings.memoryBytes &&
-    limits.cpuMillicores <= ceilings.cpuMillicores &&
-    limits.outputBytes <= ceilings.outputBytes &&
-    limits.processes <= ceilings.processes &&
-    limits.fileWriteBytes <= ceilings.fileWriteBytes
-  );
-}

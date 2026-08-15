@@ -5,6 +5,15 @@
  * repository in this folder is, so a feature hook takes one of these and a test
  * takes a `BrowserAdapter` and needs no DOM.
  *
+ * ## Who holds one
+ *
+ * `src/app/App.tsx` builds it once and hands it to `CanvasSurface`, which is the
+ * only consumer in the tree. That sentence is the point of this paragraph: this
+ * file was complete and tested and **on no import path from `src/main.tsx`** for
+ * as long as Canvas ran its own renderer-side stand-in, and a door nothing walks
+ * through is not a door. `src/runtime/reachable.test.ts` now fails if this
+ * module leaves the graph again.
+ *
  * ## The one rule a caller must not get wrong
  *
  * **Subscribe before you submit.** Events for a run can be emitted before the
@@ -27,6 +36,7 @@ import type { Ack } from '@/platform/contract';
 import type {
   ApprovalDecision,
   CancelReason,
+  DocumentObservation,
   SandboxCancelRes,
   SandboxEvent,
   SandboxPolicySnapshot,
@@ -65,6 +75,18 @@ export interface SandboxRepository {
    * directory is a directory nothing else will ever delete.
    */
   release(runId: SandboxRunId): Promise<Ack>;
+  /**
+   * What the surface saw the frame do. The one command that travels *toward*
+   * the host with an observation rather than a request.
+   *
+   * It is here because the host cannot see a frame: `SandboxReportDocumentReq`
+   * exists precisely so the side that can see one may say so. This build's host
+   * discards every report — `SandboxHost::report_document` in
+   * `src-tauri/crates/vela-sandbox/src/host.rs` has an empty body, because a
+   * host that accepts no document run has no run for a report to belong to — so
+   * a caller must not read an `Ack` here as "the outcome was recorded".
+   */
+  reportDocument(runId: SandboxRunId, observation: DocumentObservation): Promise<Ack>;
 }
 
 export function createSandboxRepository(adapter: PlatformAdapter): SandboxRepository {
@@ -94,6 +116,10 @@ export function createSandboxRepository(adapter: PlatformAdapter): SandboxReposi
 
     async release(runId) {
       return adapter.invoke('sandbox_release', { runId });
+    },
+
+    async reportDocument(runId, observation) {
+      return adapter.invoke('sandbox_report_document', { runId, observation });
     },
   };
 }

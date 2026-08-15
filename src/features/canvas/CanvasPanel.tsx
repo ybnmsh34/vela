@@ -25,11 +25,11 @@
 
 import { useMemo, useState } from 'react';
 
+import type { SandboxRepository } from '@/data/sandbox-repository';
 import type { ProjectId } from '@/platform/contract-project';
 
 import type { ArtifactTrack } from './artifacts';
 import { diffLines, summariseDiff } from './diff';
-import type { DocumentHost } from './document-host';
 import { withScripts } from './document-run';
 import { DocumentPreview } from './DocumentPreview';
 import { useDocumentRun } from './use-document-run';
@@ -39,12 +39,12 @@ type CanvasView = 'preview' | 'code' | 'diff';
 
 interface CanvasPanelProps {
   readonly track: ArtifactTrack;
-  readonly host: DocumentHost;
+  readonly sandbox: SandboxRepository;
   readonly projectId: ProjectId;
   readonly onClose: () => void;
 }
 
-export function CanvasPanel({ track, host, projectId, onClose }: CanvasPanelProps) {
+export function CanvasPanel({ track, sandbox, projectId, onClose }: CanvasPanelProps) {
   const [pinned, setPinned] = useState<number | null>(null);
   const [view, setView] = useState<CanvasView>('preview');
   const [allowScripts, setAllowScripts] = useState(false);
@@ -58,7 +58,7 @@ export function CanvasPanel({ track, host, projectId, onClose }: CanvasPanelProp
     return withScripts(version.program, allowScripts ? 'sandboxedNullOrigin' : 'denied');
   }, [version, allowScripts]);
 
-  const run = useDocumentRun(host, projectId, program);
+  const run = useDocumentRun(sandbox, projectId, program);
 
   const scriptable =
     version?.program.language === 'html' || version?.program.language === 'react';

@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { createSandboxRepository } from '@/data/sandbox-repository';
 import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
@@ -96,6 +97,18 @@ export function App({ adapter }: AppProps) {
  * does. When projects arrive, this line reads the selected one and nothing
  * downstream changes.
  *
+ * The sandbox repository is handed down the same way, and for a reason with more
+ * teeth than tidiness. `src/data/sandbox-repository.ts` was a complete, tested
+ * door to the six `sandbox_*` commands with **no importer outside its own
+ * tests**, while `CanvasSurface` built a renderer-side host of its own — so the
+ * permission level, the approval, the digest and the timeout were all decided
+ * inside the process the sandbox contract exists to constrain. This line is the
+ * joint that was missing. `src/runtime/reachable.test.ts` fails if it goes away.
+ *
+ * It is built here, above the `key={conversationId}` remount, for the same
+ * reason the runtime is: a repository rebuilt per conversation would re-subscribe
+ * every artifact's event stream on every sidebar click.
+ *
  * ## The fourth joint: the agent runtime
  *
  * `src/runtime/` is a whole agent loop — a registry, a live-run directory with
@@ -117,10 +130,11 @@ function Workspace() {
   const [answers, setAnswers] = useState<readonly string[]>(NO_ANSWERS);
   const adapter = usePlatform();
   const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
+  const sandbox = useMemo(() => createSandboxRepository(adapter), [adapter]);
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>
-      <CanvasSurface assistantTexts={answers} projectId={DEFAULT_PROJECT_ID}>
+      <CanvasSurface assistantTexts={answers} projectId={DEFAULT_PROJECT_ID} sandbox={sandbox}>
         <Transcript
           onPendingTurn={setTurnTexts}
           onAssistantMessages={setAnswers}

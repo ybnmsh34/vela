@@ -59,6 +59,16 @@ const CI_GATES: ReadonlyArray<{ readonly ci: string; readonly matches: RegExp }>
   { ci: 'cargo clippy --workspace --all-targets -- -D warnings', matches: /cargo clippy --workspace --all-targets -- -D warnings/ },
   { ci: 'pnpm test', matches: /pnpm (?:run )?test(?![\w:-])/ },
   { ci: 'pnpm test:harness', matches: /pnpm (?:run )?test:harness/ },
+  // The same gate, wrapped for the Windows job only. The wrapper re-runs a
+  // vitest worker-pool CRASH — a run that printed no verdict — and passes a real
+  // test failure straight through; see `scripts/ci-retry-vitest-crash.mjs`. It
+  // is listed rather than exempted so that the harness gate cannot be swapped
+  // for something else behind the wrapper without this file noticing, and
+  // `matches` still demands that `verify` reach the unwrapped gate.
+  {
+    ci: 'node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
+    matches: /pnpm (?:run )?test:harness/,
+  },
   { ci: 'pnpm build', matches: /pnpm (?:run )?build/ },
   { ci: './scripts/check-transcripts.sh', matches: /check-transcripts\.sh/ },
   // The same script, reached the way a Windows developer reaches it. The Linux

@@ -22,6 +22,30 @@ apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
     libjavascriptcoregtk-4.1-dev librsvg2-dev patchelf libayatana-appindicator3-dev
 ```
 
+Every host needs **`cargo` on the PATH of the shell `pnpm` spawns**. Four of the
+nine gates in `pnpm verify` are cargo — `fmt`, `clippy`, `build`, `test` — and
+`verify` chains them with `&&`, so a shell that cannot resolve `cargo` fails at
+the second gate and silently takes the two build gates at the end with it:
+
+```
+> vela@0.1.0 lint:rust
+'cargo' is not recognized as an internal or external command
+```
+
+`rustup` normally puts `cargo` there for you; if that error appears, its
+directory (`~/.cargo/bin`, or `$CARGO_HOME/bin`) is missing from your PATH.
+Note that `pnpm` runs script bodies through the *system* shell — `cmd.exe` on
+Windows — which does not read your shell profile, so exporting it in `.bashrc`
+or a PowerShell profile alone is not enough. It must be on the PATH the OS hands
+to a new process. This is deliberately not worked around in `package.json`:
+resolving a hard-coded toolchain path would let `verify` pass while `cargo` was
+still unusable from your own terminal.
+
+Windows hosts additionally need **Git Bash**, which ships with Git for Windows.
+Two gates are shell scripts, and `scripts/run-bash.mjs` locates that specific
+shell rather than trusting `bash` on PATH — where Windows resolves it to the WSL
+launcher, a different operating system with a different toolchain.
+
 ## Layout
 
 | Path | What lives there |

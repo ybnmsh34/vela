@@ -216,8 +216,26 @@ jobs:
       # something on the shipping platform cannot skip the gate that is failing
       # there; that is not a Windows job, it is a Windows job with the Windows
       # part removed. Both defects are fixed, so both gates run here now.
+      #
+      # Wrapped, and ONLY here. Adding this gate to a Windows job also imports a
+      # vitest defect that only shows up on Windows: 5 runs in 32 on the machine
+      # this was fixed on (1 in 16 on another) die inside vitest's own worker
+      # pool with `ERR_IPC_CHANNEL_CLOSED` from tinypool. The run does not fail
+      # — it STOPS. Ten of the twelve test files print a result, two print
+      # nothing, and no `Tests N passed` summary is emitted at all. So the gate
+      # returns no verdict, which is not a red to be waved through and not a
+      # green either; the only thing that produces a verdict is running it
+      # again. `scripts/ci-retry-vitest-crash.mjs` does exactly that and nothing
+      # else: it retries once, only on that signature, only when no test
+      # reported a failure, and prints a `::warning::` every time so the rate
+      # stays visible rather than being absorbed. A run with a genuinely failing
+      # test is passed straight through on the first attempt.
+      #
+      # This is deliberately not a general retry and deliberately not applied to
+      # `pnpm verify` or to the Linux job, where the crash does not occur. If the
+      # warnings stop being rare, fix the pool — do not raise the attempt count.
       - name: GATE M Part 1 — mock capability matrix
-        run: pnpm test:harness
+        run: node scripts/ci-retry-vitest-crash.mjs pnpm test:harness
       - name: Frontend build
         run: pnpm build
 

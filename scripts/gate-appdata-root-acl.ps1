@@ -136,16 +136,44 @@ Say "--- 1. BEFORE: a widened directory with a database already in it --------"
 New-Item -ItemType Directory -Force -Path $ScratchDir | Out-Null
 # An existing installation: entries that predate the fix, which the hardening
 # has to repair rather than merely coexist with.
-New-Item -ItemType Directory -Force -Path (Join-Path $ScratchDir 'skills') | Out-Null
+$skills = Join-Path $ScratchDir 'skills'
+New-Item -ItemType Directory -Force -Path $skills | Out-Null
 $null = & icacls $ScratchDir /grant "${group}:(OI)(CI)(RX)"
 if ($LASTEXITCODE -ne 0) { throw "icacls could not widen $ScratchDir" }
+
+# And the shape protecting the root does NOT reach: an ACE the child carries
+# EXPLICITLY. Hardening a parent rewrites only the inherited portion of a
+# child's DACL, so this one survives unless something walks for it. The file is
+# created afterwards so it is born carrying the ACE by inheritance — the
+# propagation half, not just the directory half.
+$null = & icacls $skills /grant "${group}:(OI)(CI)(RX)"
+if ($LASTEXITCODE -ne 0) { throw "icacls could not widen $skills" }
+Set-Content -Path (Join-Path $skills 'my-skill.md') -Value "---`nname: my-skill`n---" -Encoding utf8
 
 $before = Show-Acl 'BEFORE  ' $ScratchDir
 $beforeForeign = Foreign-Principals $before
 Say ""
 Check "BEFORE names at least one foreign principal (else the test proves nothing)" ($beforeForeign.Count -gt 0)
 Check "BEFORE has inheritance enabled, as the real directory did" (-not $before.AreAccessRulesProtected)
+
+# %TEMP% on this machine already inherits CodexSandboxUsers, so "a foreign
+# principal is present" would be true even if this gate granted nothing at all —
+# a check that cannot come back wrong. What IS this gate's own doing is the
+# NON-INHERITED ace it just granted, so that is what gets asserted: blind the
+# `icacls` above and this fails, which is the property a control needs.
+$deliberate = @($before.Access | Where-Object {
+  -not $_.IsInherited -and $_.AccessControlType -eq 'Allow' -and
+  $_.IdentityReference.Value -ne $before.Owner
+})
+Check "BEFORE carries the gate's OWN explicit grant, not just what %TEMP% hands down" ($deliberate.Count -gt 0)
 Say "  BEFORE foreign: $($beforeForeign -join ', ')"
+Say "  BEFORE explicit (this gate's doing): $(@($deliberate | ForEach-Object { $_.IdentityReference.Value }) -join ', ')"
+
+$beforeSkills = Show-Acl 'BEFORE  ' $skills
+Check "BEFORE skills/ carries an EXPLICIT foreign ace (the shape inheritance cannot fix)" (
+  @($beforeSkills.Access | Where-Object { -not $_.IsInherited -and $_.IdentityReference.Value -ne $beforeSkills.Owner }).Count -gt 0)
+Check "BEFORE skills/my-skill.md inherited that ace" (
+  (Foreign-Principals (Get-Acl -LiteralPath (Join-Path $skills 'my-skill.md'))).Count -gt 0)
 Say ""
 
 # ---------------------------------------------------------------------------
@@ -194,7 +222,7 @@ Say "--- 3b. AFTER: the database, and a directory created after hardening ---"
 # comes out private it is because it inherited, and for no other reason.
 New-Item -ItemType Directory -Force -Path (Join-Path $ScratchDir 'projects') | Out-Null
 
-foreach ($child in @('vela.db', 'skills', 'projects')) {
+foreach ($child in @('vela.db', 'skills', 'skills\my-skill.md', 'projects')) {
   $path = Join-Path $ScratchDir $child
   $acl = Show-Acl "AFTER   " $path
   if ($null -eq $acl) {
@@ -228,8 +256,14 @@ foreach ($name in @('vela.db-wal', 'vela.db-shm')) {
 }
 Say ""
 
-Check "the database survived the hardening with its bytes intact" `
-  ((Get-Item (Join-Path $ScratchDir 'vela.db')).Length -gt 0)
+# Guarded rather than bare. `Get-Item` on a missing path throws, and with
+# `$ErrorActionPreference = 'Stop'` a throw kills the script — so blinding the
+# hardening used to make the gate *die* instead of reporting which check failed.
+# A gate that cannot say what went wrong is only half a gate.
+$database = Join-Path $ScratchDir 'vela.db'
+$databaseBytes = if (Test-Path -LiteralPath $database) { (Get-Item -LiteralPath $database).Length } else { -1 }
+Check "the database survived the hardening with its bytes intact" ($databaseBytes -gt 0)
+if ($databaseBytes -le 0) { Say "  vela.db is absent or empty (length reported: $databaseBytes)" }
 Say ""
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,83 @@
+Mutation transcript — appdata root ACL fix.
+
+Each mutation was applied to the shipping code, the named command was run, and
+the mutation was reverted. A test that does not go red under the mutation that
+breaks the behaviour it names is a test that was not measuring anything.
+
+Machine: DESKTOP-298M5DU, Windows 11. Commands run from src-tauri/.
+
+-------------------------------------------------------------------------------
+M1  prepare() -> the pre-fix `create_dir_all`, no hardening at all
+    cargo test -p vela-store --lib location
+    => 4 FAILED
+       the_directory_prepare_creates_is_reachable_by_nobody_else
+       an_existing_directory_a_non_owner_can_read_is_tightened_not_accepted
+       the_subdirectories_beside_the_database_inherit_the_root_they_sit_in
+       the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else
+
+M2  the per-file hardening of vela.db/-wal/-shm skipped
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       an_existing_database_a_non_owner_can_read_is_tightened_without_losing_a_byte
+
+M3  PROTECTED_DACL_SECURITY_INFORMATION dropped from the SetNamedSecurityInfoW
+    call, so inherited ACEs merge instead of being discarded
+    cargo test -p vela-privatefs ; cargo test -p vela-store --lib location
+    => 4 FAILED in vela-privatefs, 6 FAILED in vela-store
+
+M4  repair_entries neutered (returns before walking anything)
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    This is the case protecting the root does not reach: an ACE the child holds
+    explicitly. Note that M1 does NOT catch it -- the root-widening tests are
+    structurally incapable of it, which is why this test widens the child.
+
+M5  Failure::Unreachable routed to StoreError::NotPrivate, collapsing
+    "could not" into "would not"
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       a_directory_that_cannot_be_created_is_an_io_fault_not_a_privacy_refusal
+
+M6  reach_summary() stops joining `foreign`
+    => DID NOT FAIL. The mutation was insufficient: `detail` still carries the
+       SIDs, so the principals still reached the message. Recorded rather than
+       hidden -- and it exposed a real defect in the test, see below.
+
+M6b describe() removed from the enforcement-failure path (the branch where
+    SetNamedSecurityInfoW itself fails), so the error names nobody
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       a_refusal_names_the_accounts_that_can_still_reach_the_folder
+    Observed message under the mutation -- exactly the pre-fix shape:
+      "the folder holding your conversations at `...\dev.vela.desktop` could
+       not be made private to your account, so Vela did not open the database:
+       `...` could not be made private on this machine:
+       SetNamedSecurityInfoW failed: Access is denied. (os error 5) ()."
+    Names the folder. Names nobody.
+
+    DEFECT FOUND BY M6, IN MY OWN TEST: the assertion had been
+      message.contains("S-1-5-32-545") || message.contains("Users")
+    and the second clause is satisfied by the temp path `C:\Users\...` whether
+    or not a single principal is named. The test passed with the principals
+    removed. Narrowed to the SID alone, which cannot occur by accident in a
+    path, and only then did M6b turn it red.
+
+M7  describe_chain() stops walking source(), reporting only the outermost error
+    cargo test -p vela-app --lib fatal
+    => 1 FAILED, alone
+       the_reported_text_keeps_the_innermost_cause_not_just_the_wrapper
+    Reported text under the mutation: "setup failed" -- no folder, no accounts.
+
+M8  the root hardening blinded, gate run end to end
+    scripts\gate-appdata-root-acl.ps1
+    => exit 1, with 10 NAMED failing checks and a complete transcript.
+       It reports rather than dying; a bare Get-Item on the absent database used
+       to throw and kill the script before it could say which check failed.
+    Note `skills` and `skills\my-skill.md` stay PASS under M8. That is correct:
+    M8 blinds only the injected root hardening, and repair_entries is a separate
+    mechanism that still runs. `vela.db` and `projects/` go red because they are
+    created after prepare and depend on the root being protected.
+
+-------------------------------------------------------------------------------
+After every revert: cargo test --workspace => 63 targets, 1291 tests, 0 failed.

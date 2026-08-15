@@ -103,7 +103,9 @@ fn appdata_root_acl_evidence_driver() {
     // A `-wal` only exists once something has been committed. Writing a real
     // conversation is what makes the sibling half of this measurable at all.
     let chat = store
-        .create_conversation(NewConversation::titled("gate: the sort of thing a user types"))
+        .create_conversation(NewConversation::titled(
+            "gate: the sort of thing a user types",
+        ))
         .expect("a conversation");
     store
         .append_message(NewMessage::user(

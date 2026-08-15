@@ -76,27 +76,40 @@ impl DatabaseLocation {
     /// not a lesser file than the database: on the machine this was measured on
     /// it held 2.6 MB of conversation text that had not yet been checkpointed.
     ///
-    /// Hardening the **root** covers almost all of that, for a reason worth
-    /// stating rather than assuming. Windows ACL inheritance is *static*: when
-    /// `create_private_dir` protects a directory, the security system rewrites
-    /// the DACL of every existing non-protected child at that moment, and
-    /// stamps the same two ACEs onto every entry created afterwards. So
-    /// `skills/` and `projects/` — which `vela-projects` creates with a plain
-    /// `create_dir_all` — are born private, and so is each `-wal` SQLite spins
-    /// up and throws away. This runs from `SqliteStore::open`, which the host
-    /// calls **first** in `setup`, before the skill store, the project host or
-    /// the diagnostics handle exist, so there is no entry that predates the
-    /// protection within a single launch.
+    /// Hardening the **root** covers most of that, for a reason worth stating
+    /// precisely rather than approximately. Windows ACL inheritance is
+    /// *static*: when `create_private_dir` protects a directory, the security
+    /// system rewrites the **inherited portion** of every existing
+    /// non-protected child's DACL at that moment, and stamps the same two ACEs
+    /// onto every entry created afterwards. So `skills/` and `projects/` —
+    /// which `vela-projects` creates with a plain `create_dir_all` — are born
+    /// private, and so is each `-wal` SQLite spins up and throws away. This
+    /// runs from `SqliteStore::open`, which the host calls **first** in
+    /// `setup`, before the skill store, the project host or the diagnostics
+    /// handle exist, so no entry created during a launch predates the
+    /// protection.
     ///
     /// That claim is measured, not argued:
     /// `the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else`
     /// opens a real database and reads the siblings' ACLs back off the disk.
     ///
-    /// The gap the root does not close is a child with its **own** protected
-    /// DACL — inheritance cannot reach one of those. `vela.db` and its siblings
-    /// are therefore tightened individually as well: they are the files this
-    /// crate owns across restarts, and a leaf protected in its own right cannot
-    /// be widened tomorrow by widening the parent.
+    /// # Two things the root does not reach, and what does
+    ///
+    /// **An ACE a child carries explicitly.** "Inherited portion" is the whole
+    /// of it: an ACE with `inherited=False` on a child is not inherited, so
+    /// protecting the parent does not rewrite it and it survives — and keeps
+    /// being handed down to everything created inside that child. This was
+    /// measured, not predicted: a `skills/` holding an explicit
+    /// `CodexSandboxUsers ReadAndExecute` kept it through a root hardening and
+    /// propagated it onward. It is the shape any previous `icacls /grant`
+    /// leaves behind. `vela_privatefs::repair_entries` walks for exactly this;
+    /// what it does and does not cover is documented there.
+    ///
+    /// **A child with its own protected DACL**, which inheritance cannot reach
+    /// by definition. `vela.db` and its siblings are therefore tightened
+    /// individually: they are the files this crate owns across restarts, and a
+    /// leaf protected in its own right cannot be widened tomorrow by widening
+    /// the parent.
     ///
     /// # An existing installation is repaired, not merely accepted
     ///
@@ -157,11 +170,26 @@ impl DatabaseLocation {
     /// [`StoreError::Io`] so that *would not* is never read as *could not*, and
     /// it carries the reason `vela-privatefs` produced — which names the path,
     /// every principal that can reach it, and whether inheritance is disabled.
+    /// That split is enforced by the `Failure` this crate matches on rather
+    /// than by wording: a directory that cannot be *created* is still
+    /// [`StoreError::Io`], because a name collision or a full disk is not a
+    /// security decision and must not present as one.
+    ///
     /// The user's data is untouched: nothing is moved, copied or deleted on
     /// this path, so backing it up or fixing the ACL by hand and relaunching
     /// are both available.
+    ///
+    /// # It has to reach the user
+    ///
+    /// A refusal nobody sees is indistinguishable from a crash, and on Windows
+    /// a release build has no console: `main.rs` sets
+    /// `windows_subsystem = "windows"`. Returning `Err` from here therefore
+    /// only *starts* the job. `vela_lib::fatal` finishes it — `run()` reports
+    /// any startup failure through a native message box before the process
+    /// leaves, so the decision taken here is one the user is actually told
+    /// about. Without that, refusing and crashing look the same from outside.
     pub(crate) fn prepare(&self) -> StoreResult<()> {
-        self.prepare_with(vela_privatefs::create_private_dir)
+        self.prepare_with(vela_privatefs::create_private_dir_reporting)
     }
 
     /// [`Self::prepare`] with the directory hardening supplied by the caller.
@@ -182,18 +210,43 @@ impl DatabaseLocation {
     /// was simply never called on this directory.
     pub(crate) fn prepare_with(
         &self,
-        harden_dir: impl FnOnce(&Path) -> std::io::Result<()>,
+        harden_dir: impl FnOnce(&Path) -> Result<(), vela_privatefs::Failure>,
     ) -> StoreResult<()> {
         let Self::File(path) = self else {
             return Ok(());
         };
-        let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        else {
             return Ok(());
         };
 
         // Creates it if missing, repairs its DACL if it is not, and re-reads
         // the result off the filesystem before returning `Ok`.
-        harden_dir(parent).map_err(|error| StoreError::NotPrivate {
+        //
+        // The two halves land on two different variants. A directory that
+        // could not be *created* is the error it always was; only a directory
+        // that exists and will not be *accepted* is a privacy refusal.
+        harden_dir(parent).map_err(|failure| {
+            let path = parent.display().to_string();
+            match failure {
+                vela_privatefs::Failure::Unreachable(error) => StoreError::Io {
+                    path,
+                    reason: error.to_string(),
+                },
+                vela_privatefs::Failure::NotPrivate(error) => StoreError::NotPrivate {
+                    path,
+                    reason: error.to_string(),
+                },
+            }
+        })?;
+
+        // Anything already inside that a foreign principal can still reach —
+        // an ACE carried explicitly rather than inherited, which protecting the
+        // parent does not rewrite. Nothing is touched unless the read-back says
+        // it needs to be, so a healthy directory pays one `describe` per entry.
+        vela_privatefs::repair_entries(parent).map_err(|error| StoreError::NotPrivate {
             path: parent.display().to_string(),
             reason: error.to_string(),
         })?;
@@ -464,6 +517,144 @@ mod tests {
         }
     }
 
+    /// **The gap protecting the root does not close, measured.**
+    ///
+    /// Protecting a directory rewrites the *inherited* portion of each existing
+    /// child's DACL. An ACE a child carries **explicitly** is not inherited, so
+    /// it survives — and keeps being handed down to everything created inside
+    /// that child afterwards. This widens `skills/` **itself**, not the root,
+    /// which is what makes it able to fail for that reason;
+    /// `the_subdirectories_beside_the_database_inherit_the_root_they_sit_in`
+    /// widens only the root and is structurally incapable of catching it.
+    ///
+    /// The file inside is created *after* the widening precisely so it is born
+    /// carrying the foreign ACE by inheritance — the propagation half of the
+    /// defect, not just the directory half.
+    ///
+    /// What changes if `repair_entries` is absent: both assertions fail with
+    /// `CodexSandboxUsers` (here, `BUILTIN\Users`) still present.
+    #[cfg(windows)]
+    #[test]
+    fn an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        let skills = data.join("skills");
+        std::fs::create_dir_all(&skills).unwrap();
+
+        // Explicitly on the child. Nothing is done to the root.
+        widen(&skills);
+        let installed = skills.join("my-skill.md");
+        std::fs::write(&installed, b"---\nname: my-skill\n---\n").unwrap();
+
+        let before = vela_privatefs::describe(&skills).unwrap();
+        assert!(
+            !before.foreign.is_empty(),
+            "control: the child was not widened, so the assertion below would \
+             pass on anything: {before:?}"
+        );
+        let before_file = vela_privatefs::describe(&installed).unwrap();
+        assert!(
+            !before_file.foreign.is_empty(),
+            "control: the explicit ACE did not propagate to the file, so the \
+             propagation half is not under test: {before_file:?}"
+        );
+
+        DatabaseLocation::in_directory(&data).prepare().unwrap();
+
+        let after = vela_privatefs::describe(&skills).unwrap();
+        assert!(
+            after.foreign.is_empty(),
+            "an explicit foreign ACE on `skills/` survived hardening the root: \
+             {after:?}"
+        );
+        let after_file = vela_privatefs::describe(&installed).unwrap();
+        assert!(
+            after_file.foreign.is_empty(),
+            "the file `skills/` handed the ACE down to is still reachable by \
+             another account: {after_file:?}"
+        );
+    }
+
+    /// **A disk fault must not present as a security decision.**
+    ///
+    /// `StoreError::NotPrivate` exists because `Io` means *could not* and this
+    /// means *would not*. A directory that cannot be created at all — here a
+    /// plain file sitting where the application-data directory belongs — is a
+    /// genuine *could not*, and routing it through the privacy variant is the
+    /// exact confusion that variant was invented to prevent.
+    ///
+    /// What changes if the classification collapses: this returns
+    /// `NotPrivate { reason: "… Cannot create a file when that file already
+    /// exists. (os error 183)" }`, telling the user their conversations are
+    /// exposed when in fact a file is in the way.
+    #[test]
+    fn a_directory_that_cannot_be_created_is_an_io_fault_not_a_privacy_refusal() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+        // Not a directory. `create_dir_all` cannot proceed and privacy never
+        // enters into it.
+        std::fs::write(&data, b"something else is already here").unwrap();
+
+        let error = DatabaseLocation::in_directory(&data).prepare().unwrap_err();
+
+        assert!(
+            matches!(error, StoreError::Io { .. }),
+            "a directory that could not be created was reported as a privacy \
+             refusal: {error:?}"
+        );
+    }
+
+    /// **The refusal names the accounts, not just the folder.**
+    ///
+    /// `prepare`'s own documentation promises the message carries "every
+    /// principal that can reach it", and that is the half a user can act on —
+    /// it is what turns the message into one `icacls` command. When the
+    /// *enforcement* call failed rather than the verification, the error used
+    /// to be a bare `SetNamedSecurityInfoW failed: Access is denied` naming
+    /// nobody, so the promise was false on precisely the branch that matters.
+    ///
+    /// Driven through the seam with a hardener that fails the way a locked-down
+    /// host fails, over a directory that genuinely has a foreign principal.
+    #[cfg(windows)]
+    #[test]
+    fn a_refusal_names_the_accounts_that_can_still_reach_the_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("dev.vela.desktop");
+
+        let error = DatabaseLocation::in_directory(&data)
+            .prepare_with(|path| {
+                vela_privatefs::create_private_dir_with_reporting(path, |path| {
+                    widen(path);
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
+                    ))
+                })
+            })
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(matches!(error, StoreError::NotPrivate { .. }), "{error:?}");
+        assert!(
+            message.contains("SetNamedSecurityInfoW"),
+            "the underlying cause was dropped: {message}"
+        );
+        // The SID `widen` grants (`BUILTIN\Users`), which is the spelling
+        // `describe` reports.
+        //
+        // **Asserted on the SID alone, deliberately.** The first version of
+        // this accepted `message.contains("Users")` as an alternative, and that
+        // made it vacuous: the path in the message is under
+        // `C:\Users\…\Temp\…`, so the substring is present whether or not a
+        // single principal was named. It passed with the principals removed.
+        // A SID cannot appear by accident in a temp path.
+        assert!(
+            message.contains("S-1-5-32-545"),
+            "the refusal names the folder but not the accounts that can reach \
+             it, which is the half a user can act on: {message}"
+        );
+    }
+
     /// **The siblings SQLite creates on its own, measured on a real database.**
     ///
     /// `prepare` runs before any connection is opened, so the `-wal` and `-shm`
@@ -489,10 +680,15 @@ mod tests {
 
         let store = SqliteStore::open(DatabaseLocation::in_directory(&data)).unwrap();
         let chat = store
-            .create_conversation(NewConversation::titled("something the user would not say twice"))
+            .create_conversation(NewConversation::titled(
+                "something the user would not say twice",
+            ))
             .unwrap();
         store
-            .append_message(NewMessage::user(chat.id.clone(), "and something they typed"))
+            .append_message(NewMessage::user(
+                chat.id.clone(),
+                "and something they typed",
+            ))
             .unwrap();
 
         let wal = data.join(format!("{DATABASE_FILE_NAME}-wal"));
@@ -540,11 +736,11 @@ mod tests {
             .prepare_with(|path| {
                 // What a locked-down host looks like from here: the directory
                 // is creatable, and its ACL is not ours to set.
-                std::fs::create_dir_all(path)?;
-                Err(std::io::Error::new(
+                std::fs::create_dir_all(path).map_err(vela_privatefs::Failure::Unreachable)?;
+                Err(vela_privatefs::Failure::NotPrivate(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
-                ))
+                )))
             })
             .unwrap_err();
 
@@ -590,7 +786,7 @@ mod tests {
 
         let error = DatabaseLocation::in_directory(&data)
             .prepare_with(|path| {
-                vela_privatefs::create_private_dir_with(path, |path| {
+                vela_privatefs::create_private_dir_with_reporting(path, |path| {
                     // `location.rs:65` as it stood, plus the state the audit
                     // measured on a real machine.
                     std::fs::create_dir_all(path)?;

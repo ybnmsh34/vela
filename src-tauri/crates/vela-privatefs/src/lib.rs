@@ -96,17 +96,28 @@
 //! A file that Vela creates *inside* an already-protected directory is a
 //! different case, and the distinction is load-bearing rather than pedantic.
 //! Windows inheritance is **static**: when [`create_private_dir`] protects a
-//! directory, the security system rewrites the DACL of every existing
-//! non-protected child then and there, and stamps the same two ACEs onto every
-//! entry created afterwards. Such a child ends up with `foreign` empty and
-//! `inheritance_disabled == Some(false)` — it is unreachable by anyone else,
-//! but it is unreachable *because of its parent*, so `is_private()` reports
-//! `false` for it. That is not a false alarm; it is the honest reading of a
-//! path whose safety is delegated.
+//! directory, the security system rewrites the **inherited portion** of every
+//! existing non-protected child's DACL then and there, and stamps the same two
+//! ACEs onto every entry created afterwards. Such a child ends up with
+//! `foreign` empty and `inheritance_disabled == Some(false)` — it is
+//! unreachable by anyone else, but it is unreachable *because of its parent*,
+//! so `is_private()` reports `false` for it. That is not a false alarm; it is
+//! the honest reading of a path whose safety is delegated.
+//!
+//! **"Inherited portion" is exact, and the imprecise version of that sentence
+//! was wrong in a way that mattered.** An ACE a child carries *explicitly*
+//! (`inherited=False`) is not inherited, so protecting the parent does not
+//! rewrite it and it survives — and the child goes on handing it down to
+//! everything created inside. That was measured on a `skills/` directory here,
+//! not deduced. [`repair_entries`] exists for exactly that shape, and is the
+//! reason "harden the root" is a start rather than a finish.
 //!
 //! So the rule the callers follow:
 //!
 //! - A **root** gets [`create_private_dir`] and must satisfy `is_private()`.
+//! - **Whatever is already inside it** gets [`repair_entries`], which re-stamps
+//!   anything a foreign principal can still reach and leaves everything else
+//!   untouched. This is the only thing that reaches an explicit ACE.
 //! - A **file this crate is responsible for across restarts** — the debug log,
 //!   the database and its siblings — additionally gets [`make_file_private`],
 //!   which protects the leaf in its own right so that widening the parent
@@ -186,7 +197,7 @@
 
 use std::fs::File;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// What the operating system says about who can reach a path.
 ///
@@ -222,28 +233,84 @@ impl Privacy {
         self.foreign.is_empty() && self.inheritance_disabled != Some(false)
     }
 
+    /// Who can reach the path, in the words a user has to act on.
+    ///
+    /// **This is the actionable half of every message this crate produces.**
+    /// "Vela would not open your conversations" tells a user something is
+    /// wrong; "`DESKTOP-…\CodexSandboxUsers` can read them" tells them what to
+    /// type into `icacls`. Every error path here goes through this, including
+    /// the one where the *enforcement* failed rather than the verification —
+    /// that path used to report a bare `SetNamedSecurityInfoW failed: Access is
+    /// denied` and name nobody, which is a message that cannot be acted on.
+    pub fn reach_summary(&self) -> String {
+        format!(
+            "{} reachable by: {}; inheritance disabled: {}; {}",
+            self.platform,
+            if self.foreign.is_empty() {
+                "nobody".to_owned()
+            } else {
+                self.foreign.join(", ")
+            },
+            match self.inheritance_disabled {
+                Some(v) => v.to_string(),
+                None => "n/a".to_owned(),
+            },
+            self.detail,
+        )
+    }
+
     fn refusal(&self, path: &Path) -> io::Error {
         io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!(
-                "`{}` could not be made private on this machine \
-                 ({} reachable by: {}; inheritance disabled: {}; {}). \
+                "`{}` could not be made private on this machine ({}). \
                  Vela will not keep your conversations, or the raw provider \
                  exchanges behind them, at a path another account can read.",
                 path.display(),
-                self.platform,
-                if self.foreign.is_empty() {
-                    "nobody".to_owned()
-                } else {
-                    self.foreign.join(", ")
-                },
-                match self.inheritance_disabled {
-                    Some(v) => v.to_string(),
-                    None => "n/a".to_owned(),
-                },
-                self.detail,
+                self.reach_summary(),
             ),
         )
+    }
+}
+
+/// **Which half of the promise failed.**
+///
+/// The distinction is the caller's to act on and it is not cosmetic: one is
+/// *could not*, the other is *would not*. A directory that cannot be created —
+/// a name collision, a missing parent, a full disk — is an ordinary I/O fault
+/// and was one before any of this existed. A directory that exists and cannot
+/// be made private is a decision this crate is making.
+///
+/// `vela-store` maps them onto two different `StoreError` variants for exactly
+/// that reason, and
+/// `a_directory_that_cannot_be_created_is_an_io_fault_not_a_privacy_refusal`
+/// is what stops the first quietly becoming the second.
+#[derive(Debug)]
+pub enum Failure {
+    /// The path could not be created or reached at all. Nothing to do with
+    /// privacy.
+    Unreachable(io::Error),
+    /// The path exists and could not be made reachable-by-owner-only — or the
+    /// read-back said it still is not.
+    NotPrivate(io::Error),
+}
+
+impl Failure {
+    /// The underlying error, discarding which half produced it. Used by the
+    /// entry points that predate this distinction and whose callers do not act
+    /// on it.
+    pub fn into_io(self) -> io::Error {
+        match self {
+            Self::Unreachable(error) | Self::NotPrivate(error) => error,
+        }
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(error) | Self::NotPrivate(error) => write!(f, "{error}"),
+        }
     }
 }
 
@@ -258,7 +325,17 @@ pub fn describe(path: &Path) -> io::Result<Privacy> {
 /// Create `path` and every missing parent, reachable by its owner and nobody
 /// else — or fail.
 pub fn create_private_dir(path: &Path) -> io::Result<()> {
-    create_private_dir_with(path, imp::harden_dir)
+    create_private_dir_reporting(path).map_err(Failure::into_io)
+}
+
+/// [`create_private_dir`], keeping which half failed.
+///
+/// The caller that needs this is `vela-store`: a directory it cannot *create*
+/// must stay an ordinary I/O error, and only a directory it will not *accept*
+/// becomes a privacy refusal. Collapsing the two is how a disk fault starts
+/// reporting itself as a security decision.
+pub fn create_private_dir_reporting(path: &Path) -> Result<(), Failure> {
+    create_private_dir_with_reporting(path, imp::harden_dir)
 }
 
 /// [`create_private_dir`] with the enforcement step supplied by the caller.
@@ -277,10 +354,58 @@ pub fn create_private_dir_with(
     path: &Path,
     harden: impl FnOnce(&Path) -> io::Result<()>,
 ) -> io::Result<()> {
+    create_private_dir_with_reporting(path, harden).map_err(Failure::into_io)
+}
+
+/// [`create_private_dir_with`], keeping which half failed. See [`Failure`].
+pub fn create_private_dir_with_reporting(
+    path: &Path,
+    harden: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<(), Failure> {
     // Created as tight as the platform allows in the first place, so there is
-    // no window in which the directory exists and is readable.
-    imp::create_dir(path)?;
-    harden(path)?;
+    // no window in which the directory exists and is readable. A failure here
+    // is a plain I/O fault — the path collides with a file, the parent is
+    // gone, the disk is full — and is reported as one.
+    imp::create_dir(path).map_err(Failure::Unreachable)?;
+    enforce(path, harden).map_err(Failure::NotPrivate)
+}
+
+/// Apply the policy, then re-read it off the filesystem.
+///
+/// Both exits name the principals. The verification exit always could; the
+/// **enforcement** exit could not, and reported a bare
+/// `SetNamedSecurityInfoW failed: Access is denied. (os error 5)` — true, and
+/// useless to the person who has to fix it. [`describe`] still works when
+/// `SetNamedSecurityInfoW` does not, because reading a DACL and writing one are
+/// different rights, so the accounts that can reach the path are available
+/// exactly when they matter most.
+fn enforce(path: &Path, harden: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
+    if let Err(error) = harden(path) {
+        return Err(match describe(path) {
+            Ok(report) => io::Error::new(
+                error.kind(),
+                format!(
+                    "`{}` could not be made private on this machine: {error} \
+                     ({}). Vela will not keep your conversations, or the raw \
+                     provider exchanges behind them, at a path another account \
+                     can read.",
+                    path.display(),
+                    report.reach_summary(),
+                ),
+            ),
+            // Neither writing nor reading the ACL worked. Say so rather than
+            // implying the principals were checked and found empty.
+            Err(unreadable) => io::Error::new(
+                error.kind(),
+                format!(
+                    "`{}` could not be made private on this machine: {error}; \
+                     and who can reach it could not be read either \
+                     ({unreadable}).",
+                    path.display(),
+                ),
+            ),
+        });
+    }
     let report = describe(path)?;
     if !report.is_private() {
         return Err(report.refusal(path));
@@ -305,6 +430,98 @@ pub fn open_private_append(path: &Path) -> io::Result<File> {
     let file = imp::open_append(path)?;
     make_file_private(path)?;
     Ok(file)
+}
+
+/// Re-stamp anything **inside** `dir` that a foreign principal can still reach.
+///
+/// # Why protecting the parent is not enough
+///
+/// It is tempting to think [`create_private_dir`] on a root settles everything
+/// below it. It does not, and the gap was measured rather than reasoned about.
+/// Windows inheritance is static: protecting a directory rewrites the
+/// **inherited portion** of each existing non-protected child's DACL. An ACE a
+/// child carries **explicitly** — `inherited=False` — is not inherited, so it
+/// is not rewritten, and it survives. On the machine this was found on, a
+/// `skills/` directory holding an explicit
+/// `CodexSandboxUsers ReadAndExecute` kept it after the root was hardened, and
+/// went on handing it down to every file created inside.
+///
+/// That is not an exotic shape. It is what a previous installer, a sandbox
+/// tool, or anyone who has ever run `icacls /grant` on the directory leaves
+/// behind — and it is invisible to a check that only reads the root.
+///
+/// # What this walks, and what it does not
+///
+/// Direct entries of `dir`, and the contents of any directory it **had to
+/// repair** — a directory carrying a foreign ACE is one whose contents are
+/// demonstrably suspect, whereas a clean directory's subtree inherits from
+/// something already verified. Entries that are already unreachable by anyone
+/// foreign are left completely alone, so the steady-state cost at every launch
+/// is one [`describe`] per entry and zero writes.
+///
+/// **Reparse points are skipped, never followed.** `projects/<id>/skills/<name>`
+/// are junctions into the machine-wide canonical skill store; stamping a DACL
+/// *through* one would rewrite the target's ACL, which lives outside this tree
+/// and belongs to every project at once. `vela-projects::remove_tree` exists for
+/// the same reason.
+///
+/// The residual gap, stated plainly: an explicit foreign ACE on a deep entry
+/// underneath an otherwise-clean directory is not searched for. Closing it
+/// would mean walking every file under `projects/` at every launch, through
+/// exactly those junctions. If that shape is ever observed in the wild it wants
+/// its own repair pass, not a silent full-tree walk here.
+///
+/// Returns the paths it repaired, so a caller can report them.
+pub fn repair_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut repaired = Vec::new();
+    repair_within(dir, 0, &mut repaired)?;
+    Ok(repaired)
+}
+
+/// Bounded so a filesystem loop cannot turn a startup check into a hang.
+/// Reached only through directories that needed repair, so in a healthy tree
+/// the recursion never starts.
+const REPAIR_MAX_DEPTH: u32 = 16;
+
+fn repair_within(dir: &Path, depth: u32, repaired: &mut Vec<PathBuf>) -> io::Result<()> {
+    if depth >= REPAIR_MAX_DEPTH {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        // An entry that vanished between the directory listing and here is not
+        // a privacy failure. SQLite deletes a write-ahead log on checkpoint and
+        // this runs at startup beside a database that may already be live.
+        let before = match describe(&path) {
+            Ok(report) => report,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        if before.foreign.is_empty() {
+            continue;
+        }
+
+        if kind.is_dir() {
+            imp::harden_dir(&path)?;
+        } else {
+            imp::harden_file(&path)?;
+        }
+        let after = describe(&path)?;
+        if !after.foreign.is_empty() {
+            return Err(after.refusal(&path));
+        }
+        repaired.push(path.clone());
+
+        if kind.is_dir() {
+            repair_within(&path, depth + 1, repaired)?;
+        }
+    }
+    Ok(())
 }
 
 /// Tighten a file that **already exists**, without opening it — or fail.

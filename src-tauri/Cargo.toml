@@ -107,6 +107,14 @@ vela-store.workspace = true
 # workspace that calls `vela_endpoint::server::serve`.
 vela-endpoint.workspace = true
 
+# `src/fatal.rs`, and only that. A release build sets
+# `windows_subsystem = "windows"`, so a startup failure has no console to print
+# to and no window to attach a dialog to; `MessageBoxW` with a null owner is the
+# one channel that still reaches the user at that point. One namespace, one
+# function.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
 [features]
 default = ["os-keychain"]
 # Enables the real OS keychain backend (keyring crate). Disable in CI or on

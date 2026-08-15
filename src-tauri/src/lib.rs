@@ -263,8 +263,13 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) = configure(tauri::Builder::default()).run(tauri::generate_context!()) {
-        // The whole chain: Tauri's wrapper is a summary, and the sentence
-        // naming the folder and the principals is underneath it.
+        // `tauri::Error::Setup` has no `source()` and its `Display` already
+        // embeds the whole inner message, so for the error this exists to
+        // deliver the chain walk is a no-op and the folder and principals are
+        // in the outermost string. It is kept for the `#[from]` variants, which
+        // do carry a source. See `fatal::describe_chain`, which retracted the
+        // opposite claim — and which this comment repeated for one more round
+        // because a correction landed in the module and not at the call site.
         fatal::report("Vela cannot start", &fatal::describe_chain(&error));
         std::process::exit(1);
     }

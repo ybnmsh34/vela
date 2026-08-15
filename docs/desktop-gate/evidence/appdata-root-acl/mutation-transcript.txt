@@ -66,8 +66,19 @@ M6b describe() removed from the enforcement-failure path (the branch where
 M7  describe_chain() stops walking source(), reporting only the outermost error
     cargo test -p vela-app --lib fatal
     => 1 FAILED, alone
-       the_reported_text_keeps_the_innermost_cause_not_just_the_wrapper
-    Reported text under the mutation: "setup failed" -- no folder, no accounts.
+       (then named the_reported_text_keeps_the_innermost_cause_not_just_the_wrapper;
+        renamed in round 2 to a_chain_with_a_real_source_is_walked_to_the_bottom)
+
+    CORRECTED IN ROUND 3. This entry originally said the walk is what carries
+    the folder and the principals through tauri's wrapper. That is false and the
+    commit that introduced it also retracted it: tauri::Error is
+    `#[error("error encountered during setup hook: {0}")] Setup(SetupError)` --
+    a positional field with no #[source] -- so the variant has no source() and
+    its Display already embeds the whole inner message. For THAT error the walk
+    is a no-op. What M7 actually proves is that the walk works on a shape that
+    HAS a source, which is the #[from] variants, not the setup path. The
+    user-facing property is guarded separately by
+    a_real_tauri_setup_error_reports_the_folder_and_the_principals.
 
 M8  the root hardening blinded, gate run end to end
     scripts\gate-appdata-root-acl.ps1
@@ -87,12 +98,29 @@ N3  a DENY ace counted as granting  (ace::verdict)
     cargo test -p vela-privatefs --lib
     => 2/2 runs, 2 tests:
        a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader
-       a_directory_carrying_a_real_deny_ace_still_reads_as_private
-    THE ONE WITH TEETH. A deny entry read as granting makes a path carrying a
-    denial for a foreign principal report as non-private -- and vela-store
-    refuses to open a database in a directory that is not private, so Vela
-    would decline to start over an ACL STRICTER than the one it demands.
-    Nothing in the workspace noticed before these two tests existed.
+       a_deny_ace_an_administrator_added_survives_the_walk
+
+    THE ONE WITH TEETH -- BUT NOT FOR THE REASON GIVEN HERE IN ROUND 2.
+
+    Round 2 said the consequence was "Vela would decline to start over an ACL
+    stricter than the one it demands". That is NOT REACHABLE, and the check is
+    easy: every describe() whose answer can produce a refusal (enforce, and
+    make_file_private) runs immediately after apply(), which builds a fresh
+    two-ACE DACL from NULL. No pre-existing deny entry survives to be read back
+    on those paths.
+
+    The reachable consequence is worse. The one describe() that reads a DACL
+    nobody has just replaced is the `before` inside repair_within, and there a
+    false Foreign does not refuse -- IT REPAIRS. A directory an administrator
+    had locked a group out of would have had that lockout SILENTLY DELETED by a
+    routine startup, and the read-back would have confirmed the result as
+    private, because it is. Vela would have widened a path in the name of
+    narrowing it.
+
+    The round-2 test asserted the unreachable property (is_private() on a
+    hardened directory). It has been replaced by one that drives repair_entries
+    over a directory carrying a real deny ace added with icacls and asserts the
+    ace is still there afterwards.
 
 N5  an unknown ACE layout waved through as harmless
     => 2/2 runs: an_ace_layout_this_code_cannot_decode_is_never_called_harmless
@@ -139,5 +167,59 @@ Also fixed this round, found by mutation rather than by review:
     DACL was already clean. The link is now widened after the root is protected.
 
 -------------------------------------------------------------------------------
-After every revert: cargo test --workspace => 63 targets, 1300 tests, 0 failed.
-Gate: 22 checks, 0 failures, twice.
+ROUND 3. Review found that two of round 2's mutations did not hit what their
+entries claimed, and that three more guards did not exist. Each below run TWICE.
+
+P1  the walk reports the DIRECTORY instead of the failing entry
+    (EntryFailure::not_private(&path, ..) -> (dir, ..))
+    => 2/2: a_refusal_inside_the_walk_names_the_entry_not_the_directory
+    Round 2's N6 claimed to cover this and did not: it patched `entry_failure`,
+    vela-store's pure mapping function, so the walk's own error construction was
+    never exercised. Closing it needed an injection seam
+    (repair_entries_with), because a failure that cannot be provoked cannot be
+    tested. Same for N7 / P2.
+
+P2  the directory listing's I/O fault reported as a privacy refusal
+    (EntryFailure::unreachable -> not_private at the read_dir site)
+    => 2/2: a_directory_that_cannot_be_listed_is_an_io_fault_not_a_refusal
+    NOT CLAIMED: the per-entry iteration error and file_type() sites. Neither is
+    provokable without injecting faults into std::fs, and neither is guarded.
+
+P3  foreign_explicit aliases foreign (the `if !inherited` filter dropped, both
+    branches)
+    => 2/2: foreign_explicit_holds_only_what_the_path_carries_itself
+    The field exists to stop controls being ambient-true; without its own guard
+    it could silently become the thing it replaced.
+
+P4  the parent is never widened, in
+    the_subdirectories_beside_the_database_inherit_the_root_they_sit_in
+    => 2/2: that test
+    THE FIFTH VACUITY INSTANCE, introduced in 317c977 sixty lines above the one
+    fixed in round 2. `!foreign.is_empty()` is ambient-true under %TEMP%, which
+    hands three foreign principals to every directory created inside it, so
+    deleting the widen left the control passing. Now asserts the SID `widen`
+    grants (S-1-5-32-545, absent from what %TEMP% hands down) by name.
+
+P5  deny counted as granting, retested against the REACHABLE consequence
+    => 2/2: a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader
+            a_deny_ace_an_administrator_added_survives_the_walk
+
+Also fixed in round 3, found by review rather than by mutation:
+  - the retracted chain-walk claim was still shipped verbatim at the call site
+    in src/lib.rs, one file from the copy that retracted it.
+  - the round-2 deny test leaked an undeletable directory into %TEMP% on every
+    PASSING run: it denies BUILTIN\Users, of which the test account is a member,
+    so the discarded `let _ = remove_dir_all` silently failed. 33 accumulated in
+    under an hour. Cleanup now resets the ACL first and asserts the removal.
+  - two sentences mangled by a botched edit in round 2.
+  - THE FILE ITSELF WAS CORRUPTED during this round: a PowerShell
+    Get-Content/Set-Content round-trip decoded UTF-8 as codepage 1255 and
+    re-encoded it, turning 82 em-dashes and ellipses into mojibake. Repaired by
+    mapping the three affected sequences back, not by a blanket reverse
+    transform, which would have broken the characters written correctly after
+    the corruption. Every changed file was then scanned; only that one was hit.
+
+-------------------------------------------------------------------------------
+After every revert: cargo test --workspace => 63 targets, 1303 tests, 0 failed.
+Gate: 22 checks, 0 failures, twice. vitest 2110/2110, twice.
+No scratch directory is left in %TEMP% by a passing run.

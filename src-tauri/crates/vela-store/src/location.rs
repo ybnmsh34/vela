@@ -250,8 +250,8 @@ impl DatabaseLocation {
         // The error names **the entry**, not this directory, and keeps the same
         // could-not/would-not split as the root. Collapsing either — reporting
         // the root's path for a fault three levels down, or calling a
-        // directory-listing I/O error a privacy refusal — would undo one call site to the right
-        // exactly what the two branches above are for.
+        // directory-listing I/O error a privacy refusal — would undo, one call
+        // site to the right, exactly what the two branches above are for.
         vela_privatefs::repair_entries(parent).map_err(entry_failure)?;
 
         // The files this crate owns across restarts, protected in their own
@@ -303,8 +303,8 @@ impl DatabaseLocation {
 ///   front of the user and the wrong one into the `icacls` command they are
 ///   being invited to run.
 /// - **The could-not / would-not split holds here too.** A directory-listing
-///   fault and a refusal to accept an ACL are not the same kind of event, one call site
-///   to the right any more than they are at the root.
+///   fault and a refusal to accept an ACL are no more the same kind of event
+///   one call site to the right than they are at the root.
 fn entry_failure(entry: vela_privatefs::EntryFailure) -> StoreError {
     let path = entry.path.display().to_string();
     match entry.failure {
@@ -367,6 +367,12 @@ mod tests {
     /// and a control that a crate imports from the crate under test is a
     /// control that stops being independent the moment that crate is wrong.
     /// Ten lines of `icacls` is a cheap price for that.
+    /// The SID [`widen`] grants: `BUILTIN\Users`. Named, because a control that
+    /// only counts foreign principals cannot tell what this test did from what
+    /// `%TEMP%` already does.
+    #[cfg(windows)]
+    const WIDENED_SID: &str = "S-1-5-32-545";
+
     #[cfg(windows)]
     fn widen(path: &Path) {
         let output = std::process::Command::new("icacls")
@@ -522,12 +528,18 @@ mod tests {
         // carries the inherited ACE the audit measured on it.
         std::fs::create_dir_all(data.join("skills")).unwrap();
         widen(&data);
+        // **The principal `widen` grants, by name.** `!foreign.is_empty()` is
+        // ambient-true here — a bare `create_dir_all` under `%TEMP%` already
+        // reports three foreign principals — so deleting the `widen` above left
+        // this control passing. `BUILTIN\Users` is not among what `%TEMP%`
+        // hands down, so its arrival on `skills/` can only have come from
+        // widening the parent, which is the propagation this test is about.
+        let inherited = vela_privatefs::describe(&data.join("skills")).unwrap();
         assert!(
-            !vela_privatefs::describe(&data.join("skills"))
-                .unwrap()
-                .foreign
-                .is_empty(),
-            "control: skills/ was not widened by widening its parent"
+            inherited.foreign.iter().any(|who| who == WIDENED_SID),
+            "control: `skills/` did not inherit {WIDENED_SID} from widening its \
+             parent, so the propagation this test measures never happened: \
+             {inherited:?}"
         );
 
         DatabaseLocation::in_directory(&data).prepare().unwrap();

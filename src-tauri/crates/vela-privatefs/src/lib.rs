@@ -237,10 +237,20 @@ mod ace {
     ///
     /// - A **deny** ACE takes access away. Counting one as granting would make
     ///   any path carrying a deny entry for a foreign principal read as
-    ///   non-private — and since `vela-store` refuses to open a database in a
-    ///   directory that is not private, **Vela would decline to start over an
-    ///   ACL that is stricter than the one it demands**. Deny entries are
-    ///   ordinary: they are what an administrator adds to lock a group out.
+    ///   non-private. **The consequence is not a refusal to start, and saying
+    ///   so was wrong.** Every [`describe`] whose answer can produce a refusal
+    ///   runs immediately after [`imp::apply`], which builds a fresh two-ACE
+    ///   DACL from `NULL` — so no pre-existing deny entry survives to be read
+    ///   back on that path, and it is unreachable.
+    ///
+    ///   The reachable consequence is worse. The one [`describe`] that reads a
+    ///   DACL nobody has just replaced is the `before` in [`repair_within`],
+    ///   and a non-empty `foreign` there means **repair**: the entry is
+    ///   re-stamped with two ACEs and nothing else. So a directory an
+    ///   administrator had locked a group out of would have had that lockout
+    ///   **silently deleted by a routine startup**, and the read-back would
+    ///   have confirmed the result as private, because it is. Vela would have
+    ///   quietly widened a path in the name of narrowing it.
     /// - An **empty mask** grants nothing. Reporting it as a foreign reader
     ///   would be a false alarm with the same consequence.
     /// - An **unrecognised type** must be `Undecodable`, never `Harmless`.
@@ -579,8 +589,35 @@ pub fn open_private_append(path: &Path) -> io::Result<File> {
 ///
 /// Returns the paths it repaired, so a caller can report them.
 pub fn repair_entries(dir: &Path) -> Result<Vec<PathBuf>, EntryFailure> {
+    repair_entries_with(dir, |path, is_dir| {
+        enforce(
+            path,
+            if is_dir {
+                imp::harden_dir
+            } else {
+                imp::harden_file
+            },
+        )
+    })
+}
+
+/// [`repair_entries`] with the per-entry enforcement supplied by the caller.
+///
+/// The seam exists for the reason [`create_private_dir_with`] exists, and it
+/// was added because its absence hid a defect: the two mutations that were
+/// supposed to prove the walk reports the **failing entry** rather than the
+/// directory it was walking both landed on `entry_failure`, a pure mapping
+/// function, and the walk's own error construction went unguarded through two
+/// rounds of review. A failure that cannot be provoked cannot be tested, and a
+/// test that cannot fail is a comment.
+///
+/// Production code calls [`repair_entries`].
+pub fn repair_entries_with(
+    dir: &Path,
+    enforce_entry: impl Fn(&Path, bool) -> io::Result<()> + Copy,
+) -> Result<Vec<PathBuf>, EntryFailure> {
     let mut repaired = Vec::new();
-    repair_within(dir, 0, &mut repaired)?;
+    repair_within(dir, 0, &mut repaired, enforce_entry)?;
     Ok(repaired)
 }
 
@@ -627,7 +664,12 @@ impl std::fmt::Display for EntryFailure {
 /// the recursion never starts.
 const REPAIR_MAX_DEPTH: u32 = 16;
 
-fn repair_within(dir: &Path, depth: u32, repaired: &mut Vec<PathBuf>) -> Result<(), EntryFailure> {
+fn repair_within(
+    dir: &Path,
+    depth: u32,
+    repaired: &mut Vec<PathBuf>,
+    enforce_entry: impl Fn(&Path, bool) -> io::Result<()> + Copy,
+) -> Result<(), EntryFailure> {
     if depth >= REPAIR_MAX_DEPTH {
         return Ok(());
     }
@@ -661,16 +703,12 @@ fn repair_within(dir: &Path, depth: u32, repaired: &mut Vec<PathBuf>) -> Result<
         // be a second implementation of the promise with its own read-back to
         // forget — and `assuming_the_os_already_made_it_private_does_not_get_past_the_read_back`
         // guards this path only because it is this path.
-        let harden = if kind.is_dir() {
-            imp::harden_dir
-        } else {
-            imp::harden_file
-        };
-        enforce(&path, harden).map_err(|error| EntryFailure::not_private(&path, error))?;
+        enforce_entry(&path, kind.is_dir())
+            .map_err(|error| EntryFailure::not_private(&path, error))?;
         repaired.push(path.clone());
 
         if kind.is_dir() {
-            repair_within(&path, depth + 1, repaired)?;
+            repair_within(&path, depth + 1, repaired, enforce_entry)?;
         }
     }
     Ok(())
@@ -1265,45 +1303,174 @@ mod tests {
         }
     }
 
-    /// **The deny case again, on a real DACL rather than an integer.**
+    /// **The deny case on a real DACL, at the one call site where it bites.**
     ///
-    /// The pure test above fixes the decision; this one fixes the wiring, by
-    /// putting a genuine deny entry on a genuine directory with `icacls` and
-    /// asking [`describe`] what it sees. Without both, the classifier could be
-    /// right and unreachable.
+    /// The pure test above fixes the decision; this fixes the wiring — and it
+    /// drives [`repair_entries`], not [`describe`] alone, because that is where
+    /// the consequence actually lives. Every `describe` whose answer can
+    /// produce a *refusal* runs just after the DACL has been rebuilt from
+    /// `NULL`, so a pre-existing deny cannot reach it. The `before` read inside
+    /// the walk is the exception, and there a false `Foreign` does not refuse —
+    /// **it repairs**, replacing the entry's DACL with two ACEs and destroying
+    /// the administrator's lockout on the way past.
+    ///
+    /// So: a directory an administrator has locked `BUILTIN\Users` out of,
+    /// sitting inside the application-data root, must come through a startup
+    /// with that lockout intact.
     #[cfg(windows)]
     #[test]
-    fn a_directory_carrying_a_real_deny_ace_still_reads_as_private() {
+    fn a_deny_ace_an_administrator_added_survives_the_walk() {
         let root = scratch("deny");
-        let dir = root.join("diagnostics");
-        create_private_dir(&dir).unwrap();
-        assert!(describe(&dir).unwrap().is_private(), "control");
+        let data = root.join("app-data");
+        let locked = data.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        create_private_dir(&data).unwrap();
 
         // Stricter than what this crate demands, not looser.
-        let status = std::process::Command::new("icacls")
-            .arg(&dir)
-            .arg("/deny")
-            .arg("*S-1-5-32-545:(OI)(CI)(R)")
-            .output()
-            .expect("icacls must be present on Windows");
+        deny(&locked, "*S-1-5-32-545");
+
+        let before = describe(&locked).unwrap();
         assert!(
-            status.status.success(),
-            "could not add a deny ace: {}",
-            String::from_utf8_lossy(&status.stderr)
+            before.detail.contains("ace type=1"),
+            "control: no deny ace was recorded, so nothing here is under test: \
+             {before:?}"
+        );
+        assert!(
+            before.foreign.is_empty(),
+            "a deny entry was read as a principal that can reach the path — the \
+             walk is about to 'repair' a directory that needs no repair: \
+             {before:?}"
         );
 
-        let report = describe(&dir).unwrap();
+        repair_entries(&data).unwrap();
+
+        let after = describe(&locked).unwrap();
         assert!(
-            report.foreign.is_empty(),
-            "a deny entry was reported as a principal that can reach the path: \
-             {report:?}"
+            after.detail.contains("ace type=1"),
+            "a routine startup silently deleted an administrator's lockout: \
+             before={before:?} after={after:?}"
+        );
+        reset_and_remove(&root);
+    }
+
+    /// **A refusal inside the walk names the entry that failed.**
+    ///
+    /// Driven through the real walk with a failing enforcer, not by
+    /// hand-building an [`EntryFailure`]. That distinction is the whole point:
+    /// the two mutations that were supposed to prove this both landed on
+    /// `vela-store`'s pure mapping function, and the walk's own error
+    /// construction — `EntryFailure::not_private(&path, …)` — stayed green
+    /// while being changed to report the directory instead.
+    #[cfg(windows)]
+    #[test]
+    fn a_refusal_inside_the_walk_names_the_entry_not_the_directory() {
+        let root = scratch("walk-entry");
+        let data = root.join("app-data");
+        let child = data.join("skills");
+        std::fs::create_dir_all(&child).unwrap();
+        create_private_dir(&data).unwrap();
+        widen(&child);
+        assert!(
+            !describe(&child).unwrap().foreign.is_empty(),
+            "control: the walk has nothing to repair, so it will never reach \
+             the enforcement step"
+        );
+
+        let failure = repair_entries_with(&data, |_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "SetNamedSecurityInfoW failed: Access is denied. (os error 5)",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            failure.path, child,
+            "the walk reported the directory it was walking rather than the \
+             entry that could not be tightened"
         );
         assert!(
-            report.is_private(),
-            "Vela would refuse to start over an ACL that is stricter than the \
-             one it asks for: {report:?}"
+            matches!(failure.failure, Failure::NotPrivate(_)),
+            "an ACL refusal was classified as an I/O fault: {failure:?}"
         );
-        let _ = std::fs::remove_dir_all(&root);
+        reset_and_remove(&root);
+    }
+
+    /// **A directory that cannot be listed is an I/O fault, not a refusal.**
+    ///
+    /// The could-not / would-not split, at the walk rather than at the root.
+    /// The three `EntryFailure::unreachable` sites were changed to
+    /// `not_private` together and nothing went red.
+    ///
+    /// This covers the listing call. The two remaining sites — the per-entry
+    /// iteration error and `file_type()` — are not independently provokable
+    /// without injecting faults into `std::fs`, and are **not** claimed to be
+    /// guarded.
+    #[test]
+    fn a_directory_that_cannot_be_listed_is_an_io_fault_not_a_refusal() {
+        let root = scratch("unlistable");
+        let missing = root.join("was-never-created");
+
+        let failure = repair_entries(&missing).unwrap_err();
+
+        assert_eq!(failure.path, missing);
+        assert!(
+            matches!(failure.failure, Failure::Unreachable(_)),
+            "a directory that could not be listed was reported as a privacy \
+             refusal: {failure:?}"
+        );
+    }
+
+    /// **`foreign_explicit` is the non-inherited subset, not a copy of
+    /// `foreign`.**
+    ///
+    /// The field exists so a control can tell "this path carries a foreign ACE
+    /// of its own" from "this path is under a directory that hands one down" —
+    /// the difference between a precondition a test established and one the
+    /// filesystem supplied for free. If it ever aliases `foreign`, every
+    /// control built on it silently becomes the ambient-true check it replaced,
+    /// and the five vacuous preconditions this repair has already produced
+    /// would come back at once.
+    ///
+    /// Self-contained rather than relying on `%TEMP%`'s own ACL: the parent is
+    /// widened here, so the child's foreign principal is inherited by
+    /// construction on any machine.
+    #[cfg(windows)]
+    #[test]
+    fn foreign_explicit_holds_only_what_the_path_carries_itself() {
+        let root = scratch("explicit");
+        let parent = root.join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        widen(&parent);
+
+        let inherited = describe(&child).unwrap();
+        assert!(
+            !inherited.foreign.is_empty(),
+            "control: the child inherited nothing, so there is no distinction \
+             to draw: {inherited:?}"
+        );
+        assert!(
+            inherited.foreign_explicit.is_empty(),
+            "an ace the child merely inherits was reported as one it carries \
+             itself, which makes every control built on this field vacuous: \
+             {inherited:?}"
+        );
+
+        widen(&child);
+        let own = describe(&child).unwrap();
+        assert!(
+            !own.foreign_explicit.is_empty(),
+            "an ace granted directly on the child was not reported as its own: \
+             {own:?}"
+        );
+        for who in &own.foreign_explicit {
+            assert!(
+                own.foreign.contains(who),
+                "`foreign_explicit` is not a subset of `foreign`: {own:?}"
+            );
+        }
+        reset_and_remove(&root);
     }
 
     /// **The walk must not leave the tree it was given.**
@@ -1396,7 +1563,7 @@ mod tests {
             "the walk followed a junction and rewrote a directory outside the \
              tree it was given"
         );
-        let _ = std::fs::remove_dir_all(&root);
+        reset_and_remove(&root);
     }
 
     /// The post-condition, on the real implementation, read back off the real
@@ -1595,5 +1762,49 @@ mod tests {
     #[cfg(all(not(unix), not(windows)))]
     fn widen(_path: &Path) {
         unreachable!("no third platform is supported");
+    }
+
+    /// Lock a principal out of `path` the way an administrator would.
+    #[cfg(windows)]
+    fn deny(path: &Path, principal: &str) {
+        let output = std::process::Command::new("icacls")
+            .arg(path)
+            .arg("/deny")
+            .arg(format!("{principal}:(OI)(CI)(R)"))
+            .output()
+            .expect("icacls must be present on Windows");
+        assert!(
+            output.status.success(),
+            "could not add a deny ace to {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Remove a scratch tree, **restoring access first, and checking it went**.
+    ///
+    /// A test that denies `BUILTIN\Users` denies the account running the test,
+    /// which is a member of it — so the recursive delete fails, and the idiom
+    /// used everywhere else here (a discarded `let _ = …` around it) throws
+    /// that failure away. The test stays green and leaves a directory in
+    /// `%TEMP%` that its own author cannot delete. Thirty-three of them
+    /// accumulated in under an hour before this existed, and clearing them by
+    /// hand needed `icacls /reset /T` and a re-grant.
+    ///
+    /// Discarding the result of a cleanup is the same mistake as discarding the
+    /// result of a check: it cannot fail, so it cannot tell you anything.
+    #[cfg(windows)]
+    fn reset_and_remove(root: &Path) {
+        let _ = std::process::Command::new("icacls")
+            .arg(root)
+            .args(["/reset", "/T", "/C", "/Q"])
+            .output();
+        std::fs::remove_dir_all(root).unwrap_or_else(|error| {
+            panic!(
+                "the scratch tree at {} could not be removed ({error}); it will \
+                 accumulate in %TEMP% on every run",
+                root.display()
+            )
+        });
     }
 }

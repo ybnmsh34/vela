@@ -2,11 +2,12 @@
 //!
 //! # What this exists to settle
 //!
-//! `vela-providers/src/private_fs.rs` shipped with an honesty note saying its
-//! Windows implementation was **UNRUN**: written in a Linux container,
-//! type-checked against `x86_64-pc-windows-msvc`, never executed, not one line
-//! of it having touched a real ACL. Worse, the module was not even in
-//! `lib.rs` — it had never been compiled, on any platform.
+//! `vela-privatefs/src/lib.rs` — at the time a module inside vela-providers —
+//! shipped with an honesty note saying its Windows implementation was
+//! **UNRUN**: written in a Linux container, type-checked against
+//! `x86_64-pc-windows-msvc`, never executed, not one line of it having touched a
+//! real ACL. Worse, the module was not even in its crate root — it had never
+//! been compiled, on any platform.
 //!
 //! The finding it was written for was real and measured:
 //! `%APPDATA%\dev.vela.desktop\diagnostics` — which holds raw provider

@@ -1,0 +1,40 @@
+[package]
+name = "vela-privatefs"
+description = "One promise: a path reachable by its owner and nobody else — applied, then measured"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Deliberately dependency-free off Windows, and one dependency on it.
+#
+# This crate exists because TWO crates need the same promise and neither may
+# depend on the other. `vela-providers` protects the debug log;
+# `vela-store` protects the application-data root that holds every
+# conversation. `vela-store` cannot reach into `vela-providers` for it: the
+# provider seam pulls in an HTTP client, a Tokio runtime and the credential
+# seam, and it already dev-depends on `vela-store` for the content-model parity
+# test with a comment saying the runtime direction must not reverse. Putting a
+# Win32 FFI module in `vela-core` instead would push it into the build graph of
+# every crate in the workspace, to serve two of them.
+#
+# So: its own crate, with exactly the surface the promise needs.
+
+[target.'cfg(windows)'.dependencies]
+# There is no way to express "this directory is reachable by its owner and
+# nobody else" on Windows through `std::fs`: the concept is a DACL, and setting
+# one — with inheritance *disabled*, which is the whole point — means
+# `SetNamedSecurityInfoW`. Reading it back means `GetNamedSecurityInfoW` plus
+# `GetAce`, because the promise this crate makes is a measurement and not a
+# restatement of what was requested.
+#
+# The feature list is exactly the four namespaces `imp` imports from, plus
+# `Win32_Foundation` for `LocalFree`/`CloseHandle`/`WIN32_ERROR`.
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+] }

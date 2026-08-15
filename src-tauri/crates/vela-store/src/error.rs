@@ -54,6 +54,24 @@ pub enum StoreError {
     #[error("cannot open the database at `{path}`: {reason}")]
     Io { path: String, reason: String },
 
+    /// The directory holding the database could not be made reachable by this
+    /// account alone, so it was **not opened**.
+    ///
+    /// Distinct from [`StoreError::Io`] on purpose, and the distinction is not
+    /// cosmetic: `Io` means *could not*, this means *would not*. The database
+    /// is intact and reachable; Vela declined. Anyone reading a log needs to be
+    /// able to tell a failing disk from a refused one, and a caller that wants
+    /// to word the two differently for the user needs the variant to match on.
+    ///
+    /// The argument for refusing at all is on
+    /// [`DatabaseLocation::prepare`](crate::DatabaseLocation), where it is
+    /// taken.
+    #[error(
+        "the folder holding your conversations at `{path}` could not be made \
+         private to your account, so Vela did not open the database: {reason}"
+    )]
+    NotPrivate { path: String, reason: String },
+
     /// Anything SQLite reported that is not one of the above.
     #[error("database error: {reason}")]
     Backend { reason: String },

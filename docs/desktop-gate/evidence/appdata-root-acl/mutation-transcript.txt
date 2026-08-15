@@ -1,0 +1,374 @@
+Mutation transcript — appdata root ACL fix.
+
+Each mutation was applied to the shipping code, the named command was run, and
+the mutation was reverted. A test that does not go red under the mutation that
+breaks the behaviour it names is a test that was not measuring anything.
+
+Machine: DESKTOP-298M5DU, Windows 11. Commands run from src-tauri/.
+
+-------------------------------------------------------------------------------
+M1  prepare() -> the pre-fix `create_dir_all`, no hardening at all
+    cargo test -p vela-store --lib location
+    => 4 FAILED
+       the_directory_prepare_creates_is_reachable_by_nobody_else
+       an_existing_directory_a_non_owner_can_read_is_tightened_not_accepted
+       the_subdirectories_beside_the_database_inherit_the_root_they_sit_in
+       the_wal_and_shm_sqlite_creates_are_born_unreachable_by_anyone_else
+
+M2  the per-file hardening of vela.db/-wal/-shm skipped
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       an_existing_database_a_non_owner_can_read_is_tightened_without_losing_a_byte
+
+M3  PROTECTED_DACL_SECURITY_INFORMATION dropped from the SetNamedSecurityInfoW
+    call, so inherited ACEs merge instead of being discarded
+    cargo test -p vela-privatefs ; cargo test -p vela-store --lib location
+    => 4 FAILED in vela-privatefs, 6 FAILED in vela-store
+
+M4  repair_entries neutered (returns before walking anything)
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    This is the case protecting the root does not reach: an ACE the child holds
+    explicitly. Note that M1 does NOT catch it -- the root-widening tests are
+    structurally incapable of it, which is why this test widens the child.
+
+M5  Failure::Unreachable routed to StoreError::NotPrivate, collapsing
+    "could not" into "would not"
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       a_directory_that_cannot_be_created_is_an_io_fault_not_a_privacy_refusal
+
+M6  reach_summary() stops joining `foreign`
+    => DID NOT FAIL. The mutation was insufficient: `detail` still carries the
+       SIDs, so the principals still reached the message. Recorded rather than
+       hidden -- and it exposed a real defect in the test, see below.
+
+M6b describe() removed from the enforcement-failure path (the branch where
+    SetNamedSecurityInfoW itself fails), so the error names nobody
+    cargo test -p vela-store --lib location
+    => 1 FAILED, alone
+       a_refusal_names_the_accounts_that_can_still_reach_the_folder
+    Observed message under the mutation -- exactly the pre-fix shape:
+      "the folder holding your conversations at `...\dev.vela.desktop` could
+       not be made private to your account, so Vela did not open the database:
+       `...` could not be made private on this machine:
+       SetNamedSecurityInfoW failed: Access is denied. (os error 5) ()."
+    Names the folder. Names nobody.
+
+    DEFECT FOUND BY M6, IN MY OWN TEST: the assertion had been
+      message.contains("S-1-5-32-545") || message.contains("Users")
+    and the second clause is satisfied by the temp path `C:\Users\...` whether
+    or not a single principal is named. The test passed with the principals
+    removed. Narrowed to the SID alone, which cannot occur by accident in a
+    path, and only then did M6b turn it red.
+
+M7  describe_chain() stops walking source(), reporting only the outermost error
+    cargo test -p vela-app --lib fatal
+    => 1 FAILED, alone
+       (then named the_reported_text_keeps_the_innermost_cause_not_just_the_wrapper;
+        renamed in round 2 to a_chain_with_a_real_source_is_walked_to_the_bottom)
+
+    CORRECTED IN ROUND 3. This entry originally said the walk is what carries
+    the folder and the principals through tauri's wrapper. That is false and the
+    commit that introduced it also retracted it: tauri::Error is
+    `#[error("error encountered during setup hook: {0}")] Setup(SetupError)` --
+    a positional field with no #[source] -- so the variant has no source() and
+    its Display already embeds the whole inner message. For THAT error the walk
+    is a no-op. What M7 actually proves is that the walk works on a shape that
+    HAS a source, which is the #[from] variants, not the setup path. The
+    user-facing property is guarded separately by
+    a_real_tauri_setup_error_reports_the_folder_and_the_principals.
+
+M8  the root hardening blinded, gate run end to end
+    scripts\gate-appdata-root-acl.ps1
+    => exit 1, with 10 NAMED failing checks and a complete transcript.
+       It reports rather than dying; a bare Get-Item on the absent database used
+       to throw and kill the script before it could say which check failed.
+    Note `skills` and `skills\my-skill.md` stay PASS under M8. That is correct:
+    M8 blinds only the injected root hardening, and repair_entries is a separate
+    mechanism that still runs. `vela.db` and `projects/` go red because they are
+    created after prepare and depend on the root being protected.
+
+-------------------------------------------------------------------------------
+ROUND 2. This machine manufactures failures under load, so every mutation below
+was run TWICE and is reported only if it reddened both times.
+
+N3  a DENY ace counted as granting  (ace::verdict)
+    cargo test -p vela-privatefs --lib
+    => 2/2 runs, 2 tests:
+       a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader
+       a_deny_ace_an_administrator_added_survives_the_walk
+
+    THE ONE WITH TEETH -- BUT NOT FOR THE REASON GIVEN HERE IN ROUND 2.
+
+    Round 2 said the consequence was "Vela would decline to start over an ACL
+    stricter than the one it demands". That is NOT REACHABLE, and the check is
+    easy: every describe() whose answer can produce a refusal (enforce, and
+    make_file_private) runs immediately after apply(), which builds a fresh
+    two-ACE DACL from NULL. No pre-existing deny entry survives to be read back
+    on those paths.
+
+    The reachable consequence is worse. The one describe() that reads a DACL
+    nobody has just replaced is the `before` inside repair_within, and there a
+    false Foreign does not refuse -- IT REPAIRS. A directory an administrator
+    had locked a group out of would have had that lockout SILENTLY DELETED by a
+    routine startup, and the read-back would have confirmed the result as
+    private, because it is. Vela would have widened a path in the name of
+    narrowing it.
+
+    The round-2 test asserted the unreachable property (is_private() on a
+    hardened directory). It has been replaced by one that drives repair_entries
+    over a directory carrying a real deny ace added with icacls and asserts the
+    ace is still there afterwards.
+
+N5  an unknown ACE layout waved through as harmless
+    => 2/2 runs: an_ace_layout_this_code_cannot_decode_is_never_called_harmless
+
+N6  a walk failure reports the root instead of the failing entry
+    => 2/2 runs: a_fault_inside_the_walk_names_the_entry_and_keeps_its_kind
+
+N7  a walk failure collapses could-not into would-not
+    => 2/2 runs: a_fault_inside_the_walk_names_the_entry_and_keeps_its_kind
+
+N8  foreign_explicit never populated
+    => 2/2 runs: an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    The strengthened control detecting that its own precondition is not met.
+
+N9  repair_entries neutered, against the STRENGTHENED control
+    => 2/2 runs: an_explicit_ace_on_a_subdirectory_is_removed_not_merely_out_voted
+    The weak control (!foreign.is_empty()) let this pass: %TEMP% hands three
+    foreign principals to every directory created inside it, so the precondition
+    was ambient-true. Asserting foreign_explicit is what makes it bite for the
+    reason it claims.
+
+N10 the gate's skills/ grant made non-inheritable  ((OI)(CI)(RX) -> (RX))
+    scripts\gate-appdata-root-acl.ps1
+    => 2/2 runs: exit 1, FAIL "BEFORE skills/my-skill.md inherited BUILTIN\Users
+       FROM skills/". Previously PASS -- the check counted foreign principals,
+       which %TEMP% supplies for free. Naming the principal, and granting one
+       %TEMP% does not, is what makes it falsifiable.
+
+N4  the reparse-point skip removed
+    => 2/2 runs: NO TEST FAILED. Reported, not hidden.
+N4b the recursion descent guard (kind.is_dir()) forced open
+    => 2/2 runs: NO TEST FAILED.
+N4c BOTH removed together
+    => 2/2 runs: the_walk_does_not_follow_a_junction_out_of_the_tree
+    The two guards are redundant: FileType::is_dir() is already false for a
+    junction, so either one alone blocks descent and neither is individually
+    falsifiable. The test guards the PAIR. Both are kept and the redundancy is
+    documented on repair_entries rather than left to imply that each line is
+    separately load-bearing.
+
+Also fixed this round, found by mutation rather than by review:
+  - the junction test's first version passed with the skip deleted, because
+    repair_within descends only into directories it repaired and the junction's
+    DACL was already clean. The link is now widened after the root is protected.
+
+-------------------------------------------------------------------------------
+ROUND 3. Review found that two of round 2's mutations did not hit what their
+entries claimed, and that three more guards did not exist. Each below run TWICE.
+
+P1  the walk reports the DIRECTORY instead of the failing entry
+    (EntryFailure::not_private(&path, ..) -> (dir, ..))
+    => 2/2: a_refusal_inside_the_walk_names_the_entry_not_the_directory
+    Round 2's N6 claimed to cover this and did not: it patched `entry_failure`,
+    vela-store's pure mapping function, so the walk's own error construction was
+    never exercised. Closing it needed an injection seam
+    (repair_entries_with), because a failure that cannot be provoked cannot be
+    tested. Same for N7 / P2.
+
+P2  the directory listing's I/O fault reported as a privacy refusal
+    (EntryFailure::unreachable -> not_private at the read_dir site)
+    => 2/2: a_directory_that_cannot_be_listed_is_an_io_fault_not_a_refusal
+    NOT CLAIMED: the per-entry iteration error and file_type() sites. Neither is
+    provokable without injecting faults into std::fs, and neither is guarded.
+
+P3  foreign_explicit aliases foreign (the `if !inherited` filter dropped, both
+    branches)
+    => 2/2: foreign_explicit_holds_only_what_the_path_carries_itself
+    The field exists to stop controls being ambient-true; without its own guard
+    it could silently become the thing it replaced.
+
+P4  the parent is never widened, in
+    the_subdirectories_beside_the_database_inherit_the_root_they_sit_in
+    => 2/2: that test
+    THE FIFTH VACUITY INSTANCE, introduced in 317c977 sixty lines above the one
+    fixed in round 2. `!foreign.is_empty()` is ambient-true under %TEMP%, which
+    hands three foreign principals to every directory created inside it, so
+    deleting the widen left the control passing. Now asserts the SID `widen`
+    grants (S-1-5-32-545, absent from what %TEMP% hands down) by name.
+
+P5  deny counted as granting, retested against the REACHABLE consequence
+    => 2/2: a_deny_ace_for_a_foreign_principal_is_not_a_foreign_reader
+            a_deny_ace_an_administrator_added_survives_the_walk
+
+Also fixed in round 3, found by review rather than by mutation:
+  - the retracted chain-walk claim was still shipped verbatim at the call site
+    in src/lib.rs, one file from the copy that retracted it.
+  - the round-2 deny test leaked an undeletable directory into %TEMP% on every
+    PASSING run: it denies BUILTIN\Users, of which the test account is a member,
+    so the discarded `let _ = remove_dir_all` silently failed. 33 accumulated in
+    under an hour. Cleanup now resets the ACL first and asserts the removal.
+  - two sentences mangled by a botched edit in round 2.
+  - THE FILE ITSELF WAS CORRUPTED during this round: a PowerShell
+    Get-Content/Set-Content round-trip decoded UTF-8 as codepage 1255 and
+    re-encoded it, turning 82 em-dashes and ellipses into mojibake. Repaired by
+    mapping the three affected sequences back, not by a blanket reverse
+    transform, which would have broken the characters written correctly after
+    the corruption. Every changed file was then scanned; only that one was hit.
+
+-------------------------------------------------------------------------------
+ROUND 4. Two mechanisms were entirely unguarded and one retraction had not
+taken. Each mutation run TWICE.
+
+Q1  the recursive descent deleted (`if false` on the recursive call)
+    => 2/2: the_walk_descends_into_a_directory_it_had_to_repair
+    The mechanism could be removed with 1303/1303 green. The existing
+    an_explicit_ace_on_a_subdirectory_... could not see it, because its file
+    merely INHERITS the offending ace, so protecting the subdirectory cleans it
+    without anyone descending. The new test gives the file an ace of its OWN.
+
+Q2  an unreadable ACL silently skipped -- failing OPEN (`Err(_) => continue`)
+    => 2/2: an_entry_whose_acl_cannot_be_read_stops_the_walk
+Q3  a vanished entry treated as fatal instead of stepped over
+    => 2/2: an_entry_that_vanished_mid_walk_is_stepped_over
+    Both arms carried a comment asserting the behaviour and nothing checking
+    it. Neither is provokable through the real reader -- an object's owner
+    holds implicit READ_CONTROL and `icacls /deny` on oneself does not make
+    GetNamedSecurityInfoW fail -- so the ACL READER is now injectable too,
+    for the same reason and by the same argument as the enforcer.
+
+Q4  the retracted deny-consequence reintroduced in ANOTHER crate
+    => 2/2: the_retracted_reason_for_the_deny_rule_stays_retracted
+Q6  the guard's search stops reading file contents
+    => 2/2: same test (positive control)
+Q7  the guard's walk stops descending the workspace
+    => 2/2: same test (scanned-count assertion)
+
+Q5  the guard's needle swapped for a phrase that occurs nowhere
+    => 2/2: NO TEST FAILED. Reported, not hidden. No assertion that a phrase is
+    ABSENT can detect its own needle being swapped; what it can detect is the
+    search silently finding nothing, which is how it would actually rot, and
+    Q6/Q7 cover that.
+
+    THIS WAS THE WRONG RESIDUAL, AND STATING IT WAS MISLEADING. See round 5.
+
+-------------------------------------------------------------------------------
+ROUND 5. The guard built in round 4 could not detect the defect it was written
+for.
+
+The needle was a single-line substring. The retracted phrase is 32 characters
+and an 80-column doc comment wrapped it across two lines -- which is what a wrap
+does. Verified against the defect's own bytes, out of git, not retyped:
+
+    $ git cat-file -p e85cc23:.../vela-privatefs/src/lib.rs | sed -n '1250,1251p'
+        /// not private, **Vela would decline to start over an ACL stricter than the
+        /// one it demands**. Deny entries are not exotic: they are exactly what an
+
+    single-line contains() against that file -> 0 matches
+
+Swept across the four files that ever carried the claim, single-line vs the
+fixed whitespace-insensitive matcher:
+
+    43704b4   single-line=1   flattened=2
+    e85cc23   single-line=0   flattened=1     <- the state that was FAILed
+    a79309e   single-line=0   flattened=0
+    HEAD      single-line=0   flattened=0
+
+Three historical occurrences. The single-line needle finds ONE, and that one had
+already been deleted. Both occurrences that survived into the reviewed state
+were invisible to it. The guard caught the form that was fixed and missed the
+form that shipped.
+
+QW0 baseline: the real wrapped bytes injected into vela-store, round-4 guard
+    => 2/2 NO TEST FAILED   (the defect, live)
+QW1 same bytes, guard now flattening whitespace and comment markers
+    => 2/2 RED
+QW2 the same phrase on one line (round 4's Q4 shape)
+    => 2/2 RED
+Q6  guard stops reading contents, re-proved after the fix   => 2/2 RED
+Q7  guard stops descending, re-proved after the fix         => 2/2 RED
+
+WHY THIS KEEPS HAPPENING. Three times in this run a guard was validated against
+a shape the defect cannot produce: a chain walk proved with a synthetic error
+whose Display did not embed its source; and now a phrase guard proved with a
+re-typed one-line version of a phrase that only ever appeared wrapped. The rule
+that would have caught all of them: WHEN A GUARD IS BUILT FROM A DEFECT, THE
+MUTATION THAT PROVES IT MUST BE THE DEFECT'S OWN BYTES, TAKEN FROM GIT. Those
+bytes existed the whole time.
+
+-------------------------------------------------------------------------------
+ROUND 6. A figure this branch introduced, contradicted by its own evidence.
+
+Five sites in this branch's source said the write-ahead log was 2.6 MB, and two
+said the database was 315 KB. This file's sibling, real-appdata-before.txt,
+records:
+
+    ...\vela.db                            315,392 bytes
+    ...\vela.db-wal                         98,912 bytes   <- LIVE
+    ...\vela.db-wal.pre-cleanup-20260815  2,603,872 bytes   <- a BACKUP
+
+The live write-ahead log is 98 KB. The only 2.6 MB object is a pre-cleanup
+backup, which by definition is not un-checkpointed live data -- so
+location.rs asserted as measured the opposite of what the measurement shows.
+Stacked on that: both figures come from paths that resolve into the container,
+which the header of real-appdata-before.txt now says must not be quoted.
+
+Provenance, established rather than guessed:
+    $ git log --oneline -S'2.6 MB' -- docs/audit
+      92cdb06  Audit: grade all 264 aspects of the app against evidence
+    $ git log --oneline -S'2.6 MB' -- src-tauri
+      317c977  (this branch)
+The figure entered in the audit and this branch copied it into source. It is
+absent from src-tauri at the merge base.
+
+THE REPAIR CHOSEN, AND WHY NOT THE OTHERS.
+  Rejected -- state it with date and provenance: the audit's measurement cannot
+    be tied to a specific object or moment, and the "un-checkpointed live data"
+    reading is contradicted by the later measurement regardless of attribution.
+  Rejected -- quote what the evidence holds (98 KB live, 2.6 MB backup): both
+    numbers come from container-resolved paths, so quoting them would break the
+    rule this project just wrote down one file away.
+  CHOSEN -- remove the figure. No claim on any of the seven sites needs a number
+    to be true. That the -wal is not a lesser file than the database follows
+    from how SQLite works, not from its size on one machine.
+
+The guard added in rounds 4-5 now carries all three retracted claims, since this
+is the second instance of one class: a real measurement of one object written
+down as a measurement of another (the first was the `diagnostics` row). Proved
+against the defects' own bytes, out of git, never retyped:
+
+  QS1  the 2.6 MB sentence exactly as it shipped, wrapped  => 2/2 RED
+       (bytes: git cat-file -p e04c4e0:.../vela-store/src/location.rs)
+  QS2  the 315 KB + 2.6 MB sentence as it shipped, wrapped => 2/2 RED
+       (bytes: git cat-file -p e04c4e0:.../vela-store/src/lib.rs)
+  QW1  the round-3 phrase, re-proved after generalising    => 2/2 RED
+  Q6   guard stops reading contents                        => 2/2 RED
+  Q7   guard stops descending                              => 2/2 RED
+
+docs/audit/REPORT.md and docs/audit/security.md still carry the figure. They are
+dated records of what the audit measured and are left alone, as with every other
+historical document in this track.
+
+WHY A TEST AND NOT A HABIT. The deny-consequence claim was retracted in round 3
+and then shipped verbatim TWICE MORE in the same file, a thousand lines below
+the retraction, in a commit whose own message said "checking took one grep".
+The round before that, the same shape one file away. Twice is a mistake; three
+times is a missing check. The grep is now a test that walks every Rust source
+in the workspace, so it is not confined to the crate that happened to be wrong.
+Running it caught its own doc comment quoting the banned phrase, which is why
+the needle is assembled from fragments rather than written out.
+
+Also fixed in round 4, found by a control refusing a bad setup:
+  - the descent test's first version widened the file with the same principal
+    and container-inherit flags as its parent, which produced NO explicit ace
+    on the file at all -- so the control fired and said so, rather than the
+    test passing for the wrong reason.
+
+-------------------------------------------------------------------------------
+After every revert: cargo test --workspace => 63 targets, 1307 tests, 0 failed.
+Gate: 22 checks, 0 failures, twice. vitest 2110/2110, twice.
+No scratch directory is left in %TEMP% by a passing run (verified after a clean
+full-workspace run; a PANICKING run still leaves one, since cleanup is trailing).

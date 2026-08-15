@@ -100,6 +100,12 @@ impl From<vela_store::StoreError> for IpcError {
             | StoreError::MigrationChanged { .. }
             | StoreError::Corrupt { .. }
             | StoreError::Io { .. }
+            // A privacy refusal names a host-side path and the local accounts
+            // that can reach it. It is the single most useful thing to put in
+            // front of the *user*, and the single worst thing to hand the
+            // *renderer*, which is a web view. It reaches the user through
+            // startup failing loudly, not through this seam.
+            | StoreError::NotPrivate { .. }
             | StoreError::Backend { .. } => IpcError::new(
                 IpcErrorCode::Internal,
                 "the local database could not be read",

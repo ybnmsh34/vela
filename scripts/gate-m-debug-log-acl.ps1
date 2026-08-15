@@ -5,7 +5,7 @@ GATE M — the debug log's ACL, measured FROM A SHELL on a real Windows machine.
 
 ## What this measures that the unit tests do not
 
-`vela-providers/src/private_fs.rs` and `src-tauri/src/ipc/diagnostics.rs` assert
+`vela-privatefs/src/lib.rs` and `src-tauri/src/ipc/diagnostics.rs` assert
 "nobody foreign can reach this path" from inside the process that created it,
 reading the ACL back through the same `GetNamedSecurityInfoW` call the code
 under test used, in a temporary directory. That is a good assertion and a poor

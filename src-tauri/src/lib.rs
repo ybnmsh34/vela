@@ -10,6 +10,7 @@
 //! and the event channel: no `fs`, no `shell`, no `http`, no `process`.
 
 pub mod endpoint_host;
+pub mod fatal;
 pub mod ipc;
 pub mod provider_host;
 pub mod scheduler_host;
@@ -244,9 +245,32 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
 
 /// The process entry point. Everything about how Vela is assembled lives in
 /// [`configure`]; this adds the real runtime and the real context.
+///
+/// # Why this is not `.expect(...)`
+///
+/// It was, and on Windows that made every startup failure invisible.
+/// `main.rs` sets `windows_subsystem = "windows"` for release builds, so a
+/// panicking `expect` writes to a console that does not exist: the measured
+/// result was exit 101, no window, no dialog, no log — an application that
+/// vanishes.
+///
+/// That is wrong for any fatal, and it silently unmakes a deliberate decision
+/// elsewhere: `DatabaseLocation::prepare` refuses to open a database whose
+/// directory it cannot make private, on the explicit grounds that refusing
+/// fails *loudly* with the path and the offending accounts named. Delivered
+/// through a console nobody has, that refusal is indistinguishable from a
+/// crash. [`fatal::report`] is the channel that makes it a refusal again.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    configure(tauri::Builder::default())
-        .run(tauri::generate_context!())
-        .expect("error while running Vela");
+    if let Err(error) = configure(tauri::Builder::default()).run(tauri::generate_context!()) {
+        // `tauri::Error::Setup` has no `source()` and its `Display` already
+        // embeds the whole inner message, so for the error this exists to
+        // deliver the chain walk is a no-op and the folder and principals are
+        // in the outermost string. It is kept for the `#[from]` variants, which
+        // do carry a source. See `fatal::describe_chain`, which retracted the
+        // opposite claim — and which this comment repeated for one more round
+        // because a correction landed in the module and not at the call site.
+        fatal::report("Vela cannot start", &fatal::describe_chain(&error));
+        std::process::exit(1);
+    }
 }

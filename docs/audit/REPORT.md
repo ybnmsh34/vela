@@ -189,11 +189,33 @@ Worth keeping as a matter of method: the auditor could not run the check and **s
 would be the bad one**. That framing is what made the finding legible the moment somebody could
 run it. A could-not-establish that names its own worst case is worth more than one that just stops.
 
-**Deliberately not listed as closed yet:** *`pnpm verify` runs to completion on Windows*. That is a
-different row from *is runnable on Windows* above — the latter is about `'.' is not recognized`,
-which `scripts/run-bash.mjs` fixes, and the former is about the whole nine-link chain finishing.
-Every gate has been observed green individually, which is exactly the kind of evidence this
-document exists to distrust. It is graded when the chain has been run end to end and not before.
+**`pnpm verify` runs to completion on Windows — CLOSED, and it took four runs to earn.** This was
+deliberately left ungraded while every gate had been seen green *individually*, which is exactly the
+evidence this document exists to distrust: gate 2 hid for the project's entire history behind people
+checking the parts.
+
+The four end-to-end runs, in order, are the record worth keeping:
+
+| run | outcome |
+|---|---|
+| 1 | **gate 3** — `EndpointsPanel.test.tsx:121` timed out at 5000ms. The load artefact. |
+| 2 | **gate 4** — `frontier/01-health.json is stale`. A **real** defect, and its advice was wrong. |
+| 3 | **gate 3** — `EndpointsPanel.test.tsx:176`. The artefact again. |
+| 4 | **exit 0**, 7.4 min — after the flake fix merged at `64c970e`. |
+| 5 | **exit 0**, 2.9 min. Reproduced. |
+
+Two different faults, two different gates, and each would have been misread alone. Run 1 alone says
+"the flake blocks verify". Run 2 alone says "the transcripts are stale, re-record them" — which is
+what the assertion advised and would have overwritten **58 correct baselines** with captures taken
+that minute, destroying the one property a regression baseline has.
+
+The gate-4 failure was not staleness. `.gitattributes` marks that directory `-text`, and the rule is
+correct — but **an attribute added after a file is already in the working tree does not rewrite it**,
+and git's stat cache means the content is never re-read. So `git status` reported clean while 58 of
+106 files held CRLF on disk against pure LF in the object store. The rule had been verified against a
+*fresh checkout*, where it gives 0 of 106. Nobody asked what an existing tree does — which is every
+developer's machine and a cached CI runner. Restored with `rm -rf` + `git checkout --`; the guard now
+distinguishes the two faults and names the right remedy for each (`9002685`).
 
 **Not closed, and Wave 1 did not touch them:**
 

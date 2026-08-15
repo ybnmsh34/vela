@@ -13,8 +13,9 @@
 use crate::error::StoreResult;
 use crate::model::{
     Conversation, ConversationId, ConversationPatch, Message, MessageId, MessagePatch,
-    NewConversation, NewMessage, NewProject, Project, ProjectId, ProjectPatch, Setting,
-    SettingEntry, Timestamp,
+    NewConversation, NewMessage, NewProject, NewSchedule, Project, ProjectId, ProjectPatch,
+    RunTrigger, Schedule, ScheduleId, SchedulePatch, ScheduleRun, ScheduleRunId,
+    ScheduleRunOutcome, Setting, SettingEntry, Timestamp,
 };
 
 /// Which project's conversations to list.
@@ -206,6 +207,88 @@ pub trait MessageRepository {
     fn search_messages(&self, query: &str, limit: u32) -> StoreResult<Vec<SearchHit>>;
 }
 
+/// Schedules, and the history of what they ran.
+///
+/// ## Why every method that cares about time takes an instant
+///
+/// This trait never reads the clock. `due_schedules`, `begin_schedule_run`,
+/// `finish_schedule_run` and `reap_orphaned_runs` all take the instant they are
+/// to act at, so that "is this schedule due?" is a pure question about a
+/// database and a number. That is the whole of how the scheduler is tested
+/// without waiting an hour: `crate::scheduler::poll_once` is handed
+/// `Timestamp::from_millis(..)` and answers immediately.
+///
+/// The store's own [`crate::Clock`] still stamps `created_at` and `updated_at`,
+/// because those are facts about the write rather than about the schedule.
+pub trait ScheduleRepository {
+    fn create_schedule(&self, input: NewSchedule) -> StoreResult<Schedule>;
+    fn get_schedule(&self, id: &ScheduleId) -> StoreResult<Schedule>;
+    /// Soonest-due first, so a list view reads as a queue. Disabled schedules
+    /// are hidden by default: disabling is the user saying "not now", and a
+    /// list that ignores it is a list that lies — the same rule
+    /// [`ConversationQuery::include_archived`] follows.
+    fn list_schedules(&self, include_disabled: bool) -> StoreResult<Vec<Schedule>>;
+    fn update_schedule(&self, id: &ScheduleId, patch: SchedulePatch) -> StoreResult<Schedule>;
+    /// Deletes the schedule **and its run history**, by cascade. The runs are
+    /// the schedule's own record; keeping them orphaned would leave a history
+    /// pane full of rows pointing at nothing.
+    fn delete_schedule(&self, id: &ScheduleId) -> StoreResult<()>;
+
+    /// Every schedule that is enabled, owed a run at or before `now`, and does
+    /// not already have a run in flight.
+    ///
+    /// **The overlap guard is here, in the query, not in the caller.** A
+    /// schedule whose previous run is still `running` is not due: a poll that
+    /// re-fired it would stack conversations on a slow model until the machine
+    /// ran out of them. Putting it in the SQL is what stops a second caller —
+    /// a "run all now" button, a test — from re-deriving it differently.
+    fn due_schedules(&self, now: Timestamp) -> StoreResult<Vec<Schedule>>;
+
+    /// Opens a run, `running`, started at `at`.
+    ///
+    /// The conversation is attached afterwards rather than passed here, and the
+    /// order is deliberate: the row exists before the work does, so a crash
+    /// between the two leaves a run that says it was attempted instead of no
+    /// evidence at all.
+    fn begin_schedule_run(
+        &self,
+        schedule_id: &ScheduleId,
+        trigger: RunTrigger,
+        at: Timestamp,
+    ) -> StoreResult<ScheduleRun>;
+
+    /// Points a run at the conversation it spawned. Separate from
+    /// [`ScheduleRepository::finish_schedule_run`] so a UI can open a run that
+    /// is still in flight.
+    fn attach_run_conversation(
+        &self,
+        run_id: &ScheduleRunId,
+        conversation_id: &ConversationId,
+    ) -> StoreResult<ScheduleRun>;
+
+    /// Closes a run at `at`, computing `duration_ms` from its own `started_at`.
+    /// Finishing an already-finished run is [`crate::StoreError::Invalid`]: a
+    /// second close would overwrite the first outcome with a later one.
+    fn finish_schedule_run(
+        &self,
+        run_id: &ScheduleRunId,
+        at: Timestamp,
+        outcome: ScheduleRunOutcome,
+    ) -> StoreResult<ScheduleRun>;
+
+    /// This schedule's history, newest first.
+    fn list_schedule_runs(&self, schedule_id: &ScheduleId, limit: u32)
+        -> StoreResult<Vec<ScheduleRun>>;
+
+    /// Fails every run still marked `running`, and answers how many there were.
+    ///
+    /// **Called once at startup, before the first poll.** A process that died
+    /// mid-run leaves a `running` row, and `due_schedules` treats a running row
+    /// as "still working" — so without this the schedule is wedged forever and
+    /// the user sees a spinner that outlives the reason for it.
+    fn reap_orphaned_runs(&self, at: Timestamp) -> StoreResult<u32>;
+}
+
 pub trait SettingsRepository {
     /// Insert or replace. The value is arbitrary JSON and must never be a
     /// credential — pass a [`crate::model::SecretRefName`] instead.
@@ -221,7 +304,13 @@ pub trait SettingsRepository {
 /// `Arc<dyn VelaStore>`, so the host, the IPC layer and tests all depend on
 /// this trait rather than on SQLite.
 pub trait VelaStore:
-    ProjectRepository + ConversationRepository + MessageRepository + SettingsRepository + Send + Sync
+    ProjectRepository
+    + ConversationRepository
+    + MessageRepository
+    + ScheduleRepository
+    + SettingsRepository
+    + Send
+    + Sync
 {
     /// Which database is actually live, for honest diagnostics — the same
     /// reason `app_info.secretBackend` exists. Returns
@@ -238,6 +327,7 @@ where
     T: ProjectRepository
         + ConversationRepository
         + MessageRepository
+        + ScheduleRepository
         + SettingsRepository
         + Send
         + Sync

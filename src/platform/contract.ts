@@ -1248,6 +1248,151 @@ export interface UiLayout {
 }
 
 /* -------------------------------------------------------------------------- */
+/* schedules                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How often a schedule comes round.
+ *
+ * A closed set of four rather than a cron expression, and the reason is the
+ * same one `Concern` is a closed set: the UI owns every sentence it renders. A
+ * cron string would have to be parsed to be described, and a schedules pane
+ * that parses is a schedules pane that disagrees with the host about what a
+ * given expression means.
+ *
+ * `once` is not a cadence in the ordinary sense — it fires and then the
+ * schedule disables itself, which is a state the list shows rather than a
+ * failure.
+ */
+export type Cadence = 'once' | 'hourly' | 'daily' | 'weekly';
+
+/**
+ * A schedule as this surface sees it.
+ *
+ * **No `providerId`, no `modelId`.** The stored row carries both, exactly as a
+ * stored conversation does, and this view drops them for the reason
+ * {@link ConversationSummary} drops them: conventions §0 rule 3, the UI branches
+ * on capability and never on a backend identity.
+ *
+ * `nextRunAtMs` is an absolute epoch millisecond, so rendering "in 3 hours" is
+ * arithmetic the renderer already knows how to do against its own clock.
+ */
+export interface ScheduleView {
+  readonly id: string;
+  readonly title: string;
+  /** Sent verbatim as the first user message of every run. */
+  readonly prompt: string;
+  readonly cadence: Cadence;
+  readonly nextRunAtMs: number;
+  readonly enabled: boolean;
+  readonly projectId: string | null;
+  /**
+   * Slots that came due while Vela was not running. **Counted, never fired** —
+   * a laptop shut for a week owes an hourly schedule 168 runs, and opening 168
+   * conversations at breakfast is not what the user asked for. One run and this
+   * number is the honest answer.
+   */
+  readonly missedRuns: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+/**
+ * Where one attempt got to.
+ *
+ * `running` covers two situations the renderer cannot tell apart and does not
+ * need to: a run genuinely in flight, and a run whose process died before it
+ * finished. The second is repaired at the next startup, which turns it into a
+ * `failed` with a reason.
+ */
+export type ScheduleRunStatus = 'running' | 'success' | 'failed';
+
+/**
+ * Whether the poll started a run or a person did.
+ *
+ * Carried because the two behave differently and the difference is visible: a
+ * `manual` run does not move the schedule's next slot, so a history showing two
+ * runs an hour apart on a daily schedule is correct rather than a bug.
+ */
+export type ScheduleRunTrigger = 'schedule' | 'manual';
+
+/** One attempt at a schedule, finished or not. */
+export interface ScheduleRunView {
+  readonly id: string;
+  readonly scheduleId: string;
+  readonly status: ScheduleRunStatus;
+  readonly trigger: ScheduleRunTrigger;
+  readonly startedAtMs: number;
+  /** `null` while the run is still in flight. */
+  readonly finishedAtMs: number | null;
+  readonly durationMs: number | null;
+  /**
+   * The conversation this run spawned, already holding the schedule's prompt.
+   * Present from the moment the run starts, which is what lets a UI open a run
+   * that has not finished. `null` only if the user deleted the conversation and
+   * kept the history.
+   */
+  readonly conversationId: string | null;
+  /**
+   * Why a `failed` run failed. Free text from whatever failed, so it is
+   * rendered and never matched — the same contract `ChatError.message` carries.
+   */
+  readonly error: string | null;
+}
+
+export interface SchedulesCreateReq {
+  readonly title: string;
+  readonly prompt: string;
+  readonly cadence: Cadence;
+  /**
+   * When the first run is owed, absolute.
+   *
+   * **The renderer computes this, and that is deliberate.** "Nine tomorrow" is
+   * a question about the user's timezone, which lives here, and a host that
+   * re-derived it would be a second answer to what tomorrow means. What the
+   * host owns is what happens after: cadences advance by fixed offsets, so
+   * `daily` is exactly 24h and not "09:00 whatever the clocks did overnight".
+   */
+  readonly firstRunAtMs: number;
+  readonly projectId?: string | undefined;
+}
+
+export interface SchedulesListReq {
+  /**
+   * Disabled schedules are hidden by default — disabling is the user saying
+   * "not now", and a list that ignores it is a list that lies. The same rule
+   * archived conversations follow.
+   */
+  readonly includeDisabled?: boolean | undefined;
+}
+
+export interface SchedulesRefReq {
+  readonly scheduleId: string;
+}
+
+export interface SchedulesSetEnabledReq {
+  readonly scheduleId: string;
+  readonly enabled: boolean;
+}
+
+export interface SchedulesListRunsReq {
+  readonly scheduleId: string;
+  readonly limit?: number | undefined;
+}
+
+export interface ScheduleRes {
+  readonly schedule: ScheduleView;
+}
+
+export interface ScheduleListRes {
+  readonly schedules: readonly ScheduleView[];
+}
+
+export interface ScheduleRunListRes {
+  readonly runs: readonly ScheduleRunView[];
+}
+
+/* -------------------------------------------------------------------------- */
 /* the contract                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1262,6 +1407,11 @@ export interface IpcContract {
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
+  schedules_create: { req: SchedulesCreateReq; res: ScheduleRes };
+  schedules_delete: { req: SchedulesRefReq; res: Ack };
+  schedules_list: { req: SchedulesListReq; res: ScheduleListRes };
+  schedules_list_runs: { req: SchedulesListRunsReq; res: ScheduleRunListRes };
+  schedules_set_enabled: { req: SchedulesSetEnabledReq; res: ScheduleRes };
   secrets_delete: { req: SecretsRefReq; res: Ack };
   secrets_set: { req: SecretsSetReq; res: Ack };
   secrets_status: { req: SecretsRefReq; res: SecretsStatusRes };
@@ -1304,6 +1454,11 @@ export const COMMAND_ALLOWLIST = [
   'models_capabilities',
   'models_list',
   'models_probe',
+  'schedules_create',
+  'schedules_delete',
+  'schedules_list',
+  'schedules_list_runs',
+  'schedules_set_enabled',
   'secrets_delete',
   'secrets_set',
   'secrets_status',

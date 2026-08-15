@@ -95,6 +95,14 @@ id_newtype!(
     /// Identifier of a [`Message`].
     MessageId, "msg", "message"
 );
+id_newtype!(
+    /// Identifier of a [`Schedule`].
+    ScheduleId, "sched", "schedule"
+);
+id_newtype!(
+    /// Identifier of a [`ScheduleRun`].
+    ScheduleRunId, "schedrun", "scheduleRun"
+);
 
 // ---------------------------------------------------------------------------
 // Messages
@@ -685,6 +693,329 @@ pub struct ProjectPatch {
     pub description: Option<Option<String>>,
     pub system_prompt: Option<Option<String>>,
     pub archived: Option<bool>,
+}
+
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+/// How often a schedule comes round.
+///
+/// Four members and no cron expression, because a cron string is a *question*
+/// and a schedule row stores the *answer* — see the header of
+/// `0003_schedules.sql` for why that matters to a poll that runs forever.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Cadence {
+    /// Fires once and then disables itself. There is no next slot, and
+    /// [`Cadence::advance`] says so by answering `None`.
+    Once,
+    Hourly,
+    Daily,
+    Weekly,
+}
+
+impl Cadence {
+    pub(crate) const fn as_db(self) -> &'static str {
+        match self {
+            Self::Once => "once",
+            Self::Hourly => "hourly",
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+        }
+    }
+
+    pub(crate) fn from_db(value: &str) -> StoreResult<Self> {
+        Ok(match value {
+            "once" => Self::Once,
+            "hourly" => Self::Hourly,
+            "daily" => Self::Daily,
+            "weekly" => Self::Weekly,
+            other => return Err(StoreError::corrupt(format!("unknown cadence `{other}`"))),
+        })
+    }
+
+    /// The gap between slots, in milliseconds. `None` for [`Cadence::Once`],
+    /// which has no second slot.
+    ///
+    /// **These are fixed offsets, not wall-clock rules.** `Daily` is exactly
+    /// 24h, so a schedule that fired at 09:00 fires at 08:00 or 10:00 local time
+    /// after a daylight-saving change. That is a real limitation and it is
+    /// written here rather than in a `timezone` column nothing reads.
+    pub const fn interval_ms(self) -> Option<i64> {
+        match self {
+            Self::Once => None,
+            Self::Hourly => Some(60 * 60 * 1_000),
+            Self::Daily => Some(24 * 60 * 60 * 1_000),
+            Self::Weekly => Some(7 * 24 * 60 * 60 * 1_000),
+        }
+    }
+
+    /// Where a schedule goes after the slot at `from` has been fired at `now`.
+    ///
+    /// The rule in one sentence: **the next slot is the first one strictly after
+    /// `now`, and every slot skipped to get there is counted, not fired.** A
+    /// laptop that was shut for a week owes an hourly schedule 168 runs; firing
+    /// them would open 168 conversations at breakfast. One run and a number is
+    /// the honest answer, and the number is what [`Advance::missed_slots`]
+    /// carries into `schedules.missed_runs`.
+    ///
+    /// Total on purpose. Called with `from` in the future (which the due check
+    /// makes impossible) it leaves the schedule where it is rather than
+    /// inventing a slot, because a scheduler that moves a row it did not fire is
+    /// a scheduler that silently drops a run.
+    pub fn advance(self, from: Timestamp, now: Timestamp) -> Advance {
+        let Some(interval) = self.interval_ms() else {
+            return Advance {
+                next_run_at: None,
+                missed_slots: 0,
+            };
+        };
+        if from > now {
+            return Advance {
+                next_run_at: Some(from),
+                missed_slots: 0,
+            };
+        }
+        // Closed form rather than a loop: a machine that was off for a decade
+        // would otherwise spin through ~87,000 iterations of an hourly cadence
+        // inside a database transaction.
+        let elapsed = now.as_millis().saturating_sub(from.as_millis());
+        let steps = elapsed / interval + 1;
+        let next = steps
+            .checked_mul(interval)
+            .and_then(|offset| from.as_millis().checked_add(offset));
+        match next {
+            Some(next) => Advance {
+                next_run_at: Some(Timestamp::from_millis(next)),
+                missed_slots: u32::try_from(steps - 1).unwrap_or(u32::MAX),
+            },
+            // Only reachable from a clock set past the year 292 million. There
+            // is no next slot that fits, so the schedule stops rather than
+            // wrapping into the past and firing forever.
+            None => Advance {
+                next_run_at: None,
+                missed_slots: 0,
+            },
+        }
+    }
+}
+
+/// The result of [`Cadence::advance`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Advance {
+    /// Where `next_run_at` moves to. `None` means there is no next slot and the
+    /// schedule is disabled instead — the [`Cadence::Once`] case.
+    pub next_run_at: Option<Timestamp>,
+    /// Slots that came due and were passed over, not counting the one fired.
+    pub missed_slots: u32,
+}
+
+/// A standing instruction: run this prompt on this cadence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Schedule {
+    pub id: ScheduleId,
+    pub title: String,
+    /// Sent verbatim as the first user message of every run.
+    pub prompt: String,
+    pub cadence: Cadence,
+    /// The instant this schedule is next owed a run. The whole due check is a
+    /// comparison against this field.
+    pub next_run_at: Timestamp,
+    pub enabled: bool,
+    pub project_id: Option<ProjectId>,
+    /// Advisory, exactly as on [`Conversation`]: which endpoint and model the
+    /// spawned conversation opens against.
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    /// Slots that came due while nothing was polling. Never fired, only counted
+    /// — see [`Cadence::advance`].
+    pub missed_runs: u32,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// Input for creating a schedule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSchedule {
+    pub title: String,
+    pub prompt: String,
+    pub cadence: Cadence,
+    /// When the first run is owed. The caller decides, because "in an hour" and
+    /// "at nine tomorrow" are the same field to this layer and only the caller
+    /// knows which the user asked for.
+    pub first_run_at: Timestamp,
+    pub project_id: Option<ProjectId>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+}
+
+impl NewSchedule {
+    pub fn new(
+        title: impl Into<String>,
+        prompt: impl Into<String>,
+        cadence: Cadence,
+        first_run_at: Timestamp,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            prompt: prompt.into(),
+            cadence,
+            first_run_at,
+            project_id: None,
+            provider_id: None,
+            model_id: None,
+        }
+    }
+
+    pub fn in_project(mut self, project_id: ProjectId) -> Self {
+        self.project_id = Some(project_id);
+        self
+    }
+
+    pub fn with_model(
+        mut self,
+        provider_id: impl Into<String>,
+        model_id: impl Into<String>,
+    ) -> Self {
+        self.provider_id = Some(provider_id.into());
+        self.model_id = Some(model_id.into());
+        self
+    }
+
+    pub(crate) fn validate(&self) -> StoreResult<()> {
+        if self.title.trim().is_empty() {
+            return Err(StoreError::invalid("title", "a schedule must have a title"));
+        }
+        if self.prompt.trim().is_empty() {
+            return Err(StoreError::invalid(
+                "prompt",
+                "a schedule with no prompt has nothing to run",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Partial update. `None` leaves a field alone.
+///
+/// `next_run_at` and `missed_runs` are writable because the poll owns them: it
+/// is the only caller that knows a slot was fired. A UI patches `enabled`,
+/// `title` and `prompt` and nothing else.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SchedulePatch {
+    pub title: Option<String>,
+    pub prompt: Option<String>,
+    pub cadence: Option<Cadence>,
+    pub next_run_at: Option<Timestamp>,
+    pub enabled: Option<bool>,
+    pub project_id: Option<Option<ProjectId>>,
+    pub missed_runs: Option<u32>,
+}
+
+/// Where a run came from.
+///
+/// A discriminated value rather than a boolean "is manual" flag, because the
+/// two are treated differently forever: a manual run does **not** move
+/// `next_run_at`,
+/// so a person pressing "run now" cannot silently push the schedule's next slot
+/// a day into the future.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RunTrigger {
+    /// The poll found the schedule due.
+    Schedule,
+    /// A person asked for it now.
+    Manual,
+}
+
+impl RunTrigger {
+    pub(crate) const fn as_db(self) -> &'static str {
+        match self {
+            Self::Schedule => "schedule",
+            Self::Manual => "manual",
+        }
+    }
+
+    pub(crate) fn from_db(value: &str) -> StoreResult<Self> {
+        Ok(match value {
+            "schedule" => Self::Schedule,
+            "manual" => Self::Manual,
+            other => return Err(StoreError::corrupt(format!("unknown run trigger `{other}`"))),
+        })
+    }
+}
+
+/// Lifecycle of one attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScheduleRunStatus {
+    /// In flight right now — or left behind by a process that died mid-run,
+    /// which is what `reap_orphaned_runs` is for.
+    Running,
+    Success,
+    Failed,
+}
+
+impl ScheduleRunStatus {
+    pub(crate) const fn as_db(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Success => "success",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub(crate) fn from_db(value: &str) -> StoreResult<Self> {
+        Ok(match value {
+            "running" => Self::Running,
+            "success" => Self::Success,
+            "failed" => Self::Failed,
+            other => {
+                return Err(StoreError::corrupt(format!(
+                    "unknown schedule run status `{other}`"
+                )))
+            }
+        })
+    }
+}
+
+/// How a run ended.
+///
+/// A union rather than `status` plus an `Option<String>`, so the two states the
+/// schema's own CHECK constraint allows — succeeded with no error, failed with
+/// one — are the only two a caller can express.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScheduleRunOutcome {
+    Succeeded,
+    Failed { error: String },
+}
+
+/// One attempt at a schedule, finished or not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRun {
+    pub id: ScheduleRunId,
+    pub schedule_id: ScheduleId,
+    pub status: ScheduleRunStatus,
+    pub trigger: RunTrigger,
+    pub started_at: Timestamp,
+    pub finished_at: Option<Timestamp>,
+    pub duration_ms: Option<i64>,
+    /// The conversation this run spawned. `None` only in the instant between
+    /// the row being inserted and the conversation being attached, or after the
+    /// user deleted the conversation and kept the history.
+    pub conversation_id: Option<ConversationId>,
+    /// Set only on a failed run; the schema refuses any other combination.
+    pub error: Option<String>,
+}
+
+impl ScheduleRun {
+    /// Whether this run is still in flight. The overlap guard's question.
+    pub fn is_running(&self) -> bool {
+        self.status == ScheduleRunStatus::Running
+    }
 }
 
 // ---------------------------------------------------------------------------

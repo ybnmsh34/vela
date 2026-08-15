@@ -180,6 +180,75 @@ fn a_database_left_by_an_older_build_is_upgraded_in_place_and_its_content_indexe
     assert_eq!(store.search_messages("Earth", 10).unwrap().len(), 1);
 }
 
+/// A schedule is only a schedule if it is still there after the app is closed.
+/// The unit tests run in memory and cannot say this; this one writes a real
+/// file, drops the connection, reopens it, and fires the schedule from the
+/// reopened database.
+#[test]
+fn a_schedule_and_its_run_history_survive_a_restart_and_still_fire() {
+    use vela_store::{
+        Cadence, NewSchedule, ScheduleRepository, ScheduleRunOutcome, ScheduleRunStatus, Timestamp,
+    };
+
+    const NOON: i64 = 1_700_000_000_000;
+    const HOUR: i64 = 60 * 60 * 1_000;
+    let dir = tempfile::tempdir().unwrap();
+
+    let schedule_id = {
+        let store = open(dir.path());
+        let schedule = store
+            .create_schedule(NewSchedule::new(
+                "daily standup notes",
+                "summarise yesterday",
+                Cadence::Daily,
+                Timestamp::from_millis(NOON),
+            ))
+            .unwrap();
+
+        // Fire it once and close the run, so there is history to survive too.
+        let fired = vela_store::poll_once(&store, Timestamp::from_millis(NOON))
+            .unwrap()
+            .fired
+            .remove(0);
+        store
+            .finish_schedule_run(
+                &fired.run_id,
+                Timestamp::from_millis(NOON + 2_000),
+                ScheduleRunOutcome::Succeeded,
+            )
+            .unwrap();
+        schedule.id
+    }; // quitting the app
+
+    let reopened = open(dir.path());
+    let schedule = reopened.get_schedule(&schedule_id).unwrap();
+    assert_eq!(schedule.title, "daily standup notes");
+    assert_eq!(schedule.cadence, Cadence::Daily);
+    assert_eq!(
+        schedule.next_run_at,
+        Timestamp::from_millis(NOON + 24 * HOUR),
+        "the slot the first run moved it to has to be on disk, or a restart re-fires it"
+    );
+
+    let history = reopened.list_schedule_runs(&schedule_id, 10).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].status, ScheduleRunStatus::Success);
+    assert_eq!(history[0].duration_ms, Some(2_000));
+    let spawned = history[0].conversation_id.clone().expect("run has a chat");
+    assert_eq!(
+        reopened
+            .list_messages(&spawned, MessageQuery::default())
+            .unwrap()[0]
+            .answer_text(),
+        "summarise yesterday"
+    );
+
+    // And the reopened database still schedules: the next slot fires.
+    let again = vela_store::poll_once(&reopened, Timestamp::from_millis(NOON + 24 * HOUR)).unwrap();
+    assert_eq!(again.fired.len(), 1);
+    assert_eq!(reopened.list_schedule_runs(&schedule_id, 10).unwrap().len(), 2);
+}
+
 #[test]
 fn wal_leaves_its_sidecar_files_beside_the_database() {
     let dir = tempfile::tempdir().unwrap();

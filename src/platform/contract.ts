@@ -1029,6 +1029,106 @@ export interface MessageListRes {
 }
 
 /* -------------------------------------------------------------------------- */
+/* mcp — tools the user's own MCP servers offer                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Why a configured MCP server is not serving tools.
+ *
+ * Closed, and provider-neutral in the same sense {@link Concern} is: the UI owns
+ * every sentence. Mirrors `vela_mcp::McpFailureCode`.
+ *
+ * There is no free-text arm and there must never be one. The text would be
+ * written by a third-party process the user pasted a command line for — an
+ * unbounded string from an untrusted source, rendered in a window. `ChatError`
+ * makes the same argument for the same reason.
+ *
+ * The arms a user acts on differently:
+ *  - `configUnreadable` — their file has a typo; nothing else could be read.
+ *  - `configInvalid` — that one entry does not describe a launchable server.
+ *  - `transportNotSupported` — their file is *correct* and this build cannot do
+ *    it. Today that is every remote (`url`) entry; see the note on
+ *    {@link McpServerTools}.
+ *  - `spawnFailed` — the command is not on the machine, or not on `PATH`.
+ *  - `serverExited` — it was running and is not any more. Asking again restarts
+ *    it: the pool replaces a dead connection rather than returning it.
+ */
+export type McpFailureReason =
+  | 'notConfigured'
+  | 'configUnreadable'
+  | 'configInvalid'
+  | 'transportNotSupported'
+  | 'spawnFailed'
+  | 'handshakeFailed'
+  | 'serverExited'
+  | 'protocolError'
+  | 'timedOut'
+  | 'serverError';
+
+/**
+ * A discriminated union rather than `{ connected: boolean; reason?: … }`,
+ * because a reason is meaningless on a connected server and the boolean form
+ * makes that state expressible.
+ */
+export type McpServerStatus =
+  | { readonly kind: 'connected' }
+  | { readonly kind: 'unavailable'; readonly reason: McpFailureReason };
+
+/**
+ * One tool an MCP server offers.
+ *
+ * `name`, `description` and `parameters` are deliberately the three fields
+ * {@link ToolDefinitionInput} carries, so putting an MCP tool into a turn is a
+ * projection and not a translation. `toolName` is the extra one: it is the
+ * server's own name, which is what a call has to be addressed to, and carrying
+ * it means nothing ever has to take `name` apart to recover it.
+ */
+export interface McpToolView {
+  /** `mcp__<server>__<tool>`. Unique across servers; `toolName` is not. */
+  readonly name: string;
+  /** The server's own name for this tool. */
+  readonly toolName: string;
+  /** Empty when the server described nothing. Never absent. */
+  readonly description: string;
+  /** JSON Schema for the arguments object, verbatim from the server. */
+  readonly parameters: unknown;
+}
+
+/**
+ * One configured server and what it is currently offering.
+ *
+ * **An unavailable server keeps its row**, with `tools` empty. A server the user
+ * configured that quietly vanished from this list is the silent reduction
+ * conventions §9 forbids — they would see a shorter list and no reason for it.
+ * That applies most of all to `transportNotSupported`, which is this build
+ * saying it has not implemented the transport their entry names, not a fault in
+ * anything they wrote.
+ */
+export interface McpServerTools {
+  readonly serverId: string;
+  readonly status: McpServerStatus;
+  readonly tools: readonly McpToolView[];
+}
+
+/**
+ * Every configured server's tools.
+ *
+ * Connecting is lazy: the host spawns a server the first time this is called,
+ * not at startup, and reuses the process afterwards. So this is a command that
+ * can take as long as a process takes to start — and can also answer instantly
+ * from cache, which is what the second call does.
+ *
+ * `configFailure` is `null` when the file read cleanly, **including when there
+ * is no file at all** — no MCP servers configured is where every user starts,
+ * and reporting the ordinary case as a fault would train them past the reasons
+ * that matter.
+ */
+export interface McpListToolsRes {
+  readonly configFailure: McpFailureReason | null;
+  readonly servers: readonly McpServerTools[];
+}
+
+/* -------------------------------------------------------------------------- */
 /* ui — window layout that must survive a restart                             */
 /* -------------------------------------------------------------------------- */
 
@@ -1057,6 +1157,7 @@ export interface IpcContract {
   diagnostics_debug_log_get: { req: EmptyPayload; res: DebugLogStatus };
   diagnostics_debug_log_set: { req: DebugLogSetReq; res: DebugLogStatus };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
+  mcp_list_tools: { req: EmptyPayload; res: McpListToolsRes };
   models_capabilities: { req: ModelsRefReq; res: ModelCapabilityReport };
   models_list: { req: ModelsProviderRefReq; res: ModelsListRes };
   models_probe: { req: ModelsRefReq; res: ModelsProbeRes };
@@ -1096,6 +1197,7 @@ export const COMMAND_ALLOWLIST = [
   'diagnostics_debug_log_get',
   'diagnostics_debug_log_set',
   'diagnostics_echo',
+  'mcp_list_tools',
   'models_capabilities',
   'models_list',
   'models_probe',

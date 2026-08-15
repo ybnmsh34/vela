@@ -4223,6 +4223,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "vela-core",
+ "vela-mcp",
  "vela-providers",
  "vela-secrets",
  "vela-settings",
@@ -4237,6 +4238,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "zeroize",
+]
+
+[[package]]
+name = "vela-mcp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

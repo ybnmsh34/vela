@@ -53,8 +53,11 @@
  *     failure markers, not just the end-of-run summary — see
  *     {@link reachedAVerdict}, which was blind to them at first and would
  *     therefore retry a run that had already printed a real regression.
- *   - It retries ONCE. Two attempts takes a ~10% false red to ~1%; a third would
- *     start buying silence rather than a verdict.
+ *   - It retries ONCE. Measured, not modelled: 20 wrapped runs of the real gate,
+ *     5 of which crashed, 0 false reds. Do NOT estimate the residue by squaring
+ *     the ~14% — the paragraph below calls the crash load-correlated, so the
+ *     two attempts are not independent and ~2% would be an optimistic floor
+ *     rather than a prediction. A third attempt buys silence, not a verdict.
  *   - Every retry prints a `::warning::` annotation, so the crash rate stays
  *     visible in the CI run summary instead of being quietly absorbed. If those
  *     warnings become common, that is the signal to fix the pool, not to raise
@@ -68,13 +71,17 @@
  * That class is not hypothetical in this suite: the harness binds real TCP on
  * ephemeral ports, and `server.test.ts` drives 9 MiB and 17 MiB bodies through
  * it. It is not independent of the crash either — both are load-correlated. The
- * inline markers above shrink that window to a genuinely flaky test whose failure
- * output never reached the parent at all; they do not close it.
+ * inline markers close the case where the failure was PRINTED, in both of the
+ * shapes vitest prints it in. What they cannot reach is a failure inside one of
+ * the four or five files the crash silenced: those print nothing at all, so no
+ * transcript can show it. Only the second attempt can, and only if the failure
+ * is deterministic.
  *
  * IF YOU ARE A MAINTAINER LOOKING AT THIS BECAUSE THE STEP WENT RED: it fails now
  * only if both attempts crashed, or if vitest reported a failing test. Search the
- * log for a `×` marker or a `Tests` line — if either is there, the failure is
- * real and is about your change. If neither is there and you see
+ * log for `×`, for a `❯` beside a `.test.ts` name, or for a `Tests` line. If any
+ * of the three is there, vitest reported on the suite and the failure is real
+ * and is about your change.
  * `ERR_IPC_CHANNEL_CLOSED` twice, you hit the crash twice in a row and a re-run
  * is legitimate. If that stops being rare, find the trigger; do not raise the
  * attempt count.
@@ -135,20 +142,36 @@ function isRunnerCrash(transcript) {
  * the worst thing this file could do, and it was reproduced from real vitest
  * bytes rather than a synthetic transcript.
  *
- * So the inline markers are what actually matter. From that real run:
+ * So the inline markers are what actually matter. Two of them, because vitest
+ * has two shapes of failure and they do not look alike. A failing TEST:
  *
  *     ❯ t/a-fast-fail.test.ts (2 tests | 1 failed) 10ms
  *       × a genuinely failing test 8ms
  *
- * Both are printed within milliseconds of the failure, and about six seconds
- * before any summary would have been. The end-of-run patterns are kept too:
- * they cost nothing and they cover a run that dies after the flush has begun.
+ * A failing SUITE — a `beforeAll`/`beforeEach` hook that throws — renders with no
+ * `×` anywhere, and its module line counts the tests it never got to as
+ * SKIPPED, so `| N failed` never appears either:
+ *
+ *     ❯ t/a-beforeall.test.ts (1 test | 1 skipped) 3ms
+ *       ↓ never runs because the suite failed
+ *
+ * The only thing common to both is the `❯` pointer on the module line, which
+ * vitest uses for a file that did not come out clean. Hence the third pattern.
+ * It is deliberately loose: a stack frame naming a test file is also evidence
+ * that a failure was reported, and erring towards "a verdict was reached" fails
+ * CLOSED — it costs a retry, never a laundered regression. Checked against 99
+ * captured transcripts of this suite (19 of them crashed): it fires on none of
+ * them, so the retry is not lost in the benign case.
+ *
+ * The end-of-run patterns are kept too: they cost nothing and they cover a run
+ * that dies after the flush has begun.
  */
 function reachedAVerdict(transcript) {
   return (
     // Inline, printed as each file finishes. These are the load-bearing ones.
     /^\s*\u00D7\s/mu.test(transcript) ||
     /\(\d+ tests?[^)]*\|\s*\d+ failed\)/u.test(transcript) ||
+    /^\s*\u276F\s.*\.test\.tsx?/mu.test(transcript) ||
     // End-of-run summary.
     /^\s*Tests\s+\d+/mu.test(transcript) ||
     /Failed Tests\s+\d+/u.test(transcript) ||
@@ -207,12 +230,20 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
   }
 
   if (attempt < MAX_ATTEMPTS) {
+    // This string is the ONLY part of this file most people will ever read, so
+    // it must not claim more than the file itself does. It used to end "This is
+    // an upstream vitest defect, not a result about this commit" while the
+    // header two screens up said `upstream defect` is not safe to assert. Both
+    // halves were unfounded: the trigger is unidentified and may be pressure
+    // from this repo's own harness, in which case a commit that makes the
+    // harness heavier IS implicated. Say what is known and stop.
     process.stdout.write(
-      `::warning title=vitest worker pool crashed::` +
-        `Attempt ${String(attempt)} of ${String(MAX_ATTEMPTS)} ended in ` +
-        `ERR_IPC_CHANNEL_CLOSED inside tinypool and produced no test summary, ` +
-        `so it returned no verdict. Retrying. This is an upstream vitest defect, ` +
-        `not a result about this commit.\n`,
+      `::warning title=vitest worker died; re-running for a verdict::` +
+        `Attempt ${String(attempt)} of ${String(MAX_ATTEMPTS)} lost a test worker ` +
+        `(ERR_IPC_CHANNEL_CLOSED inside tinypool) and printed no test summary, so ` +
+        `it reached no verdict on the suite. Re-running to get one. The cause is ` +
+        `not identified: it may be the runner, and it may be load from this ` +
+        `suite. See scripts/ci-retry-vitest-crash.mjs.\n`,
     );
   }
 }

@@ -85,8 +85,30 @@ blanket — which is why the worktrees and scratchpad have behaved coherently al
 | Container-only — measurements here are not about the machine | Real — trustworthy |
 |---|---|
 | `%LOCALAPPDATA%\Vela`, `%LOCALAPPDATA%\tauri`, `%APPDATA%\Claude` | all of `%TEMP%`, including the scratchpad |
-| **every `HKCU` key written this session** | `%APPDATA%\dev.vela.desktop`, `%LOCALAPPDATA%\dev.vela.desktop` |
-| | `Desktop`, Start Menu, `C:\ProgramData`, `C:\Users\User\vela*` |
+| **every `HKCU` key written this session** | `Desktop`, Start Menu, `C:\ProgramData`, `C:\Users\User\vela*` |
+
+**The rule holds for directories and fails for the files inside them.** A second agent probed
+`%APPDATA%\dev.vela.desktop` path by path and the boundary runs *through* it:
+
+```
+REAL       %APPDATA%\dev.vela.desktop            <- the directory falls through
+REAL       %APPDATA%\dev.vela.desktop\skills
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db
+CONTAINER  %APPDATA%\dev.vela.desktop\vela.db-wal
+CONTAINER  %APPDATA%\dev.vela.desktop\diagnostics\exchanges.jsonl
+```
+
+Directories merge; files inside do not uniformly follow the parent. So a directory's own ACL can be
+the real one while a listing of its children is a **merged** view, and a file read from it may be a
+container copy. The precise capture behaviour is **undetermined** and must not be guessed at —
+probe the exact path with `GetFinalPathNameByHandle` and believe nothing broader.
+
+This retired a claim that had stood all session. An agent repeatedly reported that directory
+"byte-for-byte and timestamp-for-timestamp identical" as evidence nothing had been written. It had
+compared a **container copy of the database**. Nothing was in fact damaged — the app was never
+launched and the installer does not touch that path — but the evidence was weaker than the sentence
+it carried, and it happened to land on a reassuring conclusion, which is exactly when a
+verification needs checking hardest.
 
 **The authoritative check for any path is `GetFinalPathNameByHandle`.** If it resolves under
 `…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\`, the observation is about the container.

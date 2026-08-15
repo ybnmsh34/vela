@@ -62,6 +62,7 @@ pub mod app;
 pub mod chat;
 pub mod content;
 pub mod diagnostics;
+pub mod endpoint;
 pub mod error;
 pub mod mcp;
 pub mod memory;
@@ -103,6 +104,9 @@ pub const COMMAND_ALLOWLIST: &[&str] = &[
     "diagnostics_debug_log_get",
     "diagnostics_debug_log_set",
     "diagnostics_echo",
+    "endpoint_disable",
+    "endpoint_enable",
+    "endpoint_status",
     "mcp_list_tools",
     "memory_add",
     "memory_clear_scope",

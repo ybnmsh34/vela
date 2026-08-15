@@ -57,6 +57,19 @@ launcher, a different operating system with a different toolchain.
 | `src-tauri/src/ipc/` | The command allowlist — the entire renderer-facing surface. |
 | `src-tauri/crates/` | Domain logic with no Tauri dependency: `vela-core`, `vela-secrets`, `vela-providers`. |
 
+## Serving a model back out
+
+Vela can serve one of your configured endpoints on a local HTTP port, so other tools on the
+machine can send turns through it — one port, both the Anthropic and the OpenAI wire formats.
+It is **off unless you turn it on**, in **Endpoints → Local endpoint**, or with the five
+`VELA_LOCAL_ENDPOINT*` environment variables at startup.
+
+**[`docs/local-endpoint.md`](docs/local-endpoint.md)** is the whole of it, and reading it before
+you point a client at the port will save you the four things that otherwise cost an afternoon:
+`x-api-key` is not accepted (it must be `Authorization: Bearer`), the two dialects take
+*different* base URLs (`http://host:port` and `http://host:port/v1`), the address must be an IP
+literal rather than a hostname, and binding anything other than loopback turns tool calling off.
+
 ## Before you write code
 
 **[`docs/architecture/conventions.md`](docs/architecture/conventions.md) is binding.** It

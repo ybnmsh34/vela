@@ -69,6 +69,10 @@ import {
   type DebugLogStatus,
   type EchoReq,
   type EchoRes,
+  type EndpointEnableReq,
+  type EndpointStatus,
+  type EndpointToolPolicy,
+  type EndpointToolsRequest,
   type ContentPartInput,
   type McpListToolsRes,
   type MemoryAddReq,
@@ -534,6 +538,103 @@ function storageKey(reference: SecretsRefReq): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/* the local endpoint — the fake's stand-in for `EndpointControl`             */
+/* -------------------------------------------------------------------------- */
+
+/** The state every launch starts in, and the one `disable` returns to. */
+const ENDPOINT_OFF: EndpointStatus = {
+  state: 'off',
+  address: null,
+  providerId: null,
+  toolsEnabled: false,
+  toolPolicy: null,
+  loopback: false,
+  detail: null,
+};
+
+/**
+ * What the fake answers when asked for port `0`.
+ *
+ * A real host is given a port by the operating system. Echoing `0` back would
+ * be the fake teaching the UI that `:0` is a thing a user sees, so it picks a
+ * number in the ephemeral range instead. Fixed rather than random: a fake that
+ * answers differently every run is a fake nothing can assert against.
+ */
+const FAKE_EPHEMERAL_PORT = 49_871;
+
+interface BoundAddress {
+  readonly host: string;
+  readonly port: number;
+  readonly loopback: boolean;
+  /** IPv6 literals are written back inside brackets, as they were supplied. */
+  readonly bracketed: boolean;
+}
+
+/**
+ * Mirrors `std::net::SocketAddr`'s `FromStr`, which is what the host parses
+ * `bind` with.
+ *
+ * The strictness is the point, not an omission: `SocketAddr` accepts an **IP
+ * literal and a port**, and nothing else. `localhost:8034` does not parse, and
+ * neither does a bare port. A fake that were more permissive would let the
+ * browser build accept an address the packaged app refuses, which is the exact
+ * class of drift `docs/architecture/conventions.md` §8 makes the host
+ * authoritative over.
+ */
+function parseBindAddress(raw: string): BoundAddress | null {
+  const text = raw.trim();
+  const bracketed = text.startsWith('[');
+  const split = bracketed ? text.indexOf(']:') : text.lastIndexOf(':');
+  if (split < 0) return null;
+  const host = bracketed ? text.slice(1, split) : text.slice(0, split);
+  const portText = text.slice(bracketed ? split + 2 : split + 1);
+
+  if (!/^\d{1,5}$/.test(portText)) return null;
+  const port = Number(portText);
+  if (port > 65_535) return null;
+
+  const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (octets !== null) {
+    const parts = octets.slice(1).map(Number);
+    if (bracketed || parts.some((part) => part > 255)) return null;
+    // `127.0.0.0/8`, all of it — `IpAddr::is_loopback` is not a `127.0.0.1`
+    // comparison, and neither is this.
+    return { host, port, loopback: parts[0] === 127, bracketed: false };
+  }
+
+  // IPv6, only in brackets, and only the two forms a user actually types. A
+  // full IPv6 parser here would be more code than the thing it checks; what
+  // matters is that `[::1]` is loopback and `[::]` is not.
+  if (bracketed && /^[0-9a-fA-F:]+$/.test(host)) {
+    return { host, port, loopback: host === '::1' || host === '0:0:0:0:0:0:0:1', bracketed: true };
+  }
+  return null;
+}
+
+/**
+ * Mirrors `vela_endpoint::policy::ToolPolicy::resolve`, arm for arm.
+ *
+ * **This is a security rule, so the fake implements it rather than assuming
+ * it.** The table below is the whole of it: disabling wins everywhere, loopback
+ * defaults on, anything else defaults off, and forcing tools onto an address
+ * other machines can reach needs a confirmation or it fails closed.
+ */
+function resolveToolPolicy(
+  loopback: boolean,
+  tools: EndpointToolsRequest,
+  confirmed: boolean,
+): { readonly enabled: boolean; readonly reason: EndpointToolPolicy } {
+  if (tools === 'off') return { enabled: false, reason: 'forced-off' };
+  if (tools === 'default') {
+    return loopback
+      ? { enabled: true, reason: 'loopback-default' }
+      : { enabled: false, reason: 'exposed-default' };
+  }
+  if (loopback || confirmed) return { enabled: true, reason: 'forced-on' };
+  return { enabled: false, reason: 'exposed-enable-unconfirmed' };
+}
+
+/* -------------------------------------------------------------------------- */
 /* store — the fake's stand-in for the SQLite tables                          */
 /* -------------------------------------------------------------------------- */
 
@@ -766,6 +867,12 @@ export class BrowserAdapter implements PlatformAdapter {
    * reload of `pnpm dev` puts it back off for the same reason a restart does.
    */
   #debugLogEnabled = false;
+  /**
+   * Mirrors `EndpointControl`. Off at every construction, exactly as the host
+   * is at every launch, and not persisted for the same reason: a local HTTP
+   * server is not something to restore from a saved preference.
+   */
+  #endpoint: EndpointStatus = ENDPOINT_OFF;
   readonly #now: () => number;
   readonly #latencyMs: number;
   readonly #scheduleFrame: (run: () => void) => void;
@@ -805,6 +912,12 @@ export class BrowserAdapter implements PlatformAdapter {
         return this.#debugLogSet(payload as DebugLogSetReq);
       case 'diagnostics_echo':
         return this.#echo(payload as EchoReq);
+      case 'endpoint_status':
+        return this.#endpoint;
+      case 'endpoint_enable':
+        return this.#endpointEnable(payload as EndpointEnableReq);
+      case 'endpoint_disable':
+        return this.#endpointDisable();
       case 'mcp_list_tools':
         return this.#mcp;
       case 'memory_add':
@@ -1019,6 +1132,73 @@ export class BrowserAdapter implements PlatformAdapter {
       );
     }
     return { message: request.message, receivedAtMs: this.#now() };
+  }
+
+  /**
+   * The local endpoint's switch, faked.
+   *
+   * **VERIFIED-BY-FAKE, and the boundary matters here more than usual.** No
+   * socket is opened. What this reproduces is the *decision* the host makes —
+   * which configurations are refused, what a bound address resolves to, and
+   * above all the bind-address tool policy, which is a security rule and is
+   * therefore worth having the headless UI exercise. What it proves is that the
+   * panel renders every state; it is not evidence that any port ever opened.
+   *
+   * The address rules mirror `SocketAddr::parse`, hostnames included: the host
+   * refuses `localhost:8034`, so this must too, or the browser build would
+   * teach a user a spelling the real app rejects.
+   */
+  #endpointEnable(request: EndpointEnableReq): EndpointStatus {
+    const bound = parseBindAddress(request.bind);
+    if (bound === null) {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'the address must be written as host:port',
+        'endpoint_enable',
+      );
+    }
+    if (request.key.trim() === '') {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'the local endpoint needs a key: an endpoint anything on the network could use is not a configuration',
+        'endpoint_enable',
+      );
+    }
+    const providerId = request.providerId.trim();
+    if (providerId === '') {
+      throw new PlatformError(
+        'INVALID_PAYLOAD',
+        'name which configured endpoint should answer here',
+        'endpoint_enable',
+      );
+    }
+
+    // Port 0 means "the operating system chooses". The host answers with the
+    // port it was given, so a fake that echoed `0` back would let a panel ship
+    // that never renders a real port.
+    const port = bound.port === 0 ? FAKE_EPHEMERAL_PORT : bound.port;
+    const address = bound.bracketed ? `[${bound.host}]:${port}` : `${bound.host}:${port}`;
+    const policy = resolveToolPolicy(
+      bound.loopback,
+      request.tools ?? 'default',
+      request.confirmExposedTools ?? false,
+    );
+
+    this.#endpoint = {
+      state: 'serving',
+      address,
+      providerId,
+      toolsEnabled: policy.enabled,
+      toolPolicy: policy.reason,
+      loopback: bound.loopback,
+      detail: null,
+    };
+    return this.#endpoint;
+  }
+
+  #endpointDisable(): EndpointStatus {
+    this.#endpoint = ENDPOINT_OFF;
+    return this.#endpoint;
   }
 
   #secretsSet(request: SecretsSetReq): Ack {

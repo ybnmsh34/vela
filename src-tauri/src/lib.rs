@@ -170,11 +170,18 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             // THE DUAL LOCAL ENDPOINT. Off unless `VELA_LOCAL_ENDPOINT` names
             // an address, and refused rather than defaulted if the key or the
             // provider is missing — see `endpoint_host`. It is started after
-            // the provider sync above because it serves one of those providers,
-            // and it is `manage`d rather than dropped because `ServerHandle`'s
-            // `Drop` stops the listener: a handle nobody holds is a port that
-            // closes the moment startup returns.
-            let endpoint = endpoint_host::start_if_configured(
+            // the provider sync above because it serves one of those providers.
+            //
+            // What is `manage`d is the *control*, not the handle. Two things
+            // follow from that and neither is incidental: the `ServerHandle`
+            // inside it is held for the life of the process, because its `Drop`
+            // stops the listener and a handle nobody holds is a port that
+            // closes the moment startup returns; and `ipc::endpoint` can reach
+            // it afterwards, which is what makes the endpoint switchable
+            // without a restart. Startup is one caller of that control, not a
+            // separate mechanism — this line is `enable()` with the environment
+            // supplying the arguments.
+            let endpoint = endpoint_host::EndpointControl::start_if_configured(
                 &endpoint_host::ProcessEnv,
                 std::sync::Arc::clone(&app.state::<AppState>().providers),
             );
@@ -191,6 +198,9 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ipc::diagnostics::diagnostics_debug_log_get,
             ipc::diagnostics::diagnostics_debug_log_set,
             ipc::diagnostics::diagnostics_echo,
+            ipc::endpoint::endpoint_disable,
+            ipc::endpoint::endpoint_enable,
+            ipc::endpoint::endpoint_status,
             ipc::mcp::mcp_list_tools,
             ipc::memory::memory_add,
             ipc::memory::memory_clear_scope,

@@ -178,14 +178,25 @@
 //! C:\Users\User\AppData\Roaming\dev.vela.desktop
 //!   Protected           : False
 //!   DESKTOP-298M5DU\CodexSandboxUsers  ReadAndExecute, Synchronize  inherited=True
-//! C:\Users\User\AppData\Roaming\dev.vela.desktop\diagnostics
-//!   Protected           : True
-//!   NT AUTHORITY\SYSTEM                FullControl                  inherited=False
-//!   DESKTOP-298M5DU\User               FullControl                  inherited=False
 //! ```
 //!
-//! The debug log was private and the transcripts beside it were not. A
-//! mechanism is not a policy: this crate kept its promise everywhere it was
+//! **That row, and only that row, is quoted here.** The measurement recorded
+//! nine paths, and review established that the root resolves to the real
+//! per-user directory — its live SDDL is byte-identical to the recorded one —
+//! while the child rows resolve into a container view. An earlier version of
+//! this passage also quoted the `diagnostics` row to show the debug log
+//! protected beside an unprotected root; that row is one of the redirected
+//! ones, so it is not evidence about the user's real `diagnostics` directory
+//! and has been dropped. See `docs/desktop-gate/evidence/appdata-root-acl/`.
+//!
+//! Nothing in the finding depends on it. That the debug log's directory *was*
+//! made private is established by the desktop gate quoted above, which drove
+//! the real `debug_log_set` and read the result back — and the defect is a
+//! statement about the **root**, which is the row that is real: the directory
+//! holding `vela.db` and its 2.6 MB write-ahead log was reachable by a second
+//! local group, and this crate was never called on it.
+//!
+//! A mechanism is not a policy: this crate kept its promise everywhere it was
 //! *called*, and the lesson is that the call site is part of the fix. It is now
 //! called on the root, by `DatabaseLocation::prepare`, before anything else in
 //! `setup` touches that directory.
@@ -1341,15 +1352,42 @@ mod tests {
     /// implausible. If one ever happens, rephrase — do not widen this.
     #[test]
     fn the_retracted_reason_for_the_deny_rule_stays_retracted() {
+        /// Collapse a source file so a phrase can be found however it is laid
+        /// out: comment markers and every run of whitespace become one space.
+        ///
+        /// **The first version of this guard matched a single-line substring,
+        /// and that made it blind to the defect it was written for.** The
+        /// retracted phrase is thirty-two characters; an eighty-column doc
+        /// comment wrapped it across two lines, which is what a wrap does. Of
+        /// the three times the claim appeared in this repository's history, a
+        /// single-line search finds exactly one — the instance that had already
+        /// been deleted. Both occurrences that survived into the state under
+        /// review were invisible to it. It caught the form that was fixed and
+        /// missed the form that shipped.
+        fn flattened(text: &str) -> String {
+            text.replace("///", " ")
+                .replace("//!", " ")
+                .replace("//", " ")
+                .replace('*', " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+
         // Assembled rather than written out, so this file does not contain the
         // string it is banning.
-        let retracted = format!("stricter than {} one it demands", "the");
+        let retracted = flattened(&format!("stricter than {} one it demands", "the"));
         // A positive control. An assertion that a phrase is ABSENT passes just
         // as happily when the search is broken as when the tree is clean, so
-        // the same walk is asked for something that must be there. This does
-        // not defend against the needle being swapped for a phrase that never
-        // occurs — no absence assertion can — but it does catch the walk
-        // silently finding nothing, which is the way this would actually rot.
+        // the same walk is asked for something that must be there.
+        //
+        // It does not defend against the needle being swapped for a phrase that
+        // never occurs — no absence assertion can. That was reported as this
+        // guard's residual, and it was the wrong residual: the one that
+        // actually bit was a FALSE NEGATIVE ON REAL INPUT, and no amount of
+        // care about the needle would have found it. What found it was
+        // re-running the guard against the defect's own bytes out of git
+        // instead of a retyped version of them.
         let sentinel = "PROTECTED_DACL_SECURITY_INFORMATION";
 
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1377,10 +1415,11 @@ mod tests {
                 } else if path.extension().is_some_and(|ext| ext == "rs") {
                     scanned += 1;
                     if let Ok(text) = std::fs::read_to_string(&path) {
-                        if text.contains(sentinel) {
+                        let flat = flattened(&text);
+                        if flat.contains(sentinel) {
                             sentinel_hits += 1;
                         }
-                        if text.contains(&retracted) {
+                        if flat.contains(&retracted) {
                             offenders.push(path);
                         }
                     }

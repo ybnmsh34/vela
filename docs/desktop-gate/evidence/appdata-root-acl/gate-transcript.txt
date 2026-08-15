@@ -1,15 +1,15 @@
 ﻿==============================================================
  GATE — application-data root ACL
- scratch  : C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
+ scratch  : C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b
  widen as : DESKTOP-298M5DU\CodexSandboxUsers
  machine  : DESKTOP-298M5DU   user: User
- when     : 2026-08-15T20:33:19.9084037+03:00
+ when     : 2026-08-15T21:10:33.7161132+03:00
 ==============================================================
 
 NOTE: this gate never touches C:\Users\User\AppData\Roaming\dev.vela.desktop.
 
 --- 1. BEFORE: a widened directory with a database already in it --------
-BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
+BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=False
@@ -25,7 +25,7 @@ BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
   PASS  BEFORE carries the gate's OWN explicit grant, not just what %TEMP% hands down
   BEFORE foreign: DESKTOP-298M5DU\CodexSandboxUsers, S-1-5-21-334268411-1552034672-3966210088-2644424740, BUILTIN\Administrators
   BEFORE explicit (this gate's doing): DESKTOP-298M5DU\CodexSandboxUsers
-BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills
+BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\skills
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       BUILTIN\Users                              ReadAndExecute, Synchronize    inherited=False
@@ -37,7 +37,7 @@ BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills
       DESKTOP-298M5DU\User                       FullControl                    inherited=True
     SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;OICI;0x1200a9;;;BU)(A;OICIID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;0x1301bf;;;S-1-5-21-334268411-1552034672-3966210088-2644424740)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)
   PASS  BEFORE skills/ carries BUILTIN\Users as a NON-INHERITED ace (the shape inheritance cannot fix)
-BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills\my-skill.md
+BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\skills\my-skill.md
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       BUILTIN\Users                              ReadAndExecute, Synchronize    inherited=True
@@ -51,11 +51,11 @@ BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills\my-
   PASS  BEFORE skills/my-skill.md inherited BUILTIN\Users FROM skills/
 
 --- 2. Driving the real SqliteStore::open ------------------------------
-  |     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.86s
+  |     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.28s
   |      Running tests\gate_appdata_root_acl.rs (target\debug\deps\gate_appdata_root_acl-9bbb32904109d31f.exe)
   | 
   | running 1 test
-  | VELA_ACL_DIRECTORY=C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
+  | VELA_ACL_DIRECTORY=C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b
   | BEFORE platform=windows private=false inheritance_disabled=Some(false)
   | BEFORE foreign=S-1-5-21-1337097237-1456437254-2378116049-1006
   | BEFORE foreign=S-1-5-21-1337097237-1456437254-2378116049-1006
@@ -81,7 +81,7 @@ BEFORE    C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills\my-
   PASS  the evidence driver passed
 
 --- 3. AFTER: Get-Acl, independently ----------------------------------
-AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : True
       NT AUTHORITY\SYSTEM                        FullControl                    inherited=False
@@ -93,7 +93,7 @@ AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755
   PASS  every principal that could reach it BEFORE is gone
 
 --- 3b. AFTER: the database, and a directory created after hardening ---
-AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\vela.db
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\vela.db
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       DESKTOP-298M5DU\User                       FullControl                    inherited=True
@@ -101,7 +101,7 @@ AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\vela.db
     SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;FA;;;SY)
   PASS  vela.db is reachable by no foreign principal
 
-AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\skills
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : True
       NT AUTHORITY\SYSTEM                        FullControl                    inherited=False
@@ -110,7 +110,7 @@ AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills
   PASS  skills is reachable by no foreign principal
   PASS  skills no longer carries BUILTIN\Users
 
-AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills\my-skill.md
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\skills\my-skill.md
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       DESKTOP-298M5DU\User                       FullControl                    inherited=True
@@ -119,7 +119,7 @@ AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\skills\my-
   PASS  skills\my-skill.md is reachable by no foreign principal
   PASS  skills\my-skill.md no longer carries BUILTIN\Users
 
-AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\projects
+AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-e9a0c98b\projects
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       DESKTOP-298M5DU\User                       FullControl                    inherited=True
@@ -140,7 +140,7 @@ AFTER     C:\Users\User\AppData\Local\Temp\vela-gate-appdata-eb38e755\projects
   PASS  the database survived the hardening with its bytes intact
 
 --- 4. CONTROL: the same reader on a directory nobody hardened ---------
-CONTROL   C:\Users\User\AppData\Local\Temp\vela-gate-control-b16574bf
+CONTROL   C:\Users\User\AppData\Local\Temp\vela-gate-control-ed148173
     Owner                   : DESKTOP-298M5DU\User
     AreAccessRulesProtected : False
       DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=False

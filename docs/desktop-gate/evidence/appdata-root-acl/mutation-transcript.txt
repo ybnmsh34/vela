@@ -253,6 +253,52 @@ Q5  the guard's needle swapped for a phrase that occurs nowhere
     search silently finding nothing, which is how it would actually rot, and
     Q6/Q7 cover that.
 
+    THIS WAS THE WRONG RESIDUAL, AND STATING IT WAS MISLEADING. See round 5.
+
+-------------------------------------------------------------------------------
+ROUND 5. The guard built in round 4 could not detect the defect it was written
+for.
+
+The needle was a single-line substring. The retracted phrase is 32 characters
+and an 80-column doc comment wrapped it across two lines -- which is what a wrap
+does. Verified against the defect's own bytes, out of git, not retyped:
+
+    $ git cat-file -p e85cc23:.../vela-privatefs/src/lib.rs | sed -n '1250,1251p'
+        /// not private, **Vela would decline to start over an ACL stricter than the
+        /// one it demands**. Deny entries are not exotic: they are exactly what an
+
+    single-line contains() against that file -> 0 matches
+
+Swept across the four files that ever carried the claim, single-line vs the
+fixed whitespace-insensitive matcher:
+
+    43704b4   single-line=1   flattened=2
+    e85cc23   single-line=0   flattened=1     <- the state that was FAILed
+    a79309e   single-line=0   flattened=0
+    HEAD      single-line=0   flattened=0
+
+Three historical occurrences. The single-line needle finds ONE, and that one had
+already been deleted. Both occurrences that survived into the reviewed state
+were invisible to it. The guard caught the form that was fixed and missed the
+form that shipped.
+
+QW0 baseline: the real wrapped bytes injected into vela-store, round-4 guard
+    => 2/2 NO TEST FAILED   (the defect, live)
+QW1 same bytes, guard now flattening whitespace and comment markers
+    => 2/2 RED
+QW2 the same phrase on one line (round 4's Q4 shape)
+    => 2/2 RED
+Q6  guard stops reading contents, re-proved after the fix   => 2/2 RED
+Q7  guard stops descending, re-proved after the fix         => 2/2 RED
+
+WHY THIS KEEPS HAPPENING. Three times in this run a guard was validated against
+a shape the defect cannot produce: a chain walk proved with a synthetic error
+whose Display did not embed its source; and now a phrase guard proved with a
+re-typed one-line version of a phrase that only ever appeared wrapped. The rule
+that would have caught all of them: WHEN A GUARD IS BUILT FROM A DEFECT, THE
+MUTATION THAT PROVES IT MUST BE THE DEFECT'S OWN BYTES, TAKEN FROM GIT. Those
+bytes existed the whole time.
+
 WHY A TEST AND NOT A HABIT. The deny-consequence claim was retracted in round 3
 and then shipped verbatim TWICE MORE in the same file, a thousand lines below
 the retraction, in a commit whose own message said "checking took one grep".

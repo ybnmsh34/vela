@@ -1,5 +1,26 @@
-﻿The finding, measured read-only on the real application-data directory.
-This file is a MEASUREMENT, not a run: nothing here modified this directory.
+﻿The finding, measured read-only. This file is a MEASUREMENT, not a run: nothing
+here modified anything.
+
+WHICH ROWS ARE REAL. Read this before quoting any row below.
+
+  Row 1, `...\dev.vela.desktop` itself, resolves to the REAL per-user
+  application-data directory. Review confirmed its live SDDL is byte-identical
+  to what is recorded here, so its 6 access rules and Protected=False are the
+  user's actual ACL. This is the row the finding rests on, and the only row
+  anything in the branch relies on.
+
+  The remaining rows -- the child entries, INCLUDING `diagnostics` -- resolve
+  into a container view rather than the real directory. They are recorded here
+  as they were read, but they are NOT evidence about the user's real files and
+  must not be quoted as such. An earlier draft of `vela-privatefs`' module docs
+  quoted the `diagnostics` row to contrast a protected debug-log directory with
+  an unprotected root; that quotation has been removed.
+
+  This line originally said all nine rows were "measured on the real
+  application-data directory", which was wrong for eight of them.
+
+  The gate transcript beside this file is unaffected: it drives a scratch
+  directory under %TEMP%, which resolves real throughout.
 Taken at HEAD, before the fix, on DESKTOP-298M5DU as User, 2026-08-15T14:30:52.8684628+03:00.
 
 Note diagnostics — hardened by the earlier fix — against everything beside it.

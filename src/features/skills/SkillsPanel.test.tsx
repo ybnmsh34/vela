@@ -158,9 +158,10 @@ describe('the skills pane', () => {
 
     await user.click(await screen.findByRole('button', { name: /commit-messages/u }));
     await screen.findByText('Instructions');
-    // The control. A recorder that recorded nothing would make the assertion
-    // after the back-navigation true by construction, which is the shape of
-    // vacuity this file already carries two other guards against.
+    // The control, and not decoration: a recorder that recorded nothing would
+    // make the assertion after the back-navigation true by construction. This
+    // test asserted its own name vacuously until the pane was mutated to
+    // re-read on every back-navigation and 18/18 stayed green, twice.
     expect(reads).toEqual(['commit-messages']);
 
     await user.click(screen.getByRole('button', { name: '← All skills' }));

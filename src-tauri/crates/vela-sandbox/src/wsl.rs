@@ -37,11 +37,14 @@
 //!    and to a path that is not under `/mnt`, so the bind keeps the drvfs
 //!    superblock alive while the path that reaches the rest of the drive stops
 //!    existing.
-//!  - every mount under `/mnt` is lazily unmounted and an empty read-only tmpfs
-//!    is mounted over `/mnt` itself. `/mnt` is a plain directory rather than a
-//!    mount point, so `umount -R /mnt` answers "not mounted" — which is exactly
-//!    the kind of thing that is discovered by running it and never by reasoning
-//!    about it.
+//!  - every mount under `/mnt` **and under `/usr/lib/wsl`** is lazily unmounted,
+//!    and an empty read-only tmpfs is mounted over `/mnt` itself. `/mnt` is a
+//!    plain directory rather than a mount point, so `umount -R /mnt` answers
+//!    "not mounted" — which is exactly the kind of thing that is discovered by
+//!    running it and never by reasoning about it. The second prefix is the same
+//!    kind of discovery: WSL puts a 9p share of the Windows driver store at
+//!    `/usr/lib/wsl/drivers`, an unmount aimed at `/mnt` never touches it, and a
+//!    run that still has it can read files off the user's Windows disk.
 //!  - `binfmt_misc` is unmounted and `env -i` clears `WSL_INTEROP`. Those are
 //!    the two halves of WSL's Windows-interop path; either one left in place
 //!    means the run can execute a Windows binary, which is every guarantee here
@@ -251,10 +254,24 @@ impl WslBackend {
 
         // Now take the drives away. Deepest first, so a nested mount does not
         // block its parent.
+        //
+        // **Two prefixes, and `/mnt` alone is not enough.** WSL mounts the
+        // Windows drives under `/mnt`, and it also mounts the host's driver
+        // store at `/usr/lib/wsl/drivers` — a second 9p share of the user's
+        // Windows disk, read-only, that survives every unmount aimed at `/mnt`.
+        // A run with that still in its table can read Windows files, which is
+        // the one thing this script exists to prevent.
+        //
+        // The prefixes are named rather than "every 9p mount" because a grant is
+        // a *bind* of a 9p source and reports `9p` at its new location: a loop
+        // that unmounted by filesystem type would take away the directory the
+        // caller was granted. Neither prefix can hold a grant —
+        // `paths::RESERVED_GUEST_ROOTS` refuses `/mnt` and `/usr` — so this loop
+        // can only ever unmount WSL's own.
         push(
             &mut lines,
-            "for m in $(awk '$5 ~ /^\\/mnt\\// {print $5}' /proc/self/mountinfo | sort -r); do \
-             umount -l \"$m\" 2>/dev/null || true; done"
+            "for m in $(awk '$5 ~ /^\\/mnt\\// || $5 ~ /^\\/usr\\/lib\\/wsl\\// {print $5}' \
+             /proc/self/mountinfo | sort -r); do umount -l \"$m\" 2>/dev/null || true; done"
                 .into(),
         );
         push(
@@ -492,6 +509,10 @@ mod tests {
         let script = WslBackend::for_distro("Ubuntu").guest_script(&plan());
         assert!(script.contains("mount --make-rprivate /"), "{script}");
         assert!(script.contains("umount -l \"$m\""), "{script}");
+        // Both routes, not just the drives: `/usr/lib/wsl/drivers` is a second
+        // 9p share of the Windows disk and no `/mnt` unmount reaches it.
+        assert!(script.contains("$5 ~ /^\\/mnt\\//"), "{script}");
+        assert!(script.contains("$5 ~ /^\\/usr\\/lib\\/wsl\\//"), "{script}");
         assert!(
             script.contains("mount -t tmpfs -o size=1m,mode=0555 tmpfs /mnt"),
             "{script}"

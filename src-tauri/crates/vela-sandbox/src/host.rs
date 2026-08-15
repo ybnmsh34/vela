@@ -202,6 +202,15 @@ impl SandboxHost {
 
     /// Hand a run over. Returns as soon as the run is registered; everything
     /// else arrives on the event stream.
+    ///
+    /// **The decision is made here, on the caller's thread, and not in the run
+    /// thread.** [`admit`]'s `Err` is the caller's payload being malformed, and
+    /// the only place a malformed payload can be answered is the invoke that
+    /// carried it: settling the run instead would spend a `HostFailureReason` —
+    /// "nobody's request being wrong" — on precisely the caller's request being
+    /// wrong, and send them looking for a bug in Vela. Nothing has been spawned
+    /// and no event has been emitted by the time this returns `Err`, so the run
+    /// id is free for the corrected request.
     pub fn submit(
         self: &Arc<Self>,
         request: SandboxSubmitReq,
@@ -210,8 +219,8 @@ impl SandboxHost {
         let handle = {
             let mut runs = self.runs.lock().expect("run table lock");
             if runs.contains_key(&run_id) {
-                // The one failure that rejects the invoke rather than settling
-                // the run: pushing a refusal onto that id's stream would tell a
+                // A failure that rejects the invoke rather than settling the
+                // run: pushing a refusal onto that id's stream would tell a
                 // different caller their healthy run had failed.
                 return Err(MalformedRequest(format!(
                     "run id `{run_id}` is already in flight"
@@ -222,14 +231,57 @@ impl SandboxHost {
             handle
         };
 
+        // The id is registered first so that `tooManyConcurrentRuns` counts the
+        // same way it did when this decision was made in the run thread, and so
+        // that two submits racing on one id cannot both pass the check above.
+        // `saturating_sub(1)` takes this run back out of that count.
+        let decision = {
+            let config = self.config.lock().expect("sandbox config lock").clone();
+            let active = self.runs.lock().expect("run table lock").len() as u32;
+            admit(
+                &config,
+                &self.process_backend(),
+                &self.document_backend,
+                &self.languages,
+                active.saturating_sub(1),
+                &request,
+            )
+        };
+        let decision = match decision {
+            Ok(decision) => decision,
+            Err(message) => {
+                self.runs.lock().expect("run table lock").remove(&run_id);
+                return Err(MalformedRequest(message));
+            }
+        };
+
         let host = Arc::clone(self);
         let driven = run_id.clone();
         let spawned = std::thread::Builder::new()
             .name("vela-sandbox-run".to_string())
-            .spawn(move || host.drive(driven, handle, request));
-        if let Err(error) = spawned {
-            self.runs.lock().expect("run table lock").remove(&run_id);
-            return Err(MalformedRequest(format!("could not start run: {error}")));
+            .spawn({
+                let handle = Arc::clone(&handle);
+                move || host.drive(driven, handle, request, decision)
+            });
+        if spawned.is_err() {
+            // A thread this host could not start is Vela's failure and not the
+            // caller's, so it settles the run rather than rejecting the invoke:
+            // `MalformedRequest` would say the request was wrong, and it was
+            // not. This is the sole producer of `internal`.
+            self.settle(
+                &run_id,
+                &handle,
+                SandboxOutcome::HostFailed {
+                    reason: HostFailureReason::Internal,
+                },
+                RunUsage {
+                    wall_clock_ms: 0,
+                    cpu_ms: None,
+                    peak_memory_bytes: None,
+                    output_bytes: 0,
+                    dropped_output_bytes: 0,
+                },
+            );
         }
 
         Ok(SandboxSubmitRes {
@@ -368,7 +420,17 @@ impl SandboxHost {
         }
     }
 
-    fn drive(self: Arc<Self>, run_id: SandboxRunId, handle: Arc<RunHandle>, request: SandboxSubmitReq) {
+    /// Everything after the decision. The decision itself was made in
+    /// [`SandboxHost::submit`], before the invoke answered, because a malformed
+    /// payload has to be answered there — this function only ever sees a
+    /// well-formed request, and so has no host-failure arm for one.
+    fn drive(
+        self: Arc<Self>,
+        run_id: SandboxRunId,
+        handle: Arc<RunHandle>,
+        request: SandboxSubmitReq,
+        decision: Admission,
+    ) {
         let started_at = Instant::now();
         let zero_usage = || RunUsage {
             wall_clock_ms: 0,
@@ -378,39 +440,13 @@ impl SandboxHost {
             dropped_output_bytes: 0,
         };
 
-        let decision = {
-            let config = self.config.lock().expect("sandbox config lock").clone();
-            let active = self.runs.lock().expect("run table lock").len() as u32;
-            admit(
-                &config,
-                &self.process_backend(),
-                &self.document_backend,
-                &self.languages,
-                active.saturating_sub(1),
-                &request,
-            )
-        };
         let (grant, plan, needs_approval) = match decision {
-            Err(_message) => {
-                // A malformed payload that got past the command layer. There is
-                // no refusal reason for it, so the run settles as a host
-                // failure rather than as a lie about the request.
-                self.settle(
-                    &run_id,
-                    &handle,
-                    SandboxOutcome::HostFailed {
-                        reason: HostFailureReason::Internal,
-                    },
-                    zero_usage(),
-                );
-                return;
-            }
-            Ok(Admission::Refused(outcome)) => {
+            Admission::Refused(outcome) => {
                 self.settle(&run_id, &handle, outcome, zero_usage());
                 return;
             }
-            Ok(Admission::NeedsApproval { grant, plan }) => (grant, plan, true),
-            Ok(Admission::Approved { grant, plan }) => (grant, plan, false),
+            Admission::NeedsApproval { grant, plan } => (grant, plan, true),
+            Admission::Approved { grant, plan } => (grant, plan, false),
         };
 
         if needs_approval {

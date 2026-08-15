@@ -1340,9 +1340,11 @@ export class BrowserAdapter implements PlatformAdapter {
       );
     }
     if (this.#sandboxRuns.has(request.runId)) {
-      // The one failure that rejects the invoke rather than settling the run:
-      // pushing a refusal onto that id's stream would tell a different caller
-      // their healthy run had failed.
+      // A failure that rejects the invoke rather than settling the run: pushing
+      // a refusal onto that id's stream would tell a different caller their
+      // healthy run had failed. The host rejects malformed mounts, guest paths
+      // and oversized programs the same way; this fake never reaches those
+      // checks, because it refuses every submit `languageUnsupported` first.
       throw new PlatformError(
         'INVALID_PAYLOAD',
         `invalid runId: \`${request.runId}\` is already in flight`,

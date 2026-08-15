@@ -194,11 +194,15 @@ fn the_users_windows_filesystem_is_not_reachable_from_inside_a_run() {
          assertion below would pass for the wrong reason"
     );
 
+    // The two counts are labelled rather than printed bare. Unlabelled, one
+    // assertion covered both — `any(line == "0")` was satisfied by whichever
+    // count happened to be zero, and stayed green with the launcher's
+    // `umount -l` loop replaced by a no-op.
     let Some((collector, outcome)) = run_confined(
         "cat /mnt/c/Windows/System32/drivers/etc/hosts >/dev/null 2>&1 \
            && echo REACHED || echo blocked
-         ls /mnt | wc -l
-         cat /proc/self/mountinfo | grep -c 9p || true",
+         printf 'mnt-entries=%s\\n' \"$(ls /mnt | wc -l)\"
+         printf 'ninep-mounts=%s\\n' \"$(grep -c 9p /proc/self/mountinfo || true)\"",
         Vec::new(),
     ) else {
         return;
@@ -218,8 +222,15 @@ fn the_users_windows_filesystem_is_not_reachable_from_inside_a_run() {
         "expected the read to fail; stdout: {stdout:?}"
     );
     assert!(
-        stdout.lines().any(|line| line.trim() == "0"),
-        "`/mnt` must be empty and no 9p mount may remain; stdout: {stdout:?}"
+        stdout.lines().any(|line| line.trim() == "mnt-entries=0"),
+        "`/mnt` must be empty; stdout: {stdout:?}"
+    );
+    // The other half, and the one the `umount -l` loop is there for: an empty
+    // `/mnt` with a 9p mount still in the table is a drive the run can reach by
+    // some other name.
+    assert!(
+        stdout.lines().any(|line| line.trim() == "ninep-mounts=0"),
+        "no 9p mount may remain in the run's mount table; stdout: {stdout:?}"
     );
 }
 
@@ -864,8 +875,139 @@ fn two_runs_may_not_share_an_id() {
         ..submit_of("echo other")
     };
     host.submit(request).expect("admitted");
-    // The one failure that rejects the invoke instead of settling the run.
+    // A failure that rejects the invoke instead of settling the run.
     assert!(host.submit(duplicate).is_err());
+}
+
+/* -------------------------------------------------------------------------- */
+/* malformed payloads — rejected at the invoke, never settled `hostFailed`     */
+/*                                                                            */
+/* `HostFailureReason` is defined by the frozen contract as "a host-side       */
+/* failure that is nobody's request being wrong". Each shape below is exactly  */
+/* the caller's request being wrong, and each one was, in an earlier draft,    */
+/* decided inside the run thread the invoke had already answered `admitted` —  */
+/* so the caller who asked for `copyIn`, or named a directory that is not      */
+/* there, was told Vela had an internal failure and went looking in the wrong  */
+/* place. The decision now runs on the invoke's thread; these tests are what   */
+/* holds it there.                                                            */
+/* -------------------------------------------------------------------------- */
+
+/// Submits, and insists the answer was `INVALID_PAYLOAD` on the invoke and not
+/// a settled run of any kind. Returns the message, so each caller can say which
+/// shape it is about.
+#[track_caller]
+fn rejected_at_the_invoke(request: SandboxSubmitReq) -> String {
+    let (host, collector) = host_with(PermissionLevel::Full, declared_backend());
+    let message = match host.submit(request) {
+        Err(error) => error.0,
+        Ok(response) => {
+            let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(5));
+            panic!(
+                "the invoke answered `admitted: {}` and the run settled {outcome:?}. A \
+                 malformed request must be `INVALID_PAYLOAD` on the invoke: settling it \
+                 `hostFailed` spends a reason the contract defines as nobody's request \
+                 being wrong on precisely the caller's request being wrong",
+                response.admitted
+            );
+        }
+    };
+    // Nothing was spawned and nothing was said — no `accepted`, no `settled`,
+    // and in particular no `hostFailed` arriving after the rejection.
+    assert!(
+        collector.snapshot().is_empty(),
+        "a rejected submit emitted {:?}",
+        collector.snapshot()
+    );
+    // The run was never registered, so the id is free for the corrected
+    // request rather than spent on a payload the host would not take.
+    assert_eq!(
+        host.policy().active_runs,
+        0,
+        "a rejected submit left the run id in flight"
+    );
+    message
+}
+
+#[test]
+fn a_materialisation_this_host_does_not_serve_is_a_malformed_payload() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let mut request = submit_of("echo hi");
+    request.filesystem.mounts = vec![Mount {
+        host_path: temp.path().to_string_lossy().into_owned(),
+        guest_path: "/work".into(),
+        mode: MountMode::ReadOnly,
+        // The mode whose only alternative was serving it quietly as `bind`,
+        // which would write the user's files during a run promised it could not.
+        materialisation: MountMaterialisation::CopyIn,
+    }];
+    let message = rejected_at_the_invoke(request);
+    assert!(
+        message.contains("bind"),
+        "the message must name what this host serves; got {message:?}"
+    );
+}
+
+#[test]
+fn a_host_path_that_does_not_resolve_is_a_malformed_payload() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let absent = temp.path().join("no-such-directory");
+    let mut request = submit_of("echo hi");
+    request.filesystem.mounts = vec![Mount {
+        host_path: absent.to_string_lossy().into_owned(),
+        guest_path: "/work".into(),
+        mode: MountMode::ReadOnly,
+        materialisation: MountMaterialisation::Bind,
+    }];
+    let message = rejected_at_the_invoke(request);
+    // There is no `RefusalReason` for "that directory is not there", and
+    // reusing a neighbouring member would put a wrong sentence in front of the
+    // user. See `paths::resolve_host_directory`.
+    assert!(
+        message.contains("hostPath"),
+        "the message must name the field; got {message:?}"
+    );
+}
+
+#[test]
+fn a_program_past_what_this_host_can_carry_is_a_malformed_payload() {
+    let oversized = "#".repeat(vela_sandbox::admission::MAX_PROGRAM_BYTES + 1);
+    let request = submit_of(&oversized);
+    let message = rejected_at_the_invoke(request);
+    // The alternative is the worst available failure: the Windows command line
+    // truncates the program and the run executes something the user never saw.
+    assert!(
+        message.contains("bytes"),
+        "the message must say how big is too big; got {message:?}"
+    );
+
+    // At the limit exactly, the same host takes it: the boundary is the size
+    // and not the shape of the request. At `ask`, so this stops for a person
+    // rather than spending a WSL launch on 16 KiB of comments.
+    let (host, _collector) = host_with(PermissionLevel::Ask, declared_backend());
+    let largest = "#".repeat(vela_sandbox::admission::MAX_PROGRAM_BYTES);
+    assert!(host.submit(submit_of(&largest)).is_ok());
+}
+
+#[test]
+fn the_guest_path_project_filesystem_scope_produces_is_a_malformed_payload() {
+    // `projectFilesystemScope` in `src/platform/contract-sandbox.ts` builds its
+    // host-owned mounts with `guestPath: layout.paths.workspace` — the Windows
+    // path repeated. It is not a POSIX path, so this host cannot mount it, and
+    // the caller has to be told that by the invoke that carried it.
+    let temp = tempfile::tempdir().expect("temp dir");
+    let windows_path = temp.path().to_string_lossy().into_owned();
+    let mut request = submit_of("echo hi");
+    request.filesystem.mounts = vec![Mount {
+        host_path: windows_path.clone(),
+        guest_path: windows_path,
+        mode: MountMode::ReadWrite,
+        materialisation: MountMaterialisation::Bind,
+    }];
+    let message = rejected_at_the_invoke(request);
+    assert!(
+        message.contains("guest path"),
+        "the message must name the field; got {message:?}"
+    );
 }
 
 #[test]

@@ -8,11 +8,22 @@
 //! `ask` sits waiting for a person for as long as the person takes, and holding
 //! an IPC call open for that is not a thing to do.
 //!
+//! **"Validates the payload" is the whole payload and not just `runId`.** This
+//! function checks the one field it can check without the host — a blank
+//! `runId` — and [`vela_sandbox::host::SandboxHost::submit`] runs the admission
+//! decision synchronously before it spawns anything, so every malformed shape
+//! the decision knows about (a materialisation this host does not serve, a
+//! `hostPath` that does not resolve, a program past the size this host can
+//! carry, a `guestPath` that is not one) rejects this invoke with
+//! `INVALID_PAYLOAD`. None of them settles the run: `HostFailureReason` is
+//! "nobody's request being wrong", and a caller told `internal` for a directory
+//! they misspelled goes looking for a bug in Vela.
+//!
 //! Because events can be emitted before `invoke`'s promise settles, the
 //! **caller** mints `runId`, exactly as the renderer mints `turnId`. A run id
-//! already in flight is the one failure that rejects the invoke rather than
-//! settling the run — pushing a refusal onto that id's stream would tell a
-//! different caller their healthy run had failed.
+//! already in flight rejects the invoke rather than settling the run — pushing a
+//! refusal onto that id's stream would tell a different caller their healthy run
+//! had failed.
 //!
 //! # Where the host is built
 //!

@@ -152,6 +152,13 @@ pub const MAX_PROGRAM_BYTES: usize = 16 * 1024;
 
 /// Decide. `Err` is a malformed payload — `INVALID_PAYLOAD` on the invoke —
 /// and never a refusal: a refusal is a fact about a well-formed request.
+///
+/// That distinction only survives if the caller is still there to be told, so
+/// this runs on the invoke's own thread, in [`crate::host::SandboxHost::submit`],
+/// before the run thread exists. Deciding it inside the run thread would leave
+/// `Err` nothing to become but a settled `HostFailed` — a host failure is
+/// "nobody's request being wrong", and this is exactly the caller's request
+/// being wrong.
 pub fn admit(
     config: &SandboxConfig,
     backend: &SandboxBackendReport,

@@ -172,6 +172,23 @@ guards read **one filename** and the product loads a **directory**: a second cap
 registered in `tauri.conf.json`, widens the window's real surface with both tests green. Neither
 the file nor its registration is asserted anywhere. Open, and recorded in the plan.
 
+**A could-not-establish, now established — and the audit guessed the right way.** This document's
+own open-question list says it could not determine whether `pnpm lint:rust` passes, because clippy
+must build the whole dependency graph before it lints a line and the disk budget did not allow it,
+and adds: *"This is link 2 of `pnpm verify`, so if it is red the Windows verify story is worse than
+reported, not better."*
+
+**It was red, and worse than reported.** `cargo fmt --all --check` produced 33 hunks across 5 files
+and `clippy -D warnings` two errors — from the **pure-LF stored bytes**, so neither Windows nor
+line endings, meaning gate 2 was red on **every platform** and CI had never run on this branch to
+notice. Everything behind link 2 — including both cargo gates — had therefore never executed for
+anyone, which is a stronger statement than the "never run on Windows" the table records. Fixed at
+`4949578`; green cold from an empty target directory, confirmed from three worktrees.
+
+Worth keeping as a matter of method: the auditor could not run the check and **said which answer
+would be the bad one**. That framing is what made the finding legible the moment somebody could
+run it. A could-not-establish that names its own worst case is worth more than one that just stops.
+
 **Deliberately not listed as closed yet:** *`pnpm verify` runs to completion on Windows*. That is a
 different row from *is runnable on Windows* above — the latter is about `'.' is not recognized`,
 which `scripts/run-bash.mjs` fixes, and the former is about the whole nine-link chain finishing.

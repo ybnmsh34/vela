@@ -333,6 +333,110 @@ mod tests {
         assert!(!gone.exists(), "the user's folder is theirs, not ours");
     }
 
+    /// Every path under `root`, relative, with the bytes of every file.
+    ///
+    /// Existence alone is not the question: a probe file left behind, a
+    /// scaffolded README, or a file removed are all the same class of wrong.
+    fn tree_snapshot(root: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+        fn walk(base: &Path, at: &Path, into: &mut Vec<(String, Option<Vec<u8>>)>) {
+            let mut paths: Vec<PathBuf> = fs::read_dir(at)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            paths.sort();
+            for path in paths {
+                let relative = path
+                    .strip_prefix(base)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                if path.is_dir() {
+                    into.push((relative, None));
+                    walk(base, &path, into);
+                } else {
+                    into.push((relative, Some(fs::read(&path).unwrap())));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(root, root, &mut found);
+        found
+    }
+
+    /// **Nothing in the project machinery writes a byte inside the user's own
+    /// directory** — not creation, not skill mounting, not deletion. The
+    /// contract states it at `WorkingDirectory` in
+    /// `src/platform/contract-project.ts`, and this crate's own header repeats
+    /// it; until now nothing observed it.
+    ///
+    /// [`crate::directory_is_writable`] is where the rule is easiest to lose,
+    /// and its doc comment already argues the case: the obvious implementation
+    /// is to write a probe file and delete it, and it is not available here
+    /// because the question is asked of the user's folder on **every** layout
+    /// read. Measured before this test was written — making it write and delete
+    /// a probe first left every test in this crate and in `vela-app` green.
+    ///
+    /// ## Two legs, because neither sees what the other does
+    ///
+    /// The tree snapshot catches anything **left**: a probe that was not cleaned
+    /// up, a scaffolded file, a removal. It cannot catch a probe that is created
+    /// and deleted again, because that restores the listing exactly — and that
+    /// is precisely the implementation the doc comment argues against.
+    ///
+    /// The directory's own last-write time catches that one: adding or removing
+    /// an entry stamps the containing directory, on NTFS as on ext4. The sleep
+    /// is not padding. Windows file times come off a system clock that ticks
+    /// about every 15ms, so without it a probe could fall inside the same tick
+    /// as the stamp read above and write back the value that was already there.
+    #[test]
+    fn nothing_in_the_project_machinery_writes_inside_the_users_working_directory() {
+        let data = app_data();
+        install_skill(data.path(), "research");
+        let notes = tempfile::tempdir().unwrap();
+        fs::create_dir_all(notes.path().join("drafts")).unwrap();
+        fs::write(
+            notes.path().join("drafts").join("chapter.md"),
+            "the user's own words",
+        )
+        .unwrap();
+        let stored = notes.path().to_string_lossy().into_owned();
+        let before = tree_snapshot(notes.path());
+        let stamped = fs::metadata(notes.path()).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let strategy = probe_link_strategy(data.path());
+        let enabled = vec!["research".to_string()];
+        create_project_directories(data.path(), PROJECT).unwrap();
+        let read = resolve_layout(data.path(), PROJECT, strategy, Some(&stored), &enabled).unwrap();
+        // A second read is the `project_reconcile_skills` path, and a delete
+        // follows, so all three verbs in the contract's sentence have run.
+        resolve_layout(data.path(), PROJECT, strategy, Some(&stored), &enabled).unwrap();
+        remove_project_root(data.path(), PROJECT).unwrap();
+
+        // Without these the assertions below would hold just as well for a host
+        // that never looked at the directory at all.
+        assert!(
+            matches!(read.working_directory, WorkingDirectory::Bound { .. }),
+            "the directory really was resolved, so its writability really was asked"
+        );
+        assert!(
+            matches!(read.mounts[0].status, SkillMountStatus::Linked { .. }),
+            "and a skill really was mounted while the binding was in force"
+        );
+
+        assert_eq!(
+            tree_snapshot(notes.path()),
+            before,
+            "nothing may be left inside the user's directory, and nothing taken out of it"
+        );
+        assert_eq!(
+            fs::metadata(notes.path()).unwrap().modified().unwrap(),
+            stamped,
+            "a file created inside and deleted again leaves the listing identical and \
+             stamps the directory; this is the leg that sees it"
+        );
+    }
+
     #[test]
     fn removing_a_project_root_unlinks_the_skill_mounts_instead_of_emptying_the_store() {
         // THE test this crate exists for. A recursive delete that follows a

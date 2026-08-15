@@ -142,6 +142,22 @@ pub fn create_link(link: &Path, target: &Path) -> io::Result<()> {
     }
 }
 
+/// The reparse tag the volume stored at `path`, or `None` where the entry
+/// carries no reparse data.
+///
+/// Crate-visible test scaffolding, exported no further, and it earns its place
+/// for the same reason [`short_name_alias`] does: it is the only cheap way to
+/// ask the volume a question no other API answers. A junction and a symbolic
+/// link are both reparse points, both are followed transparently, `std::fs`
+/// calls both `is_symlink()` on Windows, and `std::fs::read_link` answers the
+/// same absolute path for either — the 32-bit tag on the entry is the whole
+/// of the difference between the link this crate is allowed to make and the one
+/// it is forbidden to make.
+#[cfg(all(test, windows))]
+pub(crate) fn reparse_tag(path: &Path) -> Option<u32> {
+    windows_junction::reparse_tag(path)
+}
+
 /// Whether `path` is a reparse point — a junction or a symlink on Windows, a
 /// symlink anywhere else.
 ///
@@ -545,6 +561,19 @@ mod windows_junction {
         (!alias.is_empty()).then_some(alias)
     }
 
+    /// The reparse tag on `path`'s directory entry, or `None` where it carries
+    /// no reparse data.
+    ///
+    /// `dwReserved0` **is** the tag when `FILE_ATTRIBUTE_REPARSE_POINT` is set —
+    /// the same structure [`stored_name`] already reads, one field along. See
+    /// [`super::reparse_tag`] for why no other call can answer this.
+    #[cfg(test)]
+    pub(super) fn reparse_tag(path: &Path) -> Option<u32> {
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        let entry = find_entry(path).ok()?;
+        (entry.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0).then_some(entry.reserved0)
+    }
+
     /// The directory entry for `path`, exactly as the volume stores it.
     fn find_entry(path: &Path) -> io::Result<FindDataW> {
         let name: Vec<u16> = path.as_os_str().encode_wide().chain(once(0)).collect();
@@ -726,6 +755,90 @@ mod tests {
         } else {
             assert_eq!(NATIVE_LINK_STRATEGY, LinkStrategy::Symlink);
         }
+    }
+
+    /// **What the volume actually made**, asked of the volume rather than read
+    /// off the constant saying what was intended.
+    ///
+    /// The test above asserts `NATIVE_LINK_STRATEGY`, and that assertion never
+    /// touches [`create_link`]'s body. Replacing its Windows arm with
+    /// `std::os::windows::fs::symlink_dir` leaves it green — and leaves the host
+    /// reporting `linkStrategy: junction` on a wire while making symbolic links
+    /// on the disk. That pairing is worse than either half alone: it works on a
+    /// machine with Developer Mode on, fails on the user's with a privilege
+    /// error, and the strategy the layout reports denies that anything differs.
+    /// The failure distribution this rule exists to prevent, with the report
+    /// that would have diagnosed it saying the opposite.
+    ///
+    /// So this reads the reparse tag. Nothing cheaper tells the two apart — see
+    /// [`super::reparse_tag`].
+    ///
+    /// **This half and the `#[cfg(not(windows))]` half below are not two tests
+    /// of one rule; they are one test each, and no machine runs both.** Exactly
+    /// one is compiled per target. This one — the half that holds the rule for
+    /// the platform Vela ships to — is compiled only on Windows, and the sole
+    /// runner in `.github/workflows/ci.yml` is `ubuntu-latest`, so the
+    /// `cargo test --workspace` that gates every merge never compiles this
+    /// function. It is exercised on a developer's Windows machine and nowhere
+    /// else. A green CI run is therefore not evidence that `create_link` makes
+    /// a junction; only a local `cargo test -p vela-projects` on Windows is.
+    #[cfg(windows)]
+    #[test]
+    fn the_link_this_crate_makes_on_windows_is_a_junction_and_never_a_symbolic_link() {
+        /// `IO_REPARSE_TAG_MOUNT_POINT`, what `mklink /J` makes and what any
+        /// unprivileged user may create.
+        const MOUNT_POINT: u32 = 0xA000_0003;
+        /// `IO_REPARSE_TAG_SYMLINK`, what `symlink_dir` makes and what needs
+        /// `SeCreateSymbolicLinkPrivilege`.
+        const SYMLINK: u32 = 0xA000_000C;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = tree(root.path(), "store-skill");
+        let link = root.path().join("mounted");
+        create_link(&link, &target).unwrap();
+
+        assert_eq!(
+            reparse_tag(&link),
+            Some(MOUNT_POINT),
+            "the mount must be a junction on the disk, not merely on the wire"
+        );
+        assert_ne!(reparse_tag(&link), Some(SYMLINK));
+        assert_eq!(
+            reparse_tag(&target),
+            None,
+            "an ordinary directory carries no reparse data, so the tag above is a \
+             statement about the link rather than about every directory"
+        );
+    }
+
+    /// The same rule from the other side: off Windows the link is a symbolic
+    /// link, which is unprivileged there, and `NATIVE_LINK_STRATEGY` says so.
+    ///
+    /// **Never compiled on Windows, and Windows is what Vela ships to.** The two
+    /// halves of this pair do not add up to double coverage of `create_link`:
+    /// each target compiles exactly one of them, so on a developer's Windows
+    /// machine this body does not exist, and in CI — `ubuntu-latest`, the only
+    /// runner in `.github/workflows/ci.yml` — the junction half above does not.
+    /// This is the half CI actually runs, and it is the half that says nothing
+    /// about the product's own platform. Read the pair as two single-platform
+    /// tests that happen to sit together, and read a green CI run as evidence
+    /// about the symlink branch only.
+    #[cfg(not(windows))]
+    #[test]
+    fn the_link_this_crate_makes_off_windows_is_a_symbolic_link() {
+        let root = tempfile::tempdir().unwrap();
+        let target = tree(root.path(), "store-skill");
+        let link = root.path().join("mounted");
+        create_link(&link, &target).unwrap();
+
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]

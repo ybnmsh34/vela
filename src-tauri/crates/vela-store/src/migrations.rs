@@ -364,7 +364,10 @@ mod tests {
         );
 
         let after = applied(&conn).unwrap();
-        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            after.keys().copied().collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5]
+        );
         assert_eq!(after[&3].name, "schedules");
         assert_eq!(after[&4].name, "memory");
         assert_eq!(after[&5].name, "project_workspace");
@@ -433,7 +436,10 @@ mod tests {
         assert_eq!(applied_now, vec![5], "exactly one step was outstanding");
 
         let after = applied(&conn).unwrap();
-        assert_eq!(after.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            after.keys().copied().collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5]
+        );
         assert_eq!(after[&5].name, "project_workspace");
         for version in [1, 2, 3, 4] {
             assert_eq!(

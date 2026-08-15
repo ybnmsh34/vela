@@ -53,14 +53,24 @@
  *
  * ## What is guarded, and what is only written down
  *
- * `pnpm typecheck` holds every shape in this file, and that is the whole of the
- * automatic enforcement. In particular: the rule below that no surface may
- * branch on a harness id has **no test behind it**.
- * `src/platform/no-provider-leak.test.ts` scans the renderer for *backend*
- * identities and their wire tells; it has never heard of a harness id and will
- * not fail a build for one. The rule is stated, and unenforced, and saying so is
- * the point — a comment claiming a guard that does not exist is the defect this
- * repo keeps finding in itself.
+ * `pnpm typecheck` holds every shape in this file and not one sentence of it.
+ * Every rule below stated as **must**, **never**, **always** or **cannot** is a
+ * sentence unless a test drives it, and most of them still are. Which ones are
+ * not is written where each rule is stated, so this paragraph cannot go stale by
+ * being a list.
+ *
+ * The rule below that no surface may branch on a harness id is one that **is**
+ * now driven: `src/runtime/no-harness-leak.test.ts` takes the ids the registry
+ * actually holds and fails a build for any of them written as a literal, or for
+ * a `harnessId` compared against one, anywhere in shipping `src/`. This
+ * paragraph said "no test behind it" until 2026-08-15 — see amendment 5 — and
+ * that sentence is the reason the guard exists.
+ * `src/platform/no-provider-leak.test.ts` still has never heard of a harness id
+ * and still will not fail a build for one; it scans the renderer for *backend*
+ * identities and their wire tells, which is a different rule. Saying which of
+ * these is true is the point in both directions — a comment claiming a guard
+ * that does not exist is the defect this repo keeps finding in itself, and a
+ * comment denying one that does is how the next builder writes it a second time.
  *
  * ## The rule that shapes every type below
  *
@@ -122,7 +132,7 @@ import type { ProjectId } from './contract-project';
  * and so a builder can tell at a glance whether the file they read is the file
  * they were handed.
  */
-export const HARNESS_CONTRACT_VERSION = 2;
+export const HARNESS_CONTRACT_VERSION = 3;
 
 /**
  * Identifies a harness implementation. **Stable across releases**, because the
@@ -1619,6 +1629,18 @@ export interface HarnessRuntime {
  *    place a run's mount set is built. A builder who had written that scope by
  *    hand inside an executor should delete it and call the helper: the two
  *    host-owned mounts are not a caller's to choose.
+ *
+ * 5. 2026-08-15 — **no shape and no rule changed.** The header claimed the
+ *    no-branching-on-a-harness-id rule had "no test behind it"; it now has one,
+ *    `src/runtime/no-harness-leak.test.ts`, and the paragraph is corrected to
+ *    say so and to say what that guard does and does not cover. The same file
+ *    holds two neighbouring rules this contract also stated and nothing drove:
+ *    `ModelTarget` being transported and never inspected, and a harness
+ *    performing no I/O of its own — both scoped to `src/runtime`, both scans.
+ *    Nothing else in the header's account of what is enforced changed, and the
+ *    rest of this file's rules are held or unheld exactly as before. Revisit:
+ *    nothing — this corrects a statement about which guards exist, which is the
+ *    one kind of sentence in here that goes stale by being right at the time.
  *
  * This file is frozen: builders code against it without being able to ask, so a
  * silent edit is worse than a wrong shape. To change it, append a numbered entry

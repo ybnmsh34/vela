@@ -11,16 +11,23 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { ChatMessageInput, ContentPart } from '@/platform/contract';
+import type {
+  ChatMessageInput,
+  ContentPart,
+  ContentPartInput,
+  MessageRole,
+} from '@/platform/contract';
 import type {
   ContextChunk,
   ContextRef,
   ExecutableToolCall,
+  HarnessServices,
   LiveRuns,
   RunEvent,
   RunHandle,
   RunOutcome,
   RunRequest,
+  RuntimeHarness,
   ToolExecutor,
   ToolResultPart,
 } from '@/platform/contract-harness';
@@ -131,6 +138,37 @@ function result(callId: string, content: string): ToolResultPart {
   return { kind: 'toolResult', callId, content, isError: false };
 }
 
+/** A message as a comparison sees it: who said it, and with what parts. */
+interface Row {
+  readonly role: MessageRole;
+  readonly parts: readonly ContentPartInput[];
+}
+
+/**
+ * The rows the store would hold, folded out of the appends and their updates.
+ *
+ * `store_update_message` replaces the whole part list, and an omitted `parts`
+ * means "leave it alone" — so a row's final content is its last update that
+ * carried parts, or the append's if none did. This is the read-back the contract
+ * compares the in-memory sequence against, and doing the fold here rather than
+ * asserting on raw calls is the whole point: the claim is about what survives.
+ */
+function storedRows(transcript: ReturnType<typeof recordingTranscript>): readonly Row[] {
+  return transcript.appended.map((append, index) => {
+    const id = transcript.ids[index];
+    const parts = transcript.updated
+      .filter((update) => update.messageId === id && update.parts !== undefined)
+      .map((update) => update.parts)
+      .at(-1);
+    return { role: append.role, parts: parts ?? append.parts };
+  });
+}
+
+/** The same view of an in-memory message, so the two sequences are comparable. */
+function asRow(message: ChatMessageInput): Row {
+  return { role: message.role, parts: message.parts ?? [{ kind: 'text', text: message.text }] };
+}
+
 /* -------------------------------------------------------------------------- */
 
 describe('the run stream', () => {
@@ -233,6 +271,56 @@ describe('the accumulation rule', () => {
     expect(bench.sentMessages(1)[1]).toEqual({ role: 'assistant', text: '', parts });
   });
 
+  it('composes the system message once, before turn 1, and never again', async () => {
+    // Rule 4's other half. "No synthetic 'continue' turn, **no system message
+    // per step**. `RunContextRequest.systemPrompt` is composed once, by the
+    // caller, before the run."
+    //
+    // The test below it — 'inserts no synthetic turn between steps' — runs with
+    // `systemPrompt` null and no preload, so `composeSystemMessage` answers null
+    // and a loop that re-composed on every step would be invisible to it. This
+    // one gives the run both halves of the material a system message is made of,
+    // and reads turn 2's wire messages.
+    //
+    // What it costs when it goes: the model reads the project's instructions
+    // twice on turn 2 and three times on turn 3 — no crash, no event, an answer
+    // built from a prompt nobody wrote.
+    const ref: ContextRef = {
+      source: 'projectInstructions',
+      id: 'r1',
+      title: 'Project instructions',
+      estimatedTokens: null,
+    };
+    const bench = new Bench({
+      tools: { execute: (call) => Promise.resolve(result(call.callId, 'ok')) },
+      load: (r) => Promise.resolve({ ref: r, text: 'be brief' }),
+    });
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, {
+        type: 'done',
+        response: chatResponse({ toolCalls: [toolCall('c1', 'alpha', {})], stopReason: 'toolUse' }),
+      });
+    });
+    bench.turns.scriptText('done');
+    bench.start({ context: { systemPrompt: 'you are helpful', preload: [ref] } });
+    await bench.finished();
+
+    const composed: ChatMessageInput = { role: 'system', text: 'you are helpful\n\nbe brief' };
+    expect(bench.sentMessages(0)).toEqual([composed, { role: 'user', text: 'hello' }]);
+    expect(
+      bench.sentMessages(1).filter((message) => message.role === 'system'),
+      'the one system message is composed before turn 1 and never re-inserted',
+    ).toEqual([composed]);
+    // And it is still leading, followed by nothing but the accumulation rule's
+    // own three additions.
+    expect(bench.sentMessages(1).map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+    ]);
+  });
+
   it('inserts no synthetic turn between steps', async () => {
     const bench = new Bench({
       tools: { execute: (call) => Promise.resolve(result(call.callId, 'ok')) },
@@ -249,6 +337,79 @@ describe('the accumulation rule', () => {
 
     const roles = bench.sentMessages(1).map((message) => message.role);
     expect(roles).toEqual(['user', 'assistant', 'tool']);
+  });
+
+  it('persists the sequence it accumulated, in the same order', async () => {
+    // "The same four rules decide what `TranscriptWriter` persists, in the same
+    // order, so that a transcript read back from the store and a transcript
+    // accumulated in memory are the same sequence. Where they would differ, the
+    // store is right — it is the one that survives."
+    //
+    // Nothing compared the two. The tests around this one read the appends'
+    // roles and statuses and check that every append carries at least one part,
+    // and a loop that persisted the assistant turn *without* its `toolCall`
+    // parts, or wrote the tool rows in an order the calls did not have, passes
+    // every one of them. The store then holds an answer that never mentions
+    // calling anything, or results attached to the wrong calls — invisible today
+    // only because the on-screen transcript drops tool rows, and visible the
+    // moment anything rebuilds a prompt from the store.
+    const assistantParts: readonly ContentPart[] = [
+      { kind: 'text', text: 'working' },
+      { kind: 'toolCall', callId: 'c1', name: 'alpha', arguments: {} },
+      { kind: 'toolCall', callId: 'c2', name: 'beta', arguments: {} },
+    ];
+    const bench = new Bench({
+      tools: { execute: (call) => Promise.resolve(result(call.callId, `ran ${call.name}`)) },
+    });
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, {
+        type: 'done',
+        response: chatResponse({
+          parts: assistantParts,
+          toolCalls: [toolCall('c1', 'alpha', {}), toolCall('c2', 'beta', {})],
+          stopReason: 'toolUse',
+        }),
+      });
+    });
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, {
+        type: 'done',
+        response: chatResponse({
+          parts: [{ kind: 'text', text: 'once more' }],
+          toolCalls: [toolCall('c3', 'gamma', {})],
+          stopReason: 'toolUse',
+        }),
+      });
+    });
+    bench.turns.scriptText('done');
+    bench.start();
+    await bench.finished();
+
+    // What the loop accumulated: turn 3's wire messages, less the caller's own
+    // input, which the store never held because this run did not write it.
+    const accumulated = bench.sentMessages(2).slice(1).map(asRow);
+    expect(accumulated.map((row) => row.role)).toEqual([
+      'assistant',
+      'tool',
+      'tool',
+      'assistant',
+      'tool',
+    ]);
+
+    const persisted = storedRows(bench.transcript);
+    expect(
+      persisted.slice(0, accumulated.length),
+      'the store and the loop must hold the same sequence, in the same order',
+    ).toEqual(accumulated);
+
+    // The one row memory has no copy of: the last turn's own answer, which no
+    // later turn re-sends. Asserted rather than truncated away, so the
+    // comparison above cannot be passing because both sides were cut short.
+    expect(persisted).toHaveLength(accumulated.length + 1);
+    expect(persisted.at(-1)).toEqual({
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'done' }],
+    });
   });
 });
 
@@ -271,6 +432,41 @@ describe('context', () => {
       role: 'system',
       text: 'you are helpful\n\nbe brief',
     });
+  });
+
+  it('loads the preload in the order asked for, whatever settles first', async () => {
+    // "`preload`: loaded up front, **in this order**." Every other context test
+    // in this file uses exactly one ref, so nothing held the ordering — and
+    // `composeSystemMessage` joins the chunks in load order, so a loop that
+    // loaded them concurrently (the obvious optimisation: the loads are
+    // independent) would compose the caller's material in whatever order the
+    // promises settled and report a reading order the run did not have. Same
+    // text, different order, different answer, no event.
+    //
+    // The two loads settle in the opposite order to the one asked for, so a
+    // concurrent loop cannot come out right by accident.
+    const first: ContextRef = { source: 'skill', id: 'a', title: 'A', estimatedTokens: null };
+    const second: ContextRef = { source: 'memory', id: 'b', title: 'B', estimatedTokens: null };
+    const bench = new Bench({
+      load: async (ref) => {
+        if (ref.id === 'a') await flush(3);
+        return { ref, text: `body of ${ref.id}` };
+      },
+    });
+    bench.turns.scriptText('ok');
+    bench.start({ context: { systemPrompt: 'lead', preload: [first, second] } });
+    await bench.finished();
+
+    expect(bench.sentMessages(0)[0]).toEqual({
+      role: 'system',
+      text: 'lead\n\nbody of a\n\nbody of b',
+    });
+    // And the run reported the reading order it actually had.
+    expect(bench.events.filter((event) => event.type === 'contextLoaded')).toEqual([
+      { type: 'contextLoaded', ref: first },
+      { type: 'contextLoaded', ref: second },
+    ]);
+    expect(bench.contextLoads).toEqual([first, second]);
   });
 
   it('degrades rather than fails when named material has gone', async () => {
@@ -518,6 +714,36 @@ describe('durability and cancellation', () => {
     expect(bench.transcript.updated).toEqual([{ messageId: 'msg-0', status: 'cancelled' }]);
   });
 
+  it('cancels twice without a second chat_cancel for a turn that is already over', async () => {
+    // "Cancelling twice is legal and does nothing the second time."
+    // `live-runs.test.ts` holds the directory half — two cancels reach the
+    // controller and neither throws. This is the harness half: the second press
+    // must not put a second `chat_cancel` on the wire. The host answers
+    // `cancelled: false` for a turn that already ended, which the contract calls
+    // a race rather than an error — and in the sandbox-backed executor the
+    // contract describes, it is a second cancel aimed at a run somebody else may
+    // now own.
+    const bench = new Bench();
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, { type: 'textDelta', text: 'partial' });
+    });
+    const handle = bench.start();
+    await flush();
+
+    // Both presses land while the turn is still open — the second one taken
+    // before the loop has had a chance to notice the first, which is the window
+    // a real second click falls in.
+    await Promise.all([handle.cancel(), handle.cancel()]);
+    const outcome = await bench.finished();
+    expect(outcome).toEqual({ type: 'cancelled' });
+    expect(bench.turns.cancelled, 'one open turn, one cancel').toEqual(['run-1:1']);
+
+    // And a third, after the run is over: legal, and still nothing.
+    await handle.cancel();
+    expect(bench.turns.cancelled).toEqual(['run-1:1']);
+    expect(bench.events.filter((event) => event.type === 'runFinished')).toHaveLength(1);
+  });
+
   it('reports a provider failure as ChatError, unchanged', async () => {
     // "A provider failure travels as ChatError, unchanged — it is the one error
     // taxonomy and re-wrapping it would strip the Diagnosis."
@@ -534,5 +760,208 @@ describe('durability and cancellation', () => {
       type: 'failed',
       failure: { kind: 'provider', error: { kind: 'cancelled' } },
     });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One run driven straight against a harness instance, with no directory above
+ * it.
+ *
+ * Every other test in this file goes through `createLiveRuns`, which builds a
+ * fresh harness per run — so no test in this repo has ever called `start` twice
+ * on one instance, which is exactly the rule below.
+ */
+function runOn(
+  harness: RuntimeHarness,
+  request: RunRequest,
+): { readonly events: RunEvent[]; readonly done: Promise<RunOutcome>; readonly cancel: () => Promise<void> } {
+  const events: RunEvent[] = [];
+  let settle: ((outcome: RunOutcome) => void) | null = null;
+  let early: RunOutcome | null = null;
+  const controller = harness.start(request, (event) => {
+    events.push(event);
+    if (event.type !== 'runFinished') return;
+    if (settle === null) early = event.outcome;
+    else settle(event.outcome);
+  });
+  const done = new Promise<RunOutcome>((resolve) => {
+    if (early !== null) {
+      resolve(early);
+      return;
+    }
+    settle = resolve;
+  });
+  return { events, done, cancel: () => controller.cancel() };
+}
+
+function sharedServices(turns: FakeTurnDriver, executed: string[]): HarnessServices {
+  return {
+    turns,
+    tools: {
+      execute: (call) => {
+        executed.push(call.callId);
+        return Promise.resolve(result(call.callId, `ran ${call.name}`));
+      },
+    },
+    context: { index: () => Promise.resolve([]), load: () => Promise.resolve(null) },
+    transcript: recordingTranscript().writer,
+    parts: contentPartCodec,
+    now: () => 0,
+  };
+}
+
+function turnIdsOf(events: readonly RunEvent[]): readonly string[] {
+  return events.filter((event) => event.type === 'turnStarted').map((event) => event.turnId);
+}
+
+describe('a harness holds no state that outlives one call to start', () => {
+  // "An implementation must, **without exception** … hold no state that outlives
+  // one call to `start`."
+  //
+  // Nothing held this. `harness-registry.test.ts` holds the neighbouring rule —
+  // `create` is a factory, not a shared instance — and stops there, and the
+  // directory happens to call `create` once per run, so a harness that hoisted
+  // `messages`, the tool-call counter or the `AbortController` off its run and
+  // onto itself passes every test in this repo. It stops passing the day
+  // anything memoises a harness the way `harness-runtime.ts` memoises resolvers,
+  // and the failure is two conversations sharing one message list: each user
+  // gets an answer containing the other's turn.
+
+  /** Every turn asks for one tool and the next one answers. */
+  function toolThenAnswer(turns: FakeTurnDriver): void {
+    turns.always((request, driver) => {
+      if (request.turnId.endsWith(':1')) {
+        const callId = `${request.turnId}-call`;
+        driver.emit(request.turnId, {
+          type: 'done',
+          response: chatResponse({
+            parts: [{ kind: 'toolCall', callId, name: 'alpha', arguments: {} }],
+            toolCalls: [toolCall(callId, 'alpha', {})],
+            stopReason: 'toolUse',
+          }),
+        });
+        return;
+      }
+      driver.emit(request.turnId, {
+        type: 'done',
+        response: chatResponse({ parts: [{ kind: 'text', text: `answer to ${request.turnId}` }] }),
+      });
+    });
+  }
+
+  /** One tool call each, against a budget of exactly one, so a shared counter shows. */
+  const LIMITS = { maxSteps: 4, maxToolCalls: 1, wallClockMs: 100_000 };
+
+  function requestFor(name: 'a' | 'b'): RunRequest {
+    return runRequest({
+      runId: `run-${name}`,
+      conversationId: `c-${name}`,
+      input: [{ role: 'user', text: `${name} question` }],
+      limits: LIMITS,
+    });
+  }
+
+  /** The three messages a run of this shape puts on its second turn. */
+  function secondTurnOf(name: 'a' | 'b'): readonly ChatMessageInput[] {
+    const callId = `run-${name}:1-call`;
+    return [
+      { role: 'user', text: `${name} question` },
+      {
+        role: 'assistant',
+        text: '',
+        parts: [{ kind: 'toolCall', callId, name: 'alpha', arguments: {} }],
+      },
+      { role: 'tool', text: '', parts: [result(callId, 'ran alpha')] },
+    ];
+  }
+
+  it('drives two runs at once on one instance without either seeing the other’s messages', async () => {
+    const turns = new FakeTurnDriver();
+    toolThenAnswer(turns);
+    const executed: string[] = [];
+    const harness = agentLoopHarness.create(sharedServices(turns, executed));
+
+    const alpha = runOn(harness, requestFor('a'));
+    const beta = runOn(harness, requestFor('b'));
+
+    expect(await alpha.done).toEqual({ type: 'completed', stopReason: 'endTurn' });
+    expect(await beta.done).toEqual({ type: 'completed', stopReason: 'endTurn' });
+
+    const sent = (turnId: string): readonly ChatMessageInput[] | undefined =>
+      turns.sent.find((request) => request.turnId === turnId)?.messages;
+
+    // The second run's first turn carries its own question and nothing else.
+    expect(sent('run-b:1'), 'a second run must start from its own input').toEqual([
+      { role: 'user', text: 'b question' },
+    ]);
+    expect(sent('run-a:2')).toEqual(secondTurnOf('a'));
+    expect(sent('run-b:2')).toEqual(secondTurnOf('b'));
+
+    // Each run spent its own tool budget, and each emitter saw only its own run.
+    expect([...executed].sort()).toEqual(['run-a:1-call', 'run-b:1-call']);
+    expect(turnIdsOf(alpha.events)).toEqual(['run-a:1', 'run-a:2']);
+    expect(turnIdsOf(beta.events)).toEqual(['run-b:1', 'run-b:2']);
+    expect(alpha.events.filter((event) => event.type === 'degraded')).toEqual([]);
+    expect(beta.events.filter((event) => event.type === 'degraded')).toEqual([]);
+  });
+
+  it('gives a run started after another has finished a fresh budget, not the spent one', async () => {
+    // Sequential, and that is the point: the *ceilings* are the state a
+    // concurrent pair cannot show has been hoisted, because both runs read the
+    // budget before either has spent it. Two messages in the same conversation,
+    // one after the other, is what a caller that memoised a harness would do —
+    // and a run reading the previous run's counter is capped before it
+    // dispatches, so the second question silently gets an answer with no tool
+    // call in it and a degradation the first run earned.
+    const turns = new FakeTurnDriver();
+    toolThenAnswer(turns);
+    const executed: string[] = [];
+    const harness = agentLoopHarness.create(sharedServices(turns, executed));
+
+    expect(await runOn(harness, requestFor('a')).done).toEqual({
+      type: 'completed',
+      stopReason: 'endTurn',
+    });
+    const second = runOn(harness, requestFor('b'));
+    expect(await second.done).toEqual({ type: 'completed', stopReason: 'endTurn' });
+
+    expect(executed, 'each run has its own tool budget').toEqual([
+      'run-a:1-call',
+      'run-b:1-call',
+    ]);
+    expect(second.events.filter((event) => event.type === 'degraded')).toEqual([]);
+    expect(turnIdsOf(second.events)).toEqual(['run-b:1', 'run-b:2']);
+    expect(turns.sent.find((request) => request.turnId === 'run-b:2')?.messages).toEqual(
+      secondTurnOf('b'),
+    );
+  });
+
+  it('cancels one run on an instance without cancelling the other', async () => {
+    // The `AbortController` half of the same rule, and the one whose cost is
+    // worst: a shared controller means the Stop button on one conversation ends
+    // the other user's run, and the tool executor's signal aborts work nobody
+    // asked to stop.
+    // Both runs are mid-turn — nothing is scripted, so neither turn answers —
+    // and the second is still open when the first is cancelled. That is the
+    // whole of the setup: a shared controller can only show while there is
+    // another run left to abort.
+    const turns = new FakeTurnDriver();
+    const harness = agentLoopHarness.create(sharedServices(turns, []));
+    const alpha = runOn(harness, runRequest({ runId: 'run-a', conversationId: 'c-a' }));
+    const beta = runOn(harness, runRequest({ runId: 'run-b', conversationId: 'c-b' }));
+    await flush();
+
+    await alpha.cancel();
+    expect(await alpha.done).toEqual({ type: 'cancelled' });
+
+    // The second run answers afterwards, and is unaffected.
+    turns.emit('run-b:1', {
+      type: 'done',
+      response: chatResponse({ parts: [{ kind: 'text', text: 'beta answer' }] }),
+    });
+    expect(await beta.done).toEqual({ type: 'completed', stopReason: 'endTurn' });
+    expect(turns.cancelled, 'only the cancelled run’s open turn is cancelled').toEqual(['run-a:1']);
   });
 });

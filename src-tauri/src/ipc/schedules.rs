@@ -279,7 +279,9 @@ fn schedule_id(raw: &str) -> IpcResult<ScheduleId> {
 fn validate_text(field: &str, raw: &str, max: usize) -> IpcResult<String> {
     let text = raw.trim();
     if text.is_empty() {
-        return Err(IpcError::invalid(format!("invalid {field}: must not be blank")));
+        return Err(IpcError::invalid(format!(
+            "invalid {field}: must not be blank"
+        )));
     }
     if text.chars().count() > max {
         return Err(IpcError::invalid(format!(
@@ -323,10 +325,7 @@ pub fn list(store: &dyn VelaStore, req: SchedulesListReq) -> IpcResult<ScheduleL
     })
 }
 
-pub fn set_enabled(
-    store: &dyn VelaStore,
-    req: SchedulesSetEnabledReq,
-) -> IpcResult<ScheduleRes> {
+pub fn set_enabled(store: &dyn VelaStore, req: SchedulesSetEnabledReq) -> IpcResult<ScheduleRes> {
     let id = schedule_id(&req.schedule_id)?;
     Ok(ScheduleRes {
         schedule: store
@@ -377,10 +376,7 @@ pub fn schedules_create(
 }
 
 #[tauri::command]
-pub fn schedules_delete(
-    store: State<'_, StoreHandle>,
-    payload: SchedulesRefReq,
-) -> IpcResult<Ack> {
+pub fn schedules_delete(store: State<'_, StoreHandle>, payload: SchedulesRefReq) -> IpcResult<Ack> {
     delete(store.store(), payload)
 }
 
@@ -454,16 +450,24 @@ mod tests {
         blank_prompt.prompt = "\n\t ".into();
         assert!(create(&store, blank_prompt).is_err());
 
-        assert!(list(&store, SchedulesListReq { include_disabled: true })
-            .unwrap()
-            .schedules
-            .is_empty());
+        assert!(list(
+            &store,
+            SchedulesListReq {
+                include_disabled: true
+            }
+        )
+        .unwrap()
+        .schedules
+        .is_empty());
     }
 
     #[test]
     fn disabling_hides_a_schedule_from_the_default_list_without_deleting_it() {
         let store = store();
-        let id = create(&store, new_daily("paused", NOON)).unwrap().schedule.id;
+        let id = create(&store, new_daily("paused", NOON))
+            .unwrap()
+            .schedule
+            .id;
 
         let disabled = set_enabled(
             &store,
@@ -481,10 +485,15 @@ mod tests {
             .schedules
             .is_empty());
         assert_eq!(
-            list(&store, SchedulesListReq { include_disabled: true })
-                .unwrap()
-                .schedules
-                .len(),
+            list(
+                &store,
+                SchedulesListReq {
+                    include_disabled: true
+                }
+            )
+            .unwrap()
+            .schedules
+            .len(),
             1
         );
     }

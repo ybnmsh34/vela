@@ -8,6 +8,18 @@
  * and this is the counterpart, for the part of that contract the skills crate
  * implements: the mount vocabulary.
  *
+ * ## Which crate this is, and which one answers the commands
+ *
+ * **This file reads `src-tauri/crates/vela-skills/` and nothing else, and that
+ * is not the crate behind `project_layout`.** `src-tauri/src/ipc/skills.rs` says
+ * no command calls `vela_skills::mount`; the implementation the user's machine
+ * runs is `src-tauri/crates/vela-projects/`, which has its own copy of this
+ * vocabulary. So a variant renamed there is invisible here, and every assertion
+ * below stays green while the renderer's closed union stops matching the wire.
+ * `src/platform/project-host-parity.test.ts` is the file that reads that crate,
+ * and it exists because this one alone was read as covering both. Neither
+ * replaces the other while two crates spell one vocabulary.
+ *
  * ## What is pinned, and in which direction each way fails
  *
  * A **Rust** variant added without its TypeScript twin fails here, at

@@ -856,6 +856,65 @@ mod tests {
         .is_err());
     }
 
+    /// **Names are not unique and are not checked for uniqueness.**
+    ///
+    /// Held by nobody having broken it yet, which is not the same as held: no
+    /// test made two projects with one name, so a uniqueness check added in the
+    /// store, here, or in the browser fake would have passed the whole suite. The
+    /// user who wanted two projects called "Notes" would then find they may not
+    /// have them, and rename would become an operation that can fail — which is
+    /// the argument the contract gives for not enforcing it in the first place.
+    ///
+    /// The rename half is asserted too, because a check written at the create is
+    /// usually written at the update in the same commit.
+    #[test]
+    fn two_projects_may_carry_the_same_name_and_renaming_onto_one_is_allowed() {
+        let fixture = fixture();
+        let first = fixture.named("Notes");
+        let second = fixture.named("Notes");
+
+        assert_ne!(
+            first.summary.id, second.summary.id,
+            "identity is the id, and the id is what the directories are keyed by"
+        );
+        let listed = list(&fixture.store, ProjectListReq::default())
+            .unwrap()
+            .projects;
+        assert_eq!(
+            listed
+                .iter()
+                .filter(|project| project.name == "Notes")
+                .count(),
+            2,
+            "both are real rows and both are listed"
+        );
+
+        // And nothing may look a project up by name: two roots, keyed by id.
+        let roots: Vec<String> = [&first, &second]
+            .iter()
+            .map(|project| fixture.layout_of(&project.summary.id).paths.root)
+            .collect();
+        assert_ne!(roots[0], roots[1]);
+
+        let third = fixture.named("Rigging");
+        let renamed = update(
+            &fixture.store,
+            &fixture.host,
+            ProjectUpdateReq {
+                project_id: third.summary.id.clone(),
+                name: Some("Notes".into()),
+                ..ProjectUpdateReq::default()
+            },
+        )
+        .unwrap()
+        .project;
+        assert_eq!(
+            renamed.summary.name, "Notes",
+            "renaming onto an existing name is ordinary; a uniqueness rule is what \
+             would make rename an operation that can fail"
+        );
+    }
+
     #[test]
     fn a_project_renamed_keeps_its_directories_exactly_where_they_were() {
         let fixture = fixture();
@@ -995,6 +1054,110 @@ mod tests {
                 .as_str(),
             DEFAULT_PROJECT_ID,
             "conversations are reassigned, never deleted and never left unfiled"
+        );
+    }
+
+    /// Every path under `root`, relative, with the bytes of every file.
+    ///
+    /// Existence alone is not the question. A removal that took the files and
+    /// left the folder, or that emptied one subdirectory, is the same loss to
+    /// the user, so the contents are part of what is compared.
+    fn tree_snapshot(root: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+        fn walk(base: &Path, at: &Path, into: &mut Vec<(String, Option<Vec<u8>>)>) {
+            let mut paths: Vec<PathBuf> = fs::read_dir(at)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            paths.sort();
+            for path in paths {
+                let relative = path
+                    .strip_prefix(base)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                if path.is_dir() {
+                    into.push((relative, None));
+                    walk(base, &path, into);
+                } else {
+                    into.push((relative, Some(fs::read(&path).unwrap())));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(root, root, &mut found);
+        found
+    }
+
+    /// **The working directory is not touched by a delete**, which is half of a
+    /// sentence in `src/platform/contract-project.ts` under `ProjectDeleteReq`.
+    ///
+    /// The other half — that no option exists to ask for it — is held by the
+    /// type: `ProjectDeleteReq = ProjectRefReq` has no flag to spell, and `tsc`
+    /// and `serde` between them make one unspellable. This half was held by
+    /// nothing at all. Adding a `std::fs::remove_dir_all` of the stored working
+    /// directory to [`delete`] left every test here and in `vela-projects` green,
+    /// which is the whole reason this test exists: the loss is unrecoverable,
+    /// silent, and lands on the one directory Vela is emphatic it never creates
+    /// and never writes into.
+    ///
+    /// A skill is enabled so the project really has a junction in it. The delete
+    /// under test is therefore the real one — root with reparse points and all —
+    /// rather than a delete of an empty tree that could not have reached
+    /// anywhere interesting.
+    #[test]
+    fn deleting_a_project_does_not_touch_the_users_working_directory() {
+        let fixture = fixture();
+        let installed = fixture.install_skill("research");
+        let notes = tempfile::tempdir().unwrap();
+        fs::create_dir_all(notes.path().join("drafts")).unwrap();
+        fs::write(
+            notes.path().join("drafts").join("chapter.md"),
+            "the user's own words",
+        )
+        .unwrap();
+        fs::write(notes.path().join("todo.txt"), "buy milk").unwrap();
+        let before = tree_snapshot(notes.path());
+        assert_eq!(before.len(), 3, "the fixture really has something to lose");
+
+        let created = fixture
+            .create(ProjectCreateReq {
+                name: "Field notes".into(),
+                working_directory: Some(WorkingDirectoryBinding::Path {
+                    path: notes.path().to_string_lossy().into_owned(),
+                }),
+                enabled_skills: Some(vec!["research".into()]),
+                ..ProjectCreateReq::default()
+            })
+            .unwrap()
+            .project;
+        let root = PathBuf::from(fixture.layout_of(&created.summary.id).paths.root);
+        assert!(root.is_dir());
+
+        delete(
+            &fixture.store,
+            &fixture.host,
+            ProjectRefReq {
+                project_id: created.summary.id.clone(),
+            },
+        )
+        .unwrap();
+
+        assert!(
+            !root.exists(),
+            "the host-owned root is what a delete removes"
+        );
+        assert!(
+            installed.join("SKILL.md").is_file(),
+            "and never the machine-wide store the mount pointed at"
+        );
+        assert!(
+            notes.path().is_dir(),
+            "the user picked this folder; Vela never created it and does not remove it"
+        );
+        assert_eq!(
+            tree_snapshot(notes.path()),
+            before,
+            "not one byte of the user's own directory may differ across a project delete"
         );
     }
 

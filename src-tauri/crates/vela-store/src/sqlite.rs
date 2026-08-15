@@ -27,8 +27,8 @@ use crate::model::{
     MemoryCategory, MemoryEntry, MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId,
     MessagePatch, MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage,
     NewProject, NewSchedule, Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId,
-    SchedulePatch, ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus, SecretRefName,
-    Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
+    SchedulePatch, ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus,
+    SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage,
 };
 use crate::repository::{
     ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,
@@ -1447,7 +1447,10 @@ impl ScheduleRepository for SqliteStore {
         // Clamped at zero rather than allowed negative: a clock that stepped
         // backwards mid-run is a broken machine, and the schema's own CHECK
         // would refuse the row anyway.
-        let duration = at.as_millis().saturating_sub(run.started_at.as_millis()).max(0);
+        let duration = at
+            .as_millis()
+            .saturating_sub(run.started_at.as_millis())
+            .max(0);
         let (status, error) = match outcome {
             ScheduleRunOutcome::Succeeded => (ScheduleRunStatus::Success, None),
             ScheduleRunOutcome::Failed { error } => (ScheduleRunStatus::Failed, Some(error)),
@@ -2758,6 +2761,7 @@ mod tests {
         let store = store();
         let project = store.create_project(NewProject::named("Sails")).unwrap();
         assert_eq!(project.last_active_at, None, "nothing has happened in it");
+        let untouched = store.get_project(&project.id).unwrap().updated_at;
 
         let chat = store
             .create_conversation(NewConversation::titled("rigging").in_project(project.id.clone()))
@@ -2769,6 +2773,23 @@ mod tests {
         let used = store.get_project(&project.id).unwrap();
         let last_active = used.last_active_at.expect("a turn happened in it");
         assert_eq!(used.conversation_count, 1);
+
+        // **The direction this test used to leave out.** It read the record only
+        // *after* the append, so it held the converse — that a record edit does
+        // not move `last_active_at` — and nothing at all held the clause the
+        // contract actually states: `updated_at` is "when the record last
+        // changed" and does not move when a conversation inside the project is
+        // added or answered. Anything that bumps the row on message append — a
+        // trigger, a helper that touches it — collapses the two questions back
+        // into one field, and a list sorted by "recently edited" silently
+        // becomes a list sorted by "recently used". No value goes missing and no
+        // call fails; the only symptom is a sort order that cannot be explained.
+        assert_eq!(
+            used.updated_at.as_millis(),
+            untouched.as_millis(),
+            "filing a conversation and answering in it are activity, not an edit \
+             of the project record"
+        );
 
         // Editing the record moves `updated_at` and must not move
         // `last_active_at`: "when did I last edit this" and "when was this last

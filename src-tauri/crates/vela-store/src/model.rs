@@ -1001,7 +1001,11 @@ impl RunTrigger {
         Ok(match value {
             "schedule" => Self::Schedule,
             "manual" => Self::Manual,
-            other => return Err(StoreError::corrupt(format!("unknown run trigger `{other}`"))),
+            other => {
+                return Err(StoreError::corrupt(format!(
+                    "unknown run trigger `{other}`"
+                )))
+            }
         })
     }
 }

@@ -148,11 +148,19 @@ export interface RecordingTranscript {
   readonly writer: TranscriptWriter;
   readonly appended: StoreAppendMessageReq[];
   readonly updated: StoreUpdateMessageReq[];
+  /**
+   * The id handed back for each append, positionally. A test that has to fold
+   * the appends and their updates back into the rows the store would hold needs
+   * the join key, and reconstructing it from the naming scheme would be a test
+   * asserting against this double's private spelling.
+   */
+  readonly ids: string[];
 }
 
 export function recordingTranscript(): RecordingTranscript {
   const appended: StoreAppendMessageReq[] = [];
   const updated: StoreUpdateMessageReq[] = [];
+  const ids: string[] = [];
   let next = 0;
   const stored = (request: StoreAppendMessageReq, id: string): StoredMessage => ({
     id,
@@ -172,10 +180,12 @@ export function recordingTranscript(): RecordingTranscript {
   return {
     appended,
     updated,
+    ids,
     writer: {
       append: (request) => {
         appended.push(request);
         const id = `msg-${next}`;
+        ids.push(id);
         next += 1;
         return Promise.resolve(stored(request, id));
       },

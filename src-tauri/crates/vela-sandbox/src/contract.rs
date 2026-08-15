@@ -782,6 +782,79 @@ mod tests {
         assert!(json.contains("\"droppedOutputBytes\":0"), "{json}");
     }
 
+    /// Reads the TypeScript contract and extracts one `as const` string array.
+    ///
+    /// A dumb string scan on purpose, for the reason
+    /// `rust_and_typescript_allowlists_are_identical` gives for the same
+    /// technique in `src-tauri/src/ipc/mod.rs`: no TS toolchain exists inside
+    /// `cargo test`, and a parser here would be more code than the thing it
+    /// checks.
+    fn typescript_string_array(name: &str) -> Vec<String> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../src/platform/contract-sandbox.ts"
+        );
+        let source = std::fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("cannot read the TS contract at {path}: {error}"));
+        let marker = format!("export const {name}");
+        let start = source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("src/platform/contract-sandbox.ts must export {name}"));
+        let open = source[start..]
+            .find('[')
+            .unwrap_or_else(|| panic!("{name} must be an array literal"))
+            + start;
+        let close = source[open..]
+            .find(']')
+            .unwrap_or_else(|| panic!("{name}'s array is unterminated"))
+            + open;
+        source[open + 1..close]
+            .split(',')
+            .map(|entry| entry.trim().trim_matches(['\'', '"', '\n', ' ']).to_owned())
+            .filter(|entry| !entry.is_empty())
+            .collect()
+    }
+
+    /// The base environment is one list in two languages, and this is what keeps
+    /// it one list.
+    ///
+    /// [`SANDBOX_BASE_ENVIRONMENT_POSIX`] above is a hand-written parallel copy
+    /// of the TypeScript constant — the "hand-maintained parallel pair" that
+    /// `PROCESS_ISOLATION_STRENGTH` in `src/platform/contract-sandbox.ts` calls
+    /// this project's central defect in miniature — and it had no parity check.
+    /// Neither direction of drift is a type error and neither is visible:
+    /// a key added on the TypeScript side and not here makes
+    /// `environmentNamesCollide` refuse a name the host no longer injects, and a
+    /// key dropped there and left here lets a caller legally set a variable the
+    /// host also sets, where the last writer wins and neither half knows.
+    ///
+    /// This pins the two constants to each other. What the host actually puts
+    /// inside a run is a separate question, asserted from inside a real run by
+    /// `the_run_sees_the_base_environment_the_callers_entries_and_nothing_else`;
+    /// the two together are the whole loop from the frozen list to the child's
+    /// environment.
+    #[test]
+    fn the_base_environment_list_is_the_one_the_typescript_contract_froze() {
+        let typescript = typescript_string_array("SANDBOX_BASE_ENVIRONMENT_POSIX");
+        let rust: Vec<String> = SANDBOX_BASE_ENVIRONMENT_POSIX
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        assert_eq!(
+            rust, typescript,
+            "the Rust `SANDBOX_BASE_ENVIRONMENT_POSIX` and the TypeScript one have drifted \
+             apart. The contract calls its list \"the complete list\" of keys the host adds, \
+             and two complete lists that disagree are neither."
+        );
+
+        // A duplicate would let the two lists agree as sets while disagreeing
+        // about what "these are the keys, and no others" enumerates.
+        let mut unique = rust.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), rust.len(), "a key is listed twice");
+    }
+
     #[test]
     fn a_drawn_language_carrying_a_scripts_field_is_malformed() {
         let svg_with_scripts = DocumentProgram {

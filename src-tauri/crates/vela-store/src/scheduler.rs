@@ -247,7 +247,10 @@ mod tests {
         assert_eq!(runs[0].status, ScheduleRunStatus::Running);
         assert_eq!(runs[0].trigger, RunTrigger::Schedule);
         assert_eq!(runs[0].started_at, at(NOON));
-        assert_eq!(runs[0].conversation_id.as_ref(), Some(&fired.conversation_id));
+        assert_eq!(
+            runs[0].conversation_id.as_ref(),
+            Some(&fired.conversation_id)
+        );
 
         // The conversation really exists and really holds the prompt.
         let spawned = store.get_conversation(&fired.conversation_id).unwrap();
@@ -256,7 +259,10 @@ mod tests {
             .list_messages(&fired.conversation_id, MessageQuery::default())
             .unwrap();
         assert_eq!(transcript.len(), 1);
-        assert_eq!(transcript[0].answer_text(), "morning briefing: what happened?");
+        assert_eq!(
+            transcript[0].answer_text(),
+            "morning briefing: what happened?"
+        );
         assert_eq!(transcript[0].status, MessageStatus::Complete);
 
         // And the one that was not due was not touched at all.
@@ -444,7 +450,10 @@ mod tests {
         let run = store.list_schedule_runs(&id, 1).unwrap().remove(0);
         assert_eq!(run.status, ScheduleRunStatus::Failed);
         assert_eq!(run.finished_at, Some(at(NOON + 5 * HOUR)));
-        assert!(run.error.is_some(), "a reaped run says why it has no result");
+        assert!(
+            run.error.is_some(),
+            "a reaped run says why it has no result"
+        );
 
         assert_eq!(
             poll_once(&store, at(NOON + 5 * HOUR)).unwrap().fired.len(),

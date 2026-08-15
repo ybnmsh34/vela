@@ -88,6 +88,17 @@ describe('admission', () => {
   it('drives many turns without rebuilding the bundle', () => {
     // The per-turn half of the same rule: an executor rebuilt mid-run would hold
     // a different AbortSignal chain than the one the run started with.
+    //
+    // **This one cannot fail, and that is worth writing down rather than
+    // leaving for the next reader to discover.** The directory has no per-turn
+    // hook — `start` is its only path to the factory — so no edit to
+    // `live-runs.ts` makes a turn call `services` again, and the emits below
+    // are a harness double's, not a loop's. The per-turn half is held by the
+    // shape of `HarnessServicesFactory` and by the two tests above, which count
+    // the calls and compare the bundle handed to `create`. Kept because a
+    // directory that grew such a hook would want exactly this assertion waiting
+    // for it; not counted as a guard, because a test nothing can break is a
+    // claim.
     const { runs, harness, factory } = setup();
     started(runs, runRequest({ runId: 'a', conversationId: 'c1', harnessId: 'manual' }));
     for (let step = 1; step <= 5; step += 1) {
@@ -308,6 +319,70 @@ describe('late join', () => {
     expect(seen).toEqual([]);
     expect(subscription.replayedFrom).toBe(1);
     expect(subscription.liveFrom).toBe(1);
+  });
+
+  it('never interleaves a live event into a replay that is still in flight', () => {
+    // "Replay from `fromSeq`, then live, with no gap and no duplicate." The
+    // ordering that produces it is the one thing this rule rests on — the replay
+    // is delivered, and only then is the listener registered — and nothing held
+    // it: no existing test emits anything while a replay is in flight, so
+    // registering the subscriber *before* replaying passes the whole suite.
+    //
+    // A listener that emits during its own replay is the case that separates
+    // them. It is unreachable through the two harnesses this build ships (their
+    // cancel path emits in a microtask) and reachable by any third-party harness
+    // that emits synchronously — the same class `live-runs.ts` already guards
+    // against for create and start.
+    //
+    // **What this holds is the ordering and the no-duplicate half**: everything
+    // replayed reaches the listener before anything live does, no seq arrives
+    // twice, and what does arrive ascends. The no-*gap* half is not held here
+    // and is not asserted either way, because the shipped implementation does
+    // not keep it in this case — `replayed` is snapshotted before delivery and
+    // the subscriber is added after it, so the event emitted during the replay
+    // reaches this listener as neither, while `liveFrom` reads as an ordinary
+    // subscribe. Asserting the gap would freeze it; closing it is a change to
+    // the implementation, not to this test.
+    const { runs, harness } = setup();
+    const handle = started(runs, runRequest({ runId: 'a', harnessId: 'manual' }));
+    const emit = (text: string): void => {
+      harness.emitTo('a', { type: 'chat', turnId: 't', event: { type: 'textDelta', text } });
+    };
+    for (const text of ['0', '1', '2']) emit(text);
+
+    // A subscriber that was already watching, so the re-entrant event below is
+    // known to have been numbered and fanned out at all.
+    const watching = collect();
+    handle.subscribe(watching.listener, { fromSeq: 0 });
+
+    const seen: [number, RunDelivery][] = [];
+    let reentered = false;
+    handle.subscribe(
+      (envelope, delivery) => {
+        seen.push([envelope.seq, delivery]);
+        if (reentered) return;
+        reentered = true;
+        emit('emitted from inside the replay');
+      },
+      { fromSeq: 0 },
+    );
+    emit('after the replay');
+
+    const deliveries = seen.map(([, delivery]) => delivery);
+    expect(deliveries).toContain('live');
+    expect(
+      deliveries.lastIndexOf('replay'),
+      'every replayed event must arrive before any live one',
+    ).toBeLessThan(deliveries.indexOf('live'));
+
+    const seqs = seen.map(([seq]) => seq);
+    expect(new Set(seqs).size, 'no seq may be delivered twice').toBe(seqs.length);
+    expect([...seqs].sort((left, right) => left - right)).toEqual(seqs);
+
+    // The event really was emitted, numbered, and delivered once to the
+    // subscriber that was already attached — so the assertions above are about
+    // ordering rather than about an event that never happened.
+    expect(watching.seen.filter(([, delivery]) => delivery === 'live')).toHaveLength(2);
   });
 
   it('gives every subscriber its own replay', () => {

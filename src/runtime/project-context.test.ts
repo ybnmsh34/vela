@@ -102,6 +102,64 @@ describe('the project instructions resolver', () => {
 });
 
 describe('contextFor on the runtime', () => {
+  it('hands back a reader without reading anything itself', async () => {
+    // "Pure and cheap, like `select`: it hands back a reader, it does not read.
+    // A caller may hold the result across runs in the same project."
+    //
+    // `select`'s purity is held in `harness-registry.test.ts`; this neighbour
+    // was not. A resolver that read at construction turns a settings surface
+    // calling `contextFor` on every render into a host read per render — and the
+    // runtime memoises one resolver per project, so that first read becomes the
+    // answer every later run gets.
+    let reads = 0;
+    const runtime = createHarnessRuntime({
+      turns: new FakeTurnDriver(),
+      transcript: recordingTranscript().writer,
+      toolsFor: () => ({ execute: () => Promise.reject(new Error('no tools')) }),
+      readProjectInstructions: (projectId: string) => {
+        reads += 1;
+        return Promise.resolve(projectId === DEFAULT_PROJECT_ID ? 'be brief' : null);
+      },
+    });
+
+    for (let call = 0; call < 5; call += 1) {
+      runtime.contextFor(DEFAULT_PROJECT_ID);
+      runtime.contextFor(OTHER_PROJECT);
+    }
+    expect(reads, 'contextFor hands back a reader; it does not read').toBe(0);
+
+    // …and the reader it handed back does read, so the count above is not
+    // measuring a reader nobody wired up.
+    await runtime.contextFor(DEFAULT_PROJECT_ID).index();
+    expect(reads).toBe(1);
+  });
+
+  it('never serves a snapshot taken when the resolver was first asked for', async () => {
+    // The other half of the same rule, and the one a user would feel: the
+    // runtime memoises a resolver per project, so a resolver that read once at
+    // construction would answer every later run with the instructions as they
+    // were the first time anything asked. The user edits them, sends again, and
+    // gets the old ones with nothing to say so.
+    let instructions = 'the first version';
+    const runtime = createHarnessRuntime({
+      turns: new FakeTurnDriver(),
+      transcript: recordingTranscript().writer,
+      toolsFor: () => ({ execute: () => Promise.reject(new Error('no tools')) }),
+      readProjectInstructions: () => Promise.resolve(instructions),
+    });
+
+    const ref = (await runtime.contextFor(DEFAULT_PROJECT_ID).index())[0];
+    expect(ref).toBeDefined();
+    if (ref === undefined) return;
+    expect((await runtime.contextFor(DEFAULT_PROJECT_ID).load(ref))?.text).toBe('the first version');
+
+    instructions = 'the edited version';
+    expect(
+      (await runtime.contextFor(DEFAULT_PROJECT_ID).load(ref))?.text,
+      'a memoised resolver must re-read, not replay what it read once',
+    ).toBe('the edited version');
+  });
+
   it('answers with a resolver interchangeable with a directly built one', async () => {
     const read = reader({ [DEFAULT_PROJECT_ID]: 'be brief' });
     const runtime = createHarnessRuntime({

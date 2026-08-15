@@ -216,7 +216,8 @@ fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules(
         let mut old = rusqlite::Connection::open(&path).unwrap();
         old.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         let applied =
-            vela_store::migrations::apply_list(&mut old, pre_merge, &FixedClock::default()).unwrap();
+            vela_store::migrations::apply_list(&mut old, pre_merge, &FixedClock::default())
+                .unwrap();
         assert_eq!(applied, vec![1, 2, 3]);
 
         old.execute(
@@ -342,7 +343,13 @@ fn a_database_from_before_the_projects_merge_gains_them_and_keeps_memory_and_sch
         .get_schedule(&vela_store::ScheduleId::new("sched_old").unwrap())
         .unwrap();
     assert_eq!(schedule.title, "weekly review");
-    assert_eq!(store.list_memory_entries(&MemoryScope::Global).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .list_memory_entries(&MemoryScope::Global)
+            .unwrap()
+            .len(),
+        1
+    );
 
     // And the step that just ran did its job: the seed exists, and the user's
     // own project was neither replaced nor duplicated by it.
@@ -438,7 +445,10 @@ fn a_schedule_and_its_run_history_survive_a_restart_and_still_fire() {
     // And the reopened database still schedules: the next slot fires.
     let again = vela_store::poll_once(&reopened, Timestamp::from_millis(NOON + 24 * HOUR)).unwrap();
     assert_eq!(again.fired.len(), 1);
-    assert_eq!(reopened.list_schedule_runs(&schedule_id, 10).unwrap().len(), 2);
+    assert_eq!(
+        reopened.list_schedule_runs(&schedule_id, 10).unwrap().len(),
+        2
+    );
 }
 
 #[test]

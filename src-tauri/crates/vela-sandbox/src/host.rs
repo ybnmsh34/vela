@@ -803,3 +803,74 @@ fn reap(handle: &RunHandle) -> Option<i32> {
     let child = slot.as_mut()?;
     child.wait().ok().and_then(|status| status.code())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::complete_utf8_prefix;
+
+    /// The rule `SandboxOutput` states: the host "decodes UTF-8 across chunk
+    /// boundaries and never splits a code point between two events", and bytes
+    /// that are not valid UTF-8 become U+FFFD and are still counted.
+    ///
+    /// The two halves pull in opposite directions and this is where they meet.
+    /// Holding back an incomplete tail is what keeps a code point whole;
+    /// holding back a byte that can never *begin* a sequence would stall the
+    /// stream forever waiting for a continuation that is not coming.
+    #[test]
+    fn an_incomplete_code_point_is_held_back_and_an_impossible_byte_is_not() {
+        assert_eq!(complete_utf8_prefix(b"plain ascii"), 11);
+        assert_eq!(complete_utf8_prefix(b""), 0);
+
+        for text in ["é", "€", "𝄞"] {
+            let tail = text.as_bytes();
+            for split in 1..tail.len() {
+                let mut buffer = b"ab".to_vec();
+                buffer.extend_from_slice(&tail[..split]);
+                assert_eq!(
+                    complete_utf8_prefix(&buffer),
+                    2,
+                    "{split} of the {} bytes of `{text}` arrived; the whole character has to \
+                     wait for the rest of itself",
+                    tail.len()
+                );
+            }
+            let mut whole = b"ab".to_vec();
+            whole.extend_from_slice(tail);
+            assert_eq!(complete_utf8_prefix(&whole), whole.len());
+        }
+
+        // `0xFF` begins no sequence in UTF-8. Emitting it is what lets the
+        // lossy decode mark it and the byte counter count it.
+        assert_eq!(complete_utf8_prefix(b"ab\xffcd"), 5);
+        assert_eq!(complete_utf8_prefix(b"\xff"), 1);
+    }
+
+    /// The property the rule is really about, exercised the way
+    /// [`super::spawn_pump`] uses it: a stream cut at every awkward size
+    /// reassembles into the bytes that were written, and no event carries a
+    /// replacement character the program never printed.
+    #[test]
+    fn a_stream_cut_at_any_size_reassembles_without_a_replacement_character() {
+        let text = "héllo wörld ✓ 𝄞 ".repeat(64);
+        for size in [1usize, 2, 3, 5, 7, 8, 13] {
+            let mut pending: Vec<u8> = Vec::new();
+            let mut rebuilt = String::new();
+            for piece in text.as_bytes().chunks(size) {
+                pending.extend_from_slice(piece);
+                let split = complete_utf8_prefix(&pending);
+                if split == 0 {
+                    continue;
+                }
+                let emitted: Vec<u8> = pending.drain(..split).collect();
+                rebuilt.push_str(&String::from_utf8_lossy(&emitted));
+            }
+            rebuilt.push_str(&String::from_utf8_lossy(&pending));
+            assert!(
+                !rebuilt.contains('\u{FFFD}'),
+                "a read of {size} bytes split a character and the user is looking at a \
+                 replacement mark in the middle of a word their own program printed"
+            );
+            assert_eq!(rebuilt, text, "at a read size of {size}");
+        }
+    }
+}

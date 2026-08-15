@@ -297,8 +297,11 @@ pub trait ScheduleRepository {
     ) -> StoreResult<ScheduleRun>;
 
     /// This schedule's history, newest first.
-    fn list_schedule_runs(&self, schedule_id: &ScheduleId, limit: u32)
-        -> StoreResult<Vec<ScheduleRun>>;
+    fn list_schedule_runs(
+        &self,
+        schedule_id: &ScheduleId,
+        limit: u32,
+    ) -> StoreResult<Vec<ScheduleRun>>;
 
     /// Fails every run still marked `running`, and answers how many there were.
     ///

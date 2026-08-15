@@ -368,6 +368,68 @@ describe('the depth ceiling', () => {
 
 /* -------------------------------------------------------------------------- */
 
+describe('a directory rejection is a tool result, never a rejection', () => {
+  // `ToolExecutor`: "It does not reject for a tool that failed … If it rejects
+  // anyway, that is a defect in the executor and the harness must fail the run"
+  // with `toolExecutorFailed`. This file's other refusals — the depth ceiling,
+  // bad arguments, a conversation that could not be minted — are covered; the
+  // one branch nothing drove is the directory answering `rejected`, which is
+  // reachable two ways: two children handed the same conversation id, and a
+  // minted run id that collides. The first is below.
+  //
+  // What it costs when that branch throws instead: one subagent that could not
+  // start kills the parent, and the user loses an answer that was most of the
+  // way finished.
+
+  it('answers conversationBusy as an error result, and the parent finishes', async () => {
+    // Both children are handed the *same* conversation, which is exactly what
+    // `SubagentToolkitOptions.newConversationId` exists to prevent: at most one
+    // run may be live per conversation, so the second child is refused.
+    const w = world(1, (parent) => `${parent}/shared`);
+    const finished = w.startParent();
+    await flush();
+
+    // One child was admitted and the other never existed.
+    expect(w.runtime.runs.list().map((snapshot) => snapshot.runId)).toEqual([
+      PARENT_RUN,
+      `${PARENT_RUN}/sub-1`,
+    ]);
+    expect(w.childTurns).toEqual([`${PARENT_RUN}/sub-1:1`]);
+
+    w.turns.emit(`${PARENT_RUN}/sub-1:1`, { type: 'textDelta', text: 'the one that ran' });
+    w.turns.emit(`${PARENT_RUN}/sub-1:1`, {
+      type: 'done',
+      response: chatResponse({ parts: [{ kind: 'text', text: 'the one that ran' }] }),
+    });
+
+    const outcome = await finished;
+    // The parent survived and got to decide what to do about it — rather than
+    // dying as `toolExecutorFailed` for a subagent that could not start.
+    expect(outcome.outcome).toEqual({ type: 'completed', stopReason: 'endTurn' });
+
+    const parentSecondTurn = w.turns.sent.find((request) => request.turnId === `${PARENT_RUN}:2`);
+    expect(parentSecondTurn?.messages.slice(2)).toEqual([
+      {
+        role: 'tool',
+        text: '',
+        parts: [{ kind: 'toolResult', callId: 'c1', content: 'the one that ran', isError: false }],
+      },
+      {
+        role: 'tool',
+        text: '',
+        parts: [
+          {
+            kind: 'toolResult',
+            callId: 'c2',
+            content: 'subagent could not start: conversationBusy',
+            isError: true,
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe('where a child writes is the composition root’s call, and it may be a host call', () => {
   // `newConversationId` may answer a promise, and in the shipping wiring it does:
   // `src/runtime/app-runtime.ts` creates a real conversation through

@@ -46,9 +46,9 @@ use std::sync::{Arc, OnceLock};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use vela_sandbox::contract::{
-    SandboxApproveReq, SandboxCancelReq, SandboxCancelRes, SandboxEventEnvelope,
+    PermissionLevel, SandboxApproveReq, SandboxCancelReq, SandboxCancelRes, SandboxEventEnvelope,
     SandboxPolicySnapshot, SandboxReleaseReq, SandboxReportDocumentReq, SandboxSubmitReq,
-    SandboxSubmitRes, PermissionLevel, SANDBOX_EVENT,
+    SandboxSubmitRes, SANDBOX_EVENT,
 };
 use vela_sandbox::{
     default_auto_approval_profile, protected_paths_for_this_machine, SandboxConfig,

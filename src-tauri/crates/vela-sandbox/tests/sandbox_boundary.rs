@@ -1042,6 +1042,1349 @@ fn the_policy_snapshot_says_what_this_machine_can_actually_do() {
     );
 }
 
+/* -------------------------------------------------------------------------- */
+/* rules the frozen contract states as sentences, and what holds them          */
+/*                                                                            */
+/* Everything below this banner is about a rule `pnpm typecheck` cannot reach: */
+/* an ordering, a narrowing, a comparison made over the wrong operand. Each    */
+/* one was watched to fail against a named change to the implementation it is  */
+/* about, and each doc comment says which change and what the caller sees when */
+/* it is made. A test nobody has watched fail is a claim, and claims are the   */
+/* thing this repository keeps finding in its own comments.                    */
+/* -------------------------------------------------------------------------- */
+
+impl Collector {
+    fn events_for(&self, run_id: &str) -> Vec<SandboxEventEnvelope> {
+        self.snapshot()
+            .into_iter()
+            .filter(|envelope| envelope.run_id == run_id)
+            .collect()
+    }
+
+    fn settled_for(&self, run_id: &str) -> Option<SandboxOutcome> {
+        self.events_for(run_id).into_iter().find_map(|envelope| {
+            match envelope.event {
+                SandboxEvent::Settled { outcome, .. } => Some(outcome),
+                _ => None,
+            }
+        })
+    }
+
+    /// What the person was shown, if anybody was asked.
+    fn prompt_for(&self, run_id: &str) -> Option<ApprovalRequest> {
+        self.events_for(run_id).into_iter().find_map(|envelope| {
+            match envelope.event {
+                SandboxEvent::AwaitingApproval { request } => Some(request),
+                _ => None,
+            }
+        })
+    }
+
+    /// The grant on the `accepted` event — the one the contract's ceiling rule
+    /// names, and the one a caller may act on.
+    fn accepted_grant(&self, run_id: &str) -> Option<EffectiveGrant> {
+        self.events_for(run_id).into_iter().find_map(|envelope| {
+            match envelope.event {
+                SandboxEvent::Accepted { grant } => Some(grant),
+                _ => None,
+            }
+        })
+    }
+}
+
+fn host_with_settings(
+    settings: SandboxConfig,
+    backend: Option<WslBackend>,
+) -> (Arc<SandboxHost>, Arc<Collector>) {
+    let collector = Arc::new(Collector::default());
+    let host = Arc::new(SandboxHost::new(
+        settings,
+        backend,
+        Arc::new(Sink(Arc::clone(&collector))),
+    ));
+    (host, collector)
+}
+
+/// A backend that reports `container` like the real one and cannot start a
+/// single process.
+///
+/// Every test that asks "was a person asked, or was this run accepted" needs the
+/// decision and not the run. Admission reads [`WslBackend::report`], which is
+/// the same here as for a real distribution, so the decision is identical — and
+/// anything that gets past it dies in the launcher instead of spending a WSL
+/// start-up. Tests about what a run *does* use [`boundary_backend`] and say so.
+fn unreachable_backend() -> Option<WslBackend> {
+    Some(WslBackend::for_distro("vela-test-no-such-distribution"))
+}
+
+#[track_caller]
+fn wait_until(within: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + within;
+    while Instant::now() < deadline {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    done()
+}
+
+/// `true` if a person was asked, `false` if the run was accepted without one.
+/// Anything else settling first is reported as itself rather than read as a
+/// silent `false`.
+#[track_caller]
+fn asked_or_accepted(collector: &Collector, run_id: &str) -> bool {
+    let decided = wait_until(Duration::from_secs(20), || {
+        collector.prompt_for(run_id).is_some()
+            || collector.accepted_grant(run_id).is_some()
+            || collector.settled_for(run_id).is_some()
+    });
+    if collector.prompt_for(run_id).is_some() {
+        return true;
+    }
+    if collector.accepted_grant(run_id).is_some() {
+        return false;
+    }
+    panic!(
+        "the run neither asked nor was accepted (decided within the deadline: {decided}); \
+         events {:?}",
+        collector.events_for(run_id)
+    );
+}
+
+/// A directory junction, the Windows spelling of the reparse point
+/// `CONTRACT-SANDBOX` calls "the same problem wearing Windows clothes". `false`
+/// when this machine would not make one, so the caller can say so out loud
+/// rather than assert nothing quietly.
+fn make_junction(link: &Path, target: &Path) -> bool {
+    std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(link.as_os_str())
+        .arg(target.as_os_str())
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+        && link.exists()
+}
+
+fn canonical(path: &Path) -> std::path::PathBuf {
+    std::fs::canonicalize(path)
+        .map(|resolved| vela_sandbox::paths::strip_verbatim(&resolved))
+        .expect("the test's own directory resolves")
+}
+
+/// A mount, spelled out so a row's intent is legible at the call site.
+fn mount_of(host_path: String, guest_path: &str, mode: MountMode) -> Mount {
+    Mount {
+        host_path,
+        guest_path: guest_path.to_string(),
+        mode,
+        materialisation: MountMaterialisation::Bind,
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* resolution before the check                                                */
+/* -------------------------------------------------------------------------- */
+
+/// A protected root reached by a different spelling is still a protected root.
+///
+/// `SANDBOX_PROTECTED_ROOTS` requires `hostPath` to be resolved — symlinks,
+/// `..`, `~`, Windows short names — **before** it is checked, and calls checking
+/// the unresolved string "the classic bypass". The existing
+/// `a_mount_of_a_protected_root_names_the_category_and_not_the_path` hands the
+/// host a path that is already canonical, so it holds the category-naming half
+/// and nothing about resolution: with `category_for` given
+/// `Path::new(&mount.host_path)` it stays green. Neither spelling below is a
+/// component prefix of the directory it reaches, so neither is caught by a check
+/// on the string.
+///
+/// Watched to fail with exactly that substitution in `admission::admit`: both
+/// spellings were admitted and the run executed with the user's key material
+/// mounted. The failure it describes is silent — no refusal, no prompt copy, a
+/// run that simply succeeds and reads the keys.
+#[test]
+fn a_protected_root_reached_by_another_spelling_is_still_a_protected_root() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let keys = temp.path().join("keys");
+    let decoy = temp.path().join("decoy");
+    std::fs::create_dir_all(&keys).expect("key dir");
+    std::fs::create_dir_all(&decoy).expect("decoy dir");
+    std::fs::write(keys.join("id_ed25519"), b"PRIVATE-KEY-BYTES").expect("key file");
+
+    let mut spellings: Vec<(&'static str, String)> = vec![(
+        "a `..` out of a sibling directory and back in",
+        decoy.join("..").join("keys").to_string_lossy().into_owned(),
+    )];
+    let junction = temp.path().join("link-to-keys");
+    if make_junction(&junction, &keys) {
+        spellings.push((
+            "a Windows directory junction",
+            junction.to_string_lossy().into_owned(),
+        ));
+    } else {
+        eprintln!(
+            "SKIPPED one half: this machine would not create a directory junction, so the \
+             reparse-point spelling asserts nothing here. The `..` spelling below still runs."
+        );
+    }
+
+    for (spelling, host_path) in spellings {
+        let mut settings = config(PermissionLevel::Full);
+        settings.protected.user_key_material = vec![canonical(&keys)];
+        let (host, collector) = host_with_settings(settings, unreachable_backend());
+        let mut request = submit_of("cat /work/*");
+        request.filesystem.mounts = vec![mount_of(host_path, "/work", MountMode::ReadOnly)];
+        host.submit(request).expect("well-formed: the directory is there");
+
+        let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(30));
+        match outcome {
+            SandboxOutcome::Refused {
+                reason: RefusalReason::MountIsProtectedRoot,
+                protected_root,
+                ..
+            } => assert_eq!(protected_root, Some(ProtectedRoot::UserKeyMaterial)),
+            other => panic!(
+                "{spelling} reached a protected root and the host answered {other:?}. The \
+                 protected-root check must run against the path `resolve_host_directory` \
+                 produced, not against the string the caller sent."
+            ),
+        }
+    }
+
+    // The control. Without it, a host that refused every mount in this tree
+    // would pass the loop above and have demonstrated nothing.
+    let mut settings = config(PermissionLevel::Ask);
+    settings.protected.user_key_material = vec![canonical(&keys)];
+    let (host, collector) = host_with_settings(settings, unreachable_backend());
+    let mut request = submit_of("echo hi");
+    let run_id = request.run_id.clone();
+    request.filesystem.mounts = vec![mount_of(
+        decoy.to_string_lossy().into_owned(),
+        "/work",
+        MountMode::ReadOnly,
+    )];
+    host.submit(request).expect("admitted");
+    assert!(
+        asked_or_accepted(&collector, &run_id),
+        "the sibling directory is not protected and must reach a person, or the refusals \
+         above are about the whole temporary tree rather than about resolution"
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* the order the checks run in                                                */
+/* -------------------------------------------------------------------------- */
+
+/// At `off`, every submit is `permissionIsOff` **before** anything else about it
+/// is looked at.
+///
+/// `PermissionLevel` says `off` refuses every submit, and `admission`'s own
+/// header fixes the order with `permissionIsOff` first. The existing
+/// `off_refuses_every_submit_before_anything_can_run` submits a request that is
+/// valid in every other respect, so it holds "off refuses" and not "off is
+/// first": with the check moved to the end of `admit` it stays green.
+///
+/// Each row below is a request that is wrong in exactly one other way, and each
+/// is asserted twice — `permissionIsOff` at `off`, and its own answer at `full`.
+/// The second half is what makes the first mean something: without it a host
+/// that refused these for some third reason would pass. This is the pattern the
+/// house uses where an ordering is not directly observable — the steps named as
+/// data, each one asserted alongside the effect it has.
+///
+/// Two rows are `INVALID_PAYLOAD` at `full` rather than a refusal, and those are
+/// the sharpest: reaching them means the host resolved a caller-supplied path
+/// and touched the filesystem for a request it had been told to ignore.
+///
+/// Watched to fail with the `off` check moved below the project check in
+/// `admit`: the row for an unknown project answered `unknownProject`, which
+/// tells a user who switched execution off nothing whatever about their own
+/// setting.
+#[test]
+fn off_is_answered_before_the_project_the_mounts_the_language_or_the_network() {
+    enum AtFull {
+        Refused(RefusalReason),
+        RejectedAtTheInvoke,
+    }
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let absent = temp.path().join("no-such-directory");
+    let present = temp.path().to_string_lossy().into_owned();
+
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(&str, Box<dyn Fn(&mut SandboxSubmitReq)>, AtFull)> = vec![
+        (
+            "the project id",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                request.project_id = "not-a-project-this-host-knows".into();
+            }),
+            AtFull::Refused(RefusalReason::UnknownProject),
+        ),
+        (
+            "the isolation family",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                request.minimum_isolation = Isolation::Document {
+                    level: DocumentIsolation::SameOrigin,
+                };
+            }),
+            AtFull::Refused(RefusalReason::IsolationFamilyMismatch),
+        ),
+        (
+            "the isolation floor",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                request.minimum_isolation = Isolation::Process {
+                    level: ProcessIsolation::MicroVm,
+                };
+            }),
+            AtFull::Refused(RefusalReason::IsolationUnavailable),
+        ),
+        (
+            "the language",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                request.program = SandboxProgram::Process(ProcessProgram {
+                    language: ProcessLanguage::Python,
+                    source: "print(1)".into(),
+                    working_directory: ProcessWorkingDirectory::Scratch,
+                    environment: Vec::new(),
+                    stdin: None,
+                });
+            }),
+            AtFull::Refused(RefusalReason::LanguageUnsupported),
+        ),
+        (
+            "the network policy",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                request.network = NetworkPolicy::Allowed;
+            }),
+            AtFull::Refused(RefusalReason::NetworkPolicyUnavailable),
+        ),
+        (
+            "the caller's environment",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                if let SandboxProgram::Process(program) = &mut request.program {
+                    program.environment = vec![EnvironmentEntry {
+                        name: "HOME".into(),
+                        value: "/mnt/c".into(),
+                    }];
+                }
+            }),
+            AtFull::Refused(RefusalReason::EnvironmentNamesCollide),
+        ),
+        (
+            "the working directory",
+            Box::new(|request: &mut SandboxSubmitReq| {
+                if let SandboxProgram::Process(program) = &mut request.program {
+                    program.working_directory = ProcessWorkingDirectory::GuestPath {
+                        path: "/somewhere-nobody-granted".into(),
+                    };
+                }
+            }),
+            AtFull::Refused(RefusalReason::WorkingDirectoryOutsideScope),
+        ),
+        (
+            "a mount's materialisation",
+            Box::new(move |request: &mut SandboxSubmitReq| {
+                request.filesystem.mounts = vec![Mount {
+                    host_path: present.clone(),
+                    guest_path: "/work".into(),
+                    mode: MountMode::ReadOnly,
+                    materialisation: MountMaterialisation::CopyIn,
+                }];
+            }),
+            AtFull::RejectedAtTheInvoke,
+        ),
+        (
+            "whether a mount's hostPath is even there",
+            Box::new(move |request: &mut SandboxSubmitReq| {
+                request.filesystem.mounts = vec![mount_of(
+                    absent.to_string_lossy().into_owned(),
+                    "/work",
+                    MountMode::ReadOnly,
+                )];
+            }),
+            AtFull::RejectedAtTheInvoke,
+        ),
+    ];
+
+    for (what, break_it, at_full) in rows {
+        let (host, collector) = host_with(PermissionLevel::Off, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        break_it(&mut request);
+        assert!(
+            host.submit(request).is_ok(),
+            "at `off` the host answered `INVALID_PAYLOAD` over {what}: it had to look at it \
+             to say so, for a request it was told to ignore"
+        );
+        let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(5));
+        assert!(
+            matches!(
+                outcome,
+                SandboxOutcome::Refused {
+                    reason: RefusalReason::PermissionIsOff,
+                    ..
+                }
+            ),
+            "at `off` a request that is wrong about {what} settled {outcome:?}. The user \
+             switched execution off and was told about something else."
+        );
+
+        // The other half: this row really is wrong in the way it claims, so the
+        // assertion above is about the order and not about a request that would
+        // have been fine anyway.
+        let (host, collector) = host_with(PermissionLevel::Full, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        break_it(&mut request);
+        match at_full {
+            AtFull::RejectedAtTheInvoke => assert!(
+                host.submit(request).is_err(),
+                "the row for {what} claims to be a malformed payload and was accepted"
+            ),
+            AtFull::Refused(expected) => {
+                host.submit(request).expect("admitted");
+                let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(5));
+                match outcome {
+                    SandboxOutcome::Refused { reason, .. } => assert_eq!(
+                        reason, expected,
+                        "the row for {what} does not produce the refusal it claims"
+                    ),
+                    other => panic!("the row for {what} settled {other:?} at `full`"),
+                }
+            }
+        }
+    }
+}
+
+/// `mountIndex` names the **first** bad row by position.
+///
+/// The only existing assertion on `mountIndex` is made with a single mount at
+/// index 0, so an off-by-one or a last-match-wins loop survives it. A surface
+/// that highlights the wrong row of an approval prompt has a person looking at
+/// one path and answering about another.
+///
+/// Watched to fail with the mount loop's `enumerate` replaced by a counter that
+/// keeps scanning and reports the last match: the first case below answered
+/// index 2 for a bad row at index 1.
+#[test]
+fn a_refusal_names_the_first_bad_mount_row_by_position() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let ordinary = temp.path().join("ordinary");
+    let also_ordinary = temp.path().join("also-ordinary");
+    let keys = temp.path().join("keys");
+    let more_keys = temp.path().join("more-keys");
+    for directory in [&ordinary, &also_ordinary, &keys, &more_keys] {
+        std::fs::create_dir_all(directory).expect("directory");
+    }
+    let path = |directory: &Path| directory.to_string_lossy().into_owned();
+
+    let cases: Vec<(&str, Vec<Mount>, RefusalReason, u32)> = vec![
+        (
+            "two protected rows: the first one is named",
+            vec![
+                mount_of(path(&ordinary), "/a", MountMode::ReadOnly),
+                mount_of(path(&keys), "/b", MountMode::ReadOnly),
+                mount_of(path(&more_keys), "/c", MountMode::ReadOnly),
+            ],
+            RefusalReason::MountIsProtectedRoot,
+            1,
+        ),
+        (
+            "a bad row last: the index is not clamped to the first row",
+            vec![
+                mount_of(path(&ordinary), "/a", MountMode::ReadOnly),
+                mount_of(path(&also_ordinary), "/b", MountMode::ReadOnly),
+                mount_of(path(&keys), "/c", MountMode::ReadOnly),
+            ],
+            RefusalReason::MountIsProtectedRoot,
+            2,
+        ),
+        (
+            "an overlap names the row that collided, not the row it collided with",
+            vec![
+                mount_of(path(&ordinary), "/a", MountMode::ReadOnly),
+                mount_of(path(&also_ordinary), "/a/inner", MountMode::ReadWrite),
+            ],
+            RefusalReason::MountsOverlap,
+            1,
+        ),
+    ];
+
+    for (what, mounts, expected, expected_index) in cases {
+        let mut settings = config(PermissionLevel::Full);
+        settings.protected.user_key_material = vec![canonical(&keys), canonical(&more_keys)];
+        let (host, collector) = host_with_settings(settings, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        request.filesystem.mounts = mounts;
+        host.submit(request).expect("admitted");
+
+        let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(5));
+        match outcome {
+            SandboxOutcome::Refused {
+                reason,
+                mount_index,
+                ..
+            } => {
+                assert_eq!(reason, expected, "{what}");
+                assert_eq!(
+                    mount_index,
+                    Some(expected_index),
+                    "{what}: `mountIndex` points a surface at a row of the approval prompt, \
+                     and this one points at the wrong path"
+                );
+            }
+            other => panic!("{what}: settled {other:?}"),
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* the grant is the request narrowed                                          */
+/* -------------------------------------------------------------------------- */
+
+/// A lowered limit is reported lowered, and a limit under the ceiling is not
+/// raised to it.
+///
+/// `SandboxLimits` says the host "may lower any of these and must report the
+/// lowered value in `SandboxAccepted.grant`. It may never raise one, and never
+/// lowers silently." Nothing held it: with `request.limits` placed in the grant
+/// while the run kept the lowered set, every test stayed green. The person then
+/// consents to a wall clock of ten minutes for a run that will be killed at
+/// five, and the only evidence is a `limitExceeded` that arrives early with no
+/// explanation.
+///
+/// Watched to fail with `limits: request.limits` in the `EffectiveGrant` built
+/// by `admit`.
+#[test]
+fn a_limit_the_host_lowers_is_reported_lowered_and_one_under_the_ceiling_is_untouched() {
+    let mut settings = config(PermissionLevel::Full);
+    settings.ceilings = SandboxLimits {
+        wall_clock_ms: 5_000,
+        memory_bytes: 256 * 1024 * 1024,
+        cpu_millicores: 2_000,
+        output_bytes: 64 * 1024,
+        processes: 64,
+        file_write_bytes: 1024 * 1024,
+    };
+    let (host, collector) = host_with_settings(settings, unreachable_backend());
+
+    let mut request = submit_of("echo hi");
+    let run_id = request.run_id.clone();
+    request.limits = SandboxLimits {
+        // Over the ceiling: must come back lowered.
+        wall_clock_ms: 600_000,
+        memory_bytes: 4 * 1024 * 1024 * 1024,
+        cpu_millicores: 8_000,
+        // Under the ceiling: must come back untouched, not raised to it. A host
+        // that "normalised" these to its own numbers would be widening a grant
+        // the caller deliberately made narrow.
+        output_bytes: 4_096,
+        processes: 8,
+        file_write_bytes: 1_024,
+    };
+    host.submit(request).expect("admitted");
+
+    assert!(
+        wait_until(Duration::from_secs(20), || collector
+            .accepted_grant(&run_id)
+            .is_some()),
+        "no `accepted` event; events {:?}",
+        collector.events_for(&run_id)
+    );
+    let grant = collector.accepted_grant(&run_id).expect("accepted");
+    assert_eq!(
+        grant.limits.wall_clock_ms, 5_000,
+        "the grant a person is shown must carry the number the run will actually be held to"
+    );
+    assert_eq!(grant.limits.memory_bytes, 256 * 1024 * 1024);
+    assert_eq!(grant.limits.cpu_millicores, 2_000);
+    assert_eq!(
+        grant.limits.output_bytes, 4_096,
+        "a limit under the ceiling is the caller's, and raising it to the ceiling would \
+         widen the grant"
+    );
+    assert_eq!(grant.limits.processes, 8);
+    assert_eq!(grant.limits.file_write_bytes, 1_024);
+}
+
+/// The grant never promises a scratch directory that outlives the run.
+///
+/// `EffectiveGrant` is the request narrowed: "Nothing here may be wider than the
+/// request — not a mode, not a mount, not a network policy, not a number", which
+/// is what lets a caller ignore it safely. `retainAfterSettled` is the one field
+/// this host actually narrows, and nothing held it: echoing the request back
+/// left every test green. A caller then comes back for the files of a failed run
+/// in a tmpfs that died with the namespace, finds an empty directory, and had
+/// been told by the grant that they would be there.
+///
+/// Watched to fail with `retain_after_settled: request.filesystem.scratch
+/// .retain_after_settled` in `admit`.
+#[test]
+fn the_grant_never_promises_a_scratch_directory_that_outlives_the_run() {
+    let (host, collector) = host_with(PermissionLevel::Full, unreachable_backend());
+    let mut request = submit_of("echo hi");
+    let run_id = request.run_id.clone();
+    request.filesystem.scratch = ScratchRequest {
+        guest_path: Some("/vela-scratch-of-this-run".into()),
+        retain_after_settled: true,
+    };
+    host.submit(request).expect("admitted");
+
+    assert!(
+        wait_until(Duration::from_secs(20), || collector
+            .accepted_grant(&run_id)
+            .is_some()),
+        "no `accepted` event; events {:?}",
+        collector.events_for(&run_id)
+    );
+    let grant = collector.accepted_grant(&run_id).expect("accepted");
+    assert!(
+        !grant.filesystem.scratch.retain_after_settled,
+        "the scratch directory is a tmpfs inside a namespace destroyed with the run, so a \
+         grant that echoes `retainAfterSettled: true` back promises files that cannot exist"
+    );
+    // Narrowed where it must be, and faithful everywhere else: the caller still
+    // learns where its scratch directory is.
+    assert_eq!(
+        grant.filesystem.scratch.guest_path,
+        "/vela-scratch-of-this-run"
+    );
+}
+
+/// A working directory outside every mount and outside scratch is refused, and
+/// not quietly moved somewhere convenient.
+///
+/// `ProcessWorkingDirectory` calls this "a refusal and not a fallback to
+/// somewhere convenient — the convenient fallback is the user's home directory,
+/// which is the whole problem". `workingDirectoryOutsideScope` had no producer
+/// in any test. A fallback yields a run that starts, works, and writes its
+/// output where the caller never named: a successful run with the artefacts
+/// missing from where they were expected.
+///
+/// Watched to fail with the refusal replaced by `scratch_guest_path.clone()`:
+/// the run was accepted and the grant reported a directory the caller had not
+/// asked for.
+#[test]
+fn a_working_directory_outside_every_mount_is_refused_and_not_moved_to_scratch() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let outside = |path: &str| {
+        let (host, collector) = host_with(PermissionLevel::Ask, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        if let SandboxProgram::Process(program) = &mut request.program {
+            program.working_directory = ProcessWorkingDirectory::GuestPath {
+                path: path.to_string(),
+            };
+        }
+        request.filesystem.mounts = vec![mount_of(
+            temp.path().to_string_lossy().into_owned(),
+            "/work",
+            MountMode::ReadWrite,
+        )];
+        let run_id = request.run_id.clone();
+        host.submit(request).expect("admitted");
+        wait_until(Duration::from_secs(5), || {
+            collector.settled_for(&run_id).is_some() || collector.prompt_for(&run_id).is_some()
+        });
+        if let Some(prompt) = collector.prompt_for(&run_id) {
+            panic!(
+                "a working directory at `{path}` was carried forward to a person as \
+                 `{:?}` instead of being refused. The convenient fallback is the whole \
+                 problem the refusal exists for.",
+                prompt.grant.working_directory
+            );
+        }
+        collector
+            .settled_for(&run_id)
+            .unwrap_or_else(|| panic!("no terminal event for a working directory at `{path}`"))
+    };
+
+    for path in [
+        // Nowhere at all.
+        "/somewhere-nobody-granted",
+        // The sibling trap, twice: a string prefix of the mount and of the
+        // scratch directory, inside neither. A containment check written with
+        // `starts_with` on the raw string admits both.
+        "/workshop",
+        "/vela/scratchy",
+    ] {
+        let outcome = outside(path);
+        match outcome {
+            SandboxOutcome::Refused {
+                reason: RefusalReason::WorkingDirectoryOutsideScope,
+                ..
+            } => {}
+            other => panic!(
+                "a working directory at `{path}` settled {other:?}. It must be refused rather \
+                 than replaced with somewhere convenient."
+            ),
+        }
+    }
+}
+
+/// The paths that *are* in scope are honoured and reported back, so the refusal
+/// above is about scope and not about `guestPath` being unserved.
+#[test]
+fn a_working_directory_inside_a_mount_or_inside_scratch_is_reported_in_the_grant() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    for (what, requested, expected) in [
+        ("a mount's own root", "/work", "/work"),
+        ("a directory inside a mount", "/work/inner", "/work/inner"),
+        (
+            "a directory inside scratch",
+            "/vela/scratch/inner",
+            "/vela/scratch/inner",
+        ),
+    ] {
+        let (host, collector) = host_with(PermissionLevel::Ask, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        let run_id = request.run_id.clone();
+        if let SandboxProgram::Process(program) = &mut request.program {
+            program.working_directory = ProcessWorkingDirectory::GuestPath {
+                path: requested.to_string(),
+            };
+        }
+        request.filesystem.mounts = vec![mount_of(
+            temp.path().to_string_lossy().into_owned(),
+            "/work",
+            MountMode::ReadWrite,
+        )];
+        host.submit(request).expect("admitted");
+
+        assert!(
+            wait_until(Duration::from_secs(10), || collector
+                .prompt_for(&run_id)
+                .is_some()),
+            "{what}: no approval was requested; events {:?}",
+            collector.events_for(&run_id)
+        );
+        let prompt = collector.prompt_for(&run_id).expect("prompt");
+        assert_eq!(
+            prompt.grant.working_directory.as_deref(),
+            Some(expected),
+            "{what}: `EffectiveGrant.workingDirectory` reports the path the run will start in"
+        );
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* automatic approval, decided over the request                               */
+/* -------------------------------------------------------------------------- */
+
+/// At `approve`, the isolation clause is compared over the **request's**
+/// `minimumIsolation` and never over the backend.
+///
+/// `AutoApprovalProfile` states it and says why: reading it against the backend
+/// "would auto-approve a run on a container-capable machine whose caller never
+/// demanded containment — a caller that named a floor of `none` would sail
+/// through on the strength of a guarantee it did not request and cannot rely
+/// on". This backend reports `container`, so the two readings differ for every
+/// submit that asks for less. The TypeScript twin is held by 'does not approve a
+/// run that merely lands on a capable backend' in
+/// `src/features/canvas/document-run.test.ts`; the half that a real Bash run
+/// goes through was not — `approve_runs_a_scratch_only_container_run_without_asking`
+/// demands `container` itself, so it cannot tell the two readings apart.
+///
+/// Watched to fail with `within_profile` comparing a hardcoded
+/// `Isolation::Process { level: ProcessIsolation::Container }` instead of
+/// `request.minimum_isolation`: both rows below were accepted with no prompt and
+/// no record, and Bash ran.
+#[test]
+fn approve_asks_when_the_submit_named_a_floor_below_the_profile_on_a_capable_backend() {
+    for level in [ProcessIsolation::None, ProcessIsolation::Process] {
+        let (host, collector) = host_with(PermissionLevel::Approve, unreachable_backend());
+        let mut request = submit_of("echo hi");
+        let run_id = request.run_id.clone();
+        // Everything else about this submit is inside the shipped profile: no
+        // mounts, network denied, the default limits, a language the profile
+        // covers. The isolation clause is the only one deciding.
+        request.minimum_isolation = Isolation::Process { level };
+        host.submit(request).expect("admitted");
+
+        assert!(
+            asked_or_accepted(&collector, &run_id),
+            "a submit whose own floor is {level:?} is below the profile's `container` and must \
+             stop for a person, whatever this machine happens to be capable of"
+        );
+    }
+}
+
+/// `readableRoots` and `writableRoots` are checked independently and neither
+/// implies the other.
+///
+/// `AutoApprovalProfile`: "a `readWrite` mount must appear here, and appearing
+/// here does not make a path readable. Spelling write access as a flag on the
+/// read list is how a widened read root silently becomes a widened write root."
+/// No test entered this loop at all, because `DEFAULT_AUTO_APPROVAL_PROFILE`
+/// ships both lists empty — so a profile a user widens by one root has never
+/// been exercised.
+///
+/// The rows are the whole matrix. Watched to fail with the `readWrite` arm
+/// reduced to `inside(&profile.writable_roots)`: the second row auto-approved a
+/// read-write mount of a root the user had only made readable.
+#[test]
+fn a_profile_root_on_one_list_does_not_grant_the_mode_the_other_list_names() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let sub = temp.path().join("sub");
+    std::fs::create_dir_all(&sub).expect("sub dir");
+    let root = temp.path().to_string_lossy().into_owned();
+
+    let rows: [(&str, bool, bool, MountMode, bool); 5] = [
+        ("read-only inside a readable root", true, false, MountMode::ReadOnly, false),
+        ("read-write inside a root that is only readable", true, false, MountMode::ReadWrite, true),
+        ("read-write inside a root that is only writable", false, true, MountMode::ReadWrite, true),
+        ("read-only inside a root that is only writable", false, true, MountMode::ReadOnly, true),
+        ("read-write inside a root on both lists", true, true, MountMode::ReadWrite, false),
+    ];
+
+    for (what, readable, writable, mode, expect_prompt) in rows {
+        let mut settings = config(PermissionLevel::Approve);
+        settings.profile.readable_roots = if readable { vec![root.clone()] } else { Vec::new() };
+        settings.profile.writable_roots = if writable { vec![root.clone()] } else { Vec::new() };
+        let (host, collector) = host_with_settings(settings, unreachable_backend());
+
+        let mut request = submit_of("echo hi");
+        let run_id = request.run_id.clone();
+        request.filesystem.mounts = vec![mount_of(
+            sub.to_string_lossy().into_owned(),
+            "/work",
+            mode,
+        )];
+        host.submit(request).expect("admitted");
+
+        assert_eq!(
+            asked_or_accepted(&collector, &run_id),
+            expect_prompt,
+            "{what}: this is the clause that decides whether model-authored code writes to \
+             the user's disk without anybody being asked"
+        );
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* the run table                                                              */
+/* -------------------------------------------------------------------------- */
+
+/// After release the id is free, and the slot it was holding is free with it.
+///
+/// `SandboxReleaseReq` says "after release the id is free", and
+/// `SandboxPolicySnapshot.activeRuns` counts "runs already admitted and not yet
+/// released". Nothing held either: with `settle` never removing a released run,
+/// every test stayed green — `releasing_a_run_that_is_still_waiting_for_a_person_abandons_it`
+/// asserts the outcome and nothing about the id. The run table then grows
+/// without bound and, after `maximumConcurrentRuns` submits, Vela refuses every
+/// later run `tooManyConcurrentRuns` forever: a slow wedge that looks like a
+/// capacity problem and has no error anywhere near its cause.
+///
+/// Watched to fail with the `remove` in `SandboxHost::settle` deleted:
+/// `activeRuns` stayed at four and the re-used id was rejected as already in
+/// flight.
+#[test]
+fn releasing_a_run_frees_its_id_and_the_slot_it_was_holding() {
+    let (host, collector) = host_with(PermissionLevel::Ask, unreachable_backend());
+    let capacity = host.policy().maximum_concurrent_runs as usize;
+
+    let mut ids: Vec<SandboxRunId> = Vec::new();
+    for _ in 0..capacity {
+        let request = submit_of("echo hi");
+        let run_id = request.run_id.clone();
+        host.submit(request).expect("admitted");
+        assert!(
+            wait_until(Duration::from_secs(10), || collector
+                .prompt_for(&run_id)
+                .is_some()),
+            "a run at `ask` stops for a person"
+        );
+        ids.push(run_id);
+    }
+    assert_eq!(host.policy().active_runs as usize, capacity);
+
+    // The control: the limit is real, so the assertions after the release are
+    // about the release and not about a limit that was never reached.
+    let over = submit_of("echo hi");
+    let over_id = over.run_id.clone();
+    host.submit(over).expect("admitted");
+    let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(5));
+    assert!(
+        matches!(
+            outcome,
+            SandboxOutcome::Refused {
+                reason: RefusalReason::TooManyConcurrentRuns,
+                ..
+            }
+        ),
+        "outcome {outcome:?}"
+    );
+
+    for run_id in ids.iter().chain(std::iter::once(&over_id)) {
+        host.release(SandboxReleaseReq {
+            run_id: run_id.clone(),
+        });
+    }
+    assert!(
+        wait_until(Duration::from_secs(10), || host.policy().active_runs == 0),
+        "released runs still counted as active: {} of them",
+        host.policy().active_runs
+    );
+    for run_id in ids.iter() {
+        assert!(
+            collector.settled_for(run_id).is_some(),
+            "every admitted run settles exactly once, release included"
+        );
+    }
+
+    // The id itself, and not merely the count: a caller that releases and
+    // retries with the same id is the ordinary shape of a retry.
+    let reused = SandboxSubmitReq {
+        run_id: ids[0].clone(),
+        ..submit_of("echo hi")
+    };
+    host.submit(reused)
+        .expect("after release the id is free for the corrected request");
+    assert!(
+        wait_until(Duration::from_secs(10), || collector
+            .events_for(&ids[0])
+            .iter()
+            .any(|envelope| matches!(
+                envelope.event,
+                SandboxEvent::AwaitingApproval { .. }
+            ))),
+        "the re-used id was admitted and then refused; events {:?}",
+        collector.events_for(&ids[0])
+    );
+}
+
+/// `seq` is dense, 0-based and **per run**.
+///
+/// The one existing assertion (`envelope.seq == index`, in
+/// `output_arrives_in_the_programs_own_order_within_one_stream`) runs against a
+/// collector holding exactly one run, so it cannot tell a per-run counter from a
+/// global one. Two runs in flight at once can: with the counter moved onto the
+/// host, the second run's stream starts at 2 and every consumer that treats
+/// `seq` as dense — the contract says reattachment will — silently mis-orders or
+/// discards events.
+///
+/// Watched to fail with `RunHandle::seq` replaced by a single `AtomicU64` on
+/// `SandboxHost`: the second run's envelopes were numbered 2 and 3.
+#[test]
+fn seq_is_dense_and_zero_based_within_each_run_and_not_shared_between_two() {
+    let (host, collector) = host_with(PermissionLevel::Ask, unreachable_backend());
+
+    let mut ids: Vec<SandboxRunId> = Vec::new();
+    for _ in 0..2 {
+        let request = submit_of("echo hi");
+        let run_id = request.run_id.clone();
+        host.submit(request).expect("admitted");
+        assert!(
+            wait_until(Duration::from_secs(10), || collector
+                .prompt_for(&run_id)
+                .is_some()),
+            "a run at `ask` stops for a person"
+        );
+        ids.push(run_id);
+    }
+
+    // Interleaved on purpose: both runs are live, so a shared counter would be
+    // handing out numbers to both.
+    for run_id in ids.iter() {
+        let digest = collector.prompt_for(run_id).expect("prompt").request_digest;
+        host.approve(SandboxApproveReq {
+            run_id: run_id.clone(),
+            request_digest: digest,
+            decision: ApprovalDecision::Deny,
+        })
+        .expect("the digest matches");
+    }
+
+    for run_id in ids.iter() {
+        assert!(
+            wait_until(Duration::from_secs(10), || collector
+                .settled_for(run_id)
+                .is_some()),
+            "no terminal event for {run_id}"
+        );
+        let seqs: Vec<u64> = collector
+            .events_for(run_id)
+            .iter()
+            .map(|envelope| envelope.seq)
+            .collect();
+        assert_eq!(
+            seqs,
+            vec![0, 1],
+            "`seq` is per run: {run_id} saw {seqs:?}, which is a stream with a gap in it for \
+             every consumer that treats it as dense"
+        );
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* the approval digest                                                        */
+/* -------------------------------------------------------------------------- */
+
+/// The digest covers the request, not the run.
+///
+/// `ApprovalRequest`: the approval "is bound to `requestDigest`, computed
+/// host-side over the canonical form of the submit. Approving covers exactly
+/// those bytes and that grant." The one existing assertion checks that a digest
+/// which was never handed out is refused — which hashing the run id alone would
+/// also pass. Every row below changes something a person was shown and nothing
+/// else, including the run id, which is held fixed so that a digest computed
+/// over the id cannot accidentally differ.
+///
+/// Watched to fail with the digest computed over `run_id.as_bytes()`: every row
+/// produced the same hex string, so an approval of one program would have
+/// covered any other.
+#[test]
+fn the_approval_digest_changes_when_anything_the_person_was_shown_changes() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let mount = temp.path().to_string_lossy().into_owned();
+
+    // One id for every row. A digest that changes here changes because the
+    // request changed.
+    let fixed_id = "the-same-run-id-for-every-row";
+    let base = || SandboxSubmitReq {
+        run_id: fixed_id.to_string(),
+        ..submit_of("echo hi")
+    };
+    let digest_of = |request: SandboxSubmitReq| -> String {
+        let (host, collector) = host_with(PermissionLevel::Ask, unreachable_backend());
+        let run_id = request.run_id.clone();
+        host.submit(request).expect("admitted");
+        assert!(
+            wait_until(Duration::from_secs(10), || collector
+                .prompt_for(&run_id)
+                .is_some()),
+            "no approval was requested; events {:?}",
+            collector.events_for(&run_id)
+        );
+        collector.prompt_for(&run_id).expect("prompt").request_digest
+    };
+
+    // Same bytes, twice: the digest is a function of the request and not of the
+    // clock, the host, or the order the rows run in.
+    assert_eq!(
+        digest_of(base()),
+        digest_of(base()),
+        "the same submit must produce the same digest, or a person's answer could never be \
+         matched to what they were shown"
+    );
+
+    let mut variants: Vec<(&str, SandboxSubmitReq)> = Vec::new();
+    variants.push(("the program text", {
+        let mut request = base();
+        request.program = SandboxProgram::Process(ProcessProgram {
+            language: ProcessLanguage::Bash,
+            source: "echo hi ".into(),
+            working_directory: ProcessWorkingDirectory::Scratch,
+            environment: Vec::new(),
+            stdin: None,
+        });
+        request
+    }));
+    variants.push(("the program's stdin", {
+        let mut request = base();
+        if let SandboxProgram::Process(program) = &mut request.program {
+            program.stdin = Some("fed-in".into());
+        }
+        request
+    }));
+    variants.push(("the mounts", {
+        let mut request = base();
+        request.filesystem.mounts = vec![mount_of(mount.clone(), "/work", MountMode::ReadOnly)];
+        request
+    }));
+    variants.push(("a mount's mode", {
+        let mut request = base();
+        request.filesystem.mounts = vec![mount_of(mount.clone(), "/work", MountMode::ReadWrite)];
+        request
+    }));
+    variants.push(("the limits", {
+        let mut request = base();
+        request.limits.wall_clock_ms += 1;
+        request
+    }));
+    variants.push(("the isolation floor", {
+        let mut request = base();
+        request.minimum_isolation = Isolation::Process {
+            level: ProcessIsolation::Process,
+        };
+        request
+    }));
+    variants.push(("the scratch directory", {
+        let mut request = base();
+        request.filesystem.scratch = ScratchRequest {
+            guest_path: Some("/scratch-somewhere-else".into()),
+            retain_after_settled: false,
+        };
+        request
+    }));
+    variants.push(("the environment", {
+        let mut request = base();
+        if let SandboxProgram::Process(program) = &mut request.program {
+            program.environment = vec![EnvironmentEntry {
+                name: "CI".into(),
+                value: "1".into(),
+            }];
+        }
+        request
+    }));
+
+    // The network policy is deliberately absent: every value but `denied` is
+    // refused by this backend before an approval is ever requested, so there is
+    // no prompt to compare. That is a fact about this host and not about the
+    // rule.
+    let mut seen: Vec<(String, String)> = vec![("the base request".into(), digest_of(base()))];
+    for (what, request) in variants {
+        let digest = digest_of(request);
+        for (other, previous) in seen.iter() {
+            assert_ne!(
+                &digest, previous,
+                "changing {what} left the digest identical to {other}: an approval of one \
+                 would cover the other, and the person answered about neither"
+            );
+        }
+        seen.push((what.to_string(), digest));
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* what the run sees, checked from inside the run                             */
+/* -------------------------------------------------------------------------- */
+
+/// The child's environment is exactly `ProcessProgram.environment` plus
+/// `SANDBOX_BASE_ENVIRONMENT_POSIX`, and nothing else exists inside the run.
+///
+/// `SANDBOX_BASE_ENVIRONMENT_POSIX` states it as a closed set: "a variable that
+/// is not in one of those two places does not exist inside the run — including
+/// every token the user happened to export into the shell that launched Vela".
+/// No test asserted it from inside a run. Broken, model-authored Bash gets the
+/// user's whole shell environment with no symptom at all — the run works and the
+/// output looks normal. This is the exact leak the contract inverts the
+/// reference product's blocklist to prevent.
+///
+/// The set is asserted closed rather than by absence of names somebody thought
+/// of: a list of forbidden names is the blocklist this rule exists to replace.
+/// Two names the shell gives itself are the only exception and are named here.
+///
+/// **Which of the two mechanisms this holds, measured rather than assumed.**
+/// `env -i` on the guest exec line is held: removing it put `WSL_DISTRO_NAME`,
+/// `WSL_INTEROP`, `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` and fifteen more of
+/// the distribution's own variables inside the run, and this test went red
+/// naming them. `Command::env_clear` on the launcher is **not** held by it, and
+/// that was measured too: with `env -i` standing, removing `env_clear` changes
+/// nothing a run can see, because the guest clears the environment again on the
+/// way in. It is the outer half of a belt-and-braces pair and only the inner
+/// half is observable from where the contract states the rule. Removing both,
+/// plus the `WSLENV` line that decides what crosses into the guest at all, put
+/// the value exported below inside the run — so the rule as a whole is held,
+/// and one of its two implementations is held only in composition with the
+/// other.
+#[test]
+fn the_run_sees_the_base_environment_the_callers_entries_and_nothing_else() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    // Exported into this process, which is what a launcher that inherited
+    // anything would inherit. Named like the thing it stands for.
+    std::env::set_var("VELA_TEST_EXPORTED_TOKEN", "sk-this-must-not-reach-a-run");
+
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+    let mut request = submit_of("env");
+    if let SandboxProgram::Process(program) = &mut request.program {
+        program.environment = vec![EnvironmentEntry {
+            name: "VELA_RUN_LABEL".into(),
+            value: "set-by-the-caller".into(),
+        }];
+    }
+    host.submit(request).expect("admitted");
+
+    let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(120));
+    let stdout = collector.text(OutputStream::Stdout);
+    assert!(
+        matches!(outcome, SandboxOutcome::Exited { exit_code: 0 }),
+        "outcome {outcome:?} stdout {stdout:?}"
+    );
+
+    let seen: Vec<(&str, &str)> = stdout
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .collect();
+    let value_of = |name: &str| -> Option<&str> {
+        seen.iter()
+            .find(|(seen, _)| *seen == name)
+            .map(|(_, value)| *value)
+    };
+
+    // The two the shell sets for itself. Written down rather than filtered out
+    // by a pattern, so that a third one arriving is a failure and not a silent
+    // widening of what counts as expected.
+    const SHELL_OWN: [&str; 2] = ["SHLVL", "_"];
+    let mut expected: Vec<&str> = SANDBOX_BASE_ENVIRONMENT_POSIX.to_vec();
+    expected.push("VELA_RUN_LABEL");
+    expected.extend_from_slice(&SHELL_OWN);
+    expected.sort_unstable();
+
+    let mut got: Vec<&str> = seen.iter().map(|(name, _)| *name).collect();
+    got.sort_unstable();
+    assert_eq!(
+        got, expected,
+        "the run's environment is the caller's entries plus the base list and nothing else. \
+         `{}` of the shell's own is the only allowance. stdout {stdout:?}",
+        SHELL_OWN.join("`, `")
+    );
+
+    assert_eq!(value_of("VELA_RUN_LABEL"), Some("set-by-the-caller"));
+    assert_eq!(value_of("HOME"), Some("/vela/scratch"));
+    assert_eq!(value_of("TMPDIR"), Some("/vela/scratch"));
+    assert_eq!(value_of("LANG"), Some("C.UTF-8"));
+    assert_eq!(
+        value_of("PATH"),
+        Some("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
+        "the host's `PATH` and not a translation of the user's: a `PATH` with `/mnt/c` in \
+         it is the Windows filesystem reachable by name"
+    );
+    assert!(
+        !stdout.contains("sk-this-must-not-reach-a-run"),
+        "a value exported into the shell that launched Vela reached the run"
+    );
+
+    // The launcher's own noise is attributed to the program if it is not
+    // suppressed: WSL prints one line per `PATH` entry it cannot translate,
+    // which is every entry once `/mnt` is gone.
+    assert_eq!(
+        collector.text(OutputStream::Stderr),
+        "",
+        "the run's stderr belongs to the program"
+    );
+}
+
+/// `EffectiveGrant.workingDirectory` reports the directory the run actually
+/// starts in.
+///
+/// `ProcessWorkingDirectory`: "Whichever is chosen,
+/// `EffectiveGrant.workingDirectory` reports the path the run will actually
+/// start in, so a caller that said `scratch` still learns where that was." The
+/// plan and the grant share one value today, but nothing bound that value to the
+/// guest's own `pwd` — the `cd` line in `guest_script` could diverge and no test
+/// would notice. A caller told `/vela/scratch` that is actually started
+/// elsewhere writes relative paths into the wrong tree and reads back nothing.
+///
+/// Watched to fail with `cd {}` in `wsl::WslBackend::guest_script` replaced by
+/// `cd /`: every row reported a directory the run had not started in.
+#[test]
+fn the_grant_reports_the_directory_the_run_actually_starts_in() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    let temp = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir_all(temp.path().join("inner")).expect("inner dir");
+
+    let rows = [
+        ("the caller said `scratch`", ProcessWorkingDirectory::Scratch),
+        (
+            "a mount's own root",
+            ProcessWorkingDirectory::GuestPath {
+                path: "/work".into(),
+            },
+        ),
+        (
+            "a directory inside a mount",
+            ProcessWorkingDirectory::GuestPath {
+                path: "/work/inner".into(),
+            },
+        ),
+    ];
+
+    for (what, working_directory) in rows {
+        let (host, collector) = host_with(PermissionLevel::Full, Some(backend.clone()));
+        let mut request = submit_of("pwd");
+        let run_id = request.run_id.clone();
+        if let SandboxProgram::Process(program) = &mut request.program {
+            program.working_directory = working_directory;
+        }
+        request.filesystem.mounts = vec![mount_of(
+            temp.path().to_string_lossy().into_owned(),
+            "/work",
+            MountMode::ReadWrite,
+        )];
+        host.submit(request).expect("admitted");
+
+        let (outcome, _usage) = wait_for_settled(&collector, Duration::from_secs(120));
+        let stdout = collector.text(OutputStream::Stdout);
+        assert!(
+            matches!(outcome, SandboxOutcome::Exited { exit_code: 0 }),
+            "{what}: outcome {outcome:?} stdout {stdout:?}"
+        );
+        let reported = collector
+            .accepted_grant(&run_id)
+            .expect("accepted")
+            .working_directory;
+        assert_eq!(
+            Some(stdout.trim()),
+            reported.as_deref(),
+            "{what}: the grant said one directory and the run started in another"
+        );
+    }
+}
+
+/// Multibyte output crosses the reader's buffer without growing a replacement
+/// character, and `bytes` counts bytes.
+///
+/// `SandboxOutput`: the host "decodes UTF-8 across chunk boundaries and never
+/// splits a code point between two events", and `bytes` is "the length of the
+/// decoded source bytes, not of `text`". `complete_utf8_prefix` had no test at
+/// any level. Broken, every read boundary in a run's output grows a replacement
+/// character mid-word, which the user attributes to their own program — a
+/// plausible wrong answer, never a crash.
+///
+/// The shape is chosen so the boundary lands inside a character rather than
+/// between two: the reader's buffer is 8192 bytes and each line here is 31
+/// (ten three-byte characters and a newline), and 8192 is 264 lines plus eight
+/// bytes, which is the middle of the third character of the next one.
+///
+/// Watched to fail with `complete_utf8_prefix` returning `buffer.len()`
+/// unconditionally: the run's output came back with replacement characters in
+/// it and the text no longer matched what the program printed.
+#[test]
+fn multibyte_output_crosses_the_read_buffer_without_a_replacement_character() {
+    let Some(backend) = boundary_backend() else {
+        return;
+    };
+    const LINES: usize = 20_000;
+    const LINE: &str = "€€€€€€€€€€";
+
+    let (host, collector) = host_with(PermissionLevel::Full, Some(backend));
+    host.submit(submit_of(&format!("yes '{LINE}' | head -n {LINES}")))
+        .expect("admitted");
+    let (outcome, usage) = wait_for_settled(&collector, Duration::from_secs(120));
+
+    let stdout = collector.text(OutputStream::Stdout);
+    assert!(
+        matches!(outcome, SandboxOutcome::Exited { exit_code: 0 }),
+        "outcome {outcome:?}"
+    );
+    assert!(
+        !stdout.contains('\u{FFFD}'),
+        "the output grew a replacement character the program never printed, at byte {:?}",
+        stdout.find('\u{FFFD}')
+    );
+    let expected: String = format!("{LINE}\n").repeat(LINES);
+    assert_eq!(stdout.len(), expected.len(), "the whole stream arrived");
+    assert_eq!(stdout, expected);
+
+    // `bytes` is the length of the source bytes. A host counting characters, or
+    // UTF-16 units, would answer a third of this against a byte budget.
+    assert_eq!(usage.output_bytes as usize, expected.len());
+    for envelope in collector.snapshot() {
+        if let SandboxEvent::Output { text, bytes, .. } = envelope.event {
+            assert_eq!(
+                bytes,
+                text.as_bytes().len() as u64,
+                "`bytes` counts the decoded source bytes, not the length of `text`"
+            );
+        }
+    }
+}
+
 /// Keeps `std::io::Write` used on platforms where nothing else needs it, and
 /// documents that the harness writes nothing to disk of its own.
 #[allow(dead_code)]

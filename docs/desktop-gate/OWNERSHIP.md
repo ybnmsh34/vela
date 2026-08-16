@@ -153,6 +153,29 @@ exists — not that this red was it. An unnamed single failure stays unestablish
 repeats. Capture the failing test name (`--reporter=verbose`, or tee the whole log) rather than
 filtering to the summary, so a recurrence can be compared.
 
+### `git checkout -- <path>` can rewrite the file it restores, and `git status` will not say so
+
+This repository has `core.autocrlf=true` from the system gitconfig and **no `* text=auto` rule**.
+The working tree is mixed: `vela-drive.mjs` is CRLF on disk, `keys.mjs` and `keys.test.mjs` are LF.
+Restoring an LF file with `git checkout -- <path>` **writes it back as CRLF**, and because the
+filter normalises on the way in, `git status` still reports the tree clean.
+
+That makes the standard "put it back the way I found it" move a silent mutation. It was caught once
+today only because the agent had recorded a raw hash before touching the file — `git status` said
+clean, and the bytes on disk were not the bytes it started with.
+
+**Restore from a byte snapshot you took yourself, and verify by hash, not by `git status`.** Take
+the hash before the first edit; compare after the last. A related and harmless follow-on: writing a
+file invalidates git's index stat cache, after which git may report an LF file as ` M` even though
+its *filtered* content matches the blob. `git add` on identical content resyncs the stat and changes
+no blob and no tree — `git diff --cached HEAD` stays empty — so that particular ` M` is noise, not a
+change. Distinguish the two cases by hashing; do not assume either way.
+
+This is the third line-ending hazard on this project, after the 58-of-106 CRLF-vs-store mismatch at
+Wave 1 gate 4 and the pure-LF `cargo fmt` failure at gate 2. The common cause is the missing
+`.gitattributes` coverage, and until that is closed every byte-exact operation here has to defend
+itself.
+
 ### A pipeline reports the exit status of the *last* command, so a gate can fail green
 
 This one cost nothing only because the log was read anyway. Running the gate as

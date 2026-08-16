@@ -72,9 +72,9 @@
  *     namespace that runs Bash and nothing else; `BrowserAdapter` implements all six as a
  *     fake that runs nothing and refuses every submit `languageUnsupported`, which is what
  *     the real host also answers on a machine with no WSL distribution. Still unbuilt:
- *     every document command path, `python`, both copying materialisations, and any surface
- *     that renders an approval prompt is **reachable by a user**. See amendment 6 for the
- *     last clause: an approval surface now exists and is wired, and no host can reach it.
+ *     every document command path, `python`, both copying materialisations, and any
+ *     approval prompt a user can actually reach. See amendment 6 for that last item: an
+ *     approval surface now exists and is wired, and no host in this tree can drive it.
  *  2. **Some rules below are enforced by tests now, and which ones is not obvious.** As of
  *     2026-08-15 the `vela-sandbox` crate carries 47 tests: `tests/sandbox_boundary.rs` is an
  *     escape battery that executes real programs inside the boundary and checks the

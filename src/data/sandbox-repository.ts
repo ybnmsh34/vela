@@ -9,10 +9,12 @@
  *
  * `src/app/App.tsx` builds it once and hands it to `CanvasSurface`, which is the
  * only consumer in the tree. That sentence is the point of this paragraph: this
- * file was complete and tested and **on no import path from `src/main.tsx`** for
- * as long as Canvas ran its own renderer-side stand-in, and a door nothing walks
- * through is not a door. `src/runtime/reachable.test.ts` now fails if this
- * module leaves the graph again.
+ * file was tested and **on no import path from `src/main.tsx`** for as long as
+ * Canvas ran its own renderer-side stand-in, and a door nothing walks through is
+ * not a door. It covered five commands while it sat there;
+ * {@link SandboxRepository.reportDocument} is the sixth and was added with the
+ * wiring that finally gave the file a caller.
+ * `src/runtime/reachable.test.ts` now fails if this module leaves the graph again.
  *
  * ## The one rule a caller must not get wrong
  *

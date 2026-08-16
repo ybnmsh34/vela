@@ -98,12 +98,17 @@ export function App({ adapter }: AppProps) {
  * downstream changes.
  *
  * The sandbox repository is handed down the same way, and for a reason with more
- * teeth than tidiness. `src/data/sandbox-repository.ts` was a complete, tested
- * door to the six `sandbox_*` commands with **no importer outside its own
- * tests**, while `CanvasSurface` built a renderer-side host of its own — so the
- * permission level, the approval, the digest and the timeout were all decided
- * inside the process the sandbox contract exists to constrain. This line is the
- * joint that was missing. `src/runtime/reachable.test.ts` fails if it goes away.
+ * teeth than tidiness. `src/data/sandbox-repository.ts` was a tested door to
+ * five of the `sandbox_*` commands — `policy`, `submit`, `approve`, `cancel`,
+ * `release` — with **no importer but its own test**, while `CanvasSurface` built
+ * a renderer-side host of its own, so the permission level, the approval, the
+ * digest and the timeout were all decided inside the process the sandbox
+ * contract exists to constrain. This line is the joint that was missing.
+ *
+ * `sandbox_report_document` is the sixth, and **this branch added it**: the
+ * command was allowlisted and registered on both sides of `invoke` with no
+ * caller anywhere in `src/`, so wiring the door up meant finishing it first.
+ * `src/runtime/reachable.test.ts` fails if this line goes away.
  *
  * It is built here, above the `key={conversationId}` remount, for the same
  * reason the runtime is: a repository rebuilt per conversation would re-subscribe

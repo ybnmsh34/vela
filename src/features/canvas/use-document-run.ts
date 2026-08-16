@@ -113,11 +113,59 @@ function newRunId(): SandboxRunId {
 
 const NO_DIAGNOSTICS: readonly SandboxDiagnostic[] = [];
 
+/** `scripts` exists only on the executable arm; `svg` and `mermaid` have none. */
+function scriptsOf(program: DocumentProgram): string | null {
+  return 'scripts' in program ? program.scripts : null;
+}
+
+/**
+ * One object identity per distinct program, so the run below is keyed on what a
+ * program *is* rather than on which object happens to carry it.
+ *
+ * This is not a micro-optimisation, and the reason is the boundary this file
+ * exists to move. `collectArtifacts` rebuilds every track — and every
+ * `DocumentProgram` inside it — whenever the assistant-message array changes
+ * identity, which is once per drained batch of stream deltas for *any* turn in
+ * the conversation, including turns that contain no artifact at all. The
+ * artifact on screen has not changed; only its wrapper is new.
+ *
+ * While Canvas ran its own renderer-side host that churn cost a few objects. Now
+ * every cycle puts a real `sandbox_release` and `sandbox_submit` across `invoke`
+ * and tears down and re-establishes the `sandbox:event` subscription in between
+ * — `watch` is an `adapter.listen`, not a command, which is why only two of the
+ * three show up in a count of invokes. Measured on the fake with one word per
+ * macrotask: a 39-word answer streaming beside an open panel drove **12 submits
+ * and 11 releases** where one submit was warranted.
+ *
+ * It never reached `tooManyConcurrentRuns` — release is issued in the teardown
+ * that precedes the next submit, so the table held one run and the host refuses
+ * at five — but a surface that submits eleven times to draw one artifact is
+ * telling the host something untrue about what the user did.
+ */
+function useStableProgram(next: DocumentProgram | null): DocumentProgram | null {
+  const held = useRef<DocumentProgram | null>(null);
+  const current = held.current;
+  if (next === null) {
+    held.current = null;
+  } else if (
+    current === null ||
+    current.language !== next.language ||
+    current.source !== next.source ||
+    scriptsOf(current) !== scriptsOf(next)
+  ) {
+    held.current = next;
+  }
+  return held.current;
+}
+
 export function useDocumentRun(
   sandbox: SandboxRepository,
   projectId: ProjectId,
-  program: DocumentProgram | null,
+  incoming: DocumentProgram | null,
 ): DocumentRun {
+  // Keyed by value: an equal program that arrived in a new object must not
+  // start a second run. See {@link useStableProgram}.
+  const program = useStableProgram(incoming);
   const [phase, setPhase] = useState<RunPhase>({ kind: 'submitting' });
   const [diagnostics, setDiagnostics] = useState<readonly SandboxDiagnostic[]>(NO_DIAGNOSTICS);
   const runIdRef = useRef<SandboxRunId | null>(null);

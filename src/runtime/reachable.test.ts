@@ -149,12 +149,16 @@ describe('the agentic runtime is wired into the product', () => {
   /**
    * The same defect, found one directory over, named rather than generalised.
    *
-   * `src/data/sandbox-repository.ts` was a complete and tested door to the six
-   * `sandbox_*` commands whose only importers were its own test and two other
-   * tests, while `src/features/canvas/CanvasSurface.tsx` built a renderer-side
-   * host instead — so the sandbox contract's permission level, approval decision
-   * and request digest were all decided inside the process that contract exists
-   * to constrain. Wiring it up is worth nothing if it can silently come loose.
+   * `src/data/sandbox-repository.ts` was a tested door to five `sandbox_*`
+   * commands whose **only importer was its own test** — `contract-sandbox.ts`
+   * and `project-run-scope.test.ts` name the file in prose, which is not an
+   * import, and the first of those is not a test — while
+   * `src/features/canvas/CanvasSurface.tsx` built a renderer-side host instead,
+   * so the sandbox contract's permission level, approval decision and request
+   * digest were all decided inside the process that contract exists to
+   * constrain. The sixth command, `sandbox_report_document`, had no caller in
+   * `src/` at all and was added with this wiring. Wiring it up is worth nothing
+   * if it can silently come loose.
    *
    * **It is one named module rather than a walk of `src/data`, and that is a
    * deliberate limit on this guard.** `mcp-repository.ts` and

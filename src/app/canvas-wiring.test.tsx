@@ -44,7 +44,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { App } from '@/app/App';
 import { BrowserAdapter } from '@/platform/browser-adapter';
-import { NO_CAPABILITIES, type ModelCapabilityReport } from '@/platform/contract';
+import {
+  NO_CAPABILITIES,
+  type CommandName,
+  type CommandReq,
+  type CommandRes,
+  type ModelCapabilityReport,
+} from '@/platform/contract';
 import { resetModelStore } from '@/state/model-store';
 import { resetNavigationStore } from '@/state/navigation-store';
 
@@ -140,6 +146,95 @@ describe('an artifact in an answer reaches the panel', () => {
     await user.click(within(panel).getByRole('tab', { name: 'Code' }));
     expect(within(panel).getByTestId('canvas-code')).toHaveTextContent('circle r="4" fill="red"');
   });
+
+  /**
+   * One artifact on screen is one run, however much streams beside it.
+   *
+   * `collectArtifacts` rebuilds every track from scratch whenever the
+   * assistant-message array changes identity, which is once per drained batch of
+   * stream deltas — including deltas of a *later* turn that contains no artifact
+   * at all. Each rebuild produced a new `DocumentProgram` object for the artifact
+   * already on screen, and `useDocumentRun` keyed its effect on that object.
+   *
+   * While Canvas ran a renderer-side host this cost objects. Once the boundary
+   * moved it cost a `sandbox_release` and a `sandbox_submit` across `invoke` per
+   * batch, either side of a torn-down and re-established `sandbox:event`
+   * subscription. This test pins the fix; before it, the run below measured
+   * **twelve** submits for one artifact.
+   *
+   * The pacing matters and is the reason this test looks odd. With the fake's
+   * default microtask scheduling every delta of an answer lands in one burst and
+   * the surface's own coalescing hides the defect — it measured two submits, not
+   * twelve. One word per macrotask is what a real stream looks like to the
+   * renderer, and it is the only setting under which this test can fail.
+   */
+  it('submits once for an artifact no matter how much streams beside it', async () => {
+    const submits: CommandName[] = [];
+    class Counting extends BrowserAdapter {
+      override async invoke<C extends CommandName>(
+        command: C,
+        payload: CommandReq<C>,
+      ): Promise<CommandRes<C>> {
+        if (command === 'sandbox_submit') submits.push(command);
+        return super.invoke(command, payload);
+      }
+    }
+    const adapter = new Counting({ scheduleFrame: (run) => setTimeout(run, 1) });
+    await adapter.invoke('settings_put_provider', {
+      id: 'workstation',
+      displayName: 'The workstation',
+      kind: 'local',
+      baseUrl: 'http://127.0.0.1:8080/v1',
+      modelId: 'local-model',
+    });
+    adapter.seedCapabilities(report());
+
+    const user = userEvent.setup();
+    render(<App adapter={adapter} />);
+    await user.click(await screen.findByRole('button', { name: 'Start a conversation' }));
+    await screen.findByRole('region', { name: 'Conversation' });
+
+    await user.click(screen.getByRole('textbox', { name: 'Message' }));
+    await user.paste(`Draw me this.\n\n\`\`\`svg\n${CHART}\n\`\`\`\n`);
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(
+      () => {
+        expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false');
+      },
+      { timeout: 10_000 },
+    );
+    await screen.findByRole('complementary', { name: 'Artifact: SVG image' });
+    expect(submits).toHaveLength(1);
+
+    // A second turn with no fence in it. The panel from the first turn stays
+    // open and showing the same artifact for every word of it.
+    await user.click(screen.getByRole('textbox', { name: 'Message' }));
+    await user.paste(
+      'Here is a much longer explanation that streams one word at a time and ' +
+        'carries no fenced block at all so the panel beside it never changes ' +
+        'which artifact it is showing while every one of these words arrives.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(
+      () => {
+        expect(within(screen.getByRole('log')).getAllByRole('article')).toHaveLength(4);
+      },
+      { timeout: 10_000 },
+    );
+    await waitFor(
+      () => {
+        expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false');
+      },
+      { timeout: 10_000 },
+    );
+
+    expect(
+      submits,
+      'the artifact on screen never changed, so the host should have been asked ' +
+        'to run it exactly once — a second submit means the panel is keyed on ' +
+        'the object carrying the program rather than on the program',
+    ).toHaveLength(1);
+  }, 30_000);
 
   it('leaves the transcript alone when the answer has nothing to draw', async () => {
     const user = userEvent.setup();

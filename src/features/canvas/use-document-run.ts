@@ -134,13 +134,21 @@ function scriptsOf(program: DocumentProgram): string | null {
  * and tears down and re-establishes the `sandbox:event` subscription in between
  * — `watch` is an `adapter.listen`, not a command, which is why only two of the
  * three show up in a count of invokes. Measured on the fake with one word per
- * macrotask: a 39-word answer streaming beside an open panel drove **12 submits
- * and 11 releases** where one submit was warranted.
+ * macrotask: a 39-word answer streaming beside an open panel drove **12 to 17
+ * submits**, with a release behind each but the last, where one submit was
+ * warranted.
+ *
+ * Read that as a magnitude and not a fixture. The count is however many batches
+ * the stream happened to drain in, so it tracks machine speed and load rather
+ * than anything about the defect — ten samples spread across that whole span,
+ * two clusters of them on one machine hours apart, none below twelve. What does
+ * not move is the guard in `src/app/canvas-wiring.test.tsx`: it asserts
+ * `toHaveLength(1)` and reddens at two, so the spread costs it nothing.
  *
  * It never reached `tooManyConcurrentRuns` — release is issued in the teardown
  * that precedes the next submit, so the table held one run and the host refuses
- * at five — but a surface that submits eleven times to draw one artifact is
- * telling the host something untrue about what the user did.
+ * at five — but a surface that resubmits a dozen times over to draw one artifact
+ * is telling the host something untrue about what the user did.
  */
 function useStableProgram(next: DocumentProgram | null): DocumentProgram | null {
   const held = useRef<DocumentProgram | null>(null);

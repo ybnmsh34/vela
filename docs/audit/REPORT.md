@@ -143,6 +143,57 @@ container or graded UNVERIFIED. Real damage is still possible in the unredirecte
 install overwrote two genuine shortcuts on the user's Desktop and Start Menu to point at a
 container-only path, which would have failed for the user with no diagnostic.
 
+## The first `reaches-user` evidence in this audit (2026-08-16)
+
+Until this entry, **every** verdict in this document was `traced` or `test-bites`. The supreme rule
+grades those UNVERIFIED. Three surfaces have now been clicked in a running Vela window at
+`8200985`, driven by `tests/harness/desktop-click/vela-drive.mjs`.
+
+Process ownership was proven on every command, not assumed: the pid holding the debug socket
+(`msedgewebview2.exe` 35612) was verified to descend from the `vela.exe` the harness itself spawned
+(3168). App-data was `isolated`, identifier `dev.vela.harness`.
+
+| surface | what appeared in the live DOM when its sidebar control was clicked |
+|---|---|
+| Projects | `role="dialog"` — "A project holds instructions that are sent with every agent run…"; body text 1710 → 2025 chars |
+| Skills | "Skills are folders in Vela's skill store on this device. Each one holds a SKILL.md file…"; body 2050 |
+| Schedules | "When a slot comes round, Vela opens a conversation holding the prompt…"; body 2214 |
+
+**What this evidence is not.** A dev-profile binary against a Vite dev server, not a release bundle
+and not an installed one. Clicks after the first were dispatched through CDP, which React handles as
+a genuine user event but which is not OS input. Nothing was typed, so the keystroke corruption
+described in `fix/harness-keycode` does not touch these three results — but it does touch any
+earlier grade that involved typing.
+
+### Defect found by clicking, which 2,311 passing tests did not find
+
+**Two controls share the accessible name "Close", and one of them quits the application.**
+
+With a panel open, the DOM holds `aria-label="Close"` on the titlebar caption control
+(`_captionButton_ _closeButton_`, outside any dialog) and a second control whose text is `Close`
+inside the dialog (`_close_`). Name-based navigation — a screen reader, voice control, or any
+automation — cannot distinguish "dismiss this panel" from "quit Vela".
+
+Established by reproduction, per this document's own standard that an unnamed single failure stays
+unestablished until a name repeats. First occurrence: an automated run died mid-sequence with
+`CDP Runtime.evaluate timed out after 30000ms` and the process gone, with **no Rust panic and no
+Windows Error Reporting entry** — which is why it initially read as a crash. Deliberate second
+occurrence: with no dialog open exactly one control named `Close` exists; clicking it produced the
+identical timeout signature followed by `vela processes alive: 0`.
+
+Vela did not crash on either occasion. It was closed by a control that a user navigating by name
+cannot tell from a panel dismissal.
+
+### A second instrument defect, recorded because it affects how every grade here is read
+
+`vela-drive.mjs`'s `up` returns `ok: true` while `readyState` is `interactive` and
+`rootChildElements` is `0`. Its README states that `up` waits for `readyState === 'complete'`. It
+does not. Both launches in this session reported success against an unmounted renderer, which reads
+as "the app renders nothing" to anyone who trusts the return value. It is cold-start latency, and
+`mount` re-run a minute later reports correctly — but a harness that reports success for a state its
+own `mount` command calls `THE RENDERER DID NOT MOUNT` is a harness that can manufacture a false
+verdict in either direction.
+
 ## What Wave 1 closed, and what it did not (2026-08-15)
 
 Six branches merged. Rows are listed here rather than edited in place, so the original grade and
@@ -632,7 +683,11 @@ whoever fixes it should re-run the measurement rather than take the audit's word
 | `processes` limit reported `kernel`-enforced | **FAIL** | hardware | reaches-user | wsl.rs:178 declares `EnforcementLevel::Kernel`; wsl.rs:322-325 emits `ulimit -u N 2>/dev/null \|\| true` into a script piped to `/bin/sh` = dash, whose ulimit has no `-u` (`/bin/sh: 3: ulimit: Illegal option -u`). Via the real `SandboxHost`: grant said `processes: 8`, run reported `ulimit -u` 127929 and forked 300 with zero errors. No test covers this limit — the only `kernel` claim is the only untested one. |
 | Test coverage for the descendant-reaping claim | **FAIL** | test unproven | n/a | I ran the mutation and it did NOT bite: `cancelling_stops_the_run_and_reaches_every_descendant` passes with `--kill-child` removed from the launcher. Its only descendant assertion is `!stdout.contains("NEVER")` against a pipe the host stops reading at cancellation, so an orphaned guest could print forever and it would still hold. The test is named for a guarantee it does not check. |
 | stderr fidelity — host bytes attributed to the program | **FAIL** | hardware | reaches-user | A cold-VM run delivered UTF-16LE `wsl.exe` text ("the wsl2.localhostForwarding setting has no effect…", caused by the user's own .wslconfig `networkingMode=mirrored`) as `SandboxEvent::Output{stream:Stderr}`, counted against `output_bytes`. `new_command`'s comment anticipates this exact class for PATH noise and fixes it with `env_clear`; this warning is not environmental and gets through. Makes `output_arrives_in_the_programs_own_order…` (which asserts stderr equals `"to-stderr\n"` exactly) order-dependent. |
-| End-to-end reachability from a UI surface | **FAIL** | read only | not-wired | All six commands are registered (lib.rs:210-215) and `src/data/sandbox-repository.ts` invokes them, but `createSandboxRepository` has no non-test caller and the only `ToolExecutor` the composition root builds (`createSubagentToolkit`, app-runtime.ts:81) has no bash tool. No surface renders an approval prompt, so `awaitingApproval` has no consumer. The renderer test suite runs against `BrowserAdapter`'s fake, which refuses every submit `languageUnsupported` — VERIFIED-BY-FAKE. All of this is declared accurately in contract-sandbox.ts amendment 4, which I checked in both directions. |
+| End-to-end reachability from a UI surface | **FAIL** | read only | not-wired | All six commands are registered (the `ipc::sandbox::sandbox_*` rows of the `generate_handler!`
+list in `src-tauri/src/lib.rs` — cited by symbol because the line numbers rot: they were 210-215
+when this row was written, 211-216 at `e563575`, and 221-226 at `8200985` after the
+project-instructions merge inserted `project_*` above them) and `src/data/sandbox-repository.ts`
+invokes them, but `createSandboxRepository` has no non-test caller and the only `ToolExecutor` the composition root builds (`createSubagentToolkit`, app-runtime.ts:81) has no bash tool. No surface renders an approval prompt, so `awaitingApproval` has no consumer. The renderer test suite runs against `BrowserAdapter`'s fake, which refuses every submit `languageUnsupported` — VERIFIED-BY-FAKE. All of this is declared accurately in contract-sandbox.ts amendment 4, which I checked in both directions. |
 | WSL2 namespace construction (the launcher) | **PASS** | test bites | reaches-user | Removing `unshare` and all five flags from `WslBackend::command` (wsl.rs:389-398) failed both escape tests immediately; the crate's dedicated unit test also pins each flag by name. Registered command path only — no renderer surface invokes it (see the reachability row). |
 | Windows filesystem unreachable from a run (both 9p routes) | **PASS** | test bites | reaches-user | No-oping the `umount -l` loop in wsl.rs:271-276 produced `mnt-entries=0 ninep-mounts=4` and failed at sandbox_boundary.rs:231. The second prefix (`/usr/lib/wsl`) and the labelled two-count assertion are both load-bearing; the unlabelled form would have stayed green. |
 | The pre-mount interlock protecting the user's live distribution | **PASS** | hardware | reaches-user | wsl.rs:217-220 checks `/proc/net/dev` has exactly 1 interface before the first mount. Distro's own namespace has 8. With `unshare` removed, both runs settled `HostFailed{BackendStartFailed}` with `stdout ""` — no script line after the check ran — and the user's Ubuntu afterwards still had /mnt/c, 5 /mnt entries, 4 9p mounts and a writable rootfs. This is the only guard whose failure mode is damage to the user. |

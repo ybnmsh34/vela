@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AssistantTurn, UserTurn } from './MessageTurn';
+import { entriesFromStored } from './stored-entries';
 import { EMPTY_TURN, type TurnState } from './turn-stream';
 
 const TURN_STREAM = readFileSync(
@@ -198,5 +199,51 @@ describe('the window says which endpoint answered', () => {
     const reply = screen.getByRole('article', { name: 'Model reply' });
     expect(within(reply).queryByLabelText('Which endpoint answered')).toBeNull();
     expect(within(reply).queryByText(/home-workstation/u)).toBeNull();
+  });
+});
+
+describe('the disclosure survives closing and reopening the conversation', () => {
+  /**
+   * **The loop the two unit tests do not close on their own.**
+   *
+   * `stored-entries.test.ts` proves a stored row produces a `TurnState` with
+   * `answeredBy` set. The tests above prove a `TurnState` with `answeredBy` set
+   * renders the note. Neither proves the composition, and the composition is
+   * where the defect lived: the column was written, carried through the
+   * contract, and read by nothing, so the disclosure a user saw when the turn
+   * arrived was gone the moment they reopened the conversation — while the truth
+   * sat correctly in SQLite.
+   *
+   * So this drives the real restore path into the real component and reads the
+   * real DOM, with a stored row whose two endpoints differ.
+   */
+  it('draws the substitution for a turn rebuilt from a stored row', () => {
+    const [entry] = entriesFromStored([
+      {
+        id: 'msg_1',
+        conversationId: 'conv_1',
+        seq: 0,
+        role: 'assistant',
+        status: 'complete',
+        parts: [{ kind: 'text', text: 'the answer' }],
+        providerId: 'home-workstation',
+        modelId: 'local-model',
+        answeredByProviderId: 'rented-gpu-box',
+        answeredByModelId: 'big-model',
+        usage: { inputTokens: null, outputTokens: null, reasoningTokens: null, cachedInputTokens: null },
+        stopReason: null,
+        errorMessage: null,
+        createdAtMs: 1_700_000_000_000,
+        updatedAtMs: 1_700_000_000_000,
+      },
+    ]);
+    if (entry?.kind !== 'assistant') throw new Error('the restore did not produce an assistant turn');
+
+    render(<AssistantTurn turn={entry.turn} id="t4" selectedProviderId="home-workstation" />);
+
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+    const note = within(reply).getByLabelText('Which endpoint answered');
+    expect(within(note).getByText(/rented-gpu-box/u)).toBeInTheDocument();
+    expect(within(note).getByText(/home-workstation/u)).toBeInTheDocument();
   });
 });

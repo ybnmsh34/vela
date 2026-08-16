@@ -28,9 +28,15 @@
  * Both are stated here rather than left for a reader to discover, and both are
  * live limitations rather than settled design: the fix for either is a wider
  * stored shape, not a cleverer reconstruction.
+ *
+ * The converse case is {@link answeredByOf}: the endpoint that answered *is* in
+ * the store, so it is restored. "Refuses to invent" is not "declines to read" —
+ * dropping a fact the row actually holds turned a recorded substitution into
+ * silence on reload, which is its own way of misreporting the turn.
  */
 
 import type {
+  AnswerProvenance,
   ContentPart,
   ContentPartInput,
   StopReason,
@@ -154,7 +160,50 @@ function turnFromStored(message: StoredMessage): TurnState {
     phase: phaseOf(message.status),
     usage: usageOf(message.usage),
     stopReason: stopReasonOf(message.stopReason),
+    answeredBy: answeredByOf(message),
   });
+}
+
+/**
+ * Who answered, as the row records it — **the one thing on this list that is
+ * rebuilt rather than refused.**
+ *
+ * The module header explains why the typed error and the tool outcomes are not
+ * restored: neither is in the store, so reconstructing them would put an
+ * invented claim in front of the user. This is the opposite case and that is the
+ * whole reason it belongs here. The answering endpoint *is* in the store, in its
+ * own column, written by the turn that happened. Leaving it out was not caution
+ * — it silently downgraded a recorded fact to "unattributed", so reopening a
+ * conversation made the substitution disclosure vanish while the truth sat
+ * correctly in SQLite.
+ *
+ * Both halves or neither. {@link AnswerProvenance} has no shape for "an endpoint
+ * whose model is unknown", and filling in the missing half from
+ * `message.modelId` — the model the user *selected* — would be exactly the
+ * confusion between addressed and answering that this column exists to end. A
+ * half-written row is treated as no record, which is what it is.
+ *
+ * `null` stays `null`, and nothing here reads the selection columns. Every row
+ * written before migration 6 lands on that path, and it must render as silence
+ * rather than as the endpoint the turn was addressed to.
+ *
+ * The locals are named for the columns they hold rather than for the fields they
+ * become. A `StoredMessage` carries **two** provider ids — the one addressed and
+ * the one that answered — so a local called `providerId` in this function names
+ * whichever of them the reader assumes, which is the precise ambiguity the
+ * second column was added to end. (It also keeps `no-provider-leak.test.ts`
+ * quiet, which is a consequence and not the reason: that scan flags any
+ * comparison on a bare `providerId` outside `use-conversation.ts`, and it cannot
+ * tell a presence check from a branch on backend identity. Moving this function
+ * into that carrier — the fix used for `attributionOf` — is not available here,
+ * because `use-conversation.ts` already imports `entriesFromStored` from this
+ * module and the pair would become a runtime import cycle.)
+ */
+function answeredByOf(message: StoredMessage): AnswerProvenance | null {
+  const answeredByProviderId = message.answeredByProviderId;
+  const answeredByModelId = message.answeredByModelId;
+  if (answeredByProviderId === null || answeredByModelId === null) return null;
+  return { providerId: answeredByProviderId, modelId: answeredByModelId };
 }
 
 /**

@@ -877,7 +877,12 @@ commands.type = async (flags) => {
       match: result.matches[index],
     });
   }
-  if (flags.clear) {
+  // Read once, and let the same two consts drive both the behaviour and the
+  // report — `keyEvents` was derived from the value's route alone, and said
+  // "no key events at all" on a run that had just pressed Backspace or Enter.
+  const cleared = Boolean(flags.clear);
+  const enter = Boolean(flags.enter);
+  if (cleared) {
     await cdp.evaluate(
       'document.activeElement && document.activeElement.select && document.activeElement.select()',
     );
@@ -895,7 +900,7 @@ commands.type = async (flags) => {
       await pressKey(cdp, keySpecFor(character));
     }
   }
-  if (flags.enter) await pressKey(cdp, NAMED_KEYS.Enter);
+  if (enter) await pressKey(cdp, NAMED_KEYS.Enter);
   await sleep(flagNumber(flags, 'settle', 300));
   const value = await cdp.evaluate(
     '(() => { const el = document.activeElement; if (!el) return null; ' +
@@ -905,11 +910,19 @@ commands.type = async (flags) => {
   return {
     typed: text,
     charactersSent: insertText ? 0 : [...text].length,
-    enter: Boolean(flags.enter),
-    keyEvents: !insertText,
+    // `--clear` presses Backspace and `--enter` presses Enter on *either*
+    // route, so `keyEvents` is a property of the whole run and cannot be read
+    // off the value's route. `valueKeyEvents` is the narrower question — did
+    // the value itself go in as keys — and `cleared` is reported because
+    // otherwise the Backspace is unrecoverable from the transcript.
+    cleared,
+    enter,
+    keyEvents: !insertText || cleared || enter,
+    valueKeyEvents: !insertText,
     mechanism: insertText
-      ? 'CDP Input.insertText — one insertion, no key events at all. Nothing that listens for ' +
-        'keydown/keyup saw this input.'
+      ? 'CDP Input.insertText — the value went in as one insertion with no key events of its ' +
+        'own. Any key events in this run came from --clear (Backspace) or --enter; see ' +
+        '`cleared` and `enter`.'
       : 'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp, with the ' +
         'US-layout virtual-key code and shift state for each character. Enter is text "\\r".',
     isOsInput: false,

@@ -50,6 +50,14 @@ const PRINTABLE = Array.from({ length: 0x7f - 0x20 }, (_, i) => String.fromCharC
  * Windows virtual-key codes in the ASCII-printable range that belong to a
  * *non-character* key. Anything in `!`…`/` (33–47) lands in here, which is why
  * the defect was never about `.` alone.
+ *
+ * The second block is the one an earlier version of this file got wrong: it
+ * called every code point above `/` "unassigned on Windows". Eight of them are
+ * (`: ; < = > ? @ ^`, i.e. 0x3A–0x40 and 0x5E); nine are not. `VK_APPS` is the
+ * one with teeth — Blink fires a context menu on an unmodified `VK_APPS` keyup
+ * on non-Mac, so `]` under the old mapping plausibly opened a context menu on
+ * top of the window being measured, a corruption class the first account of
+ * this defect missed entirely.
  */
 const NON_CHARACTER_VK = {
   8: 'VK_BACK',
@@ -71,7 +79,23 @@ const NON_CHARACTER_VK = {
   45: 'VK_INSERT',
   46: 'VK_DELETE',
   47: 'VK_HELP',
+  91: 'VK_LWIN',
+  92: 'VK_RWIN',
+  93: 'VK_APPS (context menu)',
+  95: 'VK_SLEEP',
+  96: 'VK_NUMPAD0',
+  123: 'VK_F12',
+  124: 'VK_F13',
+  125: 'VK_F14',
+  126: 'VK_F15',
 };
+
+/**
+ * The code points in the printable range that really are unassigned. Listed so
+ * the claim is checkable instead of asserted in prose: 0x3A–0x40 is the gap
+ * between `9` and `A`, and 0x5E is the gap between `Z` and `VK_SLEEP`.
+ */
+const UNASSIGNED_VK = [58, 59, 60, 61, 62, 63, 64, 94];
 
 // ---------------------------------------------------------------------------
 // 1. the table
@@ -95,9 +119,10 @@ describe('the character → virtual-key table', () => {
 
   /**
    * The general form. Every character whose code point falls in 33–47 used to
-   * press a navigation or editing key; `:` `;` `<` `=` `>` `?` `@` `[` `\` `]`
-   * `^` `_` `` ` `` `{` `|` `}` `~` used to press virtual-key codes that are
-   * unassigned on Windows.
+   * press a navigation or editing key. Of the rest, `:` `;` `<` `=` `>` `?` `@`
+   * `^` pressed genuinely unassigned codes, and `[` `\` `]` `_` `` ` `` `{`
+   * `|` `}` `~` pressed VK_LWIN, VK_RWIN, VK_APPS, VK_SLEEP, VK_NUMPAD0 and
+   * F12–F15 — assigned keys, one of which opens a context menu.
    */
   it('gives no printable character the virtual-key code of a non-character key', () => {
     const offenders = PRINTABLE.filter((character) => {
@@ -111,6 +136,70 @@ describe('the character → virtual-key table', () => {
       'a character carrying a navigation/editing virtual-key code runs that command on keydown ' +
         'instead of typing, and Chromium then suppresses the character event',
     ).toEqual([]);
+  });
+
+  /**
+   * The paragraph above, as an assertion — "which keys did it actually press"
+   * is exactly the claim that was wrong in the first write-up of this defect,
+   * so it is checked rather than asserted in prose.
+   *
+   * Not a CONTROL despite driving the shipped mapping: it classifies by
+   * *disagreement* with the fixed table, so reverting the fix empties all three
+   * lists and it goes red. That is wanted — it pins the headline number to the
+   * fix rather than to a comment.
+   */
+  it('names which keys the shipped mapping actually pressed', () => {
+    const editingOrNav = [];
+    const otherAssigned = [];
+    const unassigned = [];
+    for (const character of PRINTABLE) {
+      const shipped = shippedKeySpecFor(character).keyCode;
+      // `0`-`9`, `a`-`z`, `A`-`Z` and space carried the right code already.
+      if (shipped === keySpecFor(character).keyCode) continue;
+      if (shipped <= 47) editingOrNav.push(character);
+      else if (NON_CHARACTER_VK[shipped] !== undefined) otherAssigned.push(character);
+      else if (UNASSIGNED_VK.includes(shipped)) unassigned.push(character);
+      else throw new Error(`unclassified: ${character} → ${shipped}`);
+    }
+    expect(editingOrNav.join('')).toBe('!"#$%&\'()*+,-./');
+    expect(otherAssigned.join('')).toBe('[\\]_`{|}~');
+    expect(unassigned.join('')).toBe(':;<=>?@^');
+    // The headline number, pinned: 32 characters carried a wrong virtual-key
+    // code. Not 59 — that is the count with *any* wrong field, below.
+    expect(editingOrNav.length + otherAssigned.length + unassigned.length).toBe(32);
+  });
+
+  /**
+   * The other headline number, and the reason the two must not be conflated:
+   * `A`-`Z` carried the correct virtual-key code and the correct `code`, and
+   * were wrong only in the shift bit. Space was wrong only in `code`. Writing
+   * "59 were sent as the wrong key" — as the first version of the README and
+   * the ownership row both did — contradicts the sentence before it, which says
+   * ASCII and VK agree on `A`-`Z`.
+   *
+   * Also not a CONTROL, for the same reason as the test above.
+   */
+  it('59 characters had at least one wrong field, and 32 of them the key itself', () => {
+    const wrongKeyCode = [];
+    const wrongAnything = [];
+    for (const character of PRINTABLE) {
+      const shipped = shippedKeySpecFor(character);
+      const now = keySpecFor(character);
+      if (shipped.keyCode !== now.keyCode) wrongKeyCode.push(character);
+      if (
+        shipped.keyCode !== now.keyCode ||
+        shipped.code !== now.code ||
+        Boolean(shipped.shiftKey) !== now.shiftKey
+      ) {
+        wrongAnything.push(character);
+      }
+    }
+    expect(wrongKeyCode).toHaveLength(32);
+    expect(wrongAnything).toHaveLength(59);
+    expect(PRINTABLE).toHaveLength(95);
+    // The 27 that are in the wider set only: every capital, plus space.
+    const shiftOrCodeOnly = wrongAnything.filter((c) => !wrongKeyCode.includes(c));
+    expect(shiftOrCodeOnly.join('')).toBe(' ABCDEFGHIJKLMNOPQRSTUVWXYZ');
   });
 
   /** `code` is the physical key. `Digit.` and `Digit@` are not codes at all. */
@@ -207,17 +296,33 @@ describe('the character → virtual-key table', () => {
  * in `EditingBehavior::InterpretKeyEvent`. When one of these runs, the keydown
  * is handled and the character event never fires — the character is not typed.
  *
- * Only the commands this file actually exercises are modelled. The rest of the
- * 33–47 block is covered by the pure-function guard above, which needs no claim
- * about what each command does — only that a printable character must not carry
- * that virtual-key code at all.
+ * All nine of the swallowing keys in the 33–47 block are modelled. An earlier
+ * version left out 33, 34, 38 and 40, and a model that omits a command reports
+ * a string the real pipeline corrupts as arriving *intact* — the exact failure
+ * direction this file's header warns about. Fed the shipped mapping, that
+ * version said `"Hello, World!"` and `"a&b(c)d"` round-tripped; they do not.
+ *
+ * On a single-line `<input>` the four line/page commands collapse onto the two
+ * ends of the field: Up and PageUp move the caret to 0, Down and PageDown to
+ * the end. That is everyday behaviour for Up/Down and the less certain of the
+ * two claims for PageUp/PageDown — no assertion in this file distinguishes
+ * them, and none should be read as evidence about the page commands.
+ *
+ * 41–45 and 47 (`VK_SELECT`, `VK_PRINT`, `VK_EXECUTE`, `VK_SNAPSHOT`,
+ * `VK_INSERT`, `VK_HELP`) carry no bare binding, so under the old mapping
+ * `)` `*` `+` `,` `-` `/` did insert — their damage was to the event, not the
+ * text, and the pure-function guards above are what cover that.
  */
 const BARE_EDITING_COMMAND = {
   8: ['DeleteBackward', (el) => replaceRange(el, Math.max(0, caret(el) - 1), caret(el), '')],
+  33: ['MovePageUp', (el) => setCaret(el, 0)],
+  34: ['MovePageDown', (el) => setCaret(el, el.value.length)],
   35: ['MoveToEndOfLine', (el) => setCaret(el, el.value.length)],
   36: ['MoveToBeginningOfLine', (el) => setCaret(el, 0)],
   37: ['MoveLeft', (el) => setCaret(el, Math.max(0, caret(el) - 1))],
+  38: ['MoveUp', (el) => setCaret(el, 0)],
   39: ['MoveRight', (el) => setCaret(el, Math.min(el.value.length, caret(el) + 1))],
+  40: ['MoveDown', (el) => setCaret(el, el.value.length)],
   46: ['DeleteForward', (el) => replaceRange(el, caret(el), Math.min(el.value.length, caret(el) + 1), '')],
 };
 
@@ -238,7 +343,7 @@ function replaceRange(el, start, end, text) {
  * Returns what the element holds afterwards — the thing under test is the
  * field's value, not the string that was requested.
  */
-function typeInto(el, text, specFor) {
+function typeInto(el, text, specFor, commands = BARE_EDITING_COMMAND) {
   const keydowns = [];
   const record = (event) =>
     keydowns.push({
@@ -262,7 +367,7 @@ function typeInto(el, text, specFor) {
           cancelable: true,
         }),
       );
-      const command = BARE_EDITING_COMMAND[spec.keyCode];
+      const command = commands[spec.keyCode];
       if (command) {
         command[1](el);
         continue;
@@ -298,8 +403,16 @@ describe('the strings a user actually types reach the field intact', () => {
   /**
    * CONTROL, and the model's calibration. Driven by the mapping that shipped,
    * the model reproduces both strings that were observed coming out of a real
-   * window — from nothing but the virtual-key codes. That is the evidence that
-   * the model's account of the pipeline is the right one.
+   * window — from nothing but the virtual-key codes.
+   *
+   * Read narrowly. Both strings exercise exactly *one* command (VK 46) and the
+   * VK number is fixed by ASCII, so there was no free parameter to tune — the
+   * reproduction is not circular. But it validates one claim only: **VK 46
+   * swallowed the character.** It does not validate the deletion behaviour,
+   * because the caret is at the end of the field on every `.` in both strings —
+   * replacing `DeleteForward` with a command that deletes nothing gives
+   * identical output. Nor does it validate any of the other nine commands. The
+   * assertion below pins that, so the limit cannot quietly widen.
    *
    * It cannot go red when the fix is reverted, because it carries its own copy
    * of the old mapping. It is a control, not a regression test.
@@ -307,6 +420,44 @@ describe('the strings a user actually types reach the field intact', () => {
   it('CONTROL: the shipped mapping reproduces both field-observed corruptions', () => {
     expect(typeInto(field(), '127.0.0.1:8033', shippedKeySpecFor).value).toBe('127001:8033');
     expect(typeInto(field(), 'Local llama.cpp', shippedKeySpecFor).value).toBe('Local llamacpp');
+  });
+
+  /**
+   * CONTROL: the boundary of what the two observations establish. A model whose
+   * VK 46 deletes nothing at all — a pure swallow — reproduces both observed
+   * strings exactly. So the observations cannot tell the two apart, and nothing
+   * downstream may cite them as evidence that the forward delete happens.
+   */
+  it('CONTROL: a pure swallow at VK 46 fits both observations just as well', () => {
+    const swallow = { ...BARE_EDITING_COMMAND, 46: ['swallow, delete nothing', () => {}] };
+    const withSwallow = (el, text) => typeInto(el, text, shippedKeySpecFor, swallow).value;
+    expect(withSwallow(field(), '127.0.0.1:8033')).toBe('127001:8033');
+    expect(withSwallow(field(), 'Local llama.cpp')).toBe('Local llamacpp');
+    // The two models *are* different — they just do not differ on the caret
+    // position both observations happen to sit at.
+    const el = field();
+    el.value = 'ab';
+    el.setSelectionRange(0, 0);
+    expect(typeInto(el, '.', shippedKeySpecFor, swallow).value).toBe('ab');
+    const other = field();
+    other.value = 'ab';
+    other.setSelectionRange(0, 0);
+    expect(typeInto(other, '.', shippedKeySpecFor).value).toBe('b');
+  });
+
+  /**
+   * CONTROL: the two strings an incomplete model reported as intact. Before
+   * VK 33/34/38/40 were added to `BARE_EDITING_COMMAND`, this file said both of
+   * these round-tripped under the shipped mapping. They do not, and a harness
+   * test that reports a corrupted string as clean is the failure this whole
+   * branch is about.
+   */
+  it('CONTROL: the shipped mapping also lost characters to the line and page keys', () => {
+    // '!' is 33, VK_PRIOR → MovePageUp: swallowed at the end of the field.
+    expect(typeInto(field(), 'Hello, World!', shippedKeySpecFor).value).toBe('Hello, World');
+    // '&' is 38 (VK_UP → caret to 0) and '(' is 40 (VK_DOWN → caret to end);
+    // ')' is 41, VK_SELECT, which carries no binding and so inserts.
+    expect(typeInto(field(), 'a&b(c)d', shippedKeySpecFor).value).toBe('bac)d');
   });
 
   /**
@@ -390,6 +541,19 @@ describe('the strings a user actually types reach the field intact', () => {
  * the same way `os-input.ps1` is in `verdicts.test.mjs`: the runtime symptom of
  * losing either one is silence.
  */
+/**
+ * Comment lines removed, so a negative assertion fires on the defect and not on
+ * a comment describing it. Both files quote the old wrong bytes deliberately.
+ */
+const codeOnly = (text) =>
+  text
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
+    })
+    .join('\n');
+
 describe('typing has two routes, and the silent one is never the default', () => {
   const source = readFileSync(join(HERE, 'vela-drive.mjs'), 'utf8');
   /** Just `commands.type`, so an `indexOf` cannot answer from another command. */
@@ -421,9 +585,46 @@ describe('typing has two routes, and the silent one is never the default', () =>
     expect(typeCommand).toContain('--insert-text to insert it');
   });
 
+  /**
+   * The first version of this guard asserted `keyEvents: !insertText`, which
+   * pinned a defect rather than catching one. `--clear` presses Backspace and
+   * `--enter` presses Enter on *either* route, so `--insert-text --enter` put
+   * two `Input.dispatchKeyEvent` calls on the wire and reported
+   * `keyEvents: false` with a `mechanism` reading "no key events at all". A
+   * guard whose name is "a transcript cannot be misread" passing while the
+   * transcript could be misread is worse than no guard.
+   */
   it('says in its own output which route ran, so a transcript cannot be misread', () => {
-    expect(source).toContain('no key events at all');
-    expect(source).toContain('keyEvents: !insertText');
+    // The whole-run question and the narrower value-only question are both
+    // answered, and they are different questions.
+    expect(typeCommand).toContain('keyEvents: !insertText || cleared || enter,');
+    expect(typeCommand).toContain('valueKeyEvents: !insertText,');
+    // `--clear` fires a Backspace that is otherwise unrecoverable from the
+    // JSON, so the flag has to be in the record.
+    expect(typeCommand).toContain('cleared,');
+    expect(typeCommand).toContain('enter,');
+    // ...and the emitted prose must not claim a silence the run did not have.
+    // Negative assertions read code only: this file and `vela-drive.mjs` both
+    // quote the old wrong sentence on purpose, and a guard that fires on the
+    // description of a defect instead of the defect is the same mistake the
+    // `charCodeAt` detector below already had to be taught not to make.
+    expect(codeOnly(typeCommand)).not.toContain('no key events at all');
+    expect(typeCommand).toContain('no key events of its');
+  });
+
+  /**
+   * The behaviour the flags actually drive has to come from the same two
+   * consts as the report, or the two can drift apart again.
+   */
+  it('drives the Backspace and the Enter from the values it reports', () => {
+    expect(typeCommand).toContain('const cleared = Boolean(flags.clear);');
+    expect(typeCommand).toContain('const enter = Boolean(flags.enter);');
+    expect(typeCommand).toContain('if (cleared) {');
+    expect(typeCommand).toContain('if (enter) await pressKey(cdp, NAMED_KEYS.Enter);');
+    // The old reads went straight to the flag bag, so the report could say one
+    // thing while the wire did another.
+    expect(codeOnly(typeCommand)).not.toContain('if (flags.clear) {');
+    expect(codeOnly(typeCommand)).not.toContain('if (flags.enter) await pressKey');
   });
 
   it('carries the key spec shift bit onto the wire', () => {

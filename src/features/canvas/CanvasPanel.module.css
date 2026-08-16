@@ -187,10 +187,44 @@
   padding: 0 var(--vela-space-3);
 }
 
+/* A tinted row RE-GROUNDS itself, so it must re-colour itself too.
+ *
+ * `.diffBody` is a code surface, and a code surface does not go pale in light
+ * mode: `--vela-code-bg` is night-950 in light and night-900 in dark — dark in
+ * BOTH themes. That is precisely why `--vela-code-text` can be one fixed value,
+ * night-100, and be right twice.
+ *
+ * These two tints are page-palette tokens, and the page turns over with the
+ * theme: `--vela-accent-quiet` is signal-50 in light and signal-900 in dark, and
+ * `--vela-danger-bg` inverts with it. So a tinted row is not a code ground at
+ * all — in light it is a pale band — and the `--vela-code-text` inherited from
+ * `.diffBody` measured 1.19:1 (added) and 1.14:1 (removed) against the 4.5:1
+ * that `.diffBody`'s own `font-size: var(--vela-text-xs)` (0.75rem, regular
+ * weight) demands. Dark read 10.06:1 and 13.24:1. The rule was right in one
+ * theme by coincidence, and in the other the added and removed lines — the whole
+ * point of the view — were near-invisible.
+ *
+ * `--vela-text` is the page's own text role, so it turns over in step with the
+ * grounds that are now under it: 16.97:1 and 16.25:1 in light, 11.32:1 and
+ * 14.90:1 in dark. It costs no new colour — both pairings already ship elsewhere
+ * (`base.css ::selection`, `MessageTurn .errorTitle`), and both rows are now
+ * named in `src/styles/contrast.test.ts`, which measures them in both themes.
+ *
+ * The other repair — keep `--vela-code-text` and make the tints dark in both
+ * themes — has no answer in this palette. Every hue-carrying ground Vela owns
+ * follows the page: accent-quiet, danger-bg, warning-bg, notice-bg, thinking-bg,
+ * row-selected, turn-user-bg. The only theme-fixed grounds are the neutral code
+ * family, and a neutral cannot say "added" or "removed". That repair would take
+ * a new colour, and Vela's colours are final.
+ *
+ * A row with no `data-kind` sets no background, so it keeps the code ground and
+ * the code text untouched — 15.31:1 light, 14.24:1 dark. */
 .diffRow[data-kind='added'] {
   background: var(--vela-accent-quiet);
+  color: var(--vela-text);
 }
 
 .diffRow[data-kind='removed'] {
   background: var(--vela-danger-bg);
+  color: var(--vela-text);
 }

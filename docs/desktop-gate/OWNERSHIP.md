@@ -9,17 +9,30 @@ see `docs/HANDOVER.md`).
 
 ## Worktrees
 
-| path | branch | holder |
-|---|---|---|
-| `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead |
-| `C:/Users/User/vela-wt-guards` | `fix/guards-that-bite` | Wave 1 / B7 |
-| `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps |
-| `C:/Users/User/vela-w2-harness` | `wave2/click-harness` | Wave 2 / click harness |
-| `C:/Users/User/vela-w2-sched` | `wave2/schedules-surface` | Wave 2 / schedules |
-| `C:/Users/User/vela-w2-proj` | `wave2/project-instructions` | Wave 2 / projects |
-| `C:/Users/User/vela-w2-prov` | `wave2/provider-selection` | Wave 2 / provider selection |
-| `C:/Users/User/vela-w2-endpoint` | `wave2/endpoint-control` | Wave 2 / endpoint control |
-| `C:/Users/User/vela-w2-canvas` | `wave2/canvas-host-boundary` | Wave 2 / canvas host boundary |
+**Re-derived from `git worktree list` on 2026-08-16, not edited incrementally.** Four rows had gone
+stale because worktrees were reused for new branches, and one named a worktree that no longer
+exists. A registry whose job is stopping two sessions from swallowing each other's work is worse
+than useless when it is wrong, so it is now rebuilt from the tool rather than maintained by hand.
+
+| path | branch | holder | state |
+|---|---|---|---|
+| `C:/Users/User/vela-tmp` | `claude/new-session-tgl1ut` | lead | integration; tag `wave2-complete` |
+| `C:/Users/User/vela-w2-proj` | `fix/diff-contrast` | contrast | in review (reused; was Wave 2 / projects) |
+| `C:/Users/User/vela-w2-skills` | `fix/reachable-scope` | reachability | in review (reused; was Wave 2 / skills) |
+| `C:/Users/User/vela-w2-endpoint` | `fix/answer-provenance` | provenance | in review (reused; was Wave 2 / endpoint control) |
+| `C:/Users/User/vela-w2-harness` | `fix/harness-keycode` | click harness | **merged** at `0448b92` |
+| `C:/Users/User/vela-wt-caps` | `fix/capability-union` | Wave 1 / caps | **merged** at `3fea14b` |
+| `C:/Users/User/vela-w2-canvas` | `wave2/canvas-host-boundary` | Wave 2 / canvas | **merged** at `92441b4` |
+| `C:/Users/User/vela-w2-sched` | `wave2/schedules-surface` | Wave 2 / schedules | merged earlier |
+| `C:/Users/User/vela-w2-prov` | `wave2/provider-selection` | Wave 2 / provider selection | merged earlier |
+
+`vela-wt-guards` and `vela-w2-canvas`'s predecessor `vela-wt-privatefs` are gone; the branches
+survive. `vela-audit-ro` was a detached read-only worktree at `8200985` for the backlog audit and
+has been removed now that the audit has reported.
+
+**Reusing a worktree for a new branch is fine and saves a `node_modules` install — but this table
+is the only place that records it, so update the row in the same commit.** Three of the four stale
+rows above were reuses.
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`

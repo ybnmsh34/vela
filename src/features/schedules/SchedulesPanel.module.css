@@ -1,0 +1,225 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* The same rule the other dialogs keep: a pane taller than a scaled-up window
+     must overflow downwards into a scroll, not symmetrically off both edges
+     where its heading cannot be reached. This one holds a form *and* a list, so
+     it is taller than the memory pane it is modelled on. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-overlay-md), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.intro,
+.note {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.composerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vela-space-3);
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  flex: 1;
+}
+
+.fieldLabel {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.save {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  background: var(--vela-accent);
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-on-accent);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Bounded so a long list cannot push the create form off the screen — the
+     form is the only way to add the next one. */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+}
+
+/* A disabled schedule is dimmed rather than hidden: it is still the user's, and
+   this pane is the only place it can be switched back on. Opacity alone would
+   be colour-as-meaning, so the switch beside it carries the state in text. */
+.rowOff {
+  opacity: 0.65;
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.rowTitle {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.switch {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.switchOn {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.rowMeta {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+/* Weight, not colour. A missed slot is worth noticing and the obvious reach is
+   `--vela-warning`, but that would be a colour carrying the whole message on a
+   line that is already muted — and it is a text role this build has never
+   audited on this ground. Emphasis says the same thing to a reader who cannot
+   see the difference. */
+.missed {
+  font-weight: var(--vela-weight-medium);
+}
+
+.rowPrompt {
+  margin: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.rowActions {
+  display: flex;
+  gap: var(--vela-space-2);
+}
+
+.action,
+.delete {
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.delete:hover {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}

@@ -14,8 +14,25 @@
  * at are exactly the ones nobody looked at. Reading the sheet again would have
  * found the same one role. So the check is mechanical, it covers every pair the
  * components actually paint, and — see `every colour role is audited` below —
- * **a colour role that is not in the table fails the suite**. There is no way to
- * add a colour to this app and not audit it.
+ * **a colour role that is not in the table fails the suite**.
+ *
+ * ## The half of that claim that was false
+ *
+ * This header used to end the paragraph above with "there is no way to add a
+ * colour to this app and not audit it". It was false in a way that shipped a
+ * defect. The completeness checks quantify over the *vocabulary* —
+ * `new Set(PAIRS.map(p => p.fg))` and `new Set(PAIRS.flatMap(p => p.on))` — so an
+ * audited foreground on an audited background was never measured **as a pair**.
+ * `CanvasPanel`'s diff rows re-grounded `--vela-code-text` (audited, on
+ * `--vela-code-bg`) onto `--vela-accent-quiet` and `--vela-danger-bg` (both known
+ * grounds, both light in the light theme), and the composition read 1.19:1 and
+ * 1.14:1 there. Every ingredient passed and the dish was never tasted.
+ *
+ * `every rule that paints text on a ground it declares itself is a pair in the
+ * table` closes that for every composition a single CSS rule states — the part
+ * CSS text can actually prove. What it still cannot reach is a composition
+ * assembled across the DOM; the comment on that test says what closing *that*
+ * would take, and why it is not this commit.
  *
  * ## What it found on the first run, besides the briefed one
  *
@@ -195,6 +212,23 @@ function groundColour(chain: readonly string[], palette: Map<string, string>): R
  */
 type Kind = 'text' | 'ui';
 
+/**
+ * The rule a pair claims to describe, named exactly enough to be checked.
+ *
+ * `where` is prose for a human; this is the same claim made to the machine. When
+ * a rule states a whole composition itself — it declares both the `color` and
+ * the `background` — the pair may bind to it, and `a pair that names a rule is
+ * checked against that rule` then asserts the stylesheet still says what the
+ * table says it says. Without that binding the table is a description of the
+ * CSS, and a description does not fail when the CSS changes underneath it.
+ */
+interface RuleRef {
+  /** Repo-relative, forward slashes. */
+  readonly file: string;
+  /** The selector exactly as it is written, whitespace collapsed. */
+  readonly selector: string;
+}
+
 interface Pair {
   readonly fg: string;
   /** Nearest ground first, ending in an opaque one. */
@@ -202,10 +236,25 @@ interface Pair {
   readonly kind: Kind;
   /** The file and rule this was read from, so a wrong chain is traceable. */
   readonly where: string;
+  readonly rule?: RuleRef | undefined;
 }
 
-const T = (fg: string, on: readonly string[], where: string): Pair => ({ fg, on, kind: 'text', where });
-const U = (fg: string, on: readonly string[], where: string): Pair => ({ fg, on, kind: 'ui', where });
+const T = (fg: string, on: readonly string[], where: string, rule?: RuleRef): Pair => ({
+  fg,
+  on,
+  kind: 'text',
+  where,
+  rule,
+});
+const U = (fg: string, on: readonly string[], where: string, rule?: RuleRef): Pair => ({
+  fg,
+  on,
+  kind: 'ui',
+  where,
+  rule,
+});
+
+const CANVAS_PANEL = 'src/features/canvas/CanvasPanel.module.css';
 
 const BG = ['--vela-bg'] as const;
 const SURFACE = ['--vela-surface'] as const;
@@ -240,6 +289,34 @@ const PAIRS: readonly Pair[] = [
   T('--vela-text', ['--vela-row-hover', '--vela-surface'], 'AttachmentTray .remove:hover'),
   T('--vela-warning', ['--vela-warning-bg'], 'AttachmentTray .refusalList'),
   T('--vela-warning', ['--vela-warning-bg'], 'AttachmentTray .dismiss'),
+
+  /* ---- canvas ------------------------------------------------------------ */
+  T('--vela-text', SURFACE, 'CanvasPanel .title'),
+  T('--vela-text-subtle', SURFACE, 'CanvasPanel .close / .diffLead'),
+  T('--vela-text', ['--vela-row-hover', '--vela-surface'], 'CanvasPanel .close:hover'),
+  T('--vela-text-muted', INSET, 'CanvasPanel .tab / .version — on the view bar'),
+  T('--vela-text-subtle', INSET, 'CanvasPanel .tab:disabled — diff, before a second version exists'),
+  T('--vela-accent', ['--vela-accent-quiet'], 'CanvasPanel .tab[aria-selected=true]', {
+    file: CANVAS_PANEL,
+    selector: ".tab[aria-selected='true']",
+  }),
+  T('--vela-accent', INSET, 'CanvasPanel .version[aria-pressed=true]'),
+  T('--vela-text-muted', SURFACE, 'CanvasPanel .scripts'),
+  T('--vela-code-text', ['--vela-code-bg'], 'CanvasPanel .code / .diffBody — and an unchanged diff row'),
+  /* The two the vocabulary check could not ask for. A tinted row re-grounds from
+     the code palette to the page palette, so it must take the page's text role:
+     --vela-code-text is one fixed value in both themes and only ever suits a
+     ground that is also fixed, which --vela-code-bg is and these two are not. */
+  T('--vela-text', ['--vela-accent-quiet'], 'CanvasPanel .diffRow[data-kind=added]', {
+    file: CANVAS_PANEL,
+    selector: ".diffRow[data-kind='added']",
+  }),
+  T('--vela-text', ['--vela-danger-bg'], 'CanvasPanel .diffRow[data-kind=removed]', {
+    file: CANVAS_PANEL,
+    selector: ".diffRow[data-kind='removed']",
+  }),
+  U('--vela-focus', INSET, 'CanvasPanel .tab / .version :focus-visible, on the view bar'),
+  U('--vela-focus', SURFACE, 'CanvasPanel .close:focus-visible'),
 
   /* ---- code -------------------------------------------------------------- */
   T('--vela-syntax-comment', ['--vela-code-surface'], 'CodeBlock .language / .pending'),
@@ -495,6 +572,91 @@ const SHEETS = [...stylesheets(SRC_ROOT), join(SRC_ROOT, 'styles', 'base.css')].
   text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, ''),
 }));
 
+/**
+ * Every declaration block in a stylesheet, lifted out of any `@media` or
+ * `@supports` wrapper it sits inside. `SHEETS.text` has already had its comments
+ * stripped, so a rule quoted in prose cannot be mistaken for one that ships.
+ *
+ * A rule that *contains* a nested block still has declarations of its own, and
+ * they are emitted before the scan descends into it. The first version of this
+ * function recursed instead of emitting, so a rule shaped like
+ *
+ *     .row { color: …; background: …; &:hover { … } }
+ *
+ * disappeared from every check built on it — which is this branch's own defect
+ * one level down: an assertion satisfied by an ambient property, here "no
+ * stylesheet happens to nest yet". Nothing in `src` nests today and all six
+ * `@media` blocks are at column 0, so the drop was latent; native nesting is
+ * baseline in the engines Vela ships against, so it would not have stayed
+ * latent, and a guard that goes silently blind is worse than one that never
+ * claimed to see. `the completeness scan can actually see the stylesheets`
+ * carries the conservation check that notices a *partial* drop; the count floors
+ * cannot, because they detect total blindness.
+ */
+function declarationBlocks(text: string): readonly { selector: string; body: string }[] {
+  const found: { selector: string; body: string }[] = [];
+  /**
+   * A block's own declarations: what is left once nested blocks are removed,
+   * innermost first so that arbitrary depth collapses. The nested *selectors*
+   * survive as loose text, which is harmless — a selector cannot match
+   * `color:` or `background:`.
+   */
+  const ownDeclarations = (body: string): string => {
+    let out = body;
+    for (let pass = 0; pass < 12 && out.includes('{'); pass += 1) {
+      out = out.replace(/\{[^{}]*\}/gu, '');
+    }
+    return out;
+  };
+  const scan = (from: number, to: number): void => {
+    let depth = 0;
+    let open = from;
+    let selectorFrom = from;
+    for (let index = from; index < to; index += 1) {
+      const character = text[index];
+      if (character === '{') {
+        if (depth === 0) open = index;
+        depth += 1;
+      } else if (character === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const body = text.slice(open + 1, index);
+          // Anything ending in a semicolon before the brace is a statement, not
+          // part of the selector. Without this, base.css's first rule carries its
+          // `@import` lines inside `selector` and no RuleRef could bind to it.
+          const preamble = text.slice(selectorFrom, open);
+          const own = ownDeclarations(body);
+          if (own.trim() !== '') {
+            found.push({
+              selector: preamble
+                .slice(preamble.lastIndexOf(';') + 1)
+                .trim()
+                .replace(/\s+/gu, ' '),
+              body: own,
+            });
+          }
+          if (body.includes('{')) scan(open + 1, index);
+          selectorFrom = index + 1;
+        }
+      }
+    }
+  };
+  scan(0, text.length);
+  return found;
+}
+
+/**
+ * The one `color` / `background` token a single rule declares, if it declares
+ * one. Both are anchored on a character that is neither a word character nor a
+ * hyphen, so that `border-color:` is not a `color:` and a custom property whose
+ * name ends in `-background` is not a ground.
+ */
+const DECLARES_COLOUR = /(?:^|[^-\w])color:\s*var\((--vela-[a-z0-9-]+)\)/u;
+const DECLARES_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\((--vela-[a-z0-9-]+)\)/u;
+/** The same two, global, for counting every declaration rather than the first. */
+const EVERY_COLOUR = /(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gu;
+const EVERY_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\(--vela-[a-z0-9-]+\)/gu;
+
 /** Every token a stylesheet uses in `property: var(--vela-…)`. */
 function tokensUsedAs(property: RegExp): Map<string, string> {
   const found = new Map<string, string>();
@@ -549,6 +711,171 @@ describe('every colour role is audited', () => {
     );
   });
 
+  it('every rule that paints text on a ground it declares itself is a pair in the table', () => {
+    // THE PAIR-VERSUS-TOKEN HOLE, as far as CSS text can close it.
+    //
+    // The two assertions above quantify over the vocabulary: they ask whether a
+    // token appears *somewhere* as a foreground, and whether it appears
+    // *somewhere* as a ground. Neither asks whether this foreground on this
+    // ground was ever measured. That is how --vela-code-text — audited, on
+    // --vela-code-bg — came to be painted on --vela-accent-quiet at 1.19:1 with
+    // every ingredient green.
+    //
+    // A rule that declares both `color` and `background` states a whole
+    // composition in one place, so it can be checked knowing nothing about the
+    // DOM. That is what this does, and it is why the repair to CanvasPanel's
+    // diff rows sets `color` on the same rule as `background` instead of leaving
+    // it to inheritance: a composition that is written down is a composition
+    // that gets measured.
+    const measured = new Set(PAIRS.map((pair) => `${pair.fg} on ${pair.on[0] ?? ''}`));
+    const missing = SHEETS.flatMap(({ name, text }) =>
+      declarationBlocks(text).flatMap(({ selector, body }) => {
+        const foreground = DECLARES_COLOUR.exec(body)?.[1];
+        const ground = DECLARES_GROUND.exec(body)?.[1];
+        if (foreground === undefined || ground === undefined) return [];
+        return measured.has(`${foreground} on ${ground}`)
+          ? []
+          : [`${name} — ${selector} — ${foreground} on ${ground}`];
+      }),
+    );
+    expect(missing, 'add a pair naming this rule, or its composition is unmeasured').toEqual([]);
+  });
+
+  /*
+   * WHAT THIS STILL DOES NOT CLOSE, and what closing it would take.
+   *
+   * A composition assembled across the DOM — an ancestor declares the `color`, a
+   * descendant re-declares only the `background` — is invisible to every check in
+   * this file, because the ancestry lives in the TSX and not in the CSS. The
+   * defect above had exactly that shape before the fix: `.diffBody` painted the
+   * text, `.diffRow[data-kind=added]` painted the ground, and no single rule held
+   * both. The assertion above would not have caught it. It catches it now only
+   * because the fix co-declares.
+   *
+   * The clearest illustration is inside this very table. `MessageTurn
+   * .errorTitle` — which `CanvasPanel.module.css` cites as the precedent for
+   * --vela-text on --vela-danger-bg — is itself that shape: `.error` declares the
+   * background, `.errorTitle` declares the colour, two rules, no co-declaration.
+   * It is audited only because a human read the component and wrote the pair
+   * down. Delete that line and nothing in this file asks for it back. The
+   * precedent for the fix is also the standing proof of the gap.
+   *
+   * Two routes reach the general case, and both are larger than a contrast fix:
+   *
+   * 1. PER-COMPONENT COMPLETENESS. Demand that each stylesheet's own use of a
+   *    token be audited by a pair whose `where` names that component, rather than
+   *    the token merely appearing somewhere in this table. Measured against the
+   *    tree as it stands, that asks for 44 new foreground entries and 58 new
+   *    ground entries across 22 of 41 stylesheets; nine components — CanvasPanel
+   *    before this commit, CanvasSurface, DocumentPreview, MemoryPanel,
+   *    ProjectPanel, SchedulesPanel, SkillsPanel, LocalEndpointSection,
+   *    RunHistory — have no pair at all today. It also needs a per-component
+   *    exemption list, because NOT_A_TEXT_GROUND is global and several of those
+   *    "gaps" are the meter fills and status dots it already excuses. Worth
+   *    doing. Not a contrast fix, and not safe to land inside one.
+   *
+   * 2. STATIC JSX ANCESTRY. `CanvasPanel.tsx` literally contains
+   *    `<pre className={styles.diffBody}>` wrapping
+   *    `<span className={styles.diffRow}>`, so the true ground chain is derivable
+   *    from source without a browser. This is the only route that yields the real
+   *    chain — the thing the header calls the one hand-made part of this file —
+   *    but a JSX nesting analyser that stays correct across 40 components is its
+   *    own piece of work, and a guard that rots is worse than a guard that is
+   *    honest about its reach.
+   */
+
+  it('a pair that names a rule is checked against that rule', () => {
+    // The other direction of the guard above, and the one that makes a revert of
+    // the stylesheet redden the suite. The assertion above walks CSS → table:
+    // every rule that co-declares must be a pair. This walks table → CSS: every
+    // pair that names a rule must find that rule still declaring both halves of
+    // the composition it claims.
+    //
+    // Without it, the two diff-row pairs are only a *description*. Delete the
+    // `color` from .diffRow[data-kind='added'] and the ratio assertions stay
+    // green — they measure --vela-text on --vela-accent-quiet, which is a fact
+    // about the palette and stays true whether or not any rule paints it. This
+    // is what fails instead, by name.
+    const bound = PAIRS.filter((pair) => pair.rule !== undefined);
+    expect(bound.length, 'the table has stopped binding to any rule at all').toBeGreaterThan(2);
+
+    const sheetsByName = new Map(
+      SHEETS.map(({ name, text }) => [name.replace(/\\/gu, '/'), text] as const),
+    );
+    const wrong = bound.flatMap((pair) => {
+      const rule = pair.rule;
+      if (rule === undefined) return [];
+      const text = sheetsByName.get(rule.file);
+      if (text === undefined) return [`${rule.file} — no such stylesheet`];
+      const block = declarationBlocks(text).find(({ selector }) => selector === rule.selector);
+      if (block === undefined) return [`${rule.file} — no rule \`${rule.selector}\``];
+      const foreground = DECLARES_COLOUR.exec(block.body)?.[1];
+      const ground = DECLARES_GROUND.exec(block.body)?.[1];
+      const say = (detail: string): string => `${rule.file} \`${rule.selector}\` — ${detail}`;
+      if (foreground === undefined) {
+        return [
+          say(
+            `declares no colour of its own, so it inherits one and this pair does not describe it; the table claims ${pair.fg}`,
+          ),
+        ];
+      }
+      if (ground === undefined) return [say(`declares no background; the table claims ${pair.on[0] ?? ''}`)];
+      const problems: string[] = [];
+      if (foreground !== pair.fg) problems.push(say(`paints ${foreground}, the table claims ${pair.fg}`));
+      if (ground !== (pair.on[0] ?? '')) {
+        problems.push(say(`is grounded on ${ground}, the table claims ${pair.on[0] ?? ''}`));
+      }
+      return problems;
+    });
+    expect(wrong, 'the stylesheet and the table have parted company').toEqual([]);
+  });
+
+  it('a foreground that does not change with the theme is never crossed by its ground', () => {
+    // The defect's class, stated as a property rather than as a ratio.
+    // --vela-code-text is one fixed value in both themes, which is only ever
+    // right because --vela-code-bg is dark in both. Pair a fixed foreground with
+    // a ground that is light in one theme and dark in the other and it is
+    // legible in at most one of them.
+    //
+    // Its reach, stated honestly: on THIS palette it never catches anything the
+    // ratio assertions would miss. Enumerate all 41 theme-fixed foregrounds
+    // against all 36 theme-turning grounds and there are 898 crossings, of which
+    // not one has both ratios clearing 4.5:1 — the best is 4.37:1. So today this
+    // is a second and better-worded witness to a failure the measurement also
+    // sees, not an extra catch. It earns its place by being a property of the
+    // pairing rather than of the current values: it goes on holding, and goes on
+    // saying why, across a palette change that could quietly make the ratios
+    // pass.
+    //
+    // Text only. --vela-scrollbar-thumb is deliberately night-400 in both themes
+    // and is deliberately crossed by --vela-bg, --vela-chrome and
+    // --vela-surface-raised; it is a control rather than text, it is audited at
+    // 3:1 against all three, and tokens.css says why it is one value.
+    const light = paletteFor('light');
+    const dark = paletteFor('dark');
+    const side = (foreground: Rgba, ground: Rgba): number =>
+      Math.sign(luminance(composite(foreground, ground)) - luminance(ground));
+    const crossed = PAIRS.filter((pair) => pair.kind === 'text').flatMap((pair) => {
+      const fgLight = resolve(pair.fg, light);
+      const fgDark = resolve(pair.fg, dark);
+      const groundLight = groundColour(pair.on, light);
+      const groundDark = groundColour(pair.on, dark);
+      if (fgLight === null || fgDark === null || groundLight === null || groundDark === null) {
+        return [];
+      }
+      const fixed =
+        fgLight.r === fgDark.r &&
+        fgLight.g === fgDark.g &&
+        fgLight.b === fgDark.b &&
+        fgLight.a === fgDark.a;
+      if (!fixed) return [];
+      return side(fgLight, groundLight) === side(fgDark, groundDark)
+        ? []
+        : [`${pair.fg} is fixed across themes but ${pair.on.join(' over ')} crosses it — ${pair.where}`];
+    });
+    expect(crossed, 'give the row a foreground that turns over with its ground').toEqual([]);
+  });
+
   it('no component paints a ramp step as a text colour', () => {
     // `--vela-night-0` was the `color` of two filled buttons. A ramp step has no
     // theme — it is the same white in dark mode, where those fills are light —
@@ -578,5 +905,38 @@ describe('every colour role is audited', () => {
         ([token]) => token === '--vela-border',
       ),
     ).toBe(false);
+
+    // The composition guard is only a guard if the rule splitter finds rules,
+    // finds rules that co-declare, and reads real selectors rather than
+    // whitespace. A splitter that quietly returned [] would pass it vacuously —
+    // which is the same shape of defect the guard itself exists to close.
+    const rules = SHEETS.flatMap(({ text }) => declarationBlocks(text));
+    expect(rules.length).toBeGreaterThan(400);
+    expect(
+      rules.filter(({ body }) => DECLARES_COLOUR.test(body) && DECLARES_GROUND.test(body)).length,
+    ).toBeGreaterThan(40);
+    expect(rules.some(({ selector }) => selector === ".diffRow[data-kind='added']")).toBe(true);
+
+    // CONSERVATION — the floor that notices a *partial* drop.
+    //
+    // The three expectations above detect a splitter that has gone blind
+    // altogether. They cannot detect one that quietly loses a subset, and that
+    // is not hypothetical: the first version of `declarationBlocks` swallowed
+    // every rule containing a nested block, and all three stayed green. So count
+    // instead. Every `color:`/`background:` token declaration in the sheets must
+    // land in exactly one emitted block — parent declarations in the parent,
+    // nested ones in the child, none in both and none nowhere.
+    const tally = (chunks: readonly string[], pattern: RegExp): number =>
+      chunks.reduce((sum, chunk) => sum + [...chunk.matchAll(pattern)].length, 0);
+    const inSheets = SHEETS.map(({ text }) => text);
+    const inBlocks = rules.map(({ body }) => body);
+    expect(
+      tally(inBlocks, EVERY_COLOUR),
+      'the rule splitter is losing colour declarations',
+    ).toBe(tally(inSheets, EVERY_COLOUR));
+    expect(
+      tally(inBlocks, EVERY_GROUND),
+      'the rule splitter is losing background declarations',
+    ).toBe(tally(inSheets, EVERY_GROUND));
   });
 });

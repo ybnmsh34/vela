@@ -15,6 +15,7 @@ export { CapabilitySummary } from './CapabilitySummary';
 export { ContextMeter } from './ContextMeter';
 export { EndpointForm } from './EndpointForm';
 export { EndpointsPanel } from './EndpointsPanel';
+export { LocalEndpointSection } from './LocalEndpointSection';
 export { SecurityNotice } from './SecurityNotice';
 export { capabilityRows, degradations, type CapabilityRow } from './capability-rows';
 export {
@@ -27,5 +28,6 @@ export {
   type EntryBlock,
   type ModelEntry,
 } from './catalogue';
+export { useLocalEndpoint, type LocalEndpointState } from './use-local-endpoint';
 export { useModelSelection } from './use-model-selection';
 export { useProviders, type ProvidersState } from './use-providers';

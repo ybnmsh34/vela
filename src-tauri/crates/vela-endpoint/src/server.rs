@@ -91,14 +91,21 @@ impl std::error::Error for ServeError {}
 
 /// A running endpoint.
 ///
-/// **Dropping it stops the listener.** A host that wants the endpoint to
-/// outlive the function that started it has to keep this alive — which is the
-/// point: a server nobody holds is a server nobody can stop.
+/// **Dropping it stops the listener, and waits until the port is closed.** A
+/// host that wants the endpoint to outlive the function that started it has to
+/// keep this alive — which is the point: a server nobody holds is a server
+/// nobody can stop.
+///
+/// The waiting half is what makes a *rebind* possible rather than only a stop.
+/// See [`Self::shutdown`].
 #[derive(Debug)]
 pub struct ServerHandle {
     address: SocketAddr,
     policy: ToolPolicy,
     stop: Arc<AtomicBool>,
+    /// The accept loop, which owns the [`std::net::TcpListener`]. Held so [`Self::shutdown`]
+    /// can wait for it to return — `None` once it has been waited on.
+    accepting: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ServerHandle {
@@ -119,15 +126,46 @@ impl ServerHandle {
         route::client_base_url(dialect, &format!("http://{}", self.address))
     }
 
-    /// Stop accepting. Connections already in flight finish.
+    /// Ask the accept loop to stop. Returns immediately; the port may still be
+    /// open when it does. Connections already in flight finish either way.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+    }
+
+    /// **Stop accepting and wait until the listening socket is actually
+    /// closed.**
+    ///
+    /// [`Self::stop`] only raises a flag. The accept loop notices it up to
+    /// [`ACCEPT_POLL`] later, and the [`std::net::TcpListener`] is owned by *that*
+    /// thread — so between `stop()` returning and the loop returning, the port
+    /// is still bound. That gap does not matter to a process on its way out,
+    /// and decides everything for one that is not: a host that stops the
+    /// endpoint and immediately rebinds **the same address** gets `AddrInUse`
+    /// from its own previous listener, because `TcpListener::bind` does not set
+    /// `SO_REUSEADDR` on Windows (where it would permit hijacking) and a live
+    /// listener holds the port on every platform.
+    ///
+    /// Joining the accept thread closes the gap: the listener is a local of
+    /// that thread's closure, so it is dropped before `join` returns. The wait
+    /// is bounded by [`ACCEPT_POLL`].
+    ///
+    /// In-flight connections are *not* joined. Each is its own thread and they
+    /// finish on their own, which is the behaviour [`Self::stop`] already
+    /// documents; what is guaranteed here is only that nothing new is accepted
+    /// and the address is free.
+    pub fn shutdown(&mut self) {
+        self.stop();
+        if let Some(accepting) = self.accepting.take() {
+            // A panicked accept loop has already dropped the listener, so its
+            // `Err` is not interesting: the port is free either way.
+            let _ = accepting.join();
+        }
     }
 }
 
 impl Drop for ServerHandle {
     fn drop(&mut self) {
-        self.stop();
+        self.shutdown();
     }
 }
 
@@ -146,7 +184,7 @@ pub fn serve(config: EndpointConfig, brain: Arc<dyn Brain>) -> Result<ServerHand
     let stop = Arc::new(AtomicBool::new(false));
     let key = Arc::new(config.api_key);
 
-    {
+    let accepting = {
         let stop = Arc::clone(&stop);
         std::thread::spawn(move || {
             while !stop.load(Ordering::SeqCst) {
@@ -168,13 +206,16 @@ pub fn serve(config: EndpointConfig, brain: Arc<dyn Brain>) -> Result<ServerHand
                     Err(_) => break,
                 }
             }
-        });
-    }
+            // `listener` is dropped here, which is what closes the port.
+            // `ServerHandle::shutdown` waits for exactly this point.
+        })
+    };
 
     Ok(ServerHandle {
         address,
         policy,
         stop,
+        accepting: Some(accepting),
     })
 }
 
@@ -669,6 +710,56 @@ mod tests {
             handle.client_base_url(Dialect::OpenAi),
             format!("http://{}/v1", handle.address())
         );
+    }
+
+    /// **The property a rebind rests on**, and the reason `shutdown` joins
+    /// rather than only signalling.
+    ///
+    /// Dropping the handle must leave the address free *by the time drop
+    /// returns*. Without the join this fails on the first iteration roughly
+    /// always: the accept loop is asleep for up to `ACCEPT_POLL` and still owns
+    /// the listener, so the second `bind` of the same address is refused.
+    ///
+    /// Port `0` and then the *resolved* address on purpose: a hard-coded port
+    /// would be a test that fails when something else on the machine happens to
+    /// hold it, which is a different fact than the one being measured.
+    #[test]
+    fn the_port_is_free_by_the_time_the_handle_finishes_dropping() {
+        fn brain() -> Arc<dyn Brain> {
+            Arc::new(crate::FnBrain::new(Vec::new(), |_, _| {
+                Ok(ChatResponse::empty())
+            }))
+        }
+
+        let first = serve(
+            EndpointConfig {
+                bind: "127.0.0.1:0".parse().unwrap(),
+                api_key: "k".to_string(),
+                tools: ToolRequest::Default,
+            },
+            brain(),
+        )
+        .expect("loopback bind must succeed");
+        let address = first.address();
+        drop(first);
+
+        // Twice, because "the port reopened once" is also what a lucky race
+        // looks like.
+        for attempt in 1..=2 {
+            let again = serve(
+                EndpointConfig {
+                    bind: address,
+                    api_key: "k".to_string(),
+                    tools: ToolRequest::Default,
+                },
+                brain(),
+            )
+            .unwrap_or_else(|error| {
+                panic!("attempt {attempt}: {address} must be free after drop: {error}")
+            });
+            assert_eq!(again.address(), address);
+            drop(again);
+        }
     }
 
     #[test]

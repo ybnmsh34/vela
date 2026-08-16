@@ -35,6 +35,7 @@ import type {
 import { returnFocusTo } from '@/state/focus-store';
 
 import { EndpointForm } from './EndpointForm';
+import { LocalEndpointSection } from './LocalEndpointSection';
 import { SecurityNotice } from './SecurityNotice';
 import styles from './EndpointsPanel.module.css';
 import type { ProvidersState } from './use-providers';
@@ -137,6 +138,12 @@ export function EndpointsPanel({
               Add an endpoint
             </button>
           )}
+
+          {/* The other direction: this panel is where the endpoints Vela talks
+              *to* are configured, and the local endpoint is one of them served
+              back out. It needs the list above to choose from, which is the
+              reason it is mounted here and not somewhere with a tidier name. */}
+          <LocalEndpointSection providers={state.providers} />
 
           {/* This panel is where a user comes when an endpoint is misbehaving,
               which is exactly when the debug log is worth turning on and the

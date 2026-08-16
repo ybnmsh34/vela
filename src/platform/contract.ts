@@ -136,6 +136,98 @@ export interface DebugLogSetReq {
 }
 
 /* -------------------------------------------------------------------------- */
+/* the local endpoint                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Vela can serve one of the user's configured endpoints back out on a local
+ * HTTP port, so that other tools on the machine can talk to it. This is the
+ * switch for that.
+ *
+ * **Off at every launch**, and not persisted — the same rule
+ * {@link DebugLogStatus} follows and for a stronger reason: a local HTTP server
+ * is not something a desktop chat client should start on its own, and the key
+ * that guards it lives in this process only.
+ *
+ * What is *not* in this vocabulary is the point of it. The port answers more
+ * than one wire format, and none of them is nameable here: what a caller
+ * supplies is an address, a key, one of its own configured endpoint ids, and
+ * what it wants done about tools. `no-provider-leak.test.ts` scans both sides
+ * of this boundary for backend identities, and this surface gives it nothing to
+ * find. The host's `endpoint_host` module records why that mattered: the belief
+ * that a switch *would* need them is what kept this off the contract.
+ */
+export interface EndpointEnableReq {
+  /** `host:port`. Its scope decides the tool policy — see {@link EndpointStatus}. */
+  readonly bind: string;
+  /**
+   * The bearer key callers must present. Travels one way, exactly like
+   * {@link SecretsSetReq.value}: nothing returns it, and no status carries it.
+   */
+  readonly key: string;
+  /** One of the ids from {@link SettingsSnapshot.providers}. Opaque. */
+  readonly providerId: string;
+  /**
+   * `default` lets the bound address decide, and is the safe answer. `on` is a
+   * request, not a guarantee — see {@link EndpointEnableReq.confirmExposedTools}.
+   */
+  readonly tools?: EndpointToolsRequest;
+  /**
+   * The user's answer to "tools, on an address other machines can reach". Only
+   * consulted when `tools` is `on` **and** the bound address is not loopback;
+   * without it that combination resolves to tools off rather than to an error,
+   * because failing closed is the only defensible answer to a question nobody
+   * answered.
+   */
+  readonly confirmExposedTools?: boolean;
+}
+
+export type EndpointToolsRequest = 'default' | 'on' | 'off';
+
+/** Which of the four things the endpoint can be doing it is doing. */
+export type EndpointRunState = 'off' | 'refused' | 'bindFailed' | 'serving';
+
+/**
+ * Why the tool policy resolved the way it did. A closed set of codes, never a
+ * sentence: the renderer owns every word a user reads, the same rule
+ * {@link Concern} follows.
+ *
+ * `loopbackDefault` and `exposedDefault` are the rule doing its job — a port
+ * only this machine can reach may run tools, a port anything can reach may not.
+ * `exposedEnableUnconfirmed` is the one that surprises people: they asked for
+ * tools, and got none, because they did not confirm.
+ */
+export type EndpointToolPolicy =
+  | 'loopback-default'
+  | 'exposed-default'
+  | 'forced-on'
+  | 'exposed-enable-unconfirmed'
+  | 'forced-off';
+
+/**
+ * What the endpoint is doing, read back off the listener that is actually up.
+ *
+ * `address` is the address that was **bound**, not the one that was asked for,
+ * which is why asking for port `0` comes back with a real port. The same is
+ * true of `toolsEnabled` and `toolPolicy`: the host resolves them from the
+ * listener's own address, so they cannot describe a wildcard bind as loopback.
+ */
+export interface EndpointStatus {
+  readonly state: EndpointRunState;
+  /** `host:port` as bound. `null` unless serving. */
+  readonly address: string | null;
+  /** Which configured endpoint answers turns here. `null` unless serving. */
+  readonly providerId: string | null;
+  /** Whether tool calls reach the model. `false` whenever not serving. */
+  readonly toolsEnabled: boolean;
+  readonly toolPolicy: EndpointToolPolicy | null;
+  /** Whether the bound address is reachable only from this machine. */
+  readonly loopback: boolean;
+  /** The refusal code, or the reason the bind failed. `null` when there is none. */
+  readonly detail: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
 /* secrets                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -1620,6 +1712,9 @@ export interface IpcContract {
   diagnostics_debug_log_get: { req: EmptyPayload; res: DebugLogStatus };
   diagnostics_debug_log_set: { req: DebugLogSetReq; res: DebugLogStatus };
   diagnostics_echo: { req: EchoReq; res: EchoRes };
+  endpoint_disable: { req: EmptyPayload; res: EndpointStatus };
+  endpoint_enable: { req: EndpointEnableReq; res: EndpointStatus };
+  endpoint_status: { req: EmptyPayload; res: EndpointStatus };
   mcp_list_tools: { req: EmptyPayload; res: McpListToolsRes };
   memory_add: { req: MemoryAddReq; res: MemoryRes };
   memory_clear_scope: { req: MemoryScopeReq; res: MemoryClearRes };
@@ -1693,6 +1788,9 @@ export const COMMAND_ALLOWLIST = [
   'diagnostics_debug_log_get',
   'diagnostics_debug_log_set',
   'diagnostics_echo',
+  'endpoint_disable',
+  'endpoint_enable',
+  'endpoint_status',
   'mcp_list_tools',
   'memory_add',
   'memory_clear_scope',

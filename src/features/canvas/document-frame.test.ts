@@ -1,12 +1,17 @@
 /**
  * The boundary, checked.
  *
- * Everything `document-host.ts` reports as `kernel` for the document family is a
- * claim about two attributes on one element, and this is the file that makes
- * those claims true rather than merely written down. If any assertion here goes
- * red, the correct response is to fix the frame, not to soften the report — a
- * `SandboxBackendReport` that says `network: 'kernel'` over a frame with no CSP
- * is the exact shape of defect the contract's reference study is about.
+ * Everything a `SandboxBackendReport` could truthfully call `kernel` for the
+ * document family is a claim about two attributes on one element, and this is the
+ * file that makes those claims true rather than merely written down. If any
+ * assertion here goes red, the correct response is to fix the frame, not to
+ * soften a report — a report that says `network: 'kernel'` over a frame with no
+ * CSP is the exact shape of defect the contract's reference study is about.
+ *
+ * The only report in this tree that does say it is the fake host in
+ * `document-host-double.ts`; the shipped host says `unenforced`, because it draws
+ * no frame. The assertions below are about the frame itself and hold regardless
+ * of which host is on the other side of the seam.
  */
 
 import { describe, expect, it } from 'vitest';

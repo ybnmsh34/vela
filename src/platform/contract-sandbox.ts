@@ -72,9 +72,9 @@
  *     namespace that runs Bash and nothing else; `BrowserAdapter` implements all six as a
  *     fake that runs nothing and refuses every submit `languageUnsupported`, which is what
  *     the real host also answers on a machine with no WSL distribution. Still unbuilt:
- *     every document command path, `python`, both copying materialisations, and any surface
- *     that renders an approval prompt — {@link SandboxEvent} `awaitingApproval` reaches
- *     `src/data/sandbox-repository.ts` and stops there.
+ *     every document command path, `python`, both copying materialisations, and any
+ *     approval prompt a user can actually reach. See amendment 6 for that last item: an
+ *     approval surface now exists and is wired, and no host in this tree can drive it.
  *  2. **Some rules below are enforced by tests now, and which ones is not obvious.** As of
  *     2026-08-15 the `vela-sandbox` crate carries 47 tests: `tests/sandbox_boundary.rs` is an
  *     escape battery that executes real programs inside the boundary and checks the
@@ -2060,4 +2060,29 @@ void _sandboxNamesAreWellTyped;
  *    ordering. {@link SANDBOX_CONTRACT_VERSION} reads 3 because amendment 4 bumped it;
  *    amendment 5 still does not bump it, and the sentence above should be read as "this
  *    entry does not bump it" rather than as a claim about the constant's current value.
+ *
+ * 6. 2026-08-16 — **No shape changed. One clause of honesty note 1 did, because wiring
+ *    Canvas to the real host falsified it.** The note said `awaitingApproval` "reaches
+ *    `src/data/sandbox-repository.ts` and stops there". It no longer does:
+ *    `src/app/App.tsx` builds that repository and hands it to `CanvasSurface`, which drives
+ *    it through `use-document-run.ts` into an approval card in
+ *    `src/features/canvas/DocumentPreview.tsx` — a surface that shows the whole
+ *    {@link EffectiveGrant} before anything runs, which is what this contract asks of one.
+ *
+ *    The clause is narrowed rather than deleted, because deleting it would swap one false
+ *    reading for another. **No host in this tree can reach that card.** A document submit
+ *    is refused before approval is considered: `languages` carries no document language on
+ *    any build, and the document backend is reported at `sameOrigin` while every Canvas
+ *    submit demands `opaqueOriginFrame`, so `admit` answers `isolationUnavailable` first.
+ *    So the approval prompt is built, on the import graph, and unreachable by a user —
+ *    which is a different state from "unbuilt" and is why the sentence had to change rather
+ *    than be dropped.
+ *
+ *    The same wiring makes the note's other clauses **more** true, not less: the document
+ *    command path is still unbuilt, and it is now unbuilt in front of a surface that
+ *    submits to it, so a real refusal is what a Canvas user sees. Recorded by the builder
+ *    who moved the boundary, because the amendment that fixed these notes on 2026-08-15
+ *    warned in the same paragraph that a stale absence claim is how a rule gets changed
+ *    with nothing watching — and leaving this one standing would have been that warning
+ *    ignored one file over.
  */

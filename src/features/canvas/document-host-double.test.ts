@@ -8,25 +8,37 @@
  * any of it. This does.
  *
  * **VERIFIED-BY-FAKE, and more so than usual.** The host under test runs in the
- * renderer, because the six `sandbox_*` commands are not wired. These assertions
- * are evidence about lifetime and sequencing and about nothing else — not about
- * a boundary, not about a policy a request cannot raise. The honesty note at the
- * top of `document-host.ts` says which claims survive that placement and which
- * do not.
+ * renderer — not because the six `sandbox_*` commands are unwired (they are on
+ * both allowlists, registered in `src-tauri/src/lib.rs`, and implemented in
+ * `src-tauri/src/ipc/sandbox.rs`; the shipping surface goes through
+ * `src/data/sandbox-repository.ts`) but because **no host in this tree accepts a
+ * document run**, so a real one could never be driven past a refusal into the
+ * sequence these tests are about. What is genuinely unbuilt is the list at
+ * `src/platform/contract-sandbox.ts` 73-77: every document command path,
+ * `python`, both copying materialisations, and any surface rendering an approval
+ * prompt.
+ *
+ * So these assertions are evidence about lifetime and sequencing and about
+ * nothing else — not about a boundary, not about a policy a request cannot
+ * raise. The honesty note at the top of `document-host-double.ts` says which
+ * claims survive that placement and which do not.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
 import {
+  DEFAULT_AUTO_APPROVAL_PROFILE,
   DEFAULT_DOCUMENT_LIMITS,
+  type AutoApprovalProfile,
   type DocumentProgram,
   type SandboxEvent,
   type SandboxEventEnvelope,
+  type SandboxSubmitReq,
 } from '@/platform/contract-sandbox';
 import { PlatformError } from '@/platform/errors';
 
-import { LocalDocumentHost } from './document-host';
+import { LocalDocumentHost, autoApproves } from './document-host-double';
 import { documentSubmit } from './document-run';
 
 const SVG: DocumentProgram = {
@@ -370,5 +382,84 @@ describe('the policy a surface reads before it offers a button', () => {
     expect(host.policy().activeRuns).toBe(1);
     host.release({ runId: 'r1' });
     expect(host.policy().activeRuns).toBe(0);
+  });
+});
+
+/**
+ * Auto-approval, which is a **host** decision and is tested here for that reason.
+ *
+ * These assertions moved from `document-run.test.ts` when Canvas was wired to the
+ * real host: `autoApproves` stopped having any caller in shipping renderer code,
+ * and a rule about what a host decides belongs beside the fake host that decides
+ * it. The rule itself is the contract's, and the authoritative implementation is
+ * `within_profile` in `src-tauri/crates/vela-sandbox/src/admission.rs`.
+ *
+ * The first case below is the dead branch, pinned: under the profile Vela ships,
+ * **no submit Canvas can build ever auto-approves**, so the `||` arm in
+ * `LocalDocumentHost.submit` that calls this can never be taken and a user who
+ * selects permission `approve` is prompted exactly as if they had selected `ask`.
+ * The rest use a profile with the floor lowered to `opaqueOriginFrame`, which is
+ * the only way to reach the clauses after the first one at all.
+ */
+
+const HTML: DocumentProgram = {
+  kind: 'document',
+  language: 'html',
+  source: '<p>hello</p>',
+  scripts: 'denied',
+};
+
+function autoApprovalSubmit(program: DocumentProgram = SVG): SandboxSubmitReq {
+  return documentSubmit('run-auto', DEFAULT_PROJECT_ID, program);
+}
+
+describe('automatic approval is decided over the request', () => {
+  it('auto-approves nothing Canvas can submit, under the profile Vela ships', () => {
+    expect(autoApproves(DEFAULT_AUTO_APPROVAL_PROFILE, autoApprovalSubmit())).toBe(false);
+    expect(autoApproves(DEFAULT_AUTO_APPROVAL_PROFILE, autoApprovalSubmit(HTML))).toBe(false);
+  });
+
+  it('approves once the request itself demands the floor the profile names', () => {
+    const profile: AutoApprovalProfile = {
+      ...DEFAULT_AUTO_APPROVAL_PROFILE,
+      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
+      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
+    };
+    expect(autoApproves(profile, autoApprovalSubmit())).toBe(true);
+  });
+
+  it('does not approve a run that merely lands on a capable backend', () => {
+    // The distinction the contract calls "not academic". A caller that named a
+    // floor of `sameOrigin` asked for nothing, and must not sail through on the
+    // strength of what the machine happens to be able to do.
+    const profile: AutoApprovalProfile = {
+      ...DEFAULT_AUTO_APPROVAL_PROFILE,
+      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
+      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
+    };
+    const weak: SandboxSubmitReq = {
+      ...autoApprovalSubmit(),
+      minimumIsolation: { family: 'document', level: 'sameOrigin' },
+    };
+    expect(autoApproves(profile, weak)).toBe(false);
+  });
+
+  it('never approves a run that asked for the network', () => {
+    const profile: AutoApprovalProfile = {
+      ...DEFAULT_AUTO_APPROVAL_PROFILE,
+      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
+      maximumLimits: DEFAULT_DOCUMENT_LIMITS,
+    };
+    const noisy: SandboxSubmitReq = { ...autoApprovalSubmit(), network: { kind: 'allowed' } };
+    expect(autoApproves(profile, noisy)).toBe(false);
+  });
+
+  it('never approves a limit above the profile ceiling', () => {
+    const profile: AutoApprovalProfile = {
+      ...DEFAULT_AUTO_APPROVAL_PROFILE,
+      minimumIsolation: { process: 'container', document: 'opaqueOriginFrame' },
+      maximumLimits: { ...DEFAULT_DOCUMENT_LIMITS, wallClockMs: 1 },
+    };
+    expect(autoApproves(profile, autoApprovalSubmit())).toBe(false);
   });
 });

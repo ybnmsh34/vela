@@ -14,9 +14,15 @@
  * ## Who observes what
  *
  * The host owns the run and cannot see the frame; this component can, and reports
- * what it saw through `sandbox_report_document`'s shape. That is the fork the
- * contract draws deliberately, and it is why three of the four observation kinds
- * are produced here:
+ * what it saw through `sandbox_report_document` — the real command, over the real
+ * seam, since Canvas was wired to `src/data/sandbox-repository.ts`. **This
+ * build's host discards every report**: `report_document` in the `vela-sandbox`
+ * crate is an empty body, because a host that accepts no document run has no run
+ * for a report to belong to. So the observations below are produced correctly and
+ * land nowhere, and nothing on this surface may be read as evidence that a
+ * document outcome was recorded. That is the fork the contract draws
+ * deliberately, and it is why three of the four observation kinds are produced
+ * here:
  *
  *  - `rendered` — the frame's own `load`, timed from the moment it was mounted.
  *  - `failed` — only for SVG, only from a parse performed *outside* the frame.
@@ -214,6 +220,13 @@ function isolationSentence(grant: EffectiveGrant): string {
 }
 
 function PreviewNotice({ run }: { readonly run: DocumentRun }) {
+  if (run.phase.kind === 'notSubmitted') {
+    return (
+      <p className={styles.notice} data-testid="canvas-notice">
+        Vela could not send this artifact to be run. The source is in the Code tab.
+      </p>
+    );
+  }
   if (run.phase.kind !== 'settled') {
     return <p className={styles.notice}>Preparing…</p>;
   }
@@ -250,6 +263,23 @@ function outcomeSentence(run: DocumentRun): string {
   }
 }
 
+/**
+ * A host refusal, in Vela's words.
+ *
+ * The two arms that are not about the user's own decision are the ones a real
+ * host reaches today, and they are worded here rather than left to the default
+ * for a reason the boundary move makes concrete: with the decision host-held,
+ * **every** Canvas run ends in one of them. `vela-sandbox` reports the document
+ * backend at `sameOrigin` and carries no document language, so a submit asking
+ * for `opaqueOriginFrame` is refused `isolationUnavailable`, and a submit that
+ * somehow met that floor would be refused `languageUnsupported` immediately
+ * after. A generic "this artifact was refused" would be the whole of what a user
+ * ever sees from this feature.
+ *
+ * The default arm stays for the reasons no producer in this tree emits — the
+ * mount and path refusals a document submit carries nothing to trigger. Wording
+ * those would be inventing sentences about states that cannot occur.
+ */
 function refusalSentence(reason: RefusalReason): string {
   switch (reason) {
     case 'permissionIsOff':
@@ -260,6 +290,8 @@ function refusalSentence(reason: RefusalReason): string {
       return 'Not rendered.';
     case 'languageUnsupported':
       return 'This build cannot draw this kind of artifact. The source is in the Code tab.';
+    case 'isolationUnavailable':
+      return 'This build has no isolated frame to draw artifacts in, so nothing was run. The source is in the Code tab.';
     case 'tooManyConcurrentRuns':
       return 'Too many artifacts are open at once. Close one and try again.';
     default:

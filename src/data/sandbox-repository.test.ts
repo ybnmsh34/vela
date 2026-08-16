@@ -169,6 +169,18 @@ describe('the sandbox seam', () => {
     expect(await repository.release('run-cancel')).toEqual({ ok: true });
   });
 
+  it('carries an observation about a frame the host cannot see, and reads nothing into the answer', async () => {
+    // The sixth command, which had no caller in `src/` at all until Canvas was
+    // wired: only a comment in `DocumentPreview.tsx` and this fake's own arm.
+    // Both fakes and the real host answer `{ ok: true }` and do nothing with it
+    // — `report_document` in the `vela-sandbox` crate is an empty body — so the
+    // `Ack` is delivery, never a claim that an outcome was recorded.
+    const repository = createSandboxRepository(new BrowserAdapter());
+    await expect(
+      repository.reportDocument('run-report', { kind: 'failed', reason: 'frameCrashed' }),
+    ).resolves.toEqual({ ok: true });
+  });
+
   it('treats an approval digest it was never handed as a bug, not a decision', async () => {
     const repository = createSandboxRepository(new BrowserAdapter());
     await expect(repository.approve('run-x', 'invented', 'allowOnce')).rejects.toBeInstanceOf(

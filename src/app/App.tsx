@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { createSandboxRepository } from '@/data/sandbox-repository';
 import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
@@ -125,6 +126,23 @@ export function App({ adapter }: AppProps) {
  * without a project and says so; the canvas panel does not open. A fallback here
  * would be the same defect with a different spelling.
  *
+ * The sandbox repository is handed down the same way, and for a reason with more
+ * teeth than tidiness. `src/data/sandbox-repository.ts` was a tested door to
+ * five of the `sandbox_*` commands — `policy`, `submit`, `approve`, `cancel`,
+ * `release` — with **no importer but its own test**, while `CanvasSurface` built
+ * a renderer-side host of its own, so the permission level, the approval, the
+ * digest and the timeout were all decided inside the process the sandbox
+ * contract exists to constrain. This line is the joint that was missing.
+ *
+ * `sandbox_report_document` is the sixth, and **this branch added it**: the
+ * command was allowlisted and registered on both sides of `invoke` with no
+ * caller anywhere in `src/`, so wiring the door up meant finishing it first.
+ * `src/runtime/reachable.test.ts` fails if this line goes away.
+ *
+ * It is built here, above the `key={conversationId}` remount, for the same
+ * reason the runtime is: a repository rebuilt per conversation would re-subscribe
+ * every artifact's event stream on every sidebar click.
+ *
  * ## The fourth joint: the agent runtime
  *
  * `src/runtime/` is a whole agent loop — a registry, a live-run directory with
@@ -146,11 +164,12 @@ function Workspace() {
   const [answers, setAnswers] = useState<readonly string[]>(NO_ANSWERS);
   const adapter = usePlatform();
   const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
+  const sandbox = useMemo(() => createSandboxRepository(adapter), [adapter]);
   const projectId = useActiveProjectId();
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>
-      <CanvasSurface assistantTexts={answers} projectId={projectId}>
+      <CanvasSurface assistantTexts={answers} projectId={projectId} sandbox={sandbox}>
         <Transcript
           onPendingTurn={setTurnTexts}
           onAssistantMessages={setAnswers}

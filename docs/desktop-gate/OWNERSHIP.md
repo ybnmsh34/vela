@@ -19,6 +19,7 @@ see `docs/HANDOVER.md`).
 | `C:/Users/User/vela-w2-proj` | `wave2/project-instructions` | Wave 2 / projects |
 | `C:/Users/User/vela-w2-prov` | `wave2/provider-selection` | Wave 2 / provider selection |
 | `C:/Users/User/vela-w2-endpoint` | `wave2/endpoint-control` | Wave 2 / endpoint control |
+| `C:/Users/User/vela-w2-canvas` | `wave2/canvas-host-boundary` | Wave 2 / canvas host boundary |
 
 `vela-wt-privatefs` is gone; `wave-g/private-fs` still exists as a branch. Removed with
 `fix/sandbox-process-limit`, `fix/verify-on-windows`, `fix/dead-skill-mount`, `fix/real-bundle`
@@ -45,14 +46,29 @@ first, or the reclaim silently does not happen.
 | `src-tauri/src/endpoint_host.rs`, `src-tauri/src/ipc/endpoint.rs`, `src-tauri/crates/vela-endpoint/src/server.rs`, `src-tauri/tests/endpoint_runtime_control.rs`, `src/data/endpoint-repository.ts(+test)`, `src/features/models/LocalEndpointSection.{tsx,module.css,test.tsx}`, `src/features/models/use-local-endpoint.ts`, `docs/local-endpoint.md` | Wave 2 / endpoint control | 2026-08-16 | the endpoint had no start/stop/rebind entry point and no user-facing switch, and the comment explaining that was false. Also touched, additively only: `src-tauri/src/{lib.rs,ipc/mod.rs}`, `src/platform/{contract.ts,browser-adapter.ts}`, `src/features/models/{EndpointsPanel.tsx,index.ts}`, `README.md`. **`src/features/models/EndpointsPanel.test.tsx` is claimed by Wave 1 and was NOT edited** — the new section's endpoint menu was reworded to `name (id)` so its `getByText` queries stay unambiguous |
 | `src/runtime/app-runtime.ts`, `src/runtime/project-context.ts`, `src/runtime/project-context.test.ts`, `src/runtime/app-runtime.test.ts`, `src/data/projects-repository.ts`, `src/state/project-store.ts`, `src/features/projects/`, `src/app/App.tsx`, `src/app/project-instructions.test.tsx`, `src/features/conversation/use-conversation.ts`, `src/features/conversation/ConversationSurface.tsx`, `src/features/conversation/ConversationView.tsx`, `src/features/conversation/MessageTurn.tsx`, `src/features/conversation/TurnNotices.tsx`, `src/features/conversation/notices.ts`, `src/features/conversation/agent-run.test.tsx`, `src/features/navigation/Sidebar.tsx`, `src/features/memory/MemoryPanel.tsx`, `src/platform/contract-harness.ts` | Wave 2 / project instructions | 2026-08-16 | `readProjectInstructions` answered `null` for every project under a false comment, so the whole project-context layer was dead; and `App.tsx` passed `DEFAULT_PROJECT_ID` literally while `use-conversation.ts` fell through to the same constant, so one project's context served every run |
 | `src/features/canvas/CanvasSurface.tsx`, `src/app/App.tsx` | Wave 2 / project instructions | 2026-08-16 | **collides with `wave2/canvas-host-boundary` in `C:/Users/User/vela-w2-canvas`, in two files — see the note below. A careless resolution silently restores the defect this branch removed.** |
+| `src/features/canvas/**`, `src/data/sandbox-repository.ts`, `src/data/sandbox-repository.test.ts`, `src/app/App.tsx`, `src/app/canvas-wiring.test.tsx`, `src/runtime/reachable.test.ts`, `src/platform/contract-sandbox.ts` (amendment 6 + honesty note 1 only) | Wave 2 / canvas host boundary | 2026-08-16 | `CanvasSurface` built `new LocalDocumentHost()`, so `permissionIsOff`, the approval, the digest and the wall clock were held by the renderer they constrain. It now takes a `SandboxRepository` built at the composition root. `LocalDocumentHost` demoted to `document-host-double.ts`; `autoApproves` moved there with it. **No shape changed in `contract-sandbox.ts`** — one clause of honesty note 1 was narrowed because the wiring falsified it |
 
 ### `wave2/project-instructions` × `wave2/canvas-host-boundary` — resolve by hand, in this order
 
-> **Status, 2026-08-16: `wave2/project-instructions` has landed on the integration branch.**
-> Only `wave2/canvas-host-boundary` remains. It is still based at `e563575`, so the conflicts
-> below are the ones it will raise when it is merged forward — but the sides have swapped:
-> what is described as "the project-instructions side" is now *what is already in the tree*,
-> and it is the side to keep. The canvas branch must be rebased, not merged blind.
+> **Status, 2026-08-16: both branches have landed. This section is history, kept for the
+> resolution it records.** `wave2/project-instructions` merged first, then
+> `wave2/canvas-host-boundary`. The union below is what shipped; the paragraph numbered 1 is the
+> one that mattered, and both critics derived the same answer independently:
+>
+> ```tsx
+> const sandbox = useMemo(() => createSandboxRepository(adapter), [adapter]);
+> const projectId = useActiveProjectId();
+> …
+> <CanvasSurface assistantTexts={answers} projectId={projectId} sandbox={sandbox}>
+> ```
+>
+> Taking either side alone loses something real: the canvas side re-introduces
+> `DEFAULT_PROJECT_ID` at the exact point the other branch removed it — every conversation in
+> every project running as the default, which is invisible with one project — and the
+> project-instructions side drops `sandbox={sandbox}` and with it the whole boundary move.
+> In `CanvasSurface.tsx` the shipped shape is `projectId: ProjectId | null` **and**
+> `sandbox: SandboxRepository`, with `host?: DocumentHost` deleted: the renderer-side host is
+> what that branch existed to remove, and an optional prop is somewhere for it to live again.
 
 Both branches are based at `e563575` and both rewrite **the same two files**. Read this before
 merging either; the shapes below were read out of the two branches with `git show`, not assumed.

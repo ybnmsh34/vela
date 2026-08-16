@@ -21,10 +21,18 @@
  * so a page whose skeleton came from the model could put anything it liked ahead
  * of the policy. Owning the skeleton is what makes the policy first.
  *
- * Together those two are the `network: 'kernel'` claim in `document-host.ts`.
- * The frame reaches nothing — no fetch, no image, no font, no stylesheet, no
- * nested frame — because the browser refuses, not because a policy object in
- * this process says so.
+ * Together those two are what a `network: 'kernel'` claim about a document frame
+ * would rest on. The frame reaches nothing — no fetch, no image, no font, no
+ * stylesheet, no nested frame — because the browser refuses, not because a policy
+ * object in this process says so.
+ *
+ * **No shipped host makes that claim.** `absent_document_backend` in the
+ * `vela-sandbox` crate reports the document family at `sameOrigin` with every
+ * guarantee `unenforced`, because that host draws no frame and will not describe
+ * one it does not own. The only `SandboxBackendReport` in this tree that says
+ * `kernel` about a document is the fake host in `document-host-double.ts`, which
+ * is a test double and says so. The mechanism below is real either way; what is
+ * missing is a host that has one and reports it.
  *
  * ## What this file does not do
  *

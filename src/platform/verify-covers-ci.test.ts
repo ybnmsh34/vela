@@ -54,7 +54,9 @@
  * ### Inputs this reader refuses rather than reading past
  *
  * Each of these can put a gate command into CI that no amount of scanning this
- * directory would find. There is no wide reading of them, so they throw:
+ * directory would find. There is no wide reading of them, so they throw — and
+ * they throw on *what a `uses:` names*, never on how the YAML spells it, which
+ * took two goes to make true (defects three and four below):
  *
  * - **A local composite action** — a step whose `uses:` is a relative path to an
  *   action directory. Its own steps run commands, and they live in a definition
@@ -86,6 +88,34 @@
  * The value is now parsed rather than tokenised — see {@link usesValue}. Nothing
  * about which targets are refused changed; only whether the quoting could hide
  * one from the arms that refuse it.
+ *
+ * ### The fourth defect: the same hole, one YAML spelling over
+ *
+ * Fixing the quoting left the identical hole open for the spellings where the
+ * value is not on the `uses:` line at all. `usesValue` treated an empty
+ * remainder as *not a `uses:` line*, and handed a block-scalar indicator to the
+ * arms as though `>-` were a target. Measured on `ci.yml`'s bytes the same way,
+ * one step in the `static` job, each twice:
+ *
+ * | step | verdict |
+ * | --- | --- |
+ * | `- uses: ./.github/actions/foo` | refused (control) |
+ * | `- uses:` ⏎ `    ./.github/actions/foo` | 36/36 green |
+ * | `- uses: >-` ⏎ `    ./.github/actions/foo` | 36/36 green |
+ * | `- uses: \|-` ⏎ `    ./.github/actions/foo` | 36/36 green |
+ *
+ * A YAML parser resolves all four to the identical string — checked here, not
+ * assumed. Whether GitHub Actions' own parser accepts every one of them is
+ * **not established**; a multi-line plain scalar is ordinary YAML and would be
+ * expected to work, and the block-scalar forms may or may not be. That question
+ * does not need answering, because the rule does not depend on it: a reader that
+ * cannot see the value must say so rather than return "nothing here". Reporting
+ * a clean read of a line it never read is the defect, whatever the runner would
+ * have done with it.
+ *
+ * So the two "cannot read it" outcomes are now cases in {@link UsesValue} and
+ * both are refused by name. The lesson from three, restated: the fix that only
+ * covers the spellings you thought of is the same defect with a smaller mouth.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -323,28 +353,35 @@ describe('the local gate is a superset of the remote one', () => {
   });
 });
 
-describe('a uses: is refused on what it names, not on how it is quoted', () => {
-  // The third defect in the header, held down. `refuseUnreadableUses` is called
-  // on every real workflow by `readWorkflowSurface`, so a refusal that misfires
-  // takes the whole file down at module load and the tests above never run —
-  // which is exactly what the unquoted control does today, and exactly what the
-  // quoted forms failed to do. These cases put single lines through the same
-  // function, because whether a `uses:` is readable is a property of the line.
+describe('a uses: is refused on what it names, not on how it is written', () => {
+  // The third and fourth defects in the header, held down. `refuseUnreadableUses`
+  // is called on every real workflow by `readWorkflowSurface`, so a refusal that
+  // misfires takes the whole file down at module load and the tests above never
+  // run — which is exactly what the unquoted control does today, and exactly what
+  // the quoted and off-the-line forms failed to do.
   //
-  // Every quoting below is ordinary YAML. The runner resolves `"./x"`, `'./x'`
-  // and `./x` to one target, so all three have to reach one verdict here.
+  // Every spelling below is ordinary YAML, and a YAML parser resolves `"./x"`,
+  // `'./x'`, `./x`, `uses:` with `./x` on the next line, `>-` and `|-` to one
+  // string. So they have to reach one verdict here. Where this reader cannot see
+  // the value at all it refuses instead, which is a different verdict from the
+  // one it used to give — silence.
 
   /** One step, spelled the way a workflow spells it. */
   const step = (written: string): string => `      - uses: ${written}`;
 
-  /** The same step, put through the refusal. */
-  function refuse(written: string): () => void {
+  /** A step written across however many lines it takes, put through the refusal. */
+  function refuseStep(...stepLines: readonly string[]): () => void {
     return (): void => {
       refuseUnreadableUses({
         file: 'probe.yml',
-        text: ['jobs:', '  probe:', '    steps:', step(written)].join('\n'),
+        text: ['jobs:', '  probe:', '    steps:', ...stepLines].join('\n'),
       });
     };
+  }
+
+  /** The one-line case, which is most of them. */
+  function refuse(written: string): () => void {
+    return refuseStep(step(written));
   }
 
   it.each([
@@ -391,10 +428,12 @@ describe('a uses: is refused on what it names, not on how it is quoted', () => {
     { quoting: 'unquoted, with a trailing comment', written: './.github/workflows/reusable.yml # local', names: './.github/workflows/reusable.yml' },
   ])('reads a local reusable workflow written $quoting and allows it', ({ written, names }) => {
     // Two assertions, because "it did not throw" on its own is also what a
-    // reader that understood nothing would report — which is exactly how this
-    // case passed before the parse existed: it fell off the end of every arm
-    // rather than matching the one that admits it. The first assertion says
-    // what was read; the case below says the admission is a decision.
+    // reader that understood nothing would report. That is not hypothetical for
+    // the two *quoted* rows: before the parse existed they were allowed by
+    // falling off the end of every arm, never reaching the one that admits
+    // them. The two unquoted rows did go through the allowance branch even
+    // then, and are here as its controls. The first assertion says what was
+    // read; the case below says the admission is a decision.
     expect(usesValue(step(written))).toEqual({ kind: 'target', target: names });
     expect(
       refuse(written),
@@ -422,6 +461,28 @@ describe('a uses: is refused on what it names, not on how it is quoted', () => {
     );
   });
 
+  it.each([
+    { spelling: 'a plain scalar continued on the next line', line: '      - uses:', raw: '' },
+    { spelling: 'the same, with the key left trailing a space', line: '      - uses: ', raw: '' },
+    { spelling: 'a folded block scalar', line: '      - uses: >-', raw: '>-' },
+    { spelling: 'a literal block scalar', line: '      - uses: |-', raw: '|-' },
+    { spelling: 'a folded block scalar keeping its newline', line: '      - uses: >', raw: '>' },
+    { spelling: 'a literal block scalar keeping its newline', line: '      - uses: |', raw: '|' },
+  ])('refuses a uses: written as $spelling, whose value is not on the line', ({ line, raw }) => {
+    // The fourth defect. Every one of these resolves to the same string as
+    // `uses: ./.github/actions/foo`, which is refused — so a composite action
+    // could be admitted by moving its path down one line. The parse is asserted
+    // first because the failure was that this reader called the line *not a
+    // `uses:` line*: silence about a key it could not read, which is the one
+    // report it must never make.
+    expect(usesValue(line)).toEqual({ kind: 'elsewhere', raw });
+    expect(
+      refuseStep(line, '          ./.github/actions/foo'),
+      'a reader that works a line at a time cannot see a value written below ' +
+        'that line. It must say so, not report that it found nothing.',
+    ).toThrow('has a "uses:" whose value is not on that line');
+  });
+
   it('refuses a uses: whose opening quote never closes', () => {
     // Unquoted this exact target is *allowed* — it is the local reusable
     // workflow above — so neither guess is safe. Stripping the stray quote
@@ -435,6 +496,12 @@ describe('a uses: is refused on what it names, not on how it is quoted', () => {
   });
 
   it.each([
+    // A control row, named as one: `actions/checkout@v4` unquoted and
+    // uncommented reddens under no mutation of this parser, because it is the
+    // spelling the parser never changed. It is here to say that the plain case
+    // still works, not to detect anything. The three below it each redden on
+    // their own — the quoted pair when the parse is reverted, the commented one
+    // when the unquoted form stops stopping at whitespace.
     { quoting: 'unquoted', written: 'actions/checkout@v4', names: 'actions/checkout@v4' },
     { quoting: 'double-quoted', written: '"pnpm/action-setup@v4"', names: 'pnpm/action-setup@v4' },
     { quoting: 'single-quoted', written: "'dtolnay/rust-toolchain@stable'", names: 'dtolnay/rust-toolchain@stable' },
@@ -505,18 +572,28 @@ function filesUnder(absolute: string, prefix: string, into: string[]): void {
 /**
  * What one `uses:` line names, once YAML quoting is off.
  *
- * `unterminated` is a case of its own because the alternative is to guess, and
- * both guesses are wrong in the direction that matters. This is a line reader,
- * not a YAML parser: given `uses: "./x` it cannot know whether the scalar
- * continues on the next line or the closing quote was simply dropped. Strip the
- * opening quote and it refuses a target the runner may never see; leave the
- * value raw and it is back to the defect in the header, since a leading `"`
- * matches none of the arms in {@link refuseUnreadableUses}. So the ambiguity is
- * carried out to the call site, which refuses it and says which line to fix.
+ * Two of the three cases are *this reader admitting it cannot read the value*,
+ * and they exist because the alternative is to guess. This is a line reader, not
+ * a YAML parser, and the one thing it must never do is report "nothing to see
+ * here" about a line it did not understand — that is the failure this whole file
+ * exists to catch, and it is the failure it committed twice.
+ *
+ * - `unterminated` — `uses: "./x`, an opening quote that never closes. Strip the
+ *   quote and it refuses a target the runner may never see; leave the value raw
+ *   and it is the third defect again, a leading `"` matching no arm.
+ * - `elsewhere` — the value is not on this line at all: `uses:` with the target
+ *   on the next line, or a block scalar (`uses: >-`, `uses: |-`). See the fourth
+ *   defect in the header.
+ *
+ * Both are carried out to {@link refuseUnreadableUses}, which refuses them and
+ * names the line. Neither is `undefined`: `undefined` means "not a `uses:` key",
+ * a claim this reader is entitled to make, and it may not be borrowed to cover a
+ * `uses:` key whose value it failed to find.
  */
 type UsesValue =
   | { readonly kind: 'target'; readonly target: string }
-  | { readonly kind: 'unterminated'; readonly raw: string };
+  | { readonly kind: 'unterminated'; readonly raw: string }
+  | { readonly kind: 'elsewhere'; readonly raw: string };
 
 /**
  * The target of a `uses:` key, unquoted — or `undefined` when the line is not a
@@ -531,6 +608,16 @@ type UsesValue =
  * quoted form ends at the closing quote for the same reason — the comment is
  * outside it.
  *
+ * Whitespace after the key does **not** mean an empty value; it means the value
+ * is on a later line, and a block-scalar indicator means the same thing. Both
+ * come back as `elsewhere` rather than as `undefined` — see the fourth defect in
+ * the header, which is what this reader did with them before.
+ *
+ * This over-refuses in one place, deliberately: the key pattern is indentation
+ * blind, so a `with:` parameter that happens to be named `uses` and carries a
+ * block scalar is refused too. Rule 2's trade applies — over-reporting costs a
+ * review, and the message names the line.
+ *
  * A `\"` escape inside a double-quoted scalar would cut the value short here. It
  * is not handled because no action path contains one, and the error is in the
  * safe direction: a truncated relative path is still relative, so it is still
@@ -541,7 +628,9 @@ function usesValue(line: string): UsesValue | undefined {
   if (rest === undefined) return undefined;
 
   const value = rest.trim();
-  if (value === '') return undefined;
+  if (value === '' || value.startsWith('|') || value.startsWith('>')) {
+    return { kind: 'elsewhere', raw: value };
+  }
 
   const quote = value[0];
   if (quote === '"' || quote === "'") {
@@ -588,6 +677,17 @@ function refuseUnreadableUses(workflow: Workflow): void {
           'cannot tell what it names, and a target it cannot read is not a target ' +
           'it may assume is harmless. Write the value on one line, with matching ' +
           'quotes or none.',
+      );
+    }
+
+    if (uses.kind === 'elsewhere') {
+      throw new Error(
+        `${at} has a "uses:" whose value is not on that line — it is written as ` +
+          `${uses.raw === '' ? 'a plain scalar continued below' : `a block scalar (${uses.raw})`}. ` +
+          'This reader works one line at a time, so it cannot see what is named ' +
+          'and must not report that it found nothing. YAML resolves this to the ' +
+          'same string as the one-line spelling, so a composite action written ' +
+          'this way would reach CI unread. Put the target on the "uses:" line.',
       );
     }
 

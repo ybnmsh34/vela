@@ -160,20 +160,20 @@ describe('an artifact in an answer reaches the panel', () => {
    * moved it cost a `sandbox_release` and a `sandbox_submit` across `invoke` per
    * batch, either side of a torn-down and re-established `sandbox:event`
    * subscription. This test pins the fix; before it, the run below measured
-   * **twelve to seventeen** submits for one artifact — the count tracks how many
-   * batches the stream drains in, so it moves with the machine.
+   * **ten-odd** submits for one artifact — the count tracks how many batches the
+   * stream drains in, so it moves with the machine.
    *
    * The pacing matters and is the reason this test looks odd. It is not what
    * lets the test fail: reverted, the run below reddens under the fake's default
    * microtask scheduling too, at **three** submits, on every run of it. What the
    * pacing sets is the *size* of what the guard sees. Under the default an
    * answer drains in far fewer batches than a real stream would produce, and
-   * three is all that is left of a defect worth a dozen and more — which
+   * three is all that is left of a defect worth ten-odd submits — which
    * understates the cost this test exists to measure. One word per macrotask is
    * what a real stream looks like to the renderer. The assertion is
    * `toHaveLength(1)` and reddens at two, so the spread in those counts costs it
    * nothing; the `setTimeout` is not a dead knob, and stripping it would quietly
-   * drop this guard from catching a dozen-odd to catching three.
+   * drop this guard from catching ten-odd to catching three.
    */
   it('submits once for an artifact no matter how much streams beside it', async () => {
     const submits: CommandName[] = [];

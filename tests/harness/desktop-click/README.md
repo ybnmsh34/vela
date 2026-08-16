@@ -141,7 +141,7 @@ screenshot --out FILE               webview contents as PNG (not the window fram
 
 ```
 click <query> [--via os|message|cdp] [--nth N] [--watch CSS] [--settle ms]
-type  <query> --value "..." [--clear] [--enter]
+type  <query> --value "..." [--clear] [--enter] [--insert-text]
 key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
 eval  --expr "..." | --file FILE
 ```
@@ -149,6 +149,58 @@ eval  --expr "..." | --file FILE
 `--text` is a **query filter** everywhere, including on `type`. The string to be
 typed is `--value`. Conflating them made `type` search for an element containing
 the text about to be entered into it, and report "not found".
+
+#### The two ways to put text in a field, and why there are two
+
+`type` sends **one real key event per character** by default: `keydown` carrying
+`text`, then `keyup`, with the US-layout virtual-key code and shift state for
+that character. That is the only route that anything listening for keys can
+see — `use-navigation-shortcuts.ts`, the `onKeyDown` handlers in `Composer`,
+`ModalSurface`, `CommandPalette`, and the roving-tabindex list in `Sidebar.tsx`.
+
+`--insert-text` uses CDP `Input.insertText` instead: the **value** goes in as one
+insertion, through `beforeinput`/`input` so React's `onChange` fires, with no key
+events of its own. Use it for text no key produces. Never use it to exercise
+something whose behaviour is keyboard-driven — it will report success while the
+handler under test never ran.
+
+Read the JSON carefully, because "which route" has two answers and they differ:
+`valueKeyEvents` is whether the *value* went in as keys, and `keyEvents` is
+whether the *run* put any key on the wire. They come apart because `--clear`
+presses Backspace and `--enter` presses Enter on **either** route, so
+`--insert-text --enter` is an insertion plus two real key events. `cleared` and
+`enter` are reported for the same reason: without `cleared`, the Backspace that
+`--clear` fires is unrecoverable from the transcript.
+
+The virtual-key code comes from a written-out table in `keys.mjs`, not from the
+character. It used to be `name.toUpperCase().charCodeAt(0)`, and ASCII and the
+Windows VK space agree only on `0`–`9` and `A`–`Z`. **32 of the 95 printable
+ASCII characters were sent with the wrong Windows virtual-key code, and 59 of 95
+with at least one wrong field** (virtual-key code, `code`, or shift state) —
+`A`–`Z` carried the right code and were wrong only in the missing shift bit, and
+space was wrong only in `code`. The whole run `!` to `/` (33–47) landed on the VK
+navigation/editing block: `.` was 46 = `VK_DELETE`, so Chromium ran
+`DeleteForward` on the keydown and never fired the character event —
+`Local llama.cpp` arrived as `Local llamacpp` and `127.0.0.1:8033` as
+`127001:8033`. Nine characters were swallowed that way. Above `/` the damage was
+quieter: eight (`: ; < = > ? @ ^`) pressed genuinely unassigned codes, but nine
+pressed *assigned* keys — `[`→VK_LWIN, `\`→VK_RWIN, `]`→**VK_APPS**, `_`→VK_SLEEP,
+`` ` ``→VK_NUMPAD0, `{`→F12, `|`→F13, `}`→F14, `~`→F15. VK_APPS is the one to
+notice: Blink fires a context menu on an unmodified VK_APPS keyup on non-Mac, so
+typing `]` plausibly opened a context menu over the window being measured.
+
+A character with no key on the layout is now **refused before the window is
+touched**, naming `--insert-text`, rather than being given a guessed code: half a
+value in a field is worse evidence than none.
+
+**This narrowed a case that used to work.** Non-ASCII code points all produced
+virtual-key codes ≥ 128 under `charCodeAt`, which cannot collide with a bare
+editing command, so the character rode in on the `text` field and
+`type --value "café"` did the right thing. It now hard-refuses. The refusal is
+correct — there is no single key on a US layout that produces `é`, so any code
+sent for it is a fiction, and the old success was luck rather than design — but
+it is a capability that moved rather than one that was only ever broken. The
+replacement is `--insert-text`, which is why that flag exists.
 
 ### Query flags
 
@@ -299,6 +351,36 @@ Stated rather than left to be discovered:
   The composer is disabled with no endpoint configured, and the harness reports
   that state correctly (`disabled: true`, focus refused) rather than typing into
   it.
+- **The key-mapping fix has not been re-driven against a live window.** The
+  window was down and had to stay down, so `keys.test.mjs` proves it two ways
+  that are not a live run: pure-function assertions on the table, and the three
+  strings driven through a *model* of Chromium's keydown → editing-command →
+  character pipeline into a jsdom `<input>`. Fed the mapping that shipped, the
+  model reproduces `127001:8033` and `Local llamacpp` — the two corruptions
+  observed against the real window — byte-for-byte, from nothing but the
+  virtual-key numbers, so the reproduction is not circular.
+
+  **Read that narrowly.** It is strong evidence for exactly one claim: that
+  VK 46 swallowed the character. Both observed strings exercise only that one
+  command, and the caret sits at the end of the field on every `.` in both — so
+  a model whose VK 46 deletes *nothing at all* fits both observations equally
+  well. `keys.test.mjs` asserts that explicitly, so the limit cannot quietly
+  widen. The forward delete itself, and the other nine modelled commands, are
+  supported by Chromium's source and by ordinary keyboard behaviour, not by any
+  observation recorded here. Type `127.0.0.1:8033` into Vela on the next live
+  session and record the `activeElementAfter` value here.
+- **The model is a model.** It covers the ten bare-VK editing commands that bear
+  on this defect. An earlier version of it omitted four (VK 33/34/38/40) and
+  therefore reported `"Hello, World!"` and `"a&b(c)d"` as round-tripping under
+  the shipped mapping when the real pipeline gives `"Hello, World"` and
+  `"bac)d"`. Both are now pinned as controls. A test model that reports a
+  corrupted string as intact is the same failure class as the instrument this
+  branch was fixing, so treat any future addition to `BARE_EDITING_COMMAND` as
+  evidence that the previous account was incomplete rather than as a detail.
+- **`--insert-text` has never been executed.** `Input.insertText` is a CDP call;
+  no test in this suite may open a window, so the route is guarded at the source
+  (that it exists, that it is not the default, and that the JSON says which
+  route ran) and not by running it.
 
 ## Failing on purpose
 
@@ -325,7 +407,9 @@ script: it fails on *both* directions of drift, not only on absence.
 | `page.mjs` | everything that runs *inside* the window, as source strings |
 | `os-input.ps1` | Win32: raise, the `SendInput` self-test, and the two delivery modes |
 | `final-path.ps1` | `GetFinalPathNameByHandle` — where a path really is |
+| `keys.mjs` | the US layout as a table: character → `{key, code, keyCode, shiftKey}` |
 | `verdicts.test.mjs` | the regression cases for the three ways this reported a click that never happened |
+| `keys.test.mjs` | the regression cases for the harness typing something other than what it was given |
 | `vitest.config.mjs` | their project; `pnpm test:click-harness`, and inside `pnpm verify` |
 
 No dependencies beyond Node 22+ (global `WebSocket` and `fetch`) and Windows

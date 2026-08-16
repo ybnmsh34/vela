@@ -83,6 +83,7 @@ import {
   waitForEndpoint,
 } from './cdp.mjs';
 import { BOOTSTRAP, literal } from './page.mjs';
+import { NAMED_KEYS, keySpecFor, unmappableCharacters } from './keys.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -361,21 +362,6 @@ function pickOne(result, query, flags) {
   return 0;
 }
 
-const NAMED_KEYS = {
-  Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
-  Tab: { key: 'Tab', code: 'Tab', keyCode: 9, text: '\t' },
-  Escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
-  Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8, text: '\b' },
-  Delete: { key: 'Delete', code: 'Delete', keyCode: 46 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
-  Home: { key: 'Home', code: 'Home', keyCode: 36 },
-  End: { key: 'End', code: 'End', keyCode: 35 },
-  Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
-};
-
 const MODIFIER_BITS = { alt: 1, ctrl: 2, control: 2, meta: 4, cmd: 4, shift: 8 };
 
 function modifiersOf(flags) {
@@ -392,44 +378,32 @@ function modifiersOf(flags) {
 }
 
 /**
- * One key press. `Input.dispatchKeyEvent` needs `text` for anything that should
- * produce input — Enter is `"\r"`, not `"\n"` and not omitted — which has cost
- * this project time before, so the mapping is a table rather than a guess.
+ * One key press. The spec comes from `keys.mjs`, which owns the character →
+ * virtual-key mapping; see the header there for why it is a written-out table
+ * and not a computation over the character's code point.
+ *
+ * `shiftKey` on the spec is a property of the *key*, not of the caller's
+ * request: there is no way to press `$` without shift, so the bit is OR'd into
+ * whatever modifiers the caller asked for rather than replacing them.
  */
 async function pressKey(cdp, spec, modifiers = 0) {
+  const effective = modifiers | (spec.shiftKey ? MODIFIER_BITS.shift : 0);
   const base = {
     key: spec.key,
     code: spec.code,
     windowsVirtualKeyCode: spec.keyCode,
     nativeVirtualKeyCode: spec.keyCode,
-    modifiers,
+    modifiers: effective,
   };
   // A modifier other than shift suppresses text input in a real browser, and
   // sending `text` anyway would make Ctrl+K type a "k".
-  const wantsText = spec.text !== undefined && (modifiers & ~8) === 0;
+  const wantsText = spec.text !== undefined && (effective & ~MODIFIER_BITS.shift) === 0;
   await cdp.send('Input.dispatchKeyEvent', {
     ...base,
     type: wantsText ? 'keyDown' : 'rawKeyDown',
     ...(wantsText ? { text: spec.text, unmodifiedText: spec.text } : {}),
   });
   await cdp.send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
-}
-
-function keySpecFor(name) {
-  if (NAMED_KEYS[name]) return NAMED_KEYS[name];
-  if (name.length === 1) {
-    const upper = name.toUpperCase();
-    return {
-      key: name,
-      code: /[a-z]/i.test(name) ? `Key${upper}` : `Digit${name}`,
-      keyCode: upper.charCodeAt(0),
-      text: name,
-    };
-  }
-  throw new HarnessError(
-    EXIT.USAGE,
-    `unknown key "${name}". Known: ${Object.keys(NAMED_KEYS).join(', ')}, or a single character.`,
-  );
 }
 
 async function psJson(script, args) {
@@ -869,6 +843,23 @@ commands.type = async (flags) => {
     );
   }
   const text = String(flags.value);
+  const insertText = Boolean(flags['insert-text']);
+  // Refuse before the window is touched. Throwing halfway through the loop
+  // below would leave a half-filled field and a non-zero exit, and the field is
+  // what the next command reads — a partial value is worse evidence than none.
+  if (!insertText) {
+    const unmappable = unmappableCharacters(text);
+    if (unmappable.length > 0) {
+      throw new HarnessError(
+        EXIT.USAGE,
+        `no US-layout key produces ${unmappable.map((c) => JSON.stringify(c)).join(', ')}, so ` +
+          'this string cannot be typed as key events. Re-run with --insert-text to insert it ' +
+          'via CDP Input.insertText — which fills the field but fires no keydown/keyup, so ' +
+          'anything under test that listens for keys will not see them.',
+        { value: text, unmappable },
+      );
+    }
+  }
   const { cdp } = await attach(session);
   const result = await resolveQuery(cdp, query);
   let index;
@@ -886,16 +877,30 @@ commands.type = async (flags) => {
       match: result.matches[index],
     });
   }
-  if (flags.clear) {
+  // Read once, and let the same two consts drive both the behaviour and the
+  // report — `keyEvents` was derived from the value's route alone, and said
+  // "no key events at all" on a run that had just pressed Backspace or Enter.
+  const cleared = Boolean(flags.clear);
+  const enter = Boolean(flags.enter);
+  if (cleared) {
     await cdp.evaluate(
       'document.activeElement && document.activeElement.select && document.activeElement.select()',
     );
     await pressKey(cdp, NAMED_KEYS.Backspace);
   }
-  for (const character of text) {
-    await pressKey(cdp, keySpecFor(character));
+  if (insertText) {
+    // `Input.insertText` hands the string to the editing pipeline as a single
+    // insertion. It goes through beforeinput/input, so a React `onChange` sees
+    // it — but it synthesises no keydown/keyup at all, so a shortcut handler,
+    // an `onKeyDown`, or the roving-tabindex list in `Sidebar.tsx` sees
+    // nothing. That is why it is a flag and not the default.
+    await cdp.send('Input.insertText', { text });
+  } else {
+    for (const character of text) {
+      await pressKey(cdp, keySpecFor(character));
+    }
   }
-  if (flags.enter) await pressKey(cdp, NAMED_KEYS.Enter);
+  if (enter) await pressKey(cdp, NAMED_KEYS.Enter);
   await sleep(flagNumber(flags, 'settle', 300));
   const value = await cdp.evaluate(
     '(() => { const el = document.activeElement; if (!el) return null; ' +
@@ -904,10 +909,22 @@ commands.type = async (flags) => {
   cdp.close();
   return {
     typed: text,
-    charactersSent: [...text].length,
-    enter: Boolean(flags.enter),
-    mechanism:
-      'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp. Enter is text "\\r".',
+    charactersSent: insertText ? 0 : [...text].length,
+    // `--clear` presses Backspace and `--enter` presses Enter on *either*
+    // route, so `keyEvents` is a property of the whole run and cannot be read
+    // off the value's route. `valueKeyEvents` is the narrower question — did
+    // the value itself go in as keys — and `cleared` is reported because
+    // otherwise the Backspace is unrecoverable from the transcript.
+    cleared,
+    enter,
+    keyEvents: !insertText || cleared || enter,
+    valueKeyEvents: !insertText,
+    mechanism: insertText
+      ? 'CDP Input.insertText — the value went in as one insertion with no key events of its ' +
+        'own. Any key events in this run came from --clear (Backspace) or --enter; see ' +
+        '`cleared` and `enter`.'
+      : 'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp, with the ' +
+        'US-layout virtual-key code and shift state for each character. Enter is text "\\r".',
     isOsInput: false,
     target: result.matches[index],
     activeElementAfter: value,
@@ -931,8 +948,13 @@ commands.key = async (flags) => {
   return {
     key: spec.key,
     code: spec.code,
+    keyCode: spec.keyCode,
     text: spec.text ?? null,
     modifiers,
+    // What was actually on the wire. `$` cannot be pressed without shift, so
+    // the spec contributes a bit the caller did not ask for; saying so here
+    // keeps the JSON an honest record of the event rather than of the request.
+    modifiersSent: modifiers | (spec.shiftKey ? MODIFIER_BITS.shift : 0),
     repeat,
     isOsInput: false,
     mechanism: 'CDP Input.dispatchKeyEvent',
@@ -1120,7 +1142,14 @@ Driving
         os       Win32 SendInput into the system input queue — what a mouse does (default)
         message  Win32 WM_LBUTTONDOWN/UP posted to the WebView2 window, cursor really over it
         cdp      CDP Input domain — browser input pipeline, ahead of hit-testing
-  type  <query> --value "..." [--clear] [--enter]   (--value is typed; --text queries)
+  type  <query> --value "..." [--clear] [--enter] [--insert-text]
+                                                   (--value is typed; --text queries)
+        default  one real key event per character, US layout: correct virtual-key code and
+                 shift state. Refuses, before touching the window, any character with no key
+                 on that layout rather than inventing a code for it.
+        --insert-text  CDP Input.insertText: fills the field in one insertion and fires NO
+                 keydown/keyup. Use for text no key produces; never for anything whose
+                 handler listens for keys.
   key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
   eval  --expr "..." | --file FILE
 

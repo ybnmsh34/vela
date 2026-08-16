@@ -1,10 +1,24 @@
 /**
- * Wording for the two things the host reports that a user must be able to read:
- * what Vela had to give up, and what went wrong.
+ * Wording for the three things a user must be able to read: what the endpoint
+ * had to give up, what an **agent run** had to give up, and what went wrong.
  *
  * Pure functions over the contract's enums, so the wording is unit-tested and
- * the components stay dumb. Both mappings are **total** — a new variant on
- * either union fails the type check here rather than rendering as a blank.
+ * the components stay dumb. All three mappings are **total** — a new variant on
+ * any of the unions fails the type check here rather than rendering as a blank.
+ *
+ * "The host reports" is what the first sentence used to say, and the second
+ * mapping is why it changed: `describeRunDegradation` words `RunDegradation`,
+ * which is **Vela's own** runtime reporting on itself, not the host reporting on
+ * a backend. The distinction matters at the one place the sentences meet a
+ * screen — `TurnNotices.tsx` draws the two lists separately, because the unions
+ * are separate and merging them would break the parity test that holds
+ * `Degradation` against its Rust twin.
+ *
+ * "so the wording is unit-tested" was briefly false, and that is worth leaving
+ * written down: `describeRunDegradation` shipped in the same change as the first
+ * component that could render it, and four of its five arms had no assertion
+ * anywhere. `notices.test.ts` now enumerates that union too, in
+ * `ALL_RUN_DEGRADATIONS`.
  *
  * There is no provider name in any string, and there is nowhere to put one:
  * these functions receive enums, not ids.

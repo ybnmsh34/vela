@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatError, Degradation, Diagnosis, KnownCause } from '@/platform/contract';
+import type { ContextRef, RunDegradation } from '@/platform/contract-harness';
 
-import { describeChatError, describeDegradation, describeMalformedReason } from './notices';
+import {
+  describeChatError,
+  describeDegradation,
+  describeMalformedReason,
+  describeRunDegradation,
+} from './notices';
 
 /** A diagnosis, as the host builds one: a closed cause plus integers. */
 function diagnosis(cause: KnownCause, extras: Partial<Diagnosis> = {}): Diagnosis {
@@ -24,6 +30,46 @@ const ALL_DEGRADATIONS: readonly Degradation[] = [
   { kind: 'usageNotReported' },
   { kind: 'malformedToolCalls', count: 1 },
   { kind: 'failedOver', attempts: 2 },
+];
+
+/** A ref as `project-context.ts` mints one: a fixed label, nothing counted. */
+const INSTRUCTIONS_REF: ContextRef = {
+  source: 'projectInstructions',
+  id: 'project:p1:instructions',
+  title: 'Project instructions',
+  estimatedTokens: null,
+};
+
+/**
+ * Every degradation an **agent run** can carry. Keep in step with the union.
+ *
+ * A second list rather than entries in {@link ALL_DEGRADATIONS}, because
+ * `RunDegradation` is a separate union from `Degradation` — that one mirrors a
+ * Rust enum and merging them would break the parity test holding the two
+ * honest.
+ *
+ * Four of these five had no assertion anywhere when they were written, which is
+ * how they nearly shipped: `use-conversation.ts` had always dropped `degraded`
+ * events, so adding the wording and adding the first reader happened in one
+ * change and only the arm that change was *about* got exercised. Three of the
+ * four are emitted by the shipping loop (`agent-loop-harness.ts` emits
+ * `wallClockLimitReached`, `toolCallLimitReached` and `stepLimitReached`), so
+ * they are sentences a user can reach today.
+ *
+ * `auxiliaryModelUnavailable` is the exception and is listed anyway. That loop
+ * documents that it **never emits** it — it has no internal steps to fall back
+ * — so nothing renders it yet. It is on the union, this mapping must stay total,
+ * and a harness that adds an internal step owes the degradation and will find
+ * the wording already written.
+ */
+const ALL_RUN_DEGRADATIONS: readonly RunDegradation[] = [
+  { kind: 'auxiliaryModelUnavailable' },
+  { kind: 'stepLimitReached', steps: 1 },
+  { kind: 'stepLimitReached', steps: 4 },
+  { kind: 'toolCallLimitReached', calls: 1 },
+  { kind: 'toolCallLimitReached', calls: 6 },
+  { kind: 'wallClockLimitReached', elapsedMs: 30_000 },
+  { kind: 'contextUnavailable', ref: INSTRUCTIONS_REF },
 ];
 
 const ALL_ERRORS: readonly ChatError[] = [
@@ -111,6 +157,82 @@ describe('degradation wording', () => {
     expect(describeDegradation({ kind: 'malformedFramesSkipped', count: 3 }).detail).toContain(
       '3 frames could not be parsed',
     );
+  });
+});
+
+describe('run degradation wording', () => {
+  it('produces a title and a detail for every variant', () => {
+    for (const degradation of ALL_RUN_DEGRADATIONS) {
+      const notice = describeRunDegradation(degradation);
+      expect(notice.title, degradation.kind).not.toBe('');
+      expect(notice.detail, degradation.kind).not.toBe('');
+    }
+  });
+
+  it('never names a backend', () => {
+    for (const degradation of ALL_RUN_DEGRADATIONS) {
+      const notice = describeRunDegradation(degradation);
+      expect(`${notice.title} ${notice.detail}`).not.toMatch(PROVIDER_NAMES);
+    }
+  });
+
+  it('never renders a raw enum name or an undefined at the user', () => {
+    // The failure mode a total switch does not catch: an arm that compiles,
+    // returns strings, and interpolates something the user cannot read. Every
+    // one of these arms carries a field, and a typo in the template shows up
+    // here rather than on somebody's screen.
+    for (const degradation of ALL_RUN_DEGRADATIONS) {
+      const notice = describeRunDegradation(degradation);
+      const sentence = `${notice.title} ${notice.detail}`;
+      expect(sentence, degradation.kind).not.toContain(degradation.kind);
+      expect(sentence, degradation.kind).not.toMatch(/undefined|NaN|\[object/);
+    }
+  });
+
+  it('says which material went missing, in the words the ref carries', () => {
+    // `ContextRef.title` is documented as the user's own text. Quoting it is how
+    // somebody tells which of several sources was the one that could not be
+    // read, so the wording has to actually use it.
+    const notice = describeRunDegradation({ kind: 'contextUnavailable', ref: INSTRUCTIONS_REF });
+    expect(notice.detail).toContain('Project instructions');
+    expect(notice.tone).toBe('warning');
+  });
+
+  it('reports the figure each limit actually stopped at', () => {
+    // A limit notice whose number is wrong is worse than none: it sends the user
+    // to change a setting that was not the one that bit.
+    expect(describeRunDegradation({ kind: 'stepLimitReached', steps: 4 }).detail).toContain(
+      '4 steps',
+    );
+    expect(describeRunDegradation({ kind: 'toolCallLimitReached', calls: 6 }).detail).toContain(
+      '6 tool calls',
+    );
+    // Milliseconds are the wire unit and seconds are the readable one; a user
+    // told their run passed a "30000-second budget" would not believe the notice.
+    expect(
+      describeRunDegradation({ kind: 'wallClockLimitReached', elapsedMs: 30_000 }).detail,
+    ).toContain('30-second');
+  });
+
+  it('agrees with itself on singular and plural', () => {
+    expect(describeRunDegradation({ kind: 'stepLimitReached', steps: 1 }).detail).toContain(
+      '1 step ',
+    );
+    expect(describeRunDegradation({ kind: 'toolCallLimitReached', calls: 1 }).detail).toContain(
+      '1 tool call ',
+    );
+  });
+
+  it('warns about the ones that changed the answer, and only informs about the rest', () => {
+    // Tone is about consequence. A run that stopped early, or that ran without
+    // material the user wrote, produced an answer that looks complete and is
+    // not — the reader has to be told. One model doing the internal steps as
+    // well changes nothing about what they are reading.
+    expect(describeRunDegradation({ kind: 'auxiliaryModelUnavailable' }).tone).toBe('info');
+    for (const degradation of ALL_RUN_DEGRADATIONS) {
+      if (degradation.kind === 'auxiliaryModelUnavailable') continue;
+      expect(describeRunDegradation(degradation).tone, degradation.kind).toBe('warning');
+    }
   });
 });
 

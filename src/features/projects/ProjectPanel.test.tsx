@@ -54,15 +54,38 @@ beforeEach(() => {
 
 describe('the projects pane', () => {
   it('names the project the window is in, taken from the host rather than assumed', async () => {
-    // `DEFAULT_PROJECT_NAME` is not asserted against here on purpose: the host
-    // owns the seed and the pane renders whatever it is told. What is asserted
-    // is that a name arrived at all — a picker showing nothing is a window whose
-    // project nobody can see.
-    mount(new BrowserAdapter());
+    // ── THIS TEST WAS VACUOUS, AND THE FIX IS THE POINT ───────────────────────
+    // Its only assertion was `expect(picker).not.toHaveDisplayValue('')`, under
+    // a comment reading "a picker showing nothing is a window whose project
+    // nobody can see". `toHaveDisplayValue` reads the selected option's **text**,
+    // and the placeholder this pane renders when nothing is selected says
+    // "No project" — a non-empty string. So the assertion passed *precisely* in
+    // the state the title denies: neutering the selection in `use-projects.ts`
+    // left it green while three siblings in this file went red.
+    //
+    // What the title actually claims is that the picker landed on the project
+    // **the host flagged**, so that is what is asserted: by id, by name, and by
+    // the absence of the placeholder that used to hold the test up.
+    //
+    // `DEFAULT_PROJECT_NAME` and `DEFAULT_PROJECT_ID` are still not written down
+    // here. The seeded row is found through `isDefault`, which is the flag the
+    // contract carries so that nothing has to know the constant.
+    const adapter = new BrowserAdapter();
+    const { projects } = await adapter.invoke('project_list', {});
+    const seeded = projects.find((summary) => summary.isDefault);
+    expect(seeded, 'the host seeded no default project').toBeDefined();
+    if (seeded === undefined) return;
+
+    mount(adapter);
     const picker = await screen.findByRole('combobox', { name: 'Working in' });
     await waitFor(() => {
-      expect(picker).not.toHaveDisplayValue('');
+      expect(picker).toHaveValue(seeded.id);
     });
+    expect(picker).toHaveDisplayValue(seeded.name);
+    expect(
+      screen.queryByRole('option', { name: 'No project' }),
+      'the picker is offering "no project", which is the state this test denies',
+    ).toBeNull();
   });
 
   it('says which path the instructions actually travel on', async () => {

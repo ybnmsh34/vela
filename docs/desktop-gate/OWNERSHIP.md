@@ -34,7 +34,35 @@ first, or the reclaim silently does not happen.
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 | `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
 | `src/runtime/app-runtime.ts`, `src/runtime/project-context.ts`, `src/runtime/project-context.test.ts`, `src/runtime/app-runtime.test.ts`, `src/data/projects-repository.ts`, `src/state/project-store.ts`, `src/features/projects/`, `src/app/App.tsx`, `src/app/project-instructions.test.tsx`, `src/features/conversation/use-conversation.ts`, `src/features/conversation/ConversationSurface.tsx`, `src/features/conversation/ConversationView.tsx`, `src/features/conversation/MessageTurn.tsx`, `src/features/conversation/TurnNotices.tsx`, `src/features/conversation/notices.ts`, `src/features/conversation/agent-run.test.tsx`, `src/features/navigation/Sidebar.tsx`, `src/features/memory/MemoryPanel.tsx`, `src/platform/contract-harness.ts` | Wave 2 / project instructions | 2026-08-16 | `readProjectInstructions` answered `null` for every project under a false comment, so the whole project-context layer was dead; and `App.tsx` passed `DEFAULT_PROJECT_ID` literally while `use-conversation.ts` fell through to the same constant, so one project's context served every run |
-| `src/features/canvas/CanvasSurface.tsx` | Wave 2 / project instructions | 2026-08-16 | **overlaps `wave2/canvas-host-boundary` in `C:/Users/User/vela-w2-canvas` — read before merging either.** Three lines: `projectId` widened to `ProjectId \| null` and the panel not opened on `null`, because the composition root now passes the host-derived project and has no constant to fall back on before that read lands |
+| `src/features/canvas/CanvasSurface.tsx`, `src/app/App.tsx` | Wave 2 / project instructions | 2026-08-16 | **collides with `wave2/canvas-host-boundary` in `C:/Users/User/vela-w2-canvas`, in two files — see the note below. A careless resolution silently restores the defect this branch removed.** |
+
+### `wave2/project-instructions` × `wave2/canvas-host-boundary` — resolve by hand, in this order
+
+Both branches are based at `e563575` and both rewrite **the same two files**. Read this before
+merging either; the shapes below were read out of the two branches with `git show`, not assumed.
+
+**`src/app/App.tsx` — three overlapping edits, one of them dangerous.**
+
+1. **Line 137, the `CanvasSurface` element.** `wave2/canvas-host-boundary` has
+   `projectId={DEFAULT_PROJECT_ID}` and adds `sandbox={sandbox}`;
+   `wave2/project-instructions` has `projectId={projectId}`, from `useActiveProjectId()`.
+   **Taking the canvas side of this line re-introduces `DEFAULT_PROJECT_ID` at the exact point
+   this branch removed it** — which is mutation M3 in the project-instructions commit message,
+   and it is caught only by `src/app/project-instructions.test.tsx`. The merged line needs *both*
+   changes: `projectId={projectId} sandbox={sandbox}`.
+2. **The import block.** Canvas keeps `import { DEFAULT_PROJECT_ID } from '@/platform/contract-project'`;
+   project-instructions replaces it with `import type { ProjectId }` plus
+   `import { ProjectsSurface, useActiveProjectId } from '@/features/projects'`. Keeping the canvas
+   import is how (1) gets re-introduced quietly after being fixed.
+3. **The `Workspace` doc comment.** Both rewrite the paragraph beginning "`DEFAULT_PROJECT_ID` is
+   passed literally". The canvas side still contains that sentence, which is false once (1) is
+   resolved correctly.
+
+**`src/features/canvas/CanvasSurface.tsx`.** Canvas adds a required `sandbox: SandboxRepository`
+prop and passes it to `CanvasPanel`; project-instructions widens `projectId` to `ProjectId | null`
+and changes the panel guard to `openTrack !== null && projectId !== null`. These are compatible and
+both are wanted — the widening exists because the composition root has no constant left to pass
+before `project_list` answers.
 
 ## Released
 

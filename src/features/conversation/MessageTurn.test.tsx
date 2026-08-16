@@ -136,3 +136,67 @@ describe('the table above covers every model-authored channel there is', () => {
     ).toEqual([...CHANNELS.map((channel) => channel.name)].sort());
   });
 });
+
+
+describe('the window says which endpoint answered', () => {
+  /**
+   * **Reaches-user, not reaches-a-pure-function.**
+   *
+   * `notices.test.ts` pins the sentence; this pins that the sentence is drawn.
+   * The defect was never that the wording was wrong — there was no wording —
+   * and a fix that stopped at a well-tested string the transcript does not
+   * render would leave the product asserting the same false thing it did
+   * before. So this renders the real component and reads the real DOM.
+   */
+  it('discloses a substitution in the transcript itself', () => {
+    const substituted: TurnState = {
+      ...EMPTY_TURN,
+      phase: 'complete',
+      answer: 'the answer',
+      answeredBy: { providerId: 'rented-gpu-box', modelId: 'big-model' },
+    };
+    render(<AssistantTurn turn={substituted} id="t1" selectedProviderId="home-workstation" />);
+
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+    expect(within(reply).getByText(/rented-gpu-box/u)).toBeInTheDocument();
+    expect(within(reply).getByText(/home-workstation/u)).toBeInTheDocument();
+  });
+
+  /**
+   * The quiet path stays quiet, and this is what stops the test above from
+   * passing on a component that prints the note unconditionally: identical
+   * turn, identical render, and the two endpoints agree.
+   */
+  it('says nothing when the endpoint that answered is the one that was asked', () => {
+    const ordinary: TurnState = {
+      ...EMPTY_TURN,
+      phase: 'complete',
+      answer: 'the answer',
+      answeredBy: { providerId: 'home-workstation', modelId: 'local-model' },
+    };
+    render(<AssistantTurn turn={ordinary} id="t2" selectedProviderId="home-workstation" />);
+
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+    expect(within(reply).queryByLabelText('Which endpoint answered')).toBeNull();
+    expect(within(reply).queryByText(/home-workstation/u)).toBeNull();
+  });
+
+  /**
+   * A turn restored from a transcript row written before provenance existed.
+   * The window must not invent an endpoint for it — silence is the only honest
+   * rendering of "nobody recorded this".
+   */
+  it('says nothing about an unattributed turn rather than naming the selection', () => {
+    const unattributed: TurnState = {
+      ...EMPTY_TURN,
+      phase: 'complete',
+      answer: 'the answer',
+      answeredBy: null,
+    };
+    render(<AssistantTurn turn={unattributed} id="t3" selectedProviderId="home-workstation" />);
+
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+    expect(within(reply).queryByLabelText('Which endpoint answered')).toBeNull();
+    expect(within(reply).queryByText(/home-workstation/u)).toBeNull();
+  });
+});

@@ -6,10 +6,11 @@
  * because both change how the answer above them should be read.
  */
 
-import type { Degradation, ToolCallOutcome } from '@/platform/contract';
+import type { AnswerProvenance, Degradation, ToolCallOutcome } from '@/platform/contract';
 import type { RunDegradation } from '@/platform/contract-harness';
 
-import { describeDegradation, describeRunDegradation } from './notices';
+import { describeAttribution, describeDegradation, describeRunDegradation } from './notices';
+import { attributionOf } from './use-conversation';
 import { ToolCallList } from './ToolCallList';
 import type { ToolResultView } from './tool-calls';
 import type { ToolCallProgress } from './turn-stream';
@@ -28,6 +29,40 @@ export function DegradationNotes({ items }: { readonly items: readonly Degradati
           </li>
         );
       })}
+    </ul>
+  );
+}
+
+/**
+ * Which endpoint answered, when it is not the one the turn was addressed to.
+ *
+ * Drawn as its own note above the degradation list rather than inside it,
+ * because it is not a degradation: nothing was reduced, the answer is whole.
+ * What changed is *where it came from*, which a user may care about more than
+ * anything in that list and for reasons that have nothing to do with quality.
+ *
+ * Renders nothing on the ordinary path — see {@link describeAttribution} for
+ * the two silences and why neither may be filled in with a guess.
+ *
+ * This component reads neither id. It hands both to {@link attributionOf},
+ * which is the one place in this feature allowed to compare them, and words
+ * whatever closed case comes back.
+ */
+export function AnsweredByNote({
+  answeredBy,
+  selected,
+}: {
+  readonly answeredBy: AnswerProvenance | null;
+  readonly selected: string | null;
+}) {
+  const notice = describeAttribution(attributionOf(answeredBy, selected));
+  if (notice === null) return null;
+  return (
+    <ul className={styles.notes} aria-label="Which endpoint answered">
+      <li className={styles.note} data-tone={notice.tone}>
+        <span className={styles.noteTitle}>{notice.title}</span>
+        <span className={styles.noteDetail}>{notice.detail}</span>
+      </li>
     </ul>
   );
 }

@@ -281,6 +281,11 @@ pub fn finished(
         usage,
         structured: None,
         degradations,
+        // Unattributed on purpose. This builder is handed parts and never
+        // learns which endpoint produced them; the router does, and stamps it
+        // on the way out. `None` here is "nobody in this frame knew", which is
+        // true, rather than a guess that would read as a claim.
+        answered_by: None,
         // This builder takes parts that are already assembled and says nothing
         // about where they came from. `None` is the truthful value: a producer
         // that rescued text out of an unterminated reasoning block does not

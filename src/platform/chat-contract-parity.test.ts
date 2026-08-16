@@ -40,6 +40,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AnswerProvenance,
   CapabilityEvidence,
   CapabilityName,
   CapabilitySupport,
@@ -275,6 +276,12 @@ const CHAT_RESPONSE_FIELDS = everyVariantOf<keyof ChatResponseBody & string>()([
   'usage',
   'structured',
   'degradations',
+  'answeredBy',
+]);
+
+const ANSWER_PROVENANCE_FIELDS = everyVariantOf<keyof AnswerProvenance & string>()([
+  'providerId',
+  'modelId',
 ]);
 
 const SCHEMA_MISMATCH_FIELDS = everyVariantOf<keyof SchemaMismatch & string>()(['path', 'detail']);
@@ -578,6 +585,13 @@ const STRUCTS: readonly Pairing[] = [
     listed: CHAT_RESPONSE_FIELDS,
   },
   {
+    rust: 'AnswerProvenance',
+    file: 'model.rs',
+    keyword: 'struct',
+    ts: 'AnswerProvenance',
+    listed: ANSWER_PROVENANCE_FIELDS,
+  },
+  {
     rust: 'SchemaMismatch',
     file: 'model.rs',
     keyword: 'struct',
@@ -736,6 +750,40 @@ describe('the parity parser itself', () => {
       'salvaged_answer',
     );
     expect(readRustItem('diagnostic.rs', 'struct', 'Diagnosis').members).toContain('status');
+  });
+
+  /**
+   * **The blind spot, asserted so nobody has to discover it.**
+   *
+   * This file applies a container's `rename_all`. It does **not** read a
+   * per-field `#[serde(rename = "…")]`, so a field can pass every comparison
+   * above by identifier and still cross the bridge under a key the renderer
+   * never reads — which lands as a permanently `null` value rather than as a
+   * failure, i.e. the quiet kind.
+   *
+   * Asserted rather than fixed because a fix here would be a second serde
+   * implementation, and a wrong one is worse than a known gap. The gap is
+   * closed on the Rust side by serialising a real value and reading the keys
+   * off the JSON: `model.rs`'s
+   * `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`. If this
+   * control ever fails, the parser learned to read renames and that test's
+   * "do not rely on the guard" framing can be revisited.
+   */
+  it('does NOT see a per-field serde rename — the gap the Rust wire test covers', () => {
+    const fixture = [
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct FixtureStruct {',
+      '    #[serde(rename = "totally_different")]',
+      '    pub answered_by: Option<String>,',
+      '}',
+      '',
+    ].join('\n');
+    const item = parseRustItem(fixture, 'struct', 'FixtureStruct');
+    expect(item.members).toEqual(['answered_by']);
+    // The wire key is `totally_different`; this file would compare `answeredBy`
+    // and be satisfied. That is the whole point of the assertion.
+    expect(wireNames(item)).toEqual(['answeredBy']);
   });
 
   it('reads private struct fields, which are still on the wire', () => {

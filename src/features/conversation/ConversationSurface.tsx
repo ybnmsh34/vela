@@ -173,6 +173,7 @@ export function ConversationSurface({
         conversation={conversation}
         capabilities={capabilities}
         modelLabel={modelLabel}
+        selectedProviderId={providerId}
         onDraftChange={setDraft}
       />
     </TurnAttachmentsProvider>

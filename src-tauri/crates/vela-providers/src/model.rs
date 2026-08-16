@@ -519,8 +519,57 @@ pub enum Degradation {
     /// At least one tool call could not be reconstructed (MEASURED-4).
     MalformedToolCalls { count: usize },
     /// The request was retried, or moved to another candidate, before it
-    /// succeeded. Carries no provider identity by design.
+    /// succeeded.
+    ///
+    /// Carries no provider identity, and that is **not** the same claim it used
+    /// to be. It used to mean "the UI must never learn which endpoint was
+    /// involved"; it now means "who answered is not this variant's job", because
+    /// a degradation is an *event about* a turn and provenance is a *property
+    /// of* the answer. See [`ChatResponse::answered_by`] for the field that
+    /// carries it, and the note there for why it is not an extra field here.
     FailedOver { attempts: u32 },
+}
+
+/// **Who actually answered.** The endpoint that produced the reply on screen,
+/// by the id the user configured it under, plus the model it was asked for.
+///
+/// # Why this is a field on the response and not a `Degradation`
+///
+/// A `Degradation` is an *event about* a turn — something Vela gave up, which
+/// may happen zero times or several. Provenance is a *property of* the answer:
+/// exactly one endpoint produced it, always, on every path. The two have
+/// different cardinality and different truth conditions, and modelling a
+/// cardinality-one fact inside a `Vec` of events admits both "absent" and
+/// "twice".
+///
+/// The practical consequence is the whole reason this type exists. Hanging the
+/// answering endpoint off [`Degradation::FailedOver`] would make it observable
+/// **only when a failover happened**, so the single-candidate turn — the common
+/// case, and the one a privacy-conscious user cares most about — would be
+/// attributed by inference: "no `FailedOver` was emitted, therefore it must have
+/// been the endpoint you picked". That is an argument from silence, and silence
+/// is exactly what a bug produces. An answer from the selected endpoint must be
+/// *provably* from it, which means the router states it in both cases and the
+/// reader never has to reason about what was not said.
+///
+/// # What this is not
+///
+/// Not a switch. `conventions.md` §0.3 forbids the UI *branching* on a provider
+/// id — `if (provider.id === 'ollama')` — and adding a provider must require
+/// zero changes under `src/`. Reporting the id the user themselves typed is
+/// neither: it is the same act as [`Diagnosis::endpoint`](crate::diagnostic::Diagnosis),
+/// which has always named the endpoint an error came from. Nothing branches on
+/// the value; it is compared for equality against the user's own selection and
+/// otherwise printed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerProvenance {
+    /// The configured id of the endpoint that produced this answer.
+    pub provider_id: String,
+    /// The model **that endpoint** was asked for — not the one the user picked
+    /// on the endpoint they chose. A fallback answers about its own model, and
+    /// `Router::candidate_models` exists for the same reason.
+    pub model_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -552,6 +601,27 @@ pub struct ChatResponse {
     /// it before it can reach the JSON.
     pub structured: Option<Result<serde_json::Value, SchemaMismatch>>,
     pub degradations: Vec<Degradation>,
+    /// **Which endpoint produced this answer**, or `None` when nothing in the
+    /// process was in a position to know.
+    ///
+    /// See [`AnswerProvenance`] for why this is a field rather than a
+    /// [`Degradation`] arm.
+    ///
+    /// # Why it is `pub(crate)`, and what `None` is allowed to mean
+    ///
+    /// Same reasoning as [`Self::salvaged_answer`] below, minus the `skip`: this
+    /// is a claim about where an answer came from, so no caller outside this
+    /// crate may forge one. The **only** writer is [`Self::attribute_to`], and
+    /// its only caller is [`Router`](crate::router::Router), which reads the id
+    /// off the candidate it actually ran. Every wire assembler leaves it `None`,
+    /// because an assembler is handed parts and knows nothing about the endpoint
+    /// that produced them.
+    ///
+    /// So `None` means "unattributed", never "the one you picked". A reader that
+    /// treats `None` as the user's selection reintroduces exactly the falsehood
+    /// this field was added to end, and the renderer's mirror of this type is
+    /// `null` for the same reason.
+    pub(crate) answered_by: Option<AnswerProvenance>,
     /// The tail of the answer text the model **never committed to**: characters
     /// rescued out of a reasoning block the stream ended inside
     /// ([`Provenance::Salvaged`](crate::answer::Provenance::Salvaged)). Always
@@ -636,8 +706,29 @@ impl ChatResponse {
             usage: TokenUsage::default(),
             structured: None,
             degradations: Vec::new(),
+            answered_by: None,
             salvaged_answer: None,
         }
+    }
+
+    /// Who answered, if anything knew. `None` is "unattributed" — see the field.
+    ///
+    /// A reader, not a writer: the setter is `pub(crate)` so that a provenance
+    /// claim can only be made by the one layer that observed the fact.
+    pub fn answered_by(&self) -> Option<&AnswerProvenance> {
+        self.answered_by.as_ref()
+    }
+
+    /// Record which endpoint produced this answer.
+    ///
+    /// `pub(crate)` and deliberately unconditional: the router calls it on
+    /// **every** successful turn, not only the ones that failed over, so that
+    /// attribution never has to be inferred from the absence of a degradation.
+    pub(crate) fn attribute_to(&mut self, provider_id: &str, model_id: &str) {
+        self.answered_by = Some(AnswerProvenance {
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+        });
     }
 
     /// **Every character of answer the user was shown**, committed and
@@ -741,6 +832,48 @@ mod tests {
         ));
         assert!(request.needs_vision());
         assert!(!ChatRequest::new("m").needs_vision());
+    }
+
+    /// **The wire keys, read off actual JSON.**
+    ///
+    /// `chat-contract-parity.test.ts` compares *identifiers* after applying a
+    /// struct's `rename_all`; it cannot see a per-field `#[serde(rename)]`, so a
+    /// field can match the guard by name and still cross the bridge under a
+    /// different key. This asserts the bytes instead of the guard. If anyone
+    /// renames `answered_by` on the wire, the renderer's `answeredBy` goes
+    /// permanently `null` — the same silent falsehood, wearing a new hat — and
+    /// this test is what stops it.
+    #[test]
+    fn provenance_crosses_the_bridge_under_the_keys_the_renderer_reads() {
+        let mut response = ChatResponse::empty();
+        response.attribute_to("hosted-fallback", "gpt-4o-mini");
+        let json = serde_json::to_value(&response).expect("serialises");
+
+        let object = json.as_object().expect("a response is a JSON object");
+        assert!(
+            object.contains_key("answeredBy"),
+            "no `answeredBy` key; got {:?}",
+            object.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            json["answeredBy"],
+            serde_json::json!({
+                "providerId": "hosted-fallback",
+                "modelId": "gpt-4o-mini",
+            }),
+            "the whole sub-object, so a renamed inner key fails too"
+        );
+
+        // And the unattributed case is `null`, not a missing key: the renderer's
+        // mirror is `AnswerProvenance | null`, and an absent key would widen it
+        // to `undefined` at the one place a reader must not treat "unknown" as
+        // "the endpoint you picked".
+        let empty = serde_json::to_value(ChatResponse::empty()).expect("serialises");
+        assert_eq!(empty["answeredBy"], serde_json::Value::Null);
+        assert!(empty
+            .as_object()
+            .expect("object")
+            .contains_key("answeredBy"));
     }
 
     #[test]

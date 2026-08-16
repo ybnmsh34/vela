@@ -1,6 +1,9 @@
 //! Ordered candidates, bounded retries, and failover that cannot lie.
 //!
-//! # THE THREE RULES OF THIS FILE
+//! # THE RULES OF THIS FILE
+//!
+//! (The heading used to say "THREE" above a list of four. A count in a heading
+//! goes stale the first time the list grows, so it is gone rather than bumped.)
 //!
 //! 1. **Fail over only on failures that are about the endpoint.** Transport
 //!    problems and rate limits may resolve elsewhere. Auth failures, capability
@@ -20,6 +23,12 @@
 //!    exactly one — which is also the only place [`Degradation::FailedOver`]
 //!    can be attached, because nothing below the router knows an earlier
 //!    candidate was tried.
+//! 5. **Every answer says who produced it.** The same fact that makes rule 4
+//!    true — this is the only frame that knows which candidate ran — makes this
+//!    the only frame that can attribute the answer, so it does, on every
+//!    success. Not only on failover: an answer from the endpoint the user chose
+//!    must be *provably* from it, and "no `FailedOver` was emitted" is not a
+//!    proof, it is an absence. See [`ChatResponse::answered_by`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -202,6 +211,18 @@ impl Router {
                     .await
                 {
                     Ok(mut response) => {
+                        // Rule 5, and it is the *first* thing done with a
+                        // successful response rather than something conditional
+                        // below: this is the only frame in the process that
+                        // knows which of the user's ordered candidates actually
+                        // ran, and it knows it identically whether this is the
+                        // first candidate on its first attempt or the third on
+                        // its second. Attributing only in the failover branch
+                        // would leave the common case to be inferred from the
+                        // absence of a `FailedOver` — an argument from silence,
+                        // and silence is what a bug produces.
+                        response
+                            .attribute_to(&candidate.provider.descriptor().id, &candidate.model_id);
                         if attempts_used > 1 {
                             response.degradations.push(Degradation::FailedOver {
                                 attempts: attempts_used,
@@ -438,6 +459,156 @@ mod tests {
             "the Done the renderer reads must carry the attempt count"
         );
         assert_eq!(emitted.answer_text(), "answer from the second");
+    }
+
+    /// **The defect this file was reopened for.**
+    ///
+    /// A turn addressed to one endpoint was answered by a different configured
+    /// endpoint, and nothing in the response said so: `FailedOver` carried an
+    /// attempt *count* and no identity, so every surface downstream went on
+    /// naming the endpoint the user had selected. Someone running a local model
+    /// for privacy could have their prompt answered by a hosted one while the
+    /// app said `localhost`.
+    ///
+    /// The assertion that matters is the **inequality**: the answering id is
+    /// not the head of the candidate list. An assertion that merely read
+    /// `Some(_)`, or that compared against the only id in the fixture, would be
+    /// satisfied by a router that always reported the user's selection — which
+    /// is the bug.
+    #[tokio::test]
+    async fn a_failover_answer_names_the_endpoint_that_actually_answered() {
+        let first = Scripted::new("chosen-localhost", vec![Err(transport_error())]);
+        let second = Scripted::new("hosted-fallback", vec![Ok("answer from the second")]);
+        let router = Router::new(vec![
+            Candidate::new(first, "model-a"),
+            Candidate::new(second, "model-b"),
+        ])
+        .with_policy(RetryPolicy {
+            max_attempts_per_candidate: 1,
+            ..fast_policy()
+        });
+        let selected = router.candidate_ids()[0].clone();
+
+        let mut sink = CollectingSink::new();
+        router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap();
+
+        // Read off the `Done` the renderer receives, not the return value. This
+        // file has already shipped the bug where the router decorated only what
+        // it returned, leaving the emitted event — the sole thing the renderer
+        // reads — without the fact. See the test below this one.
+        let emitted = sink.response().expect("a turn ends with a Done");
+        let provenance = emitted
+            .answered_by()
+            .expect("a routed answer is always attributed");
+
+        assert_eq!(selected, "chosen-localhost", "the turn was addressed here");
+        assert_eq!(
+            provenance.provider_id, "hosted-fallback",
+            "the answer came from the fallback and must say so"
+        );
+        assert_ne!(
+            provenance.provider_id, selected,
+            "reporting the user's selection is exactly the falsehood being fixed"
+        );
+        // Not the request's model either: `request()` asks for `ignored`, and a
+        // fallback answers about its own model.
+        assert_eq!(provenance.model_id, "model-b");
+        assert_ne!(provenance.model_id, request().model_id);
+    }
+
+    /// The other half, and the one that is easy to leave out: an answer from the
+    /// endpoint the user chose is **positively** attributed to it.
+    ///
+    /// Without this the non-failover case would be attributed by inference —
+    /// "no `FailedOver` was emitted, so it must have been the one you picked" —
+    /// and an argument from silence cannot distinguish a correct attribution
+    /// from a missing one. Both ids and both models are asserted so that a
+    /// router which stamped a constant, or stamped the request's model, fails.
+    #[tokio::test]
+    async fn an_answer_from_the_chosen_endpoint_is_provably_from_it() {
+        let only = Scripted::new("chosen-localhost", vec![Ok("answered here")]);
+        let router = Router::new(vec![Candidate::new(only, "model-a")]).with_policy(fast_policy());
+
+        let mut sink = CollectingSink::new();
+        let returned = router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap();
+
+        let emitted = sink.response().expect("a turn ends with a Done");
+        assert!(
+            emitted.degradations.is_empty(),
+            "nothing was degraded — this is the path where silence proves nothing"
+        );
+        let provenance = emitted
+            .answered_by()
+            .expect("an unfailed turn is attributed too, not left to inference");
+        assert_eq!(provenance.provider_id, "chosen-localhost");
+        assert_eq!(provenance.model_id, "model-a");
+        assert_ne!(
+            provenance.model_id,
+            request().model_id,
+            "the candidate's model, not the one the request happened to carry"
+        );
+        assert_eq!(returned.answered_by(), emitted.answered_by());
+    }
+
+    /// A retry that stays on one endpoint is still that endpoint's answer.
+    ///
+    /// Separates the two things `attempts_used > 1` used to conflate: this turn
+    /// carries `FailedOver` (it took two attempts) and yet never left the
+    /// candidate the user picked. A design that read provenance off the presence
+    /// of `FailedOver` would report a substitution that did not happen.
+    #[tokio::test]
+    async fn a_retry_on_the_same_endpoint_is_not_reported_as_a_substitution() {
+        let provider = Scripted::new(
+            "chosen-localhost",
+            vec![Err(transport_error()), Ok("second try")],
+        );
+        let router =
+            Router::new(vec![Candidate::new(provider, "model-a")]).with_policy(fast_policy());
+
+        let mut sink = CollectingSink::new();
+        router
+            .stream(request(), &mut sink, &RequestContext::new())
+            .await
+            .unwrap();
+
+        let emitted = sink.response().expect("a turn ends with a Done");
+        assert_eq!(
+            emitted.degradations,
+            vec![Degradation::FailedOver { attempts: 2 }],
+            "it did take two attempts"
+        );
+        assert_eq!(
+            emitted.answered_by().map(|p| p.provider_id.as_str()),
+            Some("chosen-localhost"),
+            "and both of them were the endpoint the user chose"
+        );
+    }
+
+    /// `None` means unattributed, and nothing but the router may say otherwise.
+    ///
+    /// Pins the value the renderer's `null` mirrors. If a wire assembler ever
+    /// starts guessing, the guess would be indistinguishable from a fact.
+    #[test]
+    fn a_response_no_router_touched_claims_nothing() {
+        assert_eq!(ChatResponse::empty().answered_by(), None);
+        let assembled = crate::event::finished(
+            vec![crate::model::ContentPart::text("hi")],
+            Vec::new(),
+            crate::model::StopReason::EndTurn,
+            crate::model::TokenUsage::default(),
+            Vec::new(),
+        );
+        assert_eq!(
+            assembled.answered_by(),
+            None,
+            "an assembler is handed parts and never learns the endpoint"
+        );
     }
 
     /// One turn, one ending. Rule 4.

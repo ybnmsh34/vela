@@ -28,6 +28,10 @@ function stored(overrides: Partial<StoredMessage> & Pick<StoredMessage, 'id' | '
     parts: [],
     providerId: 'workstation',
     modelId: 'local-model',
+    // Unattributed by default: a stored row from before provenance existed, and
+    // the shape a fixture must not silently improve on.
+    answeredByProviderId: null,
+    answeredByModelId: null,
     usage: NO_USAGE,
     stopReason: null,
     errorMessage: null,

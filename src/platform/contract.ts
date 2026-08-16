@@ -785,6 +785,31 @@ export interface SchemaMismatch {
 /** Mirrors `Option<Result<Value, SchemaMismatch>>` as serde writes it. */
 export type StructuredOutcome = { readonly Ok: unknown } | { readonly Err: SchemaMismatch } | null;
 
+/**
+ * Mirrors `vela_providers::model::AnswerProvenance` — **who actually answered**.
+ *
+ * A property of the answer, not an event about the turn, which is why it is a
+ * field on {@link ChatResponseBody} rather than a {@link Degradation} arm. The
+ * host-side doc explains the choice in full; the consequence here is that this
+ * is present on *every* routed answer, not only the ones that failed over, so a
+ * reader never has to conclude "no `failedOver` arrived, therefore it must have
+ * been the endpoint I picked". That inference is what let a turn addressed to
+ * `localhost` be answered by a hosted endpoint with every surface still naming
+ * `localhost`.
+ *
+ * Not a switch. `conventions.md` §0.3 forbids the UI *branching* on a provider
+ * id and requires that adding a provider needs zero changes under `src/`.
+ * Neither is at stake: this value is compared for equality against the user's
+ * own selection and otherwise printed, exactly as {@link Diagnosis.endpoint}
+ * has always been.
+ */
+export interface AnswerProvenance {
+  /** The configured id of the endpoint that produced this answer. */
+  readonly providerId: string;
+  /** The model **that endpoint** was asked for — a fallback answers about its own. */
+  readonly modelId: string;
+}
+
 /** Mirrors `vela_providers::model::ChatResponse` — the assembled turn. */
 export interface ChatResponseBody {
   readonly parts: readonly ContentPart[];
@@ -793,6 +818,16 @@ export interface ChatResponseBody {
   readonly usage: TokenUsage;
   readonly structured: StructuredOutcome;
   readonly degradations: readonly Degradation[];
+  /**
+   * Which endpoint produced this answer, or `null` when nothing was in a
+   * position to know.
+   *
+   * **`null` means unattributed, never "the one you picked".** Treating it as
+   * the selection reintroduces the exact falsehood this field exists to end.
+   * Every answer that came through the host's router carries a value; `null` is
+   * reachable from a stub adapter or a host older than this renderer.
+   */
+  readonly answeredBy: AnswerProvenance | null;
 }
 
 /** Mirrors `vela_providers::event::ToolCallDelta`. */
@@ -1271,11 +1306,27 @@ export interface StoredMessage {
   readonly status: StoredMessageStatus;
   readonly parts: readonly ContentPartInput[];
   /**
-   * Which backend produced this message. A record of what happened, per
-   * message — not a switch the UI branches on.
+   * Which backend this message was **addressed to** — the user's selection at
+   * the time. A record of what happened, per message — not a switch the UI
+   * branches on.
+   *
+   * This used to be documented as "which backend produced this message", and
+   * nothing made that true: the renderer wrote its own `providerId` option here
+   * while the host was free to fail over to a different endpoint. See
+   * {@link answeredByProviderId}.
    */
   readonly providerId: string | null;
   readonly modelId: string | null;
+  /**
+   * Which backend **actually produced** it, from {@link AnswerProvenance}.
+   *
+   * `null` means **not recorded** — a row written before the store learned to
+   * keep this, a message no endpoint produced, or a turn the host did not
+   * attribute. It is never "the same as {@link providerId}", and rendering it
+   * that way reintroduces the falsehood the column exists to end.
+   */
+  readonly answeredByProviderId: string | null;
+  readonly answeredByModelId: string | null;
   readonly usage: TokenUsage;
   readonly stopReason: StoredStopReason | null;
   readonly errorMessage: string | null;
@@ -1289,8 +1340,15 @@ export interface StoreAppendMessageReq {
   readonly parts: readonly ContentPartInput[];
   /** Defaults to `complete`. Send `streaming` when opening a live turn. */
   readonly status?: StoredMessageStatus;
+  /** What the user selected. */
   readonly providerId?: string | null;
   readonly modelId?: string | null;
+  /**
+   * Who actually answered. Omitted or `null` means "not recorded", which is
+   * what a caller that does not know must send — never the selection.
+   */
+  readonly answeredByProviderId?: string | null;
+  readonly answeredByModelId?: string | null;
   readonly usage?: TokenUsage;
   readonly stopReason?: StoredStopReason | null;
   readonly errorMessage?: string | null;

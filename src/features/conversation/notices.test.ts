@@ -4,11 +4,14 @@ import type { ChatError, Degradation, Diagnosis, KnownCause } from '@/platform/c
 import type { ContextRef, RunDegradation } from '@/platform/contract-harness';
 
 import {
+  describeAttribution,
   describeChatError,
   describeDegradation,
   describeMalformedReason,
   describeRunDegradation,
+  type AnswerAttribution,
 } from './notices';
+import { attributionOf } from './use-conversation';
 
 /** A diagnosis, as the host builds one: a closed cause plus integers. */
 function diagnosis(cause: KnownCause, extras: Partial<Diagnosis> = {}): Diagnosis {
@@ -346,5 +349,114 @@ describe('malformed tool-call wording', () => {
     expect(describeMalformedReason('argumentsNotAnObject')).toMatch(/object/);
     expect(describeMalformedReason('unknownDiscriminator')).toMatch(/function/);
     expect(describeMalformedReason('recoveredFromUnterminatedReasoning')).toMatch(/never committed/);
+  });
+});
+
+describe('which endpoint answered', () => {
+  /**
+   * The defect, at the surface that has to disclose it.
+   *
+   * The user addressed the turn to `home-workstation`; the host reports that
+   * `rented-gpu-box` answered. Both names must appear, because "a different
+   * endpoint answered" without saying which one is not a disclosure — a user
+   * with three endpoints configured cannot act on it.
+   */
+  it('names both endpoints when a different one answered', () => {
+    const notice = describeAttribution(
+      attributionOf({ providerId: 'rented-gpu-box', modelId: 'big-model' }, 'home-workstation'),
+    );
+    expect(notice).not.toBeNull();
+    expect(notice?.detail).toContain('home-workstation');
+    expect(notice?.detail).toContain('rented-gpu-box');
+    expect(notice?.detail).toContain('big-model');
+    // A user keeping a prompt off a hosted box is not being told about a
+    // stylistic downgrade. Tone is about consequence, per this file's own rule.
+    expect(notice?.tone).toBe('warning');
+  });
+
+  /**
+   * **The anti-vacuity case.** Every assertion above is satisfied by a pair of
+   * functions that report a substitution unconditionally. This is what makes
+   * the comparison load-bearing: same provenance shape, same calls, and the two
+   * ids agree.
+   */
+  it('says nothing when the endpoint that answered is the one that was asked', () => {
+    const attribution = attributionOf(
+      { providerId: 'home-workstation', modelId: 'local-model' },
+      'home-workstation',
+    );
+    expect(attribution).toEqual({ kind: 'asAddressed' });
+    expect(describeAttribution(attribution)).toBeNull();
+  });
+
+  /**
+   * The silence that must stay silent.
+   *
+   * An unattributed answer — a host too old to say, or a transcript row written
+   * before provenance existed — is not evidence that the selected endpoint
+   * answered. Reporting the selection here would restate the original falsehood
+   * in a sentence that now *looks* like it was verified.
+   */
+  it('says nothing, and does not fall back to the selection, when nobody attributed the turn', () => {
+    const attribution = attributionOf(null, 'home-workstation');
+    expect(attribution).toEqual({ kind: 'unattributed' });
+    expect(describeAttribution(attribution)).toBeNull();
+  });
+
+  /**
+   * Attribution is still worth stating before a model has been chosen: there is
+   * nothing to contradict, but "who answered" is a fact either way.
+   */
+  it('states who answered even when there is no selection to compare against', () => {
+    const notice = describeAttribution(
+      attributionOf({ providerId: 'rented-gpu-box', modelId: 'big-model' }, null),
+    );
+    expect(notice?.detail).toContain('rented-gpu-box');
+    expect(notice?.detail).toContain('big-model');
+  });
+
+  /**
+   * §0.3, checked rather than asserted in a comment.
+   *
+   * The wording must be assembled from the ids it was handed, not from a table
+   * of known backends. Two endpoints whose names Vela has never seen produce a
+   * sentence containing both, which a lookup-based implementation could not do.
+   */
+  it('is written from the ids it is given, with no knowledge of any backend', () => {
+    const notice = describeAttribution(
+      attributionOf(
+        { providerId: 'zzz-unheard-of-42', modelId: 'model-nobody-ships' },
+        'yyy-also-unheard-of',
+      ),
+    );
+    expect(notice?.detail).toContain('zzz-unheard-of-42');
+    expect(notice?.detail).toContain('yyy-also-unheard-of');
+    expect(notice?.detail).toContain('model-nobody-ships');
+  });
+
+  /**
+   * The mapping is total, like its neighbours in this file. Enumerated rather
+   * than reached through {@link attributionOf}, so a case that the comparison
+   * cannot currently produce is still proved to have wording rather than
+   * rendering as a blank the day something else produces it.
+   */
+  it('has an answer for every case of the union', () => {
+    const ALL: readonly AnswerAttribution[] = [
+      { kind: 'unattributed' },
+      { kind: 'asAddressed' },
+      { kind: 'attributedOnly', answered: { providerId: 'a-box', modelId: 'a-model' } },
+      {
+        kind: 'substituted',
+        addressed: 'b-box',
+        answered: { providerId: 'a-box', modelId: 'a-model' },
+      },
+    ];
+    for (const attribution of ALL) {
+      const notice = describeAttribution(attribution);
+      if (notice === null) continue;
+      expect(notice.title, attribution.kind).not.toBe('');
+      expect(notice.detail, attribution.kind).not.toBe('');
+    }
+    expect(ALL.filter((a) => describeAttribution(a) !== null)).toHaveLength(2);
   });
 });

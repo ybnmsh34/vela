@@ -29,6 +29,12 @@ interface ConversationViewProps {
   readonly capabilities: ChatCapabilities;
   /** How the user named this model. Never a backend identity. */
   readonly modelLabel: string | null;
+  /**
+   * The endpoint the conversation is addressed to, as the user configured it.
+   * Forwarded to each assistant turn so it can disclose when a *different* one
+   * answered. Compared, never branched on.
+   */
+  readonly selectedProviderId?: string | null | undefined;
   /** Forwarded to the composer; see {@link Composer}'s own note on why. */
   readonly onDraftChange?: ((text: string) => void) | undefined;
 }
@@ -37,6 +43,7 @@ export function ConversationView({
   conversation,
   capabilities,
   modelLabel,
+  selectedProviderId,
   onDraftChange,
 }: ConversationViewProps) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -135,6 +142,7 @@ export function ConversationView({
                     id={entry.id}
                     turn={entry.turn}
                     runDegradations={entry.runDegradations}
+                    selectedProviderId={selectedProviderId ?? null}
                     onRetry={conversation.streaming ? undefined : conversation.retry}
                   />
                 ),

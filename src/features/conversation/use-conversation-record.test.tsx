@@ -27,7 +27,10 @@ const NO_USAGE = {
   cachedInputTokens: null,
 } as const;
 
-function answered(text: string): readonly ChatStreamEvent[] {
+function answered(
+  text: string,
+  answeredBy: { providerId: string; modelId: string } | null = null,
+): readonly ChatStreamEvent[] {
   return [
     { type: 'textDelta', text },
     {
@@ -39,6 +42,7 @@ function answered(text: string): readonly ChatStreamEvent[] {
         usage: NO_USAGE,
         structured: null,
         degradations: [],
+        answeredBy,
       },
     },
   ];
@@ -249,5 +253,96 @@ describe('a conversation is written as it happens', () => {
       expect(result.current.entries).toHaveLength(2);
     });
     expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
+  });
+
+  /**
+   * **The row that used to lie.**
+   *
+   * The user selected `workstation`; the host reports that `rented-gpu-box`
+   * answered. Before this change the transcript recorded `workstation` in the
+   * only endpoint column it had — the value this hook was *handed as an option*,
+   * never a report of what happened — so the record asserted that an endpoint
+   * which never saw the prompt had produced the reply. Written to SQLite, that
+   * cannot be corrected afterwards, because a stored guess is indistinguishable
+   * from a stored fact.
+   *
+   * The load-bearing assertions are the two inequalities. Checking only that
+   * `answeredByProviderId` is `rented-gpu-box` would also pass on a hook that
+   * wrote the attribution into *both* columns and lost the user's selection —
+   * which is a different wrong record, not a right one.
+   */
+  it('records the endpoint that answered, not the one that was selected', async () => {
+    const { adapter, wrapper, conversationId } = await fixture();
+    const chat = scripted([
+      answered('the answer', { providerId: 'rented-gpu-box', modelId: 'big-model' }),
+    ]);
+    const { result } = renderHook(
+      () =>
+        useConversation({
+          conversationId,
+          providerId: 'workstation',
+          modelId: 'local-model',
+          repository: chat,
+          scheduleCommit: (run) => {
+            run();
+          },
+        }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.send('the question');
+    });
+
+    await waitFor(async () => {
+      expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
+    });
+    const reply = (await messagesIn(adapter, conversationId))[1];
+
+    expect(reply?.answeredByProviderId).toBe('rented-gpu-box');
+    expect(reply?.answeredByModelId).toBe('big-model');
+    expect(reply?.providerId).toBe('workstation');
+    expect(reply?.modelId).toBe('local-model');
+    expect(reply?.answeredByProviderId).not.toBe(reply?.providerId);
+    expect(reply?.answeredByModelId).not.toBe(reply?.modelId);
+  });
+
+  /**
+   * A turn the host did not attribute is stored unattributed.
+   *
+   * The selection is still recorded — it is a true fact about the turn — but
+   * nothing is written into the answering columns, because nothing is known.
+   * A hook that filled them in from `providerId` would produce rows that look
+   * exactly like verified ones.
+   */
+  it('leaves the answering endpoint empty when the host did not say', async () => {
+    const { adapter, wrapper, conversationId } = await fixture();
+    const chat = scripted([answered('the answer')]);
+    const { result } = renderHook(
+      () =>
+        useConversation({
+          conversationId,
+          providerId: 'workstation',
+          modelId: 'local-model',
+          repository: chat,
+          scheduleCommit: (run) => {
+            run();
+          },
+        }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.send('the question');
+    });
+
+    await waitFor(async () => {
+      expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
+    });
+    const reply = (await messagesIn(adapter, conversationId))[1];
+
+    expect(reply?.providerId).toBe('workstation');
+    expect(reply?.answeredByProviderId).toBeNull();
+    expect(reply?.answeredByModelId).toBeNull();
   });
 });

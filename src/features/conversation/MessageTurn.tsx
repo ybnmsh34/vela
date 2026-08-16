@@ -15,7 +15,7 @@ import type { RunDegradation } from '@/platform/contract-harness';
 import { CopyButton } from './CopyButton';
 import { Markdown } from './Markdown';
 import { ThinkingBlock } from './ThinkingBlock';
-import { DegradationNotes, RunDegradationNotes, ToolCalls } from './TurnNotices';
+import { AnsweredByNote, DegradationNotes, RunDegradationNotes, ToolCalls } from './TurnNotices';
 import { describeChatError } from './notices';
 import { hasReportedUsage, type TurnState } from './turn-stream';
 import styles from './MessageTurn.module.css';
@@ -48,9 +48,24 @@ interface AssistantTurnProps {
    * was an ordinary send.
    */
   readonly runDegradations?: readonly RunDegradation[] | undefined;
+  /**
+   * The endpoint this turn was **addressed to**, as the user selected it.
+   *
+   * Passed in rather than read off {@link TurnState}, because `TurnState` is a
+   * pure reduction over the six host events and the user's selection is not one
+   * of them. It is here for one comparison — against what the host says actually
+   * answered — and nothing branches on its value.
+   */
+  readonly selectedProviderId?: string | null | undefined;
 }
 
-export function AssistantTurn({ turn, id, onRetry, runDegradations }: AssistantTurnProps) {
+export function AssistantTurn({
+  turn,
+  id,
+  onRetry,
+  runDegradations,
+  selectedProviderId,
+}: AssistantTurnProps) {
   const streaming = turn.phase === 'streaming' || turn.phase === 'awaiting';
   const error = turn.error === null ? null : describeChatError(turn.error);
   const showThinkingOnly = turn.answer === '' && turn.reasoning !== '';
@@ -87,6 +102,7 @@ export function AssistantTurn({ turn, id, onRetry, runDegradations }: AssistantT
       ) : null}
 
       <ToolCalls outcomes={turn.outcomes} progress={turn.toolProgress} />
+      <AnsweredByNote answeredBy={turn.answeredBy} selected={selectedProviderId ?? null} />
       <DegradationNotes items={turn.degradations} />
       <RunDegradationNotes items={runDegradations ?? NO_RUN_DEGRADATIONS} />
 

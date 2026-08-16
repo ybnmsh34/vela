@@ -20,11 +20,18 @@
  * anywhere. `notices.test.ts` now enumerates that union too, in
  * `ALL_RUN_DEGRADATIONS`.
  *
- * There is no provider name in any string, and there is nowhere to put one:
- * these functions receive enums, not ids.
+ * "There is no provider name in any string, and there is nowhere to put one:
+ * these functions receive enums, not ids." That was true of the two mappings
+ * above and is no longer true of the file, and the difference is the point.
+ * `describeSubstitution` receives **ids**, because the fact it reports is which
+ * endpoint answered — and that fact could not be stated by anything that only
+ * ever saw enums, which is exactly why a turn answered by a substitute endpoint
+ * went undisclosed. Naming an endpoint the user configured is not the thing
+ * §0.3 forbids; branching on one is, and nothing here does.
  */
 
 import type {
+  AnswerProvenance,
   ChatError,
   Degradation,
   Diagnosis,
@@ -126,7 +133,92 @@ export function describeDegradation(degradation: Degradation): Notice {
       return {
         tone: 'info',
         title: 'Retried before it worked',
+        // Says only what it knows: how many attempts. Whether one of those
+        // attempts went to a *different* endpoint is not in this variant and
+        // never was — see {@link describeSubstitution}, which is what actually
+        // discloses that, and the note on `AnswerProvenance` for why the two
+        // are separate.
         detail: `This answer took ${String(degradation.attempts)} attempt${degradation.attempts === 1 ? '' : 's'}.`,
+      };
+  }
+}
+
+/**
+ * How a turn's answer relates to the endpoint it was addressed to — **already
+ * decided**, never decided here.
+ *
+ * The decision is a comparison of two provider ids, and by
+ * `no-provider-leak.test.ts` exactly one file in this feature is allowed to
+ * inspect one: `use-conversation.ts`, which is where the user's selection
+ * already lives. So {@link attributionOf} does the comparing there and this
+ * union is what comes out — the same shape as every other mapping in this file,
+ * a closed set of cases the wording is total over.
+ *
+ * That split is not a workaround for the guard, it is the guard's own
+ * arrangement: this module receives facts and writes sentences. Deciding
+ * "different endpoint or not" from raw ids here would have been a second place
+ * in the feature that reads a backend id, which is the thing §0.3 is about even
+ * when the comparison is against a variable rather than a literal.
+ */
+export type AnswerAttribution =
+  /** The host did not say who answered. Nothing may be shown. */
+  | { readonly kind: 'unattributed' }
+  /** The endpoint that answered is the one the turn was addressed to. */
+  | { readonly kind: 'asAddressed' }
+  /** A different endpoint answered than the one addressed. */
+  | {
+      readonly kind: 'substituted';
+      /** The endpoint the user chose, as they configured it. */
+      readonly addressed: string;
+      readonly answered: AnswerProvenance;
+    }
+  /** Attributed, but there was no selection to compare it against. */
+  | { readonly kind: 'attributedOnly'; readonly answered: AnswerProvenance };
+
+/**
+ * **"You asked X. Y answered."**
+ *
+ * The disclosure the transcript was missing. A turn addressed to one endpoint
+ * can be answered by another — the host tries the endpoint the user chose, then
+ * every other usable one behind it — and until this existed nothing on screen
+ * said so. `failedOver` reported an attempt *count*, which is compatible with
+ * having stayed put, so a user running a local model for privacy could read
+ * "this answer took 2 attempts" while a hosted endpoint had answered.
+ *
+ * `null` for the two cases with nothing honest to say:
+ *
+ *  - `unattributed` — the host did not attribute this turn. **Not** an
+ *    invitation to assume the selection; saying nothing is the only truthful
+ *    option, and it is what a transcript row written before provenance existed
+ *    will always be.
+ *  - `asAddressed` — announcing the ordinary case on every turn would bury the
+ *    turns where it is not true, and a disclosure nobody reads is not one.
+ *
+ * Total, like its neighbours: a new case fails the type check here rather than
+ * rendering as a blank where a disclosure belongs.
+ *
+ * Ids are interpolated, never matched. Adding a provider changes nothing here.
+ */
+export function describeAttribution(attribution: AnswerAttribution): Notice | null {
+  switch (attribution.kind) {
+    case 'unattributed':
+    case 'asAddressed':
+      return null;
+    case 'attributedOnly':
+      return {
+        tone: 'info',
+        title: 'Answered by',
+        detail: `${attribution.answered.providerId} answered this, using ${attribution.answered.modelId}.`,
+      };
+    case 'substituted':
+      return {
+        // `warning`, by the tone rule this file already states: tone is about
+        // consequence. An answer from an endpoint the user did not choose may
+        // have sent their prompt somewhere they were deliberately keeping it
+        // away from, and that outranks how routine a failover is.
+        tone: 'warning',
+        title: 'A different endpoint answered',
+        detail: `This turn was sent to ${attribution.addressed}, which did not answer. ${attribution.answered.providerId} answered instead, using ${attribution.answered.modelId}.`,
       };
   }
 }

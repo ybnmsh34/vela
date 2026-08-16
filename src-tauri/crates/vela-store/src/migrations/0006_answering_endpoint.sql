@@ -1,0 +1,56 @@
+-- Messages record **who answered**, separately from **who was asked**.
+--
+-- FORWARD-ONLY, and frozen once shipped. See migrations.rs.
+--
+-- ## The defect
+--
+-- A turn addressed to one endpoint could be answered by a different configured
+-- one: `ProviderHost::router_for` puts the user's selection first and appends
+-- every other usable endpoint behind it, and the router fails over between them.
+-- Nothing in the response said which one produced the reply, so the renderer
+-- wrote `messages.provider_id` from the user's *selection* — the value it had
+-- passed in as an option — and the transcript recorded an endpoint that may
+-- never have seen the prompt. Someone running a local model for privacy could
+-- have their prompt answered by a hosted endpoint with the record saying
+-- `localhost`.
+--
+-- ## Why this adds columns instead of redefining the ones that exist
+--
+-- The obvious move is to leave `provider_id` alone and simply start writing the
+-- answering endpoint into it. That would silently change what every existing row
+-- means: rows written before this migration hold a selection, rows written after
+-- would hold an attribution, and nothing in the database would distinguish them.
+-- Reinterpreting stored data in place is the same class of defect as the one
+-- being fixed here — an assertion about the past that the data does not support.
+--
+-- So:
+--
+--   * `provider_id` / `model_id` keep the meaning they have always had in
+--     practice: **what the user selected** for this turn. Every existing row is
+--     already exactly that, so no row changes meaning and no backfill is needed
+--     or possible.
+--   * `answered_by_provider_id` / `answered_by_model_id` are new and carry
+--     **who actually produced the answer**, as reported by
+--     `vela_providers::AnswerProvenance`.
+--
+-- ## What NULL means in the new columns, and what it must never be read as
+--
+-- NULL is **"not recorded"**. It is the value on:
+--
+--   * every row written before this migration — Vela genuinely does not know who
+--     answered those turns, and never will;
+--   * user and system messages, which no endpoint produced;
+--   * any turn whose response arrived unattributed.
+--
+-- NULL is **not** "the same as `provider_id`". Backfilling it from `provider_id`
+-- would manufacture the exact claim that was found to be false: it would assert,
+-- for every historical turn, that the selected endpoint answered it — which is
+-- true for most and unknowable for all. A reader that renders NULL as the
+-- selection reintroduces the defect at the display layer. `MessageDto` mirrors
+-- these as `null`, and the renderer is required to treat that as "unknown".
+--
+-- No index: nothing queries by answering endpoint. Adding one to a column that
+-- is NULL on every historical row would cost writes and buy nothing.
+
+ALTER TABLE messages ADD COLUMN answered_by_provider_id TEXT;
+ALTER TABLE messages ADD COLUMN answered_by_model_id TEXT;

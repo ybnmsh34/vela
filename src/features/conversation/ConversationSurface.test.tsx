@@ -60,6 +60,8 @@ function done(overrides: Partial<ChatResponseBody> = {}): ChatStreamEvent {
       usage: NO_USAGE,
       structured: null,
       degradations: [],
+      // Unattributed by default; tests that care say so explicitly.
+      answeredBy: null,
       ...overrides,
     },
   };

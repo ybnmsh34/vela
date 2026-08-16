@@ -60,6 +60,9 @@ export function chatResponse(overrides: Partial<ChatResponseBody> = {}): ChatRes
     usage: NO_USAGE,
     structured: null,
     degradations: [],
+    // Unattributed by default. A double that invented a provenance would make
+    // every test that does not care about it silently assert one.
+    answeredBy: null,
     ...overrides,
   };
 }
@@ -170,6 +173,8 @@ export function recordingTranscript(): RecordingTranscript {
     status: request.status ?? 'complete',
     parts: request.parts,
     providerId: request.providerId ?? null,
+    answeredByProviderId: request.answeredByProviderId ?? null,
+    answeredByModelId: request.answeredByModelId ?? null,
     modelId: request.modelId ?? null,
     usage: request.usage ?? NO_USAGE,
     stopReason: request.stopReason ?? null,

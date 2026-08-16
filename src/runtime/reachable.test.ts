@@ -130,9 +130,47 @@ function shippingModules(directory: string): string[] {
  * Every import specifier in a module **that survives to runtime**, as written.
  *
  * Static `import`/`export … from` and dynamic `import(...)`. A regex rather than
- * a parser, and that is a deliberate weakness in the *safe* direction: a
+ * a parser.
+ *
+ * ## The head class is `[^;/]`, and that is the whole ballgame
+ *
+ * This function used to say its weakness ran in the *safe* direction — "a
  * specifier this misses makes the reachable set smaller, so the guard fails
- * loudly rather than passing wrongly.
+ * loudly rather than passing wrongly". **That was false, and it was measured
+ * false on this codebase.** The head was `[\s\S]*?`, which spans lines. A match
+ * begins at any line-initial `import`/`export` keyword, and one that is not an
+ * import statement at all — `export interface`, `export function` — ran forward
+ * through comments until it found any `from '…'`. Quoted prose became a
+ * specifier, and a specifier that resolves is a runtime edge that nothing in the
+ * tree actually has.
+ *
+ * A differential against the TypeScript AST over all 265 files under `src/` gave
+ * **9 disagreements, every one an overcount, zero undercounts** — doc-comment
+ * prose scraped out of `endpoint-repository.ts`, `settings-repository.ts`,
+ * `turn-attachments.ts`, `EndpointsPanel.tsx`, `contract-sandbox.ts` and this
+ * file. None of them resolved, so the verdict stayed right by luck.
+ *
+ * The consequence is not academic and was reproduced twice: plant an orphan in
+ * `src/data`, and this guard correctly reddens; add to a file already on the
+ * graph a **comment** reading `re-exported from './that-orphan'`, and the guard
+ * goes **green 7/7 with a module nothing in the tree imports**. A guard whose
+ * project-level finding is *a comment is not evidence* was reading comments as
+ * evidence.
+ *
+ * So the head cannot cross a statement terminator **or a comment opener**.
+ * Excluding `;` alone is not enough: an `export interface` block with no
+ * semicolons in it reaches a following doc comment anyway, which was checked
+ * rather than assumed. Excluding `/` closes the class outright, because every
+ * comment in the language begins with one and no import clause contains one —
+ * the specifier's own slashes sit after `from`, outside this class.
+ *
+ * **What it costs, stated rather than discovered later:** an inline comment
+ * *inside* an import clause makes this miss a real edge. That direction is the
+ * loud one — the module drops off the graph and the walk names it — and the
+ * differential says the tree has none. A string literal holding `from '…'` with
+ * no `;` or `/` before it can still manufacture an edge; three remain, all in
+ * test files this walk never reads, since it enters only what `src/main.tsx`
+ * imports.
  *
  * ## Why type-only imports are dropped rather than counted
  *
@@ -145,6 +183,15 @@ function shippingModules(directory: string): string[] {
  * Type imports vanish at build time; they keep a module on the graph while
  * nothing at runtime ever enters it. That is the original defect wearing the
  * guard written against it.
+ *
+ * **And the compiler does not see it either**, which is the sharpest way to put
+ * why this distinction has to live here. Severing `harness-runtime.ts`'s value
+ * import of `project-context.ts` down to `import type { ProjectInstructionsReader }`
+ * and stubbing the call leaves `pnpm typecheck` at **exit 0** — measured, twice —
+ * while `src/runtime/project-context.ts` has nothing entering it at runtime. A
+ * type-only orphan is invisible to `tsc`, invisible to every behavioural test
+ * that does not happen to drive it, and was invisible to this guard. That is
+ * three instruments agreeing on a module that is not there.
  *
  * So a type-only statement contributes no edge. Three spellings are erased and
  * all three are dropped here: `import type … from`, `export type … from`, and a
@@ -162,7 +209,7 @@ function shippingModules(directory: string): string[] {
 function specifiers(source: string): string[] {
   const found: string[] = [];
   for (const match of source.matchAll(
-    /(?:^|\n)\s*((?:import|export)[\s\S]*?from\s*['"]([^'"]+)['"])/g,
+    /(?:^|\n)\s*((?:import|export)[^;/]*?from\s*['"]([^'"]+)['"])/g,
   )) {
     const statement = match[1];
     const specifier = match[2];
@@ -268,6 +315,28 @@ describe('the renderer is wired into the product', () => {
     expect(specifiers("export type { A } from './a';\n")).toEqual([]);
     expect(specifiers("import { type A, type B } from './a';\n")).toEqual([]);
     expect(specifiers("import type {\n  A,\n} from './a';\n")).toEqual([]);
+  });
+
+  /**
+   * Prose is not an import — asserted, because this guard once believed it was.
+   *
+   * Every case below is a comment naming a module, downstream of a line-initial
+   * `export` keyword that does not begin an import statement. Under the old
+   * `[\s\S]*?` head each one yielded a specifier, which is how a planted orphan
+   * was hidden from the walk by adding a sentence to a file that was already on
+   * the graph. The first two carry **no semicolon** before the comment, which is
+   * why excluding `;` alone does not close this and `/` has to go with it.
+   */
+  it('does not manufacture an edge out of a comment that names a module', () => {
+    expect(specifiers('export interface Foo {\n  bar(): void\n}\n\n/**\n * re-exported from \'./ghost\'\n */\n')).toEqual([]);
+    expect(specifiers('export function foo() {\n  return 1\n}\n\n// used to be imported from \'./ghost\'\n')).toEqual([]);
+    expect(specifiers("export function make() {\n  return { a: 1 };\n}\n\n/**\n * re-exported from './ghost'\n */\n")).toEqual([]);
+    expect(specifiers("export const x = 1;\n/* loaded from './ghost' */\n")).toEqual([]);
+
+    // The control for the four above: the same shape, but a real import, which
+    // must still be found. A fix that returned [] for everything would pass the
+    // assertions above and silence the entire guard.
+    expect(specifiers("export const x = 1;\nimport { real } from './kept';\n")).toEqual(['./kept']);
   });
 
   it('reaches every shipping module under src/ from src/main.tsx', () => {

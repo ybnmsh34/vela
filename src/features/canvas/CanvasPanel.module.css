@@ -211,14 +211,26 @@
  * named in `src/styles/contrast.test.ts`, which measures them in both themes.
  *
  * The other repair — keep `--vela-code-text` and make the tints dark in both
- * themes — has no answer in this palette. Every hue-carrying ground Vela owns
- * follows the page: accent-quiet, danger-bg, warning-bg, notice-bg, thinking-bg,
- * row-selected, turn-user-bg. The only theme-fixed grounds are the neutral code
- * family, and a neutral cannot say "added" or "removed". That repair would take
- * a new colour, and Vela's colours are final.
+ * themes — is possible, and it loses on the merits rather than on impossibility.
+ * Every hue-carrying *ground token* Vela owns follows the page: accent-quiet,
+ * danger-bg, warning-bg, notice-bg, thinking-bg, row-selected, turn-user-bg. The
+ * grounds that stay dark in both themes are the neutral code family — and they
+ * change rung rather than side, night-950 to night-900, so what is fixed there
+ * is the polarity, not the value. A neutral cannot say "added" or "removed".
  *
- * A row with no `data-kind` sets no background, so it keeps the code ground and
- * the code text untouched — 15.31:1 light, 14.24:1 dark. */
+ * Reaching past the tokens into the ramp does give one real option:
+ * `--vela-signal-900` is a single value, dark, and carries the accent hue, so it
+ * could ground "added" with no new colour whatever — code-text on it is 10.06:1.
+ * "Removed" has no counterpart. The rose ramp stops at 700, a mid-tone that
+ * reads 3.05:1 against the light code ground where signal-900 reads 1.52:1, so
+ * the two states would be a whisper and a shout; a symmetric pair needs a rose
+ * rung that does not exist, and inventing one is a new colour value. That, and
+ * two rules reaching into the ramp for a ground against rule 1 at the top of
+ * tokens.css, is why the semantic repair wins: it invents no value, adds no
+ * token, and both of its pairings already ship.
+ *
+ * A row whose `data-kind` is `same` sets no background, so it keeps the code
+ * ground and the code text untouched — 15.31:1 light, 14.24:1 dark. */
 .diffRow[data-kind='added'] {
   background: var(--vela-accent-quiet);
   color: var(--vela-text);

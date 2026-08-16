@@ -576,9 +576,38 @@ const SHEETS = [...stylesheets(SRC_ROOT), join(SRC_ROOT, 'styles', 'base.css')].
  * Every declaration block in a stylesheet, lifted out of any `@media` or
  * `@supports` wrapper it sits inside. `SHEETS.text` has already had its comments
  * stripped, so a rule quoted in prose cannot be mistaken for one that ships.
+ *
+ * A rule that *contains* a nested block still has declarations of its own, and
+ * they are emitted before the scan descends into it. The first version of this
+ * function recursed instead of emitting, so a rule shaped like
+ *
+ *     .row { color: …; background: …; &:hover { … } }
+ *
+ * disappeared from every check built on it — which is this branch's own defect
+ * one level down: an assertion satisfied by an ambient property, here "no
+ * stylesheet happens to nest yet". Nothing in `src` nests today and all six
+ * `@media` blocks are at column 0, so the drop was latent; native nesting is
+ * baseline in the engines Vela ships against, so it would not have stayed
+ * latent, and a guard that goes silently blind is worse than one that never
+ * claimed to see. `the completeness scan can actually see the stylesheets`
+ * carries the conservation check that notices a *partial* drop; the count floors
+ * cannot, because they detect total blindness.
  */
 function declarationBlocks(text: string): readonly { selector: string; body: string }[] {
   const found: { selector: string; body: string }[] = [];
+  /**
+   * A block's own declarations: what is left once nested blocks are removed,
+   * innermost first so that arbitrary depth collapses. The nested *selectors*
+   * survive as loose text, which is harmless — a selector cannot match
+   * `color:` or `background:`.
+   */
+  const ownDeclarations = (body: string): string => {
+    let out = body;
+    for (let pass = 0; pass < 12 && out.includes('{'); pass += 1) {
+      out = out.replace(/\{[^{}]*\}/gu, '');
+    }
+    return out;
+  };
   const scan = (from: number, to: number): void => {
     let depth = 0;
     let open = from;
@@ -591,12 +620,22 @@ function declarationBlocks(text: string): readonly { selector: string; body: str
       } else if (character === '}') {
         depth -= 1;
         if (depth === 0) {
-          if (text.slice(open + 1, index).includes('{')) scan(open + 1, index);
-          else
+          const body = text.slice(open + 1, index);
+          // Anything ending in a semicolon before the brace is a statement, not
+          // part of the selector. Without this, base.css's first rule carries its
+          // `@import` lines inside `selector` and no RuleRef could bind to it.
+          const preamble = text.slice(selectorFrom, open);
+          const own = ownDeclarations(body);
+          if (own.trim() !== '') {
             found.push({
-              selector: text.slice(selectorFrom, open).trim().replace(/\s+/gu, ' '),
-              body: text.slice(open + 1, index),
+              selector: preamble
+                .slice(preamble.lastIndexOf(';') + 1)
+                .trim()
+                .replace(/\s+/gu, ' '),
+              body: own,
             });
+          }
+          if (body.includes('{')) scan(open + 1, index);
           selectorFrom = index + 1;
         }
       }
@@ -606,9 +645,17 @@ function declarationBlocks(text: string): readonly { selector: string; body: str
   return found;
 }
 
-/** The one `color` / `background` token a single rule declares, if it declares one. */
+/**
+ * The one `color` / `background` token a single rule declares, if it declares
+ * one. Both are anchored on a character that is neither a word character nor a
+ * hyphen, so that `border-color:` is not a `color:` and a custom property whose
+ * name ends in `-background` is not a ground.
+ */
 const DECLARES_COLOUR = /(?:^|[^-\w])color:\s*var\((--vela-[a-z0-9-]+)\)/u;
-const DECLARES_GROUND = /background(?:-color)?:\s*[^;]*var\((--vela-[a-z0-9-]+)\)/u;
+const DECLARES_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\((--vela-[a-z0-9-]+)\)/u;
+/** The same two, global, for counting every declaration rather than the first. */
+const EVERY_COLOUR = /(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gu;
+const EVERY_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\(--vela-[a-z0-9-]+\)/gu;
 
 /** Every token a stylesheet uses in `property: var(--vela-…)`. */
 function tokensUsedAs(property: RegExp): Map<string, string> {
@@ -705,6 +752,14 @@ describe('every colour role is audited', () => {
    * both. The assertion above would not have caught it. It catches it now only
    * because the fix co-declares.
    *
+   * The clearest illustration is inside this very table. `MessageTurn
+   * .errorTitle` — which `CanvasPanel.module.css` cites as the precedent for
+   * --vela-text on --vela-danger-bg — is itself that shape: `.error` declares the
+   * background, `.errorTitle` declares the colour, two rules, no co-declaration.
+   * It is audited only because a human read the component and wrote the pair
+   * down. Delete that line and nothing in this file asks for it back. The
+   * precedent for the fix is also the standing proof of the gap.
+   *
    * Two routes reach the general case, and both are larger than a contrast fix:
    *
    * 1. PER-COMPONENT COMPLETENESS. Demand that each stylesheet's own use of a
@@ -780,9 +835,17 @@ describe('every colour role is audited', () => {
     // --vela-code-text is one fixed value in both themes, which is only ever
     // right because --vela-code-bg is dark in both. Pair a fixed foreground with
     // a ground that is light in one theme and dark in the other and it is
-    // legible in at most one of them. That is a fact about the pairing, and it
-    // holds even when both ratios happen to clear AA — so this fires earlier,
-    // and for a reason a reader can act on, than the measurement does.
+    // legible in at most one of them.
+    //
+    // Its reach, stated honestly: on THIS palette it never catches anything the
+    // ratio assertions would miss. Enumerate all 41 theme-fixed foregrounds
+    // against all 36 theme-turning grounds and there are 898 crossings, of which
+    // not one has both ratios clearing 4.5:1 — the best is 4.37:1. So today this
+    // is a second and better-worded witness to a failure the measurement also
+    // sees, not an extra catch. It earns its place by being a property of the
+    // pairing rather than of the current values: it goes on holding, and goes on
+    // saying why, across a palette change that could quietly make the ratios
+    // pass.
     //
     // Text only. --vela-scrollbar-thumb is deliberately night-400 in both themes
     // and is deliberately crossed by --vela-bg, --vela-chrome and
@@ -853,5 +916,27 @@ describe('every colour role is audited', () => {
       rules.filter(({ body }) => DECLARES_COLOUR.test(body) && DECLARES_GROUND.test(body)).length,
     ).toBeGreaterThan(40);
     expect(rules.some(({ selector }) => selector === ".diffRow[data-kind='added']")).toBe(true);
+
+    // CONSERVATION — the floor that notices a *partial* drop.
+    //
+    // The three expectations above detect a splitter that has gone blind
+    // altogether. They cannot detect one that quietly loses a subset, and that
+    // is not hypothetical: the first version of `declarationBlocks` swallowed
+    // every rule containing a nested block, and all three stayed green. So count
+    // instead. Every `color:`/`background:` token declaration in the sheets must
+    // land in exactly one emitted block — parent declarations in the parent,
+    // nested ones in the child, none in both and none nowhere.
+    const tally = (chunks: readonly string[], pattern: RegExp): number =>
+      chunks.reduce((sum, chunk) => sum + [...chunk.matchAll(pattern)].length, 0);
+    const inSheets = SHEETS.map(({ text }) => text);
+    const inBlocks = rules.map(({ body }) => body);
+    expect(
+      tally(inBlocks, EVERY_COLOUR),
+      'the rule splitter is losing colour declarations',
+    ).toBe(tally(inSheets, EVERY_COLOUR));
+    expect(
+      tally(inBlocks, EVERY_GROUND),
+      'the rule splitter is losing background declarations',
+    ).toBe(tally(inSheets, EVERY_GROUND));
   });
 });

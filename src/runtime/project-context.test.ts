@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
-import type { ContextRef, RunEvent } from '@/platform/contract-harness';
+import type { ContextRef, RunEvent, RunOutcome } from '@/platform/contract-harness';
 
 import { createHarnessRuntime } from './harness-runtime';
 import { createProjectContextResolver } from './project-context';
@@ -52,8 +52,12 @@ describe('the project instructions resolver', () => {
   });
 
   it('serves only the sources it can actually load', async () => {
-    // "no command reads a skill's body, so a resolver cannot serve that source
-    // yet and must not pretend to by returning refs it cannot load."
+    // "a resolver must not return refs it cannot load." The quotation used to
+    // continue "…no command reads a skill's body, so a resolver cannot serve
+    // that source yet", which was false: `skills_read` answers a `body`. The
+    // rule this test holds never depended on that clause — this resolver serves
+    // one source because it implements one, not because the others are
+    // unreachable. See AMENDMENT 6 in `src/platform/contract-harness.ts`.
     const resolver = createProjectContextResolver(
       DEFAULT_PROJECT_ID,
       reader({ [DEFAULT_PROJECT_ID]: 'be brief' }),
@@ -82,6 +86,65 @@ describe('the project instructions resolver', () => {
     if (theirRef === undefined) return;
     expect(await mine.load(theirRef)).toBeNull();
     expect((await mine.load((await mine.index())[0] ?? theirRef))?.text).toBe('mine');
+  });
+
+  it('names the material anyway when the read fails, rather than indexing nothing', async () => {
+    // ── THE FAILURE DIRECTION ─────────────────────────────────────────────────
+    // The two facts a resolver must not merge: "this project has nothing
+    // written in it" and "this project could not be read". Merging them is what
+    // sends a run off with none of the user's instructions and nothing on
+    // screen about it. So a failed read still yields the ref…
+    const resolver = createProjectContextResolver(DEFAULT_PROJECT_ID, () =>
+      Promise.reject(new Error('project_get exploded')),
+    );
+
+    const refs = await resolver.index();
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.source).toBe('projectInstructions');
+
+    // …and that ref does not load, which is the `contextUnavailable` path. Note
+    // what is *not* happening: `load` is not rejecting. A rejecting resolver
+    // fails the whole run with `contextResolverFailed`, and a chat refused
+    // because an extra source could not be read is worse than a chat that says
+    // what it went without.
+    const ref = refs[0];
+    expect(ref).toBeDefined();
+    if (ref === undefined) return;
+    await expect(resolver.load(ref)).resolves.toBeNull();
+  });
+
+  it('indexes nothing for an empty project even though a broken one indexes a ref', async () => {
+    // The pair that makes the notice mean something. If both cases produced a
+    // ref, every project a user has written nothing in would report material
+    // missing on every run, and a real failure would be lost in the noise.
+    const empty = createProjectContextResolver(DEFAULT_PROJECT_ID, () => Promise.resolve(''));
+    const broken = createProjectContextResolver(DEFAULT_PROJECT_ID, () =>
+      Promise.reject(new Error('project_get exploded')),
+    );
+
+    expect(await empty.index()).toEqual([]);
+    expect(await broken.index()).toHaveLength(1);
+  });
+
+  it('over-reports rather than under-reports when a read recovers between index and load', async () => {
+    // The documented cost of the choice above, pinned so it is a decision rather
+    // than a surprise. The read fails at `index` — so the ref goes out — and has
+    // recovered by `load`, where the project turns out to be empty. That is one
+    // `contextUnavailable` for material that was never there.
+    //
+    // Reachable only after a genuine host failure, and it is the side to be
+    // wrong on: the alternative is reporting a user's written instructions as
+    // though they had never existed.
+    let attempt = 0;
+    const resolver = createProjectContextResolver(DEFAULT_PROJECT_ID, () => {
+      attempt += 1;
+      return attempt === 1 ? Promise.reject(new Error('one bad read')) : Promise.resolve('');
+    });
+
+    const ref = (await resolver.index())[0];
+    expect(ref).toBeDefined();
+    if (ref === undefined) return;
+    expect(await resolver.load(ref)).toBeNull();
   });
 
   it('makes two resolvers for one project interchangeable', async () => {
@@ -220,5 +283,62 @@ describe('contextFor on the runtime', () => {
     });
     const sent = turns.sent[0];
     expect(sent?.messages[0]).toEqual({ role: 'system', text: 'be brief' });
+  });
+
+  it('reports contextUnavailable when the project cannot be read, and runs on', async () => {
+    // ── THE FAILURE DIRECTION, END TO END ─────────────────────────────────────
+    // `project_get` throws. The run must say what it went without and then
+    // answer anyway — the two halves being equally load-bearing, because a run
+    // that silently drops the user's instructions and a run that refuses to
+    // start over an auxiliary source are both worse than a run that says so.
+    //
+    // The whole chain is real below the reader: the runtime builds the resolver,
+    // the loop preloads what the caller indexed, and the degradation is the
+    // loop's own.
+    const turns = new FakeTurnDriver();
+    turns.scriptText('ok');
+    const runtime = createHarnessRuntime({
+      turns,
+      transcript: recordingTranscript().writer,
+      toolsFor: () => ({ execute: () => Promise.reject(new Error('no tools')) }),
+      readProjectInstructions: () => Promise.reject(new Error('project_get exploded')),
+    });
+
+    const refs = await runtime.contextFor(DEFAULT_PROJECT_ID).index();
+    const ref = refs[0];
+    expect(ref, 'a failed read must still name the material').toBeDefined();
+    if (ref === undefined) return;
+
+    const events: RunEvent[] = [];
+    let outcome: RunOutcome | null = null;
+    await new Promise<void>((resolve) => {
+      const start = runtime.runs.start(
+        runRequest({ context: { systemPrompt: null, preload: [ref] } }),
+      );
+      if (start.outcome !== 'started') throw new Error(`rejected: ${start.reason}`);
+      start.handle.subscribe(
+        (envelope) => {
+          events.push(envelope.event);
+          if (envelope.event.type === 'runFinished') {
+            outcome = envelope.event.outcome;
+            resolve();
+          }
+        },
+        { fromSeq: 0 },
+      );
+    });
+
+    expect(events).toContainEqual({
+      type: 'degraded',
+      degradation: { kind: 'contextUnavailable', ref },
+    });
+    expect(events).not.toContainEqual({ type: 'contextLoaded', ref });
+    // Ran on, and ran on as a *completion* rather than as a harness fault: an
+    // unreadable auxiliary source is a degradation, not `contextResolverFailed`.
+    expect(outcome).toEqual({ type: 'completed', stopReason: 'endTurn' });
+    // …and nothing was invented to fill the gap. No system message at all is the
+    // honest payload; a system message built out of a failure would be prompt
+    // material the user never wrote.
+    expect(turns.sent[0]?.messages.some((message) => message.role === 'system')).toBe(false);
   });
 });

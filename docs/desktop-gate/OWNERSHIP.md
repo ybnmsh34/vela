@@ -43,6 +43,42 @@ first, or the reclaim silently does not happen.
 | `src/features/skills/**`, `src/state/skills-store.ts`, `src/app/skills-reachable.test.tsx`, `src/app/App.tsx`, `src/features/navigation/Sidebar.tsx` | Wave 2 / skills surface | 2026-08-16 | `src/data/skills-repository.ts` was correct, tested and off the import graph — its only importer was its own test. A skills pane, the sidebar control that opens it and the composition-root mount put `skills_list` / `skills_read` behind something a user can press. `src/data` is ungoverned by `src/runtime/reachable.test.ts`; two orphans remain there (see below) |
 | `src/data/schedules-repository.ts`, `src/features/schedules/**`, `src/state/schedules-store.ts`, `src/app/schedules-wiring.test.tsx`, and the schedules lines only of `src/app/App.tsx` and `src/features/navigation/Sidebar.tsx` | Wave 2 / schedules | 2026-08-16 | the renderer half of the five `schedules_*` commands, which were registered, allowlisted, declared and faked with **no caller under `src/data/` or `src/features/`** — the poll thread ran every thirty seconds over a table nothing could add a row to. Worktree `C:/Users/User/vela-w2-sched`, branch `wave2/schedules-surface`. No Rust touched |
 | `src-tauri/src/endpoint_host.rs`, `src-tauri/src/ipc/endpoint.rs`, `src-tauri/crates/vela-endpoint/src/server.rs`, `src-tauri/tests/endpoint_runtime_control.rs`, `src/data/endpoint-repository.ts(+test)`, `src/features/models/LocalEndpointSection.{tsx,module.css,test.tsx}`, `src/features/models/use-local-endpoint.ts`, `docs/local-endpoint.md` | Wave 2 / endpoint control | 2026-08-16 | the endpoint had no start/stop/rebind entry point and no user-facing switch, and the comment explaining that was false. Also touched, additively only: `src-tauri/src/{lib.rs,ipc/mod.rs}`, `src/platform/{contract.ts,browser-adapter.ts}`, `src/features/models/{EndpointsPanel.tsx,index.ts}`, `README.md`. **`src/features/models/EndpointsPanel.test.tsx` is claimed by Wave 1 and was NOT edited** — the new section's endpoint menu was reworded to `name (id)` so its `getByText` queries stay unambiguous |
+| `src/runtime/app-runtime.ts`, `src/runtime/project-context.ts`, `src/runtime/project-context.test.ts`, `src/runtime/app-runtime.test.ts`, `src/data/projects-repository.ts`, `src/state/project-store.ts`, `src/features/projects/`, `src/app/App.tsx`, `src/app/project-instructions.test.tsx`, `src/features/conversation/use-conversation.ts`, `src/features/conversation/ConversationSurface.tsx`, `src/features/conversation/ConversationView.tsx`, `src/features/conversation/MessageTurn.tsx`, `src/features/conversation/TurnNotices.tsx`, `src/features/conversation/notices.ts`, `src/features/conversation/agent-run.test.tsx`, `src/features/navigation/Sidebar.tsx`, `src/features/memory/MemoryPanel.tsx`, `src/platform/contract-harness.ts` | Wave 2 / project instructions | 2026-08-16 | `readProjectInstructions` answered `null` for every project under a false comment, so the whole project-context layer was dead; and `App.tsx` passed `DEFAULT_PROJECT_ID` literally while `use-conversation.ts` fell through to the same constant, so one project's context served every run |
+| `src/features/canvas/CanvasSurface.tsx`, `src/app/App.tsx` | Wave 2 / project instructions | 2026-08-16 | **collides with `wave2/canvas-host-boundary` in `C:/Users/User/vela-w2-canvas`, in two files — see the note below. A careless resolution silently restores the defect this branch removed.** |
+
+### `wave2/project-instructions` × `wave2/canvas-host-boundary` — resolve by hand, in this order
+
+> **Status, 2026-08-16: `wave2/project-instructions` has landed on the integration branch.**
+> Only `wave2/canvas-host-boundary` remains. It is still based at `e563575`, so the conflicts
+> below are the ones it will raise when it is merged forward — but the sides have swapped:
+> what is described as "the project-instructions side" is now *what is already in the tree*,
+> and it is the side to keep. The canvas branch must be rebased, not merged blind.
+
+Both branches are based at `e563575` and both rewrite **the same two files**. Read this before
+merging either; the shapes below were read out of the two branches with `git show`, not assumed.
+
+**`src/app/App.tsx` — three overlapping edits, one of them dangerous.**
+
+1. **Line 137, the `CanvasSurface` element.** `wave2/canvas-host-boundary` has
+   `projectId={DEFAULT_PROJECT_ID}` and adds `sandbox={sandbox}`;
+   `wave2/project-instructions` has `projectId={projectId}`, from `useActiveProjectId()`.
+   **Taking the canvas side of this line re-introduces `DEFAULT_PROJECT_ID` at the exact point
+   this branch removed it** — which is mutation M3 in the project-instructions commit message,
+   and it is caught only by `src/app/project-instructions.test.tsx`. The merged line needs *both*
+   changes: `projectId={projectId} sandbox={sandbox}`.
+2. **The import block.** Canvas keeps `import { DEFAULT_PROJECT_ID } from '@/platform/contract-project'`;
+   project-instructions replaces it with `import type { ProjectId }` plus
+   `import { ProjectsSurface, useActiveProjectId } from '@/features/projects'`. Keeping the canvas
+   import is how (1) gets re-introduced quietly after being fixed.
+3. **The `Workspace` doc comment.** Both rewrite the paragraph beginning "`DEFAULT_PROJECT_ID` is
+   passed literally". The canvas side still contains that sentence, which is false once (1) is
+   resolved correctly.
+
+**`src/features/canvas/CanvasSurface.tsx`.** Canvas adds a required `sandbox: SandboxRepository`
+prop and passes it to `CanvasPanel`; project-instructions widens `projectId` to `ProjectId | null`
+and changes the panel guard to `openTrack !== null && projectId !== null`. These are compatible and
+both are wanted — the widening exists because the composition root has no constant left to pass
+before `project_list` answers.
 
 ## Released
 
@@ -92,11 +128,11 @@ first, or the reclaim silently does not happen.
    has been seen under concurrent git use; `git fsck --connectivity-only` reported dangling objects
    only, no broken links. If you see it, verify the object landed rather than assuming either way.
 
-## Two hazards that manufacture red, and why they are dangerous
+## Hazards that manufacture red — and one that manufactures green
 
-Both produce a failing test for a reason unrelated to the change under test. That is worse than a
-crash, because a red is what you are looking for when you mutation-test — so both arrive disguised
-as the exact evidence you came for.
+The first two produce a failing test for a reason unrelated to the change under test. That is worse
+than a crash, because a red is what you are looking for when you mutation-test — so both arrive
+disguised as the exact evidence you came for. The last one is worse still, and is at the bottom.
 
 **Parallel load fabricates failures.** A full `vitest` run with a fixed mutation gave `4 files /
 12 tests failed`; the very next run, byte-identical input, gave `104 / 2105 passed`. The failing
@@ -116,3 +152,38 @@ unexplained red and another has independently seen the load hazard, that establi
 exists — not that this red was it. An unnamed single failure stays unestablished until a **name**
 repeats. Capture the failing test name (`--reporter=verbose`, or tee the whole log) rather than
 filtering to the summary, so a recurrence can be compared.
+
+### A pipeline reports the exit status of the *last* command, so a gate can fail green
+
+This one cost nothing only because the log was read anyway. Running the gate as
+
+```bash
+pnpm verify 2>&1 | tail -60; echo "VERIFY_EXIT=${PIPESTATUS[0]}"
+```
+
+makes the shell's own exit status that of `echo`, which is always `0`. The task harness reports
+**"completed (exit code 0)"** while `VERIFY_EXIT=1` sits in the body of the log. An agent that
+trusts the notification — or that greps the tail for `error` and finds none, because the failure
+was thirty lines up — reports a green gate that never ran.
+
+Two separate faults compound here, and both are worth knowing on their own:
+
+- **`cargo` is on no shell's `PATH` in this environment — not Bash, not PowerShell.** The binary is
+  real and sits at `C:\Users\User\.cargo\bin\cargo.exe`; the directory holding it is simply absent
+  from `PATH`, and `rustup` is not resolvable either. `pnpm verify` therefore dies at gate 2
+  (`lint:rust`) with `'cargo' is not recognized` — a **cmd.exe** message, because that is what pnpm
+  shells out to on Windows — having run `typecheck` and nothing else. Every gate behind it (the
+  whole `vitest` suite, the harnesses, the build, the transcript and secret guards, and the entire
+  Rust workspace) is skipped, not passed. Prepend the directory before running the gate:
+
+  ```
+  $env:PATH = "C:\Users\User\.cargo\bin;$env:PATH"
+  ```
+
+  Do not conclude from a green `typecheck` that the Rust side was checked. The honest tell that the
+  tail really ran is physical: `src-tauri/target/debug/deps` fills with **test binaries**, which
+  only `cargo test` produces — `cargo build` alone does not.
+- **Never let a reporting command be the last in the pipeline.** Check the status directly
+  (`pnpm verify; echo "EXIT=$?"` with no pipe), or tee to a file and read the file. A gate whose
+  result you learned from a notification rather than from its own output has not been verified —
+  which is the same rule as `reaches-user`, applied to the toolchain instead of the product.

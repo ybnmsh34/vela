@@ -55,6 +55,14 @@ const TOOL_CALLING: ChatCapabilities = { ...NO_CAPABILITIES, streaming: true, to
 interface Fixture {
   readonly adapter: BrowserAdapter;
   readonly conversationId: string;
+  /**
+   * The project a run in this fixture belongs to, read out of the host rather
+   * than written down here. `ProjectSummary.isDefault` is the flag the contract
+   * carries so that nothing under `src/` compares against `DEFAULT_PROJECT_ID`,
+   * and a test that hard-codes an id is a test that keeps passing after the
+   * seed changes.
+   */
+  readonly projectId: string;
   readonly transcript: TranscriptRepository;
   readonly wrapper: (props: { children: ReactNode }) => ReactNode;
 }
@@ -62,9 +70,13 @@ interface Fixture {
 async function fixture(): Promise<Fixture> {
   const adapter = new BrowserAdapter({ now: () => 1_700_000_000_000 });
   const { conversation } = await adapter.invoke('store_create_conversation', {});
+  const { projects } = await adapter.invoke('project_list', {});
+  const project = projects.find((summary) => summary.isDefault) ?? projects[0];
+  if (project === undefined) throw new Error('the host seeded no project');
   return {
     adapter,
     conversationId: conversation.id,
+    projectId: project.id,
     transcript: createTranscriptRepository(adapter),
     wrapper: ({ children }: { children: ReactNode }) =>
       createElement(PlatformProvider, { adapter, children }),
@@ -90,7 +102,14 @@ function runtimeOf(options: RuntimeOptions): HarnessRuntime {
   });
 }
 
-function mount(fx: Fixture, runtime: HarnessRuntime) {
+/**
+ * `projectId` is passed on every mount here because a run without one is now
+ * refused — see `NO_PROJECT` in `use-conversation.ts`. Before this it was
+ * omitted and the hook fell through to `DEFAULT_PROJECT_ID`, so every assertion
+ * in this file about a started run was resting on that fall-through rather than
+ * on anything the caller did. The refusal itself is asserted below.
+ */
+function mount(fx: Fixture, runtime: HarnessRuntime, projectId: string | null = fx.projectId) {
   return renderHook(
     () =>
       useConversation({
@@ -100,6 +119,7 @@ function mount(fx: Fixture, runtime: HarnessRuntime) {
         capabilities: TOOL_CALLING,
         transcript: fx.transcript,
         runtime,
+        projectId,
         scheduleCommit: (run) => {
           run();
         },
@@ -175,7 +195,38 @@ const NO_DIAGNOSIS = { cause: 'transport', correlation: 0 } as const;
 /* the run never starts                                                        */
 /* -------------------------------------------------------------------------- */
 
-describe('an agent run that never starts says which of the two reasons it was', () => {
+describe('an agent run that never starts says which of the three reasons it was', () => {
+  it('refuses rather than inventing a project when it has not been told one', async () => {
+    // ── THE LOAD-BEARING TEST FOR THE FALL-THROUGH ────────────────────────────
+    // This hook used to answer `options.projectId ?? DEFAULT_PROJECT_ID`, and
+    // `App.tsx` passed no `projectId` at all — so every run in every project was
+    // started against the default project's resolver and was handed the default
+    // project's instructions. Nothing observable distinguishes that from working
+    // while a user has one project, which is why it survived.
+    //
+    // The assertion is deliberately about a *refusal* and not about which id was
+    // used: an assertion of the form "the run named project X" passes just as
+    // happily against a fall-through that happens to have picked X.
+    const fx = await fixture();
+    const manual = createManualHarness('manual');
+    const runtime = runtimeOf({ transcript: fx.transcript, definitions: [manual.definition] });
+    const { result } = mount(fx, runtime, null);
+
+    act(() => {
+      result.current.agent.setEnabled(true);
+    });
+    act(() => {
+      result.current.send('go');
+    });
+
+    await waitFor(() => {
+      expect(reply(result.current).turn.phase).toBe('failed');
+    });
+    expect(reply(result.current).turn.refusal?.code).toBe('NO_PROJECT');
+    expect(manual.started, 'a run was started with a project nobody chose').toHaveLength(0);
+    expect(result.current.streaming).toBe(false);
+  });
+
   it('says no harness in this build can run against this model', async () => {
     // `selectHarness` answers `unavailable` for an empty registry, which is a
     // build defect rather than a user state — and the contract is explicit that
@@ -510,19 +561,70 @@ describe('a run that fails is drawn as a failure, in Vela’s own words', () => 
 /* -------------------------------------------------------------------------- */
 
 describe('context the run could not index', () => {
-  it('starts the run with nothing preloaded rather than not starting it', async () => {
-    // The resolver reads through an injected function precisely because there is
-    // no project command to call yet, and the day there is one it can fail. A
-    // run refused because a *source of extra prompt material* could not be
-    // listed would be a chat the user cannot have for a reason they cannot see;
-    // an empty `preload` is a run with nothing extra, which is what every run
-    // has today anyway.
+  it('still names the material, so the run reports it missing instead of going quiet', async () => {
+    // **This assertion is the reverse of the one it replaces.** The old test
+    // asserted `preload: []` for a reader that rejects, and called that correct
+    // on the grounds that a run with nothing extra "is what every run has today
+    // anyway" — true at the time, because `readProjectInstructions` answered
+    // `null` for every project and the layer was dead.
+    //
+    // It is not correct now. An empty `preload` for a `project_get` that threw
+    // is a run that quietly went without instructions the user wrote and typed
+    // into a box, with nothing on screen to say so — the silent reduction
+    // conventions §9 forbids. `project-context.ts` therefore carries the failure
+    // forward as a ref that will not load, so the harness emits
+    // `contextUnavailable` and the user can see it.
+    //
+    // What survives from the old test, and is asserted below, is the half that
+    // was always right: the run **starts**. A chat refused because a source of
+    // extra prompt material could not be listed is a chat the user cannot have
+    // for a reason they cannot see.
     const fx = await fixture();
     const manual = createManualHarness('manual');
     const runtime = runtimeOf({
       transcript: fx.transcript,
       definitions: [manual.definition],
-      readProjectInstructions: () => Promise.reject(new Error('project_get is not a command')),
+      readProjectInstructions: () => Promise.reject(new Error('project_get exploded')),
+    });
+    const { result } = mount(fx, runtime);
+
+    act(() => {
+      result.current.agent.setEnabled(true);
+    });
+    act(() => {
+      result.current.send('go');
+    });
+
+    await waitFor(() => {
+      expect(manual.started).toHaveLength(1);
+    });
+    const context = manual.started[0]?.context;
+    expect(context?.systemPrompt).toBeNull();
+    expect(context?.preload).toHaveLength(1);
+    expect(context?.preload[0]?.source).toBe('projectInstructions');
+    expect(result.current.streaming).toBe(true);
+
+    // …and that ref does not load, which is what turns it into a degradation
+    // rather than into prompt material invented out of a failure. Asked of the
+    // same runtime the run was started with, which is the seam
+    // `HarnessServices.context` freezes.
+    const ref = context?.preload[0];
+    expect(ref).toBeDefined();
+    if (ref === undefined) return;
+    expect(await runtime.contextFor(fx.projectId).load(ref)).toBeNull();
+  });
+
+  it('preloads nothing for a project that simply has no instructions', async () => {
+    // The other side of the same coin, and the reason the case above is not
+    // simply "always emit a ref". An empty column is not missing material, and a
+    // run that reported `contextUnavailable` for every project the user has
+    // written nothing in would make the notice mean nothing.
+    const fx = await fixture();
+    const manual = createManualHarness('manual');
+    const runtime = runtimeOf({
+      transcript: fx.transcript,
+      definitions: [manual.definition],
+      readProjectInstructions: () => Promise.resolve(''),
     });
     const { result } = mount(fx, runtime);
 
@@ -537,7 +639,6 @@ describe('context the run could not index', () => {
       expect(manual.started).toHaveLength(1);
     });
     expect(manual.started[0]?.context).toEqual({ systemPrompt: null, preload: [] });
-    expect(result.current.streaming).toBe(true);
   });
 });
 

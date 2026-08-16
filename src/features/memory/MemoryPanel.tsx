@@ -30,9 +30,18 @@
  * ## Scope
  *
  * Global only, because nothing in the renderer knows which project a
- * conversation belongs to — `ConversationSummary` carries no project id and
- * there is no project surface. The host's project scope is real and tested and
- * is not reachable from here.
+ * *conversation* belongs to — `ConversationSummary` carries no project id. The
+ * host's project scope is real and tested and is not reachable from here.
+ *
+ * That sentence used to end "and there is no project surface". One was built
+ * (`src/features/projects/`) and this did not change, because the surface
+ * answers a different question: which project the **window** is in, not which
+ * one this conversation is in. Scoping memory to the former would file a user's
+ * remembered facts under whichever project happened to be selected at the time.
+ * The intro sentence below says these notes go to conversations "not in a
+ * project", and that phrasing predates any project surface existing —
+ * `use-conversation.ts` reads this scope for **every** conversation, so a reader
+ * of this file should not take it as evidence that a project-scoped path exists.
  */
 
 import { useRef, useState } from 'react';

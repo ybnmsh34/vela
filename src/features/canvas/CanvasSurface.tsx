@@ -37,11 +37,18 @@ interface CanvasSurfaceProps {
   /** Every assistant message in the open conversation, oldest first. */
   readonly assistantTexts: readonly string[];
   /**
-   * Which project a run belongs to. Handed in rather than reached for: the
-   * project feature is not built, and the contract is explicit that no code
-   * under `src/` should decide for itself what "the default project" is.
+   * Which project a document run belongs to. Handed in rather than reached for,
+   * because the contract is explicit that no code under `src/` should decide for
+   * itself what "the default project" is — and the composition root is the one
+   * place that knows which project the window is in.
+   *
+   * `null` means the host has not said yet, or could not. The panel does not
+   * open on `null`: a document run is a sandboxed program executing inside a
+   * project's own filesystem scope, and there is no project to scope it to. The
+   * artifact rail still lists what the model produced, so nothing is hidden —
+   * only the running of it waits.
    */
-  readonly projectId: ProjectId;
+  readonly projectId: ProjectId | null;
   /** Injected by tests, so a suite can drive a host at a different permission level. */
   readonly host?: DocumentHost | undefined;
   /** The transcript. */
@@ -90,7 +97,7 @@ export function CanvasSurface({ assistantTexts, projectId, host, children }: Can
     <div className={styles.split}>
       <div className={styles.main}>{children}</div>
 
-      {openTrack !== null ? (
+      {openTrack !== null && projectId !== null ? (
         <div className={styles.panelSlot}>
           <CanvasPanel
             key={openTrack.slot}

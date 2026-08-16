@@ -684,6 +684,9 @@ interface FakeMessage {
   parts: ContentPartInput[];
   readonly providerId: string | null;
   readonly modelId: string | null;
+  /** Who answered, kept apart from who was asked. `null` is "not recorded". */
+  readonly answeredByProviderId: string | null;
+  readonly answeredByModelId: string | null;
   usage: TokenUsage;
   stopReason: StoredStopReason | null;
   errorMessage: string | null;
@@ -708,6 +711,8 @@ function toStoredMessage(message: FakeMessage): StoredMessage {
     parts: [...message.parts],
     providerId: message.providerId,
     modelId: message.modelId,
+    answeredByProviderId: message.answeredByProviderId,
+    answeredByModelId: message.answeredByModelId,
     usage: message.usage,
     stopReason: message.stopReason,
     errorMessage: message.errorMessage,
@@ -1625,6 +1630,12 @@ export class BrowserAdapter implements PlatformAdapter {
           // Honest: this fake reports no usage, so it says so, exactly as a
           // local runtime that never sends a usage block does.
           degradations: [{ kind: 'usageNotReported' }],
+          // Also honest, and the reason it is not `null`: this fake has exactly
+          // one candidate and never fails over, so the endpoint that answered
+          // really is the one addressed. Saying so — rather than leaving it
+          // unattributed — is what makes `pnpm dev` exercise the attributed
+          // path instead of the "host too old to say" path.
+          answeredBy: { providerId: request.providerId, modelId: request.modelId },
         },
       });
     };
@@ -2564,6 +2575,11 @@ export class BrowserAdapter implements PlatformAdapter {
       parts: [...request.parts],
       providerId: request.providerId ?? null,
       modelId: request.modelId ?? null,
+      // Mirrors the host: an omitted attribution stays absent. Defaulting these
+      // to `providerId` would make the fake disagree with SQLite about the one
+      // thing they exist to record.
+      answeredByProviderId: request.answeredByProviderId ?? null,
+      answeredByModelId: request.answeredByModelId ?? null,
       usage: request.usage ?? NO_USAGE,
       stopReason: request.stopReason ?? null,
       errorMessage: request.errorMessage ?? null,
@@ -2695,6 +2711,8 @@ export class BrowserAdapter implements PlatformAdapter {
         ],
         providerId: null,
         modelId: null,
+        answeredByProviderId: null,
+        answeredByModelId: null,
         usage: NO_USAGE,
         stopReason: null,
         errorMessage: null,

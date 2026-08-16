@@ -572,6 +572,9 @@ impl CandidateAssembler {
                 usage: self.usage,
                 structured: None,
                 degradations,
+                // The accumulator knows the wire, not the endpoint. See
+                // `ChatResponse::answered_by`: the router is the only writer.
+                answered_by: None,
                 salvaged_answer: content.salvaged,
             },
             cache_accounting_reported: self.cache_accounting,

@@ -28,6 +28,10 @@ function stored(overrides: Partial<StoredMessage> & Pick<StoredMessage, 'id' | '
     parts: [],
     providerId: 'workstation',
     modelId: 'local-model',
+    // Unattributed by default: a stored row from before provenance existed, and
+    // the shape a fixture must not silently improve on.
+    answeredByProviderId: null,
+    answeredByModelId: null,
     usage: NO_USAGE,
     stopReason: null,
     errorMessage: null,
@@ -169,5 +173,92 @@ describe('writing a settled turn to the store', () => {
       errorMessageOfTurn(settled({ phase: 'failed', refusal: { code: 'NOT_FOUND', message: 'no such provider' } })),
     ).toBe('no such provider');
     expect(errorMessageOfTurn(settled({}))).toBeNull();
+  });
+});
+
+describe('who answered survives the reload', () => {
+  /**
+   * **The disclosure has to still be there tomorrow.**
+   *
+   * The answering endpoint is written to its own column, carried through the
+   * contract and the adapters — and was then read by nothing. `turnFromStored`
+   * never set `answeredBy`, so every restored turn came back `null`, which the
+   * wording layer treats as "unattributed" and renders as silence. Reopening a
+   * conversation therefore erased a substitution the store had recorded
+   * correctly: host-complete, renderer-absent, inside the fix for the defect
+   * that pattern was found in.
+   *
+   * The two ids differ on purpose. A restore that copied `providerId` into both
+   * would satisfy "answeredBy is not null" and still be the original lie.
+   */
+  it('restores the endpoint that answered, distinct from the one addressed', () => {
+    const [entry] = entriesFromStored([
+      stored({
+        id: 'msg_1',
+        role: 'assistant',
+        parts: [{ kind: 'text', text: 'the answer' }],
+        providerId: 'home-workstation',
+        modelId: 'local-model',
+        answeredByProviderId: 'rented-gpu-box',
+        answeredByModelId: 'big-model',
+      }),
+    ]);
+
+    expect(entry?.kind).toBe('assistant');
+    const turn = entry?.kind === 'assistant' ? entry.turn : null;
+    expect(turn?.answeredBy).toEqual({ providerId: 'rented-gpu-box', modelId: 'big-model' });
+  });
+
+  /**
+   * The silence that must survive the reload too.
+   *
+   * Every row written before the answering columns existed looks like this, and
+   * `providerId` is sitting right there in the same object. Reading it would
+   * make the transcript claim, of every historical turn, that the selected
+   * endpoint answered it.
+   */
+  it('leaves a row that recorded no attribution unattributed, and does not read the selection', () => {
+    const [entry] = entriesFromStored([
+      stored({
+        id: 'msg_1',
+        role: 'assistant',
+        parts: [{ kind: 'text', text: 'the answer' }],
+        providerId: 'home-workstation',
+        modelId: 'local-model',
+      }),
+    ]);
+
+    const turn = entry?.kind === 'assistant' ? entry.turn : null;
+    expect(turn?.answeredBy).toBeNull();
+  });
+
+  /**
+   * A half-written row is no record.
+   *
+   * `AnswerProvenance` has no shape for "an endpoint whose model is unknown",
+   * and the only value lying around to fill the gap with is `modelId` — the
+   * model the user *selected*. Splicing the two together would manufacture a
+   * provenance that names an endpoint and a model that never met.
+   */
+  it('treats a half-recorded attribution as no attribution rather than borrowing the other half', () => {
+    const providerOnly = entriesFromStored([
+      stored({
+        id: 'msg_1',
+        role: 'assistant',
+        parts: [{ kind: 'text', text: 'a' }],
+        answeredByProviderId: 'rented-gpu-box',
+      }),
+    ])[0];
+    const modelOnly = entriesFromStored([
+      stored({
+        id: 'msg_2',
+        role: 'assistant',
+        parts: [{ kind: 'text', text: 'b' }],
+        answeredByModelId: 'big-model',
+      }),
+    ])[0];
+
+    expect(providerOnly?.kind === 'assistant' ? providerOnly.turn.answeredBy : 'not an assistant').toBeNull();
+    expect(modelOnly?.kind === 'assistant' ? modelOnly.turn.answeredBy : 'not an assistant').toBeNull();
   });
 });

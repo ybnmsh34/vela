@@ -45,6 +45,7 @@ import { memorySystemMessage } from '@/lib/memory-prompt';
 import { usePlatform } from '@/platform/PlatformProvider';
 import { NO_CAPABILITIES } from '@/platform/contract';
 import type {
+  AnswerProvenance,
   ChatCapabilities,
   ChatMessageInput,
   ChatStreamEvent,
@@ -66,6 +67,7 @@ import { PlatformError } from '@/platform/errors';
 import { subagentToolDefinition } from '@/runtime/subagent-toolkit';
 import { useMemoryStore } from '@/state/memory-store';
 
+import type { AnswerAttribution } from './notices';
 import { entriesFromStored, errorMessageOfTurn, partsOfTurn, statusOfTurn } from './stored-entries';
 import type { TurnAttachments } from './turn-attachments';
 import { EMPTY_TURN, isSettled, isTerminalEvent, reduceTurn, type TurnState } from './turn-stream';
@@ -252,6 +254,38 @@ export interface Conversation {
   retry: () => void;
   /** Whether the next turn runs through the agent runtime, and whether it may. */
   readonly agent: AgentMode;
+}
+
+/**
+ * **The one comparison of two provider ids in this feature, in the one file
+ * allowed to make it.**
+ *
+ * `no-provider-leak.test.ts` permits exactly this module to inspect a provider
+ * id — everything else in `features/conversation` may only pass one through —
+ * and the reason it names this module is that the user's selection already
+ * lives here. Deciding "did a different endpoint answer" is therefore this
+ * file's question, and what leaves it is a closed
+ * {@link AnswerAttribution}, which the wording layer switches over without ever
+ * seeing an id it has to reason about.
+ *
+ * The comparison itself is equality between two runtime strings. It never
+ * matches a literal, never consults a table of known backends, and adding a
+ * provider changes nothing about it — which is `conventions.md` §0.3 met in
+ * substance and not only in the letter of the scan.
+ *
+ * `addressed` is `null` before a model has been chosen. An attributed answer is
+ * still a fact worth stating then, so it is reported rather than suppressed —
+ * there is simply nothing for it to contradict.
+ */
+export function attributionOf(
+  answeredBy: AnswerProvenance | null,
+  addressed: string | null,
+): AnswerAttribution {
+  if (answeredBy === null) return { kind: 'unattributed' };
+  if (addressed === null) return { kind: 'attributedOnly', answered: answeredBy };
+  return answeredBy.providerId === addressed
+    ? { kind: 'asAddressed' }
+    : { kind: 'substituted', addressed, answered: answeredBy };
 }
 
 function defaultScheduler(run: () => void): void {
@@ -1093,8 +1127,21 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         role: 'assistant',
         parts,
         status: statusOfTurn(turn),
+        // Both, and they are not the same fact. `providerId`/`modelId` are what
+        // the user selected — the value this hook was handed as an option,
+        // which is all this row used to carry and which the schema documented
+        // as "which backend produced this message". It is not: the host may
+        // fail over to another configured endpoint, and then the row named one
+        // that never saw the prompt.
+        //
+        // `answeredBy*` is what the host reports actually answered. `null` when
+        // it did not say, never back-filled from the selection: a guess written
+        // into SQLite is indistinguishable from a fact afterwards, which is why
+        // this defect could not be corrected retroactively.
         providerId,
         modelId,
+        answeredByProviderId: turn.answeredBy?.providerId ?? null,
+        answeredByModelId: turn.answeredBy?.modelId ?? null,
         ...(turn.stopReason === null ? {} : { stopReason: turn.stopReason }),
         ...(errorMessage === null ? {} : { errorMessage }),
       });

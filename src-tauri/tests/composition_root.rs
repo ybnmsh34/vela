@@ -582,6 +582,9 @@ fn a_streamed_turn_can_be_persisted_and_read_back_with_its_reasoning_intact() {
             status: MessageStatus::Complete,
             provider_id: None,
             model_id: None,
+            // A user's own message was produced by no endpoint.
+            answered_by_provider_id: None,
+            answered_by_model_id: None,
             usage: Default::default(),
             stop_reason: None,
             error_message: None,
@@ -616,6 +619,8 @@ fn a_streamed_turn_can_be_persisted_and_read_back_with_its_reasoning_intact() {
             status: MessageStatus::Complete,
             provider_id: Some("my-box".into()),
             model_id: Some("fixture-model".into()),
+            answered_by_provider_id: Some("my-box".into()),
+            answered_by_model_id: Some("fixture-model".into()),
             usage: Default::default(),
             stop_reason: Some(vela_store::StopReason::EndTurn),
             error_message: None,

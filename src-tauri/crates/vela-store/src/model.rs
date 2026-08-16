@@ -391,9 +391,24 @@ pub struct Message {
     pub status: MessageStatus,
     /// Ordered. Reasoning keeps its position relative to the text it preceded.
     pub parts: Vec<ContentPart>,
-    /// Which backend produced this turn — `None` for user/system messages.
+    /// **Which backend the turn was addressed to** — the user's selection at
+    /// the moment they sent it. `None` for user/system messages.
+    ///
+    /// Not "which backend produced this turn", which is what this field's doc
+    /// used to say and what nothing ever guaranteed: the router may fail over to
+    /// another configured endpoint, and this value is the selection either way.
+    /// See [`Self::answered_by_provider_id`].
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// **Which backend actually produced the answer**, from
+    /// `vela_providers::AnswerProvenance`.
+    ///
+    /// `None` is **"not recorded"** — a row written before migration 6, a
+    /// message no endpoint produced, or a turn that arrived unattributed. It is
+    /// never "the same as [`Self::provider_id`]", and a reader that renders it
+    /// that way reintroduces the falsehood migration 6 exists to end.
+    pub answered_by_provider_id: Option<String>,
+    pub answered_by_model_id: Option<String>,
     pub usage: TokenUsage,
     pub stop_reason: Option<StopReason>,
     pub error_message: Option<String>,
@@ -453,8 +468,12 @@ pub struct NewMessage {
     pub role: MessageRole,
     pub status: MessageStatus,
     pub parts: Vec<ContentPart>,
+    /// What the user selected. See [`Message::provider_id`].
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// Who actually answered. See [`Message::answered_by_provider_id`].
+    pub answered_by_provider_id: Option<String>,
+    pub answered_by_model_id: Option<String>,
     pub usage: TokenUsage,
     pub stop_reason: Option<StopReason>,
     pub error_message: Option<String>,
@@ -469,6 +488,8 @@ impl NewMessage {
             parts: Vec::new(),
             provider_id: None,
             model_id: None,
+            answered_by_provider_id: None,
+            answered_by_model_id: None,
             usage: TokenUsage::default(),
             stop_reason: None,
             error_message: None,
@@ -503,6 +524,24 @@ impl NewMessage {
         self
     }
 
+    /// Record **who answered**, separately from [`Self::with_model`]'s "who was
+    /// asked".
+    ///
+    /// A separate builder rather than two more arguments on `with_model`,
+    /// because the two facts are gathered at different times by different
+    /// layers: the selection is known before the turn is sent, the attribution
+    /// only after it comes back. A caller that knows one and not the other must
+    /// be able to say so without inventing the other.
+    pub fn answered_by(
+        mut self,
+        provider_id: impl Into<String>,
+        model_id: impl Into<String>,
+    ) -> Self {
+        self.answered_by_provider_id = Some(provider_id.into());
+        self.answered_by_model_id = Some(model_id.into());
+        self
+    }
+
     pub fn with_usage(mut self, usage: TokenUsage) -> Self {
         self.usage = usage;
         self
@@ -531,6 +570,24 @@ impl NewMessage {
         if let Some(model_id) = &self.model_id {
             if model_id.trim().is_empty() {
                 return Err(StoreError::invalid("modelId", "must not be blank"));
+            }
+        }
+        // Same rule for the attribution: a blank string is a claim that an
+        // endpoint with no name answered. "Not recorded" is spelled `None`.
+        if let Some(provider_id) = &self.answered_by_provider_id {
+            if provider_id.trim().is_empty() {
+                return Err(StoreError::invalid(
+                    "answeredByProviderId",
+                    "must not be blank",
+                ));
+            }
+        }
+        if let Some(model_id) = &self.answered_by_model_id {
+            if model_id.trim().is_empty() {
+                return Err(StoreError::invalid(
+                    "answeredByModelId",
+                    "must not be blank",
+                ));
             }
         }
         Ok(())
@@ -1401,6 +1458,8 @@ mod tests {
             parts,
             provider_id: None,
             model_id: None,
+            answered_by_provider_id: None,
+            answered_by_model_id: None,
             usage: TokenUsage::default(),
             stop_reason: None,
             error_message: None,

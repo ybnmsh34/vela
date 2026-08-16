@@ -241,9 +241,14 @@ fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules(
         "memory is still the fourth migration"
     );
     assert_eq!(
-        SCHEMA_VERSION, 5,
+        MIGRATIONS[4].name, "project_workspace",
         "the project workspace landed on top of it as the fifth"
     );
+    // The count, spelled out so that adding a migration has to come past this
+    // line. `answering_endpoint` is the sixth: `messages` gains the columns that
+    // record which endpoint actually answered, separately from the one the user
+    // selected.
+    assert_eq!(SCHEMA_VERSION, 6);
 
     // The old feature is intact — the row, not just the table.
     let schedule = store.get_schedule(&schedule_id).unwrap();
@@ -270,8 +275,9 @@ fn a_database_from_before_the_memory_merge_gains_memory_and_keeps_its_schedules(
     };
     assert_eq!(
         ledger_after.keys().copied().collect::<Vec<_>>(),
-        vec![1, 2, 3, 4, 5]
+        vec![1, 2, 3, 4, 5, 6]
     );
+    assert_eq!(ledger_after[&6].name, "answering_endpoint");
     assert_eq!(ledger_after[&3].name, "schedules");
     assert_eq!(ledger_after[&4].name, "memory");
     assert_eq!(ledger_after[&5].name, "project_workspace");
@@ -368,8 +374,9 @@ fn a_database_from_before_the_projects_merge_gains_them_and_keeps_memory_and_sch
     };
     assert_eq!(
         ledger_after.keys().copied().collect::<Vec<_>>(),
-        vec![1, 2, 3, 4, 5]
+        vec![1, 2, 3, 4, 5, 6]
     );
+    assert_eq!(ledger_after[&6].name, "answering_endpoint");
     assert_eq!(ledger_after[&5].name, "project_workspace");
     for version in [1, 2, 3, 4] {
         assert_eq!(

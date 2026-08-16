@@ -49,7 +49,7 @@ const PROJECT_COLUMNS: &str = "p.id, p.name, p.description, p.system_prompt, p.c
 
 const MESSAGE_COLUMNS: &str = "id, conversation_id, seq, role, status, provider_id, model_id, \
      stop_reason, input_tokens, output_tokens, reasoning_tokens, cached_input_tokens, \
-     error_message, created_at, updated_at";
+     error_message, created_at, updated_at, answered_by_provider_id, answered_by_model_id";
 
 pub struct SqliteStore {
     connection: Mutex<Connection>,
@@ -251,6 +251,12 @@ fn read_message_head(row: &Row<'_>) -> rusqlite::Result<Message> {
         error_message: row.get(12)?,
         created_at: Timestamp::from_millis(row.get(13)?),
         updated_at: Timestamp::from_millis(row.get(14)?),
+        // Appended to `MESSAGE_COLUMNS` rather than inserted next to
+        // `provider_id`, because every index above is positional and moving one
+        // silently re-reads a different column. NULL for every row written
+        // before migration 6 — "not recorded", never "the same as provider_id".
+        answered_by_provider_id: row.get(15)?,
+        answered_by_model_id: row.get(16)?,
     })
 }
 
@@ -880,8 +886,9 @@ impl MessageRepository for SqliteStore {
             "INSERT INTO messages (
                  id, conversation_id, seq, role, status, provider_id, model_id, stop_reason,
                  input_tokens, output_tokens, reasoning_tokens, cached_input_tokens,
-                 error_message, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+                 error_message, created_at, updated_at,
+                 answered_by_provider_id, answered_by_model_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?15, ?16)",
             params![
                 id.as_str(),
                 input.conversation_id.as_str(),
@@ -897,6 +904,8 @@ impl MessageRepository for SqliteStore {
                 input.usage.cached_input_tokens,
                 input.error_message,
                 now.as_millis(),
+                input.answered_by_provider_id,
+                input.answered_by_model_id,
             ],
         )?;
 
@@ -916,6 +925,8 @@ impl MessageRepository for SqliteStore {
             parts: input.parts,
             provider_id: input.provider_id,
             model_id: input.model_id,
+            answered_by_provider_id: input.answered_by_provider_id,
+            answered_by_model_id: input.answered_by_model_id,
             usage: input.usage,
             stop_reason: input.stop_reason,
             error_message: input.error_message,
@@ -1976,6 +1987,70 @@ mod tests {
         assert_eq!(updated.message_count, 2);
         assert_eq!(updated.last_message_at, Some(second.created_at));
         assert_eq!(updated.updated_at, second.created_at);
+    }
+
+    /// **The two endpoints are stored separately and survive a read.**
+    ///
+    /// The fixture deliberately makes them *disagree*: the user selected
+    /// `local-llamacpp` and `hosted-openai` answered, which is the failover case
+    /// the whole change exists for. Asserting only that the answering columns
+    /// round-trip would pass on a store that wrote `provider_id` into both, so
+    /// each assertion names the value it expects and the last two pin the
+    /// disagreement itself.
+    #[test]
+    fn a_turn_records_who_answered_apart_from_who_was_asked() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let written = store
+            .append_message(
+                NewMessage::assistant(chat.clone(), vec![ContentPart::text("hi")])
+                    .with_model("local-llamacpp", "qwen3-8b")
+                    .answered_by("hosted-openai", "gpt-4o-mini"),
+            )
+            .unwrap();
+
+        // Read back from SQLite, not from the value `append_message` returned:
+        // a return value assembled in Rust proves nothing about the INSERT.
+        let loaded = store.get_message(&written.id).unwrap();
+        assert_eq!(loaded, written);
+        assert_eq!(loaded.provider_id.as_deref(), Some("local-llamacpp"));
+        assert_eq!(loaded.model_id.as_deref(), Some("qwen3-8b"));
+        assert_eq!(
+            loaded.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "the endpoint that answered, not the one addressed"
+        );
+        assert_eq!(loaded.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+        assert_ne!(loaded.answered_by_provider_id, loaded.provider_id);
+        assert_ne!(loaded.answered_by_model_id, loaded.model_id);
+    }
+
+    /// A turn nobody attributed stays unattributed through a round trip.
+    ///
+    /// The other half of the column's meaning: `None` must come back as `None`
+    /// and must not be quietly filled from the selection on the way out. Without
+    /// this, a store that coalesced the two on read would satisfy the test above
+    /// and still lie about every turn a host too old to attribute produced.
+    #[test]
+    fn an_unattributed_turn_does_not_acquire_an_attribution_on_the_way_back() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let written = store
+            .append_message(
+                NewMessage::assistant(chat.clone(), vec![ContentPart::text("hi")])
+                    .with_model("local-llamacpp", "qwen3-8b"),
+            )
+            .unwrap();
+
+        let loaded = store.get_message(&written.id).unwrap();
+        assert_eq!(loaded.provider_id.as_deref(), Some("local-llamacpp"));
+        assert_eq!(
+            loaded.answered_by_provider_id, None,
+            "unknown must stay unknown; the selection is not an answer"
+        );
+        assert_eq!(loaded.answered_by_model_id, None);
     }
 
     #[test]

@@ -78,6 +78,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "project_workspace",
         sql: include_str!("migrations/0005_project_workspace.sql"),
     },
+    Migration {
+        version: 6,
+        name: "answering_endpoint",
+        sql: include_str!("migrations/0006_answering_endpoint.sql"),
+    },
 ];
 
 /// The schema version this build produces and understands.
@@ -359,18 +364,22 @@ mod tests {
         let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
         assert_eq!(
             applied_now,
-            vec![4, 5],
+            vec![4, 5, 6],
             "only the steps this database has not seen may run against it"
         );
 
         let after = applied(&conn).unwrap();
         assert_eq!(
             after.keys().copied().collect::<Vec<_>>(),
-            vec![1, 2, 3, 4, 5]
+            vec![1, 2, 3, 4, 5, 6]
         );
         assert_eq!(after[&3].name, "schedules");
         assert_eq!(after[&4].name, "memory");
         assert_eq!(after[&5].name, "project_workspace");
+        // 6 belongs on this path, per the note above about spelling the list
+        // out: a pre-memory database's `messages` table lacks the
+        // answering-endpoint columns exactly as a fresh one would.
+        assert_eq!(after[&6].name, "answering_endpoint");
         assert_ne!(
             after[&3].checksum, after[&4].checksum,
             "two migrations sharing a checksum means one file is included twice"
@@ -403,7 +412,18 @@ mod tests {
     /// This is the case the previous test cannot make. That one starts at 3, so
     /// memory and the project workspace both run in the same call and a bug
     /// that applied them in the wrong order, or skipped one, could still leave
-    /// the database looking right. Starting at 4 isolates the single new step.
+    /// the database looking right.
+    ///
+    /// **Amendment.** "Starting at 4 isolates the single new step" is what this
+    /// said, and it stopped being true when `answering_endpoint` landed as 6: a
+    /// database at 4 now climbs two. The isolation this test still provides is
+    /// of the *project workspace's effect* — every assertion below is about its
+    /// seeded row and the two features it must not disturb — and the isolation
+    /// that was lost is restored one test down, by
+    /// [`a_database_at_five_gains_the_answering_columns_without_backfilling_them`],
+    /// which starts at 5 for the newest step the way this one started at 4 for
+    /// what was then the newest. A doc that keeps a claim the code stopped
+    /// supporting is the same defect this migration exists to fix, one layer up.
     #[test]
     fn a_database_migrated_before_projects_landed_gains_them_without_disturbing_memory() {
         let mut conn = fresh();
@@ -433,12 +453,16 @@ mod tests {
         assert_eq!(before.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
 
         let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
-        assert_eq!(applied_now, vec![5], "exactly one step was outstanding");
+        assert_eq!(
+            applied_now,
+            vec![5, 6],
+            "the steps this database has not seen, in order"
+        );
 
         let after = applied(&conn).unwrap();
         assert_eq!(
             after.keys().copied().collect::<Vec<_>>(),
-            vec![1, 2, 3, 4, 5]
+            vec![1, 2, 3, 4, 5, 6]
         );
         assert_eq!(after[&5].name, "project_workspace");
         for version in [1, 2, 3, 4] {
@@ -467,6 +491,110 @@ mod tests {
             )
             .expect("the upgrade must seed the default project");
         assert_eq!(default_name, crate::model::DEFAULT_PROJECT_NAME);
+    }
+
+    /// **What happens to the transcript rows a user already has.**
+    ///
+    /// Starting at 5 isolates the single newest step, the way the test above
+    /// started at 4 for what was then the newest.
+    ///
+    /// The rows written before migration 6 hold the endpoint the user
+    /// *selected*, because that is the value `use-conversation.ts` had and
+    /// passed. Nothing recorded who actually answered, and for a turn that
+    /// failed over the two differ. So the question this test settles is what the
+    /// upgrade is allowed to say about those rows, and the answer is **nothing**:
+    ///
+    ///   * `provider_id` / `model_id` are left exactly as they were, so no
+    ///     existing row changes meaning;
+    ///   * the new columns are NULL, meaning "not recorded".
+    ///
+    /// The assertion that carries the weight is the NULL one. Copying
+    /// `provider_id` across would look tidier and would be a fabricated claim —
+    /// it would assert, for every historical turn, that the selected endpoint
+    /// answered it, which is unknowable and is precisely the falsehood the
+    /// migration exists to stop. A backfill would also be undetectable
+    /// afterwards, since a copied value is indistinguishable from a recorded one.
+    #[test]
+    fn a_database_at_five_gains_the_answering_columns_without_backfilling_them() {
+        let mut conn = fresh();
+        let pre = &MIGRATIONS[..5];
+        assert_eq!(pre.last().unwrap().name, "project_workspace");
+        apply_list(&mut conn, pre, &FixedClock::new(1_000, 10)).unwrap();
+
+        // A transcript row exactly as the pre-migration build wrote one: the
+        // user picked `local-llamacpp`, and that is all the row knows. Whether
+        // `local-llamacpp` is also what answered is the fact nobody recorded.
+        conn.execute(
+            "INSERT INTO conversations (id, title, created_at, updated_at)
+             VALUES ('conv_old', 'before provenance', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages
+                 (id, conversation_id, seq, role, status, provider_id, model_id,
+                  created_at, updated_at)
+             VALUES ('msg_old', 'conv_old', 0, 'assistant', 'complete',
+                     'local-llamacpp', 'qwen2.5-coder', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        let applied_now = apply(&mut conn, &FixedClock::new(5_000, 10)).unwrap();
+        assert_eq!(applied_now, vec![6], "exactly one step was outstanding");
+        assert_eq!(applied(&conn).unwrap()[&6].name, "answering_endpoint");
+
+        let (selected_provider, selected_model, answered_provider, answered_model): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT provider_id, model_id, answered_by_provider_id, answered_by_model_id
+                 FROM messages WHERE id = 'msg_old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            selected_provider.as_deref(),
+            Some("local-llamacpp"),
+            "the selection this row already held must survive untouched"
+        );
+        assert_eq!(selected_model.as_deref(), Some("qwen2.5-coder"));
+        assert_eq!(
+            answered_provider, None,
+            "backfilling this from provider_id would fabricate an attribution \
+             for a turn nobody attributed"
+        );
+        assert_eq!(answered_model, None);
+
+        // The columns exist and accept a value — the upgrade produced a usable
+        // schema, not just two NULLs.
+        conn.execute(
+            "INSERT INTO messages
+                 (id, conversation_id, seq, role, status, provider_id, model_id,
+                  answered_by_provider_id, answered_by_model_id, created_at, updated_at)
+             VALUES ('msg_new', 'conv_old', 1, 'assistant', 'complete',
+                     'local-llamacpp', 'qwen2.5-coder',
+                     'hosted-openai', 'gpt-4o-mini', 2, 2)",
+            [],
+        )
+        .unwrap();
+        let answered: Option<String> = conn
+            .query_row(
+                "SELECT answered_by_provider_id FROM messages WHERE id = 'msg_new'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            answered.as_deref(),
+            Some("hosted-openai"),
+            "a row written after the upgrade can disagree with its own selection"
+        );
     }
 
     /// Every shipped migration must occupy its own version and its own file.
@@ -638,7 +766,7 @@ mod tests {
         .unwrap();
 
         let applied_now = apply(&mut conn, &FixedClock::default()).unwrap();
-        assert_eq!(applied_now, vec![3, 4, 5]);
+        assert_eq!(applied_now, vec![3, 4, 5, 6]);
 
         let names: Vec<String> = conn
             .prepare("SELECT name FROM projects ORDER BY name")

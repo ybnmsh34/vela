@@ -32,6 +32,9 @@ function response(overrides: Partial<ChatResponseBody> = {}): ChatResponseBody {
     usage: NO_USAGE,
     structured: null,
     degradations: [],
+    // Unattributed by default. A fixture that invented a provenance would make
+    // every test that does not care about it silently assert one.
+    answeredBy: null,
     ...overrides,
   };
 }
@@ -226,5 +229,41 @@ describe('the turn reducer', () => {
     expect(restored.reasoning).toBe('earlier thought');
     expect(restored.reasoningPhase).toBe('complete');
     expect(isSettled(restored)).toBe(true);
+  });
+
+  /**
+   * The host's attribution reaches the state the transcript is drawn from.
+   *
+   * Nothing above this point could have carried it: the reducer is the only
+   * path from the `done` event to anything the view or the store sees, so an
+   * arm that dropped `answeredBy` would leave every surface unable to disclose
+   * a substitution no matter how correct the host was.
+   */
+  it('carries who answered off the done event', () => {
+    const settled = reduceTurn(EMPTY_TURN, {
+      type: 'done',
+      response: response({
+        parts: [{ kind: 'text', text: 'hi' }],
+        answeredBy: { providerId: 'rented-gpu-box', modelId: 'big-model' },
+      }),
+    });
+    expect(settled.answeredBy).toEqual({ providerId: 'rented-gpu-box', modelId: 'big-model' });
+  });
+
+  /**
+   * And an unattributed turn stays unattributed.
+   *
+   * The reducer has no selection to fall back to and must not acquire one. This
+   * is the assertion that fails if `answeredBy` is ever given a default: a
+   * default here would be a fabricated claim at the exact point the real one
+   * should have been.
+   */
+  it('leaves an unattributed answer unattributed', () => {
+    const settled = reduceTurn(EMPTY_TURN, {
+      type: 'done',
+      response: response({ parts: [{ kind: 'text', text: 'hi' }] }),
+    });
+    expect(settled.answeredBy).toBeNull();
+    expect(EMPTY_TURN.answeredBy).toBeNull();
   });
 });

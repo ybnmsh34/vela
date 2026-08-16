@@ -76,8 +76,14 @@ pub struct MessageDto {
     pub role: MessageRole,
     pub status: MessageStatus,
     pub parts: Vec<ContentPartDto>,
+    /// The endpoint the turn was **addressed to** — the user's selection.
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    /// The endpoint that **actually answered**, from
+    /// `vela_providers::AnswerProvenance`. `null` is "not recorded", never
+    /// "the same as `providerId`" — see `vela_store::Message`.
+    pub answered_by_provider_id: Option<String>,
+    pub answered_by_model_id: Option<String>,
     pub usage: TokenUsage,
     pub stop_reason: Option<StopReason>,
     pub error_message: Option<String>,
@@ -96,6 +102,8 @@ impl From<Message> for MessageDto {
             parts: message.parts.iter().map(ContentPartDto::from).collect(),
             provider_id: message.provider_id,
             model_id: message.model_id,
+            answered_by_provider_id: message.answered_by_provider_id,
+            answered_by_model_id: message.answered_by_model_id,
             usage: message.usage,
             stop_reason: message.stop_reason,
             error_message: message.error_message,
@@ -119,6 +127,12 @@ pub struct StoreAppendMessageReq {
     pub provider_id: Option<String>,
     #[serde(default)]
     pub model_id: Option<String>,
+    /// Who actually answered. Omitted means "not recorded", which is what a
+    /// caller that genuinely does not know must send — never the selection.
+    #[serde(default)]
+    pub answered_by_provider_id: Option<String>,
+    #[serde(default)]
+    pub answered_by_model_id: Option<String>,
     #[serde(default)]
     pub usage: TokenUsage,
     #[serde(default)]
@@ -215,6 +229,14 @@ pub fn append_message(store: &dyn VelaStore, req: StoreAppendMessageReq) -> IpcR
         .with_usage(req.usage);
     input.provider_id = req.provider_id.filter(|id| !id.trim().is_empty());
     input.model_id = req.model_id.filter(|id| !id.trim().is_empty());
+    // Blank folds to "not recorded", exactly as the selection does. A blank
+    // string would otherwise be stored as an attribution to an endpoint with no
+    // name, which `NewMessage::validate` refuses anyway — this makes the
+    // renderer's `''` mean the same thing as its `null` rather than a 400.
+    input.answered_by_provider_id = req
+        .answered_by_provider_id
+        .filter(|id| !id.trim().is_empty());
+    input.answered_by_model_id = req.answered_by_model_id.filter(|id| !id.trim().is_empty());
     input.stop_reason = req.stop_reason;
     input.error_message = req.error_message;
 
@@ -357,6 +379,8 @@ mod tests {
             status: MessageStatus::Complete,
             provider_id: None,
             model_id: None,
+            answered_by_provider_id: None,
+            answered_by_model_id: None,
             usage: TokenUsage::default(),
             stop_reason: None,
             error_message: None,
@@ -412,6 +436,8 @@ mod tests {
                 status: MessageStatus::Complete,
                 provider_id: Some("llamacpp".into()),
                 model_id: Some("qwen".into()),
+                answered_by_provider_id: Some("llamacpp".into()),
+                answered_by_model_id: Some("qwen".into()),
                 usage: TokenUsage {
                     output_tokens: Some(12),
                     reasoning_tokens: Some(266),

@@ -150,9 +150,9 @@ pub use google::wire::base64_decode;
 pub use google::{GoogleOptions, GoogleProvider};
 pub use http::{HttpTransport, ReqwestTransport};
 pub use model::{
-    CacheHints, ChatMessage, ChatRequest, ChatResponse, ContentPart, ContextStrategy, Degradation,
-    MalformedToolCall, MessageRole, ReasoningRequest, ResponseFormat, Sampling, SchemaMismatch,
-    StopReason, TokenUsage, ToolCallOutcome, ToolChoice, ToolDefinition,
+    AnswerProvenance, CacheHints, ChatMessage, ChatRequest, ChatResponse, ContentPart,
+    ContextStrategy, Degradation, MalformedToolCall, MessageRole, ReasoningRequest, ResponseFormat,
+    Sampling, SchemaMismatch, StopReason, TokenUsage, ToolCallOutcome, ToolChoice, ToolDefinition,
 };
 pub use openai_compatible::wire::base64_encode;
 pub use openai_compatible::{OpenAiCompatibleProvider, ProviderOptions};

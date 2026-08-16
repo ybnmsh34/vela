@@ -24,6 +24,7 @@
  */
 
 import type {
+  AnswerProvenance,
   ChatError,
   ChatStreamEvent,
   ContentPart,
@@ -63,6 +64,16 @@ export interface TurnState {
   /** Settled tool calls, including the malformed ones the host refused to run. */
   readonly outcomes: readonly ToolCallOutcome[];
   readonly degradations: readonly Degradation[];
+  /**
+   * **Which endpoint produced this answer**, or `null` when the host did not
+   * say.
+   *
+   * `null` is "unattributed" and must never be rendered, stored or compared as
+   * "the endpoint the user selected". A turn addressed to one endpoint can be
+   * answered by another, and reading silence as agreement is what made the
+   * whole surface report the wrong one.
+   */
+  readonly answeredBy: AnswerProvenance | null;
   /** `null` until the endpoint reports usage — many never do. */
   readonly usage: TokenUsage | null;
   readonly stopReason: StopReason | null;
@@ -87,6 +98,7 @@ export const EMPTY_TURN: TurnState = {
   toolProgress: [],
   outcomes: [],
   degradations: [],
+  answeredBy: null,
   usage: null,
   stopReason: null,
   error: null,
@@ -171,6 +183,11 @@ export function reduceTurn(state: TurnState, event: ChatStreamEvent): TurnState 
         reasoningPhase: settledReasoningPhase(finalReasoning, unterminated),
         outcomes: event.response.toolCalls,
         degradations: event.response.degradations,
+        // Taken verbatim, including `null`. There is nothing sensible to fall
+        // back to: the reducer does not know what the user selected, and if it
+        // did, substituting it here would turn "the host did not say" into a
+        // claim that it did.
+        answeredBy: event.response.answeredBy,
         usage: hasReportedUsage(event.response.usage) ? event.response.usage : state.usage,
         stopReason: event.response.stopReason,
         error: null,

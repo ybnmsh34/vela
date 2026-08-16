@@ -70,6 +70,22 @@
  *   green as a parser that read it and found nothing wrong, which is precisely
  *   the failure being fixed. A mis-rooted read throws out of `readdirSync` for
  *   the same reason.
+ *
+ * ### The third defect: a refusal that YAML quoting walked straight past
+ *
+ * The two refusals above took the `uses:` value as `(\S+)`, the raw token, and a
+ * raw token carries its quotes. `uses: "./.github/actions/foo"` captured
+ * `"./.github/actions/foo"` — a string beginning `"`, not `./` — so it matched
+ * neither `startsWith('./')` nor `/\.ya?ml@/u`, fell off the end of
+ * {@link refuseUnreadableUses}, and was allowed. Measured, not assumed: with
+ * that one line added to `ci.yml`'s `static` job, this file was 17/17 green
+ * twice over, and green again with `'…'`. Unquoted, the same line is refused.
+ * A composite action in this repository, whose `run:` steps this reader cannot
+ * see, got past the guard for it purely because somebody quoted the path.
+ *
+ * The value is now parsed rather than tokenised — see {@link usesValue}. Nothing
+ * about which targets are refused changed; only whether the quoting could hide
+ * one from the arms that refuse it.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -307,6 +323,135 @@ describe('the local gate is a superset of the remote one', () => {
   });
 });
 
+describe('a uses: is refused on what it names, not on how it is quoted', () => {
+  // The third defect in the header, held down. `refuseUnreadableUses` is called
+  // on every real workflow by `readWorkflowSurface`, so a refusal that misfires
+  // takes the whole file down at module load and the tests above never run —
+  // which is exactly what the unquoted control does today, and exactly what the
+  // quoted forms failed to do. These cases put single lines through the same
+  // function, because whether a `uses:` is readable is a property of the line.
+  //
+  // Every quoting below is ordinary YAML. The runner resolves `"./x"`, `'./x'`
+  // and `./x` to one target, so all three have to reach one verdict here.
+
+  /** One step, spelled the way a workflow spells it. */
+  const step = (written: string): string => `      - uses: ${written}`;
+
+  /** The same step, put through the refusal. */
+  function refuse(written: string): () => void {
+    return (): void => {
+      refuseUnreadableUses({
+        file: 'probe.yml',
+        text: ['jobs:', '  probe:', '    steps:', step(written)].join('\n'),
+      });
+    };
+  }
+
+  it.each([
+    { quoting: 'unquoted', written: './.github/actions/foo' },
+    { quoting: 'double-quoted', written: '"./.github/actions/foo"' },
+    { quoting: 'single-quoted', written: "'./.github/actions/foo'" },
+    { quoting: 'double-quoted, with a trailing comment', written: '"./.github/actions/foo" # bundle' },
+  ])('refuses a local composite action written $quoting', ({ written }) => {
+    // The message is asserted, not merely the throw, and it is asserted on the
+    // *unquoted* path. A guard that threw while still holding `"./…"` would be
+    // refusing something it had not managed to read.
+    expect(
+      refuse(written),
+      'a composite action in this repository runs steps this reader never opens. ' +
+        'Whether it is refused cannot depend on the quoting, which the runner ' +
+        'does not see: quoting it was enough to walk past this guard.',
+    ).toThrow('runs "./.github/actions/foo", a composite action in this repository');
+  });
+
+  it('refuses a composite action reached by a parent-relative path', () => {
+    expect(refuse("'../actions/foo'")).toThrow(
+      'runs "../actions/foo", a composite action in this repository',
+    );
+  });
+
+  it.each([
+    { quoting: 'unquoted', written: 'org/repo/.github/workflows/x.yml@main' },
+    { quoting: 'double-quoted', written: '"org/repo/.github/workflows/x.yml@main"' },
+    { quoting: 'single-quoted', written: "'org/repo/.github/workflows/x.yml@main'" },
+  ])('refuses a remote reusable workflow written $quoting', ({ written }) => {
+    // This arm was never blind to quoting — `/\.ya?ml@/u` is unanchored and
+    // matches inside the quotes — but it *named* the quoted string back at the
+    // reader. Asserting the unquoted name is what makes this row a test of the
+    // parse rather than a second copy of the arm.
+    expect(refuse(written)).toThrow(
+      'calls "org/repo/.github/workflows/x.yml@main", a reusable workflow in another repository',
+    );
+  });
+
+  it.each([
+    { quoting: 'unquoted', written: './.github/workflows/reusable.yml', names: './.github/workflows/reusable.yml' },
+    { quoting: 'double-quoted', written: '"./.github/workflows/reusable.yml"', names: './.github/workflows/reusable.yml' },
+    { quoting: 'single-quoted', written: "'./.github/workflows/reusable.yaml'", names: './.github/workflows/reusable.yaml' },
+    { quoting: 'unquoted, with a trailing comment', written: './.github/workflows/reusable.yml # local', names: './.github/workflows/reusable.yml' },
+  ])('reads a local reusable workflow written $quoting and allows it', ({ written, names }) => {
+    // Two assertions, because "it did not throw" on its own is also what a
+    // reader that understood nothing would report — which is exactly how this
+    // case passed before the parse existed: it fell off the end of every arm
+    // rather than matching the one that admits it. The first assertion says
+    // what was read; the case below says the admission is a decision.
+    expect(usesValue(step(written))).toEqual({ kind: 'target', target: names });
+    expect(
+      refuse(written),
+      'a local reusable workflow is a file in this directory. Enumerating the ' +
+        'directory already read it and its jobs are already in JOBS.',
+    ).not.toThrow();
+  });
+
+  it('refuses a relative path into the workflows directory that is not a workflow', () => {
+    // The discriminator for the case above. A quoted relative path is now read
+    // far enough to be *tested* against the local-reusable-workflow shape, so
+    // one that does not have it is refused. Before the parse both landed in the
+    // same place — allowed, unexamined — and no assertion could separate them.
+    expect(refuse('"./.github/workflows/helper.sh"')).toThrow(
+      'runs "./.github/workflows/helper.sh", a composite action in this repository',
+    );
+  });
+
+  it('stops an unquoted uses: at the comment instead of swallowing it', () => {
+    // `(\S+)` got this right and the replacement has to keep it. A parser that
+    // took the rest of the line would refuse `./.github/actions/foo # bundle`,
+    // naming a path that is not in the file.
+    expect(refuse('./.github/actions/foo # bundle')).toThrow(
+      'runs "./.github/actions/foo", a composite action in this repository',
+    );
+  });
+
+  it('refuses a uses: whose opening quote never closes', () => {
+    // Unquoted this exact target is *allowed* — it is the local reusable
+    // workflow above — so neither guess is safe. Stripping the stray quote
+    // admits a target the runner may never resolve; keeping the value raw is
+    // the original defect verbatim, a leading `"` matching no arm. It is
+    // refused instead, and the line is named.
+    expect(
+      refuse('"./.github/workflows/reusable.yml'),
+      'a value this reader cannot read is not a value it may assume is harmless',
+    ).toThrow('has a "uses:" whose quote never closes');
+  });
+
+  it.each([
+    { quoting: 'unquoted', written: 'actions/checkout@v4', names: 'actions/checkout@v4' },
+    { quoting: 'double-quoted', written: '"pnpm/action-setup@v4"', names: 'pnpm/action-setup@v4' },
+    { quoting: 'single-quoted', written: "'dtolnay/rust-toolchain@stable'", names: 'dtolnay/rust-toolchain@stable' },
+    { quoting: 'unquoted, with a trailing comment', written: 'Swatinem/rust-cache@v2 # cache', names: 'Swatinem/rust-cache@v2' },
+  ])('reads a third-party action written $quoting and allows it', ({ written, names }) => {
+    // The refusal is two named shapes, not a blanket one: enumerating what a
+    // third-party action runs is neither this file's business nor within its
+    // reach, and every workflow in this directory is full of them. Widening
+    // either arm to cover these is caught by `ci.yml` itself at module load —
+    // which is why the parse is asserted here as well. "Did not throw" is the
+    // half of this case that the real file already proves; what was read is the
+    // half that only these rows can say.
+    expect(usesValue(step(written))).toEqual({ kind: 'target', target: names });
+    expect(refuse(written)).not.toThrow();
+  });
+});
+
 /* -------------------------------------------------------------------------- */
 /* the directory                                                              */
 /* -------------------------------------------------------------------------- */
@@ -358,6 +503,57 @@ function filesUnder(absolute: string, prefix: string, into: string[]): void {
 }
 
 /**
+ * What one `uses:` line names, once YAML quoting is off.
+ *
+ * `unterminated` is a case of its own because the alternative is to guess, and
+ * both guesses are wrong in the direction that matters. This is a line reader,
+ * not a YAML parser: given `uses: "./x` it cannot know whether the scalar
+ * continues on the next line or the closing quote was simply dropped. Strip the
+ * opening quote and it refuses a target the runner may never see; leave the
+ * value raw and it is back to the defect in the header, since a leading `"`
+ * matches none of the arms in {@link refuseUnreadableUses}. So the ambiguity is
+ * carried out to the call site, which refuses it and says which line to fix.
+ */
+type UsesValue =
+  | { readonly kind: 'target'; readonly target: string }
+  | { readonly kind: 'unterminated'; readonly raw: string };
+
+/**
+ * The target of a `uses:` key, unquoted — or `undefined` when the line is not a
+ * `uses:` key, which is most of them.
+ *
+ * This used to be `(\S+)` inline, and the quotes were the hole; see the third
+ * defect in the header. YAML lets any scalar be quoted, `'…'` and `"…"` alike,
+ * and the runner does not care which, so neither may this.
+ *
+ * The unquoted form still stops at the first whitespace, because that is where a
+ * plain YAML scalar ends: `uses: ./x # why` names `./x`, not `./x # why`. The
+ * quoted form ends at the closing quote for the same reason — the comment is
+ * outside it.
+ *
+ * A `\"` escape inside a double-quoted scalar would cut the value short here. It
+ * is not handled because no action path contains one, and the error is in the
+ * safe direction: a truncated relative path is still relative, so it is still
+ * refused.
+ */
+function usesValue(line: string): UsesValue | undefined {
+  const rest = /^[ \t]*-?[ \t]*uses:[ \t]*(.*)$/u.exec(line)?.[1];
+  if (rest === undefined) return undefined;
+
+  const value = rest.trim();
+  if (value === '') return undefined;
+
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    const close = value.indexOf(quote, 1);
+    if (close === -1) return { kind: 'unterminated', raw: value };
+    return { kind: 'target', target: value.slice(1, close) };
+  }
+
+  return { kind: 'target', target: /^\S+/u.exec(value)?.[0] ?? '' };
+}
+
+/**
  * A step or job that reaches commands this reader cannot see, refused by name.
  *
  * `uses:` is how a workflow runs somebody else's steps. Most of those are
@@ -372,13 +568,30 @@ function filesUnder(absolute: string, prefix: string, into: string[]): void {
  *
  * A relative path *to a workflow file in this directory* is the local reusable
  * workflow case and is allowed through: enumerating the directory already read
- * it, and its jobs are already in {@link JOBS} under their own file's name.
+ * it, and its jobs are already in {@link JOBS} under their own file's name. That
+ * is an allowance this reader decides, not one it falls into — the shape is
+ * matched, then admitted.
+ *
+ * Every arm below judges the *unquoted* value from {@link usesValue}. Quoting is
+ * invisible to the runner and used to be invisible to these arms, which is the
+ * third defect in the header.
  */
 function refuseUnreadableUses(workflow: Workflow): void {
   for (const [index, line] of workflow.text.split(/\r?\n/u).entries()) {
-    const target = /^[ \t]*-?[ \t]*uses:[ \t]*(\S+)/u.exec(line)?.[1];
-    if (target === undefined) continue;
+    const uses = usesValue(line);
+    if (uses === undefined) continue;
     const at = `.github/workflows/${workflow.file}:${String(index + 1)}`;
+
+    if (uses.kind === 'unterminated') {
+      throw new Error(
+        `${at} has a "uses:" whose quote never closes: ${uses.raw}. This reader ` +
+          'cannot tell what it names, and a target it cannot read is not a target ' +
+          'it may assume is harmless. Write the value on one line, with matching ' +
+          'quotes or none.',
+      );
+    }
+
+    const { target } = uses;
 
     if (target.startsWith('./') || target.startsWith('../')) {
       const local = target.replace(/^\.\//u, '');

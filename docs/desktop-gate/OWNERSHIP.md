@@ -33,6 +33,7 @@ first, or the reclaim silently does not happen.
 | `src-tauri/crates/vela-privatefs/**`, `src-tauri/crates/vela-store/src/location.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/fatal.rs` | Wave 1 / B4a | 2026-08-15 | app-data owner-only; deny-ACE reading, walk error attribution, pre-window fatal dialog |
 | `src/features/models/EndpointsPanel.test.tsx`, `src/app/memory-payload.test.tsx`, `src/app/modal-containment.test.tsx` | Wave 1 / flake | 2026-08-15 | the load artefact, now named: three jsdom files timing out at the default under CPU+IO contention |
 | `src/platform/capability-surface.ts`, `src/app/shell/window-controls.test.tsx`, `src/platform/project-host-parity.test.ts` | Wave 1 / caps | 2026-08-15 | both capability guards read one filename out of a directory the build reads whole; the union is now derived from `tauri.conf.json` |
+| `src/platform/verify-covers-ci.test.ts` | Wave 1 / caps | 2026-08-16 | reclaimed after `e585eb9`: `refuseUnreadableUses` took the `uses:` value as a raw token, so YAML quoting hid a local composite action from every arm that refuses one |
 
 ## Released
 

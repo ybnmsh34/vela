@@ -29,6 +29,7 @@ import {
 } from 'react';
 
 import { groupConversationsByRecency } from '@/lib/conversation-groups';
+import { useMcpStore } from '@/state/mcp-store';
 import { useMemoryStore } from '@/state/memory-store';
 import { useSkillsStore } from '@/state/skills-store';
 import { useSchedulesStore } from '@/state/schedules-store';
@@ -84,6 +85,10 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // and this one may not import it either.
   const setSchedulesOpen = useSchedulesStore((state) => state.setOpen);
   const setProjectsOpen = useProjectStore((state) => state.setOpen);
+  // And the same seam once more, for the pane that had none at all: `mcp_list_tools`
+  // was served, registered and allowlisted with nothing a user could press on
+  // the other end. This boolean is that press.
+  const setMcpOpen = useMcpStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -232,6 +237,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setMcpOpen(true);
+          }}
+          aria-label="MCP servers"
+        >
+          <McpIcon />
+        </button>
       </nav>
     );
   }
@@ -321,6 +336,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
           <span>Projects</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setMcpOpen(true);
+          }}
+        >
+          <McpIcon />
+          <span>MCP servers</span>
         </button>
       </div>
 
@@ -483,6 +508,29 @@ function ProjectsIcon() {
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * A hub with two spokes: this build's MCP is one client reaching out to several
+ * separate server processes, which is what the pane behind it lists. Drawn from
+ * the same 16-unit box and 1.4 stroke as the rest, in `currentColor` only — no
+ * icon in this file names a colour.
+ */
+function McpIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <circle cx="4" cy="8" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="4.4" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="11.6" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M5.6 7.2 10.5 5M5.6 8.8 10.5 11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
       />
     </svg>
   );

@@ -1,0 +1,174 @@
+/* Every colour composition in this file is one `SkillsPanel.module.css` already
+   ships, and no rule here declares a foreground/ground pair that is not already
+   in the table `src/styles/contrast.test.ts` audits. No token value is
+   introduced: the pane is drawn entirely from the existing set. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* Same rule the other dialogs keep: a pane taller than a scaled-up window
+     overflows downwards into a scroll rather than symmetrically off both edges,
+     where its heading could not be reached. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-overlay-md), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.intro,
+.note,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.footnote {
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+/* Text on the danger tint rather than danger-coloured text on the dialog, the
+   same composition `SkillsPanel.module.css` ships and for the reason it records:
+   `--vela-danger` is audited against `--vela-surface`, `--vela-chrome` and its
+   own tint, never against `--vela-surface-raised`. */
+.error {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-danger-bg);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.body,
+.section,
+.server {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.section {
+  gap: var(--vela-space-3);
+}
+
+.sectionLabel {
+  margin: 0;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.serverName {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Bounded so a machine with many servers cannot push the footnote — the
+     sentence saying Vela cannot call these tools — off the bottom of the
+     window. */
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  width: 100%;
+  padding: var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  text-align: left;
+}
+
+/* A server that is not serving, or a tool the catalogue withheld. It is a row
+   like any other — the whole point is that it does not vanish — and the amber
+   edge says why. An *edge* rather than a fill, for the reason
+   `SkillsPanel.module.css` records: a fill would put every other colour in the
+   row onto a ground `contrast.test.ts` does not audit them against, and the
+   sentence in `.rowProblem` is what actually carries the meaning. */
+.rowBroken {
+  border-left: 3px solid var(--vela-warning);
+}
+
+.rowName {
+  font-weight: var(--vela-weight-medium);
+}
+
+.rowDescription {
+  color: var(--vela-text-muted);
+  line-height: var(--vela-leading-ui);
+}
+
+.rowProblem {
+  color: var(--vela-warning);
+  line-height: var(--vela-leading-ui);
+}
+
+/* Deliberately declares no colour: it inherits `.row`'s, so this rule states a
+   typeface and nothing about contrast. A `color` here would be a composition
+   the table has not measured. */
+.toolName {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: var(--vela-tracking-code);
+  overflow-wrap: anywhere;
+}

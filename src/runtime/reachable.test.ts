@@ -91,29 +91,41 @@ const NOT_SHIPPED = new Map<string, string>([
 /**
  * Modules that are off the graph and **should not be** — the debt, named.
  *
- * This is the list that must shrink. Every entry is a module this repo built,
- * documented and tested, behind a host command that is registered and served,
- * with nothing a user can press on the other end — the defect this whole guard
- * is about, sitting in the tree with a date on it rather than sitting in the
- * tree invisibly.
+ * **It is empty**, and that is a fact about the tree rather than a decision to
+ * stop tracking: the last entry was `src/data/mcp-repository.ts`, and it went
+ * when `src/features/mcp/` and the `<McpSurface />` line in `src/app/App.tsx`
+ * gave `mcp_list_tools` a control a user can press. Leaving the map in place
+ * empty is deliberate — the mechanism below is what makes the next orphan a
+ * named entry instead of an invisible one, and deleting the map would take the
+ * mechanism with it.
+ *
+ * Every entry is a module this repo built, documented and tested, behind a host
+ * command that is registered and served, with nothing a user can press on the
+ * other end — the defect this whole guard is about, sitting in the tree with a
+ * date on it rather than sitting in the tree invisibly.
  *
  * **It is asserted in both directions too**, and that is the point of splitting
  * it from `NOT_SHIPPED`: when somebody wires one of these up, this file goes
  * **red** and the only way to green is to delete the entry. An exemption that
  * quietly stops applying is how the comment this map replaced came to overstate
  * its own debt by one module for a whole wave.
+ *
+ * ## What that redness proves, and the notch it is narrower than
+ *
+ * Stated because the mcp entry's own wording promised more than the assertion
+ * that removed it can deliver. It read "delete this entry when a user can press
+ * something that reaches `toolCatalogue()`" — but what actually reddens this
+ * file is one `import` from a module on the graph. A wiring that imported
+ * `mcp-repository.ts` and called nothing would have gone red in exactly the same
+ * way, and deleting the entry would then have recorded a surface that does not
+ * exist. **Reachability of a file is not reachability of a behaviour**, and no
+ * import walk can tell the two apart. The behavioural half is
+ * `src/app/mcp-reachable.test.tsx`, which drives `<App />` through the sidebar
+ * control and asserts on something only `toolCatalogueOf` could have decided —
+ * the same division of labour this file's header draws with
+ * `src/app/composition-root.test.tsx`.
  */
-const AWAITING_A_SURFACE = new Map<string, string>([
-  [
-    'src/data/mcp-repository.ts',
-    'the renderer’s door to `mcp_list_tools`, which `src-tauri/src/ipc/mcp.rs` ' +
-      'serves, `src-tauri/src/lib.rs` registers and `src-tauri/src/ipc/mod.rs` ' +
-      'allowlists. Its only importer in the whole tree is its own test. There is ' +
-      'no `src/features/mcp/` — no pane, no control, no store — so wiring it is a ' +
-      'surface, not a mount, and it is not this branch’s change. Delete this entry ' +
-      'when a user can press something that reaches `toolCatalogue()`',
-  ],
-]);
+const AWAITING_A_SURFACE = new Map<string, string>([]);
 
 /** `.ts`/`.tsx` under a directory, recursively, tests excluded. */
 function shippingModules(directory: string): string[] {

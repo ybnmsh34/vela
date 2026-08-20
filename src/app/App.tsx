@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react';
 import { createSandboxRepository } from '@/data/sandbox-repository';
 import { CanvasSurface } from '@/features/canvas';
 import { ConversationSurface } from '@/features/conversation';
+import { McpSurface } from '@/features/mcp';
 import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
 import { SkillsSurface } from '@/features/skills';
@@ -54,6 +55,17 @@ export function App({ adapter }: AppProps) {
             line and the sidebar button are the joint. */}
         <SchedulesSurface />
         <ProjectsSurface />
+        {/* The sixth joint, and the last of the three the audit called
+            "host-complete and renderer-absent". `mcp_list_tools` is served by
+            `src-tauri/src/ipc/mcp.rs`, registered in `src-tauri/src/lib.rs`,
+            allowlisted in `src-tauri/src/ipc/mod.rs` and proven against a real
+            child process over real pipes — and until this line the only importer
+            of `src/data/mcp-repository.ts` anywhere in the tree was that
+            repository's own test. `src/runtime/reachable.test.ts` carried it in
+            `AWAITING_A_SURFACE`; this line is why that entry is gone.
+            `src/app/mcp-reachable.test.tsx` is what says so, and fails if this
+            line goes. */}
+        <McpSurface />
       </KeyboardProvider>
     </PlatformProvider>
   );

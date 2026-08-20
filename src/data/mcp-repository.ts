@@ -19,10 +19,34 @@
  *
  * ## What it does not do
  *
- * It does not execute anything. Calling a tool is the harness contract's
- * `ToolExecutor`, which is not built — see the report for this track. This
- * repository can say what tools exist and hand them to a turn; nothing here
- * runs one.
+ * It does not execute anything. This repository can say what tools exist and
+ * put them in the shape a turn takes; nothing here runs one.
+ *
+ * **This paragraph used to blame the wrong missing piece**, and the correction
+ * is kept rather than quietly swapped because the wrong version was load-bearing
+ * elsewhere. It said calling a tool is the harness contract's `ToolExecutor`,
+ * "which is not built". `ToolExecutor` **is** built and runs on every agent
+ * turn: `createSubagentToolkit` in `src/runtime/subagent-toolkit.ts` supplies
+ * `toolsFor`, `createAgentRuntime` in `src/runtime/app-runtime.ts` hands it to
+ * `createHarnessRuntime`, `harness-runtime.ts` puts it on every run's services,
+ * and `agent-loop-harness.ts` calls `services.tools.execute`. Re-verified at
+ * this commit.
+ *
+ * What is genuinely absent is narrower and worse: **there is no command named
+ * "mcp_call_tool"** — a grep for it over src and src-tauri is empty at this
+ * commit — so no executor has anything to dispatch an MCP tool call *to*, and
+ * the only callers of `McpConnection::call_tool` are in
+ * `src-tauri/crates/vela-mcp/tests/stdio_end_to_end.rs`. `mcp_list_tools` is the
+ * only MCP command in `COMMAND_ALLOWLIST`.
+ *
+ * That is why {@link McpRepository.toolCatalogue} is not wired into a turn.
+ * `ChatSendReq.tools` exists in `src/platform/contract.ts` and
+ * `StreamTurnRequest` in `src/data/chat-repository.ts` has no field to carry it,
+ * so the ordinary chat path could not offer these tools even if it wanted to —
+ * and offering a model a tool nothing can execute is the failure this file's
+ * `toolCatalogue` doc already refuses for unavailable servers, one level up.
+ * `src/features/mcp/McpPanel.tsx` shows the catalogue to the *user* instead, and
+ * says on screen that Vela cannot call one.
  */
 
 import type { PlatformAdapter } from '@/platform/adapter';

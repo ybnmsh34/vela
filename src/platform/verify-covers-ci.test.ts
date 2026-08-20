@@ -114,6 +114,70 @@
  * is the realistic version of this, not a contrived one. `verify` is then looser
  * than CI, which is the one relationship this file exists to forbid.
  *
+ * ## Defects seven to ten: the fix for five and six carried the class down
+ *
+ * Measured on the tree that already carried the fixes above, each twice. Every
+ * one of the four is the same shape as everything before it — **a question
+ * asked about one spelling, one position or one half, and not about the
+ * equivalent one next door.** Three of them are literally "this is refused
+ * here, and the identical thing is admitted there".
+ *
+ * ### Defect seven: a gate row's two halves were never checked against each other
+ *
+ * A {@link CiGate} row is two halves answering two different questions. `ci` is
+ * compared with the workflows by equality, so `unaccounted` forces it to track
+ * whatever CI runs. `runs` is a predicate asked of the verify chain. Nothing
+ * asked whether they were still about the same command. So: strengthen CI's
+ * build gate to `cargo build --workspace --locked --all-targets`, update the
+ * row's `ci` because the accounting check makes you, leave `runs` describing the
+ * command CI stopped running — **91/91 green**, with `pnpm verify` running
+ * strictly less than CI. Note what this needed: no unusual YAML, no shell trick,
+ * no quoting. It is the ordinary consequence of strengthening a CI gate, which
+ * is a thing people do. The fix is {@link rowDrift}: a row's predicate must
+ * accept the row's own command, and the one row where the halves are meant to
+ * differ says so with `delegatesTo` and has to earn it three ways.
+ *
+ * ### Defect eight: `run:` refused a GitHub expression and `uses:` did not
+ *
+ * `run:` has refused `${{ … }}` since defect four, on the stated grounds that
+ * "what it runs is not in this file". The identical unreadable value in a
+ * `uses:` was admitted without comment — it starts with neither `./` nor `../`
+ * and matches no `.yml@`, so every arm of {@link refuseUses} decided a target it
+ * had never read. `uses: ${{ env.PROBE_ACTION }}` on two steps: **91/91 green**.
+ * Whether GitHub would run that step is not the question, for the same reason
+ * given for the quoted key below: the value is not in the file, so a reader that
+ * cannot see it must refuse rather than report that it found nothing harmful.
+ *
+ * ### Defect nine: the shell was refused on the step and admitted as a default
+ *
+ * A step whose `shell:` this reader cannot split is refused, because `&&` and
+ * `;` mean nothing in a Python body. `defaults:` was listed in
+ * {@link TOP_LEVEL_KEYS} as a key this reader "knows" — and never read. Three
+ * lines at the top of the file:
+ *
+ *     defaults:
+ *       run:
+ *         shell: python
+ *
+ * set that same shell for every step in the workflow and left the file **91/91
+ * green**, while the identical three lines *inside a job* are refused, because
+ * {@link JOB_KEYS} has no `defaults`. Listing a key as known is not knowing what
+ * it does. The reader now resolves the shell a step actually runs under, and
+ * takes `defaults:` apart the way it takes jobs and steps apart.
+ *
+ * ### Defect ten: `continue-on-error:` was refused and `|| …` was not
+ *
+ * `modelOf` refuses a step with `continue-on-error: true`, saying a step whose
+ * failure cannot fail the job "is therefore not a gate, and listing it as one
+ * would overstate what CI proves". It asked only whether a *YAML key* said so,
+ * never whether a *shell operator* said the same thing about the same step. The
+ * flag was even computed — {@link shellCommands} returns it — and then dropped
+ * by a `.map(c => c.text)`, an unread write. So `run: pnpm test:harness || pnpm
+ * test:harness` was **91/91 green**: `unaccounted` stayed empty because both
+ * halves are listed gates, and every row went on asserting that CI runs the
+ * harness gate while CI would ignore its failure. Its reader is now *every CI
+ * gate can actually fail the job it is listed in*.
+ *
  * ## What the reader is now, on both sides
  *
  * Both documents are read as **structure**, and both readers are *total*: every
@@ -161,7 +225,16 @@
  *   *definition* of the gate is not, and pinning it is a different guard.
  * - **`working-directory:` and `env:` on a step.** Both change what a command
  *   does without changing its text. They are read as known step keys and their
- *   values are not compared with anything.
+ *   values are not compared with anything. `defaults.run.working-directory` is
+ *   the same, and is admitted for the same reason; `defaults.run.shell` is not,
+ *   because that one changes how this reader may split a body at all — defect
+ *   nine. This is the boundary to watch: it is drawn at *what changes how the
+ *   reader reads*, not at *what changes what runs*, and the second of those is
+ *   the wider question. A `working-directory` that moves a gate to a tree with a
+ *   different `Cargo.toml` would not be seen here.
+ * - **`strategy:` on a job.** A matrix can multiply a job; the `run:` text it
+ *   multiplies is fixed, because a `run:` carrying `${{ matrix.… }}` is refused.
+ *   The multiplication itself is not modelled.
  * - **CI getting weaker.** The invariant is one-directional — `verify` may not
  *   be looser than CI — so a step behind `if: false`, or a job removed
  *   entirely, is not something this file objects to.
@@ -174,7 +247,12 @@
  *    quoted for them (16/16, 17/17, 36/36) are what the previous header
  *    recorded; this round did not reproduce them. Defects four, five and six
  *    were measured on this tree at `run-start-2026-08-17`, each twice, and the
- *    counts quoted for those are what the runs printed.
+ *    counts quoted for those are what the runs printed. Defects seven to ten
+ *    were measured, each twice, on the tree carrying the fix for four, five and
+ *    six; every count quoted for them is 91/91, which was that tree's full
+ *    suite. **These are exact totals of one file's cases at one commit, not a
+ *    range and not a bound** — the number moves whenever a case is added, and
+ *    nothing about it is evidence for anything but the run that printed it.
  * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
  *    not established.** No YAML parser was run against GitHub. It does not
  *    matter here, and that is by construction rather than by luck: if GitHub
@@ -183,6 +261,21 @@
  *    over-report costing a review. The `"uses":` half refuses either way. The
  *    error is in the safe direction under both answers, which is the only reason
  *    the question can be left open.
+ *
+ *    The same is true, and left open the same way, of whether GitHub accepts an
+ *    expression in a `uses:` (defect eight). Under either answer the refusal is
+ *    an over-report at worst. Neither question was closed, and closing either
+ *    means running GitHub's parser, not reasoning about the specification.
+ * 3. **A newline in a workflow `run:` block is read as ending the gating
+ *    chain.** Whether it does depends on the shell's `errexit`, which is not
+ *    written in this file, and this reader does not assume the answer it would
+ *    prefer. The consequence is that a gate on any line but the last of a
+ *    `run: |` block reddens *every CI gate can actually fail the job it is
+ *    listed in*. That is a false red if the shell does have `errexit`, and a
+ *    false red is what this file trades for; the opposite choice would be a
+ *    silent green on a genuinely suppressed gate. `ci.yml` today puts no gate in
+ *    a multi-line block, so the choice costs nothing at the moment it is made,
+ *    which is the honest reason it was affordable to make it this way.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -266,6 +359,18 @@ interface CiGate {
   readonly ci: string;
   /** Whether one command in the verify chain *is* this gate. */
   readonly runs: (command: ParsedCommand) => boolean;
+  /**
+   * Set only on a row whose `ci` *wraps* another listed gate, so that `runs`
+   * deliberately does not describe `ci`. Its value is the `ci` of the row being
+   * delegated to.
+   *
+   * The two halves of a row answer two different questions — `ci` is checked
+   * against the workflows, `runs` against the verify chain — and defect seven
+   * was that nothing checked they were still about the same command. See
+   * *the gate row for $ci describes the command it names*, which is what makes
+   * this field an exemption that has to be earned rather than a comment.
+   */
+  readonly delegatesTo?: string;
 }
 
 const CI_GATES: readonly CiGate[] = [
@@ -286,6 +391,7 @@ const CI_GATES: readonly CiGate[] = [
   {
     ci: 'node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
     runs: (c) => runsPnpm(c, 'test:harness'),
+    delegatesTo: 'pnpm test:harness',
   },
   { ci: 'pnpm build', runs: (c) => runsPnpm(c, 'build') },
   { ci: './scripts/check-transcripts.sh', runs: (c) => runsScript(c, 'scripts/check-transcripts.sh') },
@@ -350,6 +456,25 @@ describe('the local gate is a superset of the remote one', () => {
     ).toBeGreaterThan(0);
   });
 
+  it.each(CI_GATES)('the gate row for $ci describes the command it names', (gate) => {
+    // Defect seven. A row is two halves answering two different questions: `ci`
+    // is compared with the workflows by equality, and `runs` is asked of the
+    // verify chain. Every check above holds one half still and varies the other,
+    // so nothing noticed when the halves stopped being about the same command.
+    //
+    // Measured on this tree, twice: change CI's build gate to `cargo build
+    // --workspace --locked --all-targets`, update this row's `ci` to match —
+    // which `unaccounted` forces you to do — and leave `runs` describing the old
+    // command, and the file was 91/91 green while `pnpm verify` ran strictly
+    // less than CI. That is the one relationship this file exists to deny.
+    //
+    // The gate stays a hand-written predicate rather than a string comparison —
+    // `invokes` is what makes `--no-run` a different command instead of a longer
+    // one — but a hand-written predicate now has to survive being pointed at its
+    // own `ci`.
+    expect(rowDrift(gate, CI_GATES), `the CI_GATES row for "${gate.ci}" is inconsistent`).toEqual([]);
+  });
+
   it('every gate command in the workflows is accounted for above', () => {
     // Catches the other direction: a *new* CI step that nobody listed here, and
     // which therefore silently escapes the check above. Over the union, so a
@@ -365,6 +490,35 @@ describe('the local gate is a superset of the remote one', () => {
         'add it to SETUP_COMMANDS with a reason if it is setup rather than a ' +
         'gate. Note that this is one *simple command*: if it arrived chained ' +
         'onto another with && then the step that carries it is doing two things.',
+    ).toEqual([]);
+  });
+
+  it('every CI gate can actually fail the job it is listed in', () => {
+    // Defect ten, and the exact mirror of the `continue-on-error: true` refusal
+    // in `modelOf`. That refusal says a step whose failure cannot fail the job
+    // "is therefore not a gate, and listing it as one would overstate what CI
+    // proves" — and then asked only whether a *YAML key* said so, never whether
+    // a *shell operator* said the same thing about the same step.
+    //
+    // Measured on this tree, twice: `run: pnpm test:harness || pnpm test:harness`
+    // left the file 91/91 green. `unaccounted` stayed empty because both halves
+    // are listed gates, and every row above went on asserting "CI runs pnpm
+    // test:harness" about a step whose failure CI would ignore.
+    //
+    // The reader of `WorkflowCommand.gating` is this case and only this case.
+    //
+    // A newline counts as ending the chain, so a gate on any line but the last
+    // of a `run: |` block reddens here. That is deliberate and it is the safe
+    // direction: whether a newline ends the chain depends on the shell's errexit
+    // setting, which is not written in this file, and this reader does not get
+    // to assume the answer it prefers. The fix is one gate per step, or an `&&`.
+    expect(
+      swallowedGates(COMMANDS, CI_GATES),
+      'a command listed in CI_GATES is written in CI so that its failure cannot ' +
+        'fail the job — it is on the left of a "||", in front of a ";" or a "|", ' +
+        'or on a line of a block scalar that is not the last. A gate whose ' +
+        'failure is swallowed is not a gate, and every row above would go on ' +
+        'claiming CI runs it. Put it on its own step, or on the "&&" chain.',
     ).toEqual([]);
   });
 
@@ -435,7 +589,7 @@ describe('the local gate is a superset of the remote one', () => {
     // mentions cargo in a comment has no such command.
     for (const job of JOBS) {
       const name = `${job.file}:${job.name}`;
-      const commands = job.commands;
+      const commands = job.commands.map(({ text }) => text);
       if (!commands.some((command) => parseCommand(command).program === 'cargo')) continue;
 
       expect(job.runsOn, `CI job "${name}" has no runs-on this test can read`).not.toBe('');
@@ -482,6 +636,15 @@ describe('the workflow is read as a document, not as lines', () => {
 
   function probe(...stepLines: readonly string[]): () => WorkflowModel {
     return () => modelOf({ file: 'probe.yml', text: probeText(...stepLines) });
+  }
+
+  /** The same one-job workflow with a top-level `defaults:` block in front. */
+  function withDefaults(
+    defaultsLines: readonly string[],
+    ...stepLines: readonly string[]
+  ): () => WorkflowModel {
+    const text = ['defaults:', ...defaultsLines, probeText(...stepLines)].join('\n');
+    return () => modelOf({ file: 'probe.yml', text });
   }
 
   /**
@@ -620,6 +783,22 @@ describe('the workflow is read as a document, not as lines', () => {
       ).not.toThrow();
     });
 
+    it.each([
+      { spelling: 'alone', written: '${{ env.PROBE_ACTION }}' },
+      { spelling: 'as a prefix', written: '${{ env.OWNER }}/action@v1' },
+      { spelling: 'inside a quoted value', written: '"${{ matrix.action }}"' },
+    ])('refuses a uses: whose target is an expression written $spelling — defect eight', ({ written }) => {
+      // `run:` has refused an expression since defect four. `uses:` did not, so
+      // the identical unreadable value was refused in one key and admitted in
+      // the other, and the arms below it decided a target nobody had read.
+      //
+      // Two assertions again: the first says the parse resolved the value to the
+      // expression text, so the refusal is about what it names and not about a
+      // spelling the reader failed to take apart.
+      expect(usesTargetOf(`      - uses: ${written}`)).toContain('${{');
+      expect(probe(`      - uses: ${written}`)).toThrow('is a GitHub expression');
+    });
+
     it('refuses a relative path into the workflows directory that is not a workflow', () => {
       expect(probe('      - uses: "./.github/workflows/helper.sh"')).toThrow(
         'runs "./.github/workflows/helper.sh", a composite action in this repository',
@@ -654,6 +833,35 @@ describe('the workflow is read as a document, not as lines', () => {
     // nobody thought of, so the rule is no longer "recognise these spellings"
     // but "account for everything, and name what you cannot".
 
+    it('marks a workflow command whose failure a shell operator swallows — defect ten', () => {
+      // `modelOf` computed this flag and a `.map(c => c.text)` threw it away, so
+      // a step could suppress its own gate and every row above went on claiming
+      // CI ran it. Asserted on the model rather than only through `ci.yml`,
+      // because `ci.yml` contains no such step and never will if this holds.
+      expect(probe('      - run: pnpm test:harness || pnpm test:harness')().jobs[0]?.commands).toEqual([
+        { text: 'pnpm test:harness', gating: false },
+        { text: 'pnpm test:harness', gating: true },
+      ]);
+
+      // The control: the same step without the operator. Without it the row
+      // above passes for a reader that calls everything non-gating.
+      expect(probe('      - run: pnpm test:harness')().jobs[0]?.commands).toEqual([
+        { text: 'pnpm test:harness', gating: true },
+      ]);
+    });
+
+    it('carries the gating flag from the parsed step into the command list', () => {
+      // The step above proves `modelOf` computes the flag; the cases for
+      // `swallowedGates` prove the rule reads it. Neither says the flag survives
+      // the trip between them, and that trip is where defect ten actually lived.
+      // Measured: reintroducing the drop here was 116/116 green with both of
+      // those in place.
+      expect(commandsOf(probe('      - run: pnpm test:harness || pnpm test:harness')().jobs)).toEqual([
+        { file: 'probe.yml', job: 'probe', command: 'pnpm test:harness', gating: false },
+        { file: 'probe.yml', job: 'probe', command: 'pnpm test:harness', gating: true },
+      ]);
+    });
+
     it('refuses a step key it does not know how to reason about', () => {
       expect(probe('      - run: pnpm test', '        surprise: yes')).toThrow(
         'has a step key this reader does not know: "surprise"',
@@ -683,8 +891,44 @@ describe('the workflow is read as a document, not as lines', () => {
       // `shell: python` means the body is not shell at all, so every `&&` and
       // `;` this reader relies on means nothing there.
       expect(probe('      - run: print("hi")', '        shell: python')).toThrow(
-        'has a "shell: python"',
+        'runs under "shell: python"',
       );
+    });
+
+    it('refuses the same shell set as a workflow default — defect nine', () => {
+      // The step spells out no shell at all. The refusal above asked whether
+      // *this step* declared one it could not split; the question is what shell
+      // the step actually runs under, and a workflow default answers it just as
+      // completely. Listing `defaults` in TOP_LEVEL_KEYS and never reading it
+      // was 91/91 green with these three lines in the file.
+      expect(
+        withDefaults(['  run:', '    shell: python'], '      - run: print("hi")'),
+      ).toThrow('runs under "shell: python", set as the workflow default,');
+    });
+
+    it('lets a step override a workflow default with a shell it can split', () => {
+      // Without this the case above passes for a reader that refuses any file
+      // carrying a `defaults:` at all.
+      expect(
+        withDefaults(['  run:', '    shell: python'], '      - run: pnpm test', '        shell: bash'),
+      ).not.toThrow();
+    });
+
+    it('refuses a defaults: key it does not know how to reason about', () => {
+      // Same rule as jobs and steps, in the one place it was not applied. A
+      // default reaches every step in the file.
+      expect(withDefaults(['  surprise: yes'], '      - run: pnpm test')).toThrow(
+        'has a "defaults:" key this reader does not know: "surprise"',
+      );
+      expect(
+        withDefaults(['  run:', '    surprise: yes'], '      - run: pnpm test'),
+      ).toThrow('has a "defaults.run:" key this reader does not know: "surprise"');
+    });
+
+    it('reads a defaults.run it does understand without refusing', () => {
+      expect(
+        withDefaults(['  run:', '    working-directory: src-tauri'], '      - run: pnpm test'),
+      ).not.toThrow();
     });
 
     it('refuses a run: whose value is a GitHub expression', () => {
@@ -742,14 +986,14 @@ describe('the workflow is read as a document, not as lines', () => {
       // The `uses:` half of this spelling was defect three. The `run:` half was
       // never separately probed, and a line reader misses it the same way.
       const model = probe('      - run:', '          pnpm probe-unlisted-gate')();
-      expect(model.jobs[0]?.commands).toEqual(['pnpm probe-unlisted-gate']);
+      expect(model.jobs[0]?.commands).toEqual([{ text: 'pnpm probe-unlisted-gate', gating: true }]);
     });
 
     it('reads a key written with a space before its colon', () => {
       // Ordinary YAML, and one more position along the line that nothing had
       // varied. `run : x` is the key `run`.
       expect(probe('      - run : pnpm probe-unlisted-gate')().jobs[0]?.commands).toEqual([
-        'pnpm probe-unlisted-gate',
+        { text: 'pnpm probe-unlisted-gate', gating: true },
       ]);
     });
 
@@ -769,9 +1013,12 @@ describe('the workflow is read as a document, not as lines', () => {
         '          sudo apt-get install -y \\',
         '            libssl-dev',
       )();
+      // The gating flags are asserted here rather than only in the workflow,
+      // because this is where they are produced: a newline ends the chain, so
+      // only the last line of a block scalar is read as able to fail the job.
       expect(model.jobs[0]?.commands).toEqual([
-        'sudo apt-get update',
-        'sudo apt-get install -y libssl-dev',
+        { text: 'sudo apt-get update', gating: false },
+        { text: 'sudo apt-get install -y libssl-dev', gating: true },
       ]);
     });
   });
@@ -935,7 +1182,9 @@ describe('verify is read as commands that execute, not as text that mentions the
     // workflow. The tree contains no such command, so a code change here is
     // invisible to every other case in this file — which is exactly how a
     // prefix test survived three rounds of review.
-    const one = (command: string): WorkflowCommand[] => [{ file: 'probe.yml', job: 'probe', command }];
+    const one = (command: string): WorkflowCommand[] => [
+      { file: 'probe.yml', job: 'probe', command, gating: true },
+    ];
 
     expect(unaccounted(one('pnpm install --frozen-lockfile && pnpm probe-smuggled-gate'))).toEqual([
       'probe.yml:probe: pnpm install --frozen-lockfile && pnpm probe-smuggled-gate',
@@ -948,6 +1197,71 @@ describe('verify is read as commands that execute, not as text that mentions the
     // exempts nothing at all.
     expect(unaccounted(one('pnpm install --frozen-lockfile'))).toEqual([]);
     expect(unaccounted(one('cargo test --workspace --locked'))).toEqual([]);
+  });
+
+  it('a gate row is checked against itself — defect seven', () => {
+    // The real list is consistent, so this rule is invisible to every other case
+    // in this file unless it is asked about rows the tree does not contain.
+    const ok: CiGate = { ci: 'pnpm test', runs: (c) => runsPnpm(c, 'test') };
+    expect(rowDrift(ok, [ok])).toEqual([]);
+
+    // The measured escape: CI's command was strengthened, the `ci` string was
+    // updated because `unaccounted` forces it, and `runs` still describes the
+    // command CI stopped running.
+    const drifted: CiGate = {
+      ci: 'cargo build --workspace --locked --all-targets',
+      runs: (c) => invokes(c, 'cargo', 'build', '--workspace', '--locked'),
+    };
+    expect(rowDrift(drifted, [drifted])).toHaveLength(1);
+    expect(rowDrift(drifted, [drifted])[0]).toContain('drifted apart');
+  });
+
+  it('a wrapper row has to earn its exemption — defect seven', () => {
+    const inner: CiGate = { ci: 'pnpm test:harness', runs: (c) => runsPnpm(c, 'test:harness') };
+    const wrapper: CiGate = {
+      ci: 'node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
+      runs: (c) => runsPnpm(c, 'test:harness'),
+      delegatesTo: 'pnpm test:harness',
+    };
+    expect(rowDrift(wrapper, [inner, wrapper])).toEqual([]);
+
+    // Without the inner row listed, the delegation points at a gate nothing
+    // checks — which is how a wrapper would become the only record of a gate.
+    expect(rowDrift(wrapper, [wrapper])).toHaveLength(1);
+    expect(rowDrift(wrapper, [wrapper])[0]).toContain('not itself a listed gate');
+
+    // `delegatesTo` is not a way to switch the check off: a row whose predicate
+    // already accepts its own `ci` does not need one, and is told to delete it.
+    const needless: CiGate = { ...inner, delegatesTo: 'pnpm test:harness' };
+    expect(rowDrift(needless, [inner, needless])).toHaveLength(1);
+    expect(rowDrift(needless, [inner, needless])[0]).toContain('exemption is not needed');
+
+    // And a predicate that describes neither half is caught rather than excused.
+    const neither: CiGate = { ...wrapper, runs: (c) => runsPnpm(c, 'build') };
+    expect(rowDrift(neither, [inner, neither])).toEqual([
+      expect.stringContaining('does not accept that command either'),
+    ]);
+  });
+
+  it('a suppressed gate is caught wherever CI writes it — defect ten', () => {
+    // Asked of the rule directly. `ci.yml` contains no suppressed gate, so with
+    // this rule written inline it asserted nothing about itself: dropping the
+    // `gating` flag on the way into COMMANDS — which is defect ten put straight
+    // back — was measured at 115/115 green, twice, and only reddened once a
+    // mutated `ci.yml` supplied the input the tree does not have.
+    const gates: CiGate[] = [{ ci: 'pnpm test', runs: (c) => runsPnpm(c, 'test') }];
+    const at = (command: string, gating: boolean): WorkflowCommand[] => [
+      { file: 'probe.yml', job: 'probe', command, gating },
+    ];
+
+    expect(swallowedGates(at('pnpm test', false), gates)).toEqual(['probe.yml:probe: pnpm test']);
+
+    // Two controls. A gate that can fail is not reported, or the rule would be
+    // satisfied by one that reports everything; and a *non-gate* that cannot
+    // fail is not reported either, because setup is allowed to be suppressed and
+    // a rule that objected to it would be red on this tree's apt steps.
+    expect(swallowedGates(at('pnpm test', true), gates)).toEqual([]);
+    expect(swallowedGates(at('sudo apt-get update', false), gates)).toEqual([]);
   });
 
   it('reads pnpm run <script> as the same invocation as pnpm <script>', () => {
@@ -1529,7 +1843,13 @@ interface WorkflowJob {
   readonly name: string;
   readonly runsOn: string;
   readonly steps: readonly WorkflowStep[];
-  readonly commands: readonly string[];
+  /**
+   * Every simple command the job's `run:` steps execute, each carrying whether
+   * its failure can fail the job. The flag used to be computed here and dropped
+   * on the floor by a `.map(c => c.text)`; keeping it is defect ten, and its
+   * reader is *every CI gate can actually fail the job it is listed in*.
+   */
+  readonly commands: readonly ShellCommand[];
 }
 
 /** What this reader made of one workflow file. */
@@ -1543,6 +1863,8 @@ interface WorkflowCommand {
   readonly file: string;
   readonly job: string;
   readonly command: string;
+  /** Whether this command's failure can fail the job CI runs it in. */
+  readonly gating: boolean;
 }
 
 /**
@@ -1561,6 +1883,79 @@ interface WorkflowCommand {
  * would let `cargo test --workspace --locked --no-run` pass as the `cargo test`
  * gate.
  */
+/**
+ * The ways one {@link CiGate} row can have stopped being about one command,
+ * named rather than merely asserted.
+ *
+ * A named function for the same reason {@link unaccounted} is one: every row in
+ * the real list is consistent, so a rule written inline here would only ever see
+ * input that satisfies it, and weakening the rule would change nothing
+ * observable. The cases in *a gate row is checked against itself* feed it rows
+ * this tree does not contain.
+ *
+ * `delegatesTo` is the one shape where the halves are meant to differ — CI runs
+ * the harness gate through `ci-retry-vitest-crash.mjs` and `verify` must reach
+ * the unwrapped gate. Three conditions make that an exemption that has to be
+ * earned: the target must be a listed gate, the predicate must accept the
+ * target, and it must *not* accept the wrapper, so a row cannot buy silence by
+ * declaring a delegation it does not need.
+ */
+function rowDrift(gate: CiGate, rows: readonly CiGate[]): string[] {
+  const { ci, runs, delegatesTo } = gate;
+  if (delegatesTo === undefined) {
+    return runs(parseCommand(ci))
+      ? []
+      : [
+          `its "runs" predicate does not accept "${ci}" itself. The two halves of the ` +
+            'row have drifted apart: CI runs one command and "pnpm verify" is being ' +
+            'checked for another. Either update "runs", or say why the row is a ' +
+            'wrapper by giving it "delegatesTo".',
+        ];
+  }
+
+  const out: string[] = [];
+  if (!rows.some((row) => row.ci === delegatesTo)) {
+    out.push(
+      `it delegates to "${delegatesTo}", which is not itself a listed gate. A ` +
+        'delegation target that no row covers is a gate nobody checks.',
+    );
+  }
+  if (!runs(parseCommand(delegatesTo))) {
+    out.push(
+      `it delegates to "${delegatesTo}" but its "runs" predicate does not accept ` +
+        'that command either, so it describes neither half.',
+    );
+  }
+  if (runs(parseCommand(ci))) {
+    out.push(
+      'it claims to be a wrapper, but its "runs" predicate accepts the wrapping ' +
+        'command directly. The exemption is not needed, and an unneeded exemption ' +
+        'is somewhere the next drift can hide. Delete "delegatesTo".',
+    );
+  }
+  return out;
+}
+
+/**
+ * The commands CI lists as gates and then writes so their failure cannot fail
+ * the job, named by file and job.
+ *
+ * A named function for the reason {@link unaccounted} gives, and it was needed:
+ * with the rule written inline, dropping the `gating` flag on the way into
+ * {@link COMMANDS} — reintroducing defect ten's `.map(c => c.text)` exactly —
+ * left this file 115/115 green, because no command in `ci.yml` is suppressed and
+ * an inline rule over clean input asserts nothing. That measurement is the whole
+ * argument for this function existing.
+ */
+function swallowedGates(
+  commands: readonly WorkflowCommand[],
+  gates: readonly CiGate[],
+): string[] {
+  return commands
+    .filter(({ command, gating }) => !gating && gates.some(({ ci }) => command === ci))
+    .map(({ file, job, command }) => `${file}:${job}: ${command}`);
+}
+
 function unaccounted(commands: readonly WorkflowCommand[]): string[] {
   return commands
     .filter(
@@ -1591,6 +1986,14 @@ const STEP_KEYS = [
 ];
 /** Shells whose `&&`, `||`, `;` and `|` mean what {@link shellCommands} assumes. */
 const SPLITTABLE_SHELLS = ['bash', 'sh', 'pwsh', 'powershell', 'cmd'];
+/**
+ * The `defaults:` shape this reader can reason about. Anything else is refused
+ * rather than skipped, for the reason in {@link TOP_LEVEL_KEYS}: a default
+ * applies to every step in the file, so a default it cannot read is every step
+ * read wrong.
+ */
+const DEFAULTS_KEYS = ['run'];
+const DEFAULTS_RUN_KEYS = ['shell', 'working-directory'];
 
 const mappingOf = (node: YamlNode): readonly YamlEntry[] | undefined =>
   node.kind === 'mapping' ? node.entries : undefined;
@@ -1616,6 +2019,47 @@ function modelOf(workflow: Workflow): WorkflowModel {
         `${at(line)} has a top-level key this reader does not know: "${key}". ` +
           'Teach it what that key does before trusting a green run.',
       );
+    }
+  }
+
+  // Defect nine. The step-level `shell:` below is refused when this reader
+  // cannot split its body — and the identical setting written as a workflow
+  // default was listed in TOP_LEVEL_KEYS as a key this reader "knows" and then
+  // never read. Measured on this tree, twice: a top-level `defaults: run: shell:
+  // python` left the file 91/91 green, while the same three lines inside a job
+  // are refused, because JOB_KEYS has no `defaults`. Listing a key as known is
+  // not knowing what it does; that gap is the whole class this file is about.
+  //
+  // So `defaults` is taken apart the way jobs and steps are — every key under it
+  // must be one this reader can reason about — and the shell it sets becomes the
+  // step's shell wherever the step does not set its own.
+  const defaultsNode = entry(top, 'defaults');
+  let defaultShell: string | undefined;
+  if (defaultsNode !== undefined) {
+    const defaults = mappingOf(defaultsNode);
+    if (defaults === undefined) throw new Error(`${where} has a "defaults:" that is not a mapping`);
+    for (const { key, line } of defaults) {
+      if (!DEFAULTS_KEYS.includes(key)) {
+        throw new Error(
+          `${at(line)} has a "defaults:" key this reader does not know: "${key}". ` +
+            'A default it cannot reason about applies to every step in the file.',
+        );
+      }
+    }
+    const runDefaultsNode = entry(defaults, 'run');
+    if (runDefaultsNode !== undefined) {
+      const runDefaults = mappingOf(runDefaultsNode);
+      if (runDefaults === undefined) throw new Error(`${where} has a "defaults.run:" that is not a mapping`);
+      for (const { key, line } of runDefaults) {
+        if (!DEFAULTS_RUN_KEYS.includes(key)) {
+          throw new Error(
+            `${at(line)} has a "defaults.run:" key this reader does not know: ` +
+              `"${key}". A default it cannot reason about applies to every "run:" ` +
+              'step in the file.',
+          );
+        }
+      }
+      defaultShell = scalarOf(entry(runDefaults, 'shell'));
     }
   }
 
@@ -1681,12 +2125,17 @@ function modelOf(workflow: Workflow): WorkflowModel {
             'proves. Say so here before adding it.',
         );
       }
-      const shell = scalarOf(entry(step, 'shell'));
+      // The shell this step actually runs under, which is its own `shell:` if it
+      // has one and the workflow default otherwise — not merely the one it
+      // spells out. That widening is defect nine.
+      const ownShell = scalarOf(entry(step, 'shell'));
+      const shell = ownShell ?? defaultShell;
       if (shell !== undefined && !SPLITTABLE_SHELLS.includes(shell)) {
         throw new Error(
-          `${at(item.line)} has a "shell: ${shell}", whose body is not a shell ` +
-            'command line. This reader would split it on operators that mean ' +
-            'nothing there, so it refuses instead.',
+          `${at(item.line)} runs under "shell: ${shell}"` +
+            (ownShell === undefined ? ', set as the workflow default,' : '') +
+            ' whose body is not a shell command line. This reader would split it ' +
+            'on operators that mean nothing there, so it refuses instead.',
         );
       }
       if (run !== undefined && run.includes('${{')) {
@@ -1706,7 +2155,7 @@ function modelOf(workflow: Workflow): WorkflowModel {
       runsOn: scalarOf(entry(job, 'runs-on')) ?? '',
       steps,
       commands: steps.flatMap((step) =>
-        step.run === undefined ? [] : shellCommands(step.run, `${at(step.line)} run:`).map((c) => c.text),
+        step.run === undefined ? [] : shellCommands(step.run, `${at(step.line)} run:`),
       ),
     };
   });
@@ -1739,6 +2188,25 @@ function modelOf(workflow: Workflow): WorkflowModel {
 function refuseUses(where: string, line: number, target: string): void {
   const at = `${where}:${String(line + 1)}`;
   if (target === '') throw new Error(`${at} has a "uses:" with no target this reader can read`);
+
+  // Defect eight. `run:` has refused a GitHub expression since defect four —
+  // "what it runs is not in this file" — and `uses:` did not, so the identical
+  // unreadable value was refused in one key and admitted in the other. Measured
+  // on this tree, twice: `uses: ${{ env.PROBE_ACTION }}` added to two steps left
+  // the file 91/91 green, and the arms below decided a target they had not read.
+  //
+  // Whether GitHub's own parser would run that step is not the question this
+  // reader gets to answer, and deliberately so: the value is not in the file, so
+  // there is nothing here to read, and a reader that cannot see a value must
+  // refuse rather than report that it found nothing harmless.
+  if (target.includes('${{')) {
+    throw new Error(
+      `${at} has a "uses:" whose target is a GitHub expression: ${target}. What it ` +
+        'names is not in this file, so this reader cannot tell a third-party ' +
+        'action from a composite action in this repository whose own steps would ' +
+        'go unread. Write the target out.',
+    );
+  }
 
   if (target.startsWith('./') || target.startsWith('../')) {
     const local = target.replace(/^\.\//u, '');
@@ -1816,9 +2284,27 @@ const SURFACE = readWorkflowSurface(REPO_ROOT);
 const JOBS: readonly WorkflowJob[] = SURFACE.models.flatMap((model) => model.jobs);
 
 /** Every simple command CI runs, across every workflow. */
-const COMMANDS: readonly WorkflowCommand[] = JOBS.flatMap((job) =>
-  job.commands.map((command): WorkflowCommand => ({ file: job.file, job: job.name, command })),
-);
+/**
+ * Every simple command of every job, tagged with where it runs.
+ *
+ * A named function because the *rule* being testable is not the same as the
+ * *wiring* being testable, and that distinction was measured too: after
+ * {@link swallowedGates} was extracted and given cases of its own, putting
+ * defect ten straight back here — dropping `gating` on the way through, exactly
+ * as the old `.map(c => c.text)` did — was still 116/116 green, twice. A rule
+ * with no path from the document to its input asserts nothing about the
+ * document. Its cases are in *carries the gating flag from the parsed step into
+ * the command list*.
+ */
+function commandsOf(jobs: readonly WorkflowJob[]): WorkflowCommand[] {
+  return jobs.flatMap((job) =>
+    job.commands.map(
+      ({ text, gating }): WorkflowCommand => ({ file: job.file, job: job.name, command: text, gating }),
+    ),
+  );
+}
+
+const COMMANDS: readonly WorkflowCommand[] = commandsOf(JOBS);
 
 /* -------------------------------------------------------------------------- */
 /* the verify chain                                                           */

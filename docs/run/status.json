@@ -1,0 +1,29 @@
+{
+  "run": "2026-08-17",
+  "tag": "run-start-2026-08-17",
+  "sha": "c0feb93",
+  "state": "RUNNING",
+  "round": 1,
+  "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
+  "updated": "2026-08-17T00:00:00Z",
+  "tracks": [
+    {"id":"t01","title":"Release path — the installer nobody has produced","wt":"vela-t01","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t02","title":"The Close collision","wt":"vela-t02","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t03","title":"The instrument","wt":"vela-t03","guard":true,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t04","title":"Contrast guard","wt":"vela-t04","guard":true,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t05","title":"Reachability guard","wt":"vela-t05","guard":true,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t06","title":"CI-coverage guard","wt":"vela-t06","guard":true,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t07","title":"Remaining guards","wt":"vela-t07","guard":true,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t08","title":"MCP surface","wt":"vela-t08","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t09","title":"MCP HTTP/SSE transport","wt":"vela-t09","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t10","title":"Provenance closure","wt":"vela-t10","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t11","title":"File creation","wt":"vela-t11","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t12","title":"Plugins","wt":"vela-t12","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t13","title":"Cowork surface","wt":"vela-t13","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t14","title":"Code workspace","wt":"vela-t14","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t15","title":"Styles and incognito","wt":"vela-t15","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t16","title":"Subagent fan-out","wt":"vela-t16","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t17","title":"Shell and edge states","wt":"vela-t17","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null},
+    {"id":"t18","title":"Host boundary","wt":"vela-t18","guard":false,"tier":"pending","verdict":"running","round":1,"blocker":null}
+  ]
+}

@@ -24,7 +24,15 @@ describe('createSkillsRepository', () => {
     // installed must never disappear from every surface with no sentence
     // anywhere saying why.
     expect(listed.map((entry) => entry.kind)).toContain('invalid');
-    expect(listed.map((entry) => entry.directory)).toEqual(['commit-messages', 'half-written']);
+    // `bundle-release` is a bundle root, and it is in this list because a bundle
+    // root is an ordinary skill: `src/data/skill-bundles.ts` adds no arm to
+    // `SkillListing` and no command to the allowlist, so the repository has
+    // nothing to say about it and says nothing.
+    expect(listed.map((entry) => entry.directory)).toEqual([
+      'bundle-release',
+      'commit-messages',
+      'half-written',
+    ]);
   });
 
   it('keeps the body out of the listing, which is what the budget is', async () => {

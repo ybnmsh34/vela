@@ -64,6 +64,13 @@
 import { useRef } from 'react';
 
 import { ModalSurface } from '@/components/ModalSurface';
+import {
+  isBundleDirectory,
+  readBundle,
+  type BundleMember,
+  type BundleProblem,
+  type BundleReading,
+} from '@/data/skill-bundles';
 import type { SkillListing, SkillProblem, SkillResources, SkillsReadRes } from '@/platform/contract';
 
 import styles from './SkillsPanel.module.css';
@@ -93,6 +100,35 @@ const PROBLEM_LABELS: Record<SkillProblem, string> = {
   descriptionIsEmpty: 'Its description is empty or only whitespace.',
   descriptionTooLong: 'Its description is longer than 1024 characters.',
   nameIsNotASinglePathSegment: 'Its name is not a single path segment.',
+};
+
+/**
+ * What the user reads for each way a directory that claims to be a bundle fails
+ * to be one.
+ *
+ * The same `Record` device as {@link PROBLEM_LABELS} and for the same reason: a
+ * `BundleProblem` added in `src/data/skill-bundles.ts` with no sentence here
+ * fails `pnpm typecheck` naming this file, where a `switch` with a default would
+ * put the word "other" on somebody's screen.
+ *
+ * Unlike {@link PROBLEM_LABELS} this vocabulary has no Rust twin, so there is no
+ * second direction for a parity test to hold — `skill-bundles.ts` defines and
+ * produces every variant, and the compiler is the whole guard rather than the
+ * first half of one. That is stated because the neighbouring map needed the
+ * second half and it would be easy to assume this one does too.
+ */
+const BUNDLE_PROBLEM_LABELS: Record<BundleProblem, string> = {
+  manifestMissing: 'Its SKILL.md has no ```vela-bundle block listing what it contains.',
+  manifestUnterminated: 'Its ```vela-bundle block is opened and never closed.',
+  manifestRepeated: 'Its SKILL.md has more than one ```vela-bundle block.',
+  manifestSyntax: 'A line in its ```vela-bundle block is not written as key: value.',
+  manifestUnknownKey: 'Its ```vela-bundle block sets a key other than skills.',
+  manifestDuplicateKey: 'Its ```vela-bundle block sets the same key twice.',
+  membersMissing: 'Its ```vela-bundle block has no skills key.',
+  membersEmpty: 'Its skills key lists nothing.',
+  memberNameNotWellFormed:
+    'One of the names in its skills key is not a skill name: lowercase letters, digits and single hyphens, up to 64 characters.',
+  memberRepeated: 'Its skills key names the same skill twice.',
 };
 
 /** The three conventional subdirectories, with the words the user reads. */
@@ -258,7 +294,17 @@ function SkillDetail({ skills }: { readonly skills: SkillsController }) {
         </p>
       )}
 
-      {detail.status === 'ready' && <SkillContents directory={detail.directory} read={detail.detail} />}
+      {detail.status === 'ready' && (
+        <SkillContents
+          directory={detail.directory}
+          read={detail.detail}
+          // The listing this pane already fetched when it opened. Handed down
+          // rather than re-requested: resolving a bundle's members costs no host
+          // call, which is the property `src/data/skill-bundles.ts` is built to
+          // have and `skills-reachable.test.tsx` asserts by counting commands.
+          listing={skills.list.status === 'ready' ? skills.list.skills : []}
+        />
+      )}
     </div>
   );
 }
@@ -266,9 +312,11 @@ function SkillDetail({ skills }: { readonly skills: SkillsController }) {
 function SkillContents({
   directory,
   read,
+  listing,
 }: {
   readonly directory: string;
   readonly read: SkillsReadRes;
+  readonly listing: readonly SkillListing[];
 }) {
   if (read.kind === 'invalid') {
     // Not an error path: the host answered truthfully, and the answer is that
@@ -292,6 +340,10 @@ function SkillContents({
       <h3 className={styles.detailName}>{read.name}</h3>
       <p className={styles.detailDescription}>{read.description}</p>
 
+      {isBundleDirectory(directory) && (
+        <BundleContents reading={readBundle(directory, read.body, listing)} />
+      )}
+
       <p className={styles.sectionLabel}>Instructions</p>
       {/* The file's own text, not a rendering of it. This pane exists to show
           what is on disk; putting a Markdown renderer between the user and the
@@ -302,6 +354,87 @@ function SkillContents({
       <SkillResourceList resources={read.resources} />
     </>
   );
+}
+
+/**
+ * What a bundle contains, under the bundle root's own heading.
+ *
+ * Rendered above the instructions rather than below them because it is the
+ * reason the user opened this entry: for a bundle the instruction body is mostly
+ * the manifest they are being told about.
+ *
+ * **No new CSS.** Every class here already exists in `SkillsPanel.module.css`
+ * and every colour is already a token, which is the cheapest way to obey the
+ * standing rule that no colour value is introduced: none is, because no
+ * declaration is.
+ */
+function BundleContents({ reading }: { readonly reading: BundleReading }) {
+  if (reading.kind === 'invalid') {
+    // The precedent, applied: a directory that claims to be a bundle and is not
+    // readable as one says so, in the window, next to the skill it still is.
+    // The alternative — render nothing and let it be an ordinary skill — is the
+    // silent drop `use-skills.ts` calls the load-bearing omission.
+    return (
+      <>
+        <p className={styles.sectionLabel}>Bundle</p>
+        <p className={styles.rowProblem}>
+          Not readable as a bundle · {BUNDLE_PROBLEM_LABELS[reading.problem]}
+        </p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className={styles.sectionLabel}>Bundle · {reading.members.length} skills</p>
+      <ul className={styles.resources}>
+        {reading.members.map((member) => (
+          <li key={member.directory} className={styles.resourceGroup}>
+            <BundleMemberRow member={member} />
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * One member of a bundle.
+ *
+ * The three arms of {@link BundleMember} are worded separately and none of them
+ * is a default. `broken` and `missing` are the pair that matters: they are the
+ * same fact from a distance — you cannot use this skill — and opposite
+ * instructions, so a shared sentence would send somebody to install a directory
+ * that is already on their disk.
+ */
+function BundleMemberRow({ member }: { readonly member: BundleMember }) {
+  switch (member.kind) {
+    case 'installed':
+      return (
+        <>
+          <span className={styles.rowName}>{member.name}</span>
+          <span className={styles.rowDescription}>{member.description}</span>
+        </>
+      );
+    case 'broken':
+      return (
+        <>
+          <span className={styles.rowName}>{member.directory}</span>
+          <span className={styles.rowProblem}>
+            Installed and not readable as a skill · {PROBLEM_LABELS[member.problem]}
+          </span>
+        </>
+      );
+    case 'missing':
+      return (
+        <>
+          <span className={styles.rowName}>{member.directory}</span>
+          <span className={styles.rowProblem}>
+            Named by this bundle and not in the skill store.
+          </span>
+        </>
+      );
+  }
 }
 
 /**

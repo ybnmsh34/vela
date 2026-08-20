@@ -161,3 +161,129 @@ describe('a user can see the skills they have installed', () => {
     expect(screen.getByRole('button', { name: 'Skills' })).toHaveFocus();
   });
 });
+
+/**
+ * Records what was asked of the host, **with payloads**.
+ *
+ * The two tests below turn on which *names* were read, not how many calls there
+ * were, so the command list the other `RecordingHost` keeps is not enough: a
+ * bundle that reached for a member would issue a `skills_read` that looks
+ * exactly like the legitimate one until you read its argument.
+ *
+ * `bundleBody` replaces the body the fake serves for `bundle-release`, which is
+ * how a manifest gets written for one test without a second fixture in
+ * `browser-adapter.ts` for every shape a manifest can be wrong in.
+ */
+class ManifestHost extends BrowserAdapter {
+  readonly calls: { command: string; payload: unknown }[] = [];
+  readonly #bundleBody: string | null;
+
+  constructor(bundleBody: string | null = null) {
+    super();
+    this.#bundleBody = bundleBody;
+  }
+
+  override async invoke(command: never, payload: never): Promise<never> {
+    this.calls.push({ command: command as string, payload });
+    const answer = await super.invoke(command, payload);
+    if (
+      this.#bundleBody !== null &&
+      (command as string) === 'skills_read' &&
+      (payload as { readonly name?: string }).name === 'bundle-release'
+    ) {
+      return { ...(answer as object), body: this.#bundleBody } as never;
+    }
+    return answer;
+  }
+
+  /** Every name passed to `skills_read`, in order. */
+  namesRead(): string[] {
+    return this.calls
+      .filter((call) => call.command === 'skills_read')
+      .map((call) => (call.payload as { readonly name?: string }).name ?? '');
+  }
+}
+
+/** A manifest block, assembled so this file contains no stray fence. */
+function manifest(...lines: readonly string[]): string {
+  return ['# Release', '', '```vela-bundle', ...lines, '```', ''].join('\n');
+}
+
+describe('a bundle is a skill, and shows what it carries', () => {
+  it('shows every member and asks the host for none of them', async () => {
+    // ── THE LOAD-BEARING TEST ──────────────────────────────────────────────
+    // Two claims at once, and the second is the one that could rot quietly.
+    //
+    // A bundle's contents are on screen: the installed member with its
+    // description, the member that is installed and unreadable, and the member
+    // that is not installed — three different sentences, because they are three
+    // different things to do about it.
+    //
+    // And resolving them cost **nothing**. `readBundle` is handed the listing
+    // the pane already fetched, so the only name the host is asked for is the
+    // bundle root the user clicked. A later refactor that resolved members by
+    // reading each one would look tidier, would pass every assertion about what
+    // is on screen, and would put a host call behind text out of a manifest —
+    // which is the boundary `src/data/skill-bundles.ts` exists to hold.
+    const host = new ManifestHost();
+    const user = driver();
+    render(<App adapter={host as BrowserAdapter} />);
+
+    await openSkills(user);
+    await user.click(await screen.findByRole('button', { name: /bundle-release/u }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Bundle · 3 skills');
+    expect(dialog).toHaveTextContent(/Writes commit messages in this repository’s house style/u);
+    expect(dialog).toHaveTextContent(
+      'Installed and not readable as a skill · Its frontmatter has no description.',
+    );
+    expect(dialog).toHaveTextContent('Named by this bundle and not in the skill store.');
+
+    expect(
+      host.namesRead(),
+      'a member was fetched; resolving a bundle must cost no host call',
+    ).toEqual(['bundle-release']);
+  });
+
+  it('never turns a member name into a host call, whatever the manifest says', async () => {
+    // ── THE LOAD-BEARING TEST ──────────────────────────────────────────────
+    // The security clause, driven through the assembled window rather than
+    // asserted on a pure function. A manifest is author-supplied text that
+    // arrives from whatever the user unzipped into their skill store, and the
+    // question worth asking is not "does the parser reject `..`" — that is a
+    // string check, and the next encoding beats it. It is whether manifest text
+    // can become a host argument **at all**. It cannot: the only name that
+    // reaches `skills_read` is the directory the user clicked.
+    const host = new ManifestHost(manifest('skills: ../../secrets'));
+    const user = driver();
+    render(<App adapter={host as BrowserAdapter} />);
+
+    await openSkills(user);
+    await user.click(await screen.findByRole('button', { name: /bundle-release/u }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Not readable as a bundle ·');
+    expect(dialog).toHaveTextContent(/is not a skill name/u);
+    expect(host.namesRead()).toEqual(['bundle-release']);
+  });
+
+  it('says a bundle root with no manifest is one, rather than passing it over', async () => {
+    // The precedent the skill store set, one level up: a directory that claims
+    // to be a bundle and carries no manifest is told so, in the window, beside
+    // the skill it still is. Rendering nothing here is the silent drop — and it
+    // is the failure an author hits by mistyping the fence, which is the most
+    // likely way to get this wrong and the hardest to see.
+    const host = new ManifestHost('# Release\n\nNo manifest block at all.\n');
+    const user = driver();
+    render(<App adapter={host as BrowserAdapter} />);
+
+    await openSkills(user);
+    await user.click(await screen.findByRole('button', { name: /bundle-release/u }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/Not readable as a bundle · Its SKILL.md has no/u);
+    // Still a skill: the instruction body it does have is on screen underneath.
+    expect(dialog).toHaveTextContent('No manifest block at all.');
+  });
+});

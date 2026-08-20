@@ -1076,6 +1076,22 @@ export class BrowserAdapter implements PlatformAdapter {
    * "this skill is installed and cannot be read".
    */
   readonly #skills: readonly SkillListing[] = [
+    // A bundle root, which is an ordinary skill: `src/data/skill-bundles.ts`
+    // adds no listing shape and no command, so nothing here needed a new arm.
+    // Its manifest names one member of each kind the resolver can answer —
+    // installed, installed-but-broken, and not installed — because a fake whose
+    // bundle is all healthy members is how the renderer ends up with no design
+    // for the two rows that say something is wrong.
+    //
+    // First because `SkillsListRes` says "in name order" and this list is the
+    // only place a renderer could learn that order. A fake that answered out of
+    // order would be teaching the UI something the host does not do.
+    {
+      kind: 'skill',
+      directory: 'bundle-release',
+      name: 'bundle-release',
+      description: 'Everything this repository uses to cut a release. Use when shipping a version.',
+    },
     {
       kind: 'skill',
       directory: 'commit-messages',
@@ -1089,6 +1105,13 @@ export class BrowserAdapter implements PlatformAdapter {
     [
       'commit-messages',
       '# Commit messages\n\nSay what changed and why. One subject line, then the reasoning.\n',
+    ],
+    [
+      'bundle-release',
+      '# Release\n\nThe skills this repository uses to cut a release.\n\n' +
+        '```vela-bundle\n' +
+        'skills: commit-messages, half-written, changelog\n' +
+        '```\n',
     ],
   ]);
 

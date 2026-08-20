@@ -82,7 +82,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 use vela_core::secret::SecretValue;
-use vela_secrets::{SecretError, SecretStore};
+use vela_secrets::SecretStore;
 
 use crate::config::{credential_ref, HttpServer, OAuthConfig, RemoteAuth};
 use crate::error::{McpError, McpResult};
@@ -583,28 +583,6 @@ impl Drop for HttpTransport {
         if self.session_id().is_some() {
             self.shutdown();
         }
-    }
-}
-
-/// Whether the store holds a credential for this server. Read by
-/// `crate::pool::McpPool` so a settings surface can say "not signed in" without
-/// opening a connection.
-pub fn credential_present(store: &dyn SecretStore, server_id: &str) -> bool {
-    credential_ref(server_id)
-        .map(|reference| store.contains(&reference))
-        .unwrap_or(false)
-}
-
-/// Delete a server's stored credential. The write half of the same surface.
-pub fn forget_credential(store: &dyn SecretStore, server_id: &str) -> McpResult<()> {
-    let reference = credential_ref(server_id)?;
-    match store.delete(&reference) {
-        // Already gone is the desired end state.
-        Ok(()) | Err(SecretError::NotFound { .. }) => Ok(()),
-        Err(error) => Err(McpError::AuthorizationRequired {
-            server: server_id.to_owned(),
-            detail: error.to_string(),
-        }),
     }
 }
 

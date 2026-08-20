@@ -91,6 +91,6 @@ pub use config::{
 };
 pub use error::{McpError, McpFailureCode, McpResult};
 pub use exchange::{ExchangeError, HttpCall, HttpExchange, HttpMethod, HttpReply};
-pub use http::{credential_present, forget_credential, RemoteDeps};
+pub use http::RemoteDeps;
 pub use pool::{McpPool, ServerTools};
 pub use transport::Transport;

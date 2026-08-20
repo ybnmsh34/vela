@@ -111,9 +111,13 @@ export function CanvasPanel({ track, sandbox, projectId, onClose }: CanvasPanelP
 
       {view === 'preview' ? (
         <>
+          {/* No `program` here any more. What is drawn comes off the run's own
+              phase, so the panel cannot hand the frame a program the host was
+              never asked about — see {@link drawable} in `DocumentPreview.tsx`.
+              The key still resets the frame across a version or a script change;
+              what it no longer does is decide which bytes go into it. */}
           <DocumentPreview
             key={`${String(selected)}:${String(allowScripts)}`}
-            program={program}
             run={run}
             title={track.title}
           />

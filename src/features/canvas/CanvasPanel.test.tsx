@@ -280,3 +280,188 @@ describe('a host that refuses is a refusal on screen, not a blank panel', () => 
     expect(screen.queryByTestId('canvas-frame')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * **The frame may only ever hold bytes the host accepted.**
+ *
+ * The suite above asserts the first half of that rule — no `accepted` event, no
+ * frame — by querying the DOM once React has settled. That is exactly the query
+ * that could not see the defect these two tests exist for, and it stayed green
+ * through all of it: by the time it runs, the offending frame has already been
+ * committed, loaded and torn down again.
+ *
+ * So the instrument here is the DOM's own history. A `MutationObserver` records
+ * every `<iframe>` the document ever held and the `srcdoc` and `sandbox` it held
+ * it with, because the value React *commits* is the value the browser acts on —
+ * a frame that exists for one commit has already begun parsing its `srcdoc` and
+ * running the inline script inside it. "It was removed again on the next tick"
+ * is not a boundary.
+ *
+ * What made the gap reachable with no user action at all: the panel follows the
+ * newest version of an artifact, so a model revising its own output moves the
+ * surface's `program` while `run.phase` is still the previous run's `accepted`.
+ * With script allowed for the previous version — one earlier tick of the
+ * checkbox, which the panel keeps across revisions because `CanvasPanel` is
+ * keyed on the artifact slot and not on the version — the revision reached the
+ * DOM as `<iframe sandbox="allow-scripts">` carrying the new source, for a run
+ * that had not been submitted, let alone approved.
+ */
+interface FrameSighting {
+  readonly srcdoc: string;
+  readonly sandbox: string;
+}
+
+function recordEveryFrame(): { readonly seen: FrameSighting[]; stop: () => void } {
+  const seen: FrameSighting[] = [];
+  const take = (node: Node): void => {
+    if (!(node instanceof HTMLElement)) return;
+    const frames = node.tagName === 'IFRAME' ? [node] : [...node.querySelectorAll('iframe')];
+    for (const frame of frames) {
+      seen.push({
+        srcdoc: frame.getAttribute('srcdoc') ?? '',
+        sandbox: frame.getAttribute('sandbox') ?? '',
+      });
+    }
+  };
+  const observer = new MutationObserver((records) => {
+    for (const entry of records) {
+      if (entry.type === 'childList') for (const node of entry.addedNodes) take(node);
+      else take(entry.target);
+    }
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['srcdoc', 'sandbox'],
+  });
+  return { seen, stop: () => observer.disconnect() };
+}
+
+const PAGE_V1 = '<p id="first">a paragraph long enough to count as an artifact</p>';
+const PAGE_V2 = '<p id="second">the revision, also long enough to count as one</p>';
+
+describe('a revision is a different run, and reaches no frame before the host says so', () => {
+  async function drawV1WithScript(sandbox: SandboxRepository) {
+    const user = userEvent.setup();
+    const view = render(
+      <CanvasSurface
+        assistantTexts={[answer(PAGE_V1, 'html')]}
+        projectId={DEFAULT_PROJECT_ID}
+        sandbox={sandbox}
+      >
+        <div>transcript</div>
+      </CanvasSurface>,
+    );
+    await user.click(await renderOnce());
+    await screen.findByTestId('canvas-frame');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(await renderOnce());
+    expect((await screen.findByTestId('canvas-frame')).getAttribute('sandbox')).toBe(
+      'allow-scripts',
+    );
+    return view;
+  }
+
+  it('never commits a frame holding a revision the host has not accepted', async () => {
+    const sandbox = documentHostDouble();
+    const view = await drawV1WithScript(sandbox);
+
+    // The model revises the artifact. No click, no keystroke: the panel follows
+    // the newest version on its own, which is the whole point of the rail.
+    const watcher = recordEveryFrame();
+    view.rerender(
+      <CanvasSurface
+        assistantTexts={[answer(PAGE_V1, 'html'), answer(PAGE_V2, 'html')]}
+        projectId={DEFAULT_PROJECT_ID}
+        sandbox={sandbox}
+      >
+        <div>transcript</div>
+      </CanvasSurface>,
+    );
+    // The host has to get as far as asking about the revision, so that a frame
+    // drawn for it would have had every chance to appear.
+    await renderOnce();
+    watcher.stop();
+
+    const leaked = watcher.seen.filter((frame) => frame.srcdoc.includes('id="second"'));
+    expect(leaked).toEqual([]);
+  });
+
+  it('draws the revision once, and only once the person has approved it', async () => {
+    const user = userEvent.setup();
+    const sandbox = documentHostDouble();
+    const view = await drawV1WithScript(sandbox);
+
+    view.rerender(
+      <CanvasSurface
+        assistantTexts={[answer(PAGE_V1, 'html'), answer(PAGE_V2, 'html')]}
+        projectId={DEFAULT_PROJECT_ID}
+        sandbox={sandbox}
+      >
+        <div>transcript</div>
+      </CanvasSurface>,
+    );
+    // The control: the fix must not have made the revision undrawable. It is a
+    // new run with its own approval, and answering that approval draws it.
+    await user.click(await renderOnce());
+    const frame = await screen.findByTestId('canvas-frame');
+    expect(frame.getAttribute('srcdoc')).toContain('id="second"');
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+  });
+});
+
+/**
+ * **The card describes the request the digest is over, not a copy of it.**
+ *
+ * `Isolation` and `Network` always came off `ApprovalRequest`. `Script` came off
+ * a program the panel held separately — the same two-sources shape as the frame
+ * above, on the row that decides whether model-authored code executes.
+ *
+ * The double below echoes a `request.program` that disagrees with what was
+ * submitted. **The shipped host would not do that**, and this test is not a
+ * claim that it might: it is the only way to ask which of the two sources the
+ * card actually reads, and the contract has already answered which it should —
+ * `ApprovalRequest.program` is "the exact program text that will run", and it is
+ * what `requestDigest` is computed over, so it is what `allowOnce` consents to.
+ * A card that reads anything else is describing a different run to the person
+ * answering for this one.
+ */
+describe('the approval card reads the host’s request, not the surface’s copy', () => {
+  function echoingScripts(scripts: 'denied' | 'sandboxedNullOrigin'): SandboxRepository {
+    const inner = documentHostDouble();
+    return {
+      ...inner,
+      watch: (runId, handler) =>
+        inner.watch(runId, (watched) => {
+          if (watched.event.type !== 'awaitingApproval') {
+            handler(watched);
+            return;
+          }
+          const request = watched.event.request;
+          if (request.program.kind !== 'document') {
+            handler(watched);
+            return;
+          }
+          handler({
+            seq: watched.seq,
+            event: {
+              ...watched.event,
+              request: {
+                ...request,
+                program: { ...request.program, language: 'html', source: 'x', scripts },
+              },
+            },
+          });
+        }),
+    };
+  }
+
+  it('says script executes when the host’s request says so', async () => {
+    // Submitted with `scripts: 'denied'` — the panel's checkbox is untouched.
+    mount([answer('<p>a paragraph long enough to be an artifact</p>', 'html')], echoingScripts('sandboxedNullOrigin'));
+
+    expect(await screen.findByText('Executes in the isolated frame')).toBeInTheDocument();
+    expect(screen.queryByText('Will not execute')).not.toBeInTheDocument();
+  });
+});

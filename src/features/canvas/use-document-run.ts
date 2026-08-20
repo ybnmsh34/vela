@@ -61,17 +61,49 @@ import { documentSubmit } from './document-run';
  * "settled but never approved" cannot both be true — and so the one rule the
  * Canvas surface must obey, *draw no frame before `accepted`*, is enforced by
  * there being no frame-shaped state to draw from until then.
+ *
+ * ## Why every arm that can be drawn or described carries its own program
+ *
+ * *Draw no frame before `accepted`* was enforced against `phase`, and the frame
+ * was built from a `program` the surface held separately. Two values, no
+ * invariant tying them to the same run — so what the rule actually said was
+ * "no accepted event **for some run**, no frame". The gap is not theoretical and
+ * needs no attacker: a model revising an artifact makes the panel follow the new
+ * version, `program` moves, `phase` does not move until the effect below runs,
+ * and in between the surface commits a frame carrying the *new* model-authored
+ * bytes under the *previous* run's acceptance. Measured, with the toggle already
+ * on: one `<iframe sandbox="allow-scripts">` holding v2's source reached the DOM
+ * while the host was still being asked about it.
+ *
+ * So the program travels with the phase. `accepted` and `settled` carry the
+ * program this hook submitted for *this* run — the effect's own closure
+ * variable, minted alongside the run id, so it cannot be a different one — and
+ * `awaitingApproval` carries the host's echo instead, because
+ * {@link ApprovalRequest} calls that "the exact program text that will run" and
+ * a consent card that described the surface's own copy would be describing
+ * something other than what the digest binds.
+ *
+ * The point is not that the pairing is now checked. It is that there is nothing
+ * left to check: a caller cannot obtain a grant without obtaining the program it
+ * was granted for.
  */
 export type RunPhase =
   | { readonly kind: 'submitting' }
   | { readonly kind: 'awaitingApproval'; readonly request: ApprovalRequest }
-  | { readonly kind: 'accepted'; readonly grant: EffectiveGrant }
+  | {
+      readonly kind: 'accepted';
+      readonly grant: EffectiveGrant;
+      /** What this run was submitted with. See the note above. */
+      readonly program: DocumentProgram;
+    }
   | {
       readonly kind: 'settled';
       readonly outcome: SandboxOutcome;
       readonly usage: RunUsage;
       /** The grant it ran under, kept so a rendered document can stay drawn. */
       readonly grant: EffectiveGrant | null;
+      /** The program that grant was for. `null` exactly when `grant` is. */
+      readonly program: DocumentProgram | null;
     }
   /**
    * The submit was rejected rather than settled, so there is no run and there
@@ -202,7 +234,10 @@ export function useDocumentRun(
             break;
           case 'accepted':
             grantRef.current = event.grant;
-            setPhase({ kind: 'accepted', grant: event.grant });
+            // `program` is the effect's own closure variable — the one passed to
+            // `documentSubmit` four lines below — so the grant and the program
+            // it is a grant *for* are minted together and cannot drift apart.
+            setPhase({ kind: 'accepted', grant: event.grant, program });
             break;
           case 'settled':
             setPhase({
@@ -210,6 +245,7 @@ export function useDocumentRun(
               outcome: event.outcome,
               usage: event.usage,
               grant: grantRef.current,
+              program: grantRef.current === null ? null : program,
             });
             break;
           case 'diagnostic':
@@ -251,8 +287,15 @@ export function useDocumentRun(
 
   const answer = useCallback(
     (decision: 'allowOnce' | 'deny') => {
-      const runId = runIdRef.current;
-      if (runId === null || phase.kind !== 'awaitingApproval') return;
+      if (phase.kind !== 'awaitingApproval') return;
+      // **Both halves of the answer come off the same request.** They used to
+      // come off two: the digest from `phase`, the run id from `runIdRef`, which
+      // the effect moves on to the next run before any event for that run has
+      // arrived. That is the same defect the phase union above was widened to
+      // close, one size smaller — a pairing held by timing rather than by a
+      // value. `ApprovalRequest.runId` is the host's own statement of which run
+      // it is asking about, so the answer names the run the question named.
+      const runId = phase.request.runId;
       // The digest is opaque: it goes back exactly as it arrived. Recomputing it
       // is the one thing the contract names as forbidden on this side.
       //

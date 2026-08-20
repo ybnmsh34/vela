@@ -9,6 +9,47 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-17 — the lead dropped thirteen of eighteen tracks with a null return
+
+**Claimed:** "Run is live. All eighteen tracks are spawned and working."
+
+**True:** five ran. Thirteen never reached a builder.
+
+**The defect.** Round 1's pipeline had a stage-1 callback that skipped the probe for non-guard
+tracks:
+
+```js
+(t) => { if (!t.guard) return null; return agent(...) }
+```
+
+A pipeline stage that returns `null` **drops the item and skips its remaining stages**. I meant
+"this track needs no probe"; the pipeline's semantics are "this item is finished". Thirteen tracks
+were silently discarded between stage 1 and stage 2. The run reported `agents_done: 15,
+agents_error: 0, agents_skipped: 0` — a clean green with two-thirds of the work missing.
+
+**How it was caught.** The returned rows said `"no verdict returned"` with `tagGraded: null` for
+seventeen of eighteen tracks, and the agent count was 15 where the structure implied ~41. Reading
+`journal.jsonl` — which the tool result explicitly tells you to read before diagnosing — showed
+exactly three agents each for `t03`-`t07` and none for anything else.
+
+**Why it belongs in this file rather than a fix note.** It is the run's own governing class,
+committed by the lead, inside the harness built to hunt that class: a filter whose frame was one
+notch off the real semantics, passing green while doing two-thirds less than it claimed. The
+announcement that all eighteen were "spawned and working" was false when I made it, and nothing in
+the tooling contradicted it — `agents_error: 0` and `agents_skipped: 0` both read as confirmation.
+
+**Fixed by** returning a non-null sentinel (`{ track, skipped: true, evasions: [] }`) so non-guard
+tracks pass through stage 1 into a builder. Stage 2 already gated its probe block on
+`probe.evasions.length`, so the sentinel needed no downstream change. Resumed with
+`resumeFromRunId`, so the fifteen completed agents replayed from cache and only the thirteen
+dropped tracks ran live.
+
+**The reusable lesson**, which is the point of recording it: a zero in an error counter is not
+evidence that work happened. `agents_skipped: 0` was true and meaningless — the items were dropped
+by the pipeline's own success path, not skipped by anything that counts skips.
+
+---
+
 ## 2026-08-17 — the ladder itself was one notch narrow
 
 **Claimed:** Projects, Skills and Schedules reached `reaches-user`, the top tier, on the strength

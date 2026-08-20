@@ -87,6 +87,126 @@ Eighteen worktrees created from the tag; dependencies installed in all eighteen,
 log body (18 OK / 0 FAIL). Guard tracks run probe-first per RULE P. Verdicts land here as they
 arrive; a FAIL re-enters its builder without disturbing any other track.
 
+### Round 1 result — the five guard tracks, and a lead defect that cost thirteen
+
+**A lead pipeline defect dropped thirteen of eighteen tracks before they reached a builder.** A
+stage-1 callback returned `null` to mean "this track needs no probe"; the pipeline reads `null` as
+"this item is finished" and skips its remaining stages. The run reported `agents_done: 15,
+agents_error: 0, agents_skipped: 0` — clean green, two-thirds of the work missing. Recorded in
+[`docs/corrections.md`](./corrections.md). Fixed with a non-null sentinel and resumed; the fifteen
+completed agents replayed from cache and the thirteen dropped tracks are running now.
+
+**All five guard tracks completed, and all five FAILED — every one of them on PROBE.**
+
+| track | verdict | tier | what got past |
+|---|---|---|---|
+| T3 instrument | FAIL | test-bites | React writes `__reactContainer# Vela — run 2026-08-17
+
+**Live page:** [`docs/run/index.html`](./run/index.html) — auto-refreshing, reads
+[`docs/run/status.json`](./run/status.json). That page is how the run is followed; this file is the
+written record behind it.
+
+**Tag:** `run-start-2026-08-17` = `c0feb93` · **State:** RUNNING · **Round:** 1
+
+## How this run works
+
+Eighteen tracks, spawned simultaneously, each in its own git worktree with its own builder and its
+own critic. **There are no phases and no checkpoints.** A track that FAILs goes back to its builder
+and re-runs; every other track continues untouched. Tracks finish at different times and that is
+correct. The run ends when the operator stops it.
+
+## The ladder — and the demotion that opened this run
+
+| tier | meaning | passes? |
+|---|---|---|
+| `traced` | a call path exists in source | UNVERIFIED |
+| `test-bites` | a named test fails when the rule breaks | UNVERIFIED |
+| `dev-clicked` | dev binary, dev server, CDP events, or substituted app-data | UNVERIFIED — real progress, not a pass |
+| `reaches-user` | **installed from the produced bundle**, launched as a user launches it, **OS-level input**, app-data resolving where it resolves on a real machine | **PASSES** |
+| `ships` | reaches-user + installer produced, installs clean, survives update and uninstall | **PASSES** |
+
+**Projects, Skills and Schedules were demoted from `reaches-user` to `dev-clicked`** at the start of
+this run. The evidence stands — the clicks happened, the panels opened — but it was a dev binary
+against a Vite dev server, CDP-dispatched events, and app-data substituted into an isolated profile
+inside an MSIX container. The audit had already written all three substitutions down, in a paragraph
+headed *"What this evidence is not"*, and graded the section top-tier anyway.
+
+That is the class this entire run is organised around — a check asking a question one notch narrower
+than the real one — occurring in the definition of the check that grades everything else. Recorded
+in [`docs/corrections.md`](./corrections.md).
+
+**The only dependency in this run:** no track grades above `dev-clicked` until T1 produces an
+installer. That is a grading rule, not a sequence. Every track runs now and is regraded when the
+installer exists, without being restarted.
+
+## The class every track is governed by
+
+Six of seven defects last session were a guard asking a question one notch narrower than the real
+one, and **every fix shipped a fresh instance of the same class** — including one prescribed by a
+reviewer with measurements attached, whose concession was *"That was luck, not coverage."*
+
+Whoever can see a defect clearly enough to fix it is reasoning inside the frame that produced it.
+More care does not touch this. What broke it every time was **a second agent with a probe**.
+
+- **RULE P — probe first.** No guard merges unless a separate fresh-context agent, not shown the fix,
+  first constructs three distinct evasions attacking the frame of the guard; they fail against the
+  pre-fix guard; the fix lands and they stop evading; and a **third** agent, shown the fix, fails to
+  re-evade. A builder probing its own work is probing its own frame and does not count.
+- **RULE Q — a measurement is not a bound.** Ranges are written observed and open.
+- **RULE R — cite symbols, not line numbers.**
+- **RULE S — grade against a tag.** Every critic records its tag and re-grades if it moves.
+- **RULE T — a comment is not evidence.** Prose can neither create nor prove an edge.
+- **RULE U — name the reader.** Unread writes FAIL.
+
+## Tracks
+
+| id | track | worktree | guard | notes |
+|---|---|---|---|---|
+| T1 | Release path | `vela-t01` | | unblocks the ladder for all seventeen others; only track permitted to launch Vela |
+| T2 | The Close collision | `vela-t02` | | one control quits the app, one dismisses a panel, same accessible name |
+| T3 | The instrument | `vela-t03` | RULE P | instrument defects invalidate evidence retroactively |
+| T4 | Contrast guard | `vela-t04` | RULE P | measure from the rendered DOM, not stylesheet text |
+| T5 | Reachability guard | `vela-t05` | RULE P | rebuild on the TypeScript AST; prose must not create an edge |
+| T6 | CI-coverage guard | `vela-t06` | RULE P | parse YAML, not lines |
+| T7 | Remaining guards | `vela-t07` | RULE P | wire keys vs identifiers; floors that stayed green |
+| T8 | MCP surface | `vela-t08` | | pane-and-store, not a mount |
+| T9 | MCP HTTP/SSE transport | `vela-t09` | | OAuth, custom headers, Credential Manager |
+| T10 | Provenance closure | `vela-t10` | | agent runs record nothing; then RULE U tree-wide |
+| T11 | File creation | `vela-t11` | | real docx/pptx/xlsx/pdf through the sandbox |
+| T12 | Plugins | `vela-t12` | | bundle format over the working skill store |
+| T13 | Cowork surface | `vela-t13` | | progress / project / context panels, parallel tasks |
+| T14 | Code workspace | `vela-t14` | | panes, worktree-isolated sessions, diff review |
+| T15 | Styles and incognito | `vela-t15` | | reachable by control **and** shortcut |
+| T16 | Subagent fan-out | `vela-t16` | | BrowserAdapter answers `toolCalls: []`, so nothing can drive it |
+| T17 | Shell and edge states | `vela-t17` | | Home reachable only via the delete path |
+| T18 | Host boundary | `vela-t18` | | renderer-side decisions that belong to the host |
+
+## Round log
+
+### Round 1 — started 2026-08-17
+
+Eighteen worktrees created from the tag; dependencies installed in all eighteen, verified from the
+log body (18 OK / 0 FAIL). Guard tracks run probe-first per RULE P. Verdicts land here as they
+arrive; a FAIL re-enters its builder without disturbing any other track.
+
+ **before any render commits**, so a `#root` holding pre-existing markup grades `mounted: true`. Separately, `mount` and `status` still print `ok: true` and exit 0 while their own verdict says THE RENDERER DID NOT MOUNT — the builder diagnosed that exact mechanism for `up`, fixed `up` alone, and left it in the two commands whose entire purpose is answering that question. |
+| T4 contrast | FAIL | test-bites | Fourth evasion succeeded **and is already shipped**. COLOUR FIDELITY also failed. |
+| T5 reachability | FAIL | test-bites | Extractor is now genuinely structural (`ts.createSourceFile`) and defeats all three original evasions twice each — a fourth still got through. |
+| T6 CI coverage | FAIL | test-bites | PROBE, MUTATION and WRITE-READ all failed. |
+| T7 remaining guards | FAIL | test-bites | Builder's headline numbers all reproduce exactly; PROBE and WRITE-READ failed. |
+
+**Five independent guard fixes. Five fresh evasions found by an agent who had seen the fix.**
+
+That is RULE P earning its place. Every one of these builders did competent work — T3's critic said
+outright it could not find a false headline number in the report, T7's numbers reproduced exactly,
+T5's rebuild on the TypeScript AST defeated every evasion it was handed. And every one of them
+shipped a fix whose own frame had a hole, exactly as the class predicts. None of it would have
+surfaced without a third agent attacking the fix specifically.
+
+`LADDER` failed on all five, which is the expected cap: no installer exists yet, so nothing can
+grade above `dev-clicked`. That is not held against the other members.
+
+
 ---
 
 # Previous runs

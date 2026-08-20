@@ -121,6 +121,7 @@ import {
   type SkillsListRes,
   type SkillsReadReq,
   type SkillsReadRes,
+  type StopReason,
   type StoreAppendMessageReq,
   type StoreConversationRefReq,
   type StoreCreateConversationReq,
@@ -135,6 +136,7 @@ import {
   type StoreSearchRes,
   type StoreUpdateMessageReq,
   type TokenUsage,
+  type ToolCallOutcome,
   type ThemePreference,
   type UiLayout,
   type WireProtocolId,
@@ -464,6 +466,73 @@ function credentialFieldLabel(mode: AuthMode): string | null {
 function splitIntoFrames(text: string): string[] {
   if (text === '') return [];
   return text.match(/\S+\s*/g) ?? [text];
+}
+
+/**
+ * What a scripted turn answers. Every field is optional, and every omitted
+ * field means exactly what the unscripted fake has always done.
+ *
+ * @see BrowserAdapter.seedReplyScript
+ */
+export interface ScriptedReply {
+  /** The answer text. Omitted means the echo of the last user message. */
+  readonly text?: string;
+  /** Omitted means none, which is what this fake has always answered. */
+  readonly toolCalls?: readonly ToolCallOutcome[];
+  /**
+   * Omitted is derived, not defaulted: a turn that asked for a tool stopped
+   * because it asked for a tool. Stated explicitly only to test the
+   * combinations a real endpoint can produce and this derivation cannot.
+   */
+  readonly stopReason?: StopReason;
+}
+
+/**
+ * Decides what one turn answers, from the request as the host received it.
+ *
+ * **May answer a promise**, and that is the load-bearing half rather than a
+ * convenience: a script that does not resolve is a turn that has not answered
+ * yet, which is how a test holds several turns open at once and observes what
+ * is genuinely in flight. Nothing else in this fake can express that — the
+ * `scheduleFrame` hook is per adapter, so holding it holds every turn.
+ *
+ * **It must not reject.** There is no honest translation from "the test's
+ * script threw" into a {@link ChatError}: every arm of that union carries a
+ * {@link Diagnosis} describing something a real endpoint or a real transport
+ * did, and minting one here would put a fabricated wire failure in front of the
+ * code under test. So a rejection is rethrown on its own macrotask, where the
+ * runner reports it as the defect in the test that it is.
+ */
+export type ReplyScript = (request: ChatSendReq) => ScriptedReply | Promise<ScriptedReply>;
+
+/** Every field omitted: exactly what this fake answered before scripts existed. */
+const NO_SCRIPT: ScriptedReply = {};
+const NO_TOOL_CALLS: readonly ToolCallOutcome[] = [];
+
+/**
+ * The delta frames one tool call streams as.
+ *
+ * Two fragments rather than one, for the same reason {@link splitIntoFrames}
+ * cuts the answer up: a consumer that only ever sees a whole `arguments` blob
+ * per call must not be able to look correct here, because a real endpoint
+ * spreads that JSON across whatever chunk boundaries its transport happens to
+ * land on. The `callId` and `name` ride the first fragment only — which is also
+ * what a real endpoint does, and what {@link ToolCallDelta.slot} exists to make
+ * survivable.
+ */
+function toolCallFrames(outcome: ToolCallOutcome, slot: number): ChatStreamEvent[] {
+  const [callId, name, encoded] =
+    outcome.status === 'ok'
+      ? [outcome.callId, outcome.name, JSON.stringify(outcome.arguments) ?? '']
+      : [outcome.callId, outcome.name, outcome.rawArguments];
+  const cut = Math.floor(encoded.length / 2);
+  return [encoded.slice(0, cut), encoded.slice(cut)].map((argumentsFragment, position) => ({
+    type: 'toolCallDelta' as const,
+    delta:
+      position === 0
+        ? { slot, callId, name, argumentsFragment }
+        : { slot, callId: null, name: null, argumentsFragment },
+  }));
 }
 
 /**
@@ -832,6 +901,8 @@ export class BrowserAdapter implements PlatformAdapter {
   readonly #capabilities = new Map<string, ModelCapabilityReport>();
   /** Endpoints that enumerate their own models. Absent = no listing route. */
   readonly #listings = new Map<string, ModelOption[]>();
+  /** See {@link BrowserAdapter.seedReplyScript}. `null` is the echo. */
+  #script: ReplyScript | null = null;
   #theme: ThemePreference = 'system';
   readonly #listeners = new Map<string, Set<(payload: unknown) => void>>();
   /** Mirrors `ChatTurns` in the host: id -> "has been cancelled". */
@@ -1596,52 +1667,119 @@ export class BrowserAdapter implements PlatformAdapter {
     this.#turns.set(request.turnId, turn);
 
     const echoed = [...request.messages].reverse().find((m) => m.role === 'user')?.text ?? '';
-    const frames = splitIntoFrames(echoed);
-    let index = 0;
 
-    const step = () => {
-      if (turn.cancelled) {
-        // What a real backend produces when the caller cancels: a terminal
-        // `Error` of kind `cancelled`, not a `Done` pretending the turn ran.
+    /** Stream one settled reply. Identical to the unscripted path when `{}`. */
+    const stream = (reply: ScriptedReply): void => {
+      const text = reply.text ?? echoed;
+      const toolCalls = reply.toolCalls ?? NO_TOOL_CALLS;
+      // Derived rather than defaulted: see `ScriptedReply.stopReason`.
+      const stopReason: StopReason =
+        reply.stopReason ?? (toolCalls.length === 0 ? 'endTurn' : 'toolUse');
+      const frames: ChatStreamEvent[] = [
+        ...splitIntoFrames(text).map(
+          (fragment): ChatStreamEvent => ({ type: 'textDelta', text: fragment }),
+        ),
+        // After the text, because a call the model made is a thing it decided
+        // at the end of what it was saying, and before `done`, because a
+        // consumer that only reads `done.toolCalls` must not be the only one
+        // this fake can satisfy.
+        ...toolCalls.flatMap((outcome, slot) => toolCallFrames(outcome, slot)),
+      ];
+      let index = 0;
+
+      const step = () => {
+        if (turn.cancelled) {
+          // What a real backend produces when the caller cancels: a terminal
+          // `Error` of kind `cancelled`, not a `Done` pretending the turn ran.
+          this.#turns.delete(request.turnId);
+          this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
+          return;
+        }
+        const frame = frames[index];
+        if (frame !== undefined) {
+          this.#emitChat(request.turnId, frame);
+          index += 1;
+          this.#scheduleFrame(step);
+          return;
+        }
         this.#turns.delete(request.turnId);
-        this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
-        return;
-      }
-      if (index < frames.length) {
-        this.#emitChat(request.turnId, { type: 'textDelta', text: frames[index] ?? '' });
-        index += 1;
-        this.#scheduleFrame(step);
-        return;
-      }
-      this.#turns.delete(request.turnId);
-      this.#emitChat(request.turnId, {
-        type: 'done',
-        response: {
-          parts: echoed === '' ? [] : [{ kind: 'text', text: echoed }],
-          toolCalls: [],
-          stopReason: 'endTurn',
-          usage: {
-            inputTokens: null,
-            outputTokens: null,
-            reasoningTokens: null,
-            cachedInputTokens: null,
+        this.#emitChat(request.turnId, {
+          type: 'done',
+          response: {
+            parts: text === '' ? [] : [{ kind: 'text', text }],
+            toolCalls,
+            stopReason,
+            usage: {
+              inputTokens: null,
+              outputTokens: null,
+              reasoningTokens: null,
+              cachedInputTokens: null,
+            },
+            structured: null,
+            // Honest: this fake reports no usage, so it says so, exactly as a
+            // local runtime that never sends a usage block does.
+            degradations: [{ kind: 'usageNotReported' }],
+            // Also honest, and the reason it is not `null`: this fake has exactly
+            // one candidate and never fails over, so the endpoint that answered
+            // really is the one addressed. Saying so — rather than leaving it
+            // unattributed — is what makes `pnpm dev` exercise the attributed
+            // path instead of the "host too old to say" path.
+            answeredBy: { providerId: request.providerId, modelId: request.modelId },
           },
-          structured: null,
-          // Honest: this fake reports no usage, so it says so, exactly as a
-          // local runtime that never sends a usage block does.
-          degradations: [{ kind: 'usageNotReported' }],
-          // Also honest, and the reason it is not `null`: this fake has exactly
-          // one candidate and never fails over, so the endpoint that answered
-          // really is the one addressed. Saying so — rather than leaving it
-          // unattributed — is what makes `pnpm dev` exercise the attributed
-          // path instead of the "host too old to say" path.
-          answeredBy: { providerId: request.providerId, modelId: request.modelId },
-        },
-      });
+        });
+      };
+
+      this.#scheduleFrame(step);
     };
 
-    this.#scheduleFrame(step);
+    const script = this.#script;
+    if (script === null) {
+      stream(NO_SCRIPT);
+    } else {
+      // `Promise.resolve().then` rather than a direct call, so a script that
+      // throws synchronously and one that rejects land on the same path.
+      void Promise.resolve()
+        .then(() => script(request))
+        .then(
+          (reply) => {
+            // A turn cancelled while the script was still deciding never
+            // streamed a frame, so `step` would not see it: the terminal
+            // `cancelled` is owed here instead.
+            if (turn.cancelled) {
+              this.#turns.delete(request.turnId);
+              this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
+              return;
+            }
+            stream(reply);
+          },
+          (error: unknown) => {
+            // See `ReplyScript`: not laundered into a `ChatError`, because this
+            // fake has no honest `Diagnosis` to put behind one.
+            setTimeout(() => {
+              throw error;
+            }, 0);
+          },
+        );
+    }
     return { turnId: request.turnId, accepted: true };
+  }
+
+  /**
+   * Test hook: decide what each turn answers, including tool calls.
+   *
+   * Like `seedCapabilities`, a hook on the fake and not a command — unreachable
+   * from `invoke`, so no renderer code can call it. It exists because the one
+   * thing this fake could never say was "the model asked for a tool": every
+   * `done` it emitted carried `toolCalls: []`, which made the whole agent path
+   * below `chat:event` — the loop's `executableCalls`, its `ToolExecutor`, and
+   * the subagent toolkit `use-conversation.ts` offers on every agent run —
+   * undrivable through `<App />` by construction rather than by oversight.
+   *
+   * The script sees the request **after** every validation the host applies, so
+   * a turn a real host would have refused cannot be answered here either.
+   */
+  seedReplyScript(script: ReplyScript): void {
+    this.#script = script;
   }
 
   /**

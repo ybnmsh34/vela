@@ -104,7 +104,16 @@ export function ProjectPanel({ onClose, controller }: ProjectPanelProps) {
         <h2 id="projects-title" className={styles.title}>
           Projects
         </h2>
-        <button type="button" ref={closeRef} className={styles.close} onClick={onClose}>
+        {/* Named for what it closes, not for the verb alone: a bare "Close"
+            answered to the same name as the caption control that quits Vela.
+            `src/app/close-collision.test.tsx`. */}
+        <button
+          type="button"
+          ref={closeRef}
+          className={styles.close}
+          onClick={onClose}
+          aria-label="Close the projects panel"
+        >
           Close
         </button>
       </div>

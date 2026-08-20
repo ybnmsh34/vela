@@ -74,7 +74,18 @@ export function EndpointsPanel({
       <header className={styles.header}>
         <h2 className={styles.heading}>Endpoints</h2>
         {onClose === undefined ? null : (
-          <button type="button" className={styles.close} onClick={onClose}>
+          // Named for what it closes, not for the verb alone. This panel is
+          // not modal, so it can be on screen at the same time as a dialog that
+          // also has a dismiss control — and at the same time as the caption
+          // control that quits Vela, which is what a bare "Close" here used to
+          // answer to. `src/app/close-collision.test.tsx` drives that exact
+          // three-way state.
+          <button
+            type="button"
+            className={styles.close}
+            onClick={onClose}
+            aria-label="Close the endpoints panel"
+          >
             Close
           </button>
         )}

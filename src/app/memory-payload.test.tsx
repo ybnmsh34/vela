@@ -120,7 +120,7 @@ async function remember(user: User, text: string): Promise<void> {
   await user.paste(text);
   await user.click(within(pane()).getByRole('button', { name: 'Remember this' }));
   await screen.findByRole('textbox', { name: `Memory: ${text}` });
-  await user.click(within(pane()).getByRole('button', { name: 'Close' }));
+  await user.click(within(pane()).getByRole('button', { name: 'Close the memory panel' }));
 }
 
 async function openConversation(user: User): Promise<void> {
@@ -203,7 +203,7 @@ describe('a remembered fact reaches the payload', () => {
     await user.click(screen.getByRole('button', { name: 'Memory' }));
     await user.click(await screen.findByRole('button', { name: 'Forget: uses pnpm, never npm' }));
     await screen.findByText('Nothing is remembered yet.');
-    await user.click(within(pane()).getByRole('button', { name: 'Close' }));
+    await user.click(within(pane()).getByRole('button', { name: 'Close the memory panel' }));
 
     await openConversation(user);
     await say(user, 'how do I install this?');

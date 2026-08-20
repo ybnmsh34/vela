@@ -133,7 +133,7 @@ describe('the title bar carries the window controls', () => {
       .map((button) => button.getAttribute('aria-label'));
 
     // Windows order, and the window controls last — the corner of the window.
-    expect(names).toEqual(['Theme: system', 'Minimise', 'Maximise', 'Close']);
+    expect(names).toEqual(['Theme: system', 'Minimise', 'Maximise', 'Close Vela']);
     await waitFor(() => expect(fake.countOf('isMaximized')).toBeGreaterThan(0));
   });
 
@@ -146,7 +146,7 @@ describe('the title bar carries the window controls', () => {
     expect(fake.countOf('minimize')).toBe(1);
     expect(fake.countOf('close')).toBe(0);
 
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('button', { name: 'Close Vela' }));
     expect(fake.countOf('close')).toBe(1);
     expect(fake.countOf('minimize')).toBe(1);
   });
@@ -304,14 +304,14 @@ describe('close is not reachable by accident', () => {
       reached.push(document.activeElement?.getAttribute('aria-label') ?? null);
     }
 
-    expect(reached).toEqual(['Theme: system', 'Minimise', 'Maximise', 'Close']);
+    expect(reached).toEqual(['Theme: system', 'Minimise', 'Maximise', 'Close Vela']);
   });
 
   it('needs a real click: a press that slides off does nothing', async () => {
     const user = userEvent.setup();
     const fake = new FakeWindow();
     renderTitleBar(fake);
-    const close = screen.getByRole('button', { name: 'Close' });
+    const close = screen.getByRole('button', { name: 'Close Vela' });
 
     // Press on the button, release somewhere else. A control wired to
     // `mousedown` — which is what the drag region's double click uses — would

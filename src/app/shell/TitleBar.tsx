@@ -22,11 +22,32 @@
  *
  * Closing is the one control here that loses work. Four things keep it from
  * being hit by mistake, and all four are asserted in `window-controls.test.tsx`:
- * it is **last** in the tab order, so nothing tabs *through* it on the way
- * somewhere else; nothing focuses it at mount; it is outside the drag region,
- * so the double-click-to-maximise gesture can never land on it; and it acts on
- * a real click — press it and slide off and nothing happens, unlike the drag
- * region's deliberately `mousedown`-driven double click.
+ * it is last in the tab order **of this bar**; nothing focuses it at mount; it
+ * is outside the drag region, so the double-click-to-maximise gesture can never
+ * land on it; and it acts on a real click — press it and slide off and nothing
+ * happens, unlike the drag region's deliberately `mousedown`-driven double
+ * click.
+ *
+ * The first of those used to be written here as "last in the tab order, so
+ * nothing tabs *through* it on the way somewhere else", and that is false of the
+ * assembled window: this bar is the **first** landmark in the document, so the
+ * global order is Theme → Minimise → Maximise → Close → sidebar → main and a
+ * user tabbing forward does pass over it. `docs/audit/shell.md` §4 measured that
+ * with real `Input.dispatchKeyEvent` presses. Passing over is not activating and
+ * the other three hold, but the sentence was bar-scoped and read as app-scoped.
+ *
+ * All four of those guard the *pointer*. None of them guards the **name**, and
+ * the name is what an automation, a screen reader and voice control navigate
+ * by. This control used to be called `Close`, which is also what every panel in
+ * the product called its own dismiss button, so "Close" resolved to *this* —
+ * first in document order, because the title bar is the first thing in the
+ * shell — and quitting the application was indistinguishable from dismissing a
+ * dialog. `src/app/close-collision.test.tsx` is what says so now, and it asserts
+ * the consequence (whether `window.close` was reached) rather than the string.
+ *
+ * The other two caption controls keep their bare verbs: nothing else in the
+ * product is called `Minimise` or `Maximise`, so nothing else answers to them.
+ * `Close` was the only name in this bar that more than one control answered to.
  */
 
 import type { MouseEvent } from 'react';
@@ -164,8 +185,9 @@ export function TitleBar({ context }: TitleBarProps) {
           type="button"
           className={`${styles.captionButton} ${styles.closeButton}`}
           onClick={close}
-          aria-label="Close"
-          title="Close"
+          // Named for the consequence, not for the glyph. See the note above.
+          aria-label="Close Vela"
+          title="Close Vela"
         >
           <CaptionGlyph shape="close" />
         </button>

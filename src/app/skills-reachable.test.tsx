@@ -152,9 +152,10 @@ describe('a user can see the skills they have installed', () => {
     render(<App adapter={new BrowserAdapter()} />);
 
     const dialog = await openSkills(user);
-    // Scoped to the dialog: the title bar carries a window Close button too,
-    // and an unscoped query would be ambiguous rather than wrong.
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    // Still scoped to the dialog, but the name is now the dialog's own: the
+    // title bar's caption control is `Close Vela`, and the two used to share
+    // the single name `Close`. `src/app/close-collision.test.tsx`.
+    await user.click(within(dialog).getByRole('button', { name: 'Close the skills panel' }));
 
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement, 'focus was dropped to <body>').not.toBe(document.body);

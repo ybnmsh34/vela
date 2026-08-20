@@ -248,7 +248,7 @@ describe('focus has an owner: no overlay may drop the keyboard on the floor', ()
     expectKeyboardIsSomewhere();
     expect(panel.contains(document.activeElement)).toBe(true);
 
-    await user.click(within(panel).getByRole('button', { name: 'Close' }));
+    await user.click(within(panel).getByRole('button', { name: 'Close the endpoints panel' }));
     await waitFor(() => {
       expect(screen.queryByRole('region', { name: 'Endpoints' })).toBeNull();
     });

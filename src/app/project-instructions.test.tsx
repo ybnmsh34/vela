@@ -140,7 +140,7 @@ async function writeInstructions(user: User, name: string, text: string): Promis
   await user.paste(text);
   await user.click(within(pane()).getByRole('button', { name: 'Save instructions' }));
   await within(pane()).findByText('Saved');
-  await user.click(within(pane()).getByRole('button', { name: 'Close' }));
+  await user.click(within(pane()).getByRole('button', { name: 'Close the projects panel' }));
 }
 
 /** Switch the window to an existing project by name. */
@@ -151,7 +151,7 @@ async function switchTo(user: User, name: string): Promise<void> {
   await waitFor(() => {
     expect(picker).toHaveDisplayValue(name);
   });
-  await user.click(within(pane()).getByRole('button', { name: 'Close' }));
+  await user.click(within(pane()).getByRole('button', { name: 'Close the projects panel' }));
 }
 
 async function openConversation(user: User): Promise<void> {

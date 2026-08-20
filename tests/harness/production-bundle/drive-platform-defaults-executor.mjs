@@ -235,7 +235,13 @@ async function configureEndpoint(page) {
   await form.getByLabel(/^Model/u).fill('a-local-model');
   await form.getByRole('button', { name: 'Add endpoint' }).click();
   await page.waitForTimeout(350);
-  const close = page.getByRole('button', { name: 'Close' });
+  // `exact: true`, and the panel's own name. Playwright's default name match is
+  // a case-insensitive substring, so a bare `'Close'` matched the title bar's
+  // caption control as well — and that one is first in document order, because
+  // the title bar is the first thing in the shell. `close.first().click()`
+  // therefore *quit Vela* instead of dismissing this panel, which is how the
+  // collision recorded in `docs/audit/REPORT.md` first read as a crash.
+  const close = page.getByRole('button', { name: 'Close the endpoints panel', exact: true });
   if ((await close.count()) > 0) await close.first().click();
   await page.waitForTimeout(150);
 }

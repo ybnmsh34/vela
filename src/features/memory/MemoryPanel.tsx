@@ -111,7 +111,17 @@ export function MemoryPanel({ onClose, controller }: MemoryPanelProps) {
         <h2 id="memory-title" className={styles.title}>
           Memory
         </h2>
-        <button type="button" ref={closeRef} className={styles.close} onClick={onClose}>
+        {/* The visible word stays "Close"; the accessible name says which
+            thing closes. A bare "Close" here answered to the same name as the
+            title bar's caption control, which quits the application — see
+            `src/app/close-collision.test.tsx`. */}
+        <button
+          type="button"
+          ref={closeRef}
+          className={styles.close}
+          onClick={onClose}
+          aria-label="Close the memory panel"
+        >
           Close
         </button>
       </div>

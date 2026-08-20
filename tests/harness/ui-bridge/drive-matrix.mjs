@@ -792,8 +792,13 @@ try {
     check.noCredentialIsClean(providerView, await page.locator('body').innerText()),
   );
   // Back to the transcript.
-  const close = page.getByRole('button', { name: /Close|Done|Back/u }).first();
-  if ((await close.count()) > 0) await close.click();
+  // Not `/Close|Done|Back/u`. That matched the title bar's caption control as
+  // well — `aria-label="Close"` before this branch renamed it — and the title
+  // bar is the first thing in the shell, so `.first()` selected the control
+  // that quits the application rather than the one that dismisses this panel.
+  // `docs/audit/REPORT.md` records what that looked like from outside.
+  const close = page.getByRole('button', { name: 'Close the endpoints panel', exact: true });
+  if ((await close.count()) > 0) await close.first().click();
   await page.waitForTimeout(200);
 
   /* ---- STEP 9 — the error state ----------------------------------------- */

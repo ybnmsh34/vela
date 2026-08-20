@@ -12,6 +12,17 @@
  * rest of the repo's panes are tested against, with its `invoke` observed so the
  * test can say the command was *sent* rather than inferring it from what was
  * drawn.
+ *
+ * ## `delay: null`, and why it is not a shortcut
+ *
+ * `userEvent.setup()` puts a real delay between keystrokes, so typing a
+ * sentence into the comment box costs seconds. Measured here: the redirect
+ * tests ran 2.8s and 1.5s in isolation, and under a full-suite run on a loaded
+ * box one of them crossed vitest's 5s default and failed as a timeout — a red
+ * that says nothing about the code. `delay: null` removes the wait and keeps
+ * everything that matters: the events are the same events, dispatched in the
+ * same order, through the same `user-event` machinery. Nothing here depends on
+ * elapsed time, so there is nothing for the delay to be testing.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -100,7 +111,7 @@ describe('the progress panel', () => {
 
 describe('a comment on an upcoming step redirects the task', () => {
   it('takes the comment and shows that it will redirect', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     mount();
 
@@ -120,7 +131,7 @@ describe('a comment on an upcoming step redirects the task', () => {
   });
 
   it('reports the comment as delivered once the plan reaches that step', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     mount();
 
@@ -159,7 +170,7 @@ describe('a comment on an upcoming step redirects the task', () => {
   });
 
   it('refuses a blank comment in words rather than storing nothing', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     mount();
 
@@ -172,7 +183,7 @@ describe('a comment on an upcoming step redirects the task', () => {
   });
 
   it('says so when a comment was never read, instead of leaving it looking like the rest', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     mount();
 
@@ -206,7 +217,7 @@ describe('parallel tasks', () => {
   });
 
   it('switches the window’s conversation through the same action the sidebar uses', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     useCoworkStore.getState().setPlan('conversation-beta', ['Something else']);
     mount();
@@ -230,7 +241,7 @@ describe('parallel tasks', () => {
 
 describe('the project panel', () => {
   it('sends project_layout — the command that had no renderer caller', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const host = new WatchedHost();
     const { projects } = await host.invoke('project_list', {});
     const project = projects[0];
@@ -250,7 +261,7 @@ describe('the project panel', () => {
   });
 
   it('shows where the working directory is and whether the host reached it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const host = new BrowserAdapter();
     const { projects } = await host.invoke('project_list', {});
     const project = projects[0];
@@ -289,7 +300,7 @@ describe('the context panel', () => {
   });
 
   it('reports how many servers connected and how many tools a run could be offered', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount();
 
     await user.click(screen.getByRole('tab', { name: 'Context' }));
@@ -301,7 +312,7 @@ describe('the context panel', () => {
 
 describe('the dock’s keyboard', () => {
   it('moves between panels with the arrow keys, carrying focus with the selection', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount();
 
     const progress = screen.getByRole('tab', { name: 'Progress' });
@@ -317,7 +328,7 @@ describe('the dock’s keyboard', () => {
   });
 
   it('wraps at both ends rather than dead-ending', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mount();
 
     screen.getByRole('tab', { name: 'Progress' }).focus();

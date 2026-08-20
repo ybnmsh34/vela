@@ -168,8 +168,8 @@ export function DocumentPreview({ program, run, title }: DocumentPreviewProps) {
  * execute" while a fourth row sat below them saying `No filesystem access` as a
  * literal. Three derived rows and one written one, and the comment named the
  * three — which is how a row that could not go red survived beside three that
- * could. See {@link filesystemLines}. The only row still not derived is Script,
- * and it is read off the *program* rather than the grant on purpose: `scripts` is
+ * could. See {@link filesystemLines}. The only row not read off the grant is
+ * Script, and it is read off the *program* instead on purpose: `scripts` is
  * a property of the program text the person is approving, and
  * {@link EffectiveGrant} carries no field for it.
  *
@@ -259,37 +259,79 @@ function isolationSentence(grant: EffectiveGrant): string {
  * read-write is worse than no prompt, because it manufactures consent". A
  * hardcoded row is that hiding, in the one place the sentence was written about.
  *
- * Three things bear on reach and all three are here: every mount, by path and by
- * mode; a scratch directory that outlives the run; and, where there is neither,
- * whether the run may write anything at all. Nothing else on
- * `EffectiveFilesystemScope` can widen it — `outsideMounts` is a one-member
- * union, and `EffectiveGrant.workingDirectory` is a path inside the scope these
- * lines already name.
+ * **Every line is a directory the grant itself names**: each mount by host path
+ * and mode, then the scratch directory by the guest path
+ * {@link ResolvedScratch} resolved it to. The word *writable* on that line comes
+ * from {@link ScratchRequest}, whose doc comment opens "The one directory a run
+ * may always write to, created empty by the host for that run". Nothing else
+ * on {@link EffectiveFilesystemScope} can widen it: `outsideMounts` is a
+ * one-member union. {@link EffectiveGrant.workingDirectory}
+ * needs no line of its own, but only because the scratch line now prints its
+ * path: `admit` in `src-tauri/crates/vela-sandbox/src/admission.rs` resolves that
+ * field to `scratch_guest_path` for {@link ProcessWorkingDirectory} `scratch`,
+ * and for a named guest path refuses with `workingDirectoryOutsideScope` unless
+ * the path lies inside the scratch directory or inside one of the mounts. All
+ * three answers are inside a directory printed above.
  *
- * **`fileWriteBytes` is deliberately not folded into a mount's mode.** A
- * `readWrite` mount under a zero write budget looks unwritable, and saying "Read
- * only" for it would be under-warning on the strength of a limit that
- * `docs/audit/sandbox.md` measured as not enforced at all on the shipping backend
- * (`filesize=unlimited`, reported `Unenforced`). The mount mode is the reach; the
- * budget is a cost limit, and a cost limit that a backend declines to enforce
- * must never be allowed to soften a sentence about reach.
+ * **A cost limit decides nothing here, and the first version of this function
+ * let one decide the entire row.** It ended `grant.limits.fileWriteBytes === 0 ?
+ * ['No filesystem access'] : […]` — a sentence about *reach* derived from a
+ * *cost* field, and false on the grant the only real host builds. `admit` gives
+ * every grant a resolved scratch path (`DEFAULT_SCRATCH_GUEST_PATH` is
+ * `/vela/scratch`), and `guest_script` in `src-tauri/crates/vela-sandbox/src/wsl.rs` sizes
+ * that directory's tmpfs with
+ * `(plan.limits.file_write_bytes / 1024).clamp(1024, 262_144)` — so a budget of
+ * zero clamps *up* to a writable 1024 KiB, mounted `mode=0700` under the run's
+ * own uid, and `base_environment_for` points `HOME`, `TMPDIR` and `PWD` at it.
+ * `No filesystem access` over that is under-warning, the one direction a consent
+ * prompt may not be wrong in.
+ *
+ * That branch was defended here with a false reading of `docs/audit/sandbox.md`:
+ * that the audit "measured [`fileWriteBytes`] as not enforced at all on the
+ * shipping backend". The audit's probe run reports `filesize=unlimited` **and**
+ * `scratch-fs=102400kb`, for a requested `file_write_bytes` of 104 857 600
+ * (= 102 400 KiB). So the number is a real kernel bound on scratch writes and no
+ * bound at all on writes into a `readWrite` bind mount — which is what
+ * `WslBackend::report` says beside its `Unenforced`, calling the under-claim
+ * deliberate. Corrected, the reading still lands in the same place: a bound on
+ * how much may be written is not a statement about what may be reached, so it is
+ * not read here, and it is not folded into a mount's mode either — saying "Read
+ * only" for a `readWrite` mount under a small budget would be the same
+ * under-warning in the other direction.
  *
  * **`materialisation` is deliberately not shown.** It decides *when* a write
  * reaches the user's copy, not *what* the run can reach, so a `copyInCopyOut`
  * mount reads here as "Read and write". That over-warns, which is the only
  * direction a consent prompt is allowed to be wrong in.
+ *
+ * **Which branches a real host can reach, stated rather than implied.** `admit`
+ * names a scratch path on every grant it builds and hardcodes
+ * `retain_after_settled: false`, so of the three sentences below only *writable,
+ * deleted when the run is released* is reachable through it. The retained
+ * sentence stays because `retainAfterSettled` is a grant field and printing a
+ * kept folder as a deleted one would under-warn. `No filesystem access` stays
+ * because it is what a grant naming neither a mount nor a scratch path says, and
+ * that is the grant `document-host-double.ts` emits for a document run — a fake,
+ * not shipped, whose `#grantFor` resolves scratch to the empty guest path. In a
+ * running binary none of the three is reached at all, for the larger reason
+ * {@link CANVAS_ISOLATION_FLOOR} gives: it demands `opaqueOriginFrame`,
+ * `absent_document_backend` in `src-tauri/crates/vela-sandbox/src/host.rs` reports
+ * `SameOrigin`, and every Canvas submit is refused before a card exists.
  */
 function filesystemLines(grant: EffectiveGrant): readonly string[] {
   const lines = grant.filesystem.mounts.map(
     (mount) => `${modeWord(mount.mode)}: ${mount.hostPath}`,
   );
-  if (grant.filesystem.scratch.retainAfterSettled) {
-    lines.push('A temporary folder that is kept after the run finishes');
+  const { guestPath, retainAfterSettled } = grant.filesystem.scratch;
+  if (guestPath !== '') {
+    lines.push(
+      retainAfterSettled
+        ? `A folder of its own at ${guestPath}, writable, kept after the run finishes`
+        : `A folder of its own at ${guestPath}, writable, deleted when the run is released`,
+    );
   }
   if (lines.length > 0) return lines;
-  return grant.limits.fileWriteBytes === 0
-    ? ['No filesystem access']
-    : ['A temporary folder, deleted when the run is released'];
+  return ['No filesystem access'];
 }
 
 /** Total over `MountMode`, so a third mode stops compiling here rather than reading as read-only. */

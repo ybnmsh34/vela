@@ -137,10 +137,11 @@ describe('an artifact in an answer opens a panel', () => {
  * These drive the question the row is actually for. The host is the same
  * {@link documentHostDouble} the suites above use — the same backend report, the
  * same approve and release — with one event rewritten on its way across the seam,
- * so what is being modelled is *this host having granted mounts*, not a new fake
- * with new opinions. A card that reads its grant says what arrived; a card with a
- * literal in it says `No filesystem access` over a read-write mount of the user's
- * home directory, which is the exact sentence `ApprovalRequest` in
+ * so what is being modelled is *this host having granted mounts, a scratch path
+ * and a write budget*, not a new fake with new opinions. A card that reads its
+ * grant says what arrived; a card with a literal in it says `No filesystem
+ * access` over a read-write mount of the user's home directory, which is the
+ * exact sentence `ApprovalRequest` in
  * `src/platform/contract-sandbox.ts` exists to prevent.
  */
 function grantingHost(
@@ -175,7 +176,25 @@ function grantingHost(
   };
 }
 
-const NOTHING_RETAINED = { guestPath: '', retainAfterSettled: false } as const;
+/**
+ * A grant that names no directory at all: no mount, and no resolved scratch path.
+ *
+ * The contract calls {@link ResolvedScratch.guestPath} "Never absent", and
+ * `admit` in `src-tauri/crates/vela-sandbox/src/admission.rs` does name one on
+ * every grant it builds. This is the shape `document-host-double.ts` emits
+ * instead: its `#grantFor` says "the scratch directory it never writes to
+ * resolves to the empty guest path the contract's own `NO_FILESYSTEM` implies".
+ */
+const NAMES_NOTHING = { guestPath: '', retainAfterSettled: false } as const;
+
+/**
+ * What `admit` resolves for a run that asked for no particular path:
+ * `DEFAULT_SCRATCH_GUEST_PATH`. A caller may ask for a different guest path and
+ * get it, but not for a different fate: `retain_after_settled` is hardcoded
+ * `false` on every grant `admit` builds, with the comment "Narrowed, never
+ * widened".
+ */
+const DEFAULT_SCRATCH = { guestPath: '/vela/scratch', retainAfterSettled: false } as const;
 
 const HOME_READ_WRITE: Mount = {
   hostPath: 'C:\\Users\\ada\\notes',
@@ -191,13 +210,16 @@ const SKILLS_READ_ONLY: Mount = {
   materialisation: 'bind',
 };
 
+const OWN_FOLDER_DELETED =
+  'A folder of its own at /vela/scratch, writable, deleted when the run is released';
+
 describe('the approval card tells the truth about the user’s disk', () => {
   it('names every granted directory and which way it may be used', async () => {
     mount(
       [answer(CHART_V1)],
       grantingHost({
         mounts: [HOME_READ_WRITE, SKILLS_READ_ONLY],
-        scratch: NOTHING_RETAINED,
+        scratch: NAMES_NOTHING,
         outsideMounts: 'denied',
       }),
     );
@@ -214,7 +236,7 @@ describe('the approval card tells the truth about the user’s disk', () => {
       [answer(CHART_V1)],
       grantingHost({
         mounts: [HOME_READ_WRITE],
-        scratch: NOTHING_RETAINED,
+        scratch: NAMES_NOTHING,
         outsideMounts: 'denied',
       }),
     );
@@ -223,10 +245,48 @@ describe('the approval card tells the truth about the user’s disk', () => {
     expect(screen.queryByText('No filesystem access')).not.toBeInTheDocument();
   });
 
+  it('names the folder the run gets to itself, on a zero write budget', async () => {
+    // The defect the first version of this row shipped: it ended
+    // `grant.limits.fileWriteBytes === 0 ? ['No filesystem access'] : […]`, so
+    // this grant — which names `/vela/scratch` — was described as no filesystem
+    // at all. `guest_script` in `src-tauri/crates/vela-sandbox/src/wsl.rs` sizes that
+    // directory's tmpfs with
+    // `(plan.limits.file_write_bytes / 1024).clamp(1024, 262_144)`: zero clamps
+    // *up* to a writable 1024 KiB, and `base_environment_for` points `HOME`,
+    // `TMPDIR` and `PWD` at it. A cost field is not a statement about reach.
+    mount(
+      [answer(CHART_V1)],
+      grantingHost({ mounts: [], scratch: DEFAULT_SCRATCH, outsideMounts: 'denied' }, 0),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(screen.getByText(OWN_FOLDER_DELETED)).toBeInTheDocument();
+    expect(screen.queryByText('No filesystem access')).not.toBeInTheDocument();
+  });
+
+  it('reads the same folder the same way on a hundred-megabyte budget', async () => {
+    // The other direction of the same rule, so the row is pinned off the cost
+    // field from both sides: same scope, a budget a hundred times the 1024 KiB
+    // the tmpfs clamps up to, and the sentence does not move.
+    // `DEFAULT_PROCESS_LIMITS` is where this number comes from.
+    mount(
+      [answer(CHART_V1)],
+      grantingHost(
+        { mounts: [], scratch: DEFAULT_SCRATCH, outsideMounts: 'denied' },
+        100 * 1024 * 1024,
+      ),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(screen.getByText(OWN_FOLDER_DELETED)).toBeInTheDocument();
+  });
+
   it('says when a scratch directory outlives the run', async () => {
     // `retainAfterSettled` is the flag that leaves a directory on disk after the
     // run settles. A card that ignored it would be describing a run that cleans
-    // up after itself when it does not.
+    // up after itself when it does not. No backend in this tree sets it —
+    // `admit` hardcodes `false` — so this case is guarded here rather than
+    // observed; the field is on the grant and the wrong answer under-warns.
     mount(
       [answer(CHART_V1)],
       grantingHost({
@@ -238,23 +298,27 @@ describe('the approval card tells the truth about the user’s disk', () => {
 
     await screen.findByRole('group', { name: 'Approve this artifact' });
     expect(
-      screen.getByText('A temporary folder that is kept after the run finishes'),
+      screen.getByText(
+        'A folder of its own at /scratch/run-1, writable, kept after the run finishes',
+      ),
     ).toBeInTheDocument();
   });
 
-  it('distinguishes a run that may write from one that may not, with no mounts either way', async () => {
-    // Same empty mount set, different write budget. A row keyed only on
-    // `mounts.length` reads these two as the same grant; they are not.
+  it('says nothing is reachable only when the grant names nothing', async () => {
+    // No mount and no scratch path, under a budget that is not zero — so the
+    // sentence can only have come from the empty scope. This is the grant shape
+    // `document-host-double.ts` emits for a document run, and the only shape in
+    // this tree that names nothing: `admit` names a scratch path on every grant.
     mount(
       [answer(CHART_V1)],
-      grantingHost({ mounts: [], scratch: NOTHING_RETAINED, outsideMounts: 'denied' }, 1024),
+      grantingHost(
+        { mounts: [], scratch: NAMES_NOTHING, outsideMounts: 'denied' },
+        100 * 1024 * 1024,
+      ),
     );
 
     await screen.findByRole('group', { name: 'Approve this artifact' });
-    expect(
-      screen.getByText('A temporary folder, deleted when the run is released'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('No filesystem access')).not.toBeInTheDocument();
+    expect(screen.getByText('No filesystem access')).toBeInTheDocument();
   });
 });
 

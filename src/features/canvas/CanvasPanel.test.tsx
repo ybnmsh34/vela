@@ -37,6 +37,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createSandboxRepository, type SandboxRepository } from '@/data/sandbox-repository';
 import { BrowserAdapter } from '@/platform/browser-adapter';
+import { MAXIMUM_ALIGNED_LINES } from '@/lib/text-diff';
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
 import { PlatformError } from '@/platform/errors';
 
@@ -188,6 +189,29 @@ describe('a revision is a version of the same artifact', () => {
     expect(diff).toHaveTextContent('v1 → v2');
     expect(diff).toHaveTextContent('1 added, 1 removed');
     expect(diff).toHaveTextContent('r="9"');
+  });
+
+  it('says a revision is too large to compare rather than counting its lines as changes', async () => {
+    // The rail used to print `2001 added, 2001 removed` about two revisions that
+    // might differ nowhere: the diff fell off its cap and returned a whole-file
+    // replacement, and the summary counted those rows with no way to know they
+    // were a fallback. `aligned` is what the lead reads now, and this is the only
+    // test in this file that can see it.
+    const user = userEvent.setup();
+    const body = (mark: string): string =>
+      Array.from(
+        { length: MAXIMUM_ALIGNED_LINES + 1 },
+        (_, index) => `<rect id="${mark}${index}"/>`,
+      ).join('\n');
+    const open = '<svg xmlns="http://www.w3.org/2000/svg">';
+    const first = `${open}\n${body('a')}\n</svg>`;
+    const second = `${open}\n${body('b')}\n</svg>`;
+    mount([answer(first), answer(second)]);
+
+    await user.click(screen.getByRole('tab', { name: 'Changes' }));
+    const diff = screen.getByTestId('canvas-diff');
+    expect(diff).toHaveTextContent('too large to compare line by line');
+    expect(diff).not.toHaveTextContent('added, ');
   });
 });
 

@@ -32,6 +32,7 @@ import { groupConversationsByRecency } from '@/lib/conversation-groups';
 import { useMemoryStore } from '@/state/memory-store';
 import { useSkillsStore } from '@/state/skills-store';
 import { useSchedulesStore } from '@/state/schedules-store';
+import { useCodeWorkspaceStore } from '@/state/code-workspace-store';
 import { useProjectStore } from '@/state/project-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
@@ -84,6 +85,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // and this one may not import it either.
   const setSchedulesOpen = useSchedulesStore((state) => state.setOpen);
   const setProjectsOpen = useProjectStore((state) => state.setOpen);
+  const setCodeOpen = useCodeWorkspaceStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -232,6 +234,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setCodeOpen(true);
+          }}
+          aria-label="Code"
+        >
+          <CodeIcon />
+        </button>
       </nav>
     );
   }
@@ -321,6 +333,20 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
           <span>Projects</span>
+        </button>
+        {/* The joint that makes `src/features/code/` reachable. Without this
+            line the workspace, its pane system and its diff review are code the
+            application cannot get to — the defect `src/runtime/reachable.test.ts`
+            exists for, and that guard fails if this button goes. */}
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setCodeOpen(true);
+          }}
+        >
+          <CodeIcon />
+          <span>Code</span>
         </button>
       </div>
 
@@ -468,6 +494,22 @@ function SkillsIcon() {
         fill="none"
         stroke="currentColor"
         strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Angle brackets: the mark every editor uses for source. Same 16-unit box. */
+function CodeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M5.8 4.4 2.4 8l3.4 3.6M10.2 4.4 13.6 8l-3.4 3.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>

@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 
 import { createSandboxRepository } from '@/data/sandbox-repository';
 import { CanvasSurface } from '@/features/canvas';
+import { CodeWorkspaceSurface } from '@/features/code';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
@@ -54,6 +55,22 @@ export function App({ adapter }: AppProps) {
             line and the sidebar button are the joint. */}
         <SchedulesSurface />
         <ProjectsSurface />
+        {/* The sixth joint, and the same shape as the five above. The code
+            workspace's pane system, its worktree-isolated sessions and its diff
+            review are a feature the shell does not know about; the sidebar sets
+            a boolean in `src/state/code-workspace-store.ts` and this line is
+            what mounts the thing that reads it.
+
+            What bites if this line goes, measured rather than assumed:
+            `src/app/code-workspace-wiring.test.tsx` goes red on all three of its
+            tests, and `pnpm typecheck` exits 2 with TS6133 on the import above.
+            `src/runtime/reachable.test.ts` does **not** — it walks import
+            specifiers, so the import alone keeps the feature on the graph while
+            nothing renders it. It bites only if the import goes too, and then it
+            reports thirteen unreachable modules. That guard says so about itself
+            ("deliberately structural and deliberately weak about *behaviour*");
+            an earlier draft of this comment claimed its reach anyway. */}
+        <CodeWorkspaceSurface />
       </KeyboardProvider>
     </PlatformProvider>
   );

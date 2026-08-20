@@ -1,0 +1,665 @@
+/* The code workspace.
+ *
+ * Every value here is a token from `src/styles/tokens.css`. No colour is
+ * introduced, no radius, no type size, no leading: `src/styles/design-system.test.ts`
+ * reads every `*.module.css` under `src/` and fails on any of those written
+ * literally, and the audit this branch was written under freezes the palette
+ * outright. Where a dimension had no token — the thickness of a splitter — the
+ * spacing scale answers it rather than a new number. */
+
+.scrim {
+  position: fixed;
+  /* Not `inset: 0`. The title bar carries the window controls on Windows and the
+     status line carries the host readout; a workspace that covers either is one
+     the user cannot leave by the route they expect. */
+  top: var(--vela-titlebar-height);
+  right: 0;
+  bottom: var(--vela-statusbar-height);
+  left: 0;
+  z-index: var(--vela-z-dialog);
+  display: flex;
+  background: var(--vela-scrim);
+}
+
+.workspace {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--vela-bg);
+  color: var(--vela-text);
+}
+
+/* ---- the workspace's own header ----------------------------------------- */
+
+.workspaceHead {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-chrome);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.workspaceTitle {
+  margin: 0;
+  font-size: var(--vela-text-base);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.sessionLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-3);
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--vela-text-xs);
+}
+
+.sessionWorktree {
+  font-family: var(--vela-font-mono);
+  letter-spacing: var(--vela-tracking-code);
+  color: var(--vela-text);
+}
+
+.sessionDetail {
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  margin-left: auto;
+}
+
+.headField {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+}
+
+.viewsList,
+.moveList {
+  position: absolute;
+  top: 100%;
+  right: var(--vela-space-3);
+  z-index: var(--vela-z-popover);
+  display: flex;
+  flex-direction: column;
+  min-width: var(--vela-overlay-sm);
+  max-width: 100%;
+  padding: var(--vela-space-1);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  box-shadow: var(--vela-shadow-md);
+}
+
+.moveList {
+  right: var(--vela-space-2);
+  min-width: var(--vela-overlay-sm);
+}
+
+.moveItem {
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.moveItem:hover:not(:disabled) {
+  background: var(--vela-row-hover);
+}
+
+.moveItem:disabled {
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+.moveEmpty {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+}
+
+/* ---- the grid ------------------------------------------------------------ */
+
+.grid {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.column {
+  display: flex;
+  flex-basis: 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A splitter is a control, so it gets a control's target size rather than the
+   hairline it looks like. `--vela-space-2` is 8px, which is grabbable; the
+   borders are what make it read as an edge. */
+.splitterVertical,
+.splitterHorizontal {
+  flex: 0 0 var(--vela-space-2);
+  background: var(--vela-chrome);
+}
+
+.splitterVertical {
+  border-left: 1px solid var(--vela-border);
+  border-right: 1px solid var(--vela-border);
+  cursor: col-resize;
+}
+
+.splitterHorizontal {
+  border-top: 1px solid var(--vela-border);
+  border-bottom: 1px solid var(--vela-border);
+  cursor: row-resize;
+}
+
+/* `--vela-border`, not `--vela-border-strong`. Both would read; only one of them
+   is already a ground the audit knows about. `src/styles/contrast.test.ts`
+   failed on `--vela-border-strong — first used in
+   src/features/code/CodeWorkspace.module.css`, and the two honest answers were
+   to add a pair for a ground that carries no text, or to paint the hover with a
+   token already exempt as a hairline. The second invents nothing and touches no
+   guard another track owns. */
+.splitterVertical:hover,
+.splitterHorizontal:hover {
+  background: var(--vela-border);
+}
+
+/* ---- one pane ------------------------------------------------------------ */
+
+.pane {
+  display: flex;
+  flex-basis: 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+}
+
+/* The focused pane says so with the same ring every other control uses, inset
+   because the pane is full-bleed inside its column and an outward ring would be
+   clipped by the neighbour. */
+.pane[data-focused='true'] {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+.paneHead {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: var(--vela-chrome);
+  border-bottom: 1px solid var(--vela-border);
+  cursor: grab;
+}
+
+.paneHead[data-drop-target='true'] {
+  background: var(--vela-accent-quiet);
+}
+
+.paneTitle {
+  margin: 0;
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  color: var(--vela-text-muted);
+}
+
+.paneActions {
+  display: flex;
+  gap: var(--vela-space-1);
+  margin-left: auto;
+}
+
+.paneButton {
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.paneButton:hover:not(:disabled) {
+  background: var(--vela-row-hover);
+}
+
+.paneButton:disabled {
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+.paneBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.noPanes,
+.empty {
+  margin: 0;
+  padding: var(--vela-space-4);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-prose);
+}
+
+/* ---- forms and shared field furniture ------------------------------------ */
+
+.setup {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--vela-space-3);
+  width: min(var(--vela-panel-measure), 100%);
+  margin: 0 auto;
+  padding: var(--vela-space-5);
+  overflow: auto;
+}
+
+.setupTitle {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.setupLead {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-prose);
+}
+
+.field,
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fieldLabel {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+}
+
+.input {
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-sm);
+}
+
+.choice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  font-size: var(--vela-text-sm);
+}
+
+.fieldNote,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-prose);
+}
+
+.refusal {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-danger-bg);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+}
+
+.primary {
+  align-self: flex-start;
+  padding: var(--vela-space-2) var(--vela-space-4);
+  background: var(--vela-accent);
+  border: 1px solid var(--vela-accent);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-on-accent);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: pointer;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--vela-accent-hover);
+  border-color: var(--vela-accent-hover);
+}
+
+.primary:disabled {
+  background: var(--vela-chrome);
+  border-color: var(--vela-border);
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+/* ---- the diff pane ------------------------------------------------------- */
+
+.diffPane {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fileList {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-width: 0;
+  max-width: var(--vela-sidebar-width);
+  overflow: auto;
+  border-right: 1px solid var(--vela-border);
+}
+
+.fileRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  width: 100%;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: transparent;
+  border: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileRow:hover {
+  background: var(--vela-row-hover);
+}
+
+.fileRow[aria-current='true'] {
+  background: var(--vela-row-selected);
+  color: var(--vela-row-selected-text);
+}
+
+.filePath {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--vela-font-mono);
+  letter-spacing: var(--vela-tracking-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileStat {
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+}
+
+.fileComments {
+  padding: 0 var(--vela-space-1);
+  background: var(--vela-accent-quiet);
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text);
+}
+
+.changes {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.changesLead {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.diffRows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--vela-code-bg);
+  padding: var(--vela-space-2) 0;
+}
+
+/* A diff row re-grounds itself when it is tinted, so it re-colours itself too —
+   the repair `src/features/canvas/CanvasPanel.module.css` spends a section on:
+   `--vela-code-text` on `--vela-accent-quiet` measured 1.19:1 in light. The
+   gutter character carries the meaning on its own, so a reader who cannot
+   distinguish the two tints still reads the diff. */
+.diffLine {
+  display: flex;
+  gap: var(--vela-space-2);
+  width: 100%;
+  padding: 0 var(--vela-space-3);
+  background: transparent;
+  border: 0;
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  text-align: left;
+  cursor: pointer;
+}
+
+.diffLine:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+.diffLine[data-kind='added'] {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-text);
+}
+
+.diffLine[data-kind='removed'] {
+  background: var(--vela-danger-bg);
+  color: var(--vela-text);
+}
+
+.lineNumber {
+  flex: 0 0 auto;
+  min-width: var(--vela-control-md);
+  color: var(--vela-syntax-comment);
+  text-align: right;
+}
+
+.lineGutter {
+  flex: 0 0 auto;
+}
+
+.lineText {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.commentCard,
+.commentBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  margin: var(--vela-space-1) var(--vela-space-3);
+  padding: var(--vela-space-2);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+}
+
+.commentCard {
+  align-items: flex-start;
+}
+
+.commentBody {
+  margin: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-prose);
+}
+
+.textarea {
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+  resize: vertical;
+}
+
+.reviewBar,
+.editorBar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+.reviewCount {
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+/* ---- the editor pane ----------------------------------------------------- */
+
+.editorPane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  min-height: 0;
+  padding: var(--vela-space-3);
+}
+
+.addFile {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vela-space-2);
+}
+
+.addFile .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.code {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--vela-space-2);
+  background: var(--vela-code-bg);
+  border: 1px solid var(--vela-code-border);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  letter-spacing: var(--vela-tracking-code);
+  resize: none;
+}
+
+/* ---- the chat pane ------------------------------------------------------- */
+
+.chatPane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  min-height: 0;
+  padding: var(--vela-space-3);
+}
+
+.modelBar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: var(--vela-space-3);
+}
+
+.modelName {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  letter-spacing: var(--vela-tracking-code);
+}
+
+.contextReadout {
+  margin-left: auto;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.contextReadout[data-verdict='tight'] {
+  color: var(--vela-warning);
+}
+
+.contextReadout[data-verdict='over'] {
+  color: var(--vela-danger);
+}
+
+.queue {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  min-height: 0;
+  overflow: auto;
+}
+
+.queued {
+  margin: 0;
+  padding: var(--vela-space-2);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  white-space: pre-wrap;
+}
+
+.composer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+}

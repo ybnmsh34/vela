@@ -26,10 +26,10 @@
 import { useMemo, useState } from 'react';
 
 import type { SandboxRepository } from '@/data/sandbox-repository';
+import { diffText, type TextDiff } from '@/lib/text-diff';
 import type { ProjectId } from '@/platform/contract-project';
 
 import type { ArtifactTrack } from './artifacts';
-import { diffLines, summariseDiff } from './diff';
 import { withScripts } from './document-run';
 import { DocumentPreview } from './DocumentPreview';
 import { useDocumentRun } from './use-document-run';
@@ -172,6 +172,19 @@ function ViewTab({
 }
 
 /**
+ * Stable identity for "there is no pair to diff", so the `useMemo` above is not
+ * re-run by a fresh empty value on every render. It is also, deliberately, an
+ * *aligned* empty answer: no pair means no changes, which is a fact, not a
+ * refusal.
+ */
+const EMPTY_DIFF: TextDiff = {
+  rows: [],
+  added: 0,
+  removed: 0,
+  aligned: true,
+};
+
+/**
  * What changed between the selected version and the one before it.
  *
  * Against the *previous* version rather than against the first, because the
@@ -181,23 +194,29 @@ function ViewTab({
 function DiffView({ track, selected }: { readonly track: ArtifactTrack; readonly selected: number }) {
   const before = track.versions[selected - 1];
   const after = track.versions[selected];
-  const rows = useMemo(
+  const diff = useMemo(
     () => (before === undefined || after === undefined
-      ? []
-      : diffLines(before.program.source, after.program.source)),
+      ? EMPTY_DIFF
+      : diffText(before.program.source, after.program.source)),
     [before, after],
   );
-  const summary = useMemo(() => summariseDiff(rows), [rows]);
 
   if (before === undefined || after === undefined) return null;
 
   return (
     <div className={styles.diff} data-testid="canvas-diff">
+      {/* The counts are qualified when the alignment did not run, because then
+          they count the revision's lines rather than its changes — see
+          `src/lib/text-diff.ts`. An unqualified "2001 added, 2001 removed" about
+          two identical revisions is what this branch replaced. */}
       <p className={styles.diffLead}>
-        v{selected} → v{selected + 1} · {summary.added} added, {summary.removed} removed
+        v{selected} → v{selected + 1} ·{' '}
+        {diff.aligned
+          ? `${diff.added} added, ${diff.removed} removed`
+          : 'too large to compare line by line — shown as a whole-file replacement'}
       </p>
       <pre className={styles.diffBody}>
-        {rows.map((row, index) => (
+        {diff.rows.map((row, index) => (
           <span key={index} className={styles.diffRow} data-kind={row.kind}>
             {row.kind === 'added' ? '+' : row.kind === 'removed' ? '-' : ' '}
             {row.text}

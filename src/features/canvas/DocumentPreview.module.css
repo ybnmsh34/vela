@@ -53,6 +53,19 @@
   color: var(--vela-text);
 }
 
+/* The Files row is one `<dd>` per granted path, so every line after the first
+   has to be pinned to the value column — grid auto-placement would drop it under
+   the `<dt>` and it would read as a label. No colour here: these lines are the
+   same value text as every other `dd`, and a mount that needs a colour to be
+   noticed is a mount that should not have been granted silently.
+
+   A path is also the one value on this card that Vela did not write, so it does
+   not get to break the layout: long paths wrap inside their own column. */
+.grant .fileLine {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   gap: var(--vela-space-2);

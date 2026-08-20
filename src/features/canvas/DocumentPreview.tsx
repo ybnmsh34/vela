@@ -36,7 +36,12 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-import type { DocumentProgram, EffectiveGrant, RefusalReason } from '@/platform/contract-sandbox';
+import type {
+  DocumentProgram,
+  EffectiveGrant,
+  MountMode,
+  RefusalReason,
+} from '@/platform/contract-sandbox';
 
 import { CANVAS_FRAME_MESSAGE, frameFor, svgFailsToParse } from './document-frame';
 import type { DocumentRun } from './use-document-run';
@@ -156,7 +161,18 @@ export function DocumentPreview({ program, run, title }: DocumentPreviewProps) {
  * The contract's unit of approval is one submitted run, approved whole, before
  * it starts — and it is emphatic that a prompt which hides what the run was
  * granted manufactures consent rather than collecting it. So the grant is on the
- * card: the confinement, the network policy, and whether script will execute.
+ * card: the confinement, the network policy, what of the user's disk it reaches,
+ * and whether script will execute.
+ *
+ * That list read "the confinement, the network policy, and whether script will
+ * execute" while a fourth row sat below them saying `No filesystem access` as a
+ * literal. Three derived rows and one written one, and the comment named the
+ * three — which is how a row that could not go red survived beside three that
+ * could. See {@link filesystemLines}. The only row still not derived is Script,
+ * and it is read off the *program* rather than the grant on purpose: `scripts` is
+ * a property of the program text the person is approving, and
+ * {@link EffectiveGrant} carries no field for it.
+ *
  * The program's own source is not repeated here because the Code tab beside this
  * one shows it in full and never elides it.
  */
@@ -185,7 +201,13 @@ function ApprovalCard({
         <dt>Script</dt>
         <dd>{scripts === 'denied' ? 'Will not execute' : 'Executes in the isolated frame'}</dd>
         <dt>Files</dt>
-        <dd>No filesystem access</dd>
+        {/* One `<dd>` per line, which is what a `<dl>` is for. The lines come off
+            the grant; see {@link filesystemLines} for why that is not a detail. */}
+        {filesystemLines(grant).map((line, index) => (
+          <dd key={index} className={styles.fileLine}>
+            {line}
+          </dd>
+        ))}
       </dl>
       <div className={styles.actions}>
         <button type="button" className={styles.primary} onClick={() => run.answer('allowOnce')}>
@@ -216,6 +238,67 @@ function isolationSentence(grant: EffectiveGrant): string {
       return 'Drawn in an isolated frame with no access to Vela';
     case 'ownRendererProcess':
       return 'Drawn in an isolated frame in its own process';
+  }
+}
+
+/**
+ * What of the user's disk this run was granted, read off the grant.
+ *
+ * This row used to be the literal `No filesystem access`, written into the JSX
+ * beside three rows that were derived. It was true of every submit
+ * {@link documentSubmit} builds — that constructor passes `NO_FILESYSTEM` — and
+ * that is precisely why it was wrong: it answered *what does Canvas ask for*,
+ * decided once at the moment this file was written, in the row whose only job is
+ * to answer *what did the host grant this run*. Those are the same sentence today
+ * and are not the same question, and the row could not have gone red on any grant
+ * an actual host sent.
+ *
+ * The contract puts a whole {@link ApprovalRequest} on the card rather than a
+ * summary for one named reason: "a prompt that says 'this script wants to run'
+ * and hides the fact that it also has the user's home directory mounted
+ * read-write is worse than no prompt, because it manufactures consent". A
+ * hardcoded row is that hiding, in the one place the sentence was written about.
+ *
+ * Three things bear on reach and all three are here: every mount, by path and by
+ * mode; a scratch directory that outlives the run; and, where there is neither,
+ * whether the run may write anything at all. Nothing else on
+ * `EffectiveFilesystemScope` can widen it — `outsideMounts` is a one-member
+ * union, and `EffectiveGrant.workingDirectory` is a path inside the scope these
+ * lines already name.
+ *
+ * **`fileWriteBytes` is deliberately not folded into a mount's mode.** A
+ * `readWrite` mount under a zero write budget looks unwritable, and saying "Read
+ * only" for it would be under-warning on the strength of a limit that
+ * `docs/audit/sandbox.md` measured as not enforced at all on the shipping backend
+ * (`filesize=unlimited`, reported `Unenforced`). The mount mode is the reach; the
+ * budget is a cost limit, and a cost limit that a backend declines to enforce
+ * must never be allowed to soften a sentence about reach.
+ *
+ * **`materialisation` is deliberately not shown.** It decides *when* a write
+ * reaches the user's copy, not *what* the run can reach, so a `copyInCopyOut`
+ * mount reads here as "Read and write". That over-warns, which is the only
+ * direction a consent prompt is allowed to be wrong in.
+ */
+function filesystemLines(grant: EffectiveGrant): readonly string[] {
+  const lines = grant.filesystem.mounts.map(
+    (mount) => `${modeWord(mount.mode)}: ${mount.hostPath}`,
+  );
+  if (grant.filesystem.scratch.retainAfterSettled) {
+    lines.push('A temporary folder that is kept after the run finishes');
+  }
+  if (lines.length > 0) return lines;
+  return grant.limits.fileWriteBytes === 0
+    ? ['No filesystem access']
+    : ['A temporary folder, deleted when the run is released'];
+}
+
+/** Total over `MountMode`, so a third mode stops compiling here rather than reading as read-only. */
+function modeWord(mode: MountMode): string {
+  switch (mode) {
+    case 'readOnly':
+      return 'Read only';
+    case 'readWrite':
+      return 'Read and write';
   }
 }
 

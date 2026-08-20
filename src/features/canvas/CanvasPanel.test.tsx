@@ -38,6 +38,7 @@ import { describe, expect, it } from 'vitest';
 import { createSandboxRepository, type SandboxRepository } from '@/data/sandbox-repository';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
+import type { EffectiveFilesystemScope, Mount } from '@/platform/contract-sandbox';
 import { PlatformError } from '@/platform/errors';
 
 import { CanvasSurface } from './CanvasSurface';
@@ -119,6 +120,141 @@ describe('an artifact in an answer opens a panel', () => {
 
     expect(await screen.findByTestId('canvas-notice')).toHaveTextContent('Not rendered.');
     expect(screen.queryByTestId('canvas-frame')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The row that could not go red.
+ *
+ * `documentSubmit` passes `NO_FILESYSTEM`, so every grant this feature can
+ * currently provoke has an empty mount set — and for as long as that was true the
+ * approval card's Files row was the literal string `No filesystem access`, sitting
+ * beside three rows that were read off the grant. It was never wrong on screen,
+ * because nothing could make it wrong: it answered what Canvas asks for, not what
+ * the host granted. The test above it is named *shows what the run was granted,
+ * not a reassuring sentence about it* and asserted a reassuring sentence.
+ *
+ * These drive the question the row is actually for. The host is the same
+ * {@link documentHostDouble} the suites above use — the same backend report, the
+ * same approve and release — with one event rewritten on its way across the seam,
+ * so what is being modelled is *this host having granted mounts*, not a new fake
+ * with new opinions. A card that reads its grant says what arrived; a card with a
+ * literal in it says `No filesystem access` over a read-write mount of the user's
+ * home directory, which is the exact sentence `ApprovalRequest` in
+ * `src/platform/contract-sandbox.ts` exists to prevent.
+ */
+function grantingHost(
+  filesystem: EffectiveFilesystemScope,
+  fileWriteBytes = 0,
+): SandboxRepository {
+  const inner = documentHostDouble();
+  return {
+    ...inner,
+    watch: (runId, handler) =>
+      inner.watch(runId, (watched) => {
+        if (watched.event.type !== 'awaitingApproval') {
+          handler(watched);
+          return;
+        }
+        const request = watched.event.request;
+        handler({
+          seq: watched.seq,
+          event: {
+            type: 'awaitingApproval',
+            request: {
+              ...request,
+              grant: {
+                ...request.grant,
+                filesystem,
+                limits: { ...request.grant.limits, fileWriteBytes },
+              },
+            },
+          },
+        });
+      }),
+  };
+}
+
+const NOTHING_RETAINED = { guestPath: '', retainAfterSettled: false } as const;
+
+const HOME_READ_WRITE: Mount = {
+  hostPath: 'C:\\Users\\ada\\notes',
+  guestPath: 'C:\\Users\\ada\\notes',
+  mode: 'readWrite',
+  materialisation: 'bind',
+};
+
+const SKILLS_READ_ONLY: Mount = {
+  hostPath: 'C:\\Users\\ada\\vela\\skills',
+  guestPath: 'C:\\Users\\ada\\vela\\skills',
+  mode: 'readOnly',
+  materialisation: 'bind',
+};
+
+describe('the approval card tells the truth about the user’s disk', () => {
+  it('names every granted directory and which way it may be used', async () => {
+    mount(
+      [answer(CHART_V1)],
+      grantingHost({
+        mounts: [HOME_READ_WRITE, SKILLS_READ_ONLY],
+        scratch: NOTHING_RETAINED,
+        outsideMounts: 'denied',
+      }),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(screen.getByText('Read and write: C:\\Users\\ada\\notes')).toBeInTheDocument();
+    expect(screen.getByText('Read only: C:\\Users\\ada\\vela\\skills')).toBeInTheDocument();
+  });
+
+  it('does not say “no filesystem access” over a mounted directory', async () => {
+    // The regression in one line. A literal in this row is a prompt that
+    // manufactures consent, and it is the failure the contract names by example.
+    mount(
+      [answer(CHART_V1)],
+      grantingHost({
+        mounts: [HOME_READ_WRITE],
+        scratch: NOTHING_RETAINED,
+        outsideMounts: 'denied',
+      }),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(screen.queryByText('No filesystem access')).not.toBeInTheDocument();
+  });
+
+  it('says when a scratch directory outlives the run', async () => {
+    // `retainAfterSettled` is the flag that leaves a directory on disk after the
+    // run settles. A card that ignored it would be describing a run that cleans
+    // up after itself when it does not.
+    mount(
+      [answer(CHART_V1)],
+      grantingHost({
+        mounts: [],
+        scratch: { guestPath: '/scratch/run-1', retainAfterSettled: true },
+        outsideMounts: 'denied',
+      }),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(
+      screen.getByText('A temporary folder that is kept after the run finishes'),
+    ).toBeInTheDocument();
+  });
+
+  it('distinguishes a run that may write from one that may not, with no mounts either way', async () => {
+    // Same empty mount set, different write budget. A row keyed only on
+    // `mounts.length` reads these two as the same grant; they are not.
+    mount(
+      [answer(CHART_V1)],
+      grantingHost({ mounts: [], scratch: NOTHING_RETAINED, outsideMounts: 'denied' }, 1024),
+    );
+
+    await screen.findByRole('group', { name: 'Approve this artifact' });
+    expect(
+      screen.getByText('A temporary folder, deleted when the run is released'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No filesystem access')).not.toBeInTheDocument();
   });
 });
 

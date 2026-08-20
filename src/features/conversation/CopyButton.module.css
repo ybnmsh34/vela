@@ -46,3 +46,36 @@
   color: var(--vela-code-text);
   border-color: var(--vela-syntax-comment);
 }
+
+/* THE OUTCOME, ON THE CODE BAR.
+
+   `.button[data-outcome]` paints `--vela-success` / `--vela-danger`, which are
+   authored against the page palette. Inside a code block the ground is
+   `--vela-code-surface`, dark in both themes, and there they read 3.36:1 and
+   2.84:1 in light — both under AA, and neither composition was measured
+   anywhere: `CodeBlock .bar` declares the ground, `CopyButton .button[…]`
+   declares the colour, two files and no rule holding both.
+   `painted-contrast.test.tsx` is what found it and what fails if it comes back.
+
+   The outcome is the word — "Copied" / "Copy failed" — and the colour step from
+   `--vela-syntax-comment` to `--vela-code-text` is what says an outcome
+   happened at all. Success and failure stay apart on the border, in the code
+   palette's own hues rather than the page palette's: `--vela-syntax-string` is
+   the signal family this app's accent comes from, `--vela-syntax-number` is the
+   amber family its warnings come from. On this ground in light they read
+   12.80:1 and 9.80:1, against the 3.36:1 and 2.84:1 they replace.
+
+   No colour value is introduced: every role here is one `tokens.css` already
+   declares. */
+.subtle[data-outcome='copied'],
+.subtle[data-outcome='failed'] {
+  color: var(--vela-code-text);
+}
+
+.subtle[data-outcome='copied'] {
+  border-color: var(--vela-syntax-string);
+}
+
+.subtle[data-outcome='failed'] {
+  border-color: var(--vela-syntax-number);
+}

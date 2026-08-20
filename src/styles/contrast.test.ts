@@ -30,9 +30,11 @@
  *
  * `every rule that paints text on a ground it declares itself is a pair in the
  * table` closes that for every composition a single CSS rule states — the part
- * CSS text can actually prove. What it still cannot reach is a composition
- * assembled across the DOM; the comment on that test says what closing *that*
- * would take, and why it is not this commit.
+ * CSS text can actually prove. The part it cannot — an ancestor declaring the
+ * ground and a descendant the colour — is not in this file at all any more:
+ * `painted-contrast.test.tsx` renders the components and reads the ancestry off
+ * the DOM. The comment above `a pair that names a rule is checked against that
+ * rule` says what each of the two files can and cannot see.
  *
  * ## What it found on the first run, besides the briefed one
  *
@@ -70,119 +72,61 @@
  * fill against its track.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const REPO_ROOT = process.cwd();
-const SRC_ROOT = join(REPO_ROOT, 'src');
-const TOKENS = readFileSync(join(SRC_ROOT, 'styles', 'tokens.css'), 'utf8');
+import {
+  composite,
+  contrastRatio as contrast,
+  declaredValue,
+  expandVars,
+  loadSheets,
+  luminance,
+  paletteFor as tokenPalette,
+  parseColour,
+  parseStylesheet,
+  readPaint,
+  type Lookup,
+  type Paint,
+  type Rgba,
+  type Rule,
+  type Theme,
+} from './css-model';
+
+/**
+ * Every stylesheet under `src/`, parsed once.
+ *
+ * `SHEETS` used to be `*.module.css` plus `base.css`, which left
+ * `src/styles/typeface.css` — imported by `base.css`, shipped in the bundle —
+ * outside every check in this file, along with any non-module sheet added
+ * later. The discovery is now "every `.css` under `src/`", so a new sheet is
+ * audited by existing rather than by being remembered.
+ */
+const SHEETS = loadSheets();
+const ALL_RULES: readonly Rule[] = SHEETS.flatMap((sheet) => sheet.rules);
 
 /* -------------------------------------------------------------------------- */
 /* resolving the token graph                                                   */
 /* -------------------------------------------------------------------------- */
 
-function declaredIn(block: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const match of block.matchAll(/^\s*(--vela-[a-z0-9-]+):\s*([^;]+);/gm)) {
-    out.set(match[1] ?? '', (match[2] ?? '').trim());
-  }
-  return out;
-}
-
-function blocks(): { light: string; dark: string } {
-  const media = TOKENS.indexOf('@media (prefers-color-scheme: dark)');
-  const explicit = TOKENS.indexOf(":root[data-theme='dark']");
-  expect(media, 'the token sheet was restructured; fix this slice').toBeGreaterThan(0);
-  expect(explicit).toBeGreaterThan(media);
-  return { light: TOKENS.slice(0, media), dark: TOKENS.slice(explicit) };
-}
-
-type Theme = 'light' | 'dark';
-
 function paletteFor(theme: Theme): Map<string, string> {
-  const { light, dark } = blocks();
-  const palette = declaredIn(light);
-  if (theme === 'dark') for (const [name, value] of declaredIn(dark)) palette.set(name, value);
-  return palette;
+  return tokenPalette(theme, SHEETS);
 }
 
 function substitute(value: string, palette: Map<string, string>): string {
-  let out = value;
-  for (let pass = 0; pass < 12 && out.includes('var('); pass += 1) {
-    out = out.replace(/var\((--vela-[a-z0-9-]+)\)/gu, (whole, name: string) => palette.get(name) ?? whole);
-  }
-  return out.trim();
-}
-
-/* -------------------------------------------------------------------------- */
-/* colour                                                                      */
-/* -------------------------------------------------------------------------- */
-
-interface Rgba {
-  readonly r: number;
-  readonly g: number;
-  readonly b: number;
-  readonly a: number;
-}
-
-/** Every colour syntax this sheet uses: `#rrggbb` and `rgb(r g b / a%)`. */
-function parseColour(css: string): Rgba {
-  const text = css.trim();
-  const hex = /^#([0-9a-f]{6})$/iu.exec(text);
-  if (hex !== null) {
-    const digits = hex[1] ?? '';
-    return {
-      r: Number.parseInt(digits.slice(0, 2), 16),
-      g: Number.parseInt(digits.slice(2, 4), 16),
-      b: Number.parseInt(digits.slice(4, 6), 16),
-      a: 1,
-    };
-  }
-  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*(?:[/,]\s*([\d.]+)(%?)\s*)?\)$/iu.exec(text);
-  if (rgb !== null) {
-    const raw = rgb[4] === undefined ? 1 : Number.parseFloat(rgb[4]);
-    return {
-      r: Number.parseFloat(rgb[1] ?? '0'),
-      g: Number.parseFloat(rgb[2] ?? '0'),
-      b: Number.parseFloat(rgb[3] ?? '0'),
-      a: rgb[5] === '%' ? raw / 100 : raw,
-    };
-  }
-  throw new Error(`not a colour this audit can read: ${css}`);
-}
-
-/** Source-over compositing, which is what a translucent fill does to its ground. */
-function composite(top: Rgba, under: Rgba): Rgba {
-  if (top.a >= 1) return top;
-  const mix = (x: number, y: number): number => x * top.a + y * (1 - top.a);
-  return { r: mix(top.r, under.r), g: mix(top.g, under.g), b: mix(top.b, under.b), a: 1 };
-}
-
-/** WCAG 2.x relative luminance. */
-function luminance({ r, g, b }: Rgba): number {
-  const channel = (value: number): number => {
-    const x = value / 255;
-    return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-function contrast(a: Rgba, b: Rgba): number {
-  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+  return expandVars(value, (name) => palette.get(name)).text;
 }
 
 /**
  * The colour a token resolves to, or `null` when the sheet does not define it.
  * Null rather than a throw because an undefined token is a *finding* — CSS drops
  * an unresolvable declaration silently, so it must be reported by name, not hide
- * behind a stack trace.
+ * behind a stack trace. A token that *is* declared but does not name a colour
+ * still throws: that is a broken sheet, not a finding this table can word.
  */
 function resolve(token: string, palette: Map<string, string>): Rgba | null {
-  const value = substitute(`var(${token})`, palette);
-  if (value.includes('var(')) return null;
-  return parseColour(value);
+  const expansion = expandVars(`var(${token})`, (name) => palette.get(name));
+  if (expansion.unresolved.length > 0) return null;
+  return parseColour(expansion.text);
 }
 
 /**
@@ -557,115 +501,77 @@ describe('every colour Vela paints clears WCAG AA, in both themes', () => {
 /* completeness — the half that makes it an audit rather than a sample          */
 /* -------------------------------------------------------------------------- */
 
-function stylesheets(directory: string): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...stylesheets(path));
-    else if (entry.name.endsWith('.module.css')) found.push(path);
+/**
+ * What one rule paints, read as **values** rather than matched as text.
+ *
+ * The pair of regexes this replaces —
+ *
+ *     DECLARES_COLOUR = /(?:^|[^-\w])color:\s*var\((--vela-[a-z0-9-]+)\)/u
+ *     DECLARES_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\((--vela-[a-z0-9-]+)\)/u
+ *
+ * were the guard's eyes, and both were narrower than the question. The capture
+ * in `DECLARES_GROUND` demands `)` immediately after the token name, so
+ * `background: var(--vela-accent-quiet, transparent)` — which paints exactly
+ * `--vela-accent-quiet` — read as *no ground at all*, and the rule was skipped
+ * rather than reported. Spelling the same thing through a local custom property
+ * did the same. And because the block cutter left a nested `@supports (…)`
+ * **prelude** loose in its parent's body, `DECLARES_GROUND` could match the
+ * condition and credit a rule with a ground it does not declare — a green
+ * measurement of a composition that exists nowhere.
+ *
+ * `readPaint` expands `var()` with its fallbacks, follows custom properties, and
+ * has an `unreadable` arm; `parseStylesheet` knows the difference between a
+ * prelude and a declaration. `no colour or background declaration is unreadable
+ * to this audit` is what turns that `unreadable` arm into a failure, so a value
+ * the reader cannot parse can no longer leave through the same door as a value
+ * that is not there.
+ */
+interface Painted {
+  readonly rule: Rule;
+  readonly foreground: Paint | undefined;
+  readonly ground: Paint | undefined;
+}
+
+/** The custom properties one rule can see: its own, then `:root`'s. */
+function lookupFor(rule: Rule, palette: Map<string, string>): Lookup {
+  const locals = new Map<string, string>();
+  for (const { property, value } of rule.declarations) {
+    if (property.startsWith('--')) locals.set(property, value);
   }
-  return found;
+  return (name) => locals.get(name) ?? palette.get(name);
 }
 
-const SHEETS = [...stylesheets(SRC_ROOT), join(SRC_ROOT, 'styles', 'base.css')].map((path) => ({
-  name: relative(REPO_ROOT, path),
-  text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, ''),
-}));
-
-/**
- * Every declaration block in a stylesheet, lifted out of any `@media` or
- * `@supports` wrapper it sits inside. `SHEETS.text` has already had its comments
- * stripped, so a rule quoted in prose cannot be mistaken for one that ships.
- *
- * A rule that *contains* a nested block still has declarations of its own, and
- * they are emitted before the scan descends into it. The first version of this
- * function recursed instead of emitting, so a rule shaped like
- *
- *     .row { color: …; background: …; &:hover { … } }
- *
- * disappeared from every check built on it — which is this branch's own defect
- * one level down: an assertion satisfied by an ambient property, here "no
- * stylesheet happens to nest yet". Nothing in `src` nests today and all six
- * `@media` blocks are at column 0, so the drop was latent; native nesting is
- * baseline in the engines Vela ships against, so it would not have stayed
- * latent, and a guard that goes silently blind is worse than one that never
- * claimed to see. `the completeness scan can actually see the stylesheets`
- * carries the conservation check that notices a *partial* drop; the count floors
- * cannot, because they detect total blindness.
- */
-function declarationBlocks(text: string): readonly { selector: string; body: string }[] {
-  const found: { selector: string; body: string }[] = [];
-  /**
-   * A block's own declarations: what is left once nested blocks are removed,
-   * innermost first so that arbitrary depth collapses. The nested *selectors*
-   * survive as loose text, which is harmless — a selector cannot match
-   * `color:` or `background:`.
-   */
-  const ownDeclarations = (body: string): string => {
-    let out = body;
-    for (let pass = 0; pass < 12 && out.includes('{'); pass += 1) {
-      out = out.replace(/\{[^{}]*\}/gu, '');
-    }
-    return out;
+function paintedBy(rule: Rule, palette: Map<string, string>): Painted {
+  const lookup = lookupFor(rule, palette);
+  const colour = declaredValue(rule, 'color');
+  const ground = declaredValue(rule, 'background', 'background-color');
+  return {
+    rule,
+    foreground: colour === undefined ? undefined : readPaint(colour, lookup),
+    ground: ground === undefined ? undefined : readPaint(ground, lookup),
   };
-  const scan = (from: number, to: number): void => {
-    let depth = 0;
-    let open = from;
-    let selectorFrom = from;
-    for (let index = from; index < to; index += 1) {
-      const character = text[index];
-      if (character === '{') {
-        if (depth === 0) open = index;
-        depth += 1;
-      } else if (character === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          const body = text.slice(open + 1, index);
-          // Anything ending in a semicolon before the brace is a statement, not
-          // part of the selector. Without this, base.css's first rule carries its
-          // `@import` lines inside `selector` and no RuleRef could bind to it.
-          const preamble = text.slice(selectorFrom, open);
-          const own = ownDeclarations(body);
-          if (own.trim() !== '') {
-            found.push({
-              selector: preamble
-                .slice(preamble.lastIndexOf(';') + 1)
-                .trim()
-                .replace(/\s+/gu, ' '),
-              body: own,
-            });
-          }
-          if (body.includes('{')) scan(open + 1, index);
-          selectorFrom = index + 1;
-        }
-      }
-    }
-  };
-  scan(0, text.length);
-  return found;
 }
 
-/**
- * The one `color` / `background` token a single rule declares, if it declares
- * one. Both are anchored on a character that is neither a word character nor a
- * hyphen, so that `border-color:` is not a `color:` and a custom property whose
- * name ends in `-background` is not a ground.
- */
-const DECLARES_COLOUR = /(?:^|[^-\w])color:\s*var\((--vela-[a-z0-9-]+)\)/u;
-const DECLARES_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\((--vela-[a-z0-9-]+)\)/u;
-/** The same two, global, for counting every declaration rather than the first. */
-const EVERY_COLOUR = /(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gu;
-const EVERY_GROUND = /(?:^|[^-\w])background(?:-color)?:\s*[^;]*var\(--vela-[a-z0-9-]+\)/gu;
+const LIGHT_PALETTE = paletteFor('light');
+const PAINTED: readonly Painted[] = ALL_RULES.map((rule) => paintedBy(rule, LIGHT_PALETTE));
 
-/** Every token a stylesheet uses in `property: var(--vela-…)`. */
-function tokensUsedAs(property: RegExp): Map<string, string> {
+const at = (rule: Rule): string =>
+  `${rule.file} — ${rule.selector === '' ? rule.conditions.join(' ') : rule.selector}`;
+
+/**
+ * Every `--vela-*` role a stylesheet asks for on one side of the paint, with the
+ * first sheet that asks for it.
+ *
+ * The role is the *first* `--vela-*` property the expansion enters, so a rule
+ * that reaches a role through a local alias is credited with the role rather
+ * than with the alias.
+ */
+function rolesUsedAs(side: 'foreground' | 'ground'): Map<string, string> {
   const found = new Map<string, string>();
-  for (const { name, text } of SHEETS) {
-    for (const match of text.matchAll(property)) {
-      for (const token of (match[0] ?? '').matchAll(/var\((--vela-[a-z0-9-]+)\)/gu)) {
-        if (!found.has(token[1] ?? '')) found.set(token[1] ?? '', name);
-      }
-    }
+  for (const entry of PAINTED) {
+    const paint = entry[side];
+    if (paint === undefined || paint.kind !== 'colour' || paint.token === null) continue;
+    if (!found.has(paint.token)) found.set(paint.token, entry.rule.file);
   }
   return found;
 }
@@ -691,11 +597,37 @@ const NOT_A_TEXT_GROUND: Record<string, string> = {
 };
 
 describe('every colour role is audited', () => {
+  it('no colour or background declaration is unreadable to this audit', () => {
+    // THE DOOR THE EVASIONS WENT THROUGH, NAILED SHUT.
+    //
+    // Every check below asks "which role does this rule paint". The old reader
+    // had two answers — a token, or nothing — and "nothing" meant both *this
+    // rule declares no ground* and *this rule declares a ground I cannot read*.
+    // Collapsing those two is what let `var(--vela-x, transparent)` and a local
+    // alias walk past a guard that had the value in front of it.
+    //
+    // `readPaint` has a third answer, and this is where it lands. A value it
+    // cannot resolve to a colour, a keyword or a role is a failure quoting the
+    // value — never a skip.
+    const unreadable = PAINTED.flatMap((entry) =>
+      (['foreground', 'ground'] as const).flatMap((side) => {
+        const paint = entry[side];
+        return paint === undefined || paint.kind !== 'unreadable'
+          ? []
+          : [`${at(entry.rule)} — ${side} \`${paint.text}\`: ${paint.why}`];
+      }),
+    );
+    expect(
+      unreadable,
+      'teach css-model.ts to read this value, or write it in a form it reads',
+    ).toEqual([]);
+  });
+
   it('every token used as a text colour appears in the table', () => {
     // This is what stops the next `--vela-text-subtle`. A colour role that no
     // pair mentions is a role nobody checked, and it fails here by name.
     const audited = new Set(PAIRS.map((pair) => pair.fg));
-    const missing = [...tokensUsedAs(/(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gmu)]
+    const missing = [...rolesUsedAs('foreground')]
       .filter(([token]) => !audited.has(token))
       .map(([token, file]) => `${token} — first used in ${file}`);
     expect(missing, 'add a pair for each, naming the ground it is painted on').toEqual([]);
@@ -703,7 +635,7 @@ describe('every colour role is audited', () => {
 
   it('every token used as a background is audited or explicitly exempt', () => {
     const grounds = new Set(PAIRS.flatMap((pair) => pair.on));
-    const missing = [...tokensUsedAs(/background(?:-color)?:\s*[^;]*var\(--vela-[a-z0-9-]+\)/gmu)]
+    const missing = [...rolesUsedAs('ground')]
       .filter(([token]) => !grounds.has(token) && NOT_A_TEXT_GROUND[token] === undefined)
       .map(([token, file]) => `${token} — first used in ${file}`);
     expect(missing, 'audit the text on it, or exempt it with a reason in NOT_A_TEXT_GROUND').toEqual(
@@ -728,60 +660,47 @@ describe('every colour role is audited', () => {
     // it to inheritance: a composition that is written down is a composition
     // that gets measured.
     const measured = new Set(PAIRS.map((pair) => `${pair.fg} on ${pair.on[0] ?? ''}`));
-    const missing = SHEETS.flatMap(({ name, text }) =>
-      declarationBlocks(text).flatMap(({ selector, body }) => {
-        const foreground = DECLARES_COLOUR.exec(body)?.[1];
-        const ground = DECLARES_GROUND.exec(body)?.[1];
-        if (foreground === undefined || ground === undefined) return [];
-        return measured.has(`${foreground} on ${ground}`)
-          ? []
-          : [`${name} — ${selector} — ${foreground} on ${ground}`];
-      }),
-    );
+    const missing = PAINTED.flatMap(({ rule, foreground, ground }) => {
+      if (foreground?.kind !== 'colour' || ground?.kind !== 'colour') return [];
+      if (foreground.token === null || ground.token === null) return [];
+      return measured.has(`${foreground.token} on ${ground.token}`)
+        ? []
+        : [`${rule.file} — ${rule.selector} — ${foreground.token} on ${ground.token}`];
+    });
     expect(missing, 'add a pair naming this rule, or its composition is unmeasured').toEqual([]);
   });
 
   /*
-   * WHAT THIS STILL DOES NOT CLOSE, and what closing it would take.
+   * WHERE THE OTHER HALF OF THE QUESTION LIVES.
    *
-   * A composition assembled across the DOM — an ancestor declares the `color`, a
-   * descendant re-declares only the `background` — is invisible to every check in
-   * this file, because the ancestry lives in the TSX and not in the CSS. The
-   * defect above had exactly that shape before the fix: `.diffBody` painted the
-   * text, `.diffRow[data-kind=added]` painted the ground, and no single rule held
-   * both. The assertion above would not have caught it. It catches it now only
-   * because the fix co-declares.
+   * A composition assembled across the DOM — an ancestor declares the
+   * `background`, a descendant declares only the `color` — is invisible to every
+   * check in *this* file, because the ancestry lives in the TSX and not in the
+   * CSS. The defect above had exactly that shape before the fix: `.diffBody`
+   * painted the text, `.diffRow[data-kind=added]` painted the ground, and no
+   * single rule held both. The assertion above catches it now only because the
+   * fix co-declares.
    *
    * The clearest illustration is inside this very table. `MessageTurn
    * .errorTitle` — which `CanvasPanel.module.css` cites as the precedent for
    * --vela-text on --vela-danger-bg — is itself that shape: `.error` declares the
    * background, `.errorTitle` declares the colour, two rules, no co-declaration.
-   * It is audited only because a human read the component and wrote the pair
-   * down. Delete that line and nothing in this file asks for it back. The
-   * precedent for the fix is also the standing proof of the gap.
+   * It is in this table only because a human read the component and wrote the
+   * pair down. Delete that line and nothing *here* asks for it back.
    *
-   * Two routes reach the general case, and both are larger than a contrast fix:
+   * `src/styles/painted-contrast.test.tsx` is what asks for it back. It renders
+   * the components, walks every element that carries text, and resolves the
+   * colour it inherits and the ground it stands on through the real ancestry —
+   * so it measures the compositions no rule states, including that one. What it
+   * cannot do is measure a component no fixture mounts, and the rules no fixture
+   * reaches are listed there by name rather than left silent.
    *
-   * 1. PER-COMPONENT COMPLETENESS. Demand that each stylesheet's own use of a
-   *    token be audited by a pair whose `where` names that component, rather than
-   *    the token merely appearing somewhere in this table. Measured against the
-   *    tree as it stands, that asks for 44 new foreground entries and 58 new
-   *    ground entries across 22 of 41 stylesheets; nine components — CanvasPanel
-   *    before this commit, CanvasSurface, DocumentPreview, MemoryPanel,
-   *    ProjectPanel, SchedulesPanel, SkillsPanel, LocalEndpointSection,
-   *    RunHistory — have no pair at all today. It also needs a per-component
-   *    exemption list, because NOT_A_TEXT_GROUND is global and several of those
-   *    "gaps" are the meter fills and status dots it already excuses. Worth
-   *    doing. Not a contrast fix, and not safe to land inside one.
-   *
-   * 2. STATIC JSX ANCESTRY. `CanvasPanel.tsx` literally contains
-   *    `<pre className={styles.diffBody}>` wrapping
-   *    `<span className={styles.diffRow}>`, so the true ground chain is derivable
-   *    from source without a browser. This is the only route that yields the real
-   *    chain — the thing the header calls the one hand-made part of this file —
-   *    but a JSX nesting analyser that stays correct across 40 components is its
-   *    own piece of work, and a guard that rots is worse than a guard that is
-   *    honest about its reach.
+   * The two files answer different halves and neither subsumes the other. This
+   * one reads every rule in every sheet and needs no render, so it sees states
+   * and components a fixture never reaches; that one sees the DOM edge this one
+   * cannot represent. A composition is only certainly measured when one of them
+   * can see it, which is why the un-rendered list over there is the honest
+   * statement of what is still unmeasured today.
    */
 
   it('a pair that names a rule is checked against that rule', () => {
@@ -799,27 +718,29 @@ describe('every colour role is audited', () => {
     const bound = PAIRS.filter((pair) => pair.rule !== undefined);
     expect(bound.length, 'the table has stopped binding to any rule at all').toBeGreaterThan(2);
 
-    const sheetsByName = new Map(
-      SHEETS.map(({ name, text }) => [name.replace(/\\/gu, '/'), text] as const),
-    );
+    const known = new Set(SHEETS.map(({ name }) => name));
     const wrong = bound.flatMap((pair) => {
       const rule = pair.rule;
       if (rule === undefined) return [];
-      const text = sheetsByName.get(rule.file);
-      if (text === undefined) return [`${rule.file} — no such stylesheet`];
-      const block = declarationBlocks(text).find(({ selector }) => selector === rule.selector);
+      if (!known.has(rule.file)) return [`${rule.file} — no such stylesheet`];
+      const block = ALL_RULES.find(
+        (candidate) => candidate.file === rule.file && candidate.selector === rule.selector,
+      );
       if (block === undefined) return [`${rule.file} — no rule \`${rule.selector}\``];
-      const foreground = DECLARES_COLOUR.exec(block.body)?.[1];
-      const ground = DECLARES_GROUND.exec(block.body)?.[1];
+      const paint = paintedBy(block, LIGHT_PALETTE);
+      const foreground = paint.foreground?.kind === 'colour' ? paint.foreground.token : undefined;
+      const ground = paint.ground?.kind === 'colour' ? paint.ground.token : undefined;
       const say = (detail: string): string => `${rule.file} \`${rule.selector}\` — ${detail}`;
-      if (foreground === undefined) {
+      if (foreground === undefined || foreground === null) {
         return [
           say(
             `declares no colour of its own, so it inherits one and this pair does not describe it; the table claims ${pair.fg}`,
           ),
         ];
       }
-      if (ground === undefined) return [say(`declares no background; the table claims ${pair.on[0] ?? ''}`)];
+      if (ground === undefined || ground === null) {
+        return [say(`declares no background; the table claims ${pair.on[0] ?? ''}`)];
+      }
       const problems: string[] = [];
       if (foreground !== pair.fg) problems.push(say(`paints ${foreground}, the table claims ${pair.fg}`));
       if (ground !== (pair.on[0] ?? '')) {
@@ -881,12 +802,15 @@ describe('every colour role is audited', () => {
     // theme — it is the same white in dark mode, where those fills are light —
     // so it can only ever be right in one of the two themes. Text colours are
     // semantic roles; the ramp is what those roles are built out of.
-    const raw = SHEETS.flatMap(({ name, text }) =>
-      text
-        .split('\n')
-        .map((line, index) => ({ line: line.trim(), number: index + 1 }))
-        .filter(({ line }) => /(?:^|[^-\w])color:\s*var\(--vela-(?:night|signal|amber|rose|mint)-/u.test(line))
-        .map(({ line, number }) => `${name}:${number} — ${line}`),
+    //
+    // Asked of the resolved role rather than of the line, so that reaching a
+    // ramp step through a local alias is the same finding as naming it.
+    const raw = PAINTED.flatMap(({ rule, foreground }) =>
+      foreground?.kind === 'colour' &&
+      foreground.token !== null &&
+      /^--vela-(?:night|signal|amber|rose|mint)-/u.test(foreground.token)
+        ? [`${at(rule)} — color: ${foreground.token}`]
+        : [],
     );
     expect(raw, 'use a semantic role: --vela-text-*, --vela-text-on-*, --vela-syntax-*').toEqual([]);
   });
@@ -894,49 +818,156 @@ describe('every colour role is audited', () => {
   it('the completeness scan can actually see the stylesheets', () => {
     // Both guards above pass trivially if the scan finds nothing.
     expect(SHEETS.length).toBeGreaterThan(20);
-    const colours = tokensUsedAs(/(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gmu);
+    expect(SHEETS.map(({ name }) => name)).toContain('src/styles/typeface.css');
+    const colours = rolesUsedAs('foreground');
     expect(colours.size).toBeGreaterThan(10);
     expect(colours.has('--vela-text')).toBe(true);
-    expect(tokensUsedAs(/background(?:-color)?:\s*[^;]*var\(--vela-[a-z0-9-]+\)/gmu).size).toBeGreaterThan(10);
+    expect(rolesUsedAs('ground').size).toBeGreaterThan(10);
     // `border-color` must not be mistaken for `color`, or every border token
     // would be demanded as a text role and the exemption list would rot.
-    expect(
-      [...tokensUsedAs(/(?:^|[^-\w])color:\s*var\(--vela-[a-z0-9-]+\)/gmu)].some(
-        ([token]) => token === '--vela-border',
-      ),
-    ).toBe(false);
+    expect(colours.has('--vela-border')).toBe(false);
 
-    // The composition guard is only a guard if the rule splitter finds rules,
-    // finds rules that co-declare, and reads real selectors rather than
-    // whitespace. A splitter that quietly returned [] would pass it vacuously —
-    // which is the same shape of defect the guard itself exists to close.
-    const rules = SHEETS.flatMap(({ text }) => declarationBlocks(text));
-    expect(rules.length).toBeGreaterThan(400);
+    // The composition guard is only a guard if the parser finds rules, finds
+    // rules that co-declare, and reads real selectors rather than whitespace. A
+    // parser that quietly returned [] would pass it vacuously — which is the
+    // same shape of defect the guard itself exists to close.
+    expect(ALL_RULES.length).toBeGreaterThan(400);
     expect(
-      rules.filter(({ body }) => DECLARES_COLOUR.test(body) && DECLARES_GROUND.test(body)).length,
+      PAINTED.filter(({ foreground, ground }) => foreground !== undefined && ground !== undefined)
+        .length,
     ).toBeGreaterThan(40);
-    expect(rules.some(({ selector }) => selector === ".diffRow[data-kind='added']")).toBe(true);
+    expect(ALL_RULES.some(({ selector }) => selector === ".diffRow[data-kind='added']")).toBe(true);
 
-    // CONSERVATION — the floor that notices a *partial* drop.
+    // CONSERVATION — the floor that notices a *partial* drop, rewritten so that
+    // it is a law rather than a coincidence.
     //
-    // The three expectations above detect a splitter that has gone blind
-    // altogether. They cannot detect one that quietly loses a subset, and that
-    // is not hypothetical: the first version of `declarationBlocks` swallowed
-    // every rule containing a nested block, and all three stayed green. So count
-    // instead. Every `color:`/`background:` token declaration in the sheets must
-    // land in exactly one emitted block — parent declarations in the parent,
-    // nested ones in the child, none in both and none nowhere.
-    const tally = (chunks: readonly string[], pattern: RegExp): number =>
-      chunks.reduce((sum, chunk) => sum + [...chunk.matchAll(pattern)].length, 0);
-    const inSheets = SHEETS.map(({ text }) => text);
-    const inBlocks = rules.map(({ body }) => body);
-    expect(
-      tally(inBlocks, EVERY_COLOUR),
-      'the rule splitter is losing colour declarations',
-    ).toBe(tally(inSheets, EVERY_COLOUR));
-    expect(
-      tally(inBlocks, EVERY_GROUND),
-      'the rule splitter is losing background declarations',
-    ).toBe(tally(inSheets, EVERY_GROUND));
+    // The expectations above detect a parser that has gone blind altogether.
+    // They cannot detect one that quietly loses a subset, and that is not
+    // hypothetical: an earlier splitter swallowed every rule containing a nested
+    // block and all of them stayed green.
+    //
+    // The count this replaces tallied the SAME regex over two texts — the whole
+    // sheet, and the concatenated rule bodies. That is not conservation of
+    // declarations, it is conservation of greedy-match counts, and the two
+    // differ: `EVERY_GROUND`'s `[^;]*` can run past a nested at-rule prelude in
+    // one text and stop at a `;` that only exists in the other, so the law could
+    // fail on legal input while nothing had been lost. A law that can be wrong
+    // on legal input is not a law.
+    //
+    // So the second oracle is now structurally independent of the parser: count
+    // the DECLARATION LINES. Every `color:` / `background:` / `background-color:`
+    // in this repo's sheets is written at the head of its own line — 476 of
+    // them as this was written, and none written any other way — so a line
+    // scan sees each exactly once and knows nothing about braces, preludes or
+    // `var()`. If the parser drops one, or invents one out of a prelude, the two
+    // numbers part. If the house style ever stops holding, this fails loudly
+    // rather than drifting: that is the intended failure.
+    const PAINT_LINE = /^[\t ]*(?:color|background|background-color)[\t ]*:/u;
+    const byLine = SHEETS.reduce(
+      (sum, { text }) =>
+        sum +
+        text
+          .replace(/\/\*[\s\S]*?\*\//gu, '')
+          .split('\n')
+          .filter((line) => PAINT_LINE.test(line)).length,
+      0,
+    );
+    const byParser = ALL_RULES.reduce(
+      (sum, rule) =>
+        sum +
+        rule.declarations.filter(({ property }) =>
+          ['color', 'background', 'background-color'].includes(property),
+        ).length,
+      0,
+    );
+    expect(byParser, 'the parser and a plain line scan disagree about how many paint declarations exist').toBe(
+      byLine,
+    );
+    expect(byLine).toBeGreaterThan(400);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the reader itself                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The three constructions that walked past the regexes, as inputs.
+ *
+ * These are the anti-vacuity floor for the repair. Every assertion in the two
+ * describes above is of the form "the set of findings is empty", and the whole
+ * failure this file exists to close is a reader that finds nothing because it
+ * cannot see. Asserting on real stylesheets can only ever say "nothing is wrong
+ * today"; these say "the reader still reads", by handing it text whose right
+ * answer is known and non-empty.
+ */
+describe('the reader is not fooled by the shapes that fooled its regexes', () => {
+  const ROLE = new Map([
+    ['--vela-accent-quiet', '#e6fbf8'],
+    ['--vela-code-bg', '#0b1020'],
+    ['--vela-code-text', '#e0e3ed'],
+  ]);
+  const read = (css: string): Painted[] =>
+    parseStylesheet('probe.css', css).map((rule) => paintedBy(rule, ROLE));
+  const ground = (entry: Painted | undefined): string | null | undefined =>
+    entry?.ground?.kind === 'colour' ? entry.ground.token : (entry?.ground?.kind ?? undefined);
+
+  it('reads a ground written through a var() fallback', () => {
+    const [rule] = read(
+      `.body { color: var(--vela-code-text); background: var(--vela-accent-quiet, transparent); }`,
+    );
+    expect(ground(rule)).toBe('--vela-accent-quiet');
+  });
+
+  it('reads a ground written through a local custom property', () => {
+    const [rule] = read(
+      `.body { --skill-body-bg: var(--vela-accent-quiet); color: var(--vela-code-text); background: var(--skill-body-bg); }`,
+    );
+    expect(ground(rule)).toBe('--vela-accent-quiet');
+  });
+
+  it('never reads a ground out of an @supports condition', () => {
+    // The forged reading, in the placement that made it silent: at the END of
+    // the rule, where the old cutter left the prelude loose in the parent body
+    // and the greedy `[^;]*` had nothing after it to run into.
+    const [parent, nested] = read(
+      `.body { color: var(--vela-code-text); @supports (background: var(--vela-code-bg)) { scrollbar-gutter: stable; } }`,
+    );
+    expect(parent?.rule.selector).toBe('.body');
+    expect(parent?.ground, 'an @supports condition is not a declaration').toBeUndefined();
+    expect(nested?.rule.selector, 'a nested at-rule keeps its parent selector').toBe('.body');
+    expect(nested?.ground).toBeUndefined();
+    // And in the middle, which is where the old reader produced a false RED.
+    const [middle] = read(
+      `.body { color: var(--vela-code-text); @supports (background: var(--vela-code-bg)) { scrollbar-gutter: stable; } background: var(--vela-accent-quiet); }`,
+    );
+    expect(ground(middle)).toBe('--vela-accent-quiet');
+  });
+
+  it('keeps a `;` inside an attribute selector out of the selector it emits', () => {
+    const [rule] = read(`.row[data-label='a;b'] { color: var(--vela-code-text); }`);
+    expect(rule?.rule.selector).toBe(`.row[data-label='a;b']`);
+  });
+
+  it('does not lose the rest of the file to a brace inside a string', () => {
+    const rules = read(
+      `.a { content: '}'; color: var(--vela-code-text); }\n.b { background: var(--vela-code-bg); }`,
+    );
+    expect(rules.map((entry) => entry.rule.selector)).toEqual(['.a', '.b']);
+  });
+
+  it('emits a rule that also contains a nested block, and the nested one too', () => {
+    const rules = read(
+      `.row { color: var(--vela-code-text); background: var(--vela-code-bg); &:hover { background: var(--vela-accent-quiet); } }`,
+    );
+    expect(rules.map((entry) => entry.rule.selector)).toEqual(['.row', '.row:hover']);
+    expect(ground(rules[0])).toBe('--vela-code-bg');
+    expect(ground(rules[1])).toBe('--vela-accent-quiet');
+  });
+
+  it('calls a value it cannot resolve unreadable rather than absent', () => {
+    const [rule] = read(`.body { background: var(--nowhere); color: linear-gradient(red, blue); }`);
+    expect(rule?.ground?.kind).toBe('unreadable');
+    expect(rule?.foreground?.kind).toBe('unreadable');
   });
 });

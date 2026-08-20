@@ -67,6 +67,14 @@ const NOT_SHIPPED = new Map<string, string>([
       'permission level. On the graph again means that is back',
   ],
   [
+    'src/styles/css-model.ts',
+    'parses a stylesheet into rules and reads a `color` / `background` value as ' +
+      'a value, for `contrast.test.ts` and `painted-contrast.test.tsx`. It reads ' +
+      'CSS off disk with `node:fs`, which the renderer cannot do at all — a ' +
+      'browser has the cascade instead — so reachable from the application would ' +
+      'mean the app had started re-implementing the engine it runs inside',
+  ],
+  [
     'src/platform/declared-commands.ts',
     'reads an `export interface`’s members back out of its own source text, for ' +
       '`contract.test.ts` and `project-host-parity.test.ts`. An interface has no ' +

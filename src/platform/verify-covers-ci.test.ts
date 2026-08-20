@@ -18,104 +18,171 @@
  * order, or that `verify` runs nothing extra. `verify` may be stricter. It may
  * never be looser.
  *
- * ## The second defect: one filename out of a directory the runner reads whole
+ * ## The question this file has to answer, and the four times it asked a
+ * ## narrower one
  *
- * Every assertion below used to derive from a single `readFileSync` of
- * `.github/workflows/ci.yml`. GitHub Actions does not run a filename. It runs
- * **every** workflow file in `.github/workflows/`, so a second file there was
- * invisible to all three of the checks that scan the workflow — measured, not
- * assumed, by adding one: a second workflow carrying an unlisted gate command,
- * the crash-retry wrapper on a second job, and `cargo build` on a runner with no
- * Tauri system dependencies left this file 16/16 green.
+ * The wide question is **"what can make `pnpm verify` weaker than CI while every
+ * string this file looks for is still present?"** Four rounds of fixes each
+ * answered a narrower one and each shipped the same defect with a smaller mouth:
  *
- * That is the same shape as the capability defect fixed alongside it, and takes
- * the same fix — see the header of `src/platform/capability-surface.ts`, which
- * is the worked example. Enumerate the directory, derive the union, assert over
- * the union, and pin the file list by name so that a new file is either counted
- * or reported. It is not extracted into a module the way the capability reader
- * was, because that reader has two callers and this one has none but this file;
- * a parse is worth sharing when it is otherwise written twice.
+ * 1. *One filename out of a directory the runner reads whole.* Every assertion
+ *    derived from a single `readFileSync` of `.github/workflows/ci.yml`. GitHub
+ *    Actions does not run a filename; it runs **every** file in that directory.
+ *    Measured, not assumed: a second workflow carrying an unlisted gate, the
+ *    crash-retry wrapper on a second job, and `cargo build` on a runner with no
+ *    Tauri system dependencies left this file 16/16 green. Fixed by enumerating
+ *    the directory, asserting over the union, and pinning the file list by name
+ *    — see {@link WORKFLOW_FILES}.
+ * 2. *A refusal that YAML quoting walked straight past.* The `uses:` refusals
+ *    took the value as `(\S+)`, and a raw token carries its quotes, so
+ *    `uses: "./.github/actions/foo"` matched no arm and was allowed. 17/17 green
+ *    with the line added; refused with the quotes removed.
+ * 3. *The same hole, one YAML spelling over.* `uses:` with the value on the next
+ *    line, or as a block scalar (`>-`, `|-`), read as *not a `uses:` line at
+ *    all*. 36/36 green, three spellings.
+ * 4. *The key's spelling, not the value's.* Every fix above moved rightwards
+ *    along the line — the value's quoting, the value's position, the value's
+ *    block indicator. Nobody moved **leftwards**. The reader's key patterns
+ *    demanded the bare bytes `run:` / `uses:` at that position, so
  *
- * ### What the runner loads, and where each rule errs
+ *        - name: Probe gate behind a quoted key
+ *          "run": pnpm probe-unlisted-gate
+ *        - "uses": ./.github/actions/probe-composite
  *
- * 1. **Both YAML extensions, and nothing else.** A workflow file is `.yml` or
- *    `.yaml`; any other file in the directory is inert. Inert files are listed
- *    in {@link IGNORED_WORKFLOW_FILES} rather than passed over, so "GitHub does
- *    not load this" is a decision on the record and not an assumption.
- * 2. **Subdirectories are read anyway — deliberately wide.** GitHub picks up
- *    workflows at the top level of `.github/workflows/` only. This reader
- *    recurses, so a nested `.yml` is parsed and counted even though the runner
- *    would ignore it. Over-reporting costs a review; under-reporting is the
- *    defect above. The pinned list keeps the over-report from being silent.
- * 3. **A job's identity is its file *and* its name.** Two workflows may each
- *    hold a `test-windows`; they are two jobs. Every message below names a job
- *    as `file:job` for that reason, and the wrapper assertion pins the file too.
+ *    returned `undefined` — *"this is not a `uses:` key"*, the one claim the
+ *    reader was entitled to make — and no refusal fired. Measured on this tree
+ *    at `run-start-2026-08-17`: 42/42 green with the quotes, and the identical
+ *    two steps with **bare** keys take the file down at module load. A flow
+ *    mapping, `- { run: pnpm probe-unlisted-gate }`, was invisible to the same
+ *    two patterns for the same reason, and also 42/42 green. The
+ *    `inJobs !== inFile` net under the old `jobsIn` could not catch either:
+ *    both counts missed the step equally, so the arithmetic still balanced.
  *
- * ### Inputs this reader refuses rather than reading past
+ * ### Defect five: the setup exemption was a prefix test, not a whole-command test
  *
- * Each of these can put a gate command into CI that no amount of scanning this
- * directory would find. There is no wide reading of them, so they throw — and
- * they throw on *what a `uses:` names*, never on how the YAML spells it, which
- * took two goes to make true (defects three and four below):
+ * No unusual YAML at all. An existing step gains a shell `&&`:
  *
- * - **A local composite action** — a step whose `uses:` is a relative path to an
- *   action directory. Its own steps run commands, and they live in a definition
- *   file outside this directory that this reader never opens. There is no such
- *   directory in this tree today.
- * - **A remote reusable workflow** — a job whose `uses:` names a `.yml` in
- *   another repository. Its jobs are not in this directory at all. A *local*
- *   reusable workflow is fine and is not refused: it is a file in this
- *   directory, so enumerating the directory already reads it.
- * - **A workflow this reader cannot take apart** — no `jobs:` block it can find,
- *   no job headers under it, or a `run:` step that landed outside every job it
- *   found. A parser that quietly extracts nothing from a file reports the same
- *   green as a parser that read it and found nothing wrong, which is precisely
- *   the failure being fixed. A mis-rooted read throws out of `readdirSync` for
- *   the same reason.
+ *     - run: pnpm install --frozen-lockfile && pnpm probe-smuggled-gate
  *
- * ### The third defect: a refusal that YAML quoting walked straight past
+ * The old reader read the whole line correctly; the escape was downstream, in an
+ * exemption that dropped any command where `command.startsWith('pnpm install')`.
+ * Everything after the `&&` rode in on the prefix. Applied to all three jobs
+ * that install: 42/42 green. The second spelling used the apt block scalar's own
+ * backslash continuation —
  *
- * The two refusals above took the `uses:` value as `(\S+)`, the raw token, and a
- * raw token carries its quotes. `uses: "./.github/actions/foo"` captured
- * `"./.github/actions/foo"` — a string beginning `"`, not `./` — so it matched
- * neither `startsWith('./')` nor `/\.ya?ml@/u`, fell off the end of
- * {@link refuseUnreadableUses}, and was allowed. Measured, not assumed: with
- * that one line added to `ci.yml`'s `static` job, this file was 17/17 green
- * twice over, and green again with `'…'`. Unquoted, the same line is refused.
- * A composite action in this repository, whose `run:` steps this reader cannot
- * see, got past the guard for it purely because somebody quoted the path.
+ *           libssl-dev libsecret-1-dev \
+ *           && ./scripts/probe-smuggled-gate.sh
  *
- * The value is now parsed rather than tokenised — see {@link usesValue}. Nothing
- * about which targets are refused changed; only whether the quoting could hide
- * one from the arms that refuse it.
+ * — where the rejoin that exists to make the reader see *more* (so a wrapped
+ * `apt-get install` reads as one command instead of a list of package names) is
+ * what made it see less: the rejoined string begins `sudo apt-get`, so
+ * `startsWith('sudo apt-get')` exempted the script chained onto its end. Also
+ * 42/42 green. **Note that a perfect YAML parser does not touch this one.** It
+ * hands back the identical single scalar. The fix is that a `run:` value is now
+ * split into the simple commands the shell would run, and **every one of them**
+ * must be accounted for; the setup exemptions are exact whole-command strings in
+ * {@link SETUP_COMMANDS}, not prefixes.
  *
- * ### The fourth defect: the same hole, one YAML spelling over
+ * ### Defect six: a mention in the verify chain is not an execution
  *
- * Fixing the quoting left the identical hole open for the spellings where the
- * value is not on the `uses:` line at all. `usesValue` treated an empty
- * remainder as *not a `uses:` line*, and handed a block-scalar indicator to the
- * arms as though `>-` were a target. Measured on `ci.yml`'s bytes the same way,
- * one step in the `static` job, each twice:
+ * The larger surface, and the one no previous round touched. This guard compares
+ * two documents, and every fix so far re-read only one of them. The `verify`
+ * side was never framed as a reader at all: `matches.test(VERIFY)` asked *does
+ * this gate's text occur anywhere in the concatenation of the `verify` script
+ * body with the bodies of every script whose name is textually mentioned in it?*
+ * It never asked whether the occurrence was a command, whether it was on the
+ * success path, or whether its failure could fail `verify`. The expansion was a
+ * `String.replace` over `/pnpm (?:run )?([\w:-]+)/g`, which follows a name
+ * inside an echoed string exactly as it follows a name in a real command. So,
+ * with the workflow left byte-identical:
  *
- * | step | verdict |
- * | --- | --- |
- * | `- uses: ./.github/actions/foo` | refused (control) |
- * | `- uses:` ⏎ `    ./.github/actions/foo` | 36/36 green |
- * | `- uses: >-` ⏎ `    ./.github/actions/foo` | 36/36 green |
- * | `- uses: \|-` ⏎ `    ./.github/actions/foo` | 36/36 green |
+ *     "verify": "echo \"verify is temporarily a no-op. CI still runs: pnpm
+ *      typecheck pnpm lint:rust pnpm test … cargo test --workspace --locked\""
  *
- * A YAML parser resolves all four to the identical string — checked here, not
- * assumed. Whether GitHub Actions' own parser accepts every one of them is
- * **not established**; a multi-line plain scalar is ordinary YAML and would be
- * expected to work, and the block-scalar forms may or may not be. That question
- * does not need answering, because the rule does not depend on it: a reader that
- * cannot see the value must say so rather than return "nothing here". Reporting
- * a clean read of a line it never read is the defect, whatever the runner would
- * have done with it.
+ * was 42/42 green, and the **same** no-op with the gate names deleted from the
+ * echoed string was 13 failed / 29 passed. The two runs execute exactly the same
+ * amount of verification — none. The only difference between 13 red and 42 green
+ * was the presence of a string inside an `echo`. A file whose top line is
+ * "`pnpm verify` must be a superset of CI" certified a `verify` that was the
+ * empty set. The milder construction this repository practically invites, and
+ * which was also 42/42 green, leaves the chain intact and suppresses one gate's
+ * failure — `ci.yml`'s own comments record `test:harness` crashing on ~14% of
+ * Windows runs, so a developer writing
  *
- * So the two "cannot read it" outcomes are now cases in {@link UsesValue} and
- * both are refused by name. The lesson from three, restated: the fix that only
- * covers the spellings you thought of is the same defect with a smaller mouth.
+ *     … && (pnpm test:harness || echo "::warning:: flaky here") && …
+ *
+ * is the realistic version of this, not a contrived one. `verify` is then looser
+ * than CI, which is the one relationship this file exists to forbid.
+ *
+ * ## What the reader is now, on both sides
+ *
+ * Both documents are read as **structure**, and both readers are *total*: every
+ * line of a workflow and every character of a script body is either consumed by
+ * a construct the reader understands or **refused by name**. Silence about
+ * something it could not take apart is the failure mode of every defect above,
+ * and it is now unreachable rather than merely unlikely.
+ *
+ * - **The workflow is parsed as YAML** (a block subset — see
+ *   {@link parseWorkflowYaml}), so a key is a key whatever its quoting, and a
+ *   construct outside the subset throws instead of being skipped. Keys are
+ *   normalised, so `"run":` and `run:` are one thing; flow mappings, anchors,
+ *   aliases, tags, tabs and multi-document files are refused. Job and step keys
+ *   are then checked against a list of what this reader knows how to reason
+ *   about, and an unknown key is refused rather than ignored — that is the
+ *   general form of defect four, which was one particular unknown spelling.
+ * - **Commands are parsed as shell** (see {@link shellCommands}), so a `run:`
+ *   value is a *list* of simple commands rather than one string, and each of
+ *   them has to be accounted for. Constructs whose effect this reader cannot
+ *   compute — command substitution, subshells, background jobs, any `$`
+ *   expansion — are refused, not guessed at.
+ * - **`verify` is read as commands that execute**, not as text that mentions
+ *   them. {@link VERIFY_CHAIN} is built by following real invocations: a
+ *   segment whose program is `pnpm` and whose script name is a key in
+ *   `package.json` expands to *that script's* commands. An argument inside an
+ *   `echo` is an argument. And each command carries whether it is **gating** —
+ *   whether its failure fails `verify` — computed from the shell operators
+ *   around it, so a gate behind `||` or after `;` or `|` is present but does not
+ *   count. Each row of {@link CI_GATES} says what it needs as a predicate over a
+ *   *parsed* command, so the row for `pnpm typecheck` asks for a command whose
+ *   program is `pnpm` and whose script is `typecheck` — a question `echo` cannot
+ *   answer however its arguments are spelled.
+ *
+ * ### What this still cannot see, stated so nobody over-reads a green
+ *
+ * It compares *invocations at the command level*. It does not know what an
+ * invocation does, and it does not read anything an invocation reads. All of
+ * these keep every assertion here green:
+ *
+ * - **Rewriting what a gate is.** `"test": "vitest run --passWithNoTests
+ *   --exclude src"` is still the `pnpm test` gate to this file. So is a change
+ *   to `vite.config.ts`'s `test.include`, or to a vitest config a gate points
+ *   at, or to `scripts/run-bash.mjs`, `scripts/check-transcripts.sh` or
+ *   `scripts/secret-scan.sh`. The *argument list* of a gate is now pinned; the
+ *   *definition* of the gate is not, and pinning it is a different guard.
+ * - **`working-directory:` and `env:` on a step.** Both change what a command
+ *   does without changing its text. They are read as known step keys and their
+ *   values are not compared with anything.
+ * - **CI getting weaker.** The invariant is one-directional — `verify` may not
+ *   be looser than CI — so a step behind `if: false`, or a job removed
+ *   entirely, is not something this file objects to.
+ * - **A third-party `uses:`.** Refusal is two named shapes, and what
+ *   `actions/checkout@v4` runs is out of reach on purpose.
+ *
+ * ### Two claims this file does not make
+ *
+ * 1. **Defects one, two and three are inherited, not re-measured.** The counts
+ *    quoted for them (16/16, 17/17, 36/36) are what the previous header
+ *    recorded; this round did not reproduce them. Defects four, five and six
+ *    were measured on this tree at `run-start-2026-08-17`, each twice, and the
+ *    counts quoted for those are what the runs printed.
+ * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
+ *    not established.** No YAML parser was run against GitHub. It does not
+ *    matter here, and that is by construction rather than by luck: if GitHub
+ *    accepts it, the step is a gate and this file now demands it be in `verify`;
+ *    if GitHub rejects it, this file demands a gate CI does not run, which is an
+ *    over-report costing a review. The `"uses":` half refuses either way. The
+ *    error is in the safe direction under both answers, which is the only reason
+ *    the question can be left open.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -125,7 +192,7 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = process.cwd();
 const WORKFLOW_DIRECTORY = ['.github', 'workflows'] as const;
 
-/** Rule 1. The two extensions GitHub Actions loads. */
+/** The two extensions GitHub Actions loads. */
 const LOADED_EXTENSIONS = ['.yml', '.yaml'] as const;
 
 /**
@@ -155,55 +222,84 @@ const PACKAGE = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')
 };
 
 /**
- * Expands `pnpm <name>` references in a script body, recursively, so a command
- * CI runs directly is still found when `verify` reaches it through a chain like
- * `verify` → `lint:rust` → `cargo clippy …`.
+ * Commands CI runs that are **setup**, not gates: they fetch or install
+ * something and cannot fail on the state of the tree.
+ *
+ * **Exact whole strings, matched by equality.** This list used to be two
+ * `startsWith` prefixes, which is defect five in the header: everything after a
+ * `&&` rode in on the prefix of the command in front of it. Commands are now
+ * split before they get here, so a chained command is its own entry and has to
+ * be accounted for on its own — but the exemptions are still written as whole
+ * commands rather than prefixes, because a prefix test is the shape that failed
+ * and there is no reason to keep one.
+ *
+ * The cost is that changing the apt package list reddens this file. That is the
+ * intended price: the package list is the thing the "every job that runs cargo
+ * can actually build the dependency graph" case below is about, and a change to
+ * it deserves the two seconds it takes to read.
+ *
+ * Read by the `unaccounted` filter in *every gate command in the workflows is
+ * accounted for above*, and by nothing else.
  */
-function expand(script: string, seen = new Set<string>()): string {
-  return script.replace(/pnpm (?:run )?([\w:-]+)/g, (match, name: string) => {
-    if (seen.has(name) || PACKAGE.scripts[name] === undefined) return match;
-    seen.add(name);
-    return `${match} ${expand(PACKAGE.scripts[name], seen)}`;
-  });
-}
-
-const VERIFY = expand(PACKAGE.scripts.verify ?? '');
+const SETUP_COMMANDS: readonly string[] = [
+  'pnpm install --frozen-lockfile',
+  'sudo apt-get update',
+  'sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev ' +
+    'libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev ' +
+    'libjavascriptcoregtk-4.1-dev libssl-dev libsecret-1-dev',
+];
 
 /**
  * Every command in the workflows that is a *gate* — something that can fail the
- * build on the state of the tree. Setup steps (installing apt packages, fetching
- * toolchains) are not gates and are not listed.
+ * build on the state of the tree.
  *
- * The `matches` value is what must appear somewhere in the expanded `verify`
- * chain. It is the command's distinguishing part, so that reformatting either
- * side does not produce a false failure.
+ * `ci` is the exact command text the workflow runs, and is matched against the
+ * workflows by equality. `runs` is the **verify side**, and it is a predicate
+ * over a {@link ParsedCommand} rather than a regular expression over a text
+ * splat — defect six in the header. `matches: /pnpm (?:run )?typecheck/` tested
+ * against a bag of concatenated script bodies is satisfied by
+ * `echo "… pnpm typecheck …"`; `pnpmScript(c) === 'typecheck'` is not, because
+ * `echo`'s program is `echo` whatever its arguments say.
  */
-const CI_GATES: ReadonlyArray<{ readonly ci: string; readonly matches: RegExp }> = [
-  { ci: 'pnpm typecheck', matches: /pnpm (?:run )?typecheck/ },
-  { ci: 'cargo fmt --all --check', matches: /cargo fmt --all --check/ },
-  { ci: 'cargo clippy --workspace --all-targets -- -D warnings', matches: /cargo clippy --workspace --all-targets -- -D warnings/ },
-  { ci: 'pnpm test', matches: /pnpm (?:run )?test(?![\w:-])/ },
-  { ci: 'pnpm test:harness', matches: /pnpm (?:run )?test:harness/ },
+interface CiGate {
+  /** Exactly what the workflow runs. */
+  readonly ci: string;
+  /** Whether one command in the verify chain *is* this gate. */
+  readonly runs: (command: ParsedCommand) => boolean;
+}
+
+const CI_GATES: readonly CiGate[] = [
+  { ci: 'pnpm typecheck', runs: (c) => runsPnpm(c, 'typecheck') },
+  { ci: 'cargo fmt --all --check', runs: (c) => invokes(c, 'cargo', 'fmt', '--all', '--check') },
+  {
+    ci: 'cargo clippy --workspace --all-targets -- -D warnings',
+    runs: (c) => invokes(c, 'cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings'),
+  },
+  { ci: 'pnpm test', runs: (c) => runsPnpm(c, 'test') },
+  { ci: 'pnpm test:harness', runs: (c) => runsPnpm(c, 'test:harness') },
   // The same gate, wrapped for the Windows job only. The wrapper re-runs a
   // vitest worker-pool CRASH — a run that printed no verdict — and passes a real
   // test failure straight through; see `scripts/ci-retry-vitest-crash.mjs`. It
   // is listed rather than exempted so that the harness gate cannot be swapped
-  // for something else behind the wrapper without this file noticing, and
-  // `matches` still demands that `verify` reach the unwrapped gate.
+  // for something else behind the wrapper without this file noticing, and `runs`
+  // still demands that `verify` reach the unwrapped gate.
   {
     ci: 'node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
-    matches: /pnpm (?:run )?test:harness/,
+    runs: (c) => runsPnpm(c, 'test:harness'),
   },
-  { ci: 'pnpm build', matches: /pnpm (?:run )?build/ },
-  { ci: './scripts/check-transcripts.sh', matches: /check-transcripts\.sh/ },
+  { ci: 'pnpm build', runs: (c) => runsPnpm(c, 'build') },
+  { ci: './scripts/check-transcripts.sh', runs: (c) => runsScript(c, 'scripts/check-transcripts.sh') },
   // The same script, reached the way a Windows developer reaches it. The Linux
   // job runs the file directly; `test-windows` runs it through `pnpm`, because
   // pnpm hands script bodies to `cmd.exe` and that is the hop that was broken.
-  { ci: 'pnpm test:transcripts', matches: /pnpm (?:run )?test:transcripts/ },
-  { ci: 'cargo build --workspace --locked', matches: /cargo build --workspace --locked/ },
-  { ci: 'cargo test --workspace --locked', matches: /cargo test --workspace --locked/ },
-  { ci: './scripts/secret-scan.test.sh', matches: /secret-scan\.test\.sh/ },
-  { ci: './scripts/secret-scan.sh', matches: /secret-scan\.sh/ },
+  { ci: 'pnpm test:transcripts', runs: (c) => runsPnpm(c, 'test:transcripts') },
+  { ci: 'cargo build --workspace --locked', runs: (c) => invokes(c, 'cargo', 'build', '--workspace', '--locked') },
+  { ci: 'cargo test --workspace --locked', runs: (c) => invokes(c, 'cargo', 'test', '--workspace', '--locked') },
+  // Two rows, two different scripts. The old `matches: /secret-scan\.sh/` was
+  // satisfied by the `.test.sh` command as well, so one of these rows was
+  // proving nothing. `runsScript` compares the script path exactly.
+  { ci: './scripts/secret-scan.test.sh', runs: (c) => runsScript(c, 'scripts/secret-scan.test.sh') },
+  { ci: './scripts/secret-scan.sh', runs: (c) => runsScript(c, 'scripts/secret-scan.sh') },
 ];
 
 describe('the local gate is a superset of the remote one', () => {
@@ -227,36 +323,48 @@ describe('the local gate is a superset of the remote one', () => {
     ).toEqual([...IGNORED_WORKFLOW_FILES]);
   });
 
-  it.each(CI_GATES)('verify reaches the CI gate: $ci', ({ ci, matches }) => {
+  it.each(CI_GATES)('verify reaches the CI gate: $ci', ({ ci, runs }) => {
     expect(
-      COMMANDS.some(({ command }) => isCommand(command, ci)),
+      COMMANDS.some(({ command }) => command === ci),
       `this test's list is stale: no workflow under .github/workflows/ runs "${ci}"`,
     ).toBe(true);
+
+    // Two questions, kept apart on purpose, because the answers want different
+    // fixes. "Is it there at all?" was the only one the old text search could
+    // ask. "Does its failure fail `verify`?" is defect six: a gate wrapped in
+    // `|| echo`, or trailing a `;` or a `|`, is present and gates nothing.
+    const suppressed = VERIFY_CHAIN.filter((entry) => !entry.gating && runs(entry.command));
+    const reached = VERIFY_CHAIN.filter((entry) => entry.gating && runs(entry.command));
+
     expect(
-      matches.test(VERIFY),
-      `CI runs "${ci}" but "pnpm verify" does not. A green local run would ` +
-        `not mean a green CI run. Add it to the verify chain in package.json.`,
-    ).toBe(true);
+      reached.length,
+      suppressed.length > 0
+        ? `"pnpm verify" runs "${ci}" but its failure cannot fail the run: ` +
+          suppressed.map((entry) => `${entry.script} -> ${entry.command.text}`).join(', ') +
+          '. A gate whose failure is swallowed is not a gate, and a green local ' +
+          'run would not mean a green CI run. Put it back on the && chain.'
+        : `CI runs "${ci}" but "pnpm verify" does not. A green local run would ` +
+          `not mean a green CI run. Add it to the verify chain in package.json. ` +
+          `The commands verify actually runs are: ` +
+          VERIFY_CHAIN.map((entry) => entry.command.text).join(' | '),
+    ).toBeGreaterThan(0);
   });
 
   it('every gate command in the workflows is accounted for above', () => {
     // Catches the other direction: a *new* CI step that nobody listed here, and
     // which therefore silently escapes the check above. Over the union, so a
     // step added in a second workflow is caught the same as one added to
-    // `ci.yml` — before this read the whole directory, it was not.
+    // `ci.yml`; and over *simple commands*, so a gate chained onto the end of a
+    // setup step with `&&` is its own entry rather than part of the setup
+    // command's prefix. That is defect five.
     expect(COMMANDS.length).toBeGreaterThanOrEqual(CI_GATES.length);
 
-    const unaccounted = COMMANDS.filter(
-      ({ command }) =>
-        !command.startsWith('sudo apt-get') &&
-        !command.startsWith('pnpm install') &&
-        !CI_GATES.some(({ ci }) => isCommand(command, ci)),
-    ).map(({ file, command }) => `${file}: ${command}`);
-
     expect(
-      unaccounted,
-      'a new CI step appeared. Add it to CI_GATES and to "pnpm verify", or ' +
-        'exempt it here with a reason if it is setup rather than a gate.',
+      unaccounted(COMMANDS),
+      'a new CI command appeared. Add it to CI_GATES and to "pnpm verify", or ' +
+        'add it to SETUP_COMMANDS with a reason if it is setup rather than a ' +
+        'gate. Note that this is one *simple command*: if it arrived chained ' +
+        'onto another with && then the step that carries it is doing two things.',
     ).toEqual([]);
   });
 
@@ -277,9 +385,13 @@ describe('the local gate is a superset of the remote one', () => {
     // different job, and reading only one file could not tell them apart.
     const WRAPPER = 'ci-retry-vitest-crash.mjs';
 
-    const wrappingJobs = JOBS.filter((job) =>
-      new RegExp(`run:.*${WRAPPER}`, 'u').test(job.body),
-    ).map(jobKey);
+    const wrappingJobs = [
+      ...new Set(
+        COMMANDS.filter(({ command }) => command.includes(WRAPPER)).map(
+          ({ file, job }) => `${file}:${job}`,
+        ),
+      ),
+    ];
     expect(
       wrappingJobs,
       'the crash-retry wrapper belongs to `test-windows` in `ci.yml` alone. If ' +
@@ -315,36 +427,38 @@ describe('the local gate is a superset of the remote one', () => {
     //
     // It now asks what the runner needs, and an unrecognised runner fails:
     // "I do not know what this machine has" should be a question, not a pass.
-    // It also asks it of every job in the directory rather than of one file's,
-    // which is the third thing a second workflow used to walk straight past.
+    // It also asks it of every job in the directory rather than of one file's.
+    //
+    // `usesCargo` reads the *program* of each simple command rather than
+    // searching the job's text for the word. `cd src-tauri && cargo build` is
+    // two commands and the second one's program is `cargo`; a job that merely
+    // mentions cargo in a comment has no such command.
     for (const job of JOBS) {
-      const name = jobKey(job);
-      const usesCargo =
-        /^[ \t]*-?[ \t]*run: .*\bcargo\b/m.test(job.body) || /\n\s+cargo /.test(job.body);
-      if (!usesCargo) continue;
+      const name = `${job.file}:${job.name}`;
+      const commands = job.commands;
+      if (!commands.some((command) => parseCommand(command).program === 'cargo')) continue;
 
-      const runner = /runs-on:\s*(\S+)/.exec(job.body)?.[1] ?? '';
-      expect(runner, `CI job "${name}" has no runs-on this test can read`).not.toBe('');
+      expect(job.runsOn, `CI job "${name}" has no runs-on this test can read`).not.toBe('');
 
-      if (runner.startsWith('ubuntu')) {
+      if (job.runsOn.startsWith('ubuntu')) {
         expect(
-          job.body.includes('libwebkit2gtk-4.1-dev'),
+          commands.some((command) => command.includes('libwebkit2gtk-4.1-dev')),
           `CI job "${name}" runs cargo on Linux but never installs the Tauri ` +
             'system dependencies. It will fail in a build script before linting ' +
             'or testing anything. Copy the "Install Tauri system dependencies" step.',
         ).toBe(true);
-      } else if (runner.startsWith('windows') || runner.startsWith('macos')) {
+      } else if (job.runsOn.startsWith('windows') || job.runsOn.startsWith('macos')) {
         // Assert the absence of the Linux step as well. Copying it here would
         // fail on a runner with no apt, so its absence should read as a decision
         // rather than as something nobody got round to.
         expect(
-          job.body.includes('apt-get'),
-          `CI job "${name}" runs on ${runner} and installs Linux packages. The ` +
+          commands.some((command) => command.includes('apt-get')),
+          `CI job "${name}" runs on ${job.runsOn} and installs Linux packages. The ` +
             'webview ships with the OS there; apt-get does not exist on it.',
         ).toBe(false);
       } else {
         expect.fail(
-          `CI job "${name}" runs cargo on "${runner}", which this guard cannot ` +
+          `CI job "${name}" runs cargo on "${job.runsOn}", which this guard cannot ` +
             'reason about. Teach it what that runner provides before trusting a ' +
             'green run from it.',
         );
@@ -353,174 +467,1040 @@ describe('the local gate is a superset of the remote one', () => {
   });
 });
 
-describe('a uses: is refused on what it names, not on how it is written', () => {
-  // The third and fourth defects in the header, held down. `refuseUnreadableUses`
-  // is called on every real workflow by `readWorkflowSurface`, so a refusal that
-  // misfires takes the whole file down at module load and the tests above never
-  // run — which is exactly what the unquoted control does today, and exactly what
-  // the quoted and off-the-line forms failed to do.
-  //
-  // Every spelling below is ordinary YAML, and a YAML parser resolves `"./x"`,
-  // `'./x'`, `./x`, `uses:` with `./x` on the next line, `>-` and `|-` to one
-  // string. So they have to reach one verdict here. Where this reader cannot see
-  // the value at all it refuses instead, which is a different verdict from the
-  // one it used to give — silence.
+/* -------------------------------------------------------------------------- */
+/* the workflow, read as YAML                                                 */
+/* -------------------------------------------------------------------------- */
 
-  /** One step, spelled the way a workflow spells it. */
-  const step = (written: string): string => `      - uses: ${written}`;
+describe('the workflow is read as a document, not as lines', () => {
+  // `readWorkflowSurface` runs this same reader over every real workflow at
+  // module load, so a refusal that misfires takes the whole file down and the
+  // tests above never run. That is the control for every "refuses" row here.
 
-  /** A step written across however many lines it takes, put through the refusal. */
-  function refuseStep(...stepLines: readonly string[]): () => void {
-    return (): void => {
-      refuseUnreadableUses({
-        file: 'probe.yml',
-        text: ['jobs:', '  probe:', '    steps:', ...stepLines].join('\n'),
-      });
-    };
+  /** A one-job workflow carrying whatever step lines a case wants to try. */
+  const probeText = (...stepLines: readonly string[]): string =>
+    ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', ...stepLines].join('\n');
+
+  function probe(...stepLines: readonly string[]): () => WorkflowModel {
+    return () => modelOf({ file: 'probe.yml', text: probeText(...stepLines) });
   }
 
-  /** The one-line case, which is most of them. */
-  function refuse(written: string): () => void {
-    return refuseStep(step(written));
+  /**
+   * What the YAML parser resolved the first step's `uses:` to — read off the
+   * tree, *before* any refusal.
+   *
+   * Deliberately not `modelOf(...).jobs[0].steps[0].uses`: the refusing cases
+   * throw, and "it threw" is also what a reader that understood nothing would
+   * report. Asserting the resolved string separately is what makes the eight
+   * spellings a test of the parse rather than eight copies of one refusal arm.
+   */
+  function usesTargetOf(...stepLines: readonly string[]): string | undefined {
+    const root = parseWorkflowYaml('probe.yml', probeText(...stepLines));
+    const jobs = root.kind === 'mapping' ? entry(root.entries, 'jobs') : undefined;
+    const job = jobs !== undefined && jobs.kind === 'mapping' ? jobs.entries[0]?.value : undefined;
+    const steps = job !== undefined && job.kind === 'mapping' ? entry(job.entries, 'steps') : undefined;
+    const first = steps !== undefined && steps.kind === 'sequence' ? steps.items[0] : undefined;
+    return first !== undefined && first.kind === 'mapping'
+      ? scalarOf(entry(first.entries, 'uses'))
+      : undefined;
   }
 
-  it.each([
-    { quoting: 'unquoted', written: './.github/actions/foo' },
-    { quoting: 'double-quoted', written: '"./.github/actions/foo"' },
-    { quoting: 'single-quoted', written: "'./.github/actions/foo'" },
-    { quoting: 'double-quoted, with a trailing comment', written: '"./.github/actions/foo" # bundle' },
-  ])('refuses a local composite action written $quoting', ({ written }) => {
-    // The message is asserted, not merely the throw, and it is asserted on the
-    // *unquoted* path. A guard that threw while still holding `"./…"` would be
-    // refusing something it had not managed to read.
-    expect(
-      refuse(written),
-      'a composite action in this repository runs steps this reader never opens. ' +
-        'Whether it is refused cannot depend on the quoting, which the runner ' +
-        'does not see: quoting it was enough to walk past this guard.',
-    ).toThrow('runs "./.github/actions/foo", a composite action in this repository');
+  describe('a key is a key whatever its quoting — defect four', () => {
+    it.each([
+      { spelling: 'bare', key: 'run' },
+      { spelling: 'double-quoted', key: '"run"' },
+      { spelling: 'single-quoted', key: "'run'" },
+    ])('reads a $spelling run: key', ({ key }) => {
+      // The whole of defect four. Every fix before this one hardened how the
+      // VALUE may be written; the KEY was never a variable, and two double-quote
+      // characters were the difference between a module-load refusal and 42/42
+      // green. A YAML parser has no such notion: it unquotes the key and hands
+      // back `run`.
+      const model = probe(`      - ${key}: pnpm probe-unlisted-gate`)();
+      expect(model.jobs[0]?.steps[0]?.run).toBe('pnpm probe-unlisted-gate');
+    });
+
+    it.each([
+      { spelling: 'bare', key: 'uses' },
+      { spelling: 'double-quoted', key: '"uses"' },
+      { spelling: 'single-quoted', key: "'uses'" },
+    ])('refuses a composite action behind a $spelling uses: key', ({ key }) => {
+      expect(probe(`      - ${key}: ./.github/actions/probe-composite`)).toThrow(
+        'runs "./.github/actions/probe-composite", a composite action in this repository',
+      );
+    });
+
+    it('refuses a step written as a flow mapping', () => {
+      // The second spelling of the same frame, and the one a line reader misses
+      // for the same reason: `- { run: … }` has no line that begins `run:`. It
+      // is refused rather than parsed, because this reader does not implement
+      // flow mappings and the alternative to refusing is to skip it in silence.
+      expect(probe('      - { run: pnpm probe-unlisted-gate }')).toThrow(
+        'a flow mapping',
+      );
+    });
   });
 
-  it('refuses a composite action reached by a parent-relative path', () => {
-    expect(refuse("'../actions/foo'")).toThrow(
-      'runs "../actions/foo", a composite action in this repository',
-    );
+  describe('a uses: is refused on what it names, not on how it is written', () => {
+    it.each([
+      { spelling: 'unquoted', written: ['      - uses: ./.github/actions/foo'] },
+      { spelling: 'double-quoted', written: ['      - uses: "./.github/actions/foo"'] },
+      { spelling: 'single-quoted', written: ["      - uses: './.github/actions/foo'"] },
+      {
+        spelling: 'double-quoted with a trailing comment',
+        written: ['      - uses: "./.github/actions/foo" # bundle'],
+      },
+      {
+        spelling: 'unquoted with a trailing comment',
+        written: ['      - uses: ./.github/actions/foo # bundle'],
+      },
+      {
+        spelling: 'a plain scalar continued on the next line',
+        written: ['      - uses:', '          ./.github/actions/foo'],
+      },
+      {
+        spelling: 'a folded block scalar',
+        written: ['      - uses: >-', '          ./.github/actions/foo'],
+      },
+      {
+        spelling: 'a literal block scalar',
+        written: ['      - uses: |-', '          ./.github/actions/foo'],
+      },
+    ])('resolves and refuses a composite action written as $spelling', ({ written }) => {
+      // Defects two and three, and the promise the old header made but could not
+      // keep. The off-the-line spellings used to be refused for the *wrong*
+      // reason — "this reader cannot see the value" — which is the right verdict
+      // from a line reader and a worse one than the truth. A YAML parser
+      // resolves all eight of these to one string, so they now refuse on what
+      // they name, and the parse is asserted rather than inferred from a throw.
+      expect(usesTargetOf(...written)).toBe('./.github/actions/foo');
+      expect(probe(...written)).toThrow(
+        'runs "./.github/actions/foo", a composite action in this repository',
+      );
+    });
+
+    it('refuses a composite action reached by a parent-relative path', () => {
+      expect(probe("      - uses: '../actions/foo'")).toThrow(
+        'runs "../actions/foo", a composite action in this repository',
+      );
+    });
+
+    it.each([
+      { spelling: 'unquoted', written: 'org/repo/.github/workflows/x.yml@main' },
+      { spelling: 'double-quoted', written: '"org/repo/.github/workflows/x.yml@main"' },
+      { spelling: 'single-quoted', written: "'org/repo/.github/workflows/x.yml@main'" },
+    ])('refuses a remote reusable workflow written $spelling', ({ written }) => {
+      expect(probe(`      - uses: ${written}`)).toThrow(
+        'calls "org/repo/.github/workflows/x.yml@main", a reusable workflow in another repository',
+      );
+    });
+
+    it('refuses a remote reusable workflow called at job level', () => {
+      // A job may be a `uses:` with no steps at all. The old line reader saw
+      // the key wherever it sat, which was right by accident; this one has to
+      // look for it on purpose, so the case is pinned.
+      const text = ['jobs:', '  probe:', '    uses: org/repo/.github/workflows/x.yml@main'].join('\n');
+      expect(() => modelOf({ file: 'probe.yml', text })).toThrow(
+        'calls "org/repo/.github/workflows/x.yml@main", a reusable workflow in another repository',
+      );
+    });
+
+    it.each([
+      { spelling: 'unquoted', written: './.github/workflows/reusable.yml', names: './.github/workflows/reusable.yml' },
+      { spelling: 'double-quoted', written: '"./.github/workflows/reusable.yml"', names: './.github/workflows/reusable.yml' },
+      { spelling: 'single-quoted', written: "'./.github/workflows/reusable.yaml'", names: './.github/workflows/reusable.yaml' },
+    ])('reads a local reusable workflow written $spelling and allows it', ({ written, names }) => {
+      // Two assertions, because "it did not throw" on its own is also what a
+      // reader that understood nothing would report. The first says what was
+      // read; the second says the admission is a decision.
+      expect(usesTargetOf(`      - uses: ${written}`)).toBe(names);
+      expect(
+        probe(`      - uses: ${written}`),
+        'a local reusable workflow is a file in this directory. Enumerating the ' +
+          'directory already read it and its jobs are already in JOBS.',
+      ).not.toThrow();
+    });
+
+    it('refuses a relative path into the workflows directory that is not a workflow', () => {
+      expect(probe('      - uses: "./.github/workflows/helper.sh"')).toThrow(
+        'runs "./.github/workflows/helper.sh", a composite action in this repository',
+      );
+    });
+
+    it('refuses a uses: whose opening quote never closes', () => {
+      // Unquoted this exact target is *allowed* — it is the local reusable
+      // workflow above — so neither guess is safe.
+      expect(probe('      - uses: "./.github/workflows/reusable.yml')).toThrow(
+        'quote never closes',
+      );
+    });
+
+    it.each([
+      { spelling: 'unquoted', written: 'actions/checkout@v4', names: 'actions/checkout@v4' },
+      { spelling: 'double-quoted', written: '"pnpm/action-setup@v4"', names: 'pnpm/action-setup@v4' },
+      { spelling: 'single-quoted', written: "'dtolnay/rust-toolchain@stable'", names: 'dtolnay/rust-toolchain@stable' },
+      { spelling: 'unquoted with a trailing comment', written: 'Swatinem/rust-cache@v2 # cache', names: 'Swatinem/rust-cache@v2' },
+    ])('reads a third-party action written $spelling and allows it', ({ written, names }) => {
+      // The refusal is two named shapes, not a blanket one: enumerating what a
+      // third-party action runs is neither this file's business nor within its
+      // reach, and every workflow in this directory is full of them. Widening
+      // either arm to cover these is caught by `ci.yml` itself at module load.
+      expect(usesTargetOf(`      - uses: ${written}`)).toBe(names);
+      expect(probe(`      - uses: ${written}`)).not.toThrow();
+    });
   });
 
-  it.each([
-    { quoting: 'unquoted', written: 'org/repo/.github/workflows/x.yml@main' },
-    { quoting: 'double-quoted', written: '"org/repo/.github/workflows/x.yml@main"' },
-    { quoting: 'single-quoted', written: "'org/repo/.github/workflows/x.yml@main'" },
-  ])('refuses a remote reusable workflow written $quoting', ({ written }) => {
-    // This arm was never blind to quoting — `/\.ya?ml@/u` is unanchored and
-    // matches inside the quotes — but it *named* the quoted string back at the
-    // reader. Asserting the unquoted name is what makes this row a test of the
-    // parse rather than a second copy of the arm.
-    expect(refuse(written)).toThrow(
-      'calls "org/repo/.github/workflows/x.yml@main", a reusable workflow in another repository',
-    );
-  });
+  describe('a construct it cannot take apart is refused, never skipped', () => {
+    // The general form of defect four. Every escape so far has been a spelling
+    // nobody thought of, so the rule is no longer "recognise these spellings"
+    // but "account for everything, and name what you cannot".
 
-  it.each([
-    { quoting: 'unquoted', written: './.github/workflows/reusable.yml', names: './.github/workflows/reusable.yml' },
-    { quoting: 'double-quoted', written: '"./.github/workflows/reusable.yml"', names: './.github/workflows/reusable.yml' },
-    { quoting: 'single-quoted', written: "'./.github/workflows/reusable.yaml'", names: './.github/workflows/reusable.yaml' },
-    { quoting: 'unquoted, with a trailing comment', written: './.github/workflows/reusable.yml # local', names: './.github/workflows/reusable.yml' },
-  ])('reads a local reusable workflow written $quoting and allows it', ({ written, names }) => {
-    // Two assertions, because "it did not throw" on its own is also what a
-    // reader that understood nothing would report. That is not hypothetical for
-    // the two *quoted* rows: before the parse existed they were allowed by
-    // falling off the end of every arm, never reaching the one that admits
-    // them. The two unquoted rows did go through the allowance branch even
-    // then, and are here as its controls. The first assertion says what was
-    // read; the case below says the admission is a decision.
-    expect(usesValue(step(written))).toEqual({ kind: 'target', target: names });
-    expect(
-      refuse(written),
-      'a local reusable workflow is a file in this directory. Enumerating the ' +
-        'directory already read it and its jobs are already in JOBS.',
-    ).not.toThrow();
-  });
+    it('refuses a step key it does not know how to reason about', () => {
+      expect(probe('      - run: pnpm test', '        surprise: yes')).toThrow(
+        'has a step key this reader does not know: "surprise"',
+      );
+    });
 
-  it('refuses a relative path into the workflows directory that is not a workflow', () => {
-    // The discriminator for the case above. A quoted relative path is now read
-    // far enough to be *tested* against the local-reusable-workflow shape, so
-    // one that does not have it is refused. Before the parse both landed in the
-    // same place — allowed, unexamined — and no assertion could separate them.
-    expect(refuse('"./.github/workflows/helper.sh"')).toThrow(
-      'runs "./.github/workflows/helper.sh", a composite action in this repository',
-    );
-  });
+    it('refuses a job key it does not know how to reason about', () => {
+      const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    surprise: yes'].join('\n');
+      expect(() => modelOf({ file: 'probe.yml', text })).toThrow(
+        'has a job key this reader does not know: "surprise"',
+      );
+    });
 
-  it('stops an unquoted uses: at the comment instead of swallowing it', () => {
-    // `(\S+)` got this right and the replacement has to keep it. A parser that
-    // took the rest of the line would refuse `./.github/actions/foo # bundle`,
-    // naming a path that is not in the file.
-    expect(refuse('./.github/actions/foo # bundle')).toThrow(
-      'runs "./.github/actions/foo", a composite action in this repository',
-    );
-  });
+    it('refuses a step that is neither a run: nor a uses:', () => {
+      expect(probe('      - name: nothing at all')).toThrow(
+        'is a step with neither a "run:" nor a "uses:"',
+      );
+    });
 
-  it.each([
-    { spelling: 'a plain scalar continued on the next line', line: '      - uses:', raw: '' },
-    { spelling: 'the same, with the key left trailing a space', line: '      - uses: ', raw: '' },
-    { spelling: 'a folded block scalar', line: '      - uses: >-', raw: '>-' },
-    { spelling: 'a literal block scalar', line: '      - uses: |-', raw: '|-' },
-    { spelling: 'a folded block scalar keeping its newline', line: '      - uses: >', raw: '>' },
-    { spelling: 'a literal block scalar keeping its newline', line: '      - uses: |', raw: '|' },
-  ])('refuses a uses: written as $spelling, whose value is not on the line', ({ line, raw }) => {
-    // The fourth defect. Every one of these resolves to the same string as
-    // `uses: ./.github/actions/foo`, which is refused — so a composite action
-    // could be admitted by moving its path down one line. The parse is asserted
-    // first because the failure was that this reader called the line *not a
-    // `uses:` line*: silence about a key it could not read, which is the one
-    // report it must never make.
-    expect(usesValue(line)).toEqual({ kind: 'elsewhere', raw });
-    expect(
-      refuseStep(line, '          ./.github/actions/foo'),
-      'a reader that works a line at a time cannot see a value written below ' +
-        'that line. It must say so, not report that it found nothing.',
-    ).toThrow('has a "uses:" whose value is not on that line');
-  });
+    it('refuses a step that is both a run: and a uses:', () => {
+      expect(probe('      - run: pnpm test', '        uses: actions/checkout@v4')).toThrow(
+        'is a step with both a "run:" and a "uses:"',
+      );
+    });
 
-  it('refuses a uses: whose opening quote never closes', () => {
-    // Unquoted this exact target is *allowed* — it is the local reusable
-    // workflow above — so neither guess is safe. Stripping the stray quote
-    // admits a target the runner may never resolve; keeping the value raw is
-    // the original defect verbatim, a leading `"` matching no arm. It is
-    // refused instead, and the line is named.
-    expect(
-      refuse('"./.github/workflows/reusable.yml'),
-      'a value this reader cannot read is not a value it may assume is harmless',
-    ).toThrow('has a "uses:" whose quote never closes');
-  });
+    it('refuses a run: whose shell is not one this reader can split', () => {
+      // `shell: python` means the body is not shell at all, so every `&&` and
+      // `;` this reader relies on means nothing there.
+      expect(probe('      - run: print("hi")', '        shell: python')).toThrow(
+        'has a "shell: python"',
+      );
+    });
 
-  it.each([
-    // A control row, named as one: `actions/checkout@v4` unquoted and
-    // uncommented reddens under no mutation of this parser, because it is the
-    // spelling the parser never changed. It is here to say that the plain case
-    // still works, not to detect anything. The three below it each redden on
-    // their own — the quoted pair when the parse is reverted, the commented one
-    // when the unquoted form stops stopping at whitespace.
-    { quoting: 'unquoted', written: 'actions/checkout@v4', names: 'actions/checkout@v4' },
-    { quoting: 'double-quoted', written: '"pnpm/action-setup@v4"', names: 'pnpm/action-setup@v4' },
-    { quoting: 'single-quoted', written: "'dtolnay/rust-toolchain@stable'", names: 'dtolnay/rust-toolchain@stable' },
-    { quoting: 'unquoted, with a trailing comment', written: 'Swatinem/rust-cache@v2 # cache', names: 'Swatinem/rust-cache@v2' },
-  ])('reads a third-party action written $quoting and allows it', ({ written, names }) => {
-    // The refusal is two named shapes, not a blanket one: enumerating what a
-    // third-party action runs is neither this file's business nor within its
-    // reach, and every workflow in this directory is full of them. Widening
-    // either arm to cover these is caught by `ci.yml` itself at module load —
-    // which is why the parse is asserted here as well. "Did not throw" is the
-    // half of this case that the real file already proves; what was read is the
-    // half that only these rows can say.
-    expect(usesValue(step(written))).toEqual({ kind: 'target', target: names });
-    expect(refuse(written)).not.toThrow();
+    it('refuses a run: whose value is a GitHub expression', () => {
+      // `run: ${{ matrix.command }}` is a gate whose text is not in the file.
+      expect(probe('      - run: ${{ matrix.command }}')).toThrow(
+        'is not a command this reader can see',
+      );
+    });
+
+    it('refuses a step whose failure does not fail the job', () => {
+      expect(probe('      - run: pnpm test', '        continue-on-error: true')).toThrow(
+        'cannot fail the job',
+      );
+    });
+
+    it('refuses a YAML anchor', () => {
+      expect(probe('      - run: &base pnpm test')).toThrow('an anchor, alias or tag');
+    });
+
+    it('refuses a tab in the indentation', () => {
+      expect(probe('      - run: pnpm test', '\t\tname: tabbed')).toThrow('a tab');
+    });
+
+    it('refuses a second YAML document in one file', () => {
+      const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test', '---', 'jobs: {}'].join('\n');
+      expect(() => modelOf({ file: 'probe.yml', text })).toThrow('a document separator');
+    });
+
+    it('refuses a document with anything left unread after it', () => {
+      // The totality net, and it is a *backstop*, not the main defence: a
+      // mapping rooted at column zero — which every workflow is — can only
+      // consume to the end of the file or refuse, so the net cannot fire on
+      // one. It fires on a document whose root node ends early, and it exists
+      // so that "the parser walked past something" is a failure rather than a
+      // quiet subset. Stated rather than assumed, because a net nobody can trip
+      // is a net nobody should count on.
+      expect(() => parseWorkflowYaml('probe.yml', '- a: 1\nb: c\n')).toThrow('was left unread');
+    });
+
+    it('refuses a file with no jobs: key', () => {
+      expect(() => modelOf({ file: 'probe.yml', text: 'name: nothing\n' })).toThrow(
+        'has no "jobs:" mapping',
+      );
+    });
+
+    it('reads a steps: sequence written at the key’s own indent', () => {
+      // Legal YAML that a stricter reader would skip in silence. Asserted rather
+      // than assumed, because "found no steps" and "there are no steps" are the
+      // two outcomes this whole file exists to keep apart.
+      const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', '    - run: pnpm test'].join('\n');
+      expect(modelOf({ file: 'probe.yml', text }).jobs[0]?.steps[0]?.run).toBe('pnpm test');
+    });
+
+    it('reads a run: whose value is written on the next line', () => {
+      // The `uses:` half of this spelling was defect three. The `run:` half was
+      // never separately probed, and a line reader misses it the same way.
+      const model = probe('      - run:', '          pnpm probe-unlisted-gate')();
+      expect(model.jobs[0]?.commands).toEqual(['pnpm probe-unlisted-gate']);
+    });
+
+    it('reads a key written with a space before its colon', () => {
+      // Ordinary YAML, and one more position along the line that nothing had
+      // varied. `run : x` is the key `run`.
+      expect(probe('      - run : pnpm probe-unlisted-gate')().jobs[0]?.commands).toEqual([
+        'pnpm probe-unlisted-gate',
+      ]);
+    });
+
+    it('refuses a step key that differs from a known one only in case', () => {
+      // `RUN:` is not `run:` to the runner either, so a step spelled this way
+      // runs nothing — but a reader that lower-cased keys to be helpful would
+      // report a gate that does not exist. Refused, and named.
+      expect(probe('      - RUN: pnpm probe-unlisted-gate')).toThrow(
+        'has a step key this reader does not know: "RUN"',
+      );
+    });
+
+    it('reads a run: block scalar as the commands it contains', () => {
+      const model = probe(
+        '      - run: |',
+        '          sudo apt-get update',
+        '          sudo apt-get install -y \\',
+        '            libssl-dev',
+      )();
+      expect(model.jobs[0]?.commands).toEqual([
+        'sudo apt-get update',
+        'sudo apt-get install -y libssl-dev',
+      ]);
+    });
   });
 });
 
 /* -------------------------------------------------------------------------- */
-/* the directory                                                              */
+/* commands, read as shell                                                    */
+/* -------------------------------------------------------------------------- */
+
+describe('a command line is read as the commands it runs', () => {
+  const texts = (source: string): string[] => shellCommands(source, 'probe').map((c) => c.text);
+  const gating = (source: string): string[] =>
+    shellCommands(source, 'probe')
+      .filter((c) => c.gating)
+      .map((c) => c.text);
+
+  it('splits a && chain into its simple commands — defect five', () => {
+    // `pnpm install --frozen-lockfile && pnpm probe-smuggled-gate` was 42/42
+    // green three times over, because the exemption asked whether the command
+    // *began* with setup and never whether it was *only* setup.
+    expect(texts('pnpm install --frozen-lockfile && pnpm probe-smuggled-gate')).toEqual([
+      'pnpm install --frozen-lockfile',
+      'pnpm probe-smuggled-gate',
+    ]);
+  });
+
+  it('splits the command a backslash continuation rejoins', () => {
+    // The second spelling of defect five, and the one a YAML parser does not
+    // touch: the parser hands back one correct scalar and the hole is here.
+    expect(
+      texts('sudo apt-get install -y \\\n  libssl-dev libsecret-1-dev \\\n  && ./scripts/probe.sh'),
+    ).toEqual(['sudo apt-get install -y libssl-dev libsecret-1-dev', './scripts/probe.sh']);
+  });
+
+  it.each([
+    { shape: 'a && b', source: 'a && b', expected: ['a', 'b'] },
+    { shape: 'a || b', source: 'a || b', expected: ['b'] },
+    { shape: 'a && b || c', source: 'a && b || c', expected: ['c'] },
+    { shape: 'a && b || c && d', source: 'a && b || c && d', expected: ['c', 'd'] },
+    { shape: 'a ; b', source: 'a ; b', expected: ['b'] },
+    { shape: 'a | b', source: 'a | b', expected: ['b'] },
+    { shape: 'a\\nb', source: 'a\nb', expected: ['b'] },
+  ])('knows which commands in $shape can fail the run', ({ source, expected }) => {
+    // Defect six's other half. `a && b || c` is `((a && b) || c)`: if `a` fails
+    // the `||` catches it, so neither `a` nor `b` can fail the run. This is why
+    // wrapping one flaky gate in `|| echo` takes the gates in front of it out
+    // of the chain too, and why the message for that case says so.
+    expect(gating(source)).toEqual(expected);
+  });
+
+  it.each([
+    { construct: 'a subshell', source: 'a && (b || c)', names: 'a subshell or group' },
+    { construct: 'a command substitution', source: 'a $(b)', names: 'a command substitution' },
+    { construct: 'a backtick substitution', source: 'a `b`', names: 'a command substitution' },
+    { construct: 'a background job', source: 'a & b', names: 'a background job' },
+    { construct: 'a shell expansion', source: 'a $B', names: 'a shell expansion' },
+  ])('refuses $construct rather than guessing what it runs', ({ source, names }) => {
+    // Refusal, not a best guess. Each of these can put a command into the run
+    // whose text is not in the file, and this reader's one job is never to
+    // report a clean read of something it did not read.
+    expect(() => shellCommands(source, 'probe')).toThrow(names);
+  });
+
+  it('reads text inside quotes as an argument, never as a command', () => {
+    // Defect six in one line. `echo "… pnpm typecheck …"` used to satisfy the
+    // typecheck gate. It is one command whose program is `echo`.
+    const commands = shellCommands('echo "pnpm typecheck && pnpm build"', 'probe');
+    expect(commands.map((c) => c.text)).toHaveLength(1);
+    expect(parseCommand(commands[0]?.text ?? '').program).toBe('echo');
+  });
+});
+
+describe('verify is read as commands that execute, not as text that mentions them', () => {
+  it('follows a pnpm script invocation into the script it invokes', () => {
+    // The chain is real: `cargo fmt --all --check` is nowhere in `verify`'s own
+    // body and reaches it through `pnpm lint:rust`.
+    expect(
+      VERIFY_CHAIN.some((entry) => entry.gating && invokes(entry.command, 'cargo', 'fmt', '--all', '--check')),
+      'verify -> lint:rust -> cargo fmt is the expansion this test is about',
+    ).toBe(true);
+    expect(VERIFY_CHAIN.some((entry) => entry.script === 'lint:rust')).toBe(true);
+  });
+
+  it.each([
+    { program: 'echo', text: 'echo "pnpm typecheck"' },
+    { program: 'echo', text: 'echo pnpm typecheck' },
+  ])('does not read $program’s arguments as an invocation', ({ text }) => {
+    // Both spellings. The quoted one is the construction that was measured
+    // 42/42 green; the unquoted one is what a second agent would reach for once
+    // the quoted one stopped working, and it is the reason the fix cannot be
+    // "strip quoted spans".
+    expect(pnpmScript(parseCommand(text))).toBeUndefined();
+    expect(CI_GATES.every(({ runs }) => !runs(parseCommand(text)))).toBe(true);
+  });
+
+  it('does not read a gate name in a script body as an invocation of it', () => {
+    // The whole of defect six, driven through the real expander against a
+    // synthetic package.json shape.
+    const chain = chainOf('probe', {
+      probe: 'echo "CI still runs: pnpm typecheck pnpm lint:rust cargo test --workspace --locked"',
+      typecheck: 'tsc --build --force',
+      'lint:rust': 'cd src-tauri && cargo fmt --all --check',
+    });
+    expect(chain.map((entry) => entry.command.text)).toEqual([
+      'echo "CI still runs: pnpm typecheck pnpm lint:rust cargo test --workspace --locked"',
+    ]);
+    expect(CI_GATES.filter(({ runs }) => chain.some((e) => e.gating && runs(e.command)))).toEqual([]);
+  });
+
+  it('marks a gate whose failure is caught as reached but not gating', () => {
+    const chain = chainOf('probe', {
+      probe: 'pnpm test:harness || echo "flaky here" && pnpm build',
+      'test:harness': 'vitest run',
+      build: 'vite build',
+    });
+    expect(chain.filter((e) => e.gating).map((e) => e.command.text)).not.toContain('pnpm test:harness');
+    expect(chain.some((e) => !e.gating && e.command.text === 'pnpm test:harness')).toBe(true);
+  });
+
+  it('stops following a script chain that refers back to itself', () => {
+    expect(chainOf('a', { a: 'pnpm b', b: 'pnpm a' }).map((e) => e.command.text)).toEqual([
+      'pnpm b',
+      'pnpm a',
+    ]);
+  });
+
+  it.each([
+    { neutered: 'cargo test --workspace --locked --no-run' },
+    { neutered: 'pnpm test --passWithNoTests' },
+    { neutered: 'pnpm test:harness --reporter=dot --passWithNoTests' },
+    { neutered: 'node scripts/run-bash.mjs scripts/secret-scan.sh --dry-run' },
+  ])('does not accept $neutered as the gate it starts with', ({ neutered }) => {
+    // The route out of this fix that a leading-argument test would have left
+    // open, and the reason {@link invokes} and {@link runsPnpm} are exact. Each
+    // of these still *contains* its gate and still *begins* with it; none of
+    // them still runs it. There is no reading of the string that separates a
+    // strengthening flag from an emptying one, so the row reddens and a person
+    // decides.
+    const command = parseCommand(neutered);
+    expect(CI_GATES.filter(({ runs }) => runs(command))).toEqual([]);
+  });
+
+  it('accepts the unflagged form of each of those', () => {
+    // The control. Without it the case above passes for a matcher that accepts
+    // nothing at all.
+    for (const exact of [
+      'cargo test --workspace --locked',
+      'pnpm test',
+      'pnpm test:harness',
+      'node scripts/run-bash.mjs scripts/secret-scan.sh',
+    ]) {
+      expect(
+        CI_GATES.some(({ runs }) => runs(parseCommand(exact))),
+        `"${exact}" is a gate this file must still recognise`,
+      ).toBe(true);
+    }
+  });
+
+  it('does not exempt a command that merely begins with a setup command', () => {
+    // Defect five, asked of the exemption directly rather than through the real
+    // workflow. The tree contains no such command, so a code change here is
+    // invisible to every other case in this file — which is exactly how a
+    // prefix test survived three rounds of review.
+    const one = (command: string): WorkflowCommand[] => [{ file: 'probe.yml', job: 'probe', command }];
+
+    expect(unaccounted(one('pnpm install --frozen-lockfile && pnpm probe-smuggled-gate'))).toEqual([
+      'probe.yml:probe: pnpm install --frozen-lockfile && pnpm probe-smuggled-gate',
+    ]);
+    expect(unaccounted(one('cargo test --workspace --locked --no-run'))).toEqual([
+      'probe.yml:probe: cargo test --workspace --locked --no-run',
+    ]);
+
+    // The controls, without which the two rows above pass for a filter that
+    // exempts nothing at all.
+    expect(unaccounted(one('pnpm install --frozen-lockfile'))).toEqual([]);
+    expect(unaccounted(one('cargo test --workspace --locked'))).toEqual([]);
+  });
+
+  it('reads pnpm run <script> as the same invocation as pnpm <script>', () => {
+    expect(runsPnpm(parseCommand('pnpm run typecheck'), 'typecheck')).toBe(true);
+    expect(runsPnpm(parseCommand('pnpm run typecheck --incremental'), 'typecheck')).toBe(false);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the YAML reader                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** One node of the block-YAML subset this reader implements. */
+type YamlNode =
+  | { readonly kind: 'mapping'; readonly entries: readonly YamlEntry[]; readonly line: number }
+  | { readonly kind: 'sequence'; readonly items: readonly YamlNode[]; readonly line: number }
+  | { readonly kind: 'scalar'; readonly value: string; readonly line: number };
+
+interface YamlEntry {
+  readonly key: string;
+  readonly value: YamlNode;
+  readonly line: number;
+}
+
+/**
+ * A block-YAML subset, parsed **totally**: every non-blank, non-comment line is
+ * consumed by a construct this reader implements, or the file is refused by
+ * name and line.
+ *
+ * That totality is the fix for defect four and its whole class. The old reader
+ * scanned for lines matching `/^[ \t]*-?[ \t]*run:/` and said nothing about
+ * every other line, so any spelling outside that pattern — a quoted key, a flow
+ * mapping, anything a fourth agent thinks of next — was invisible *and silent*.
+ * A parser that must account for every line cannot be silent: it either
+ * understands the line or throws.
+ *
+ * Implemented: block mappings (keys bare, `'…'` or `"…"`), block sequences,
+ * plain / quoted / literal / folded scalars, flow sequences kept as opaque text
+ * (`branches: [main]` — nothing here looks inside one), and comments.
+ *
+ * Refused: flow mappings, anchors, aliases, tags, document separators,
+ * directives, tabs in indentation, an unterminated quote, and anything left over
+ * after the document ends.
+ *
+ * Not a general YAML implementation and not trying to be. A construct outside
+ * the subset costs a review, which is the trade rule 2 of this file has always
+ * made; the alternative — reading past it — is the defect.
+ */
+function parseWorkflowYaml(file: string, text: string): YamlNode {
+  const lines = text.split(/\r?\n/u);
+  let index = 0;
+
+  const at = (line: number): string => `.github/workflows/${file}:${String(line + 1)}`;
+  function refuse(line: number, what: string): never {
+    throw new Error(
+      `${at(line)} ${what}. This reader parses a block-YAML subset and refuses ` +
+        'what it cannot take apart, because reading past a construct is how a ' +
+        'gate reaches CI unseen. Rewrite it in the subset, or teach this reader.',
+    );
+  }
+
+  const isSkippable = (line: string): boolean => {
+    const trimmed = line.trim();
+    return trimmed === '' || trimmed.startsWith('#');
+  };
+
+  /** A bare mapping key, ending at the first `:` that is followed by space or EOL. */
+  const PLAIN_KEY = /^([^\s#'"{}[\]&*!|>%@`,][^:#]*?)[ \t]*:(?=[ \t]|$)(.*)$/u;
+
+  /**
+   * Whether a line opens a mapping entry — asked without refusing, because the
+   * caller is deciding *what shape* follows a key, not judging the line.
+   */
+  const isKeyLine = (trimmed: string): boolean => {
+    const quote = trimmed[0];
+    if (quote === '"' || quote === "'") {
+      const close = trimmed.indexOf(quote, 1);
+      return close !== -1 && trimmed.slice(close + 1).startsWith(':');
+    }
+    return PLAIN_KEY.test(trimmed);
+  };
+
+  function indentOf(line: number): number {
+    const raw = lines[line] ?? '';
+    if (raw.slice(0, raw.length - raw.trimStart().length).includes('\t')) {
+      refuse(line, 'is indented with a tab');
+    }
+    return raw.length - raw.trimStart().length;
+  }
+
+  function nextContent(from: number): number {
+    let cursor = from;
+    while (cursor < lines.length && isSkippable(lines[cursor] ?? '')) cursor += 1;
+    return cursor;
+  }
+
+  for (const [line, raw] of lines.entries()) {
+    const trimmed = raw.trim();
+    if (trimmed === '---' || trimmed === '...') refuse(line, 'is a document separator');
+    if (raw.startsWith('%')) refuse(line, 'is a YAML directive');
+  }
+
+  /** The scalar text of a block scalar (`|`, `>`) whose key sits at `indent`. */
+  function blockScalar(from: number, indent: number, folded: boolean): { value: string; next: number } {
+    const body: string[] = [];
+    let cursor = from;
+    let strip = -1;
+    while (cursor < lines.length) {
+      const raw = lines[cursor] ?? '';
+      if (raw.trim() === '') {
+        body.push('');
+        cursor += 1;
+        continue;
+      }
+      const depth = indentOf(cursor);
+      if (depth <= indent) break;
+      if (strip === -1) strip = depth;
+      body.push(raw.slice(strip));
+      cursor += 1;
+    }
+    while (body.length > 0 && body[body.length - 1] === '') body.pop();
+    // Folding joins continuation lines with a space, which is what the runner's
+    // shell then sees as one command; a literal block keeps the newlines, which
+    // is what makes each line its own command.
+    return { value: folded ? body.join(' ').trim() : body.join('\n'), next: cursor };
+  }
+
+  /** The value written after a key, on the line or below it. */
+  function parseValue(line: number, rest: string, indent: number): YamlNode {
+    const value = rest.trim();
+
+    const block = /^([|>])[-+]?[0-9]*[ \t]*(?:#.*)?$/u.exec(value);
+    if (block !== null) {
+      const { value: scalar, next } = blockScalar(line + 1, indent, block[1] === '>');
+      index = next;
+      return { kind: 'scalar', value: scalar, line };
+    }
+
+    if (value === '' || value.startsWith('#')) {
+      const below = nextContent(line + 1);
+      if (below < lines.length) {
+        const depth = indentOf(below);
+        const trimmed = (lines[below] ?? '').trim();
+        const isItem = trimmed === '-' || trimmed.startsWith('- ');
+        if (depth > indent) {
+          if (isItem || isKeyLine(trimmed)) {
+            index = below;
+            return parseNode(depth);
+          }
+          // A plain scalar written below its key, which YAML folds into one
+          // string with spaces. This is one of the spellings defect three was
+          // about, and the only reason it reached this reader as a *refusal*
+          // before was that a line reader could not see it at all.
+          const parts: string[] = [];
+          let cursor = below;
+          while (cursor < lines.length) {
+            const raw = lines[cursor] ?? '';
+            if (isSkippable(raw)) {
+              cursor += 1;
+              continue;
+            }
+            const text = raw.trim();
+            if (indentOf(cursor) <= indent) break;
+            if (text === '-' || text.startsWith('- ') || isKeyLine(text)) break;
+            parts.push(text);
+            cursor += 1;
+          }
+          index = cursor;
+          return { kind: 'scalar', value: parts.join(' '), line };
+        }
+        // A sequence may sit at its key's own indent. Legal, common, and a
+        // reader that treated it as "no value" would drop every step in the job.
+        if (depth === indent && isItem) {
+          index = below;
+          return parseSequence(indent);
+        }
+      }
+      index = line + 1;
+      return { kind: 'scalar', value: '', line };
+    }
+
+    index = line + 1;
+
+    if (value.startsWith('{')) refuse(line, 'is a flow mapping');
+    if (value.startsWith('&') || value.startsWith('*') || value.startsWith('!')) {
+      refuse(line, 'is an anchor, alias or tag');
+    }
+    if (value.startsWith('[')) {
+      if (!value.includes(']')) refuse(line, 'is a flow sequence that does not close on its line');
+      if (value.includes('{')) refuse(line, 'is a flow mapping inside a flow sequence');
+      // Kept as opaque text: nothing here looks inside one (`branches: [main]`).
+      return { kind: 'scalar', value, line };
+    }
+
+    const quote = value[0];
+    if (quote === '"' || quote === "'") {
+      if (value.includes('\\')) refuse(line, 'is a quoted scalar containing a backslash escape');
+      const close = value.indexOf(quote, 1);
+      if (close === -1) refuse(line, 'is a scalar whose quote never closes');
+      const after = value.slice(close + 1).trim();
+      if (after !== '' && !after.startsWith('#')) {
+        refuse(line, 'has text after the closing quote of its value');
+      }
+      return { kind: 'scalar', value: value.slice(1, close), line };
+    }
+
+    // A plain scalar ends at ` #`, which starts a comment. Anchors and aliases
+    // are refused above, so what is left is text.
+    const comment = value.search(/[ \t]#/u);
+    return { kind: 'scalar', value: (comment === -1 ? value : value.slice(0, comment)).trim(), line };
+  }
+
+  function parseMapping(indent: number): YamlNode {
+    const startLine = index;
+    const entries: YamlEntry[] = [];
+    const seen = new Set<string>();
+
+    for (;;) {
+      const line = nextContent(index);
+      if (line >= lines.length) break;
+      const depth = indentOf(line);
+      if (depth < indent) break;
+      const raw = lines[line] ?? '';
+      const trimmed = raw.trim();
+      if (depth > indent) refuse(line, 'is indented deeper than the mapping it belongs to');
+      if (trimmed === '-' || trimmed.startsWith('- ')) {
+        refuse(line, 'is a sequence item where this reader expects a mapping key');
+      }
+      // `- { run: pnpm x }` — defect four's second spelling. A line reader has
+      // no line beginning `run:` to find here, and neither has this one; the
+      // difference is that this one says so.
+      if (trimmed.startsWith('{')) refuse(line, 'is a flow mapping');
+
+      let key: string;
+      let rest: string;
+      const quote = trimmed[0];
+      if (quote === '"' || quote === "'") {
+        const close = trimmed.indexOf(quote, 1);
+        if (close === -1) refuse(line, 'has a key whose quote never closes');
+        if (trimmed.slice(0, close).includes('\\')) {
+          refuse(line, 'has a quoted key containing a backslash escape');
+        }
+        const after = trimmed.slice(close + 1);
+        if (!after.startsWith(':')) refuse(line, 'is a quoted scalar where a mapping key belongs');
+        key = trimmed.slice(1, close);
+        rest = after.slice(1);
+      } else {
+        const parsed = PLAIN_KEY.exec(trimmed);
+        if (parsed === null) refuse(line, `is at mapping depth but is not a key this reader can read: "${trimmed}"`);
+        key = parsed[1] ?? '';
+        rest = parsed[2] ?? '';
+      }
+
+      // Last-wins is YAML's rule and first-wins is what a reader like this
+      // naturally does, so the two can disagree about what runs. Refused.
+      if (seen.has(key)) refuse(line, `repeats the key "${key}" in one mapping`);
+      seen.add(key);
+
+      index = line + 1;
+      entries.push({ key, value: parseValue(line, rest, depth), line });
+    }
+
+    return { kind: 'mapping', entries, line: startLine };
+  }
+
+  function parseSequence(indent: number): YamlNode {
+    const startLine = index;
+    const items: YamlNode[] = [];
+
+    for (;;) {
+      const line = nextContent(index);
+      if (line >= lines.length) break;
+      if (indentOf(line) !== indent) break;
+      const raw = lines[line] ?? '';
+      const trimmed = raw.trim();
+      if (trimmed !== '-' && !trimmed.startsWith('- ')) break;
+
+      const after = raw.slice(indent + 1);
+      if (after.trim() === '' || after.trimStart().startsWith('#')) {
+        index = line + 1;
+        const below = nextContent(index);
+        if (below >= lines.length || indentOf(below) <= indent) {
+          items.push({ kind: 'scalar', value: '', line });
+          continue;
+        }
+        index = below;
+        items.push(parseNode(indentOf(below)));
+        continue;
+      }
+
+      // The dash becomes indentation, so the columns of everything on and under
+      // this line line up with the node that starts here.
+      const column = indent + 1 + (after.length - after.trimStart().length);
+      lines[line] = ' '.repeat(column) + after.trimStart();
+      index = line;
+      items.push(parseNode(column));
+    }
+
+    return { kind: 'sequence', items, line: startLine };
+  }
+
+  function parseNode(indent: number): YamlNode {
+    const line = nextContent(index);
+    index = line;
+    if (line >= lines.length) return { kind: 'scalar', value: '', line };
+    const trimmed = (lines[line] ?? '').trim();
+    if (trimmed === '-' || trimmed.startsWith('- ')) return parseSequence(indent);
+    return parseMapping(indent);
+  }
+
+  const first = nextContent(0);
+  if (first >= lines.length) throw new Error(`.github/workflows/${file} has nothing in it to read`);
+  if (indentOf(first) !== 0) refuse(first, 'starts the document indented');
+  index = first;
+  const root = parseNode(0);
+
+  // The totality net. If anything is left, the parser walked past a construct
+  // instead of refusing it, and that is the bug this whole file is about.
+  const leftover = nextContent(index);
+  if (leftover < lines.length) refuse(leftover, 'was left unread after the document ended');
+
+  return root;
+}
+
+/* -------------------------------------------------------------------------- */
+/* the shell reader                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** One simple command, and whether its failure fails the run it is part of. */
+interface ShellCommand {
+  readonly text: string;
+  /**
+   * False when a shell operator swallows this command's exit status: it is on
+   * the left of a `||`, or in front of a `;`, or upstream in a `|`. Read by the
+   * `verify reaches the CI gate` case, which is the whole of defect six.
+   */
+  readonly gating: boolean;
+}
+
+/**
+ * A command line, split into the simple commands the shell would run.
+ *
+ * Two things this has to get right, and the old reader got neither:
+ *
+ * 1. **Every command, not the first one.** `pnpm install --frozen-lockfile &&
+ *    pnpm probe-smuggled-gate` is two commands. Reading it as one string and
+ *    asking whether it *begins* with setup is defect five.
+ * 2. **Which of them can fail the run.** `a && b || c` is `((a && b) || c)`, so
+ *    a failure of `a` or `b` is caught by the `||` and only `c` can fail the
+ *    line. That is defect six: a gate wrapped in `|| echo` is present in the
+ *    script and gates nothing.
+ *
+ * Refusals, not guesses: command substitution, subshells and brace groups,
+ * background jobs, and any `$` expansion outside single quotes. Each of them can
+ * make the text of the command differ from what runs, and this file's one rule
+ * is that a reader which cannot see a value must say so.
+ */
+function shellCommands(source: string, where: string): ShellCommand[] {
+  const refuse = (what: string): never => {
+    throw new Error(
+      `${where} contains ${what}, which this reader cannot evaluate. It refuses ` +
+        'rather than guess: a command whose text is not in the file is a gate ' +
+        'nobody here is checking. Write the chain out, or teach this reader.',
+    );
+  };
+
+  // A backslash-newline is a line continuation: rejoin before splitting, so a
+  // wrapped `apt-get install` reads as the one command it is.
+  const text = source.replace(/[ \t]*\\\r?\n[ \t]*/gu, ' ');
+
+  const out: ShellCommand[] = [];
+  let group: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+
+  const endSegment = (): void => {
+    const trimmed = current.trim();
+    current = '';
+    if (trimmed !== '') group.push(trimmed);
+  };
+  const flush = (gating: boolean): void => {
+    for (const command of group) out.push({ text: command, gating });
+    group = [];
+  };
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i] ?? '';
+    const next = text[i + 1] ?? '';
+
+    if (quote !== null) {
+      if (quote === '"' && char === '$') refuse('a shell expansion inside double quotes');
+      if (quote === '"' && char === '`') refuse('a command substitution');
+      if (char === quote) quote = null;
+      current += char;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === '`') refuse('a command substitution');
+    if (char === '$') refuse(next === '(' ? 'a command substitution' : 'a shell expansion');
+    if ((char === '<' || char === '>') && next === '(') refuse('a process substitution');
+    if (char === '(' || char === ')' || char === '{' || char === '}') refuse('a subshell or group');
+
+    if (char === '&' && next === '&') {
+      endSegment();
+      i += 1;
+      continue;
+    }
+    if (char === '&') refuse('a background job');
+    if (char === '|' && next === '|') {
+      endSegment();
+      flush(false);
+      i += 1;
+      continue;
+    }
+    if (char === '|' || char === ';' || char === '\n') {
+      endSegment();
+      flush(false);
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (quote !== null) refuse('a quote that never closes');
+  endSegment();
+  flush(true);
+  return out;
+}
+
+/** One simple command, split into what it runs and what it runs it on. */
+interface ParsedCommand {
+  readonly text: string;
+  readonly program: string;
+  readonly args: readonly string[];
+}
+
+/**
+ * Split a simple command into its program and arguments, with quoting removed.
+ *
+ * The point of separating the program from the arguments is defect six: a gate
+ * name that appears in an argument is a *word*, and a gate name in the program
+ * position is an *invocation*. `echo "pnpm typecheck"` has program `echo`.
+ */
+function parseCommand(text: string): ParsedCommand {
+  const tokens: string[] = [];
+  let current = '';
+  let started = false;
+  let quote: '"' | "'" | null = null;
+
+  for (const char of text) {
+    if (quote !== null) {
+      if (char === quote) quote = null;
+      else current += char;
+      started = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (char === ' ' || char === '\t') {
+      if (started) tokens.push(current);
+      current = '';
+      started = false;
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (started) tokens.push(current);
+
+  return { text, program: tokens[0] ?? '', args: tokens.slice(1) };
+}
+
+/**
+ * True when `command` is exactly `program` with exactly these arguments.
+ *
+ * **Exact, not a leading-argument prefix.** The prefix version is one more
+ * instance of defect five in a different place, and it has a working exploit:
+ * `cargo test --workspace --locked --no-run` satisfies a prefix test, runs zero
+ * tests, and leaves this file green while `verify` has stopped verifying. There
+ * is no way to tell a flag that strengthens a gate (`--no-fail-fast`) from one
+ * that empties it (`--no-run`, `--passWithNoTests`) by looking at the string, so
+ * this reader does not try: an argument list that differs from CI's reddens and
+ * asks for a human.
+ *
+ * The alternative considered and rejected: an allowlist of flags known to be
+ * harmless. It is the same shape as the exemption that failed — a list of
+ * spellings someone thought of — and the failure mode is a silent green rather
+ * than a review. Exactness is noisier and cannot be wrong in that direction.
+ */
+function invokes(command: ParsedCommand, program: string, ...args: readonly string[]): boolean {
+  return (
+    command.program === program &&
+    command.args.length === args.length &&
+    args.every((argument, at) => command.args[at] === argument)
+  );
+}
+
+/**
+ * True when `command` is `pnpm <script>` with nothing after the script name.
+ *
+ * Same argument as {@link invokes}. `pnpm test --passWithNoTests` is a `pnpm
+ * test` invocation and is not the `pnpm test` gate.
+ */
+function runsPnpm(command: ParsedCommand, script: string): boolean {
+  if (pnpmScript(command) !== script) return false;
+  return command.args.length === (command.args[0] === 'run' ? 2 : 1);
+}
+
+/**
+ * The `package.json` script a command invokes through pnpm, or `undefined`.
+ *
+ * The name has to be a key in `scripts` — `pnpm install --frozen-lockfile`
+ * invokes no script — and it has to be in the *program's argument* position, not
+ * merely somewhere in the text. That last clause is defect six.
+ */
+function pnpmScript(command: ParsedCommand): string | undefined {
+  if (command.program !== 'pnpm') return undefined;
+  const at = command.args[0] === 'run' ? 1 : 0;
+  const name = command.args[at];
+  if (name === undefined || name.startsWith('-')) return undefined;
+  return Object.hasOwn(PACKAGE.scripts, name) ? name : undefined;
+}
+
+/**
+ * True when `command` executes the repository script at `path`.
+ *
+ * Two ways this tree reaches one, both named rather than pattern-matched: the
+ * script as the program (`./scripts/secret-scan.sh`), and the script handed to
+ * `scripts/run-bash.mjs`, which is the hop a Windows developer takes because
+ * pnpm runs script bodies through `cmd.exe`. Anything else is not an execution
+ * as far as this reader is concerned, and it will say the gate is missing rather
+ * than accept a mention of the filename.
+ */
+function runsScript(command: ParsedCommand, path: string): boolean {
+  if (command.program.replace(/^\.\//u, '') === path) return command.args.length === 0;
+  return (
+    command.program === 'node' &&
+    command.args.length === 2 &&
+    command.args[0] === 'scripts/run-bash.mjs' &&
+    command.args[1] === path
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* the workflow surface                                                       */
 /* -------------------------------------------------------------------------- */
 
 /** One workflow file the runner would load. */
@@ -530,120 +1510,212 @@ interface Workflow {
   readonly text: string;
 }
 
-/** One `run:` command, carrying the file that runs it. */
-interface WorkflowCommand {
-  readonly file: string;
-  readonly command: string;
+/** One step, as much of it as this reader reasons about. */
+interface WorkflowStep {
+  readonly line: number;
+  /** `undefined` on a `uses:` step. Read by `commands` and by two cases above. */
+  readonly run: string | undefined;
+  // No `uses` field. It was here, written on every step and read by nothing:
+  // `refuseUses` consumes the target at parse time and the assertions above
+  // never ask a step what it uses. A field written with no reader is a defect
+  // of its own — it looks like coverage and is not — so it is gone rather than
+  // kept for a caller that does not exist. Anything that needs the target reads
+  // it off the parse tree, which is what `usesTargetOf` does.
 }
 
-/** One job, carrying the file that declares it. */
+/** One job, with the simple commands its steps run. */
 interface WorkflowJob {
   readonly file: string;
   readonly name: string;
-  readonly body: string;
+  readonly runsOn: string;
+  readonly steps: readonly WorkflowStep[];
+  readonly commands: readonly string[];
 }
 
-/** How every message below names a job — rule 3. */
-function jobKey(job: WorkflowJob): string {
-  return `${job.file}:${job.name}`;
+/** What this reader made of one workflow file. */
+interface WorkflowModel {
+  readonly file: string;
+  readonly jobs: readonly WorkflowJob[];
 }
 
-/** Everything in `.github/workflows/`, split into what runs and what does not. */
-interface WorkflowSurface {
-  /** Loadable files, relative to the directory, sorted. */
-  readonly files: readonly string[];
-  /** Present but with an extension the runner ignores, same form. */
-  readonly ignoredFiles: readonly string[];
-  readonly workflows: readonly Workflow[];
+/** One simple command CI runs, carrying the file and job that run it. */
+interface WorkflowCommand {
+  readonly file: string;
+  readonly job: string;
+  readonly command: string;
 }
 
-/** Every file under a directory, recursively, as `/`-joined relative paths. */
-function filesUnder(absolute: string, prefix: string, into: string[]): void {
-  for (const entry of readdirSync(absolute, { withFileTypes: true })) {
-    const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    if (entry.isDirectory()) {
-      filesUnder(join(absolute, entry.name), relative, into);
-    } else {
-      into.push(relative);
+/**
+ * The commands CI runs that are neither a listed setup command nor a listed
+ * gate, named by file and job.
+ *
+ * A named function rather than an inline filter so that its rule can be tested
+ * on inputs the real tree does not contain. Mutating an inline filter that only
+ * ever sees clean input changes nothing observable, which makes it look tested
+ * when it is not — measured: turning the equality below back into a `startsWith`
+ * left this file 89/89 green until the case *does not exempt a command that
+ * merely begins with a setup command* existed.
+ *
+ * Both halves are **equality**, deliberately. `startsWith` on the setup side is
+ * defect five verbatim; `startsWith` on the gate side is the same shape, and
+ * would let `cargo test --workspace --locked --no-run` pass as the `cargo test`
+ * gate.
+ */
+function unaccounted(commands: readonly WorkflowCommand[]): string[] {
+  return commands
+    .filter(
+      ({ command }) =>
+        !SETUP_COMMANDS.includes(command) && !CI_GATES.some(({ ci }) => command === ci),
+    )
+    .map(({ file, job, command }) => `${file}:${job}: ${command}`);
+}
+
+/**
+ * The keys this reader knows how to reason about.
+ *
+ * An unrecognised key is **refused**, and that is the general form of defect
+ * four. Every escape so far was a spelling nobody had listed; a reader that only
+ * looks for spellings it knows will always be one spelling behind, while a
+ * reader that must classify every key it meets is behind on nothing. GitHub
+ * rejects unknown keys too, so the list costs nothing a real workflow needs.
+ */
+const TOP_LEVEL_KEYS = ['name', 'run-name', 'on', 'env', 'defaults', 'concurrency', 'permissions', 'jobs'];
+const JOB_KEYS = [
+  'name', 'needs', 'if', 'runs-on', 'permissions', 'environment', 'concurrency',
+  'outputs', 'env', 'steps', 'timeout-minutes', 'strategy', 'continue-on-error',
+  'uses', 'with', 'secrets',
+];
+const STEP_KEYS = [
+  'id', 'if', 'name', 'uses', 'run', 'working-directory', 'shell', 'with', 'env',
+  'continue-on-error', 'timeout-minutes',
+];
+/** Shells whose `&&`, `||`, `;` and `|` mean what {@link shellCommands} assumes. */
+const SPLITTABLE_SHELLS = ['bash', 'sh', 'pwsh', 'powershell', 'cmd'];
+
+const mappingOf = (node: YamlNode): readonly YamlEntry[] | undefined =>
+  node.kind === 'mapping' ? node.entries : undefined;
+const scalarOf = (node: YamlNode | undefined): string | undefined =>
+  node !== undefined && node.kind === 'scalar' ? node.value : undefined;
+const entry = (entries: readonly YamlEntry[], key: string): YamlNode | undefined =>
+  entries.find((candidate) => candidate.key === key)?.value;
+
+/**
+ * Turn one workflow's YAML into the jobs, steps and commands the rest of this
+ * file asserts over — refusing, by name, anything it cannot account for.
+ */
+function modelOf(workflow: Workflow): WorkflowModel {
+  const where = `.github/workflows/${workflow.file}`;
+  const at = (line: number): string => `${where}:${String(line + 1)}`;
+  const root = parseWorkflowYaml(workflow.file, workflow.text);
+
+  const top = mappingOf(root);
+  if (top === undefined) throw new Error(`${where} is not a mapping at its top level`);
+  for (const { key, line } of top) {
+    if (!TOP_LEVEL_KEYS.includes(key)) {
+      throw new Error(
+        `${at(line)} has a top-level key this reader does not know: "${key}". ` +
+          'Teach it what that key does before trusting a green run.',
+      );
     }
   }
+
+  const jobsNode = entry(top, 'jobs');
+  const jobsMap = jobsNode === undefined ? undefined : mappingOf(jobsNode);
+  if (jobsMap === undefined) {
+    throw new Error(
+      `${where} has no "jobs:" mapping this reader can find, so it would ` +
+        'contribute no jobs and no gates to checks that are meant to cover every ' +
+        'workflow. A file the runner loads and this guard reads as empty is the ' +
+        'defect this guard exists to catch.',
+    );
+  }
+
+  const jobs = jobsMap.map(({ key: name, value, line }): WorkflowJob => {
+    const job = mappingOf(value);
+    if (job === undefined) throw new Error(`${at(line)} declares job "${name}" as something other than a mapping`);
+    for (const { key, line: keyLine } of job) {
+      if (!JOB_KEYS.includes(key)) {
+        throw new Error(
+          `${at(keyLine)} has a job key this reader does not know: "${key}". ` +
+            'A key it cannot reason about may be a set of gates it cannot see.',
+        );
+      }
+    }
+
+    const jobUses = scalarOf(entry(job, 'uses'));
+    if (jobUses !== undefined) refuseUses(where, line, jobUses);
+
+    const stepsNode = entry(job, 'steps');
+    if (stepsNode === undefined) {
+      if (jobUses !== undefined) return { file: workflow.file, name, runsOn: '', steps: [], commands: [] };
+      throw new Error(`${at(line)} declares job "${name}" with neither "steps:" nor "uses:"`);
+    }
+    if (stepsNode.kind !== 'sequence') {
+      throw new Error(`${at(stepsNode.line)} has a "steps:" that is not a sequence this reader can walk`);
+    }
+
+    const steps = stepsNode.items.map((item): WorkflowStep => {
+      const step = mappingOf(item);
+      if (step === undefined) throw new Error(`${at(item.line)} is a step this reader cannot read as a mapping`);
+      for (const { key, line: keyLine } of step) {
+        if (!STEP_KEYS.includes(key)) {
+          throw new Error(
+            `${at(keyLine)} has a step key this reader does not know: "${key}". ` +
+              'A key it cannot reason about may be a gate it cannot see.',
+          );
+        }
+      }
+
+      const run = scalarOf(entry(step, 'run'));
+      const uses = scalarOf(entry(step, 'uses'));
+      if (run !== undefined && uses !== undefined) {
+        throw new Error(`${at(item.line)} is a step with both a "run:" and a "uses:", which the runner would reject`);
+      }
+      if (run === undefined && uses === undefined) {
+        throw new Error(`${at(item.line)} is a step with neither a "run:" nor a "uses:", so this reader cannot say what it does`);
+      }
+      if (scalarOf(entry(step, 'continue-on-error')) === 'true') {
+        throw new Error(
+          `${at(item.line)} is a step whose failure cannot fail the job. It is ` +
+            'therefore not a gate, and listing it as one would overstate what CI ' +
+            'proves. Say so here before adding it.',
+        );
+      }
+      const shell = scalarOf(entry(step, 'shell'));
+      if (shell !== undefined && !SPLITTABLE_SHELLS.includes(shell)) {
+        throw new Error(
+          `${at(item.line)} has a "shell: ${shell}", whose body is not a shell ` +
+            'command line. This reader would split it on operators that mean ' +
+            'nothing there, so it refuses instead.',
+        );
+      }
+      if (run !== undefined && run.includes('${{')) {
+        throw new Error(
+          `${at(item.line)} has a "run:" whose text is a GitHub expression, so ` +
+            'what it runs is not in this file and is not a command this reader ' +
+            'can see. Write the command out.',
+        );
+      }
+      if (uses !== undefined) refuseUses(where, item.line, uses);
+      return { line: item.line, run };
+    });
+
+    return {
+      file: workflow.file,
+      name,
+      runsOn: scalarOf(entry(job, 'runs-on')) ?? '',
+      steps,
+      commands: steps.flatMap((step) =>
+        step.run === undefined ? [] : shellCommands(step.run, `${at(step.line)} run:`).map((c) => c.text),
+      ),
+    };
+  });
+
+  return { file: workflow.file, jobs };
 }
 
 /**
- * What one `uses:` line names, once YAML quoting is off.
- *
- * Two of the three cases are *this reader admitting it cannot read the value*,
- * and they exist because the alternative is to guess. This is a line reader, not
- * a YAML parser, and the one thing it must never do is report "nothing to see
- * here" about a line it did not understand — that is the failure this whole file
- * exists to catch, and it is the failure it committed twice.
- *
- * - `unterminated` — `uses: "./x`, an opening quote that never closes. Strip the
- *   quote and it refuses a target the runner may never see; leave the value raw
- *   and it is the third defect again, a leading `"` matching no arm.
- * - `elsewhere` — the value is not on this line at all: `uses:` with the target
- *   on the next line, or a block scalar (`uses: >-`, `uses: |-`). See the fourth
- *   defect in the header.
- *
- * Both are carried out to {@link refuseUnreadableUses}, which refuses them and
- * names the line. Neither is `undefined`: `undefined` means "not a `uses:` key",
- * a claim this reader is entitled to make, and it may not be borrowed to cover a
- * `uses:` key whose value it failed to find.
- */
-type UsesValue =
-  | { readonly kind: 'target'; readonly target: string }
-  | { readonly kind: 'unterminated'; readonly raw: string }
-  | { readonly kind: 'elsewhere'; readonly raw: string };
-
-/**
- * The target of a `uses:` key, unquoted — or `undefined` when the line is not a
- * `uses:` key, which is most of them.
- *
- * This used to be `(\S+)` inline, and the quotes were the hole; see the third
- * defect in the header. YAML lets any scalar be quoted, `'…'` and `"…"` alike,
- * and the runner does not care which, so neither may this.
- *
- * The unquoted form still stops at the first whitespace, because that is where a
- * plain YAML scalar ends: `uses: ./x # why` names `./x`, not `./x # why`. The
- * quoted form ends at the closing quote for the same reason — the comment is
- * outside it.
- *
- * Whitespace after the key does **not** mean an empty value; it means the value
- * is on a later line, and a block-scalar indicator means the same thing. Both
- * come back as `elsewhere` rather than as `undefined` — see the fourth defect in
- * the header, which is what this reader did with them before.
- *
- * This over-refuses in one place, deliberately: the key pattern is indentation
- * blind, so a `with:` parameter that happens to be named `uses` and carries a
- * block scalar is refused too. Rule 2's trade applies — over-reporting costs a
- * review, and the message names the line.
- *
- * A `\"` escape inside a double-quoted scalar would cut the value short here. It
- * is not handled because no action path contains one, and the error is in the
- * safe direction: a truncated relative path is still relative, so it is still
- * refused.
- */
-function usesValue(line: string): UsesValue | undefined {
-  const rest = /^[ \t]*-?[ \t]*uses:[ \t]*(.*)$/u.exec(line)?.[1];
-  if (rest === undefined) return undefined;
-
-  const value = rest.trim();
-  if (value === '' || value.startsWith('|') || value.startsWith('>')) {
-    return { kind: 'elsewhere', raw: value };
-  }
-
-  const quote = value[0];
-  if (quote === '"' || quote === "'") {
-    const close = value.indexOf(quote, 1);
-    if (close === -1) return { kind: 'unterminated', raw: value };
-    return { kind: 'target', target: value.slice(1, close) };
-  }
-
-  return { kind: 'target', target: /^\S+/u.exec(value)?.[0] ?? '' };
-}
-
-/**
- * A step or job that reaches commands this reader cannot see, refused by name.
+ * A `uses:` that reaches commands this reader cannot see, refused by name.
  *
  * `uses:` is how a workflow runs somebody else's steps. Most of those are
  * third-party actions — checkout, the toolchain installers — and enumerating
@@ -657,61 +1729,53 @@ function usesValue(line: string): UsesValue | undefined {
  *
  * A relative path *to a workflow file in this directory* is the local reusable
  * workflow case and is allowed through: enumerating the directory already read
- * it, and its jobs are already in {@link JOBS} under their own file's name. That
- * is an allowance this reader decides, not one it falls into — the shape is
- * matched, then admitted.
+ * it, and its jobs are already in {@link JOBS} under their own file's name.
  *
- * Every arm below judges the *unquoted* value from {@link usesValue}. Quoting is
- * invisible to the runner and used to be invisible to these arms, which is the
- * third defect in the header.
+ * The value arriving here is what the YAML parser resolved, so quoting, a value
+ * written on the next line and a block scalar are all one string by the time
+ * this is asked — which is what the old header claimed and the old line reader
+ * could not deliver. Defects two, three and four are all upstream of here now.
  */
-function refuseUnreadableUses(workflow: Workflow): void {
-  for (const [index, line] of workflow.text.split(/\r?\n/u).entries()) {
-    const uses = usesValue(line);
-    if (uses === undefined) continue;
-    const at = `.github/workflows/${workflow.file}:${String(index + 1)}`;
+function refuseUses(where: string, line: number, target: string): void {
+  const at = `${where}:${String(line + 1)}`;
+  if (target === '') throw new Error(`${at} has a "uses:" with no target this reader can read`);
 
-    if (uses.kind === 'unterminated') {
-      throw new Error(
-        `${at} has a "uses:" whose quote never closes: ${uses.raw}. This reader ` +
-          'cannot tell what it names, and a target it cannot read is not a target ' +
-          'it may assume is harmless. Write the value on one line, with matching ' +
-          'quotes or none.',
-      );
-    }
+  if (target.startsWith('./') || target.startsWith('../')) {
+    const local = target.replace(/^\.\//u, '');
+    if (/\.ya?ml$/u.test(local) && local.startsWith('.github/workflows/')) return;
+    throw new Error(
+      `${at} runs "${target}", a composite action in this repository. Its own ` +
+        'steps can be gates and they are not in this directory, so this reader ' +
+        'cannot see them. Teach it to read the action, or put the gate in a ' +
+        'workflow step; do not let it go unread.',
+    );
+  }
 
-    if (uses.kind === 'elsewhere') {
-      throw new Error(
-        `${at} has a "uses:" whose value is not on that line — it is written as ` +
-          `${uses.raw === '' ? 'a plain scalar continued below' : `a block scalar (${uses.raw})`}. ` +
-          'This reader works one line at a time, so it cannot see what is named ' +
-          'and must not report that it found nothing. YAML resolves this to the ' +
-          'same string as the one-line spelling, so a composite action written ' +
-          'this way would reach CI unread. Put the target on the "uses:" line.',
-      );
-    }
+  if (/\.ya?ml@/u.test(target)) {
+    throw new Error(
+      `${at} calls "${target}", a reusable workflow in another repository. Its ` +
+        'jobs run as part of this CI and are not in this directory, so this ' +
+        'reader cannot see them. Teach it to read them, or keep the workflow ' +
+        'local; do not let it go unread.',
+    );
+  }
+}
 
-    const { target } = uses;
+/** Everything in `.github/workflows/`, split into what runs and what does not. */
+interface WorkflowSurface {
+  /** Loadable files, relative to the directory, sorted. */
+  readonly files: readonly string[];
+  /** Present but with an extension the runner ignores, same form. */
+  readonly ignoredFiles: readonly string[];
+  readonly models: readonly WorkflowModel[];
+}
 
-    if (target.startsWith('./') || target.startsWith('../')) {
-      const local = target.replace(/^\.\//u, '');
-      if (/\.ya?ml$/u.test(local) && local.startsWith('.github/workflows/')) continue;
-      throw new Error(
-        `${at} runs "${target}", a composite action in this repository. Its own ` +
-          'steps can be gates and they are not in this directory, so this reader ' +
-          'cannot see them. Teach it to read the action, or put the gate in a ' +
-          'workflow step; do not let it go unread.',
-      );
-    }
-
-    if (/\.ya?ml@/u.test(target)) {
-      throw new Error(
-        `${at} calls "${target}", a reusable workflow in another repository. Its ` +
-          'jobs run as part of this CI and are not in this directory, so this ' +
-          'reader cannot see them. Teach it to read them, or keep the workflow ' +
-          'local; do not let it go unread.',
-      );
-    }
+/** Every file under a directory, recursively, as `/`-joined relative paths. */
+function filesUnder(absolute: string, prefix: string, into: string[]): void {
+  for (const item of readdirSync(absolute, { withFileTypes: true })) {
+    const relative = prefix === '' ? item.name : `${prefix}/${item.name}`;
+    if (item.isDirectory()) filesUnder(join(absolute, item.name), relative, into);
+    else into.push(relative);
   }
 }
 
@@ -721,6 +1785,10 @@ function refuseUnreadableUses(workflow: Workflow): void {
  * `readdirSync` throws when `repoRoot` is wrong, which is the behaviour wanted:
  * the failure that must never happen here is the one where a mis-rooted read
  * finds no workflows and every assertion above passes over an empty union.
+ *
+ * GitHub picks up workflows at the top level of `.github/workflows/` only; this
+ * recurses, so a nested `.yml` is parsed and counted even though the runner
+ * would ignore it. Over-reporting costs a review; under-reporting is the defect.
  */
 function readWorkflowSurface(repoRoot: string): WorkflowSurface {
   const directory = join(repoRoot, ...WORKFLOW_DIRECTORY);
@@ -731,205 +1799,79 @@ function readWorkflowSurface(repoRoot: string): WorkflowSurface {
   const ignoredFiles: string[] = [];
   for (const path of found.sort()) {
     const extension = path.slice(path.lastIndexOf('.'));
-    if (LOADED_EXTENSIONS.includes(extension as (typeof LOADED_EXTENSIONS)[number])) {
-      files.push(path);
-    } else {
-      ignoredFiles.push(path);
-    }
+    if (LOADED_EXTENSIONS.includes(extension as (typeof LOADED_EXTENSIONS)[number])) files.push(path);
+    else ignoredFiles.push(path);
   }
 
-  const workflows = files.map((file): Workflow => {
-    const workflow = {
-      file,
-      text: readFileSync(join(directory, ...file.split('/')), 'utf8'),
-    };
-    refuseUnreadableUses(workflow);
-    return workflow;
-  });
+  const models = files.map((file) =>
+    modelOf({ file, text: readFileSync(join(directory, ...file.split('/')), 'utf8') }),
+  );
 
-  return { files, ignoredFiles, workflows };
+  return { files, ignoredFiles, models };
 }
 
 const SURFACE = readWorkflowSurface(REPO_ROOT);
 
-/* -------------------------------------------------------------------------- */
-/* the union                                                                  */
-/* -------------------------------------------------------------------------- */
+/** Every job CI runs, across every workflow. */
+const JOBS: readonly WorkflowJob[] = SURFACE.models.flatMap((model) => model.jobs);
 
-/**
- * Every command one workflow's text actually runs.
- *
- * Two blind spots used to live here, and both were the kind that make this file
- * report a pass it has not earned.
- *
- * 1. It read only the `run:` line itself. A step written as `run: |` yielded the
- *    literal `'|'`, which was filtered out and the block's actual commands were
- *    never looked at — so an entire gate could be added to the workflow in a
- *    block scalar and this test would say nothing. Block bodies are now read,
- *    and backslash continuations are rejoined so a wrapped `apt-get install`
- *    reads as the one command it is instead of as a list of package names.
- * 2. Accounting used `line.includes(ci)`. `'pnpm test:harness'.includes('pnpm
- *    test')` is true, so every `pnpm test:<anything>` step in the workflow was
- *    silently absorbed by the `pnpm test` gate and never had to be listed. See
- *    {@link isCommand}.
- *
- * Both spellings of a step are still handled: `- run: x` (a step with no name)
- * and a `run:` line under a `- name:`.
- */
-function runCommandsIn(text: string): string[] {
-  const lines = text.split(/\r?\n/u);
-  const commands: string[] = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const header = /^([ \t]*)-?[ \t]*run:[ \t]*(.*)$/u.exec(lines[index] ?? '');
-    if (header === null) continue;
-
-    const indent = (header[1] ?? '').length;
-    const value = (header[2] ?? '').trim();
-    if (value !== '' && !/^[|>][-+]?$/u.test(value)) {
-      commands.push(value);
-      continue;
-    }
-
-    // A block scalar. Every following line indented deeper than the `run:` key
-    // belongs to it; the first line at or below that indent ends the block.
-    let pending = '';
-    for (let body = index + 1; body < lines.length; body += 1) {
-      const raw = lines[body] ?? '';
-      if (raw.trim() === '') continue;
-      if (raw.length - raw.trimStart().length <= indent) break;
-
-      const trimmed = raw.trim();
-      const continues = trimmed.endsWith('\\');
-      const piece = continues ? trimmed.slice(0, -1).trim() : trimmed;
-      pending = pending === '' ? piece : `${pending} ${piece}`;
-      if (!continues) {
-        commands.push(pending);
-        pending = '';
-      }
-    }
-    if (pending !== '') commands.push(pending);
-  }
-
-  return commands;
-}
-
-/**
- * Whether a workflow command *is* a given gate, rather than merely containing
- * its text. A trailing-space prefix still counts, so `cargo test --workspace
- * --locked --no-fail-fast` is the `cargo test --workspace --locked` gate, while
- * `pnpm test:harness` is no longer the `pnpm test` gate.
- */
-function isCommand(command: string, ci: string): boolean {
-  return command === ci || command.startsWith(`${ci} `);
-}
-
-/**
- * The jobs of one workflow, split on the job headers.
- *
- * A file this reader cannot take apart throws instead of yielding nothing: an
- * empty result here is indistinguishable, at every call site above, from a file
- * with nothing wrong in it. The old version could return an empty list from a
- * file whose `jobs:` key it failed to find, and that is the whole failure mode
- * this file is being repaired for.
- *
- * **The job indent is the shallowest line in the block, not the first line that
- * looks like a job.** Inferring it from the first match was a hole found by
- * probing this very function: given a job key the header pattern declines —
- * `probe-one: # a note` carries a trailing comment, so it is not a bare key —
- * the first *matching* line in the block is the nested `steps:` four columns in.
- * The reader then read `steps` as the job name, twice, and both of the probe's
- * gates were counted under jobs that do not exist. It went green. Depth is a
- * fact about the block; the header pattern is this reader's opinion, and taking
- * the indent from the opinion let a wrong opinion choose its own evidence.
- *
- * So every line at job depth must be a job key, and one that is not throws.
- * A trailing comment is admitted because it is ordinary YAML; a flow mapping
- * (`probe: {…}`) is not, because the steps inside it are unreadable here.
- *
- * The last check is a second net under the first: every `run:` in the file has
- * to land inside some job that was found. A command in the file but in none of
- * the jobs means a job was missed some other way, and a missed job is a set of
- * gates nobody is looking at.
- */
-function jobsIn(workflow: Workflow): WorkflowJob[] {
-  const where = `.github/workflows/${workflow.file}`;
-  const lines = workflow.text.split(/\r?\n/u);
-
-  const start = lines.findIndex((line) => /^jobs:[ \t]*$/u.test(line));
-  if (start === -1) {
-    throw new Error(
-      `${where} has no "jobs:" key this reader can find, so it would contribute ` +
-        'no jobs and no gates to checks that are meant to cover every workflow. ' +
-        'A file the runner loads and this guard reads as empty is the defect this ' +
-        'guard exists to catch.',
-    );
-  }
-
-  // The jobs block runs to the next line at column zero — anything less indented
-  // than a job key is a sibling of `jobs:`, not part of it.
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (line.trim() === '' || line.startsWith('#')) continue;
-    if (!/^[ \t]/u.test(line)) {
-      end = index;
-      break;
-    }
-  }
-
-  const block = lines.slice(start + 1, end);
-  const depths = block.flatMap((line) =>
-    line.trim() === '' || line.trimStart().startsWith('#')
-      ? []
-      : [line.length - line.trimStart().length],
-  );
-  if (depths.length === 0) {
-    throw new Error(
-      `${where} has a "jobs:" key with nothing under it that this reader can ` +
-        'read. Its gates, if it has any, would be invisible here.',
-    );
-  }
-  const jobIndent = Math.min(...depths);
-
-  const isHeader = /^([ \t]+)([\w-]+):[ \t]*(?:#.*)?$/u;
-  const headers = block.flatMap((line, index) => {
-    if (line.trim() === '' || line.trimStart().startsWith('#')) return [];
-    if (line.length - line.trimStart().length !== jobIndent) return [];
-    const match = isHeader.exec(line);
-    if (match === null) {
-      throw new Error(
-        `${where}:${String(start + 2 + index)} is at job depth but is not a job ` +
-          `key this reader can split on: "${line.trim()}". Its steps would not be ` +
-          'checked by anything here. Write the job as an indented block.',
-      );
-    }
-    return [{ index, name: match[2] ?? '' }];
-  });
-
-  const jobs = headers.map(({ index, name }, position): WorkflowJob => {
-    const next = headers[position + 1]?.index ?? block.length;
-    return { file: workflow.file, name, body: block.slice(index, next).join('\n') };
-  });
-
-  const inJobs = jobs.reduce((total, job) => total + runCommandsIn(job.body).length, 0);
-  const inFile = runCommandsIn(workflow.text).length;
-  if (inJobs !== inFile) {
-    throw new Error(
-      `${where}: this reader found ${String(inFile)} run steps in the file but ` +
-        `only ${String(inJobs)} inside the ${String(jobs.length)} jobs it could ` +
-        'take apart. A job was written in a shape it does not recognise, and the ' +
-        'gates in that job are not being checked by anything here.',
-    );
-  }
-
-  return jobs;
-}
-
-/** Every gate command CI runs, across every workflow. */
-const COMMANDS: readonly WorkflowCommand[] = SURFACE.workflows.flatMap((workflow) =>
-  runCommandsIn(workflow.text).map((command): WorkflowCommand => ({ file: workflow.file, command })),
+/** Every simple command CI runs, across every workflow. */
+const COMMANDS: readonly WorkflowCommand[] = JOBS.flatMap((job) =>
+  job.commands.map((command): WorkflowCommand => ({ file: job.file, job: job.name, command })),
 );
 
-/** Every job CI runs, across every workflow. */
-const JOBS: readonly WorkflowJob[] = SURFACE.workflows.flatMap(jobsIn);
+/* -------------------------------------------------------------------------- */
+/* the verify chain                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** One command `pnpm verify` runs, and the script whose body carries it. */
+interface VerifyCommand {
+  readonly script: string;
+  readonly command: ParsedCommand;
+  readonly gating: boolean;
+}
+
+/**
+ * Every command reachable from a script, by **invocation** rather than by
+ * mention.
+ *
+ * The old expander was `String.replace(/pnpm (?:run )?([\w:-]+)/g, …)` over the
+ * concatenated bodies, which walks into an echoed string exactly as it walks
+ * into a real command; see defect six. This follows the same edge the shell
+ * follows: a *gating* simple command whose program is `pnpm` and whose script
+ * name is a key in `scripts`. A name inside an argument is an argument.
+ *
+ * Non-gating commands are collected too, and marked. They are what lets the
+ * failure message tell "you never added this gate" apart from "you added it and
+ * something swallows its exit status", which want different fixes.
+ */
+function chainOf(script: string, scripts: Record<string, string>, seen = new Set<string>([script])): VerifyCommand[] {
+  const body = scripts[script];
+  if (body === undefined) return [];
+  const out: VerifyCommand[] = [];
+  for (const segment of shellCommands(body, `package.json scripts.${script}`)) {
+    const command = parseCommand(segment.text);
+    out.push({ script, command, gating: segment.gating });
+    if (!segment.gating) continue;
+    if (command.program !== 'pnpm') continue;
+    const at = command.args[0] === 'run' ? 1 : 0;
+    const name = command.args[at];
+    if (name === undefined || name.startsWith('-') || !Object.hasOwn(scripts, name) || seen.has(name)) continue;
+    seen.add(name);
+    out.push(...chainOf(name, scripts, seen));
+  }
+  return out;
+}
+
+/**
+ * What `pnpm verify` actually runs.
+ *
+ * Read by the `verify reaches the CI gate` case, once per row of
+ * {@link CI_GATES}, and by nothing else.
+ */
+const VERIFY_CHAIN: readonly VerifyCommand[] = (() => {
+  if (PACKAGE.scripts.verify === undefined) {
+    throw new Error('package.json has no "verify" script, so there is no local gate to compare against CI');
+  }
+  return chainOf('verify', PACKAGE.scripts);
+})();

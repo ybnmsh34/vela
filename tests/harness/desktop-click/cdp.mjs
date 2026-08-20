@@ -140,6 +140,11 @@ export async function cdpHttp(port, path, timeoutMs = 5000) {
   return response.json();
 }
 
+/** A page target's URL is blank when nothing has navigated it yet. */
+export function isBlankTarget(target) {
+  return !target || !target.url || target.url === 'about:blank';
+}
+
 /** The application page among the CDP targets, preferring a navigated one. */
 export function pickPage(targets) {
   const pages = targets.filter((t) => t.type === 'page' && t.webSocketDebuggerUrl);
@@ -148,7 +153,21 @@ export function pickPage(targets) {
 
 /**
  * Waits for `/json/version` to answer, then for a `page` target to exist.
- * Returns `{ version, target }`.
+ * Returns `{ version, target, targets, acceptedBecause }`.
+ *
+ * **`acceptedBecause` is the field that matters, and it did not exist.** The
+ * last-resort branch below admits an `about:blank` page target once the
+ * deadline is within 3s, and said nothing about having done so. Everything
+ * downstream then measured a blank document: `about:blank` reports
+ * `document.readyState === 'complete'` on its first sample and forever, so any
+ * readiness wait over that target is vacuous, and `mountReport()` describes a
+ * document that is not Vela. The caller now gets told which branch fired, and
+ * `mount-grade.mjs`'s `target-provenance` criterion fails on the fallback.
+ *
+ * The fallback is kept rather than removed: attaching to a blank target and
+ * reporting a blank document is still a better answer than throwing "no page
+ * target", because it distinguishes "the window never navigated" from "the
+ * debug port never came up". It just may no longer be silent.
  */
 export async function waitForEndpoint(port, { timeoutMs = 45_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
@@ -162,8 +181,21 @@ export async function waitForEndpoint(port, { timeoutMs = 45_000 } = {}) {
       // failure, which is the most expensive wrong answer this harness could
       // give — so a blank target is only accepted once the deadline is near.
       const page = pickPage(targets);
-      if (page && (page.url !== 'about:blank' || Date.now() > deadline - 3000)) {
-        return { version, target: page, targets };
+      if (page && !isBlankTarget(page)) {
+        return { version, target: page, targets, acceptedBecause: 'navigated' };
+      }
+      if (page && Date.now() > deadline - 3000) {
+        return {
+          version,
+          target: page,
+          targets,
+          acceptedBecause: 'blank-fallback-at-deadline',
+          acceptedBecauseMeans:
+            `no page target on port ${port} had navigated within ${timeoutMs}ms, so the last ` +
+            'page target was accepted even though its url is about:blank. Nothing measured over ' +
+            'this target is about Vela: about:blank is readyState "complete" from the first ' +
+            'sample, so a readiness wait over it waits zero times and succeeds.',
+        };
       }
     } catch (error) {
       lastError = error;

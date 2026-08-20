@@ -197,12 +197,20 @@ describe('no INPUT struct is ever assembled in PowerShell', () => {
    * A PowerShell assignment to a field of a field: `$x.y.z = ...`. This is the
    * shape that silently does nothing on a value type. Written as a function so
    * the control below can drive it with the defect's own bytes.
+   *
+   * **The nesting is `{2,}`, not exactly two.** The first version of this
+   * detector required exactly three dotted components before the `=`, so it
+   * matched `$down.mi.dwFlags = ...` and did **not** match
+   * `$down.u.ki.wVk = ...`. That fourth level became reachable the moment the
+   * INPUT struct grew a real union — which is what the keyboard path needed —
+   * so the detector was one notch narrower than the defect it guards. The
+   * control below drives it with both depths.
    */
   const nestedFieldAssignments = (text) =>
     text
       .split('\n')
       .map((line, index) => ({ line: line.trim(), number: index + 1 }))
-      .filter(({ line }) => /^\$[A-Za-z_][\w]*\.[A-Za-z_][\w]*\.[A-Za-z_][\w]*\s*=[^=]/.test(line))
+      .filter(({ line }) => /^\$[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*){2,}\s*=[^=]/.test(line))
       .map(({ line, number }) => `os-input.ps1:${number} — ${line}`);
 
   it('assigns no nested value-type field from PowerShell', () => {
@@ -227,6 +235,106 @@ describe('no INPUT struct is ever assembled in PowerShell', () => {
     // And it does not fire on the single-level assignment beside it, which is
     // legal: `$move.type` is a field of the struct itself, not of a nested one.
     expect(nestedFieldAssignments('$move.type = 0')).toEqual([]);
+  });
+
+  it('CONTROL: it also catches the union depth the keyboard path made reachable', () => {
+    // `$x.u.ki.wVk` is four dotted components, not three. The original detector
+    // required exactly three and would have let every one of these through —
+    // and an all-zero KEYBDINPUT is `wVk=0`, which SendInput accepts and which
+    // delivers a keystroke for virtual key 0, indistinguishable at the return
+    // value from a working call.
+    const unionDefect = [
+      '    $press = New-Object VelaOsInput+INPUT',
+      '    $press.type = [VelaOsInput]::INPUT_KEYBOARD',
+      '    $press.u.ki.wVk = 13',
+      '    $press.u.ki.dwFlags = 0',
+      '    $press.u.mi.dx = 32768',
+    ].join('\n');
+    const caught = nestedFieldAssignments(unionDefect);
+    expect(caught).toHaveLength(3);
+    expect(caught[0]).toContain('$press.u.ki.wVk');
+    expect(caught[2]).toContain('$press.u.mi.dx');
+    // The narrower regex that shipped at the tag. Kept here as the measurement
+    // behind the claim above rather than as a comment asserting it.
+    const tagRegex = /^\$[A-Za-z_][\w]*\.[A-Za-z_][\w]*\.[A-Za-z_][\w]*\s*=[^=]/;
+    expect(tagRegex.test('$press.u.ki.wVk = 13')).toBe(false);
+    expect(tagRegex.test('$move.mi.dwFlags = 2')).toBe(true);
+  });
+
+  /**
+   * The keyboard half, which did not exist at the tag: `ValidateSet` was
+   * `raise|selftest|sendinput|message`, the legacy keybd_event entry point
+   * appeared only as the ALT tap that unblocks SetForegroundWindow, and
+   * `type`/`key` were pure CDP.
+   * Every `reaches-user` claim that involved typing anything was therefore
+   * CDP-substituted.
+   */
+  it('assembles every keyboard INPUT in C#, with the union declared rather than assumed', () => {
+    expect(source).toContain('public struct KEYBDINPUT');
+    expect(source).toContain('[StructLayout(LayoutKind.Explicit)]');
+    expect(source).toContain('private static INPUT Key(ushort vk, ushort scan, uint flags)');
+    expect(source).toContain('public static uint PressSequence(');
+    // The keyboard equivalents of `structAsBuilt` and of the self-test, so an
+    // empty or mis-aligned struct can never be read as a filtered environment.
+    expect(source).toContain('DescribeKeyInput');
+    expect(source).toContain('public static string Offsets()');
+    expect(source).toContain('KeyboardSelfTest');
+  });
+
+  it('proves keyboard delivery by reading the key state back, not by trusting SendInput', () => {
+    // SendInput returns the count it was handed whether or not anything is
+    // delivered. GetAsyncKeyState reads the global async key state, which the
+    // raw input thread maintains, so it needs no message pump in a console
+    // process.
+    expect(source).toContain('GetAsyncKeyState');
+    expect(source).toContain('keyboardInjectionWorks');
+    // And the caller refuses rather than proceeding when it did not observe it.
+    expect(source).toContain('$selfTest.keyboardInjectionWorks');
+  });
+
+  it('does not use the PowerShell 7 ternary, which is a parse error under 5.1', () => {
+    // `cond ? a : b` parses in PowerShell 7 and is a syntax error in Windows
+    // PowerShell 5.1, which is what runs this file (5.1.26100.9168 measured on
+    // this machine). A parse error here would take the whole script out, not
+    // just the branch.
+    const ternaries = source
+      .split('\n')
+      .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+      .filter(({ line }) => !line.startsWith('#') && !line.startsWith('//') && !line.startsWith('///'))
+      .filter(({ line }) => /\)\s*\?\s*[^?:]+\s*:\s/.test(line))
+      .map(({ line, number }) => `os-input.ps1:${number} — ${line}`);
+    expect(ternaries).toEqual([]);
+  });
+
+  it('keeps every string literal ASCII, because this file has no BOM', () => {
+    // Windows PowerShell 5.1 reads a BOM-less .ps1 as the system ANSI code
+    // page. A UTF-8 em dash decodes under cp1252 to `â€"`, whose last byte is
+    // U+201D — a right double quotation mark, which PowerShell accepts as a
+    // string delimiter. An em dash inside a double-quoted string therefore
+    // CLOSES the string, and the rest of the line becomes bare tokens. That
+    // happened while writing the keyboard modes and took the whole file out
+    // with "Unexpected token 'it'". Comments are unaffected, which is why the
+    // ones at the top of this file have survived.
+    expect(source.charCodeAt(0)).not.toBe(0xfeff);
+    const offenders = source
+      .split('\n')
+      // The trailing CR of a CRLF line is itself outside the printable range,
+      // and this tree is `core.autocrlf=true` with no `* text=auto`, so the
+      // working copy has CRLF and a naive detector flags every single line.
+      .map((raw, index) => ({ line: raw.replace(/\r$/, ''), number: index + 1 }))
+      .filter(({ line }) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('///')) return false;
+        // Only lines that open a quote can be broken by one.
+        if (!/['"]/.test(line)) return false;
+        return /[^\x20-\x7e\t]/.test(line);
+      })
+      .map(({ line, number }) => `os-input.ps1:${number} — ${line.trim()}`);
+    expect(
+      offenders,
+      'a non-ASCII character inside a quoted string in a BOM-less .ps1 read as cp1252 can ' +
+        'terminate the string. Use ASCII, or give the file a BOM.',
+    ).toEqual([]);
   });
 
   it('builds every INPUT in C#, and exposes the bytes so an empty one is visible', () => {

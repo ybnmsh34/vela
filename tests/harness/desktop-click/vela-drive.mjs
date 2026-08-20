@@ -84,6 +84,7 @@ import {
 } from './cdp.mjs';
 import { BOOTSTRAP, literal } from './page.mjs';
 import { NAMED_KEYS, keySpecFor, unmappableCharacters } from './keys.mjs';
+import { describeWait, gradeMount, waitForRenderer } from './mount-grade.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -406,6 +407,74 @@ async function pressKey(cdp, spec, modifiers = 0) {
   await cdp.send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
 }
 
+/**
+ * Modifier bit → Windows virtual-key code, for the OS keyboard route.
+ *
+ * These are the codes `os-input.ps1` presses and releases around the key. They
+ * are written out rather than derived for the same reason `keys.mjs` writes out
+ * the character table: a virtual-key code that is one off is a *different key*,
+ * and Windows will deliver it without complaint.
+ */
+const MODIFIER_VK = { 1: 0x12 /* VK_MENU / ALT */, 2: 0x11 /* VK_CONTROL */, 4: 0x5b /* VK_LWIN */, 8: 0x10 /* VK_SHIFT */ };
+
+/**
+ * One entry of the `-Keys` sequence `os-input.ps1` understands:
+ * `vk[+mod[+mod...]]`, decimal.
+ *
+ * The virtual-key code comes from the `keys.mjs` spec — the same table the CDP
+ * route uses — so the two routes cannot disagree about which physical key a
+ * character is on. `spec.shiftKey` is OR'd in for the same reason it is on the
+ * CDP path: there is no way to press `$` without shift, so the bit belongs to
+ * the key and not to the caller's request.
+ */
+function osKeyEntry(spec, modifiers = 0) {
+  const effective = modifiers | (spec.shiftKey ? MODIFIER_BITS.shift : 0);
+  const mods = Object.keys(MODIFIER_VK)
+    .map(Number)
+    .filter((bit) => (effective & bit) !== 0)
+    .map((bit) => MODIFIER_VK[bit]);
+  return [spec.keyCode, ...mods].join('+');
+}
+
+/**
+ * Delivers a run of keystrokes through the OS input queue.
+ *
+ * **This is the route that does not exist through CDP.** `type` and `key` were
+ * `Input.dispatchKeyEvent` only, so every `reaches-user` claim on this project
+ * that involved typing anything was CDP-substituted. `--via os` is real
+ * `SendInput` with `INPUT_KEYBOARD`, and the ladder tier a caller may claim
+ * from it is different.
+ *
+ * Three things happen before a key is sent, and all three are reported:
+ *
+ * 1. **The window is raised**, because keyboard input goes to the foreground
+ *    and not to a coordinate. There is no `WindowFromPoint` equivalent for a
+ *    keystroke, so the ownership guard is the foreground check inside the
+ *    script — which refuses if the foreground is not this session, rather than
+ *    typing the string into whatever is in front. That refusal has already
+ *    fired in anger here, against another application's window.
+ * 2. **The keyboard self-test runs**, holding VK_SHIFT and reading it back
+ *    through `GetAsyncKeyState`. `SendInput` returns the count it was handed
+ *    whether or not anything is delivered; that reading cost this project a
+ *    week on the mouse path.
+ * 3. **The struct is described**, so an empty or mis-aligned `KEYBDINPUT` can
+ *    never again be read as a filtered environment.
+ */
+async function osKeyboard(session, entries) {
+  const raise = await psJson(join(HERE, 'os-input.ps1'), [
+    '-Mode', 'raise',
+    '-OwnerPid', String(session.pid),
+  ]);
+  await sleep(250);
+  const report = await psJson(join(HERE, 'os-input.ps1'), [
+    '-Mode', 'keys',
+    '-Keys', entries.join(';'),
+    '-OwnerPid', String(session.pid),
+    '-RequirePid', String(session.pid),
+  ]);
+  return { ...report, raise };
+}
+
 async function psJson(script, args) {
   const { stdout } = await execFileAsync(
     'powershell.exe',
@@ -558,30 +627,63 @@ commands.up = async (flags) => {
   writeSession(session);
 
   const cdp = await CdpSession.connect(endpoint.target.webSocketDebuggerUrl);
-  // Give the document time to finish loading before reporting the mount. This
-  // waits for `complete`; it does NOT wait for the root to have children,
-  // because "the renderer did not mount" must stay a reportable answer rather
-  // than a timeout.
-  const settleDeadline = Date.now() + 15_000;
-  let readyState = null;
-  while (Date.now() < settleDeadline) {
-    await cdp.evaluate(BOOTSTRAP);
-    readyState = await cdp.evaluate('document.readyState');
-    if (readyState === 'complete') break;
-    await sleep(250);
-  }
-  await sleep(500);
-  await cdp.evaluate(BOOTSTRAP);
-  const mount = await cdp.evaluate('window.__velaHarness.mountReport()');
+  // Wait for the *grade*, not for a word.
+  //
+  // This loop used to spin on `document.readyState === 'complete'` and then
+  // return without saying whether it had exited on its condition or on its
+  // deadline. Three constructions were demonstrated against it — an
+  // `about:blank` admitted by the target picker's fallback, a document whose
+  // module bundle 404s, and a static splash with no JavaScript at all — and in
+  // every one `readyState` was already `complete` at the first sample, so the
+  // loop iterated zero times and the give-up branch was unreachable. Waiting
+  // longer waits zero longer. See `mount-grade.mjs`.
+  //
+  // Absence is still reported rather than thrown from in here: on deadline
+  // `waitForRenderer` resolves with the report and the named failing criteria.
+  const context = {
+    acceptedBecause: endpoint.acceptedBecause ?? null,
+    targetUrl: endpoint.target.url ?? null,
+  };
+  const readiness = await waitForRenderer({
+    evaluate: (expression) => cdp.evaluate(expression),
+    bootstrap: BOOTSTRAP,
+    context,
+    timeoutMs: flagNumber(flags, 'settle-timeout', 15_000),
+    sleep,
+  });
   cdp.close();
 
-  return {
+  const payload = {
     session,
     build: buildReport,
     version: endpoint.version,
-    target: { url: endpoint.target.url, title: endpoint.target.title, id: endpoint.target.id },
+    target: {
+      url: endpoint.target.url,
+      title: endpoint.target.title,
+      id: endpoint.target.id,
+      // How the picker came to hand us this target. `blank-fallback-at-deadline`
+      // means nothing below is about Vela; it used to be silent.
+      acceptedBecause: endpoint.acceptedBecause ?? null,
+      ...(endpoint.acceptedBecauseMeans ? { acceptedBecauseMeans: endpoint.acceptedBecauseMeans } : {}),
+    },
     ownership,
-    mount,
+    // How the wait ended, which was unrecoverable from the transcript before:
+    // `readyState` was a local variable that never reached the return value.
+    readiness: {
+      exitedBy: readiness.exitedBy,
+      readyStateAtExit: readiness.readyStateAtExit,
+      polls: readiness.polls,
+      waitedMs: readiness.waitedMs,
+      timeoutMs: readiness.timeoutMs,
+      pollMs: readiness.pollMs,
+      // Every distinct set of failing criteria, in order. One entry means
+      // nothing ever changed; several mean it was genuinely still loading.
+      gradeHistory: readiness.gradeHistory,
+      summary: describeWait(readiness),
+    },
+    mounted: readiness.grade.mounted,
+    grade: readiness.grade,
+    mount: readiness.report,
     appDataWarning:
       appData === 'real'
         ? `THIS RUN USES THE SHIPPING IDENTIFIER. Everything it does is written to ` +
@@ -590,30 +692,62 @@ commands.up = async (flags) => {
           `%APPDATA%\\${SHIPPING_IDENTIFIER}. The identifier is the only config field that differs ` +
           `from the shipping build; see README "What this drives".`,
   };
+
+  // The exit code and the verdict must agree. `up` used to decide `ok: true`
+  // solely on "did the handler throw", so it exited 0 while printing a mount
+  // report that said the renderer did not mount. The session is written and the
+  // window is still up, so `down`, `mount` and `status` all still work on the
+  // detail below — this reports a failure, it does not clean up behind you.
+  if (!readiness.grade.mounted) {
+    throw new HarnessError(
+      EXIT.FAILED,
+      `${readiness.grade.verdict}. ${describeWait(readiness)}`,
+      payload,
+    );
+  }
+  return payload;
 };
 
 commands.status = async () => {
   const session = await requireSession();
   const { cdp, page, ownership } = await attach(session);
-  const mount = await cdp.evaluate('window.__velaHarness.mountReport()');
+  const report = await cdp.evaluate('window.__velaHarness.mountReport()');
   const version = await cdpHttp(session.port, '/json/version');
   cdp.close();
-  return { session, ownership, version, target: { url: page.url, title: page.title }, mount };
+  // Graded with the same predicate `up` and `mount` use. `status` used to print
+  // a raw mount report with no verdict at all, which meant three commands
+  // showed the same object and only one of them said what it meant.
+  const grade = gradeMount(report, { acceptedBecause: null, targetUrl: page.url ?? null });
+  return {
+    session,
+    ownership,
+    version,
+    target: { url: page.url, title: page.title },
+    mounted: grade.mounted,
+    grade,
+    mount: report,
+  };
 };
 
 commands.mount = async () => {
   const session = await requireSession();
-  const { cdp } = await attach(session);
+  const { cdp, page } = await attach(session);
   const report = await cdp.evaluate('window.__velaHarness.mountReport()');
   cdp.close();
-  const mounted = report.rootPresent && report.rootDescendants > 0 && report.bodyTextChars > 0;
-  return {
-    mounted,
-    verdict: mounted
-      ? 'the renderer mounted: #root has descendants and the window has visible text'
-      : 'THE RENDERER DID NOT MOUNT: #root is empty or the window has no text',
-    report,
-  };
+  // The verdict used to be `rootPresent && rootDescendants > 0 && bodyTextChars
+  // > 0` — a node count, which is not a provenance question. A static splash
+  // inside `#root` with an empty `<script>` runs zero lines of JavaScript and
+  // satisfied all three, and this command printed "the renderer mounted" about
+  // it. `gradeMount` composes that presence question with provenance ones; see
+  // `MOUNT_CRITERIA`.
+  //
+  // `acceptedBecause` is null here on purpose: `attach` re-picks the target
+  // from a recorded session and never runs `waitForEndpoint`, so this command
+  // genuinely does not know how the target was first admitted. The criterion
+  // treats null as "not applicable" rather than pretending to an answer — the
+  // document criteria below it still fail an about:blank.
+  const grade = gradeMount(report, { acceptedBecause: null, targetUrl: page.url ?? null });
+  return { mounted: grade.mounted, verdict: grade.verdict, grade, report };
 };
 
 commands.read = async (flags) => {
@@ -844,6 +978,17 @@ commands.type = async (flags) => {
   }
   const text = String(flags.value);
   const insertText = Boolean(flags['insert-text']);
+  const via = String(flags.via ?? 'cdp');
+  if (via !== 'cdp' && via !== 'os') {
+    throw new HarnessError(EXIT.USAGE, 'type --via must be cdp or os');
+  }
+  if (via === 'os' && insertText) {
+    throw new HarnessError(
+      EXIT.USAGE,
+      '--insert-text is a CDP insertion and has no OS equivalent: the whole point of --via os is ' +
+        'that the keystrokes enter the system input queue. Drop one of the two flags.',
+    );
+  }
   // Refuse before the window is touched. Throwing halfway through the loop
   // below would leave a half-filled field and a non-zero exit, and the field is
   // what the next command reads — a partial value is worse evidence than none.
@@ -882,25 +1027,53 @@ commands.type = async (flags) => {
   // "no key events at all" on a run that had just pressed Backspace or Enter.
   const cleared = Boolean(flags.clear);
   const enter = Boolean(flags.enter);
-  if (cleared) {
+  let os = null;
+  if (via === 'os') {
+    // One SendInput call for the whole run — including the Backspace `--clear`
+    // presses and the trailing Enter — so the sequence is atomic with respect
+    // to anything else injecting input, and so it does not cost a
+    // `powershell.exe` start per character.
+    const entries = [];
+    if (cleared) {
+      await cdp.evaluate(
+        'document.activeElement && document.activeElement.select && document.activeElement.select()',
+      );
+      entries.push(osKeyEntry(NAMED_KEYS.Backspace));
+    }
+    for (const character of text) entries.push(osKeyEntry(keySpecFor(character)));
+    if (enter) entries.push(osKeyEntry(NAMED_KEYS.Enter));
+    os = await osKeyboard(session, entries);
+    if (os.blocked || !os.delivered) {
+      cdp.close();
+      throw new HarnessError(
+        EXIT.FAILED,
+        os.blockedReason ?? 'the OS keyboard route delivered nothing; see os.keyboardSelfTest',
+        { query, value: text, os },
+      );
+    }
+  } else if (cleared) {
     await cdp.evaluate(
       'document.activeElement && document.activeElement.select && document.activeElement.select()',
     );
     await pressKey(cdp, NAMED_KEYS.Backspace);
   }
-  if (insertText) {
-    // `Input.insertText` hands the string to the editing pipeline as a single
-    // insertion. It goes through beforeinput/input, so a React `onChange` sees
-    // it — but it synthesises no keydown/keyup at all, so a shortcut handler,
-    // an `onKeyDown`, or the roving-tabindex list in `Sidebar.tsx` sees
-    // nothing. That is why it is a flag and not the default.
-    await cdp.send('Input.insertText', { text });
-  } else {
-    for (const character of text) {
-      await pressKey(cdp, keySpecFor(character));
+  if (via === 'cdp') {
+    if (insertText) {
+      // `Input.insertText` hands the string to the editing pipeline as a single
+      // insertion. It goes through beforeinput/input, so a React `onChange` sees
+      // it — but it synthesises no keydown/keyup at all, so a shortcut handler,
+      // an `onKeyDown`, or the roving-tabindex list in `Sidebar.tsx` sees
+      // nothing. That is why it is a flag and not the default.
+      await cdp.send('Input.insertText', { text });
+    } else {
+      for (const character of text) {
+        await pressKey(cdp, keySpecFor(character));
+      }
     }
+    // The OS route already sent Enter as the last entry of its single call; a
+    // second press here would type two newlines and submit twice.
+    if (enter) await pressKey(cdp, NAMED_KEYS.Enter);
   }
-  if (enter) await pressKey(cdp, NAMED_KEYS.Enter);
   await sleep(flagNumber(flags, 'settle', 300));
   const value = await cdp.evaluate(
     '(() => { const el = document.activeElement; if (!el) return null; ' +
@@ -919,13 +1092,27 @@ commands.type = async (flags) => {
     enter,
     keyEvents: !insertText || cleared || enter,
     valueKeyEvents: !insertText,
-    mechanism: insertText
-      ? 'CDP Input.insertText — the value went in as one insertion with no key events of its ' +
-        'own. Any key events in this run came from --clear (Backspace) or --enter; see ' +
-        '`cleared` and `enter`.'
-      : 'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp, with the ' +
-        'US-layout virtual-key code and shift state for each character. Enter is text "\\r".',
-    isOsInput: false,
+    via,
+    mechanism:
+      via === 'os'
+        ? 'Win32 SendInput (INPUT_KEYBOARD) into the system input queue: one call carrying the ' +
+          'whole run, real virtual-key and scan codes from the keys.mjs table on the active ' +
+          'layout. Not CDP. The window was raised and the foreground proved to belong to this ' +
+          'session first, and a self-test proved injected keystrokes reach the input state.'
+        : insertText
+          ? 'CDP Input.insertText — the value went in as one insertion with no key events of its ' +
+            'own. Any key events in this run came from --clear (Backspace) or --enter; see ' +
+            '`cleared` and `enter`.'
+          : 'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp, with the ' +
+            'US-layout virtual-key code and shift state for each character. Enter is text "\\r".',
+    isOsInput: via === 'os',
+    os,
+    // `activeElementAfter` is read over CDP even on the OS route. That is a
+    // *verification* channel, not a delivery one: the keystrokes went through
+    // the system input queue, and reading the field afterwards is how we find
+    // out whether they arrived. On an installed app with no CDP the caller has
+    // to verify some other way, and `isOsInput` is what tells them the delivery
+    // half needed no substitution.
     target: result.matches[index],
     activeElementAfter: value,
   };
@@ -939,9 +1126,26 @@ commands.key = async (flags) => {
   const spec = keySpecFor(String(flags.key));
   const modifiers = modifiersOf(flags);
   const repeat = flagNumber(flags, 'repeat', 1);
+  const via = String(flags.via ?? 'cdp');
+  if (via !== 'cdp' && via !== 'os') {
+    throw new HarnessError(EXIT.USAGE, 'key --via must be cdp or os');
+  }
   const { cdp } = await attach(session);
   const before = await cdp.evaluate('window.__velaHarness.digest(null)');
-  for (let i = 0; i < repeat; i++) await pressKey(cdp, spec, modifiers);
+  let os = null;
+  if (via === 'os') {
+    os = await osKeyboard(session, Array.from({ length: repeat }, () => osKeyEntry(spec, modifiers)));
+    if (os.blocked || !os.delivered) {
+      cdp.close();
+      throw new HarnessError(EXIT.FAILED, os.blockedReason ?? 'the OS keyboard route delivered nothing', {
+        key: spec.key,
+        via,
+        os,
+      });
+    }
+  } else {
+    for (let i = 0; i < repeat; i++) await pressKey(cdp, spec, modifiers);
+  }
   await sleep(flagNumber(flags, 'settle', 300));
   const after = await cdp.evaluate('window.__velaHarness.digest(null)');
   cdp.close();
@@ -956,8 +1160,15 @@ commands.key = async (flags) => {
     // keeps the JSON an honest record of the event rather than of the request.
     modifiersSent: modifiers | (spec.shiftKey ? MODIFIER_BITS.shift : 0),
     repeat,
-    isOsInput: false,
-    mechanism: 'CDP Input.dispatchKeyEvent',
+    via,
+    isOsInput: via === 'os',
+    mechanism:
+      via === 'os'
+        ? 'Win32 SendInput (INPUT_KEYBOARD) into the system input queue, real virtual-key and ' +
+          'scan codes on the active layout. Windows decides which window receives it; the ' +
+          'foreground was raised and proved to belong to this session first.'
+        : 'CDP Input.dispatchKeyEvent',
+    os,
     before,
     after,
     changed: before.hash !== after.hash || before.elements !== after.elements,
@@ -1126,12 +1337,17 @@ vela-drive — launch Vela, click it, read what it shows.
 Lifecycle
   doctor                            what is running, what is built, is it safe to launch
   up   [--bundle prod|dev] [--app-data isolated|real] [--identifier ID]
-       [--port 9222] [--scale 1.5] [--no-build] [--timeout ms]
-  status                            session, CDP /json/version, mount report
+       [--port 9222] [--scale 1.5] [--no-build] [--timeout ms] [--settle-timeout ms]
+       waits for the MOUNT GRADE, not for readyState, and exits 7 if it never
+       passes. readyState reaching "complete" is not evidence: about:blank and a
+       document whose bundle 404s both reach it immediately and stay there.
+  status                            session, CDP /json/version, graded mount report
   down [--all]                      stop, confirm the port closed, confirm no vela.exe
 
 Reading
   mount                             did the renderer mount? (the one question)
+        Composed, not a node count: which document, whose document, who put the
+        nodes in #root, and only then how many there are. See mount-grade.mjs.
   read [--selector CSS] [--limit N] visible text, line by line
   find  <query> [--expect N]        locate elements; exit 3 when nothing matches
   appdata [--identifier ID]         where app data really is (GetFinalPathNameByHandle)
@@ -1142,15 +1358,20 @@ Driving
         os       Win32 SendInput into the system input queue — what a mouse does (default)
         message  Win32 WM_LBUTTONDOWN/UP posted to the WebView2 window, cursor really over it
         cdp      CDP Input domain — browser input pipeline, ahead of hit-testing
-  type  <query> --value "..." [--clear] [--enter] [--insert-text]
+  type  <query> --value "..." [--via cdp|os] [--clear] [--enter] [--insert-text]
                                                    (--value is typed; --text queries)
-        default  one real key event per character, US layout: correct virtual-key code and
-                 shift state. Refuses, before touching the window, any character with no key
-                 on that layout rather than inventing a code for it.
+        default  CDP: one real key event per character, US layout: correct virtual-key code
+                 and shift state. Refuses, before touching the window, any character with no
+                 key on that layout rather than inventing a code for it.
+        --via os Win32 SendInput (INPUT_KEYBOARD) into the system input queue — the whole
+                 run in one call, real virtual-key and scan codes. Raises the window and
+                 refuses if the foreground is not this session; self-tests delivery by
+                 reading the key state back, never by SendInput's return count.
         --insert-text  CDP Input.insertText: fills the field in one insertion and fires NO
                  keydown/keyup. Use for text no key produces; never for anything whose
-                 handler listens for keys.
-  key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
+                 handler listens for keys. Not combinable with --via os.
+  key   --key Enter|Escape|Tab|ArrowDown|<char> [--via cdp|os] [--modifiers ctrl,shift]
+        [--repeat N]
   eval  --expr "..." | --file FILE
 
 Query flags (ANDed; at least one required)

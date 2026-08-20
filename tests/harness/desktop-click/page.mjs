@@ -238,10 +238,24 @@ export const BOOTSTRAP = String.raw`(() => {
       return limit ? lines.slice(0, limit) : lines;
     },
 
-    /** What the renderer actually put in the root, and whether React is live. */
+    /**
+     * What the renderer actually put in the root, and whether React is live.
+     *
+     * **Every field here has a reader.** reactContainerKeyOnRoot and
+     * hasTauriInternals were computed at the tag and read by nothing — grep
+     * for either name found only this definition — while the verdict beside
+     * them asked only whether #root had descendants. They are now criteria in
+     * mount-grade.mjs; see MOUNT_CRITERIA there for which criterion reads
+     * which field, and read that file before adding a field to this object.
+     *
+     * NOTE: this whole object literal lives inside the BOOTSTRAP template
+     * string. A backtick anywhere in here, comments included, ends the
+     * template and takes the file out with "Expected a semicolon".
+     */
     mountReport() {
       const root = document.getElementById('root');
       const bodyText = collapse(document.body ? document.body.innerText : '');
+      const firstChild = root ? root.firstElementChild : null;
       return {
         href: location.href,
         title: document.title,
@@ -255,6 +269,20 @@ export const BOOTSTRAP = String.raw`(() => {
           ? Object.keys(root).filter((key) => key.indexOf('__reactContainer') === 0 || key.indexOf('_reactRootContainer') === 0)
           : [],
         hasTauriInternals: typeof window.__TAURI_INTERNALS__ === 'object' && window.__TAURI_INTERNALS__ !== null,
+        // The second marker from the same Tauri main-frame init script. Read by
+        // the tauri-host criterion's evidence and by the disagreement note in
+        // gradeMount; it does not gate, because it is the younger of the two.
+        isTauri: window.isTauri === true,
+        // What mounted, not just how much. A "mounted" verdict does not entail
+        // that the intended screen rendered — an error-boundary fallback passes
+        // — so a reader needs to see the shape that satisfied the criteria.
+        firstRootChild: firstChild
+          ? {
+              tag: firstChild.tagName,
+              id: firstChild.id || null,
+              className: typeof firstChild.className === 'string' ? firstChild.className.slice(0, 120) : null,
+            }
+          : null,
         scriptSources: Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src')),
         landmarks: Array.from(document.querySelectorAll('header,main,nav,footer,[role]'))
           .slice(0, 40)

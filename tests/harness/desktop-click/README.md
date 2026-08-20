@@ -118,10 +118,59 @@ down [--all]                        stop; prove the port closed and nothing surv
 
 `up` builds unless the binary already matches the requested flavour, launches
 with a private WebView2 profile and remote debugging, waits for a *navigated*
-page target (a target that is still `about:blank` is not accepted until the
-deadline is nearly up — attaching there would report a blank window and call it
-a mount failure), waits for `readyState === 'complete'`, and prints the pid, the
-`/json/version` response, the ownership proof and the mount report.
+page target, then **waits for the mount grade** and exits non-zero if it never
+passes.
+
+#### What `up` waits for, and why it is not `readyState`
+
+This paragraph used to say `up` "waits for `readyState === 'complete'`". That
+sentence is the defect. `readyState` is a question about one word in whatever
+document the CDP session happens to be attached to, and on this stack it reaches
+`complete` **faster when the bundle fails than when it loads**. Three
+constructions were run against the old guard over real CDP and all three came
+back `ok: true`, exit 0, with a mount report beside them saying the renderer was
+not there:
+
+| | what it was | `readyState` at loop exit | what the old `up` said |
+|---|---|---|---|
+| E1 | an `about:blank` admitted by the target picker's own fallback | `complete` on poll #1 | `ok: true` |
+| E2 | Vela's `index.html` shape with the module bundle 404ing | `complete` in ~50ms, forever | `ok: true` |
+| E3 | a static `<div id="root">` splash, zero JavaScript | `complete` | `ok: true`, and `mount` said *"the renderer mounted"* |
+
+In all three the loop iterated **zero times** and its give-up branch was
+unreachable. Waiting longer waits zero longer; reporting that we gave up never
+fires. So the loop now waits on the **grade** in `mount-grade.mjs`, which is a
+conjunction of named criteria, three of which are provenance questions rather
+than presence questions:
+
+- **which document** — the CDP target was accepted because it had navigated,
+  not by `waitForEndpoint`'s `about:blank` fallback. That branch still exists,
+  and now reports `acceptedBecause: "blank-fallback-at-deadline"` instead of
+  saying nothing.
+- **whose document** — `window.__TAURI_INTERNALS__` is an object, so this is a
+  Tauri main frame. Tauri 2.11.5 (`src-tauri/Cargo.lock`) injects it from an
+  unconditional main-frame init script; `withGlobalTauri: false` suppresses
+  `window.__TAURI__`, which is a different object.
+- **who rendered it** — `#root` carries a React root-container key, so a
+  renderer put the nodes there. A node count cannot tell a mounted app from a
+  splash screen, and E3 is what that costs.
+
+`up` returns `readiness: { exitedBy, readyStateAtExit, polls, waitedMs,
+gradeHistory, summary }`. `exitedBy` is `"condition"` or `"deadline"` — the old
+loop's exit condition was a local variable that never reached the return value,
+so "it gave up" and "it succeeded instantly" printed identically. `--settle-timeout ms`
+sets the budget.
+
+**What a passing grade does not entail.** It says a React renderer ran in a
+Tauri main frame and owns `#root`. It does **not** say the intended screen
+rendered: an error-boundary fallback, or a shell mounted before its data
+arrived, satisfies every criterion. `grade.entails` carries that sentence in
+every result, and `firstRootChild` shows what mounted. To claim more, assert on
+specific application content.
+
+`mount` and `status` grade with the same function, so the three commands cannot
+disagree with each other the way `up`'s exit code disagreed with `mount`'s
+verdict.
 
 `--scale N` adds `--force-device-scale-factor=N` to the browser arguments. That
 is the flag that actually changes layout; `Emulation.setDeviceMetricsOverride`
@@ -141,10 +190,70 @@ screenshot --out FILE               webview contents as PNG (not the window fram
 
 ```
 click <query> [--via os|message|cdp] [--nth N] [--watch CSS] [--settle ms]
-type  <query> --value "..." [--clear] [--enter] [--insert-text]
-key   --key Enter|Escape|Tab|ArrowDown|<char> [--modifiers ctrl,shift] [--repeat N]
+type  <query> --value "..." [--via cdp|os] [--clear] [--enter] [--insert-text]
+key   --key Enter|Escape|Tab|ArrowDown|<char> [--via cdp|os] [--modifiers ctrl,shift] [--repeat N]
 eval  --expr "..." | --file FILE
 ```
+
+#### `--via os` on the keyboard
+
+`click` has been real `SendInput` since the mouse struct was fixed. `type` and
+`key` were **not**: they were `Input.dispatchKeyEvent` only, so any
+`reaches-user` claim on this project that involved typing anything was
+CDP-substituted at the delivery step. `--via os` on both is now real
+`SendInput` with `INPUT_KEYBOARD`.
+
+Three things happen before a key is sent, and all three are in the JSON:
+
+1. **The window is raised and the foreground is proved to belong to this
+   session.** A keystroke has no coordinate, so there is no `WindowFromPoint`
+   equivalent — the foreground *is* the target. If it is not this session, the
+   script refuses and sends nothing. That refusal has already fired here
+   against another application's window.
+2. **A keyboard self-test runs**, holding `VK_SHIFT` through `SendInput` and
+   reading it back with `GetAsyncKeyState` (which reads the global async key
+   state and needs no message pump). `SendInput` returns the count it was
+   handed whether or not anything is delivered; `keyboardInjectionWorks` comes
+   from the read-back, not from the return value. Shift alone types nothing,
+   and it is released and re-checked so a stuck modifier is reported.
+3. **The struct is described** — `structAsBuilt` and `offsets` — so an empty or
+   mis-aligned `KEYBDINPUT` can never again be read as a filtered environment.
+
+The `INPUT` union is declared as a union (`LayoutKind.Explicit`, both members at
+offset 0) rather than as "MOUSEINPUT alone, which is the widest member". That
+old declaration is why there was no way to send a keystroke: there was no field
+to put one in. Measured on this machine, x64:
+
+```
+size=40 type@0 union@8 mi.dwFlags@20 ki.wVk@8 ki.wScan@10 ki.dwFlags@12 keybdinputSize=24
+```
+
+Hand-padding a flat keyboard struct to 40 bytes instead would have put `wVk` at
+offset 4, and `SendInput` would have accepted it and delivered a keystroke for
+whatever the padding spelled.
+
+**The self-test's own Shift is delivered.** It runs after the window is raised,
+so the focused control sees one extra `VK_SHIFT` keydown/keyup before the run.
+It produces no character and is released, but subtract it before reading a key
+log. Measured against a WinForms `TextBox` driven by this path: typing
+`Vela 127.0.0.1:8033` produced `TEXT=[Vela 127.0.0.1:8033]` and
+`KEYDOWNS=<16><16><86><69><76><65><32><49><50><55><190><48>…<16><186><56><48><51><51>`
+— the leading `<16>` is the self-test, and `<190>` is `VK_OEM_PERIOD`, which is
+the point: the CDP route once sent `.` as `46`/`VK_DELETE` and forward-deleted
+instead of typing it.
+
+The virtual-key codes come from the same `keys.mjs` table the CDP route uses, so
+the two routes cannot disagree about which physical key a character is on, and
+the whole run — `--clear`'s Backspace, every character, `--enter`'s Enter — goes
+out in **one** `SendInput` call. Extended keys (arrows, Home/End, Delete,
+Insert) carry `KEYEVENTF_EXTENDEDKEY`; without it they are the numpad keys of
+the same scan code, which is the same class of wrong-key defect as `.` being
+sent as `VK_DELETE`.
+
+`os-input.ps1 -Mode text` delivers a string as `KEYEVENTF_UNICODE` instead. It
+bypasses the layout, so it types characters no US key produces — and it reports
+**no meaningful virtual-key code**: a handler reading `event.keyCode` sees 0.
+It is the OS-side counterpart of `--insert-text` and carries the same warning.
 
 `--text` is a **query filter** everywhere, including on `type`. The string to be
 typed is `--value`. Conflating them made `type` search for an element containing

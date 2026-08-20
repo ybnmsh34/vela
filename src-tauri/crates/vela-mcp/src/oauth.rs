@@ -5,7 +5,7 @@
 //!
 //! In the **OS credential store**, under `mcp:<server id>/token`, reached
 //! through `vela_secrets::SecretStore` — on Windows that is Credential Manager.
-//! Not in `mcp-servers.json`, not in a sidecar file, not in an environment
+//! Not in "mcp-servers.json", not in a sidecar file, not in an environment
 //! variable, and not in a URL. `config::validate_headers` and
 //! `config::validate_remote_url` refuse the three ways a user might try to put
 //! one somewhere else.
@@ -26,7 +26,7 @@
 //!
 //! **Not built: the interactive authorization-code leg.** There is no browser
 //! launch, no PKCE challenge, no loopback redirect listener and no
-//! `authorization_code` grant here. The initial token set has to be provisioned
+//! authorization-code grant here. The initial token set has to be provisioned
 //! out of band — written to `mcp:<id>/token` through `secrets_set`. It is
 //! written here rather than left for a reader to infer from a missing function,
 //! because a reader who assumes Vela can sign a user in will be wrong. Wiring it

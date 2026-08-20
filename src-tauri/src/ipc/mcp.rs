@@ -31,6 +31,7 @@ use tauri::State;
 use vela_mcp::client::namespaced_tool_name;
 use vela_mcp::config::McpConfig;
 use vela_mcp::error::McpFailureCode;
+use vela_mcp::http::RemoteDeps;
 use vela_mcp::pool::McpPool;
 
 use super::{EmptyPayload, IpcResult};
@@ -57,18 +58,43 @@ impl McpHost {
     /// The name is in straight quotes because it is a file on the user's
     /// machine, not one in this repository, and this tree's path guard is
     /// entitled to read a backticked path as a claim about itself.
-    pub fn under_data_dir(directory: PathBuf) -> Self {
-        Self::from_path(directory.join(CONFIG_FILE_NAME))
+    ///
+    /// # The file's ACL is the application-data root's ACL
+    ///
+    /// `directory` is `app_data_dir()`, the same directory `store_host::open`
+    /// hands `DatabaseLocation::in_directory`, and "mcp-servers.json" is a
+    /// **direct child** of it. That is not incidental. `DatabaseLocation::prepare`
+    /// hardens that root through `vela-privatefs` — an explicit DACL with
+    /// inheritance disabled — and then walks it with
+    /// `vela_privatefs::repair_entries`, which re-reads every entry's ACL and
+    /// hardens any that a foreign principal can still reach. So this file is
+    /// covered by the same pass that covers `vela.db`, on every launch, because
+    /// it sits beside it. the two tests at the foot of this module
+    /// is what keeps that true if either path moves.
+    ///
+    /// **Nothing here creates or writes the file**, and no credential is ever in
+    /// it — `vela_mcp::config` refuses an entry that tries. The tokens live in
+    /// the OS credential store.
+    ///
+    /// `remote` is what lets a `url` entry be reached. `None` produces a pool
+    /// that reports `transportNotSupported` for one, which is the truth about a
+    /// process whose HTTP backend did not start.
+    pub fn under_data_dir(directory: PathBuf, remote: Option<RemoteDeps>) -> Self {
+        Self::from_path(directory.join(CONFIG_FILE_NAME), remote)
     }
 
-    fn from_path(path: PathBuf) -> Self {
+    fn from_path(path: PathBuf, remote: Option<RemoteDeps>) -> Self {
+        let pool = |config| match remote {
+            Some(remote) => McpPool::with_remote(config, remote),
+            None => McpPool::new(config),
+        };
         match McpConfig::read(&path) {
             Ok(config) => Self {
-                pool: McpPool::new(config),
+                pool: pool(config),
                 config_failure: None,
             },
             Err(error) => Self {
-                pool: McpPool::new(McpConfig::default()),
+                pool: pool(McpConfig::default()),
                 config_failure: Some(error.code()),
             },
         }
@@ -178,16 +204,20 @@ mod tests {
     }
 
     fn host_with(config: &str) -> (tempfile::TempDir, McpHost) {
+        host_with_remote(config, None)
+    }
+
+    fn host_with_remote(config: &str, remote: Option<RemoteDeps>) -> (tempfile::TempDir, McpHost) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).unwrap();
-        let host = McpHost::under_data_dir(dir.path().to_path_buf());
+        let host = McpHost::under_data_dir(dir.path().to_path_buf(), remote);
         (dir, host)
     }
 
     #[test]
     fn no_configuration_file_is_an_empty_answer_and_not_a_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let host = McpHost::under_data_dir(dir.path().to_path_buf());
+        let host = McpHost::under_data_dir(dir.path().to_path_buf(), None);
         let response = list_tools(&host);
         assert_eq!(response.config_failure, None);
         assert!(response.servers.is_empty());
@@ -260,9 +290,12 @@ mod tests {
     }
 
     #[test]
-    fn a_remote_entry_is_listed_as_an_unsupported_transport() {
-        // The one place the missing HTTP transport becomes visible to a user.
-        // It must not be silently dropped and must not be called invalid.
+    fn a_remote_entry_is_unsupported_only_when_this_process_has_no_http_backend() {
+        // `transportNotSupported` used to be the answer to every `url` entry.
+        // It is now the answer to one thing only — a process whose HTTP client
+        // did not start — and this asserts the *narrowness*, because a build
+        // that quietly kept the old behaviour would pass a test that only
+        // checked the `None` case.
         let config = r#"{ "mcpServers": { "remote": { "url": "https://example.com/mcp" } } }"#;
         let (_dir, host) = host_with(config);
 
@@ -272,6 +305,232 @@ mod tests {
             McpServerStatus::Unavailable {
                 reason: McpFailureCode::TransportNotSupported
             }
+        );
+    }
+
+    /// A remote MCP server on a loopback port, answering the two methods this
+    /// command's path sends. Small on purpose: what is under test here is the
+    /// **command**, not the transport — `vela-mcp/tests/http_end_to_end.rs`
+    /// tests the transport, against nineteen scripted servers.
+    fn remote_mcp_server() -> (u16, std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let served = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&served);
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let Ok(clone) = stream.try_clone() else {
+                    continue;
+                };
+                let mut reader = BufReader::new(clone);
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    let line = line.trim_end().to_ascii_lowercase();
+                    if line.is_empty() {
+                        break;
+                    }
+                    if let Some(value) = line.strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0u8; length];
+                if length > 0 && reader.read_exact(&mut body).is_err() {
+                    continue;
+                }
+                let request: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
+                let payload = match request.get("method").and_then(Value::as_str) {
+                    Some("initialize") => serde_json::json!({
+                        "jsonrpc": "2.0", "id": id,
+                        "result": { "protocolVersion": "2025-06-18" }
+                    })
+                    .to_string(),
+                    Some("tools/list") => {
+                        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                        serde_json::json!({
+                            "jsonrpc": "2.0", "id": id,
+                            "result": { "tools": [{
+                                "name": "search",
+                                "description": "Searches the team wiki.",
+                                "inputSchema": { "type": "object" }
+                            }]}
+                        })
+                        .to_string()
+                    }
+                    _ => String::new(),
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, served)
+    }
+
+    fn live_remote_deps() -> RemoteDeps {
+        RemoteDeps {
+            credentials: std::sync::Arc::new(vela_secrets::MemoryStore::new()),
+            http: std::sync::Arc::new(
+                crate::mcp_http::ProviderBackedExchange::start().expect("the client starts"),
+            ),
+        }
+    }
+
+    #[test]
+    fn the_command_returns_tools_from_a_real_remote_server_over_a_real_socket() {
+        // THE DEFECT, AT THE BOUNDARY THE RENDERER SEES. `mcp_list_tools` could
+        // not answer anything but `transportNotSupported` for a `url` entry,
+        // whatever was behind it.
+        let (port, served) = remote_mcp_server();
+        let config = format!(
+            r#"{{ "mcpServers": {{ "team": {{ "url": "http://127.0.0.1:{port}/mcp" }} }} }}"#
+        );
+        let (_dir, host) = host_with_remote(&config, Some(live_remote_deps()));
+
+        let response = list_tools(&host);
+        assert_eq!(response.config_failure, None);
+        assert_eq!(response.servers.len(), 1);
+
+        let server = &response.servers[0];
+        assert_eq!(server.status, McpServerStatus::Connected);
+        let search = server
+            .tools
+            .iter()
+            .find(|tool| tool.tool_name == "search")
+            .unwrap_or_else(|| panic!("the remote server exposes search; got {:?}", server.tools));
+        assert_eq!(search.name, "mcp__team__search");
+        assert_eq!(search.description, "Searches the team wiki.");
+        assert_eq!(
+            search.parameters.get("type").and_then(Value::as_str),
+            Some("object")
+        );
+        assert!(
+            served.load(std::sync::atomic::Ordering::SeqCst),
+            "the tools came from somewhere other than the server"
+        );
+    }
+
+    #[test]
+    fn a_remote_server_that_is_not_answering_is_unreachable_and_not_unsupported() {
+        // The control for the test above and the sharp edge of the fix: with a
+        // backend present, `transportNotSupported` must never be the answer to
+        // a `url` entry again — even when the entry does not work.
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let config = format!(
+            r#"{{ "mcpServers": {{ "team": {{ "url": "http://127.0.0.1:{port}/mcp" }} }} }}"#
+        );
+        let (_dir, host) = host_with_remote(&config, Some(live_remote_deps()));
+
+        assert_eq!(
+            list_tools(&host).servers[0].status,
+            McpServerStatus::Unavailable {
+                reason: McpFailureCode::EndpointUnreachable
+            }
+        );
+    }
+
+    #[test]
+    fn a_remote_entry_needing_a_credential_it_does_not_have_says_so() {
+        let (port, _served) = remote_mcp_server();
+        let config = format!(
+            r#"{{ "mcpServers": {{ "team": {{ "url": "http://127.0.0.1:{port}/mcp", "auth": {{ "type": "bearer" }} }} }} }}"#
+        );
+        let (_dir, host) = host_with_remote(&config, Some(live_remote_deps()));
+
+        assert_eq!(
+            list_tools(&host).servers[0].status,
+            McpServerStatus::Unavailable {
+                reason: McpFailureCode::AuthorizationRequired
+            },
+            "an empty keychain is `sign in`, not `your file is broken`"
+        );
+    }
+
+    #[test]
+    fn the_configuration_file_is_read_from_the_root_and_not_from_below_it() {
+        // The structural half of the ACL claim. `vela_privatefs::repair_entries`
+        // walks the application-data root's own entries; a configuration file
+        // one directory down would be outside that pass unless the directory
+        // above it happened to need repairing. It is a direct child, and this is
+        // what says so.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("mcp")).unwrap();
+        std::fs::write(
+            dir.path().join("mcp").join(CONFIG_FILE_NAME),
+            r#"{ "mcpServers": { "buried": { "command": "node" } } }"#,
+        )
+        .unwrap();
+        let host = McpHost::under_data_dir(dir.path().to_path_buf(), None);
+        assert!(
+            list_tools(&host).servers.is_empty(),
+            "the host read a file from somewhere other than the root it was given"
+        );
+
+        std::fs::write(
+            dir.path().join(CONFIG_FILE_NAME),
+            r#"{ "mcpServers": { "at-the-root": { "command": "node" } } }"#,
+        )
+        .unwrap();
+        let host = McpHost::under_data_dir(dir.path().to_path_buf(), None);
+        assert_eq!(list_tools(&host).servers[0].server_id, "at-the-root");
+    }
+
+    /// The measured half. Windows only, because widening an ACL is the thing
+    /// being undone and `icacls` is how a widened one is produced — the same
+    /// grant `docs/desktop-gate/VERDICTS.md` found inherited on a real
+    /// `%APPDATA%` directory, applied here explicitly so the repair has
+    /// something to repair.
+    #[cfg(windows)]
+    #[test]
+    fn a_widened_configuration_file_is_hardened_by_the_same_pass_that_hardens_the_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_FILE_NAME);
+        std::fs::write(&path, r#"{ "mcpServers": {} }"#).unwrap();
+
+        // `*S-1-1-0` is Everyone, by SID rather than by name, because the name
+        // is localised and this machine's language is not a test input.
+        let granted = std::process::Command::new("icacls")
+            .arg(&path)
+            .args(["/grant", "*S-1-1-0:(R)"])
+            .output()
+            .expect("icacls runs on Windows");
+        assert!(
+            granted.status.success(),
+            "could not widen the fixture: {}",
+            String::from_utf8_lossy(&granted.stderr)
+        );
+        assert!(
+            !vela_privatefs::describe(&path).unwrap().is_private(),
+            "the fixture was not actually widened, so this test proves nothing"
+        );
+
+        // What `DatabaseLocation::prepare` does to the application-data root,
+        // in the order it does it.
+        vela_privatefs::create_private_dir(dir.path()).expect("the root hardens");
+        let repaired = vela_privatefs::repair_entries(dir.path()).expect("the walk succeeds");
+
+        assert!(
+            repaired.iter().any(|entry| entry == &path),
+            "the configuration file was not among the entries the walk repaired: {repaired:?}"
+        );
+        assert!(
+            vela_privatefs::describe(&path).unwrap().is_private(),
+            "the configuration file is still reachable by another principal: {}",
+            vela_privatefs::describe(&path).unwrap().reach_summary()
         );
     }
 

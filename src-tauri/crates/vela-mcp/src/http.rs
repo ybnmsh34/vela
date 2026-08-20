@@ -524,7 +524,7 @@ impl HttpTransport {
         let reply = self.exchange(oauth::refresh_call(config, refresh_token))?;
         self.note(format!("token endpoint -> {}", reply.status));
         // The body is parsed whatever the status was: RFC 6749 puts the machine-
-        // readable reason (`invalid_grant`, `invalid_client`) in the body of a
+        // readable reason ("invalid_grant", "invalid_client") in the body of a
         // `400`, and that reason is the only actionable thing about the failure.
         let fresh = oauth::parse_token_response(
             &self.server_id,

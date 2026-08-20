@@ -30,7 +30,7 @@
 //! * **No standalone `GET` channel.** Server-initiated messages sent outside a
 //!   request/response exchange never arrive. See [`crate::http`].
 //! * **No interactive authorization.** There is no browser launch, no PKCE and
-//!   no `authorization_code` grant; the first token set is provisioned out of
+//!   no authorization-code grant; the first token set is provisioned out of
 //!   band into `mcp:<id>/token`. See [`crate::oauth`].
 //! * **No client registration**, static or dynamic, and no discovery of an
 //!   authorization server: the token endpoint is named in the configuration.

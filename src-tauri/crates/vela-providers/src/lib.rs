@@ -93,6 +93,11 @@
 
 pub mod answer;
 pub mod anthropic;
+// The workspace's only HTTP client lives in this crate, so the workspace's only
+// synchronous door onto it lives here too. `vela-mcp` reaches the network
+// through this module, via a trait it declares and the composition root
+// implements. See `blocking`'s own docs.
+pub mod blocking;
 pub mod capability;
 pub mod compat;
 pub mod context;
@@ -134,6 +139,7 @@ use std::sync::Arc;
 // them share that name, and flattening one here would make which vendor you got
 // depend on import order.
 pub use anthropic::{AnthropicOptions, AnthropicProvider};
+pub use blocking::{BlockingError, BlockingHttp, BlockingRequest, BlockingResponse};
 pub use capability::{CapabilityFinding, Evidence, ModelCapabilities, Support};
 pub use compat::{CompatOptions, CompatProvider};
 pub use diagnostic::{

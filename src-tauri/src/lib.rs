@@ -12,6 +12,7 @@
 pub mod endpoint_host;
 pub mod fatal;
 pub mod ipc;
+pub mod mcp_http;
 pub mod provider_host;
 pub mod scheduler_host;
 pub mod state;
@@ -100,13 +101,40 @@ pub fn configure<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builde
             ));
 
             // The user's MCP servers, read from the same directory. Reading the
-            // file is all that happens here: a server is a child process, and
-            // one is spawned on the first `mcp_list_tools` rather than at
-            // startup, so a machine with four configured servers does not
-            // launch four processes to draw a window. An unreadable file does
-            // not stop startup — see `McpHost`.
+            // file is all that happens here: a server is a child process or a
+            // socket, and neither is opened until the first `mcp_list_tools`
+            // rather than at startup, so a machine with four configured servers
+            // does not launch four of anything to draw a window. An unreadable
+            // file does not stop startup — see `McpHost`.
+            //
+            // THE JOIN THAT MAKES A `url` ENTRY WORK. `vela-mcp` reaches the
+            // network through a trait and `vela-providers` owns the only HTTP
+            // client in the workspace; `mcp_http` is where the two meet, and
+            // this is the only line that builds one. Without it the pool has no
+            // HTTP backend and every remote entry reports
+            // `transportNotSupported` — which is what every build did before
+            // this line existed, and is still the honest answer for a process
+            // whose client would not start.
+            //
+            // A failure to start it does **not** stop startup, for the same
+            // reason an unreadable configuration does not: MCP is optional, and
+            // the servers that are local go on working.
+            let remote = match mcp_http::ProviderBackedExchange::start() {
+                Ok(exchange) => Some(vela_mcp::RemoteDeps {
+                    // The same store `secrets_set` writes to. An MCP token that
+                    // went somewhere else would be invisible to the settings
+                    // surface that put it there.
+                    credentials: std::sync::Arc::clone(&app.state::<AppState>().secrets),
+                    http: std::sync::Arc::new(exchange),
+                }),
+                Err(error) => {
+                    eprintln!("vela: remote MCP servers are unavailable: {error}");
+                    None
+                }
+            };
             app.manage(ipc::mcp::McpHost::under_data_dir(
                 app.path().app_data_dir()?,
+                remote,
             ));
 
             // The canonical skill store, created **empty, here, before any

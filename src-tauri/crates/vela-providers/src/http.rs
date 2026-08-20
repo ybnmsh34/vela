@@ -893,7 +893,7 @@ const MAX_SAME_AUTHORITY_REDIRECTS: usize = 4;
 /// host and port; an `http`→`https` "upgrade" on the same host is therefore
 /// **not** same-authority and is refused, because a redirect is not evidence
 /// about who is listening on the other port.
-fn redirect_policy() -> reqwest::redirect::Policy {
+pub(crate) fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
         let from = attempt.previous().first().map_or_else(
             // `reqwest` pushes the original request URL before consulting the

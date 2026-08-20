@@ -169,7 +169,7 @@ pub struct HttpServer {
     /// as the POST target and by `HttpTransport::shutdown` as the DELETE target.
     pub url: String,
     /// Extra headers on every outbound request. Read by
-    /// `crate::http::HttpTransport::headers_for`. Names are lowercased here so
+    /// `crate::http::HttpTransport::request_call`. Names are lowercased here so
     /// the transport's own headers can be merged without duplicating one under
     /// a different case.
     pub headers: BTreeMap<String, String>,
@@ -197,13 +197,13 @@ pub enum RemoteAuth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthConfig {
     /// Sent as `client_id` in the refresh request body. Read by
-    /// `crate::oauth::refresh_request`.
+    /// `crate::oauth::refresh_call`.
     pub client_id: String,
-    /// Where the refresh is POSTed. Read by `crate::oauth::refresh_request`.
+    /// Where the refresh is POSTed. Read by `crate::oauth::refresh_call`.
     pub token_endpoint: String,
     /// Sent as a space-joined `scope` when non-empty, which is how a refresh
     /// asks for the grant it already had rather than whatever the server
-    /// defaults to. Read by `crate::oauth::refresh_request`.
+    /// defaults to. Read by `crate::oauth::refresh_call`.
     pub scopes: Vec<String>,
 }
 

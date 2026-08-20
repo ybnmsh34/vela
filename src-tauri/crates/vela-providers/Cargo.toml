@@ -18,8 +18,16 @@ vela-core.workspace = true
 vela-secrets.workspace = true
 async-trait = "0.1"
 # `time` for the stall timeout that MEASURED-1 makes mandatory, `sync` for the
-# cancellation token. No `rt`: the runtime belongs to the host process.
-tokio = { version = "1", features = ["time", "sync", "macros"] }
+# cancellation token.
+#
+# `rt` and `rt-multi-thread` were added for `blocking.rs`, and the note they
+# replace said "No `rt`: the runtime belongs to the host process." That is still
+# the rule for the *provider* path — a turn runs on the host's runtime and this
+# crate spawns nothing for it. `blocking.rs` is the exception and it argues for
+# itself: its callers are synchronous, and `Runtime::block_on` panics when it is
+# called from inside another runtime, so borrowing the host's is not available
+# to it.
+tokio = { version = "1", features = ["time", "sync", "macros", "rt", "rt-multi-thread"] }
 # THE ONLY HTTP CLIENT IN THE WORKSPACE, and it lives here on purpose: the mock
 # matrix proved the endpoints send no CORS headers and answer OPTIONS with 405,
 # so a browser-hosted renderer can never call them. All provider HTTP therefore

@@ -167,7 +167,53 @@ function expand(script: string, seen = new Set<string>()): string {
   });
 }
 
-const VERIFY = expand(PACKAGE.scripts.verify ?? '');
+/**
+ * The gate list `pnpm verify` executes.
+ *
+ * ## The fifth defect: this file asked about text, and text is not execution
+ *
+ * `VERIFY` used to be `expand(PACKAGE.scripts.verify)` — the `&&` chain from
+ * `package.json`, with `pnpm <name>` references inlined — and every assertion
+ * below asked whether a CI gate's command appears *in that string*. It always
+ * did. Meanwhile, measured at tag `run-start-2026-08-17` on the platform Vela
+ * ships on:
+ *
+ *     > vela@0.1.0 lint:rust
+ *     > cd src-tauri && cargo fmt --all --check && cargo clippy ...
+ *     'cargo' is not recognized as an internal or external command,
+ *     ELIFECYCLE  Command failed with exit code 1.
+ *     VERIFY_EXIT=1
+ *
+ * `&&` short-circuits. Gates three through ten — every test suite, the frontend
+ * build, the secret tripwire and BOTH cargo gates — did not run, and this file
+ * was green, because the question it asks is answered by the string whether or
+ * not any process was ever started. That is the same shape as the defect in the
+ * header ("`verify` was quietly narrower than the workflow"), one level down:
+ * the fix made the text contain the gates, and the text was never the thing.
+ *
+ * Two changes follow. Here, the gate list becomes structured data —
+ * `scripts/gates.json` — so this superset check reads fields instead of
+ * regexing a shell line, and a gate cannot be half-present. And separately,
+ * `src/platform/verify-runner.test.ts` asserts the part no static read can:
+ * that the runner reports SKIPPED for gates it never started, and never
+ * reports them as passed.
+ *
+ * This file's scope is unchanged and deliberately still static. It answers
+ * "could `pnpm verify` reach every CI gate"; it does not and cannot answer
+ * "did it".
+ */
+const GATES = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts', 'gates.json'), 'utf8')) as {
+  tailProbe: string;
+  gates: ReadonlyArray<{ id: string; command: string; cwd: string; needs: string[]; tail: boolean }>;
+};
+
+/**
+ * Everything `pnpm verify` runs: the gate commands, plus the post-gate probe
+ * that establishes the Rust tail physically executed. The probe is a command
+ * CI runs as a step of its own, so it has to be visible here or that step would
+ * count as unaccounted for.
+ */
+const VERIFY = [...GATES.gates.map((gate) => expand(gate.command)), expand(GATES.tailProbe)].join('\n');
 
 /**
  * Every command in the workflows that is a *gate* — something that can fail the
@@ -204,6 +250,43 @@ const CI_GATES: ReadonlyArray<{ readonly ci: string; readonly matches: RegExp }>
   { ci: 'cargo test --workspace --locked', matches: /cargo test --workspace --locked/ },
   { ci: './scripts/secret-scan.test.sh', matches: /secret-scan\.test\.sh/ },
   { ci: './scripts/secret-scan.sh', matches: /secret-scan\.sh/ },
+  // Asks the disk whether `cargo test` compiled the workspace's integration
+  // test binaries, which `cargo build` does not. Run by both Rust jobs, and
+  // reached locally as the post-gate probe declared in `scripts/gates.json`.
+  { ci: 'node scripts/check-rust-tail.mjs', matches: /check-rust-tail\.mjs/ },
+];
+
+/**
+ * Gates CI runs that `pnpm verify` deliberately does not.
+ *
+ * ## Why this list exists rather than an exemption
+ *
+ * The rule this file enforces is that nothing gates the build remotely which a
+ * developer cannot run locally — a local gate weaker than the remote one does
+ * not save a round trip, it hides the failure until the round trip is
+ * expensive. That rule is about REACHABILITY, and `pnpm verify` was only ever
+ * the default way to reach things. Folding a from-scratch release build plus
+ * WiX and NSIS into the command developers run before every commit would make
+ * `verify` cost tens of minutes and would get it skipped, which is a worse
+ * outcome than a longer CI.
+ *
+ * So the guarantee is kept and only the default moves: every entry here must
+ * name a `local` command that exists in `package.json`, and the assertion below
+ * checks that it does. A CI step with no local equivalent is still a failure,
+ * and a step listed here whose local command was deleted or renamed is a
+ * failure too. What is NOT permitted is an entry with no `local` at all — this
+ * list cannot be used to make a CI step disappear.
+ */
+const CI_ONLY_GATES: ReadonlyArray<{ readonly ci: string; readonly local: string; readonly why: string }> = [
+  {
+    ci: 'pnpm bundle',
+    local: 'bundle',
+    why:
+      'Drives the Tauri bundler and then reads the disk for the installers it ' +
+      'was supposed to produce. A from-scratch release build with WiX and NSIS ' +
+      'is tens of minutes against a debug cargo test most developers have ' +
+      'cached, so it is on demand locally and mandatory remotely.',
+  },
 ];
 
 describe('the local gate is a superset of the remote one', () => {
@@ -250,7 +333,8 @@ describe('the local gate is a superset of the remote one', () => {
       ({ command }) =>
         !command.startsWith('sudo apt-get') &&
         !command.startsWith('pnpm install') &&
-        !CI_GATES.some(({ ci }) => isCommand(command, ci)),
+        !CI_GATES.some(({ ci }) => isCommand(command, ci)) &&
+        !CI_ONLY_GATES.some(({ ci }) => isCommand(command, ci)),
     ).map(({ file, command }) => `${file}: ${command}`);
 
     expect(
@@ -258,6 +342,23 @@ describe('the local gate is a superset of the remote one', () => {
       'a new CI step appeared. Add it to CI_GATES and to "pnpm verify", or ' +
         'exempt it here with a reason if it is setup rather than a gate.',
     ).toEqual([]);
+  });
+
+  it.each(CI_ONLY_GATES)('a CI-only gate is still runnable locally: $ci', ({ ci, local }) => {
+    // Both halves matter. The first stops the list going stale — an entry for a
+    // step CI no longer runs would silently widen the exemption. The second is
+    // the actual guarantee: the reason this gate may be absent from `verify` is
+    // that another command reaches it, so that command has to exist.
+    expect(
+      COMMANDS.some(({ command }) => isCommand(command, ci)),
+      `CI_ONLY_GATES lists "${ci}" but no workflow under .github/workflows/ runs it`,
+    ).toBe(true);
+    expect(
+      PACKAGE.scripts[local],
+      `"${ci}" is exempt from the verify chain only because "pnpm ${local}" ` +
+        'reaches it. That script is not in package.json, so this gate is now ' +
+        'something CI runs and nobody can run locally.',
+    ).toBeDefined();
   });
 
   it('the crash-retry wrapper is confined to the one job that needs it', () => {

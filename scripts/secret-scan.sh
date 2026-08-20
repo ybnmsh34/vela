@@ -15,7 +15,9 @@
 # Usage:
 #   scripts/secret-scan.sh [--root <dir>]
 #
-# Exit 0 = clean, 1 = something matched (and is printed), 2 = usage error.
+# Exit 0 = clean, 1 = something matched (and is printed), 2 = usage error OR the
+# scan could not run at all. See the block below: a scan that could not look is
+# never reported as clean.
 
 set -euo pipefail
 
@@ -65,19 +67,74 @@ done
 
 status=0
 
-# `-I` skips binary files; `-n` names the line so a hit is actionable.
-if git -C "$root" grep -nIE "$pattern" -- . ${exclude_args[@]+"${exclude_args[@]}"}; then
-  echo "::error::Possible credential material found in tracked files."
-  status=1
-fi
+# ---------------------------------------------------------------------------
+# A TRIPWIRE THAT COULD NOT LOOK MUST NOT REPORT CLEAN.
+#
+# Both checks below used to be bare `if <git ...>; then`. That asks "did git
+# report a match?", and the question a tripwire has to ask is "did git run, and
+# report no match?" — because `if` cannot tell those apart. Every non-zero
+# status, including the ones that mean git never scanned anything, took the
+# else branch and printed the all-clear. Reproduced on this exact script:
+#
+#     $ mkdir /tmp/notarepo && scripts/secret-scan.sh --root /tmp/notarepo
+#     fatal: not a git repository (or any of the parent directories): .git
+#     fatal: not a git repository (or any of the parent directories): .git
+#     secret-scan: no credential material found in tracked files (docs/ included).
+#     exit 0
+#
+# `git grep` documents three outcomes and this now reads all three: 0 = it found
+# something, 1 = it looked and found nothing, anything else = it could not look.
+# The third is exit 2 here — a distinct status from "a secret was found", so a
+# broken scan can never be mistaken for either verdict.
+#
+# The second check was also a PIPELINE, `git ls-files | grep`, whose status is
+# grep's. Under `pipefail` a failed `git ls-files` and a clean `grep` produce
+# the same non-zero, so even reading the status correctly could not have
+# separated them. The listing is taken into a variable first, so `git`'s own
+# status is the one being read.
+# ---------------------------------------------------------------------------
 
-if git -C "$root" ls-files | grep -E '(^|/)\.env($|\.)'; then
+# `-I` skips binary files; `-n` names the line so a hit is actionable.
+set +e
+git -C "$root" grep -nIE "$pattern" -- . ${exclude_args[@]+"${exclude_args[@]}"}
+grep_status=$?
+set -e
+case "$grep_status" in
+  0)
+    echo "::error::Possible credential material found in tracked files."
+    status=1
+    ;;
+  1) : ;;
+  *)
+    echo "::error::secret-scan: \`git grep\` exited $grep_status in $root, so nothing was scanned." >&2
+    echo "::error::This is NOT a clean result. Fix the checkout and re-run." >&2
+    status=2
+    ;;
+esac
+
+set +e
+tracked=$(git -C "$root" ls-files)
+ls_status=$?
+set -e
+if [ "$ls_status" -ne 0 ]; then
+  echo "::error::secret-scan: \`git ls-files\` exited $ls_status in $root, so the tracked" >&2
+  echo "::error::file list is unknown and the .env check did not happen." >&2
+  status=2
+elif [ -z "$tracked" ]; then
+  # Zero tracked files satisfies every assertion this script makes. An empty
+  # scan is the same vacuous pass as an empty expectation set, and a repository
+  # with nothing in it is not the thing this gate was pointed at.
+  echo "::error::secret-scan: $root has no tracked files, so this scan examined nothing." >&2
+  status=2
+elif printf '%s
+' "$tracked" | grep -E '(^|/)\.env($|\.)'; then
   echo "::error::A .env file is tracked. Credentials must live in the OS keychain."
   status=1
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "secret-scan: no credential material found in tracked files (docs/ included)."
+  echo "secret-scan: no credential material found in $(printf '%s
+' "$tracked" | wc -l | tr -d ' ') tracked files (docs/ included)."
 fi
 
 exit "$status"

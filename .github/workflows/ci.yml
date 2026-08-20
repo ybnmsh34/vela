@@ -147,6 +147,24 @@ jobs:
         run: cargo test --workspace --locked
         working-directory: src-tauri
 
+      # A GREEN `cargo test` IS NOT EVIDENCE THAT `cargo test` RAN.
+      #
+      # `pnpm verify` reaches these two gates through eight `&&` links, and on
+      # the platform Vela ships on it never once got here: cargo is on no
+      # shell's PATH, gate 2 dies with `'cargo' is not recognized`, and the
+      # chain short-circuits with one ELIFECYCLE line that does not distinguish
+      # a failed gate from an unrun one. This step asks the disk instead. Every
+      # `tests/*.rs` in the workspace is an integration-test target that only
+      # `cargo test` compiles -- `cargo build` does not touch `tests/`, measured
+      # with `cargo clean -p vela-store` -- so a binary for each in
+      # `target/debug/deps` is a fact the tail cannot fake.
+      #
+      # It runs here rather than only in `pnpm verify` for the same reason
+      # `check-transcripts.sh` moved out of this file: a check that lives on one
+      # side only is a check the other side discovers by breaking.
+      - name: The Rust tail physically ran
+        run: node scripts/check-rust-tail.mjs
+
   # THE PLATFORM VELA SHIPS ON.
   #
   # Every job above this one runs on Linux, and Vela is a Windows desktop
@@ -272,6 +290,24 @@ jobs:
         run: cargo test --workspace --locked
         working-directory: src-tauri
 
+      # A GREEN `cargo test` IS NOT EVIDENCE THAT `cargo test` RAN.
+      #
+      # `pnpm verify` reaches these two gates through eight `&&` links, and on
+      # the platform Vela ships on it never once got here: cargo is on no
+      # shell's PATH, gate 2 dies with `'cargo' is not recognized`, and the
+      # chain short-circuits with one ELIFECYCLE line that does not distinguish
+      # a failed gate from an unrun one. This step asks the disk instead. Every
+      # `tests/*.rs` in the workspace is an integration-test target that only
+      # `cargo test` compiles -- `cargo build` does not touch `tests/`, measured
+      # with `cargo clean -p vela-store` -- so a binary for each in
+      # `target/debug/deps` is a fact the tail cannot fake.
+      #
+      # It runs here rather than only in `pnpm verify` for the same reason
+      # `check-transcripts.sh` moved out of this file: a check that lives on one
+      # side only is a check the other side discovers by breaking.
+      - name: The Rust tail physically ran
+        run: node scripts/check-rust-tail.mjs
+
       # The captures under `docs/regression-baseline/` are compared byte for
       # byte. On a checkout that rewrote their line endings this reports a
       # behaviour change nobody made, which is precisely the failure
@@ -291,6 +327,77 @@ jobs:
       # directly, so the script keeps its own unmediated coverage.
       - name: Mock transcripts are reproducible
         run: pnpm test:transcripts
+
+  # THE JOB THAT SAYS WHETHER VELA CAN BE SHIPPED AT ALL.
+  #
+  # Every other job in this file proves the code compiles and its tests pass.
+  # None of them produces the thing a user installs, and that gap is not
+  # theoretical: `bundle.icon` listed four PNGs and no `.ico`, the Windows
+  # bundler needs an `.ico` in that list, and `pnpm tauri build` therefore
+  # compiled the whole release tree, printed `Built application at: ...`, and
+  # then failed with `Couldn't find a .ico icon` -- producing NO INSTALLER OF
+  # EITHER KIND while `cargo build` stayed green, because `tauri-build` embeds
+  # the application icon by a different path. `docs/release-posture.md` section
+  # 6 is the record. A defect that stops the product shipping sat behind a green
+  # CI run because nothing here ever asked for the artefact.
+  #
+  # `pnpm bundle` drives the bundler and then reads the disk: every target
+  # `tauri.conf.json` declares must have produced a file that exists, clears a
+  # size floor, carries the format's magic bytes, carries the configured
+  # version in its name, and is newer than the moment the build started. A
+  # bundler exit code of 0 is explicitly NOT the evidence; see the header of
+  # `scripts/check-bundle.mjs` for why each weaker check passes a broken tree.
+  #
+  # WHY THIS IS NOT IN `pnpm verify`. It is the one gate whose cost makes a
+  # default-on local gate wrong: a from-scratch release build plus WiX and NSIS
+  # is tens of minutes, against a debug `cargo test` most developers already
+  # have cached. `verify-covers-ci.test.ts` therefore lists it as a CI-only
+  # gate WITH the local command that reaches it, so "CI runs something nobody
+  # can run locally" is still a failure -- the guarantee is unchanged, only the
+  # default is.
+  #
+  # WHAT A GREEN TICK HERE DOES NOT MEAN. It does not mean the installer
+  # installs, and it does not mean it is signed. Vela is unsigned by
+  # configuration -- `Get-AuthenticodeSignature` reports `NotSigned` for the
+  # MSI, the NSIS setup and `vela.exe` alike -- and SmartScreen will say so to
+  # every user. That is recorded in `docs/release-posture.md` section 2 rather
+  # than gated here, because gating it would fail every run until somebody buys
+  # a certificate.
+  #
+  # `needs: static` like the Rust jobs, and deliberately NOT gated on them: when
+  # the bundle breaks while the tests pass, that disagreement is the signal.
+  bundle:
+    name: The installer a user would download
+    runs-on: windows-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Its own key. A debug cache must not answer for a release build.
+          prefix-key: bundle
+      - name: Build the installers, then check the disk
+        run: pnpm bundle
+      - uses: actions/upload-artifact@v4
+        # `if: always()` on purpose: when the check fails, whatever the bundler
+        # DID leave behind is the evidence for why, and a failed job that
+        # uploads nothing forces the next person to reproduce a 30-minute build
+        # before they can look at it.
+        if: always()
+        with:
+          name: vela-installers
+          path: src-tauri/target/release/bundle/
+          if-no-files-found: warn
 
   # Failing this job means a secret reached the tree. It is deliberately crude
   # and deliberately cheap: the real guarantee is that keys live only in the OS

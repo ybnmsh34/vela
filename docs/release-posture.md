@@ -903,3 +903,197 @@ not see the object they were about. This is the same class as §8's
 `SHGetKnownFolderPath` result: an environment fact that silently invalidates a
 measurement while every command still exits 0.
 
+---
+
+## 13. The bundle is now a gate, not a paragraph
+
+Added on branch `track/t01-release-path`, against tag `run-start-2026-08-17`
+(`c0feb93`). Sections 1 to 12 above record a bundle that was *built once and
+written down*. Nothing in the repository asked for it again. That is the same
+shape as every other defect in this file: the fact was true and the check for it
+was prose, so the next person to break `bundle.icon` would find out the way the
+last one did.
+
+### What runs now
+
+`pnpm bundle` (`scripts/bundle.mjs`) takes a sentinel timestamp, drives
+`pnpm tauri build`, and then reads the disk — and it runs the disk check
+**whether or not the bundler exited 0**, because the two failures it exists to
+separate are exactly the two that `&&` merges: a bundler that fails after
+producing good installers, and a bundler that succeeds having produced none.
+`.github/workflows/ci.yml` runs it in a new `bundle` job on `windows-latest`.
+
+`scripts/check-bundle.mjs` is the check. It derives the expected target set from
+`tauri.conf.json` rather than hardcoding it, and for each declared target
+demands a file that exists, clears a size floor, carries the format's magic
+bytes, carries the configured version in its name, and is newer than the
+sentinel. `bundle.active: false`, an empty target list, and an unrecognised
+platform are all **refusals**, not passes. The header of that file lists the
+seven progressively weaker checks and the specific broken tree each one lets
+through; `src/platform/bundle-guard.test.ts` builds one synthetic tree per step
+and proves the guard fails it.
+
+### The run on this branch
+
+```
+bundle: sentinel 2026-08-20T20:21:06.060Z
+    Running light to produce ...\bundle\msi\Vela_0.1.0_x64_en-US.msi
+    Running makensis to produce ...\bundle\nsis\Vela_0.1.0_x64-setup.exe
+BUNDLER_EXIT=0
+
+=== the disk, not the exit code ===
+check-bundle: expecting msi, nsis for version 0.1.0
+  OK             Vela_0.1.0_x64_en-US.msi  7360512 bytes, MSI (OLE2 compound file)
+  OK             Vela_0.1.0_x64-setup.exe  5444437 bytes, NSIS setup (PE image)
+BUNDLE_OK=yes
+BUNDLE_EXIT=0
+```
+
+| Artifact | Bytes | SHA-256 | Signature |
+| --- | ---: | --- | --- |
+| `target/release/bundle/msi/Vela_0.1.0_x64_en-US.msi` | 7,360,512 | `9E76FCE179362BEE718ED3274284649C5D67FC0EC800C4AAC9A916244FA7BDBD` | NotSigned |
+| `target/release/bundle/nsis/Vela_0.1.0_x64-setup.exe` | 5,444,437 | `1DBA7E65304BB79EA56A1D425287D4EEBBB58147D11C8AB8064DBD8122BB24A2` | NotSigned |
+| `target/release/vela.exe` | 18,095,104 | — | NotSigned |
+
+Byte counts differ from section 6's; that is a different build of a moved tree
+and no conclusion is drawn from the difference. **Signing posture is unchanged
+and is unchanged deliberately: all three are `NotSigned`, there is no signing
+configuration anywhere in the tree, and this branch adds none.** Section 2
+stands in full. Nothing here is gated on signing, because a gate on signing
+would fail every run until somebody buys a certificate.
+
+Updater posture is likewise unchanged: section 3 stands. **`pnpm bundle`
+therefore does not and cannot verify an update path**, and no claim about one is
+made below.
+
+### 13a. Install, update and uninstall were NOT verified, and here is the check
+
+They could not be, and the reason is section 12's, re-measured on this branch
+rather than taken on trust. `scripts/check-real-path.ps1` turns section 12's
+closing instruction — "resolve the path with `GetFinalPathNameByHandle` before
+believing a filesystem observation" — into something that runs. It carries its
+own control: it builds a directory and a junction to it and asks for the
+junction's final path, so a reader that merely echoed its argument reports **NO
+VERDICT** rather than a clean bill of health.
+
+```
+CONTROL  junction -> \\?\C:\Users\User\AppData\Local\Temp\vela-finalpath-control-34268\target
+CONTROL  PASS  the reader answers with the junction's TARGET, so it resolves backing storage.
+
+VERDICT     PATH  ->  BACKING PATH
+REAL        %APPDATA%\dev.vela.desktop                ->  ...\AppData\Roaming\dev.vela.desktop
+CONTAINER   %APPDATA%\dev.vela.desktop\vela.db        ->  ...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\dev.vela.desktop\vela.db
+CONTAINER   %APPDATA%\dev.vela.desktop\diagnostics    ->  ...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\dev.vela.desktop\diagnostics
+REAL        %APPDATA%\dev.vela.desktop\skills         ->  ...\AppData\Roaming\dev.vela.desktop\skills
+CONTAINER   %LOCALAPPDATA%\Vela                       ->  ...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Vela
+CONTAINER   %LOCALAPPDATA%\Vela\vela.exe              ->  ...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Vela\vela.exe
+REAL        C:\Users\User\Desktop\Vela.lnk            ->  ...\Desktop\Vela.lnk
+REAL        %APPDATA%\...\Start Menu\Programs\Vela.lnk  ->  ...\Start Menu\Programs\Vela.lnk
+
+container-only paths  4
+exit 1
+```
+
+This independently reproduces section 12, including the part section 12 warned
+must not be guessed at: `skills` and `diagnostics` are sibling directories under
+the same **real** parent and resolve opposite ways.
+
+So: **`vela.db` and `diagnostics\` cannot be shown to resolve to real user paths
+from this session, because from this session they do not.** That is not a
+statement about the product. It is a statement about the vantage, and it is why
+no install was performed here.
+
+**The installer was deliberately not run, and that was a decision rather than an
+omission.** Two reasons, in order of weight:
+
+1. It would have produced no new knowledge. The install lands in the container
+   (rows 5 and 6 above), which is precisely the measurement section 12
+   withdrew. Repeating it would add a second void observation to a document that
+   already has one.
+2. It would have done real damage on a real path. Section 7 records that
+   installing Vela **took the shortcuts of an unrelated third-party application
+   called "Vela" away**, and rows 7 and 8 above show those shortcut paths are
+   REAL — they escape the container even though the install does not. Measured
+   on this branch before deciding: `C:\Users\User\Desktop\Vela.lnk` and the
+   Start Menu entry currently both target
+   `C:\Users\User\AppData\Local\Programs\vela\Vela.exe`, the incumbent
+   application. They are correct right now. Running the installer to learn
+   nothing, at the cost of breaking them again, is not a trade worth making.
+
+There is also nothing named `backups` to check. A search of every `.rs` file in
+`src-tauri/` finds no `backups` directory, no backup path constant and no backup
+routine; the 34 occurrences of the string are `FILE_FLAG_BACKUP_SEMANTICS` in
+`vela-projects/src/link.rs`, a `.pre-cleanup-` rename in
+`vela-privatefs/src/lib.rs`, test fixtures, and a mock server named `backup` in
+a provider example. Vela does not write backups today.
+
+**The honest verdict for the installed application is unchanged from section 12:
+there is none.** `ships` requires an install on a machine this session cannot
+reach.
+
+### 13b. The Rust tail is now proved by an artefact rather than an exit code
+
+`cargo build` does not compile `tests/`; only `cargo test` does. That claim was
+measured on this workspace rather than assumed:
+
+```
+$ cargo clean -p vela-store            # removed durability-f80bb87ad6590b36.{d,exe,pdb}
+$ cargo build -p vela-store            # BUILD_P_EXIT=0
+  durability-* after cargo build : count=0
+$ cargo test -p vela-store --no-run    # TEST_NORUN_EXIT=0
+  Executable tests\durability.rs (target\debug\deps\durability-44e26e9e472d07ec.exe)
+  durability-* after cargo test : count=3
+```
+
+`scripts/check-rust-tail.mjs` enumerates every `tests/*.rs` in the workspace and
+demands a matching binary in `target/debug/deps`. It read the tree red between
+those two commands and green after the second, and it now runs in `pnpm verify`
+and in both Rust CI jobs.
+
+**It does not demand an age, and that is the correction rather than the design.**
+Two freshness rules were written and both produced false reds on this
+repository, each caught by running the thing rather than reasoning about it:
+
+1. A wall-clock sentinel — `verify.mjs` passed the instant the run started. The
+   first full ten-gate run came back all green, `cargo test --workspace
+   --locked` exit 0 having genuinely executed the suite, and **all forty targets
+   STALE**. Cargo is a build cache; nothing changed, nothing was relinked, no
+   mtime moved.
+2. The newest source in the workspace. `pnpm tauri build` rewrites
+   `src-tauri/Cargo.toml` in place — identical bytes, new mtime — and four
+   correct binaries were called stale against a file whose content nobody
+   touched.
+
+Both rules re-derive a decision cargo already makes, from a cruder signal than
+cargo uses: cargo fingerprints content, not modification times. So the probe
+answers "did the tail leave its artefacts" and the runner's gate ordering
+answers "did the tail just run" — the probe is consulted only when the
+`cargo test` gate has just passed, and reports `RUST_TAIL=NOT-REACHED`
+otherwise. `--since` survives as an opt-in for a caller on a cold machine where
+its premise holds; nothing in the repository passes it.
+
+The final run, with the corrected probe:
+
+```
+cargo-test                 PASS         0     168.2
+RUST_TAIL=CONFIRMED
+1 passed, 0 failed, 0 SKIPPED (skipped is not passed)
+VERIFY_EXIT=0
+```
+
+And the full chain before it — the first time every gate in `pnpm verify` has
+run on this project:
+
+```
+GATE                       STATUS    EXIT   SECONDS
+typecheck                  PASS         0      56.6
+lint:rust                  PASS         0     199.7
+test                       PASS         0     168.0
+test:harness               PASS         0      18.8
+test:click-harness         PASS         0      21.8
+build                      PASS         0     146.3
+test:transcripts           PASS         0      13.0
+test:secrets               PASS         0      98.2
+cargo-build                PASS         0      87.3
+cargo-test                 PASS         0     423.3
+```

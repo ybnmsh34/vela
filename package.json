@@ -23,7 +23,10 @@
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri",
     "lint:rust": "cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
-    "verify": "pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && pnpm test:click-harness && pnpm build && pnpm test:transcripts && pnpm test:secrets && cd src-tauri && cargo build --workspace --locked && cargo test --workspace --locked"
+    "bundle": "node scripts/bundle.mjs",
+    "bundle:check": "node scripts/check-bundle.mjs",
+    "check:rust-tail": "node scripts/check-rust-tail.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

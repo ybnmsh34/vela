@@ -141,6 +141,69 @@ expect_clean "an empty repository is clean" \
   "# Vela"
 
 echo
+echo "# a scan that could not look must not report clean"
+
+# THE DEFECT THIS SECTION EXISTS FOR. Both checks in the scanner used to be
+# `if <git ...>; then`, which asks "did git report a match?" rather than "did
+# git run, and report no match?". `if` cannot separate those, so every failure
+# mode of git — a directory that is not a repository, a corrupt index, a
+# missing object — took the else branch and printed the all-clear:
+#
+#     $ mkdir /tmp/notarepo && scripts/secret-scan.sh --root /tmp/notarepo
+#     fatal: not a git repository (or any of the parent directories): .git
+#     fatal: not a git repository (or any of the parent directories): .git
+#     secret-scan: no credential material found in tracked files (docs/ included).
+#     exit 0
+#
+# A tripwire whose report of "clean" also covers "I never looked" is the one
+# failure a tripwire cannot have. Exit 2 is used rather than 1 so that "the scan
+# broke" stays distinguishable from "a secret was found".
+
+not_a_repo=$(mktemp -d)
+"$scanner" --root "$not_a_repo" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 2 ]; then
+  pass "a_directory_that_is_not_a_repository_is_refused: exit 2, not a clean 0"
+else
+  fail "a_directory_that_is_not_a_repository_is_refused"     "the scanner exited $rc on a directory git cannot read. Anything but 2 means a broken scan is being reported as a verdict."
+fi
+rm -rf "$not_a_repo"
+
+empty_repo=$(mktemp -d)
+git -C "$empty_repo" init -q .
+"$scanner" --root "$empty_repo" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 2 ]; then
+  pass "a_repository_with_no_tracked_files_is_refused: exit 2, not a clean 0"
+else
+  fail "a_repository_with_no_tracked_files_is_refused"     "the scanner exited $rc on a repository with nothing in it. Zero files satisfies every assertion this scanner makes, which is a vacuous pass."
+fi
+rm -rf "$empty_repo"
+
+# The control for both. A real repository with one harmless file must still come
+# back clean and exit 0 — a scanner that refused everything would pass the two
+# checks above while being useless.
+control_repo=$(mktemp -d)
+(
+  cd "$control_repo" || exit 1
+  git init -q .
+  git config user.email tripwire@vela.test
+  git config user.name Tripwire
+  printf '# nothing to see
+' > README.md
+  git add -A
+  git commit -qm fixture
+) >/dev/null 2>&1
+"$scanner" --root "$control_repo" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "a_real_repository_still_passes: the refusals above are about broken scans, not about everything"
+else
+  fail "a_real_repository_still_passes" "the scanner exited $rc on a clean one-file repository"
+fi
+rm -rf "$control_repo"
+
+echo
 echo "# the scanner and this test are themselves in scope"
 
 # The old workflow excluded `.github/workflows/ci.yml` because it held the

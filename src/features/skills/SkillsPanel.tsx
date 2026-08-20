@@ -301,8 +301,19 @@ function SkillDetail({ skills }: { readonly skills: SkillsController }) {
           // The listing this pane already fetched when it opened. Handed down
           // rather than re-requested: resolving a bundle's members costs no host
           // call, which is the property `src/data/skill-bundles.ts` is built to
-          // have and `skills-reachable.test.tsx` asserts by counting commands.
-          listing={skills.list.status === 'ready' ? skills.list.skills : []}
+          // have and `skills-reachable.test.tsx` asserts over every command and
+          // every payload.
+          //
+          // `null`, not `[]`, when the list is not ready. An empty listing is a
+          // *statement* — every member of this bundle is absent from the store —
+          // and it is the one statement that is certainly wrong here: against
+          // `[]` every member resolves `missing`, so a pane whose list had
+          // failed would tell the user to install directories already on their
+          // disk. That is the exact collapse `BundleMember` keeps `broken` and
+          // `missing` apart to prevent, and passing `[]` reintroduces it one
+          // level up at the call site. `null` says "not known", which is what is
+          // true, and `BundleContents` has a sentence for it.
+          listing={skills.list.status === 'ready' ? skills.list.skills : null}
         />
       )}
     </div>
@@ -316,7 +327,7 @@ function SkillContents({
 }: {
   readonly directory: string;
   readonly read: SkillsReadRes;
-  readonly listing: readonly SkillListing[];
+  readonly listing: readonly SkillListing[] | null;
 }) {
   if (read.kind === 'invalid') {
     // Not an error path: the host answered truthfully, and the answer is that
@@ -341,7 +352,7 @@ function SkillContents({
       <p className={styles.detailDescription}>{read.description}</p>
 
       {isBundleDirectory(directory) && (
-        <BundleContents reading={readBundle(directory, read.body, listing)} />
+        <BundleContents directory={directory} body={read.body} listing={listing} />
       )}
 
       <p className={styles.sectionLabel}>Instructions</p>
@@ -363,12 +374,46 @@ function SkillContents({
  * reason the user opened this entry: for a bundle the instruction body is mostly
  * the manifest they are being told about.
  *
- * **No new CSS.** Every class here already exists in `SkillsPanel.module.css`
- * and every colour is already a token, which is the cheapest way to obey the
- * standing rule that no colour value is introduced: none is, because no
- * declaration is.
+ * Takes the ingredients rather than a {@link BundleReading}, so that the one
+ * decision {@link readBundle} cannot make — what to say when there is no
+ * listing to resolve against — is made here and not silently at the call site.
+ *
+ * **Colours:** none is written. `styles.bundleMembers` and `styles.bundleMember`
+ * were added to `SkillsPanel.module.css` and declare layout only — flex, an
+ * existing spacing step, and zeroes. The earlier version of this function put
+ * `styles.resources` on the <ul> and `styles.resourceGroup` on each <li>, which
+ * is both of those classes used in the opposite of their role in
+ * {@link SkillResourceList}; the note above the new rules records what that
+ * costs and how it was checked.
  */
-function BundleContents({ reading }: { readonly reading: BundleReading }) {
+function BundleContents({
+  directory,
+  body,
+  listing,
+}: {
+  readonly directory: string;
+  readonly body: string;
+  readonly listing: readonly SkillListing[] | null;
+}) {
+  if (listing === null) {
+    // The store has not been listed — the pane's list call has not answered, or
+    // it failed. The manifest could still be parsed from `body`, but every
+    // answer about a *member* would be a guess: with nothing to compare against,
+    // "installed", "installed and broken" and "not installed" are
+    // indistinguishable. Saying so is the only honest row, and it is still a row
+    // rather than nothing, for the reason the `invalid` arm below is.
+    return (
+      <>
+        <p className={styles.sectionLabel}>Bundle</p>
+        <p className={styles.rowProblem}>
+          The skill store has not been listed, so what this bundle contains is not known.
+        </p>
+      </>
+    );
+  }
+
+  const reading = readBundle(directory, body, listing);
+
   if (reading.kind === 'invalid') {
     // The precedent, applied: a directory that claims to be a bundle and is not
     // readable as one says so, in the window, next to the skill it still is.
@@ -387,9 +432,9 @@ function BundleContents({ reading }: { readonly reading: BundleReading }) {
   return (
     <>
       <p className={styles.sectionLabel}>Bundle · {reading.members.length} skills</p>
-      <ul className={styles.resources}>
+      <ul className={styles.bundleMembers}>
         {reading.members.map((member) => (
-          <li key={member.directory} className={styles.resourceGroup}>
+          <li key={member.directory} className={styles.bundleMember}>
             <BundleMemberRow member={member} />
           </li>
         ))}

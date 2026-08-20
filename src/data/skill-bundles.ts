@@ -108,6 +108,22 @@
  *    It does not override a member's name, description, body or resources; those
  *    come from `skills_list` and `skills_read` exactly as they do for a skill
  *    nobody bundled.
+ * 5. **It cannot name a directory whose own name the host will not accept**, and
+ *    that is a real cost rather than a restatement of boundary 1.
+ *    `SkillStore::list` in `src-tauri/crates/vela-skills/src/store.rs` lists
+ *    every directory it finds, turning a header error into
+ *    `SkillListing::Invalid { directory, problem }` instead of skipping the
+ *    entry — and `nameIsNotWellFormed` is one such problem. So a directory
+ *    called `MySkill` can be installed, listed and on screen, and a bundle still
+ *    cannot name it: {@link isUsableMemberName} refuses the name and, because
+ *    every problem here refuses the whole manifest, the bundle reads `invalid`
+ *    rather than that one member reading `broken` or `missing`. The alternative
+ *    is a member-name rule looser than the host's, which is a second name rule
+ *    in a second place — the thing {@link SKILL_NAME_MAX_CHARS} and the test
+ *    that reads `document.rs` off disk exist to prevent.
+ *    `src/data/skill-bundles.test.ts` pins this behaviour, with the misnamed
+ *    directory really in the listing handed to the resolver, so it stays a
+ *    decision rather than becoming a surprise.
  *
  * ## Every field, and what reads it (RULE U)
  *

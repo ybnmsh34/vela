@@ -181,6 +181,41 @@ describe('a member name is matched against the store, never joined to a path', (
     });
   });
 
+  it('cannot name a directory whose own name the host will not accept', () => {
+    // The cost of spelling the crate's name rule at the manifest, written down
+    // here rather than left to be discovered.
+    //
+    // `SkillStore::list` in `src-tauri/crates/vela-skills/src/store.rs` lists
+    // *every* directory it finds — I read the function, not its doc comment: it
+    // collects directory names, sorts them, and maps a header error to
+    // `SkillListing::Invalid { directory, problem }` rather than skipping the
+    // entry. `nameIsNotWellFormed` is one of those problems. So a directory
+    // called `MySkill` can be installed, listed, and on the user's screen, and a
+    // bundle still cannot name it.
+    //
+    // And the refusal is the whole manifest, not that one member: the name
+    // never reaches resolution, so the bundle reads `invalid`, not a member
+    // reading `missing`. That is stricter than it may look and it is what the
+    // code does. The trade is deliberate — the alternative is a member-name rule
+    // that accepts names the host's own rule does not, which is a second name
+    // rule in a second place, and this module holds a copy of the first one
+    // precisely to avoid that.
+    const withMisnamed: readonly SkillListing[] = [
+      ...LISTING,
+      { kind: 'invalid', directory: 'MySkill', problem: 'nameIsNotWellFormed' },
+    ];
+    expect(
+      withMisnamed.some((entry) => entry.directory === 'MySkill'),
+      'the listing handed to the resolver must really carry the directory',
+    ).toBe(true);
+
+    expect(readBundle('bundle-release', fenced('skills: MySkill'), withMisnamed)).toEqual({
+      kind: 'invalid',
+      directory: 'bundle-release',
+      problem: 'memberNameNotWellFormed',
+    });
+  });
+
   it('accepts a name up to the host’s limit and refuses one past it', () => {
     const atLimit = 'a'.repeat(SKILL_NAME_MAX_CHARS);
     expect(parseBundleManifest(fenced(`skills: ${atLimit}`))).toEqual({

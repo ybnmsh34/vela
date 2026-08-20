@@ -206,6 +206,35 @@
   list-style: none;
 }
 
+/* The members of a bundle: a column of rows, each a name above one sentence.
+   Declared rather than assembled out of `.resources` and `.resourceGroup`,
+   which is what this markup first did. Those two carry roles — `.resources`
+   styles the <div> that stacks a section, `.resourceGroup` the <ul> that lays
+   chips out along a row — and putting them on a <ul>/<li> pair swaps both.
+   Measured rather than assumed: `.resources` above declares `margin: 0` and no
+   `padding` and no `list-style`, and none of the three global sheets
+   (`base.css`, `tokens.css`, `typeface.css`) carries a selector matching `ul`,
+   `ol` or `li`, so a <ul> carrying only `.resources` keeps the user agent's own
+   `padding-inline-start`. That is read off the stylesheets, not seen: jsdom
+   resolves no user-agent sheet and this branch has launched nothing. Declaring
+   the padding is the answer that does not depend on which of us is right.
+   No colour value and no token is introduced; every length here is an existing
+   spacing step or zero. */
+.bundleMembers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bundleMember {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+}
+
 .resourceName {
   padding: var(--vela-space-1) var(--vela-space-2);
   background: var(--vela-bg-inset);

@@ -22,6 +22,7 @@ import { PlatformProvider } from '@/platform/PlatformProvider';
 import { resetSkillsStore } from '@/state/skills-store';
 
 import { SkillsPanel } from './SkillsPanel';
+import type { SkillsController, SkillsListState } from './use-skills';
 
 function mount(adapter: BrowserAdapter) {
   return render(
@@ -348,5 +349,117 @@ describe('the skills pane', () => {
     expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('half-written');
     expect(screen.getByText(/There are no instructions to show/u)).toBeInTheDocument();
     expect(screen.queryByText(/Say what changed and why/u)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The bundle pane when there is no listing to resolve members against.
+ *
+ * Driven through the `controller` prop rather than through `useSkills`, because
+ * `useSkills` cannot currently produce this pair of states: its list is set once
+ * and never returns to `loading` or `error`, and `select` is only callable from
+ * a rendered ready list. So this is a **latent** state, not a live one, and that
+ * is exactly why it is here. The call site in `SkillDetail` used to hand
+ * `BundleContents` an empty array whenever the list was not ready, and an empty
+ * listing is not "unknown" — it is the claim that every member is absent from
+ * the store. One `useSkills` that learns to refresh, or one caller that mounts
+ * the detail without the list, and the pane starts telling a user to install
+ * directories already on their disk, with nothing failing.
+ */
+describe('a bundle pane with no listing behind it', () => {
+  const BUNDLE_BODY = [
+    '# Release',
+    '',
+    '```vela-bundle',
+    'skills: commit-messages, half-written',
+    '```',
+    '',
+  ].join('\n');
+
+  /** A controller frozen in one state pair, with the two calls stubbed out. */
+  function frozen(list: SkillsListState): SkillsController {
+    return {
+      list,
+      detail: {
+        status: 'ready',
+        directory: 'bundle-release',
+        detail: {
+          kind: 'skill',
+          name: 'bundle-release',
+          description: 'Everything this repository uses to cut a release.',
+          body: BUNDLE_BODY,
+          resources: { scripts: [], references: [], assets: [] },
+        },
+      },
+      select: async () => undefined,
+      clearSelection: () => undefined,
+    };
+  }
+
+  function mountFrozen(list: SkillsListState) {
+    return render(
+      <PlatformProvider adapter={new BrowserAdapter()}>
+        <SkillsPanel onClose={() => undefined} controller={frozen(list)} />
+      </PlatformProvider>,
+    );
+  }
+
+  it('says the store has not been listed, rather than calling every member missing', async () => {
+    // ── THE LOAD-BEARING TEST ──────────────────────────────────────────────
+    // `commit-messages` and `half-written` are both in the fake's store. The
+    // failure this catches is the pane printing "Named by this bundle and not in
+    // the skill store" beside each of them — a sentence that is false about the
+    // disk and actionable in the wrong direction.
+    mountFrozen({ status: 'error', code: 'IO', message: 'the store could not be listed' });
+
+    expect(
+      await screen.findByText(
+        'The skill store has not been listed, so what this bundle contains is not known.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Named by this bundle and not in the skill store/u)).toBeNull();
+    // Still a skill underneath: the section is a sentence, not a blank.
+    expect(screen.getByText(/skills: commit-messages, half-written/u)).toBeInTheDocument();
+  });
+
+  it('says the same while the list is still loading', async () => {
+    mountFrozen({ status: 'loading' });
+
+    expect(
+      await screen.findByText(
+        'The skill store has not been listed, so what this bundle contains is not known.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Named by this bundle and not in the skill store/u)).toBeNull();
+  });
+
+  it('resolves both members once a listing is there — the control for the two above', async () => {
+    // Without this, the two tests above pass on a pane that renders no bundle
+    // section at all, which is the silent drop rather than the fix.
+    mountFrozen({
+      status: 'ready',
+      skills: [
+        {
+          kind: 'skill',
+          directory: 'commit-messages',
+          name: 'commit-messages',
+          description: 'Writes commit messages.',
+        },
+        { kind: 'invalid', directory: 'half-written', problem: 'missingDescription' },
+      ],
+    });
+
+    expect(await screen.findByText('Bundle · 2 skills')).toBeInTheDocument();
+    expect(screen.getByText('Writes commit messages.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Installed and not readable as a skill · Its frontmatter has no description.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Named by this bundle and not in the skill store/u)).toBeNull();
+    expect(
+      screen.queryByText(/The skill store has not been listed/u),
+      'the unlisted sentence is showing where a listing was supplied',
+    ).toBeNull();
   });
 });

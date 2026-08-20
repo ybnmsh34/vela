@@ -143,11 +143,24 @@ container or graded UNVERIFIED. Real damage is still possible in the unredirecte
 install overwrote two genuine shortcuts on the user's Desktop and Start Menu to point at a
 container-only path, which would have failed for the user with no diagnostic.
 
-## The first `reaches-user` evidence in this audit (2026-08-16)
+## The first `dev-clicked` evidence in this audit (2026-08-16 — REGRADED 2026-08-17)
+
+> **DEMOTED from `reaches-user` to `dev-clicked`.** This section originally claimed the top tier.
+> It does not earn it, and the paragraph headed *"What this evidence is not"* below — written at
+> the time — already enumerated exactly why: a dev binary, a Vite dev server, CDP-dispatched
+> events, and substituted app-data. Three substitutions from the shipping product, by its own
+> account. The old rule said `reaches-user` meant "clicked in a running window", which was itself
+> one notch narrow: it asked *did something respond to a click* when the question is *does this
+> reach a person who installed the app*. The demotion is not a retraction of the evidence — the
+> clicks happened and the panels opened. It is a correction of what that evidence is worth.
+>
+> **`reaches-user` now requires:** installed from the produced bundle, launched as a user launches
+> it, driven by OS-level input, app-data resolving where it resolves on a real machine. No grade in
+> this document rises above `dev-clicked` until an installer exists (track T1).
 
 Until this entry, **every** verdict in this document was `traced` or `test-bites`. The supreme rule
-grades those UNVERIFIED. Three surfaces have now been clicked in a running Vela window at
-`8200985`, driven by `tests/harness/desktop-click/vela-drive.mjs`.
+grades those UNVERIFIED. Three surfaces were driven in a running Vela window at
+`8200985`, via `tests/harness/desktop-click/vela-drive.mjs` — `dev-clicked`, not `reaches-user`.
 
 Process ownership was proven on every command, not assumed: the pid holding the debug socket
 (`msedgewebview2.exe` 35612) was verified to descend from the `vela.exe` the harness itself spawned

@@ -1,0 +1,205 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* The same rule the other dialogs keep: a pane taller than a scaled-up
+     window overflows downwards into a scroll rather than symmetrically off
+     both edges, where its heading cannot be reached. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-overlay-md), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.intro,
+.note,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.footnote {
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-label);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  flex: 1;
+}
+
+.fieldLabel {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  resize: vertical;
+}
+
+.secondary {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-sm);
+}
+
+/* -- the resolved result ---------------------------------------------------- */
+
+.layers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  padding: var(--vela-space-3);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+}
+
+.layerHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-2);
+}
+
+.layerLabel {
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.layerState {
+  font-size: var(--vela-text-xs);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+}
+
+.layerWhy {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+.layerText {
+  margin: 0;
+  padding: var(--vela-space-2);
+  background: var(--vela-code-bg);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* -- incognito -------------------------------------------------------------- */
+
+.privacy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-md);
+}
+
+.privacyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.limits {
+  margin: 0;
+  padding-left: var(--vela-space-4);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}

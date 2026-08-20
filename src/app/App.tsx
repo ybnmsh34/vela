@@ -13,11 +13,13 @@ import { ModelWorkspace, useSelectedModel } from '@/features/models';
 import { SkillsSurface } from '@/features/skills';
 import { SchedulesSurface } from '@/features/schedules';
 import { ProjectsSurface, useActiveProjectId } from '@/features/projects';
+import { IncognitoGate, StylesSurface } from '@/features/styles';
 import { PlatformProvider, usePlatform } from '@/platform/PlatformProvider';
 import type { PlatformAdapter } from '@/platform/adapter';
 import type { HarnessRuntime } from '@/platform/contract-harness';
 import type { ProjectId } from '@/platform/contract-project';
 import { createAgentRuntime } from '@/runtime/app-runtime';
+import { useIncognitoStore } from '@/state/incognito-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { AppShell } from './shell/AppShell';
@@ -31,30 +33,42 @@ interface AppProps {
 export function App({ adapter }: AppProps) {
   return (
     <PlatformProvider {...(adapter === undefined ? {} : { adapter })}>
-      <KeyboardProvider>
-        <AppShell>
-          <Workspace />
-        </AppShell>
-        {/* Mounted here rather than in the sidebar that opens it, because one
-            feature may not import another. Each renders nothing until the user
-            asks for it — and until then neither reads the host either. */}
-        <MemorySurface />
-        {/* The fifth joint, and the same shape as the four above:
-            `src/data/skills-repository.ts` was written, correct and covered by
-            its own tests, and its only importer in the tree was that test file
-            — so `skills_list` and `skills_read` were reachable from nothing a
-            user could press. This line is what makes the skill store visible in
-            the window; `src/app/skills-reachable.test.tsx` is what says so, and
-            fails if this line goes. */}
-        <SkillsSurface />
-        {/* The same shape, and it closes the same kind of hole: the five
-            `schedules_*` commands were registered, allowlisted and tested on
-            the host side with no renderer caller at all, so the poll thread ran
-            every thirty seconds over a table nothing could add a row to. This
-            line and the sidebar button are the joint. */}
-        <SchedulesSurface />
-        <ProjectsSurface />
-      </KeyboardProvider>
+      {/* Everything below talks to the host through the adapter this gate
+          provides, which is the real one or the refusing wrapper. It is here
+          and not inside a feature because the composition root is the only
+          place allowed to decide what the rest of the application talks to —
+          and because a guard mounted inside the thing it guards is not a
+          guard. See `src/features/styles/IncognitoGate.tsx`. */}
+      <IncognitoGate>
+        <KeyboardProvider>
+          <AppShell>
+            <Workspace />
+          </AppShell>
+          {/* Mounted here rather than in the sidebar that opens it, because one
+              feature may not import another. Each renders nothing until the user
+              asks for it — and until then neither reads the host either. */}
+          <MemorySurface />
+          {/* The fifth joint, and the same shape as the four above:
+              `src/data/skills-repository.ts` was written, correct and covered by
+              its own tests, and its only importer in the tree was that test file
+              — so `skills_list` and `skills_read` were reachable from nothing a
+              user could press. This line is what makes the skill store visible in
+              the window; `src/app/skills-reachable.test.tsx` is what says so, and
+              fails if this line goes. */}
+          <SkillsSurface />
+          {/* The same shape, and it closes the same kind of hole: the five
+              `schedules_*` commands were registered, allowlisted and tested on
+              the host side with no renderer caller at all, so the poll thread ran
+              every thirty seconds over a table nothing could add a row to. This
+              line and the sidebar button are the joint. */}
+          <SchedulesSurface />
+          <ProjectsSurface />
+          {/* The sixth of the same joint. The pane sets nothing on its own; the
+              sidebar's `Style and instructions` button flips a boolean in
+              `src/state/style-store.ts` and this reads it. */}
+          <StylesSurface />
+        </KeyboardProvider>
+      </IncognitoGate>
     </PlatformProvider>
   );
 }
@@ -210,11 +224,35 @@ function Transcript({
   readonly projectId: ProjectId | null;
 }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
+  /**
+   * THE HALF OF INCOGNITO THAT IS NOT A REFUSAL: leaving it destroys what it
+   * held.
+   *
+   * `useIncognitoStore.epoch` increments on **every** transition, in and out, so
+   * this key changes on both. A changed key is a remount, and a remount drops
+   * the component state the transcript lives in — the same mechanism the
+   * paragraph below already relies on for switching conversations, used for the
+   * second thing it is good for.
+   *
+   * It is the epoch and not the `active` flag because a flag has two values and
+   * a session that is entered, left and entered again would otherwise be handed
+   * back the key it had the first time. React reuses the instance when the key
+   * matches; the counter makes each session's key unlike every earlier one.
+   *
+   * **What this proves and what it does not.** The entries are gone from the
+   * tree and nothing holds a reference to them; they were never written down,
+   * because every command that would have written them is refused at the
+   * adapter. It does not zero the JavaScript heap — no renderer can — so the
+   * claim is "unreachable and never recorded", not "erased from memory".
+   * `src/app/instructions-and-incognito.test.tsx` asserts the first, which is the part that is
+   * assertable.
+   */
+  const incognitoEpoch = useIncognitoStore((state) => state.epoch);
   const { selection, capabilities, attachments, report } = useSelectedModel();
 
   return (
     <ConversationSurface
-      key={conversationId ?? 'none'}
+      key={`${conversationId ?? 'none'}:${String(incognitoEpoch)}`}
       conversationId={conversationId}
       onAssistantMessages={onAssistantMessages}
       providerId={selection?.providerId ?? null}

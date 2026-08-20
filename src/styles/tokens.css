@@ -255,6 +255,24 @@
   --vela-focus-offset: 2px;
   --vela-focus-offset-inset: -2px;
 
+  /* ---- mode ring --------------------------------------------------------- *
+   * A ring drawn round the whole window to say it is in a MODE — today, only
+   * incognito. Deliberately NOT the focus tokens above, though the numbers
+   * happen to agree: the focus ring answers "which control has the keyboard"
+   * and moves many times a second, this answers "what kind of window is this"
+   * and changes when the user asks. One token reused for both would mean the
+   * next change to either silently moved the other, and a focus ring that
+   * thickened because a privacy mode wanted a heavier edge is the drift this
+   * file exists to prevent.
+   *
+   * The colour is NOT here. It is named at the point of use, exactly as every
+   * border in this repo names its own, so this pair introduces no colour value
+   * and the mode's colour stays auditable by `contrast.test.ts` where it is
+   * painted. Inset, because an outward ring on a full-bleed window is drawn
+   * outside the window and is not drawn at all.                              */
+  --vela-mode-ring-width: 2px;
+  --vela-mode-ring-offset: -2px;
+
   /* ---- layering ---------------------------------------------------------- *
    * The whole stacking order of the app, in one place. A bare z-index in a
    * component is a guess about what else is on screen.                       */

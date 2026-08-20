@@ -41,6 +41,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createChatRepository, newTurnId, type ChatRepository, type TurnHandle } from '@/data/chat-repository';
 import { createMemoryRepository, GLOBAL_MEMORY, type MemoryRepository } from '@/data/memory-repository';
 import { createTranscriptRepository, type TranscriptRepository } from '@/data/transcript-repository';
+import {
+  composeInstructionText,
+  resolveInstructionLayers,
+  type ProjectInstructionsState,
+} from '@/lib/instruction-layers';
 import { memorySystemMessage } from '@/lib/memory-prompt';
 import { usePlatform } from '@/platform/PlatformProvider';
 import { NO_CAPABILITIES } from '@/platform/contract';
@@ -66,6 +71,7 @@ import type { ProjectId } from '@/platform/contract-project';
 import { PlatformError } from '@/platform/errors';
 import { subagentToolDefinition } from '@/runtime/subagent-toolkit';
 import { useMemoryStore } from '@/state/memory-store';
+import { useStyleStore } from '@/state/style-store';
 
 import type { AnswerAttribution } from './notices';
 import { entriesFromStored, errorMessageOfTurn, partsOfTurn, statusOfTurn } from './stored-entries';
@@ -246,6 +252,18 @@ export interface Conversation {
    * of it.
    */
   readonly memoryPreamble: string | null;
+  /**
+   * What the chosen style and the user's own standing instructions will
+   * contribute to the next turn, or `null` when they will contribute nothing.
+   *
+   * Exposed for exactly the reason {@link memoryPreamble} is, and the omission
+   * would cost exactly the same thing: `pendingTurnTexts` weighs this string,
+   * so the meter and the payload are built from one value. It is the *chat*
+   * path's composition — the agent path adds the precedence sentence when a
+   * project chunk is coming — and the meter is a figure for the send the
+   * composer is about to make.
+   */
+  readonly instructionPreamble: string | null;
   /** `null` when sending is possible; otherwise why it is not. */
   readonly blockedReason: string | null;
   send: (text: string) => void;
@@ -480,6 +498,60 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
   memoryRef.current = memoryMessage;
 
   /**
+   * The style and the user's standing instructions, composed for each of the
+   * two paths a turn can take.
+   *
+   * **Both paths, and that is the whole reason this is here rather than only in
+   * `startRun`.** `RunContextRequest.systemPrompt` is the designed seam for a
+   * caller's own composition and it exists only on the agent path; putting the
+   * style there and nowhere else would reproduce, exactly, the asymmetry
+   * `ProjectPanel.tsx` already discloses about project instructions — a user
+   * picks "be concise", presses send without the agent toggle, and gets six
+   * paragraphs with nothing anywhere saying why. `instruction-layers.ts` takes
+   * the path as a required argument so that a future edit cannot reach one
+   * without deciding about the other.
+   *
+   * The two compositions differ in exactly one thing: the agent one appends
+   * `PROJECT_WINS_SENTENCE` when the project resolver actually produced a ref
+   * for this run, and the chat one never does because no project chunk can
+   * arrive on that path. That is why the agent side is built inside `startRun`,
+   * where `preload` is known, and not here.
+   */
+  const styleId = useStyleStore((state) => state.styleId);
+  const customInstructions = useStyleStore((state) => state.customInstructions);
+  const chatInstructions = useMemo(
+    () =>
+      composeInstructionText(
+        resolveInstructionLayers({
+          styleId,
+          customInstructions,
+          // Not `unknown` out of caution — on this path the project layer never
+          // applies whatever its state is, and `resolveInstructionLayers` says
+          // so by branching on the path before it branches on the state.
+          project: { kind: 'unknown' },
+          path: 'chat',
+        }),
+      ),
+    [styleId, customInstructions],
+  );
+
+  /**
+   * Read by `start` and `startRun` through a ref, for the reason `memoryRef`
+   * gives: neither may be rebuilt every time the user types a character into
+   * the instructions box, because `start` is handed to the composer.
+   */
+  const instructionsRef = useRef({ styleId, customInstructions, chat: chatInstructions });
+  instructionsRef.current = { styleId, customInstructions, chat: chatInstructions };
+
+  /** The agent path's composition, which needs to know whether a chunk is coming. */
+  const agentInstructions = useCallback((project: ProjectInstructionsState): string | null => {
+    const { styleId: id, customInstructions: text } = instructionsRef.current;
+    return composeInstructionText(
+      resolveInstructionLayers({ styleId: id, customInstructions: text, project, path: 'agent' }),
+    );
+  }, []);
+
+  /**
    * Read the conversation back on the way in.
    *
    * `App.tsx` remounts this surface on `key={conversationId}`, so this runs once
@@ -686,7 +758,17 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
             turnId,
             providerId,
             modelId,
-            messages: toMessages(history, userText, parts, memoryRef.current),
+            // The ordinary send. `instructionsRef.current.chat` is the same
+            // string `instructionPreamble` reports to the context meter, and it
+            // is composed for the `chat` path — no project layer, so no
+            // precedence sentence about instructions that cannot arrive here.
+            messages: toMessages(
+              history,
+              userText,
+              parts,
+              memoryRef.current,
+              instructionsRef.current.chat,
+            ),
             onEvent: (event) => {
               onEvent(turnId, event, isFirst);
             },
@@ -869,9 +951,29 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
           // everything the user asked Vela to remember. `memoryRef`, not
           // `memoryMessage`, because this reads inside an async callback that
           // must see the latest block without taking a dependency on it.
-          input: toMessages(history, userText, parts, memoryRef.current),
+          //
+          // The fifth argument is `null` **here and only here**, and it is not
+          // an oversight of the same shape: on this path the style and the
+          // user's instructions travel in `RunContextRequest.systemPrompt`
+          // below, which is the seam the contract defines for "the caller's own
+          // composition", and passing them in both places would put them in
+          // front of the model twice. It is a required parameter rather than an
+          // optional one precisely so that this decision had to be made at both
+          // call sites instead of one of them defaulting to silence.
+          input: toMessages(history, userText, parts, memoryRef.current, null),
           tools: [subagentToolDefinition],
-          context: { systemPrompt: null, preload },
+          // `systemPrompt` leads and the loaded chunks follow — see
+          // `composeSystemMessage`. That ordering is what puts the project's
+          // instructions after the user's own, and `preload.length > 0` is the
+          // renderer's exact knowledge of whether a project chunk is coming: the
+          // resolver minted a ref. The body is not read here on purpose; see
+          // `ProjectInstructionsState` in `instruction-layers.ts`.
+          context: {
+            systemPrompt: agentInstructions(
+              preload.length > 0 ? { kind: 'indexed' } : { kind: 'none' },
+            ),
+            preload,
+          },
           limits: DEFAULT_RUN_LIMITS,
           capabilities: mergeRunCapabilities(definition.descriptor.capabilities, capabilities, false),
         });
@@ -1165,6 +1267,7 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     streaming,
     blockedReason,
     memoryPreamble: memoryMessage?.text ?? null,
+    instructionPreamble: chatInstructions,
     send,
     stop,
     retry,
@@ -1221,18 +1324,53 @@ function userMessage(text: string, parts: readonly ContentPartInput[]): ChatMess
 }
 
 /**
- * The memory block leads, because it is context for everything after it. A
- * system message appended after the transcript reads as a late instruction, and
- * some endpoints refuse a system role anywhere but first.
+ * The preamble leads, because it is context for everything after it. A system
+ * message appended after the transcript reads as a late instruction, and some
+ * endpoints refuse a system role anywhere but first.
+ *
+ * ## Why the instructions and the memory block are ONE system message
+ *
+ * Because "some endpoints refuse a system role anywhere but first" is a stated
+ * property of this wire, and two system messages are two roles, only one of
+ * which can be first. `chat_send` takes a flat `ChatMessageInput[]`, so there is
+ * no second slot to put a directive in.
+ *
+ * Instructions lead and memory follows, which is the same order the agent path
+ * produces for the same two kinds of thing: `composeSystemMessage` in
+ * `agent-loop-harness.ts` puts `RunContextRequest.systemPrompt` — the caller's
+ * directives — ahead of the loaded context chunks. One order across both paths
+ * is worth more than an argument for either one.
  */
 function toMessages(
   history: readonly ConversationEntry[],
   userText: string,
   parts: readonly ContentPartInput[],
   memory: ChatMessageInput | null,
+  instructions: string | null,
 ): readonly ChatMessageInput[] {
   const messages = [...historyMessages(history), userMessage(userText, parts)];
-  return memory === null ? messages : [memory, ...messages];
+  const preamble = systemPreamble(memory, instructions);
+  return preamble === null ? messages : [preamble, ...messages];
+}
+
+/**
+ * The one system message, or `null` for a turn that needs none.
+ *
+ * Shared by {@link toMessages}, which sends it, and by {@link pendingTurnTexts},
+ * which weighs it — the same arrangement `memory-prompt.ts` gives its reason
+ * for, and for the same reason: a meter with its own opinion of what gets sent
+ * drifts from the sender the first time either changes, and the user finds out
+ * by losing a message.
+ */
+function systemPreamble(
+  memory: ChatMessageInput | null,
+  instructions: string | null,
+): ChatMessageInput | null {
+  const segments: string[] = [];
+  if (instructions !== null && instructions !== '') segments.push(instructions);
+  if (memory !== null && memory.text !== '') segments.push(memory.text);
+  if (segments.length === 0) return null;
+  return { role: 'system', text: segments.join('\n\n') };
 }
 
 /**
@@ -1253,15 +1391,26 @@ export function pendingTurnTexts(
   history: readonly ConversationEntry[],
   draft: string,
   memoryPreamble: string | null = null,
+  instructionPreamble: string | null = null,
 ): readonly string[] {
   const messages = historyMessages(history);
   if (draft.trim() !== '') messages.push({ role: 'user', text: draft });
   const texts = messages.map((message) => message.text);
-  // Counted whether or not the composer holds anything: memory rides on every
-  // turn this surface sends, including the first one, so a meter that only
+  // Counted whether or not the composer holds anything: the preamble rides on
+  // every turn this surface sends, including the first one, so a meter that only
   // counted it once there was a draft would read low on an empty composer and
   // jump by the whole block on the first keystroke.
-  return memoryPreamble === null ? texts : [memoryPreamble, ...texts];
+  //
+  // Built by the same function `toMessages` builds it with, and the argument
+  // order is the same, so the meter cannot weigh a different string from the one
+  // that goes on the wire. Adding the instructions to `toMessages` and not here
+  // is the drift `memory-prompt.ts` describes: a user with a long standing
+  // instruction would be told they had room they do not have.
+  const preamble = systemPreamble(
+    memoryPreamble === null ? null : { role: 'system', text: memoryPreamble },
+    instructionPreamble,
+  );
+  return preamble === null ? texts : [preamble.text, ...texts];
 }
 
 /**

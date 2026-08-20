@@ -150,9 +150,18 @@ export function ConversationSurface({
   // it is part of what the meter is told about. Leaving it out here while
   // `toMessages` sends it is exactly the drift the shared traversal exists to
   // prevent.
+  // The same is true of the style and the user's standing instructions: they
+  // ride every turn this surface sends, so a meter that did not know about them
+  // would under-report by the whole block.
   const pending = useMemo(
-    () => pendingTurnTexts(conversation.entries, draft, conversation.memoryPreamble),
-    [conversation.entries, draft, conversation.memoryPreamble],
+    () =>
+      pendingTurnTexts(
+        conversation.entries,
+        draft,
+        conversation.memoryPreamble,
+        conversation.instructionPreamble,
+      ),
+    [conversation.entries, draft, conversation.memoryPreamble, conversation.instructionPreamble],
   );
 
   useEffect(() => {

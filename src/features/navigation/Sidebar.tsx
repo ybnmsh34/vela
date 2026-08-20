@@ -33,6 +33,8 @@ import { useMemoryStore } from '@/state/memory-store';
 import { useSkillsStore } from '@/state/skills-store';
 import { useSchedulesStore } from '@/state/schedules-store';
 import { useProjectStore } from '@/state/project-store';
+import { useStyleStore } from '@/state/style-store';
+import { useIncognitoStore } from '@/state/incognito-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -84,6 +86,18 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // and this one may not import it either.
   const setSchedulesOpen = useSchedulesStore((state) => state.setOpen);
   const setProjectsOpen = useProjectStore((state) => state.setOpen);
+  const setStylesOpen = useStyleStore((state) => state.setOpen);
+  /**
+   * The **control** half of incognito. The brief for the mode is explicit that
+   * one route is not enough: a chord alone is a privacy mode nobody finds, and
+   * a button alone is slow for someone who works in it. The chord is
+   * `Ctrl/Cmd+Shift+N` in `use-navigation-shortcuts.ts`; this is the button, and
+   * `aria-pressed` is what makes it a *mode* control rather than an action —
+   * a screen reader announces the current state, which is the same job the
+   * banner does visually.
+   */
+  const incognito = useIncognitoStore((state) => state.active);
+  const setIncognito = useIncognitoStore((state) => state.setActive);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -232,6 +246,27 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setStylesOpen(true);
+          }}
+          aria-label="Style and instructions"
+        >
+          <StyleIcon />
+        </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setIncognito(!incognito);
+          }}
+          aria-pressed={incognito}
+          aria-label="Incognito"
+        >
+          <IncognitoIcon />
+        </button>
       </nav>
     );
   }
@@ -321,6 +356,28 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
           <span>Projects</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setStylesOpen(true);
+          }}
+        >
+          <StyleIcon />
+          <span>Style and instructions</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setIncognito(!incognito);
+          }}
+          aria-pressed={incognito}
+        >
+          <IncognitoIcon />
+          <span>Incognito</span>
+          <ShortcutHint keyName="N" shift className={styles.kbd} />
         </button>
       </div>
 
@@ -468,6 +525,44 @@ function SkillsIcon() {
         fill="none"
         stroke="currentColor"
         strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** A slider track with two handles: the settings idiom, at this stroke weight. */
+function StyleIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M2.6 5.2h10.8M2.6 10.8h10.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <circle cx="6" cy="5.2" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10.4" cy="10.8" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+/**
+ * A pair of spectacles. The browsers' shared idiom for a private window, which
+ * is the point: this mode is the thing the user already has a name for.
+ */
+function IncognitoIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <circle cx="4.6" cy="9.6" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="11.4" cy="9.6" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M7 9.6h2M2.2 6.6 4 3.8h8l1.8 2.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>

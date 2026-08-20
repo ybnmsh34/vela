@@ -62,6 +62,27 @@ export interface PrimaryModifier {
   readonly accessibleName: string;
   /** Between modifier and key when painted. */
   readonly separator: string;
+  /**
+   * How Shift joins a chord on this keyboard, when a shortcut uses one.
+   *
+   * Both halves of the same problem the rest of this record solves, one level
+   * down. macOS writes `⇧⌘N` — Shift **before** Command, both as glyphs, closed
+   * up; Windows and Linux write `Ctrl+Shift+N` — Shift **after** Control, spelt
+   * out, joined by the separator. A single "add a shift prefix" rule produces
+   * `⌘⇧N` on one platform or `Shift+Ctrl+N` on the other, and both are wrong in
+   * the way a native user notices immediately.
+   *
+   * `leading` is what carries that: the glyph order is a property of the
+   * convention, not of any one shortcut, so it lives beside the convention.
+   */
+  readonly shift: {
+    /** Painted. `⇧` or `Shift`. */
+    readonly glyph: string;
+    /** Announced. Always the word. */
+    readonly accessibleName: string;
+    /** Whether Shift is written before the primary modifier. */
+    readonly leading: boolean;
+  };
 }
 
 /** Apple keyboards: the Command key, written as its glyph. */
@@ -70,6 +91,7 @@ export const COMMAND_MODIFIER: PrimaryModifier = Object.freeze({
   glyph: '⌘',
   accessibleName: 'Command',
   separator: '',
+  shift: Object.freeze({ glyph: '⇧', accessibleName: 'Shift', leading: true }),
 });
 
 /**
@@ -82,6 +104,10 @@ export const CONTROL_MODIFIER: PrimaryModifier = Object.freeze({
   glyph: 'Ctrl',
   accessibleName: 'Control',
   separator: '+',
+  /* Spelt out, never `⇧`: `shortcut-glyphs.test.tsx` sweeps both surfaces on a
+     Windows-like environment for `/[⌘⌥⇧⌃]/u` and fails on any of them. That
+     sweep is the reason this is a per-platform value and not a constant. */
+  shift: Object.freeze({ glyph: 'Shift', accessibleName: 'Shift', leading: false }),
 });
 
 /**
@@ -168,16 +194,46 @@ export interface ShortcutLabel {
   readonly accessibleName: string;
 }
 
+/** Which extra modifiers a shortcut uses beyond the primary one. */
+export interface ShortcutSpelling {
+  /** `true` for a chord that also holds Shift, such as `Ctrl+Shift+N`. */
+  readonly shift?: boolean | undefined;
+}
+
 /**
  * Spell one shortcut, both ways at once.
  *
  * `key` is the key as it is printed on the keycap — `'K'`, `'N'`. It is not
  * transformed: a caller that passes `'k'` gets `'k'`, because guessing at case
  * would be guessing at a keycap this function cannot see.
+ *
+ * A caller that needs Shift passes `{ shift: true }` rather than putting the
+ * word in `key`. `key` is a keycap; `Shift+N` is not one, and a caller that
+ * spelt it that way would get `⌘Shift+N` on a Mac — the Command glyph and the
+ * English word in one badge — with nothing in the type to stop it.
  */
-export function shortcutLabel(modifier: PrimaryModifier, key: string): ShortcutLabel {
+export function shortcutLabel(
+  modifier: PrimaryModifier,
+  key: string,
+  spelling?: ShortcutSpelling,
+): ShortcutLabel {
+  if (spelling?.shift !== true) {
+    return {
+      label: `${modifier.glyph}${modifier.separator}${key}`,
+      accessibleName: `${modifier.accessibleName} ${key}`,
+    };
+  }
+  const painted = modifier.shift.leading
+    ? [modifier.shift.glyph, modifier.glyph]
+    : [modifier.glyph, modifier.shift.glyph];
+  const announced = modifier.shift.leading
+    ? [modifier.shift.accessibleName, modifier.accessibleName]
+    : [modifier.accessibleName, modifier.shift.accessibleName];
   return {
-    label: `${modifier.glyph}${modifier.separator}${key}`,
-    accessibleName: `${modifier.accessibleName} ${key}`,
+    label: `${painted.join(modifier.separator)}${modifier.separator}${key}`,
+    // Always spaces, never the painted separator: the accessible name is a
+    // phrase a screen reader reads out, and `Control+Shift+N` is announced as
+    // punctuation on some engines.
+    accessibleName: `${announced.join(' ')} ${key}`,
   };
 }

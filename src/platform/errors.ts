@@ -18,6 +18,18 @@ export const IPC_ERROR_CODES = [
   'UNKNOWN_COMMAND',
   /** Renderer-only: host and renderer disagree on the contract version. */
   'CONTRACT_MISMATCH',
+  /**
+   * Renderer-only: the window is in incognito and this command would have
+   * written something durable derived from the session. Never reaches the host,
+   * which is the entire point — see `src/platform/incognito-adapter.ts`.
+   *
+   * A distinct code rather than `UNSUPPORTED` because a caller has to be able to
+   * tell "this build cannot do that" from "this window is refusing to do that
+   * right now": the first is permanent and the second ends when the user leaves
+   * the mode, and a surface that reported them the same way would tell a user
+   * their conversation cannot be saved at all.
+   */
+  'INCOGNITO_REFUSED',
 ] as const;
 
 export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];

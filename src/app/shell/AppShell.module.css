@@ -46,3 +46,47 @@
 .spacer {
   flex: 1 1 auto;
 }
+
+/* -- incognito -------------------------------------------------------------- */
+
+/**
+ * The band. Full width, above everything, and it does not scroll away with any
+ * pane — it is a child of the shell's flex column, so the layout below shrinks
+ * to make room for it rather than sliding under it.
+ *
+ * The colour roles are `--vela-warning` on `--vela-warning-bg`, which is the
+ * pair `AttachmentTray .refusalList` already paints and `contrast.test.ts`
+ * already measures in both themes. No value is introduced here; the tokens are
+ * the ones that already exist for "this is a state you should notice".
+ */
+.incognitoBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-warning-bg);
+  border-bottom: 1px solid var(--vela-warning);
+  color: var(--vela-warning);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: var(--vela-tracking-label);
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/**
+ * The second signal, and the reason there are two.
+ *
+ * A band at the top is missable in the way every band at the top is: the user
+ * scrolls, the pane fills the eye, and the band leaves peripheral vision. An
+ * inset ring drawn on the shell itself is present at every edge of the window
+ * no matter where the eye is, and it cannot be scrolled off because it is not
+ * in any scroll container. `outline` rather than `border`, so nothing in the
+ * layout below shifts by a pixel when the mode is entered — a window that
+ * reflows on a privacy toggle invites the user to think something broke.
+ */
+.shell[data-incognito='on'] {
+  outline: var(--vela-mode-ring-width) solid var(--vela-warning);
+  outline-offset: var(--vela-mode-ring-offset);
+}

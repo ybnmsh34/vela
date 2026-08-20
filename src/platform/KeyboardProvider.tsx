@@ -62,9 +62,12 @@ export function usePrimaryModifier(): PrimaryModifier {
 /**
  * One shortcut, painted and announced, resolved together.
  *
- * `key` is the keycap: `'K'`, `'N'`. The modifier is this machine's.
+ * `key` is the keycap: `'K'`, `'N'`. The modifier is this machine's. `shift` is
+ * for a chord that also holds it — a boolean rather than part of `key`, because
+ * where Shift goes in the spelling is a property of the keyboard and not of the
+ * shortcut: `⇧⌘N` on a Mac, `Ctrl+Shift+N` everywhere else.
  */
-export function useShortcutLabel(key: string): ShortcutLabel {
+export function useShortcutLabel(key: string, shift = false): ShortcutLabel {
   const modifier = usePrimaryModifier();
-  return useMemo(() => shortcutLabel(modifier, key), [modifier, key]);
+  return useMemo(() => shortcutLabel(modifier, key, { shift }), [modifier, key, shift]);
 }

@@ -26,13 +26,22 @@ export interface ShortcutHintProps {
    *  so an optional prop passed through from a CSS-module lookup is
    *  `string | undefined` and `?:` alone will not accept it. */
   readonly className?: string | undefined;
+  /**
+   * `true` for a chord that also holds Shift.
+   *
+   * A flag rather than `keyName="Shift+N"`, because `keyName` is a keycap and
+   * `Shift+N` is not one: spelt into the key it would paint `⌘Shift+N` on a Mac
+   * — the Command glyph and the English word in one badge. Where Shift goes is
+   * a property of the keyboard, so `src/platform/keyboard.ts` decides it.
+   */
+  readonly shift?: boolean | undefined;
 }
 
-export function ShortcutHint({ keyName, className }: ShortcutHintProps) {
-  const { label, accessibleName } = useShortcutLabel(keyName);
+export function ShortcutHint({ keyName, className, shift = false }: ShortcutHintProps) {
+  const { label, accessibleName } = useShortcutLabel(keyName, shift);
 
   return (
-    <kbd className={className} data-shortcut-hint={keyName}>
+    <kbd className={className} data-shortcut-hint={shift ? `Shift+${keyName}` : keyName}>
       <span aria-hidden="true">{label}</span>
       <span className={styles.srOnly}>{accessibleName}</span>
     </kbd>

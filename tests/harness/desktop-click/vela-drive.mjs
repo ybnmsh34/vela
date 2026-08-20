@@ -85,6 +85,7 @@ import {
 import { BOOTSTRAP, literal } from './page.mjs';
 import { NAMED_KEYS, keySpecFor, unmappableCharacters } from './keys.mjs';
 import { describeWait, gradeMount, waitForRenderer } from './mount-grade.mjs';
+import { gradeInputProvenance } from './input-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -806,6 +807,7 @@ commands.click = async (flags) => {
   const digestSelector = flags.watch === undefined ? null : String(flags.watch);
 
   const { cdp } = await attach(session);
+  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.resolve' }];
   const result = await resolveQuery(cdp, query);
   let index;
   try {
@@ -814,6 +816,7 @@ commands.click = async (flags) => {
     cdp.close();
     throw error;
   }
+  steps.push({ name: 'cdp.describeStored' });
   const target = await cdp.evaluate(`window.__velaHarness.describeStored(${index})`);
 
   // Raising is its own step, before the click point is computed. Restoring a
@@ -821,6 +824,7 @@ commands.click = async (flags) => {
   // it, so a screen coordinate read before the raise aims at nothing.
   let raise = null;
   if (via !== 'cdp') {
+    steps.push({ name: 'os.raise' });
     raise = await psJson(join(HERE, 'os-input.ps1'), [
       '-Mode', 'raise',
       '-OwnerPid', String(session.pid),
@@ -828,12 +832,26 @@ commands.click = async (flags) => {
     await sleep(250);
   }
 
+  steps.push({ name: 'cdp.digest' });
   const before = await cdp.evaluate(`window.__velaHarness.digest(${literal(digestSelector)})`);
   const point = await cdp.evaluate(`window.__velaHarness.pointFor(${index})`);
+  // `pointFor` calls scrollIntoView on the way to computing the screen point.
+  // Whether that was an act or a measurement is not a property of the call, it
+  // is a property of whether anything moved — so the element's rect is compared
+  // before and after inside `pointFor` and the answer is graded from `scrolled`
+  // rather than assumed either way. An off-screen target means the harness
+  // scrolled the app for itself, and this run cannot grade above dev-clicked
+  // however the buttons were delivered.
+  steps.push({
+    name: point?.scrolled ? 'cdp.pointFor.scroll' : 'cdp.pointFor.measure',
+    detail: { scrolled: point?.scrolled ?? null, scrollDelta: point?.scrollDelta ?? null },
+  });
+  steps.push({ name: 'cdp.armPointerRecorder' });
   await cdp.evaluate('window.__velaHarness.armPointerRecorder()');
 
   let delivery;
   if (via === 'cdp') {
+    steps.push({ name: 'cdp.dispatchMouseEvent' });
     const common = { x: point.viewport.x, y: point.viewport.y, button: 'left', clickCount: 1 };
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...common, buttons: 0 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...common, buttons: 1 });
@@ -867,6 +885,7 @@ commands.click = async (flags) => {
         );
       }
     }
+    steps.push({ name: via === 'os' ? 'os.sendInputMouse' : 'os.postMessage' });
     const osReport = await psJson(join(HERE, 'os-input.ps1'), [
       '-Mode',
       via === 'os' ? 'sendinput' : 'message',
@@ -911,10 +930,12 @@ commands.click = async (flags) => {
   }
 
   await sleep(settle);
+  steps.push({ name: 'cdp.pointerHit' }, { name: 'cdp.digest' }, { name: 'cdp.describeStored' });
   const hit = await cdp.evaluate(`window.__velaHarness.pointerHit(${index})`);
   const after = await cdp.evaluate(`window.__velaHarness.digest(${literal(digestSelector)})`);
   const afterTarget = await cdp.evaluate(`window.__velaHarness.describeStored(${index})`);
   cdp.close();
+  const provenance = gradeInputProvenance({ delivery: via, steps });
 
   const changed =
     before && after ? before.hash !== after.hash || before.elements !== after.elements : null;
@@ -925,6 +946,11 @@ commands.click = async (flags) => {
   const payload = {
     clicked: landedOnTarget,
     via,
+    // `delivery.isOsInput` answers only "did the button events go through
+    // SendInput". It was being read as "this run needed no CDP", and on this
+    // command that is false whenever the target was off screen: `pointFor`
+    // scrolls the app to compute the point. `provenance` composes the two.
+    provenance,
     delivery,
     target,
     point,
@@ -1005,7 +1031,23 @@ commands.type = async (flags) => {
       );
     }
   }
+  // How focus is to be arranged, which is a separate question from how the
+  // keystrokes are delivered — and conflating the two is what let `--via os`
+  // report `isOsInput: true` for a run whose precondition CDP had manufactured.
+  //
+  // `focusStored` scrolls the view and calls `el.focus()`. Both are things a
+  // user does with a hand. On the CDP route that costs nothing, because the
+  // keystrokes are CDP too. On the OS route it silently caps the run at
+  // `dev-clicked` while the object says otherwise, so there the default is to
+  // REFUSE unless the target already has focus — put there by a real
+  // `click --via os`, or a real Tab — and `--focus cdp` is the explicit opt-out
+  // that records the substitution instead of hiding it.
+  const focusVia = String(flags.focus ?? (via === 'os' ? 'require' : 'cdp'));
+  if (focusVia !== 'cdp' && focusVia !== 'require') {
+    throw new HarnessError(EXIT.USAGE, 'type --focus must be cdp or require');
+  }
   const { cdp } = await attach(session);
+  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.resolve' }];
   const result = await resolveQuery(cdp, query);
   let index;
   try {
@@ -1014,13 +1056,35 @@ commands.type = async (flags) => {
     cdp.close();
     throw error;
   }
-  const focused = await cdp.evaluate(`window.__velaHarness.focusStored(${index})`);
-  if (!focused) {
-    cdp.close();
-    throw new HarnessError(EXIT.FAILED, 'the element did not take focus, so nothing was typed', {
-      query,
-      match: result.matches[index],
-    });
+  if (focusVia === 'cdp') {
+    steps.push({ name: 'cdp.focusStored' });
+    const focused = await cdp.evaluate(`window.__velaHarness.focusStored(${index})`);
+    if (!focused) {
+      cdp.close();
+      throw new HarnessError(EXIT.FAILED, 'the element did not take focus, so nothing was typed', {
+        query,
+        match: result.matches[index],
+      });
+    }
+  } else {
+    // A read, not an act: it asks where focus is and does not put it there.
+    steps.push({ name: 'cdp.focusState' });
+    const focusState = await cdp.evaluate(`window.__velaHarness.focusStateOf(${index})`);
+    if (!focusState.storedIsActive) {
+      cdp.close();
+      throw new HarnessError(
+        EXIT.FAILED,
+        'the target does not have focus, and --via os will not focus it for you: calling ' +
+          'el.focus() over CDP is a user action performed by the harness, and a run that needs ' +
+          'one cannot be reproduced against an installed app with no CDP attached. Click the ' +
+          'field first with `click --via os`, or Tab to it with `key --via os --key Tab`, then ' +
+          'type. Pass --focus cdp to focus over CDP anyway; the run then reports ' +
+          `ladderCeiling "dev-clicked" and says which step capped it. Focus is currently on ${
+            focusState.active ? focusState.active.tag : 'nothing'
+          }.`,
+        { query, match: result.matches[index], focusState, focusVia },
+      );
+    }
   }
   // Read once, and let the same two consts drive both the behaviour and the
   // report — `keyEvents` was derived from the value's route alone, and said
@@ -1028,20 +1092,38 @@ commands.type = async (flags) => {
   const cleared = Boolean(flags.clear);
   const enter = Boolean(flags.enter);
   let os = null;
+  let clearMechanism = null;
   if (via === 'os') {
-    // One SendInput call for the whole run — including the Backspace `--clear`
-    // presses and the trailing Enter — so the sequence is atomic with respect
-    // to anything else injecting input, and so it does not cost a
+    // One SendInput call for the whole run — including the `--clear` presses
+    // and the trailing Enter — so the sequence is atomic with respect to
+    // anything else injecting input, and so it does not cost a
     // `powershell.exe` start per character.
     const entries = [];
     if (cleared) {
-      await cdp.evaluate(
-        'document.activeElement && document.activeElement.select && document.activeElement.select()',
-      );
+      // Ctrl+A then Backspace, not a CDP `activeElement.select()`.
+      //
+      // `select()` is a user action — selecting text — performed over CDP, and
+      // the Backspace that follows depends on it, so the OS route's whole
+      // `--clear` was substituted while the run reported `isOsInput: true`.
+      // Ctrl+A is what a user presses, it goes down the same SendInput call as
+      // everything else, and it needs no CDP at all.
+      //
+      // It is NOT identical to `select()`: `select()` is defined on input and
+      // textarea and selects that field's value, whereas Ctrl+A is delivered to
+      // whatever has focus and, outside an editable control, selects the
+      // document. That is why the OS route refuses to type into an unfocused
+      // target at all, and why `clearMechanism` is reported rather than left
+      // for a reader to infer from `cleared`.
+      entries.push(osKeyEntry(keySpecFor('a'), MODIFIER_BITS.ctrl));
       entries.push(osKeyEntry(NAMED_KEYS.Backspace));
+      clearMechanism =
+        'Ctrl+A then Backspace, both through SendInput in the same call. Delivered to the focused ' +
+        'element; outside an editable control Ctrl+A selects the document, which is why --via os ' +
+        'refuses to type into a target that does not already have focus.';
     }
     for (const character of text) entries.push(osKeyEntry(keySpecFor(character)));
     if (enter) entries.push(osKeyEntry(NAMED_KEYS.Enter));
+    steps.push({ name: 'os.raise' }, { name: 'os.sendInputKeyboard', detail: { entries: entries.length } });
     os = await osKeyboard(session, entries);
     if (os.blocked || !os.delivered) {
       cdp.close();
@@ -1052,12 +1134,17 @@ commands.type = async (flags) => {
       );
     }
   } else if (cleared) {
+    steps.push({ name: 'cdp.selectAll' }, { name: 'cdp.dispatchKeyEvent' });
     await cdp.evaluate(
       'document.activeElement && document.activeElement.select && document.activeElement.select()',
     );
     await pressKey(cdp, NAMED_KEYS.Backspace);
+    clearMechanism =
+      'CDP activeElement.select() then a CDP Backspace keydown/keyup. The select() is a user ' +
+      'action performed over CDP.';
   }
   if (via === 'cdp') {
+    steps.push({ name: insertText ? 'cdp.insertText' : 'cdp.dispatchKeyEvent' });
     if (insertText) {
       // `Input.insertText` hands the string to the editing pipeline as a single
       // insertion. It goes through beforeinput/input, so a React `onChange` sees
@@ -1075,11 +1162,13 @@ commands.type = async (flags) => {
     if (enter) await pressKey(cdp, NAMED_KEYS.Enter);
   }
   await sleep(flagNumber(flags, 'settle', 300));
+  steps.push({ name: 'cdp.readActiveElement' });
   const value = await cdp.evaluate(
     '(() => { const el = document.activeElement; if (!el) return null; ' +
       "return { tag: el.tagName, value: 'value' in el ? el.value : el.textContent }; })()",
   );
   cdp.close();
+  const provenance = gradeInputProvenance({ delivery: via, steps });
   return {
     typed: text,
     charactersSent: insertText ? 0 : [...text].length,
@@ -1105,14 +1194,22 @@ commands.type = async (flags) => {
             '`cleared` and `enter`.'
           : 'CDP Input.dispatchKeyEvent per character, keyDown carrying `text` then keyUp, with the ' +
             'US-layout virtual-key code and shift state for each character. Enter is text "\\r".',
+    // NARROW ON PURPOSE, and no longer the answer to anything. `isOsInput`
+    // reports the route the keystrokes took and nothing else; it was being read
+    // as "this run needed no CDP", which is a different question with a
+    // different answer. `provenance.ladderCeiling` is that question, composed
+    // over every step. Read that.
     isOsInput: via === 'os',
-    os,
+    focusVia,
+    clearMechanism,
     // `activeElementAfter` is read over CDP even on the OS route. That is a
     // *verification* channel, not a delivery one: the keystrokes went through
     // the system input queue, and reading the field afterwards is how we find
-    // out whether they arrived. On an installed app with no CDP the caller has
-    // to verify some other way, and `isOsInput` is what tells them the delivery
-    // half needed no substitution.
+    // out whether they arrived. Verification is a `read` in the provenance
+    // grade and does not cap the run; an installed app with no CDP would have
+    // to verify some other way and would be driven identically.
+    provenance,
+    os,
     target: result.matches[index],
     activeElementAfter: value,
   };
@@ -1131,9 +1228,15 @@ commands.key = async (flags) => {
     throw new HarnessError(EXIT.USAGE, 'key --via must be cdp or os');
   }
   const { cdp } = await attach(session);
+  // `key` never focuses anything: it sends to whatever has focus, exactly as a
+  // keyboard does. So on the OS route every acting step is an OS step and the
+  // provenance grade is unsubstituted — which is what makes it the control
+  // showing the grade is not vacuously "dev-clicked" for everything.
+  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.digest' }];
   const before = await cdp.evaluate('window.__velaHarness.digest(null)');
   let os = null;
   if (via === 'os') {
+    steps.push({ name: 'os.raise' }, { name: 'os.sendInputKeyboard', detail: { repeat } });
     os = await osKeyboard(session, Array.from({ length: repeat }, () => osKeyEntry(spec, modifiers)));
     if (os.blocked || !os.delivered) {
       cdp.close();
@@ -1144,9 +1247,11 @@ commands.key = async (flags) => {
       });
     }
   } else {
+    steps.push({ name: 'cdp.dispatchKeyEvent', detail: { repeat } });
     for (let i = 0; i < repeat; i++) await pressKey(cdp, spec, modifiers);
   }
   await sleep(flagNumber(flags, 'settle', 300));
+  steps.push({ name: 'cdp.digest' });
   const after = await cdp.evaluate('window.__velaHarness.digest(null)');
   cdp.close();
   return {
@@ -1161,7 +1266,9 @@ commands.key = async (flags) => {
     modifiersSent: modifiers | (spec.shiftKey ? MODIFIER_BITS.shift : 0),
     repeat,
     via,
+    // Narrow on purpose; `provenance.ladderCeiling` is the composed answer.
     isOsInput: via === 'os',
+    provenance: gradeInputProvenance({ delivery: via, steps }),
     mechanism:
       via === 'os'
         ? 'Win32 SendInput (INPUT_KEYBOARD) into the system input queue, real virtual-key and ' +
@@ -1358,7 +1465,8 @@ Driving
         os       Win32 SendInput into the system input queue — what a mouse does (default)
         message  Win32 WM_LBUTTONDOWN/UP posted to the WebView2 window, cursor really over it
         cdp      CDP Input domain — browser input pipeline, ahead of hit-testing
-  type  <query> --value "..." [--via cdp|os] [--clear] [--enter] [--insert-text]
+  type  <query> --value "..." [--via cdp|os] [--focus cdp|require] [--clear] [--enter]
+        [--insert-text]
                                                    (--value is typed; --text queries)
         default  CDP: one real key event per character, US layout: correct virtual-key code
                  and shift state. Refuses, before touching the window, any character with no
@@ -1367,12 +1475,24 @@ Driving
                  run in one call, real virtual-key and scan codes. Raises the window and
                  refuses if the foreground is not this session; self-tests delivery by
                  reading the key state back, never by SendInput's return count.
+                 REFUSES to focus the target for you: focus it with a real 'click --via os'
+                 or 'key --via os --key Tab' first. --focus cdp opts back in and reports
+                 ladderCeiling "dev-clicked". --clear becomes Ctrl+A + Backspace in the
+                 same SendInput call, not a CDP select().
         --insert-text  CDP Input.insertText: fills the field in one insertion and fires NO
                  keydown/keyup. Use for text no key produces; never for anything whose
                  handler listens for keys. Not combinable with --via os.
   key   --key Enter|Escape|Tab|ArrowDown|<char> [--via cdp|os] [--modifiers ctrl,shift]
         [--repeat N]
   eval  --expr "..." | --file FILE
+
+Reading the result
+  Every driving command carries 'provenance'. Read provenance.ladderCeiling, NOT
+  isOsInput: the latter answers only "did the events go through SendInput", and a run
+  whose focus or scroll came from CDP is capped at "dev-clicked" whatever it says.
+  provenance.substitutions names the step that capped it. "os-input-unsubstituted" is
+  the delivery half of reaches-user and is not the tier — that also needs an installed
+  bundle, which this harness cannot attest. See input-provenance.mjs.
 
 Query flags (ANDed; at least one required)
   --selector CSS   --role ROLE   --name TEXT   --text TEXT   --exact   --include-hidden

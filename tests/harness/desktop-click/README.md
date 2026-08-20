@@ -325,11 +325,48 @@ coin-toss — pass `--nth` deliberately if you mean the second one.
 ## What a click is, exactly
 
 Three mechanisms, three different claims. Every result carries `via`,
-`isOsInput`, and the evidence.
+`isOsInput`, `provenance`, and the evidence.
+
+**Read `provenance.ladderCeiling`, not `isOsInput`.** `isOsInput` answers one
+narrow question — did the button or key events go through `SendInput`? — and it
+was being read as the broader one a ladder claim needs: could this run have
+happened against an installed app with no CDP attached? Those have different
+answers here, because CDP does more than deliver on both OS paths. `type --via
+os` used to call `focusStored`, which runs `el.focus()` and `el.scrollIntoView()`;
+`click --via os` calls `pointFor`, which runs `el.scrollIntoView()` on the way
+to computing the screen point. Each is a user's hand or eye, performed by the
+harness, while `isOsInput: true` sat in the same object.
+
+`provenance` composes the two. Every step of a run is classified in
+`input-provenance.mjs`'s `KNOWN_STEPS` as a `read` (CDP asked a question), an
+`instrument` (CDP installed harness-owned state the app never sees), or an `act`
+(CDP did something a user would have had to do). One CDP `act` sets
+`ladderCeiling` to `dev-clicked` and `substitutions` names which step did it.
+The other value is `os-input-unsubstituted`, which is deliberately **not** a
+ladder tier: it is the delivery half of `reaches-user`, and the other half is an
+installed bundle this harness knows nothing about. `entails.doesNot` says so in
+every result.
+
+Two consequences you will meet:
+
+- `type --via os` **refuses to focus the target for you.** Focus must already be
+  on it, put there by a real `click --via os` or a real `key --via os --key Tab`
+  — which is what a user does and what works with no CDP. `--focus cdp` opts
+  back in and reports `ladderCeiling: "dev-clicked"` with `cdp.focusStored` in
+  `substitutions`.
+- `type --via os --clear` sends **Ctrl+A then Backspace** through the same
+  `SendInput` call, not a CDP `activeElement.select()`. It is not identical:
+  `select()` is defined on input and textarea, whereas Ctrl+A goes to whatever
+  has focus and outside an editable control selects the document. See
+  `clearMechanism` in the result.
+- `click --via os` reports `cdp.pointFor.scroll` — and caps at `dev-clicked` —
+  only when computing the point actually **moved** the element. `pointFor`
+  compares the element's client rect before and after, so an already-visible
+  target stays `os-input-unsubstituted`. That is measured, not assumed.
 
 | `--via` | what happens | `isOsInput` |
 |---|---|---|
-| `os` (default) | `SendInput` — `MOUSEEVENTF_LEFTDOWN` then `LEFTUP` into the system input queue, with the cursor really at the element's screen point. Windows decides which window receives it. **This is what a user's mouse does.** Self-tested first, and it refuses rather than delivering a no-op. | `true` |
+| `os` (default) | `SendInput` — `MOUSEEVENTF_LEFTDOWN` then `LEFTUP` into the system input queue, with the cursor really at the element's screen point. Windows decides which window receives it. **This is what a user's mouse does.** Self-tested first, and it refuses rather than delivering a no-op. | `true` (but see `provenance`: an off-screen target is scrolled to over CDP first, and that caps the run) |
 | `message` | The window is raised, the cursor is really moved onto the element (so `:hover` and `:active` are real), ownership of the pixel is checked, then `WM_MOUSEMOVE`/`WM_LBUTTONDOWN`/`WM_LBUTTONUP` are posted to the WebView2 child window. The message goes through that window's own message loop and Chromium hit-tests the client coordinates as it would for a user click — but it never entered the system input queue, and the *window* was chosen by the harness rather than by the input stack. | `false` |
 | `cdp` | `Input.dispatchMouseEvent` at the element's viewport point. Enters the browser's input pipeline **ahead of hit-testing**, so the page sees a trusted event that React handles exactly as a user's. Not an OS message; does not need the window focused or visible. | `false` |
 

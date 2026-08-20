@@ -178,16 +178,45 @@ export const BOOTSTRAP = String.raw`(() => {
       return el ? describe(el, index) : null;
     },
 
-    /** Viewport-relative click point, plus what an OS click would need. */
+    /**
+     * Viewport-relative click point, plus what an OS click would need.
+     *
+     * 'scrolled' is MEASURED, not assumed. This function calls scrollIntoView
+     * on the way to computing a screen point, and that call is a user action
+     * the harness performed for itself -- but only when it moved something. The
+     * element's own client rect is read before and after: if it did not move,
+     * no ancestor scrolled and this call only measured. input-provenance.mjs
+     * grades cdp.pointFor.scroll as an act and cdp.pointFor.measure as a read,
+     * and this is the field that decides which one a click reports.
+     *
+     * Bound honestly: a rect that did not move rules out any ancestor having
+     * scrolled the element. It would not detect scrollIntoView moving some
+     * sibling scroller that does not contain the target, which is not a thing
+     * scrollIntoView(el) does on this page and which I have not proved
+     * impossible in general.
+     */
     pointFor(index) {
       const el = store.nodes[index];
       if (!el) return null;
+      const rectBefore = el.getBoundingClientRect();
       el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+      const rectAfter = el.getBoundingClientRect();
+      const scrollDelta = {
+        dx: Math.round(rectAfter.left - rectBefore.left),
+        dy: Math.round(rectAfter.top - rectBefore.top),
+      };
+      const scrolled = scrollDelta.dx !== 0 || scrollDelta.dy !== 0;
       const rect = el.getBoundingClientRect();
       const viewportX = rect.left + rect.width / 2;
       const viewportY = rect.top + rect.height / 2;
       const hit = document.elementFromPoint(viewportX, viewportY);
       return {
+        /* Did computing this point scroll the application? See the note above:
+           read by commands.click, which turns it into cdp.pointFor.scroll (an
+           act, capping the run at dev-clicked) or cdp.pointFor.measure (a
+           read, which does not cap it). */
+        scrolled,
+        scrollDelta,
         viewport: { x: viewportX, y: viewportY },
         screenCss: { x: window.screenX + viewportX, y: window.screenY + viewportY },
         devicePixelRatio: window.devicePixelRatio,
@@ -201,12 +230,55 @@ export const BOOTSTRAP = String.raw`(() => {
       };
     },
 
+    /**
+     * Focuses a stored node. THIS IS AN ACT, not a read: it scrolls the view
+     * and moves focus, both of which a user does with a hand. Anything that
+     * calls it has had a user action performed for it over CDP and cannot
+     * grade above dev-clicked; input-provenance.mjs records it as
+     * cdp.focusStored. Use focusStateOf() when you want to know where focus
+     * is without putting it there.
+     */
     focusStored(index) {
       const el = store.nodes[index];
       if (!el) return false;
       el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
       if (typeof el.focus === 'function') el.focus();
       return document.activeElement === el;
+    },
+
+    /**
+     * Where focus IS, without moving it. The read half of focusStored, split
+     * off so an OS-input run can prove its precondition instead of
+     * manufacturing it: --via os typing must be preceded by a real click or
+     * a real Tab, exactly as it would on an installed app with no CDP.
+     *
+     * 'storedIsActive' is the question; the rest is so a refusal can say what
+     * has focus instead, which is the difference between a usable error and
+     * "the element did not take focus".
+     */
+    focusStateOf(index) {
+      const el = store.nodes[index];
+      const active = document.activeElement;
+      const editable =
+        active !== null &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable === true);
+      return {
+        storedFound: Boolean(el),
+        storedIsActive: Boolean(el) && active === el,
+        activeIsBody: active === document.body,
+        active:
+          active === null
+            ? null
+            : {
+                tag: active.tagName,
+                id: active.id || null,
+                className:
+                  typeof active.className === 'string' ? active.className.slice(0, 120) : null,
+                editable,
+              },
+      };
     },
 
     /** A stable fingerprint of what the window is showing, for before/after. */

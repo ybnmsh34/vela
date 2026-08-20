@@ -69,8 +69,12 @@ impl McpHost {
     /// `vela_privatefs::repair_entries`, which re-reads every entry's ACL and
     /// hardens any that a foreign principal can still reach. So this file is
     /// covered by the same pass that covers `vela.db`, on every launch, because
-    /// it sits beside it. the two tests at the foot of this module
-    /// is what keeps that true if either path moves.
+    /// it sits beside it. Two tests in this module's `tests` are what keep that
+    /// true if either path moves:
+    /// `the_configuration_file_is_read_from_the_root_and_not_from_below_it`
+    /// pins the "direct child" half, and
+    /// `a_widened_configuration_file_is_hardened_by_the_same_pass_that_hardens_the_database`
+    /// pins the hardening half against real Windows ACLs.
     ///
     /// **Nothing here creates or writes the file**, and no credential is ever in
     /// it — `vela_mcp::config` refuses an entry that tries. The tokens live in

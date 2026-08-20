@@ -165,8 +165,20 @@ pub struct StdioServer {
 /// A reachable remote server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpServer {
-    /// The MCP endpoint, verbatim. Read by `crate::http::HttpTransport::request`
-    /// as the POST target and by `HttpTransport::shutdown` as the DELETE target.
+    /// The MCP endpoint, verbatim. Its readers, in
+    /// `crate::http` — `HttpTransport::request_call` (the POST target),
+    /// `HttpTransport::shutdown` (the DELETE target), `HttpTransport::judge`
+    /// (the `endpoint` of an `HttpStatus`), and `HttpTransport::check_alive`
+    /// with `HttpTransport::death_reason`, which both build a buried
+    /// transport's error through `Dead::as_error`. `HttpTransport::send`
+    /// mentions it once more, in a `debug_assert_eq!` and not as a value.
+    ///
+    /// The last three are the ones an earlier version of this list left out —
+    /// `judge`, `check_alive` and `death_reason` — and they are exactly the
+    /// readers that put this string in front of a user.
+    /// What is deliberately **not** a reader is `HttpTransport::exchange`: it
+    /// names the host it actually called, which for an OAuth refresh is
+    /// [`OAuthConfig::token_endpoint`] and not this.
     pub url: String,
     /// Extra headers on every outbound request. Read by
     /// `crate::http::HttpTransport::request_call`. Names are lowercased here so

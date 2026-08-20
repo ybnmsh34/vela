@@ -170,11 +170,22 @@ impl McpConnection {
             .request(protocol::METHOD_INITIALIZE, params)
             .map_err(|error| match error {
                 // A server that is simply gone is gone; only an answer that was
-                // wrong is a handshake failure. The three remote arms are here
-                // for the same reason `ServerExited` is: an endpoint that was
-                // never reached did not bungle a handshake, and a user told
-                // "handshake failed" when the answer is "sign in" goes looking
-                // in the wrong place.
+                // wrong is a handshake failure. Each arm below is here for the
+                // reason `ServerExited` already was: an endpoint that was never
+                // reached did not bungle a handshake, and a user told "handshake
+                // failed" when the answer is "sign in" goes looking in the wrong
+                // place.
+                //
+                // TWO of these three additions are remote-only — `Unreachable`
+                // and `AuthorizationRequired` have no stdio producer. `TimedOut`
+                // is NOT: `StdioTransport::request` raises it when a child does
+                // not answer within `DEFAULT_REQUEST_TIMEOUT`. So this arm
+                // changed the stdio path too — a local server whose `initialize`
+                // is slow now reports `timedOut` where it reported
+                // `handshakeFailed`. That is the better answer for both
+                // substrates (the server is alive and did not bungle anything),
+                // it is a valid renderer arm already, and it is written here
+                // rather than left for a reader to discover from the enum.
                 McpError::ServerExited => McpError::ServerExited,
                 unreachable @ McpError::Unreachable { .. } => unreachable,
                 unauthorized @ McpError::AuthorizationRequired { .. } => unauthorized,

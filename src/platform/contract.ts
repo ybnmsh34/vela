@@ -1418,9 +1418,16 @@ export interface MessageListRes {
  *    HTTP transport, so this now means a build whose composition root wired no
  *    HTTP backend into the MCP host. See the note on {@link McpServerTools}.
  *  - `spawnFailed` — the command is not on the machine, or not on `PATH`.
- *  - `endpointUnreachable` — a remote server's URL answered nothing at all: no
- *    DNS, no route, no TLS. The remote twin of `spawnFailed`, and a separate arm
- *    because the thing to fix is a URL or a network, not a missing program.
+ *  - `endpointUnreachable` — an endpoint that remote entry names answered
+ *    nothing at all: no DNS, no route, no TLS. The remote twin of `spawnFailed`,
+ *    and a separate arm because the thing to fix is a URL or a network, not a
+ *    missing program. Note *an* endpoint, not *the* server's: an OAuth entry
+ *    names two hosts — its `url` and its `auth.tokenEndpoint` — and either going
+ *    quiet reaches the user under this one code. Which host it was is in the
+ *    Rust-side error and is deliberately not on this wire type, because the arms
+ *    here carry no free text. A surface that means to name the host must get it
+ *    from somewhere that has it; naming `url` on this code alone is a guess
+ *    this arm cannot support.
  *  - `authorizationRequired` — a remote server needs a credential that is not
  *    stored, or refused the one that is. The only arm whose remedy is "sign in",
  *    which is why it is not folded into `handshakeFailed`.

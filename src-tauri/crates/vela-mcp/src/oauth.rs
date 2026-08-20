@@ -118,41 +118,112 @@ impl TokenSet {
     /// and it works until the server refuses it. Rejecting that shape would
     /// leave a user with a valid token and an unusable server.
     pub fn parse(stored: &SecretValue) -> Self {
-        let Ok(Value::Object(object)) = serde_json::from_str::<Value>(stored.expose()) else {
+        let Ok(mut document) = serde_json::from_str::<Value>(stored.expose()) else {
             return Self::new(stored.clone(), None, None);
         };
-        let string = |key: &str| {
-            object
-                .get(key)
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(SecretValue::new)
+        let parsed = match document.as_object() {
+            None => Self::new(stored.clone(), None, None),
+            Some(object) => {
+                let string = |key: &str| {
+                    object
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.is_empty())
+                        .map(SecretValue::new)
+                };
+                Self {
+                    access: string("accessToken").unwrap_or_else(|| stored.clone()),
+                    refresh: string("refreshToken"),
+                    expires_at: object.get("expiresAt").and_then(Value::as_u64),
+                }
+            }
         };
-        let access = string("accessToken").unwrap_or_else(|| stored.clone());
-        Self {
-            access,
-            refresh: string("refreshToken"),
-            expires_at: object.get("expiresAt").and_then(Value::as_u64),
-        }
+        // The parsed document holds its own plain-text copy of both tokens,
+        // whichever branch was taken. See [`scrub`].
+        scrub(&mut document);
+        parsed
     }
 
     /// The value to hand the credential store.
     ///
-    /// The intermediate `String` is zeroized before it is dropped. That is not
-    /// theatre: `serde_json::to_string` allocates a buffer holding both tokens
-    /// in plain text, and a `String` dropped normally leaves them in freed heap
-    /// for the life of the process. [`SecretValue`] does this for itself; this
-    /// is the one place in the crate where the material exists outside one.
+    /// # Both intermediates are scrubbed, and there are two
+    ///
+    /// Serialising a credential allocates plain text twice, and a `String`
+    /// dropped normally leaves its bytes in freed heap for the life of the
+    /// process. [`SecretValue`] scrubs itself on drop; nothing else here does,
+    /// so both are scrubbed by hand:
+    ///
+    /// 1. the `String` `to_string` builds, holding the whole object;
+    /// 2. the [`Value`] `json!` builds *before* that, which holds a `String`
+    ///    copy of each token in its own right.
+    ///
+    /// The second is the one an earlier version of this comment missed while
+    /// calling this "the one place in the crate where the material exists
+    /// outside a `SecretValue`". It was not one place and it is not one now.
+    /// The claim made here is only about this function — **every plain-text copy
+    /// it makes is scrubbed before it is dropped** — and [`scrub`] carries the
+    /// ledger of all the others, including the one nothing scrubs.
     pub fn to_secret(&self) -> SecretValue {
-        let mut json = serde_json::json!({
+        let mut document = serde_json::json!({
             "accessToken": self.access.expose(),
             "refreshToken": self.refresh.as_ref().map(SecretValue::expose),
             "expiresAt": self.expires_at,
-        })
-        .to_string();
+        });
+        let mut json = document.to_string();
         let value = SecretValue::new(json.as_str());
         json.zeroize();
+        scrub(&mut document);
         value
+    }
+}
+
+/// Zeroize every string a parsed JSON document holds, in place.
+///
+/// Called on any [`Value`] built from or holding credential material. A
+/// `Value::String` owns an ordinary `String`: dropping the document frees those
+/// bytes without clearing them, which is the same hazard
+/// [`SecretValue::drop`](SecretValue) exists to close for the wrapped case.
+///
+/// Keys are left alone deliberately — they are `accessToken`, `access_token`,
+/// `expiresAt`: the schema, not the secret. `serde_json::Map` does not hand out
+/// `&mut` keys anyway.
+///
+/// # The ledger: every plain-text copy of a token this crate makes
+///
+/// Written out because the last version of this area claimed one place, and the
+/// list below has six — five that are now scrubbed and one that is not. Grep is
+/// `zeroize()` and `scrub(` in `src/`.
+///
+/// **Scrubbed:**
+///
+/// * [`TokenSet::to_secret`] — the `json!` [`Value`], and the `String` from
+///   `to_string`. `scrub` and `String::zeroize`.
+/// * [`TokenSet::parse`] — the [`Value`] parsed out of the stored credential.
+/// * [`parse_token_response`] — the [`Value`] parsed out of the token
+///   endpoint's answer, on all five ways out.
+/// * [`refresh_call`] — the `String` `form_encode` returns, holding the refresh
+///   token percent-encoded.
+/// * `crate::http::HttpTransport::renew` — the token endpoint's response body,
+///   the only response body in this crate that is credential material.
+///
+/// **NOT scrubbed, and known:** the request body itself. `HttpCall::body` is a
+/// `Vec<u8>` holding the form-encoded refresh token, and
+/// `vela_app::mcp_http::ProviderBackedExchange` moves it out of the call by
+/// field, so `HttpCall` cannot be given a `Drop` without that becoming a
+/// partial-move error. From there it is the HTTP client's buffer and outside
+/// this crate entirely. Closing it means changing the seam, not adding a call
+/// here, and it is written down rather than left to be discovered.
+///
+/// This is hygiene and not a boundary in any case. It shortens how long plain
+/// text sits in freed heap; it does nothing about a copy the allocator or the
+/// OS made while the value was alive, and it is not a defence against a process
+/// that can read this process's memory.
+pub(crate) fn scrub(document: &mut Value) {
+    match document {
+        Value::String(text) => text.zeroize(),
+        Value::Array(items) => items.iter_mut().for_each(scrub),
+        Value::Object(fields) => fields.iter_mut().for_each(|(_, value)| scrub(value)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
 
@@ -203,10 +274,16 @@ pub fn refresh_call(config: &OAuthConfig, refresh_token: &SecretValue) -> HttpCa
     };
     let client_id = form_encode(&config.client_id);
     let body = refresh_token.map(|token| {
-        format!(
-            "grant_type=refresh_token&refresh_token={}&client_id={client_id}{scope}",
-            form_encode(token)
-        )
+        // `form_encode` returns an ordinary `String` holding the refresh token
+        // percent-encoded — a plain-text copy that `SecretValue::map` does not
+        // know about, because it only owns what the closure returns. Zeroized
+        // here for the reason `TokenSet::to_secret` zeroizes its own.
+        let mut encoded = form_encode(token);
+        let line = format!(
+            "grant_type=refresh_token&refresh_token={encoded}&client_id={client_id}{scope}"
+        );
+        encoded.zeroize();
+        line
     });
     HttpCall::post(&config.token_endpoint)
         .with_header("accept", "application/json")
@@ -220,9 +297,30 @@ pub fn refresh_call(config: &OAuthConfig, refresh_token: &SecretValue) -> HttpCa
 /// carries a new one replaces the old; a server that does not rotate leaves the
 /// old one usable, and discarding it would sign the user out on the first
 /// refresh.
+///
+/// The split with [`read_token_document`] is not decomposition for its own sake:
+/// the read leaves by four early refusals and one success, and this wrapper is
+/// what scrubs the parsed document down all five without that having to be
+/// remembered at each one. See [`scrub`].
 pub fn parse_token_response(
     server_id: &str,
     body: &[u8],
+    now: u64,
+    previous_refresh: Option<&SecretValue>,
+) -> McpResult<TokenSet> {
+    let mut document: Value =
+        serde_json::from_slice(body).map_err(|e| McpError::AuthorizationRequired {
+            server: server_id.to_owned(),
+            detail: format!("the token endpoint did not answer with JSON: {e}"),
+        })?;
+    let outcome = read_token_document(server_id, &document, now, previous_refresh);
+    scrub(&mut document);
+    outcome
+}
+
+fn read_token_document(
+    server_id: &str,
+    document: &Value,
     now: u64,
     previous_refresh: Option<&SecretValue>,
 ) -> McpResult<TokenSet> {
@@ -231,9 +329,7 @@ pub fn parse_token_response(
         detail,
     };
 
-    let value: Value = serde_json::from_slice(body)
-        .map_err(|e| refused(format!("the token endpoint did not answer with JSON: {e}")))?;
-    let object = value
+    let object = document
         .as_object()
         .ok_or_else(|| refused("the token endpoint did not answer with an object".to_owned()))?;
 
@@ -314,6 +410,33 @@ mod tests {
             token_endpoint: "https://auth.example.com/oauth/token".to_owned(),
             scopes: vec!["mcp:tools".to_owned(), "profile".to_owned()],
         }
+    }
+
+    #[test]
+    fn scrubbing_a_parsed_document_leaves_no_token_anywhere_in_it() {
+        // `scrub` is called from three places that parse or build credential
+        // material into a `Value` — `TokenSet::parse`, `TokenSet::to_secret` and
+        // `parse_token_response`. What it has to be is total over the shapes a
+        // token endpoint can nest one in, so it is asserted over a nested one
+        // rather than the flat object those three actually pass.
+        let mut document = serde_json::json!({
+            "access_token": ACCESS,
+            "extra": { "refresh_token": REFRESH, "keep": 7 },
+            "list": [ACCESS, REFRESH],
+            "nothing": null,
+            "flag": true,
+        });
+        scrub(&mut document);
+
+        let printed = document.to_string();
+        assert!(!printed.contains(ACCESS), "{printed}");
+        assert!(!printed.contains(REFRESH), "{printed}");
+        // Structure and non-string data survive: this scrubs, it does not empty.
+        assert_eq!(document["extra"]["keep"], serde_json::json!(7));
+        assert_eq!(document["flag"], serde_json::json!(true));
+        assert!(document["list"].is_array());
+        // And the keys, which are the schema rather than the secret.
+        assert!(printed.contains("access_token"), "{printed}");
     }
 
     #[test]

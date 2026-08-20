@@ -83,6 +83,7 @@ use std::time::Duration;
 use serde_json::Value;
 use vela_core::secret::SecretValue;
 use vela_secrets::SecretStore;
+use zeroize::Zeroize;
 
 use crate::config::{credential_ref, HttpServer, OAuthConfig, RemoteAuth};
 use crate::error::{McpError, McpResult};
@@ -326,36 +327,80 @@ impl HttpTransport {
         call
     }
 
-    /// One round-trip to *any* host, with no interpretation beyond "did anything
-    /// come back".
+    /// One round-trip to *any* host. It says what happened to **that** round
+    /// trip — it came back, it timed out, or the host was not there — and
+    /// decides nothing about what any of that means for this transport.
+    ///
+    /// The previous version of this sentence claimed the same and was false, so
+    /// both halves are spelled out.
+    ///
+    /// **The failure names the host this call actually went to**, taken from
+    /// `call.url` and never from `self.server.url`. Two different hosts reach
+    /// this method — the MCP endpoint, and the OAuth token endpoint named by a
+    /// different line of the same entry. Attributing either failure to
+    /// `self.server.url` tells a user to go and fix the URL of a server that is
+    /// answering. It is the same confusion [`Self::send`] was split off to
+    /// prevent for session ids, asked of the round trip instead of the session.
+    ///
+    /// `config::validate_remote_url` holds `url` and `auth.tokenEndpoint` to the
+    /// same rules — no credential-named query parameter, no userinfo — so
+    /// putting either in an error carries the same exposure, not a new one.
+    ///
+    /// It also does **not** bury the transport. Only the MCP endpoint being
+    /// unreachable means *this* transport is finished; a token endpoint that
+    /// refuses a connection leaves a working MCP session working. That
+    /// judgement therefore lives in [`Self::send`], which is the method that
+    /// knows which endpoint it called.
     fn exchange(&self, call: HttpCall) -> McpResult<HttpReply> {
+        let endpoint = call.url.clone();
         match self.deps.http.send(call, self.timeout) {
             Ok(reply) => {
                 self.note(format!("{} {}", reply.status, reply.media_type()));
                 Ok(reply)
             }
             Err(ExchangeError::TimedOut) => Err(McpError::TimedOut(self.timeout)),
-            Err(error) => {
-                // Unreachable is a death, not a transient: the pool replaces a
-                // dead connection, and replacing this one costs one `initialize`
-                // against a server that is answering again.
-                self.bury(Dead::Unreachable(error.to_string()));
-                Err(self.death_reason())
-            }
+            Err(error) => Err(McpError::Unreachable {
+                endpoint,
+                detail: error.to_string(),
+            }),
         }
     }
 
-    /// One round-trip **to the MCP endpoint**, whose answers may mint a session.
+    /// One round-trip **to the MCP endpoint**, whose answers may mint a session
+    /// and whose silence is this transport's death.
     ///
-    /// Separate from [`Self::exchange`] on purpose. A session id is read off any
-    /// response from the MCP server, not only the one answering `initialize` —
-    /// but only from the MCP server. Routing the OAuth refresh through this
-    /// method instead would let the *authorization server* set this client's
-    /// `Mcp-Session-Id`, which is a different host, chosen by a different line
-    /// of the configuration, and in a compromise the one an attacker is more
-    /// likely to hold.
+    /// Separate from [`Self::exchange`] on purpose, and the separation buys two
+    /// things, not one:
+    ///
+    /// * **A session id is read off any response from the MCP server** — not
+    ///   only the one answering `initialize` — but only from the MCP server.
+    ///   Routing the OAuth refresh through this method instead would let the
+    ///   *authorization server* set this client's `Mcp-Session-Id`, which is a
+    ///   different host, chosen by a different line of the configuration, and in
+    ///   a compromise the one an attacker is more likely to hold.
+    /// * **The burial happens here**, for the same reason. "Unreachable" is a
+    ///   death rather than a transient — the pool replaces a dead connection,
+    ///   and replacing this one costs one `initialize` against a server that is
+    ///   answering again — but it is only *this* transport's death when the host
+    ///   that went quiet is the one this transport is for.
+    ///
+    /// Both properties depend on the same invariant: every call reaching this
+    /// method is addressed to `self.server.url`. The `debug_assert_eq!` below is
+    /// what says so to a future caller instead of leaving it to be inferred.
     fn send(&self, call: HttpCall) -> McpResult<HttpReply> {
-        let reply = self.exchange(call)?;
+        debug_assert_eq!(
+            call.url, self.server.url,
+            "`send` mints sessions and buries this transport; both are only \
+             correct for a call to this server's own endpoint"
+        );
+        let reply = match self.exchange(call) {
+            Ok(reply) => reply,
+            Err(McpError::Unreachable { detail, .. }) => {
+                self.bury(Dead::Unreachable(detail));
+                return Err(self.death_reason());
+            }
+            Err(other) => return Err(other),
+        };
         if let Some(session) = reply.header(SESSION_HEADER) {
             if !session.is_empty() {
                 *self.session.lock().expect("mcp http session") = Some(session.to_owned());
@@ -520,18 +565,30 @@ impl HttpTransport {
         };
 
         // `exchange`, not `send`: the authorization server does not get to set
-        // this client's MCP session id. See [`Self::send`].
-        let reply = self.exchange(oauth::refresh_call(config, refresh_token))?;
+        // this client's MCP session id, and a token endpoint that cannot be
+        // reached is not this transport dying — the MCP server may be answering
+        // perfectly. What comes back from here is `McpError::Unreachable`
+        // naming `config.token_endpoint`, which is the host that went quiet.
+        // See [`Self::send`] for both halves of that.
+        let mut reply = self.exchange(oauth::refresh_call(config, refresh_token))?;
         self.note(format!("token endpoint -> {}", reply.status));
         // The body is parsed whatever the status was: RFC 6749 puts the machine-
         // readable reason ("invalid_grant", "invalid_client") in the body of a
         // `400`, and that reason is the only actionable thing about the failure.
-        let fresh = oauth::parse_token_response(
+        let parsed = oauth::parse_token_response(
             &self.server_id,
             &reply.body,
             oauth::now_unix(),
             Some(refresh_token),
-        )?;
+        );
+        // This is the one response body in the crate that is credential material
+        // — a token endpoint's answer carries both tokens in plain text. It is
+        // scrubbed on every path out, including the refusal, which is why the
+        // parse result is held rather than propagated with `?`. Everything
+        // downstream of here holds the material in a `SecretValue`, which does
+        // this for itself.
+        reply.body.zeroize();
+        let fresh = parsed?;
         oauth::save(self.deps.credentials.as_ref(), &self.server_id, &fresh)?;
         Ok(fresh.authorization())
     }

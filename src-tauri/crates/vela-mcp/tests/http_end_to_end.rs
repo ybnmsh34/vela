@@ -32,9 +32,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 use support::{LoopbackExchange, MockServer, Reply};
 use vela_core::secret::{SecretRef, SecretValue};
-use vela_mcp::config::{credential_ref, McpConfig};
+use vela_mcp::config::{credential_ref, McpConfig, ServerSpec};
 use vela_mcp::error::{McpError, McpFailureCode};
-use vela_mcp::http::RemoteDeps;
+use vela_mcp::http::{HttpTransport, RemoteDeps};
 use vela_mcp::pool::McpPool;
 use vela_secrets::{MemoryStore, SecretResult, SecretStore};
 
@@ -236,12 +236,21 @@ fn a_configured_header_cannot_displace_one_the_transport_owns() {
     );
     tool_names(&harness.pool);
 
-    for call in harness
+    let posts: Vec<_> = harness
         .exchange
         .calls()
-        .iter()
+        .into_iter()
         .filter(|call| call.method == vela_mcp::HttpMethod::Post)
-    {
+        .collect();
+    // A negative asserted inside a loop passes for free over an empty one. This
+    // is what stops that: the assertions below only mean something if there were
+    // calls to make them about.
+    assert!(
+        !posts.is_empty(),
+        "no POST was recorded, so the loop below would prove nothing"
+    );
+
+    for call in &posts {
         let framing: Vec<&(String, String)> = call
             .headers
             .iter()
@@ -532,7 +541,24 @@ fn no_request_this_transport_makes_puts_a_token_in_a_url() {
     );
     tool_names(&harness.pool);
 
-    for call in harness.exchange.calls() {
+    let calls = harness.exchange.calls();
+    let wire: Vec<_> = server
+        .received()
+        .into_iter()
+        .chain(tokens.received())
+        .collect();
+    // The same guard as `a_configured_header_cannot_displace_one_the_transport_owns`,
+    // for the same reason: both loops below assert a *negative*, and a negative
+    // over nothing is vacuously true. These two counts are what make the run
+    // that follows evidence.
+    assert!(!calls.is_empty(), "no call was recorded");
+    assert!(
+        wire.iter().any(|request| request.path.contains("/token")),
+        "the refresh never reached the token endpoint, so the URLs below are \
+         only the MCP server's: {wire:?}"
+    );
+
+    for call in &calls {
         for canary in [ACCESS_ONE, ACCESS_TWO, REFRESH_ONE, "rt-two"] {
             assert!(
                 !call.url.contains(canary),
@@ -542,7 +568,7 @@ fn no_request_this_transport_makes_puts_a_token_in_a_url() {
         }
     }
     // And every request that was on the wire agrees.
-    for request in server.received().iter().chain(tokens.received().iter()) {
+    for request in &wire {
         for canary in [ACCESS_ONE, ACCESS_TWO, REFRESH_ONE, "rt-two"] {
             assert!(!request.path.contains(canary), "{}", request.path);
         }
@@ -761,15 +787,16 @@ fn shutting_the_pool_down_ends_the_session_on_the_server() {
     assert_eq!(deletes[0].header("mcp-session-id"), Some(SESSION));
 }
 
+/// A port that was bound and released: nothing is listening, and nothing else in
+/// this test run has been handed it.
+fn dead_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().port()
+}
+
 #[test]
 fn an_endpoint_nothing_is_listening_on_is_unreachable_rather_than_a_handshake_failure() {
-    // A port that was bound and released: nothing is listening, and nothing else
-    // in this test run has been handed it.
-    let port = {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
-    let harness = harness(&format!("http://127.0.0.1:{port}/mcp"));
+    let harness = harness(&format!("http://127.0.0.1:{}/mcp", dead_port()));
 
     let error = failure(&harness.pool);
     assert_eq!(
@@ -777,6 +804,114 @@ fn an_endpoint_nothing_is_listening_on_is_unreachable_rather_than_a_handshake_fa
         McpFailureCode::EndpointUnreachable,
         "an endpoint that was never reached did not bungle a handshake; got {error:?}"
     );
+}
+
+#[test]
+fn an_unreachable_token_endpoint_names_itself_and_not_the_mcp_server() {
+    // THE ATTRIBUTION RULE. An OAuth entry names two hosts, on two different
+    // lines: `url` and `auth.tokenEndpoint`. When the token endpoint is the one
+    // that is down, an error built from `url` sends a user to go and fix a
+    // server that is healthy — and, as the last assertion measures, was never
+    // contacted at all. `HttpTransport::exchange` takes the endpoint off the
+    // call it made, which is what makes that impossible rather than unlikely.
+    let server = MockServer::start(|request| mcp_answer(request, false));
+    let token_endpoint = format!("http://127.0.0.1:{}/token", dead_port());
+
+    let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
+    store_token(
+        store.as_ref(),
+        // `expiresAt: 1` is 1970, so the refresh is attempted before the first
+        // request rather than after a 401 — which is what puts the token
+        // endpoint on the wire ahead of the MCP server.
+        &json!({ "accessToken": ACCESS_ONE, "refreshToken": REFRESH_ONE, "expiresAt": 1 })
+            .to_string(),
+    );
+    let harness = harness_with(
+        &server.url("/mcp"),
+        json!({ "auth": { "type": "oauth", "clientId": "c",
+                          "tokenEndpoint": token_endpoint } }),
+        store,
+    );
+
+    let error = failure(&harness.pool);
+    assert_eq!(
+        error.code(),
+        McpFailureCode::EndpointUnreachable,
+        "{error:?}"
+    );
+
+    let rendered = format!("{error} / {error:?}");
+    assert!(
+        rendered.contains(&token_endpoint),
+        "the error should name the host that went quiet: {rendered}"
+    );
+    assert!(
+        !rendered.contains(&server.url("/mcp")),
+        "the error names the MCP server, which is answering: {rendered}"
+    );
+    assert!(
+        server.received().is_empty(),
+        "the MCP server was contacted after all: {:?}",
+        server.received()
+    );
+}
+
+#[test]
+fn a_token_endpoint_that_refuses_a_connection_does_not_bury_the_transport() {
+    // The other half of the same rule. Burying is `send`'s job because only
+    // `send` knows the call went to this server's own endpoint; a token endpoint
+    // refusing a connection says nothing about whether the MCP server is there.
+    // Proved by using the *same transport instance* again once a credential it
+    // does not have to refresh is in the store.
+    let server = MockServer::start(|request| mcp_answer(request, false));
+    let token_endpoint = format!("http://127.0.0.1:{}/token", dead_port());
+
+    let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
+    store_token(
+        store.as_ref(),
+        &json!({ "accessToken": ACCESS_ONE, "refreshToken": REFRESH_ONE, "expiresAt": 1 })
+            .to_string(),
+    );
+    let config = config_for(
+        &server.url("/mcp"),
+        json!({ "auth": { "type": "oauth", "clientId": "c",
+                          "tokenEndpoint": token_endpoint } }),
+    );
+    let ServerSpec::Http(spec) = config.server("team").expect("the entry parses") else {
+        panic!("a url entry must resolve to the HTTP transport");
+    };
+    let deps = RemoteDeps {
+        credentials: Arc::clone(&store),
+        http: Arc::new(LoopbackExchange::default()) as Arc<dyn vela_mcp::exchange::HttpExchange>,
+    };
+    let transport = HttpTransport::connect("team", spec, &deps, Arc::new(|_: &str, _: &Value| {}));
+
+    let error = transport
+        .request("tools/list", json!({}))
+        .expect_err("the token endpoint is not listening");
+    assert_eq!(
+        error.code(),
+        McpFailureCode::EndpointUnreachable,
+        "{error:?}"
+    );
+    assert!(
+        transport.is_alive(),
+        "a token endpoint refusing a connection buried a transport whose own \
+         server is answering"
+    );
+
+    // A token with no stated expiry needs no refresh, so the next request goes
+    // straight to the MCP server — on the transport that the failure above did
+    // not kill.
+    store_token(store.as_ref(), ACCESS_ONE);
+    let answer = transport
+        .request("tools/list", json!({}))
+        .expect("the same transport must still reach a server that is answering");
+    assert!(
+        answer["tools"].is_array(),
+        "the MCP server answered: {answer}"
+    );
+    assert_eq!(server.rpc("tools/list").len(), 1);
 }
 
 #[test]

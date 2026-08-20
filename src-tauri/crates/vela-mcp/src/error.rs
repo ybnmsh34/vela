@@ -28,10 +28,17 @@ pub enum McpFailureCode {
     TransportNotSupported,
     /// The child process could not be started at all.
     SpawnFailed,
-    /// A remote server's endpoint could not be reached: no DNS, no route, no
-    /// TLS, or the connection dropped before an answer arrived. Its own arm
-    /// rather than a flavour of [`McpFailureCode::SpawnFailed`] because the user
-    /// acts on it differently — a URL or a network, not a missing program.
+    /// An endpoint this server's entry names could not be reached: no DNS, no
+    /// route, no TLS, or the connection dropped before an answer arrived. Its
+    /// own arm rather than a flavour of [`McpFailureCode::SpawnFailed`] because
+    /// the user acts on it differently — a URL or a network, not a missing
+    /// program.
+    ///
+    /// **Which** endpoint is in [`McpError::Unreachable`]'s `endpoint` field and
+    /// not in this code, because an entry names two of them: `url`, and the
+    /// `auth.tokenEndpoint` of an OAuth entry. This code alone does not say
+    /// which one went quiet, and a settings surface that wants to say so must
+    /// read the error, not the code.
     EndpointUnreachable,
     /// A remote server needs a credential this build does not have, or refused
     /// the one it has. The only arm whose remedy is "sign in", which is why it
@@ -72,6 +79,13 @@ pub enum McpError {
     SpawnFailed { command: String, detail: String },
 
     /// The remote half of [`McpError::SpawnFailed`]: nothing came back at all.
+    ///
+    /// `endpoint` is the host the round-trip was actually addressed to, which
+    /// for an OAuth entry may be its `auth.tokenEndpoint` rather than its `url`.
+    /// `HttpTransport::exchange` is where that is taken from the call, and
+    /// `an_unreachable_token_endpoint_names_itself_and_not_the_mcp_server`, in
+    /// this crate's `tests/http_end_to_end.rs`, is what keeps it from drifting
+    /// back to naming the wrong one.
     #[error("could not reach `{endpoint}`: {detail}")]
     Unreachable { endpoint: String, detail: String },
 

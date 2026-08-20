@@ -682,11 +682,23 @@ interface FakeMessage {
   readonly role: MessageRole;
   status: StoredMessageStatus;
   parts: ContentPartInput[];
+  /**
+   * What the user selected. Still `readonly`: the selection is fixed when the
+   * row is opened and `StoreUpdateMessageReq` offers no way to amend it.
+   */
   readonly providerId: string | null;
   readonly modelId: string | null;
-  /** Who answered, kept apart from who was asked. `null` is "not recorded". */
-  readonly answeredByProviderId: string | null;
-  readonly answeredByModelId: string | null;
+  /**
+   * Who answered, kept apart from who was asked. `null` is "not recorded".
+   *
+   * **Writable, unlike the selection above.** A row opened while a turn is
+   * streaming has no attribution to record yet — the answering endpoint is a
+   * fact of the `done` frame — so the closing `store_update_message` is where
+   * it lands. `readonly` here used to say "the append is the only writer", and
+   * that was true only because the update command had no field for it.
+   */
+  answeredByProviderId: string | null;
+  answeredByModelId: string | null;
   usage: TokenUsage;
   stopReason: StoredStopReason | null;
   errorMessage: string | null;
@@ -700,6 +712,25 @@ const NO_USAGE: TokenUsage = {
   reasoningTokens: null,
   cachedInputTokens: null,
 };
+
+/**
+ * One half of an attribution as the store would record it, or `null` for "not
+ * recorded".
+ *
+ * `ipc::transcript.rs` runs `.filter(|id| !id.trim().is_empty())` over both
+ * halves on both commands, so a blank string is not stored and is not an error;
+ * it means the same thing as an omission. Written once here rather than four
+ * times inline, because four inline copies is how the append path and the
+ * update path come to disagree about what `''` means.
+ *
+ * The value returned is the caller's own string, **not** a trimmed copy: the
+ * host's filter decides on `trim()` and stores the original, so trimming here
+ * would make the fake and SQLite hold different bytes for the same request.
+ */
+function recordedEndpointId(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+  return raw.trim() === '' ? null : raw;
+}
 
 function toStoredMessage(message: FakeMessage): StoredMessage {
   return {
@@ -2577,9 +2608,11 @@ export class BrowserAdapter implements PlatformAdapter {
       modelId: request.modelId ?? null,
       // Mirrors the host: an omitted attribution stays absent. Defaulting these
       // to `providerId` would make the fake disagree with SQLite about the one
-      // thing they exist to record.
-      answeredByProviderId: request.answeredByProviderId ?? null,
-      answeredByModelId: request.answeredByModelId ?? null,
+      // thing they exist to record. `''` folds to absent for the same reason
+      // `ipc::transcript::append_message` folds it — a nameless endpoint is not
+      // an attribution — and `#storeUpdateMessage` folds it identically.
+      answeredByProviderId: recordedEndpointId(request.answeredByProviderId),
+      answeredByModelId: recordedEndpointId(request.answeredByModelId),
       usage: request.usage ?? NO_USAGE,
       stopReason: request.stopReason ?? null,
       errorMessage: request.errorMessage ?? null,
@@ -2609,6 +2642,16 @@ export class BrowserAdapter implements PlatformAdapter {
     if (request.usage !== undefined) found.usage = request.usage;
     if (request.stopReason !== undefined) found.stopReason = request.stopReason;
     if (request.errorMessage !== undefined) found.errorMessage = request.errorMessage;
+    // Blank folds to "not learned", exactly as `ipc::transcript::update_message`
+    // folds it, so `pnpm dev` and the packaged app agree about what `''` means.
+    // Omitted leaves the recorded attribution standing: `vela_store::MessagePatch`
+    // has no arm that clears it, and a fake that cleared it here would make a
+    // second update — a cancel, a retry marking the row failed — erase
+    // provenance in the browser and keep it in SQLite.
+    const answeredByProviderId = recordedEndpointId(request.answeredByProviderId);
+    const answeredByModelId = recordedEndpointId(request.answeredByModelId);
+    if (answeredByProviderId !== null) found.answeredByProviderId = answeredByProviderId;
+    if (answeredByModelId !== null) found.answeredByModelId = answeredByModelId;
     found.updatedAtMs = this.#now();
     return { message: toStoredMessage(found) };
   }

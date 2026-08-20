@@ -162,6 +162,23 @@ pub struct StoreUpdateMessageReq {
     pub stop_reason: Option<StopReason>,
     #[serde(default)]
     pub error_message: Option<String>,
+    /// Who actually answered, which is only known once the turn came back.
+    ///
+    /// [`append_message`] takes the same pair, and an ordinary send uses it:
+    /// that path has the whole answer in hand before it writes anything. An
+    /// **agent run** does not — it opens the row when the turn opens, before a
+    /// single token has arrived, and the endpoint that answered is a fact of
+    /// the `done` frame. Without these two fields the run's only remaining
+    /// write cannot carry it, so every row an agent run left behind came back
+    /// from the store unattributed however loudly the host had said who
+    /// answered.
+    ///
+    /// Omitted means "not learned"; the recorded value is left alone. There is
+    /// no spelling for "forget who answered" — see `vela_store::MessagePatch`.
+    #[serde(default)]
+    pub answered_by_provider_id: Option<String>,
+    #[serde(default)]
+    pub answered_by_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -265,6 +282,13 @@ pub fn update_message(store: &dyn VelaStore, req: StoreUpdateMessageReq) -> IpcR
         usage: req.usage,
         stop_reason: req.stop_reason.map(Some),
         error_message: req.error_message.map(Some),
+        // Blank folds to "not learned", exactly as it does on the append path,
+        // so a renderer's `''` means the same thing as its omission rather than
+        // becoming a 400 out of `MessagePatch::validate`.
+        answered_by_provider_id: req
+            .answered_by_provider_id
+            .filter(|id| !id.trim().is_empty()),
+        answered_by_model_id: req.answered_by_model_id.filter(|id| !id.trim().is_empty()),
     };
     if patch.is_empty() {
         // Nothing to do is not a failure, but it must not read as a write:
@@ -549,6 +573,8 @@ mod tests {
                 }),
                 stop_reason: Some(StopReason::EndTurn),
                 error_message: None,
+                answered_by_provider_id: None,
+                answered_by_model_id: None,
             },
         )
         .unwrap()
@@ -558,6 +584,132 @@ mod tests {
         assert_eq!(closed.status, MessageStatus::Complete);
         assert_eq!(closed.parts, vec![ContentPartDto::text("the whole answer")]);
         assert_eq!(closed.usage.output_tokens, Some(4));
+    }
+
+    /// **The closing update carries who answered, and it is not the selection.**
+    ///
+    /// The append above cannot: the row is opened before the first token, when
+    /// the only endpoint anyone knows about is the one the turn was addressed
+    /// to. `run_turn` in `src/runtime/agent-loop-harness.ts` opens exactly such
+    /// a row and used to close it out with parts, status, usage and stop reason
+    /// — the attribution was in its hand at that line and had nowhere to go.
+    ///
+    /// The fixture disagrees on purpose: the turn was addressed to
+    /// `local-llamacpp` and `hosted-openai` answered. An implementation that
+    /// echoed the selection into the answering columns would satisfy "not null"
+    /// and fail the last two assertions, which is the whole point of writing
+    /// them.
+    #[test]
+    fn a_streaming_turn_learns_who_answered_when_it_is_closed_out() {
+        let store = store();
+        let chat = conversation(&store);
+        let opened = append_message(
+            &store,
+            StoreAppendMessageReq {
+                status: MessageStatus::Streaming,
+                role: MessageRole::Assistant,
+                parts: vec![ContentPartDto::text("")],
+                provider_id: Some("local-llamacpp".into()),
+                model_id: Some("qwen3-8b".into()),
+                ..user_turn(&chat, "")
+            },
+        )
+        .unwrap()
+        .message;
+        assert_eq!(
+            opened.answered_by_provider_id, None,
+            "the row opens before anyone has answered"
+        );
+
+        let closed = update_message(
+            &store,
+            StoreUpdateMessageReq {
+                message_id: opened.id.clone(),
+                parts: Some(vec![ContentPartDto::text("the whole answer")]),
+                status: Some(MessageStatus::Complete),
+                usage: None,
+                stop_reason: Some(StopReason::EndTurn),
+                error_message: None,
+                answered_by_provider_id: Some("hosted-openai".into()),
+                answered_by_model_id: Some("gpt-4o-mini".into()),
+            },
+        )
+        .unwrap()
+        .message;
+
+        assert_eq!(
+            closed.answered_by_provider_id.as_deref(),
+            Some("hosted-openai")
+        );
+        assert_eq!(closed.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(closed.provider_id.as_deref(), Some("local-llamacpp"));
+        assert_ne!(closed.answered_by_provider_id, closed.provider_id);
+        assert_ne!(closed.answered_by_model_id, closed.model_id);
+
+        // And it survives the read the transcript surface actually performs.
+        let reloaded = list_messages(
+            &store,
+            StoreListMessagesReq {
+                conversation_id: chat,
+                include_reasoning: true,
+                after_seq: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            reloaded.messages[0].answered_by_provider_id.as_deref(),
+            Some("hosted-openai")
+        );
+    }
+
+    /// A blank attribution folds to "not learned" rather than to a 400.
+    ///
+    /// `append_message` already treats `''` this way, and the renderer's
+    /// `answeredBy` is `AnswerProvenance | null` — a caller that spells the
+    /// absent case as an empty string on one command and gets a rejection on
+    /// the other has found a difference with no meaning behind it.
+    #[test]
+    fn a_blank_attribution_on_an_update_means_not_learned() {
+        let store = store();
+        let chat = conversation(&store);
+        let opened = append_message(
+            &store,
+            StoreAppendMessageReq {
+                status: MessageStatus::Streaming,
+                role: MessageRole::Assistant,
+                parts: vec![ContentPartDto::text("")],
+                answered_by_provider_id: Some("hosted-openai".into()),
+                answered_by_model_id: Some("gpt-4o-mini".into()),
+                ..user_turn(&chat, "")
+            },
+        )
+        .unwrap()
+        .message;
+
+        let closed = update_message(
+            &store,
+            StoreUpdateMessageReq {
+                message_id: opened.id,
+                parts: None,
+                status: Some(MessageStatus::Complete),
+                usage: None,
+                stop_reason: None,
+                error_message: None,
+                answered_by_provider_id: Some("   ".into()),
+                answered_by_model_id: Some(String::new()),
+            },
+        )
+        .unwrap()
+        .message;
+
+        assert_eq!(closed.status, MessageStatus::Complete);
+        assert_eq!(
+            closed.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "blank is `not learned`, which leaves the recorded fact standing"
+        );
+        assert_eq!(closed.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
     }
 
     #[test]
@@ -585,6 +737,8 @@ mod tests {
                 usage: None,
                 stop_reason: Some(StopReason::Cancelled),
                 error_message: None,
+                answered_by_provider_id: None,
+                answered_by_model_id: None,
             },
         )
         .unwrap()
@@ -709,6 +863,8 @@ mod tests {
                 usage: None,
                 stop_reason: None,
                 error_message: None,
+                answered_by_provider_id: None,
+                answered_by_model_id: None,
             },
         )
         .unwrap_err();
@@ -772,5 +928,42 @@ mod tests {
             req.include_reasoning,
             "a transcript read includes thinking unless asked otherwise"
         );
+    }
+
+    /// **The wire keys the renderer spells are the ones that bind.**
+    ///
+    /// Every other test in this module builds a `StoreUpdateMessageReq` in Rust,
+    /// which proves the store writes what the struct holds and says nothing
+    /// about how the struct gets filled. The renderer does not call this
+    /// function; it posts JSON. `#[serde(rename_all = "camelCase")]` is what
+    /// joins the two, and `serde` answers an unknown key by leaving the field at
+    /// its `#[serde(default)]` — so a misspelling on either side is not an error
+    /// anywhere, it is silence, which is the exact failure this whole change
+    /// exists to end. The literal below is the payload
+    /// `src/runtime/agent-loop-harness.ts` produces at its `done` branch.
+    ///
+    /// There is no automated parity guard over these DTOs — the one in
+    /// `src/platform/chat-contract-parity.test.ts` says in its own header that
+    /// the `src-tauri/src/ipc/` types are out of its scope — so this test is the
+    /// only thing standing between a renamed field and a silent no-op.
+    #[test]
+    fn the_renderers_spelling_of_the_attribution_binds_on_an_update() {
+        let req: StoreUpdateMessageReq = serde_json::from_str(
+            r#"{"messageId":"msg_1","status":"complete",
+                "answeredByProviderId":"hosted-openai",
+                "answeredByModelId":"gpt-4o-mini"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            req.answered_by_provider_id.as_deref(),
+            Some("hosted-openai")
+        );
+        assert_eq!(req.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+
+        // And the omission the same call site produces for an unattributed turn.
+        let silent: StoreUpdateMessageReq =
+            serde_json::from_str(r#"{"messageId":"msg_1","status":"complete"}"#).unwrap();
+        assert_eq!(silent.answered_by_provider_id, None);
+        assert_eq!(silent.answered_by_model_id, None);
     }
 }

@@ -104,6 +104,25 @@ describe('the runtime over the real adapter', () => {
     expect(assistant[0]?.status).toBe('complete');
     expect(assistant[0]?.stopReason).toBe('endTurn');
     expect(assistant[0]?.parts).toEqual([{ kind: 'text', text: 'echo this back' }]);
+
+    // The attribution survives the whole path: the loop's closing update, the
+    // real `createTranscriptRepository`, the real `store_update_message`, and
+    // the `store_list_messages` the transcript surface reads on reopen. Before
+    // `StoreUpdateMessageReq` carried these, this row came back `null` — the
+    // row an agent run left behind was silent about who answered however loudly
+    // the host had said.
+    //
+    // **This pair of assertions is weaker than it looks and the weakness is the
+    // point of the file below it.** `BrowserAdapter` has exactly one candidate
+    // endpoint and never fails over, so its `answeredBy` always equals the
+    // endpoint addressed — a loop that wrote `target.providerId` into the
+    // attribution would pass here. What that mutation would fail is
+    // `agent-loop-harness.test.ts`, where the driver answers as a *different*
+    // endpoint, and the cancelled case below, where there is no answer at all.
+    // Neither of those runs over the shipping store, and this one does; the
+    // three are worth having only together.
+    expect(assistant[0]?.answeredByProviderId).toBe(PROVIDER);
+    expect(assistant[0]?.answeredByModelId).toBe('a-model');
   });
 
   it('closes the row out as cancelled when a run is cancelled mid-turn', async () => {
@@ -167,5 +186,12 @@ describe('the runtime over the real adapter', () => {
     const listed = await adapter.invoke('store_list_messages', { conversationId });
     const assistant = listed.messages.filter((message) => message.role === 'assistant');
     expect(assistant[0]?.status).toBe('cancelled');
+    // No `done`, so no answer, so no attribution — read out of the shipping
+    // store rather than off a recording double. This is the assertion the
+    // completed case above cannot make: a loop that filled the attribution in
+    // from the endpoint it addressed would leave this row claiming
+    // `workstation` answered a turn that was killed before it said anything.
+    expect(assistant[0]?.answeredByProviderId).toBeNull();
+    expect(assistant[0]?.answeredByModelId).toBeNull();
   });
 });

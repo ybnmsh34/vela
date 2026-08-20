@@ -698,6 +698,83 @@ describe('durability and cancellation', () => {
     }
   });
 
+  it('records who answered on the update, because the append could not know', async () => {
+    // The row is opened before `chat_send`, when the only endpoint anyone knows
+    // about is the one the turn is addressed to. `ChatResponseBody.answeredBy`
+    // arrives with `done`, and the closing update is the run's last chance to
+    // write it down.
+    //
+    // `run-1`'s target is `p1`/`m1` (see `runRequest`), and this turn is
+    // answered by `hosted-openai`/`gpt-4o-mini` — the failover case. The
+    // inequality assertions are the load-bearing ones: a loop that copied the
+    // target into the attribution would satisfy "not undefined" and fail here.
+    const bench = new Bench();
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, {
+        type: 'done',
+        response: chatResponse({
+          parts: [{ kind: 'text', text: 'answered elsewhere' }],
+          answeredBy: { providerId: 'hosted-openai', modelId: 'gpt-4o-mini' },
+        }),
+      });
+    });
+    bench.start();
+    await bench.finished();
+
+    const opened = bench.transcript.appended[0];
+    expect(opened?.providerId, 'the append records the selection').toBe('p1');
+    expect(
+      opened?.answeredByProviderId ?? null,
+      'and cannot record an attribution it does not have yet',
+    ).toBeNull();
+
+    const closed = bench.transcript.updated[0];
+    expect(closed?.answeredByProviderId).toBe('hosted-openai');
+    expect(closed?.answeredByModelId).toBe('gpt-4o-mini');
+    expect(closed?.answeredByProviderId).not.toBe(opened?.providerId);
+    expect(closed?.answeredByModelId).not.toBe(opened?.modelId);
+  });
+
+  it('leaves an unattributed turn unattributed rather than back-filling the target', async () => {
+    // The other half, and the one that decides whether the field is worth
+    // having. `chatResponse` is unattributed by default — a host too old to say
+    // who answered, or one that chose not to. The update must then omit both
+    // halves: writing `p1`/`m1` here would make "nobody said" and "the endpoint
+    // you picked answered" the same row, which is the falsehood migration 6
+    // exists to end.
+    //
+    // Both keys are asserted absent rather than null, because
+    // `StoreUpdateMessageReq` spells "leave it alone" as an omission and a
+    // present `undefined` would serialise to a key the host must then decide
+    // about.
+    const bench = new Bench();
+    bench.turns.scriptText('nobody signed this');
+    bench.start();
+    await bench.finished();
+
+    const closed = bench.transcript.updated[0];
+    expect(closed?.status).toBe('complete');
+    expect(closed === undefined ? [] : Object.keys(closed)).not.toContain('answeredByProviderId');
+    expect(closed === undefined ? [] : Object.keys(closed)).not.toContain('answeredByModelId');
+  });
+
+  it('does not attribute a turn that was cancelled or ran out of wall clock', async () => {
+    // No `ChatResponseBody`, so no attribution exists to write — and inventing
+    // one from the target would attribute an answer that never arrived. This is
+    // the assertion that fails if the spread is ever hoisted out of the `done`
+    // arm to "simplify" the four paths into one.
+    const bench = new Bench();
+    bench.turns.script((request, driver) => {
+      driver.emit(request.turnId, { type: 'textDelta', text: 'partial' });
+    });
+    const handle = bench.start();
+    await flush();
+    await handle.cancel();
+    await bench.finished();
+
+    expect(bench.transcript.updated).toEqual([{ messageId: 'msg-0', status: 'cancelled' }]);
+  });
+
   it('cancels: the run ends at runFinished and the open turn is closed as cancelled', async () => {
     const bench = new Bench();
     bench.turns.script((request, driver) => {

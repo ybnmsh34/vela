@@ -1037,6 +1037,18 @@ impl MessageRepository for SqliteStore {
                 assignments.push(format!("error_message = ?{}", values.len() + 1));
                 values.push(error_message.map_or(Value::Null, Value::Text));
             }
+            // Set-only, so these push a `Text` and never a `Null`: `MessagePatch`
+            // has no arm that means "clear the attribution". A `None` here is
+            // "the caller did not learn who answered", which must leave whatever
+            // the append recorded exactly as it stands.
+            if let Some(provider_id) = patch.answered_by_provider_id {
+                assignments.push(format!("answered_by_provider_id = ?{}", values.len() + 1));
+                values.push(Value::Text(provider_id));
+            }
+            if let Some(model_id) = patch.answered_by_model_id {
+                assignments.push(format!("answered_by_model_id = ?{}", values.len() + 1));
+                values.push(Value::Text(model_id));
+            }
 
             if !assignments.is_empty() {
                 assignments.push(format!("updated_at = ?{}", values.len() + 1));
@@ -2053,6 +2065,158 @@ mod tests {
         assert_eq!(loaded.answered_by_model_id, None);
     }
 
+    /// **An attribution learned after the row was opened still lands in SQLite.**
+    ///
+    /// The append path knows who answered only when the whole answer is already
+    /// in hand. A run that opens its row when the turn opens — which is what the
+    /// durability rule asks a harness to do — has nothing to attribute yet, so
+    /// the closing `update_message` is its only chance. Before `MessagePatch`
+    /// carried these two fields there was no way to take it: the row stayed
+    /// unattributed for the life of the conversation.
+    ///
+    /// The fixture makes the two endpoints disagree for the same reason the
+    /// append test does — `hosted-openai` answered a turn addressed to
+    /// `local-llamacpp` — so an update that wrote `provider_id` into the
+    /// answering columns fails here rather than passing.
+    #[test]
+    fn an_attribution_learned_at_the_end_of_a_streaming_turn_is_recorded_by_the_update() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let opened = store
+            .append_message(
+                NewMessage::assistant(chat.clone(), vec![ContentPart::text("")])
+                    .with_status(MessageStatus::Streaming)
+                    .with_model("local-llamacpp", "qwen3-8b"),
+            )
+            .unwrap();
+        assert_eq!(opened.answered_by_provider_id, None, "nothing known yet");
+
+        store
+            .update_message(
+                &opened.id,
+                MessagePatch {
+                    parts: Some(vec![ContentPart::text("Canopus is in Carina.")]),
+                    status: Some(MessageStatus::Complete),
+                    answered_by_provider_id: Some("hosted-openai".into()),
+                    answered_by_model_id: Some("gpt-4o-mini".into()),
+                    ..MessagePatch::default()
+                },
+            )
+            .unwrap();
+
+        // Read back from SQLite rather than from the value `update_message`
+        // returned, for the reason the append test gives: a struct assembled in
+        // Rust is no evidence about the UPDATE.
+        let loaded = store.get_message(&opened.id).unwrap();
+        assert_eq!(loaded.status, MessageStatus::Complete);
+        assert_eq!(
+            loaded.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "the endpoint that answered, not the one addressed"
+        );
+        assert_eq!(loaded.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(loaded.provider_id.as_deref(), Some("local-llamacpp"));
+        assert_ne!(loaded.answered_by_provider_id, loaded.provider_id);
+        assert_ne!(loaded.answered_by_model_id, loaded.model_id);
+    }
+
+    /// An update that does not mention the attribution leaves it alone.
+    ///
+    /// `MessagePatch` is set-only for these two — there is deliberately no arm
+    /// that means "forget who answered" — so the risk is not a clear the caller
+    /// asked for but a clear the writer performs by binding `NULL` for the
+    /// `None` case, as the `stop_reason` and `error_message` assignments
+    /// legitimately do. That mistake is invisible on the happy path: the closing
+    /// update of an ordinary turn carries the attribution anyway. It shows up
+    /// only on a *second* update — a retry marking the row failed, a cancel
+    /// closing it out — which is what this drives.
+    #[test]
+    fn a_later_update_that_says_nothing_about_the_attribution_does_not_erase_it() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let written = store
+            .append_message(
+                NewMessage::assistant(chat.clone(), vec![ContentPart::text("hi")])
+                    .with_model("local-llamacpp", "qwen3-8b")
+                    .answered_by("hosted-openai", "gpt-4o-mini"),
+            )
+            .unwrap();
+
+        store
+            .update_message(
+                &written.id,
+                MessagePatch {
+                    status: Some(MessageStatus::Failed),
+                    error_message: Some(Some("the socket went away".into())),
+                    ..MessagePatch::default()
+                },
+            )
+            .unwrap();
+
+        let loaded = store.get_message(&written.id).unwrap();
+        assert_eq!(loaded.status, MessageStatus::Failed);
+        assert_eq!(
+            loaded.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "an omitted attribution means `not learned`, never `forget it`"
+        );
+        assert_eq!(loaded.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+    }
+
+    /// A blank attribution is refused on the update path as on the append path.
+    ///
+    /// `''` reaching the column would be an attribution to an endpoint with no
+    /// name — a row that reads as attributed and names nobody, which every
+    /// reader downstream would render as a substitution disclosure with an empty
+    /// endpoint in it.
+    #[test]
+    fn an_update_refuses_a_blank_attribution() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let written = store
+            .append_message(NewMessage::assistant(
+                chat.clone(),
+                vec![ContentPart::text("hi")],
+            ))
+            .unwrap();
+
+        let error = store
+            .update_message(
+                &written.id,
+                MessagePatch {
+                    answered_by_provider_id: Some("   ".into()),
+                    ..MessagePatch::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&error, StoreError::Invalid { field, .. } if field == "answeredByProviderId"),
+            "unexpected error: {error:?}"
+        );
+
+        let model_only = store
+            .update_message(
+                &written.id,
+                MessagePatch {
+                    answered_by_model_id: Some(String::new()),
+                    ..MessagePatch::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&model_only, StoreError::Invalid { field, .. } if field == "answeredByModelId"),
+            "unexpected error: {model_only:?}"
+        );
+
+        // And the refusal is a refusal, not a partial write.
+        let loaded = store.get_message(&written.id).unwrap();
+        assert_eq!(loaded.answered_by_provider_id, None);
+        assert_eq!(loaded.answered_by_model_id, None);
+    }
+
     #[test]
     fn a_message_cannot_be_appended_to_a_conversation_that_does_not_exist() {
         let store = store();
@@ -2321,6 +2485,11 @@ mod tests {
                     }),
                     stop_reason: Some(Some(StopReason::EndTurn)),
                     error_message: None,
+                    // Left exhaustive on purpose: this literal is what turns a
+                    // new `MessagePatch` field into a compile error here rather
+                    // than a field the update path quietly never exercises.
+                    answered_by_provider_id: None,
+                    answered_by_model_id: None,
                 },
             )
             .unwrap();

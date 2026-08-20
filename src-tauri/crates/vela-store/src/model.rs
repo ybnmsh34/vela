@@ -608,6 +608,18 @@ pub struct MessagePatch {
     pub stop_reason: Option<Option<StopReason>>,
     /// `Some(None)` clears the error; `None` leaves it untouched.
     pub error_message: Option<Option<String>>,
+    /// Who actually answered, learned only when the turn came back. See
+    /// [`Message::answered_by_provider_id`].
+    ///
+    /// **Set-only: there is no `Some(None)` arm and there must not be one.**
+    /// `stop_reason` and `error_message` above can be cleared because a wrong
+    /// stop reason is a wrong label on a turn that still happened; clearing an
+    /// attribution turns a recorded fact into "not recorded", which reads
+    /// afterwards as though the host never said — indistinguishable from a row
+    /// written before migration 6. Nothing needs that, and a shape that can
+    /// express it is a shape a later caller will reach for.
+    pub answered_by_provider_id: Option<String>,
+    pub answered_by_model_id: Option<String>,
 }
 
 impl MessagePatch {
@@ -625,6 +637,26 @@ impl MessagePatch {
             }
             for (index, part) in parts.iter().enumerate() {
                 part.validate(index)?;
+            }
+        }
+        // The same rule `NewMessage::validate` holds on the way in: a blank
+        // string is a claim that an endpoint with no name answered. "Not
+        // recorded" is spelled `None`, and an update must not be the one door
+        // through which a nameless attribution reaches the column.
+        if let Some(provider_id) = &self.answered_by_provider_id {
+            if provider_id.trim().is_empty() {
+                return Err(StoreError::invalid(
+                    "answeredByProviderId",
+                    "must not be blank",
+                ));
+            }
+        }
+        if let Some(model_id) = &self.answered_by_model_id {
+            if model_id.trim().is_empty() {
+                return Err(StoreError::invalid(
+                    "answeredByModelId",
+                    "must not be blank",
+                ));
             }
         }
         Ok(())

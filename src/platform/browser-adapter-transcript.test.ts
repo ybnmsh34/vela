@@ -205,6 +205,117 @@ describe('the fake host: the transcript', () => {
     expect(messages[0]?.parts[0]).toEqual(image);
   });
 
+  /**
+   * The fake's twin of
+   * `ipc::transcript::tests::a_streaming_turn_learns_who_answered_when_it_is_closed_out`.
+   *
+   * A row opened while a turn streams cannot carry an attribution, so the
+   * closing update has to. The fixture disagrees on purpose — addressed to
+   * `local-llamacpp`, answered by `hosted-openai` — because an implementation
+   * that echoed the selection into the answering columns would satisfy every
+   * "is it set" assertion and fail the last two.
+   */
+  it('an attribution learned at the end of a streaming turn is recorded by the update', async () => {
+    const id = await conversation();
+    const { message: opened } = await host.invoke('store_append_message', {
+      conversationId: id,
+      role: 'assistant',
+      parts: [{ kind: 'text', text: '' }],
+      status: 'streaming',
+      providerId: 'local-llamacpp',
+      modelId: 'qwen3-8b',
+    });
+    expect(opened.answeredByProviderId).toBeNull();
+
+    await host.invoke('store_update_message', {
+      messageId: opened.id,
+      parts: [{ kind: 'text', text: 'the whole answer' }],
+      status: 'complete',
+      answeredByProviderId: 'hosted-openai',
+      answeredByModelId: 'gpt-4o-mini',
+    });
+
+    const { messages } = await host.invoke('store_list_messages', { conversationId: id });
+    expect(messages[0]?.status).toBe('complete');
+    expect(messages[0]?.answeredByProviderId).toBe('hosted-openai');
+    expect(messages[0]?.answeredByModelId).toBe('gpt-4o-mini');
+    expect(messages[0]?.providerId).toBe('local-llamacpp');
+    expect(messages[0]?.answeredByProviderId).not.toBe(messages[0]?.providerId);
+    expect(messages[0]?.answeredByModelId).not.toBe(messages[0]?.modelId);
+  });
+
+  /**
+   * The fake's twin of
+   * `sqlite::tests::a_later_update_that_says_nothing_about_the_attribution_does_not_erase_it`.
+   *
+   * `MessagePatch` is set-only for these two, so an omission must leave the
+   * recorded value standing. The mistake this catches is not a caller asking to
+   * clear — it is a writer that assigns unconditionally and lands `undefined`
+   * on the row. It is invisible on the happy path, where the closing update
+   * carries the attribution anyway, and shows up only on a *second* update.
+   */
+  it('a later update that says nothing about the attribution does not erase it', async () => {
+    const id = await conversation();
+    const { message: written } = await host.invoke('store_append_message', {
+      conversationId: id,
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'hi' }],
+      providerId: 'local-llamacpp',
+      modelId: 'qwen3-8b',
+      answeredByProviderId: 'hosted-openai',
+      answeredByModelId: 'gpt-4o-mini',
+    });
+
+    await host.invoke('store_update_message', {
+      messageId: written.id,
+      status: 'failed',
+      errorMessage: 'the socket went away',
+    });
+
+    const { messages } = await host.invoke('store_list_messages', { conversationId: id });
+    expect(messages[0]?.status).toBe('failed');
+    expect(messages[0]?.answeredByProviderId).toBe('hosted-openai');
+    expect(messages[0]?.answeredByModelId).toBe('gpt-4o-mini');
+  });
+
+  /**
+   * Blank folds to "not learned" on both commands, as
+   * `ipc::transcript.rs` folds it — `.filter(|id| !id.trim().is_empty())` on
+   * `append_message` and on `update_message` alike.
+   *
+   * The append half of this was a real divergence: the fake used to store `''`
+   * verbatim, which every reader downstream treats as an attribution to an
+   * endpoint with no name. The host has never stored it.
+   */
+  it('a blank attribution means not recorded, on the append and on the update alike', async () => {
+    const id = await conversation();
+    const { message: written } = await host.invoke('store_append_message', {
+      conversationId: id,
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'hi' }],
+      answeredByProviderId: '   ',
+      answeredByModelId: '',
+    });
+    expect(written.answeredByProviderId).toBeNull();
+    expect(written.answeredByModelId).toBeNull();
+
+    await host.invoke('store_update_message', {
+      messageId: written.id,
+      answeredByProviderId: 'hosted-openai',
+      answeredByModelId: 'gpt-4o-mini',
+    });
+    await host.invoke('store_update_message', {
+      messageId: written.id,
+      status: 'complete',
+      answeredByProviderId: ' ',
+      answeredByModelId: '',
+    });
+
+    const { messages } = await host.invoke('store_list_messages', { conversationId: id });
+    expect(messages[0]?.answeredByProviderId).toBe('hosted-openai');
+    expect(messages[0]?.answeredByModelId).toBe('gpt-4o-mini');
+  });
+
   it('appending a message moves the conversation up the sidebar', async () => {
     const id = await conversation();
     await host.invoke('store_append_message', {

@@ -1369,6 +1369,25 @@ export interface StoreUpdateMessageReq {
   readonly usage?: TokenUsage;
   readonly stopReason?: StoredStopReason;
   readonly errorMessage?: string;
+  /**
+   * Who actually answered — the same fact {@link StoreAppendMessageReq} takes,
+   * offered here because a caller that opens the row *before* the turn answers
+   * cannot know it yet.
+   *
+   * An ordinary send has the whole {@link ChatResponseBody} in hand before it
+   * writes anything, so it attributes at append. An agent run does not: the
+   * loop opens a `streaming` row when the turn opens and the answering endpoint
+   * arrives with `done`. This is the field that lets its closing update carry
+   * what it learned.
+   *
+   * `string | null` is deliberately **not** the type. Every other field here is
+   * "omit to leave alone", and a `null` that also meant "leave alone" would read
+   * at every call site as "clear it" — see this interface's own header for why
+   * clearing is not on offer. A caller holding `AnswerProvenance | null` spreads
+   * the pair or spreads nothing.
+   */
+  readonly answeredByProviderId?: string;
+  readonly answeredByModelId?: string;
 }
 
 export interface StoreListMessagesReq {

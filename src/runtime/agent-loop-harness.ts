@@ -128,6 +128,25 @@ function storedStopReason(response: ChatResponseBody): StoredStopReason {
   return response.stopReason;
 }
 
+/**
+ * The attribution as `store_update_message` takes it: both halves, or nothing.
+ *
+ * A partial spread is the failure mode worth naming. `AnswerProvenance` has no
+ * shape for "an endpoint whose model is unknown", and a row carrying one half is
+ * read as *no record at all* by `stored-entries.ts` — so a caller that spread
+ * only the provider would write something the transcript surface silently
+ * discards, which is the original defect with a different spelling. Returning
+ * one object makes the pair inseparable at the type level rather than by
+ * convention at the call site.
+ */
+function answeredByFields(
+  response: ChatResponseBody,
+): { readonly answeredByProviderId: string; readonly answeredByModelId: string } | Record<string, never> {
+  const answeredBy = response.answeredBy;
+  if (answeredBy === null) return {};
+  return { answeredByProviderId: answeredBy.providerId, answeredByModelId: answeredBy.modelId };
+}
+
 /* -------------------------------------------------------------------------- */
 
 /** One call to `start`. Every piece of run state lives here and nowhere else. */
@@ -378,6 +397,20 @@ class AgentRun {
           status: 'complete',
           usage: result.response.usage,
           stopReason: storedStopReason(result.response),
+          // **The append above could not carry this and this is the only place
+          // that can.** The row is opened before the turn is sent, when the
+          // only endpoint anyone knows about is `target` — the one the turn is
+          // addressed to. Who answered arrives with `done`, on
+          // `ChatResponseBody.answeredBy`, and until this spread existed the
+          // fact was in hand at this line and dropped: every row an agent run
+          // left behind reloaded as unattributed, so the substitution notice a
+          // live run had shown vanished when the conversation was reopened.
+          //
+          // Spread rather than `?? null`, and never from `target`: an
+          // unattributed turn must stay unattributed. A host too old to say
+          // who answered, and a host that failed over silently, are different
+          // facts, and back-filling the selection makes them look the same.
+          ...answeredByFields(result.response),
         });
         break;
       }

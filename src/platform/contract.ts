@@ -1414,11 +1414,19 @@ export interface MessageListRes {
  *  - `configUnreadable` — their file has a typo; nothing else could be read.
  *  - `configInvalid` — that one entry does not describe a launchable server.
  *  - `transportNotSupported` — their file is *correct* and this build cannot do
- *    it. Today that is every remote (`url`) entry; see the note on
- *    {@link McpServerTools}.
+ *    it. It is no longer every remote (`url`) entry: `vela-mcp` implements the
+ *    HTTP transport, so this now means a build whose composition root wired no
+ *    HTTP backend into the MCP host. See the note on {@link McpServerTools}.
  *  - `spawnFailed` — the command is not on the machine, or not on `PATH`.
+ *  - `endpointUnreachable` — a remote server's URL answered nothing at all: no
+ *    DNS, no route, no TLS. The remote twin of `spawnFailed`, and a separate arm
+ *    because the thing to fix is a URL or a network, not a missing program.
+ *  - `authorizationRequired` — a remote server needs a credential that is not
+ *    stored, or refused the one that is. The only arm whose remedy is "sign in",
+ *    which is why it is not folded into `handshakeFailed`.
  *  - `serverExited` — it was running and is not any more. Asking again restarts
- *    it: the pool replaces a dead connection rather than returning it.
+ *    it: the pool replaces a dead connection rather than returning it. For a
+ *    remote server this is also what an ended session reads as.
  */
 export type McpFailureReason =
   | 'notConfigured'
@@ -1426,6 +1434,8 @@ export type McpFailureReason =
   | 'configInvalid'
   | 'transportNotSupported'
   | 'spawnFailed'
+  | 'endpointUnreachable'
+  | 'authorizationRequired'
   | 'handshakeFailed'
   | 'serverExited'
   | 'protocolError'
@@ -1467,9 +1477,10 @@ export interface McpToolView {
  * **An unavailable server keeps its row**, with `tools` empty. A server the user
  * configured that quietly vanished from this list is the silent reduction
  * conventions §9 forbids — they would see a shorter list and no reason for it.
- * That applies most of all to `transportNotSupported`, which is this build
- * saying it has not implemented the transport their entry names, not a fault in
- * anything they wrote.
+ * That applies most of all to the arms that are not the user's fault:
+ * `transportNotSupported`, which is this build saying it cannot speak the
+ * transport their entry names, and `authorizationRequired`, which is a server
+ * that is there and reachable and waiting to be signed into.
  */
 export interface McpServerTools {
   readonly serverId: string;

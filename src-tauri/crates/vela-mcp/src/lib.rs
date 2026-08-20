@@ -1,9 +1,9 @@
-//! # vela-mcp — an MCP client for local servers
+//! # vela-mcp — an MCP client for a user's own servers
 //!
 //! Vela talks to Model Context Protocol servers so that a user's own tools are
 //! available to whatever model they are running. This crate is the client half:
-//! it launches servers, speaks JSON-RPC to them, keeps their tool lists, and
-//! notices when they die.
+//! it launches or reaches servers, speaks JSON-RPC to them, keeps their tool
+//! lists, and notices when they go away.
 //!
 //! ## What is built, stated plainly
 //!
@@ -15,12 +15,25 @@
 //! process over a real pipe in `tests/stdio_end_to_end.rs`, not against a fake
 //! transport.
 //!
-//! **The HTTP/SSE transport is not built.** A configuration entry naming a
-//! `url` parses, is listed, and reports [`McpError::TransportNotSupported`]. It
-//! is not silently dropped, and it is not called invalid, because neither of
-//! those tells the user the truth: their file is fine and this client is not
-//! finished. OAuth and custom headers belong to that transport and are likewise
-//! absent.
+//! **The HTTP transport, request/response and SSE.** One POST per client
+//! message, answered with a JSON object or a `text/event-stream`; the session
+//! the server mints echoed on everything after it; custom headers from the
+//! configuration; `Authorization: Bearer` from the OS credential store; an
+//! OAuth token set kept current, refreshed under a lock so a rotating refresh
+//! token cannot be spent twice, and retried exactly once on a `401`. It is
+//! exercised against a real HTTP server on a real loopback socket in
+//! `tests/http_end_to_end.rs`.
+//!
+//! **What the HTTP transport does not do**, because a reader who assumes
+//! otherwise will be wrong:
+//!
+//! * **No standalone `GET` channel.** Server-initiated messages sent outside a
+//!   request/response exchange never arrive. See [`crate::http`].
+//! * **No interactive authorization.** There is no browser launch, no PKCE and
+//!   no `authorization_code` grant; the first token set is provisioned out of
+//!   band into `mcp:<id>/token`. See [`crate::oauth`].
+//! * **No client registration**, static or dynamic, and no discovery of an
+//!   authorization server: the token endpoint is named in the configuration.
 //!
 //! **Era negotiation is not built.** This client opens with `initialize`, the
 //! handshake of the revisions deployed servers actually speak. Revision
@@ -28,32 +41,56 @@
 //! for a client that supports both is described at
 //! [`crate::client::McpConnection`] and is the next thing to build.
 //!
-//! ## Why stdio first
+//! ## The two transports are one shape
 //!
-//! Because it is the half that is hard and the half that is missing elsewhere.
-//! `docs/references/unsloth-studio.md` §10 records the reference product
-//! shipping remote MCP with OAuth and custom headers while local, command-based
-//! servers were a filed gap — later closed, behind an environment variable, and
-//! still absent from its own documentation. Remote MCP is an HTTP client
-//! somebody already wrote. Local MCP is process lifecycle: spawning, framing,
-//! isolation, death, restart. That is where a client is right or wrong.
+//! [`crate::transport::Transport`] is a closed enum with an arm each, and every
+//! method on it has a case for both. Nothing above it can tell them apart:
+//! [`McpConnection`] handshakes, lists and calls identically, and [`McpPool`]
+//! replaces a dead connection identically. An MCP client whose remote servers
+//! behave differently from its local ones is a maintenance defect even when both
+//! work, so the difference is confined to the two files that own a substrate.
+//!
+//! ## No HTTP client, still
+//!
+//! This crate declares none. It declares [`crate::exchange::HttpExchange`], one
+//! round-trip, and the composition root supplies it — because
+//! `vela-settings/tests/capability_matrix_endpoints.rs` asserts against the tree
+//! that exactly one crate in this workspace may own an HTTP client, and that is
+//! `vela-providers`. The same argument applies to the OS keychain, which is why
+//! credentials here move through `vela_secrets::SecretStore` and never through
+//! `keyring`.
 //!
 //! ## Layout
 //!
-//! - [`config`] — the JSON file that says which servers exist.
+//! - [`config`] — the JSON file that says which servers exist, and the security
+//!   rules about what it may not contain.
 //! - [`protocol`] — JSON-RPC framing and message classification.
 //! - [`stdio`] — the child process, its pipes, and its death.
+//! - [`exchange`] — the HTTP seam, and what an implementation owes.
+//! - [`oauth`] — the token, where it lives, and how it is renewed.
+//! - [`http`] — the endpoint, the session, and what a hostile server can reach.
+//! - [`transport`] — the closed set of the two.
 //! - [`client`] — the handshake, the tool list, and its cache.
 //! - [`pool`] — one connection per server, reused and restarted.
 
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod exchange;
+pub mod http;
+pub mod oauth;
 pub mod pool;
 pub mod protocol;
 pub mod stdio;
+pub mod transport;
 
 pub use client::{namespaced_tool_name, McpConnection, McpTool};
-pub use config::{McpConfig, StdioServer, INHERITED_ENV};
+pub use config::{
+    credential_ref, HttpServer, McpConfig, OAuthConfig, RemoteAuth, ServerSpec, StdioServer,
+    INHERITED_ENV,
+};
 pub use error::{McpError, McpFailureCode, McpResult};
+pub use exchange::{ExchangeError, HttpCall, HttpExchange, HttpMethod, HttpReply};
+pub use http::{credential_present, forget_credential, RemoteDeps};
 pub use pool::{McpPool, ServerTools};
+pub use transport::Transport;

@@ -28,6 +28,15 @@ pub enum McpFailureCode {
     TransportNotSupported,
     /// The child process could not be started at all.
     SpawnFailed,
+    /// A remote server's endpoint could not be reached: no DNS, no route, no
+    /// TLS, or the connection dropped before an answer arrived. Its own arm
+    /// rather than a flavour of [`McpFailureCode::SpawnFailed`] because the user
+    /// acts on it differently — a URL or a network, not a missing program.
+    EndpointUnreachable,
+    /// A remote server needs a credential this build does not have, or refused
+    /// the one it has. The only arm whose remedy is "sign in", which is why it
+    /// is not folded into [`McpFailureCode::HandshakeFailed`].
+    AuthorizationRequired,
     /// The process started and then refused, or bungled, the handshake.
     HandshakeFailed,
     /// The process is gone. In-flight requests fail with this rather than hang.
@@ -62,6 +71,25 @@ pub enum McpError {
     #[error("could not spawn `{command}`: {detail}")]
     SpawnFailed { command: String, detail: String },
 
+    /// The remote half of [`McpError::SpawnFailed`]: nothing came back at all.
+    #[error("could not reach `{endpoint}`: {detail}")]
+    Unreachable { endpoint: String, detail: String },
+
+    /// The server is reachable and answered with a status this transport cannot
+    /// use. `detail` carries the media type and **never the body** — a body is
+    /// unbounded text written by the far end.
+    #[error("`{endpoint}` answered {status} ({detail})")]
+    HttpStatus {
+        endpoint: String,
+        status: u16,
+        detail: String,
+    },
+
+    /// No usable credential for a remote server: none stored, none obtainable,
+    /// or one the server refused.
+    #[error("`{server}` needs authorization: {detail}")]
+    AuthorizationRequired { server: String, detail: String },
+
     #[error("the handshake with the server failed: {0}")]
     HandshakeFailed(String),
 
@@ -90,6 +118,14 @@ impl McpError {
             McpError::ConfigInvalid { .. } => McpFailureCode::ConfigInvalid,
             McpError::TransportNotSupported { .. } => McpFailureCode::TransportNotSupported,
             McpError::SpawnFailed { .. } => McpFailureCode::SpawnFailed,
+            McpError::Unreachable { .. } => McpFailureCode::EndpointUnreachable,
+            // A status this transport cannot use is the server answering badly,
+            // which is what `ServerError` already means for a JSON-RPC error.
+            // Two error arms, one code: the renderer acts on both identically
+            // and the distinction lives in the log, which is where the detail
+            // that justifies it also lives.
+            McpError::HttpStatus { .. } => McpFailureCode::ServerError,
+            McpError::AuthorizationRequired { .. } => McpFailureCode::AuthorizationRequired,
             McpError::HandshakeFailed(_) => McpFailureCode::HandshakeFailed,
             McpError::ServerExited => McpFailureCode::ServerExited,
             McpError::Protocol(_) => McpFailureCode::ProtocolError,
@@ -120,6 +156,55 @@ mod tests {
     fn failure_codes_serialise_as_camel_case_strings() {
         let json = serde_json::to_string(&McpFailureCode::TransportNotSupported).unwrap();
         assert_eq!(json, "\"transportNotSupported\"");
+    }
+
+    #[test]
+    fn an_unreachable_endpoint_and_a_refused_credential_are_different_codes() {
+        // The two things a user of a remote server does differently: fix the
+        // URL or the network, versus sign in.
+        assert_eq!(
+            McpError::Unreachable {
+                endpoint: "https://mcp.example.com/mcp".into(),
+                detail: "dns error".into(),
+            }
+            .code(),
+            McpFailureCode::EndpointUnreachable
+        );
+        assert_eq!(
+            McpError::AuthorizationRequired {
+                server: "team".into(),
+                detail: "no credential is stored".into(),
+            }
+            .code(),
+            McpFailureCode::AuthorizationRequired
+        );
+    }
+
+    #[test]
+    fn a_status_this_transport_cannot_use_never_quotes_the_body() {
+        // The body is unbounded text written by the far end. `detail` carries
+        // the media type, which is metadata, and that is the whole of it.
+        let error = McpError::HttpStatus {
+            endpoint: "https://mcp.example.com/mcp".into(),
+            status: 500,
+            detail: "text/html".into(),
+        };
+        assert_eq!(error.code(), McpFailureCode::ServerError);
+        let rendered = error.to_string();
+        assert!(rendered.contains("500"), "{rendered}");
+        assert!(rendered.contains("text/html"), "{rendered}");
+    }
+
+    #[test]
+    fn the_new_codes_serialise_in_the_shape_the_typescript_union_declares() {
+        assert_eq!(
+            serde_json::to_string(&McpFailureCode::EndpointUnreachable).unwrap(),
+            "\"endpointUnreachable\""
+        );
+        assert_eq!(
+            serde_json::to_string(&McpFailureCode::AuthorizationRequired).unwrap(),
+            "\"authorizationRequired\""
+        );
     }
 
     #[test]

@@ -8,10 +8,11 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::config::StdioServer;
+use crate::config::ServerSpec;
 use crate::error::{McpError, McpResult};
+use crate::http::RemoteDeps;
 use crate::protocol::{self, ttl_ms_of};
-use crate::stdio::StdioTransport;
+use crate::transport::Transport;
 
 /// How long a tool list is trusted when the server sends no freshness hint.
 ///
@@ -98,7 +99,7 @@ struct CachedTools {
 /// negotiation happens.
 pub struct McpConnection {
     server_id: String,
-    transport: StdioTransport,
+    transport: Transport,
     tools: Arc<ToolCache>,
 }
 
@@ -108,7 +109,11 @@ impl McpConnection {
     /// The two are one operation on purpose: a process that is running but has
     /// not been initialised is a state no caller has a use for, and making it
     /// reachable would mean every later method had to check for it.
-    pub fn connect(server_id: &str, server: &StdioServer) -> McpResult<Self> {
+    pub fn connect(
+        server_id: &str,
+        spec: &ServerSpec,
+        remote: Option<&RemoteDeps>,
+    ) -> McpResult<Self> {
         let tools = Arc::new(ToolCache {
             entry: Mutex::new(None),
             epoch: AtomicU64::new(0),
@@ -119,8 +124,10 @@ impl McpConnection {
         // because a sink that blocked would block the thread that delivers the
         // response the blocked caller is waiting for.
         let sink_tools = Arc::clone(&tools);
-        let transport = StdioTransport::spawn(
-            server,
+        let transport = Transport::open(
+            server_id,
+            spec,
+            remote,
             Arc::new(move |method: &str, _params: &Value| {
                 if method == protocol::NOTIFY_TOOLS_LIST_CHANGED {
                     sink_tools.epoch.fetch_add(1, Ordering::SeqCst);
@@ -145,8 +152,11 @@ impl McpConnection {
         self.transport.is_alive()
     }
 
-    pub fn recent_stderr(&self) -> Vec<String> {
-        self.transport.recent_stderr()
+    /// The last few lines worth knowing about this server. Diagnostics only,
+    /// never evidence of failure. See [`Transport::recent_diagnostics`] for why
+    /// it is not called `recent_stderr` any more.
+    pub fn recent_diagnostics(&self) -> Vec<String> {
+        self.transport.recent_diagnostics()
     }
 
     fn handshake(&self) -> McpResult<()> {
@@ -160,8 +170,15 @@ impl McpConnection {
             .request(protocol::METHOD_INITIALIZE, params)
             .map_err(|error| match error {
                 // A server that is simply gone is gone; only an answer that was
-                // wrong is a handshake failure.
+                // wrong is a handshake failure. The three remote arms are here
+                // for the same reason `ServerExited` is: an endpoint that was
+                // never reached did not bungle a handshake, and a user told
+                // "handshake failed" when the answer is "sign in" goes looking
+                // in the wrong place.
                 McpError::ServerExited => McpError::ServerExited,
+                unreachable @ McpError::Unreachable { .. } => unreachable,
+                unauthorized @ McpError::AuthorizationRequired { .. } => unauthorized,
+                timed_out @ McpError::TimedOut(_) => timed_out,
                 other => McpError::HandshakeFailed(other.to_string()),
             })?;
 

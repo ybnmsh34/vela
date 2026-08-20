@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex};
 use crate::client::{McpConnection, McpTool};
 use crate::config::McpConfig;
 use crate::error::McpResult;
+use crate::http::RemoteDeps;
 
 /// Every configured server's tools, or the reason there are none.
 pub struct ServerTools {
@@ -44,13 +45,29 @@ pub struct ServerTools {
 pub struct McpPool {
     config: Mutex<McpConfig>,
     connections: Mutex<BTreeMap<String, Arc<McpConnection>>>,
+    /// The network and the credential store, or `None` in a build with no HTTP
+    /// backend wired. A `url` entry then reports `TransportNotSupported`, which
+    /// is the truth about that build and was the truth about every build before
+    /// this one. See [`crate::transport::Transport::open`].
+    remote: Option<RemoteDeps>,
 }
 
 impl McpPool {
+    /// A pool that can launch stdio servers and nothing else.
     pub fn new(config: McpConfig) -> Self {
         Self {
             config: Mutex::new(config),
             connections: Mutex::new(BTreeMap::new()),
+            remote: None,
+        }
+    }
+
+    /// A pool that can also reach remote servers.
+    pub fn with_remote(config: McpConfig, remote: RemoteDeps) -> Self {
+        Self {
+            config: Mutex::new(config),
+            connections: Mutex::new(BTreeMap::new()),
+            remote: Some(remote),
         }
     }
 
@@ -85,8 +102,12 @@ impl McpPool {
         // other server behind one slow one.
         let connection = {
             let config = self.config.lock().expect("mcp config");
-            let server = config.server(server_id)?;
-            Arc::new(McpConnection::connect(server_id, server)?)
+            let spec = config.server(server_id)?;
+            Arc::new(McpConnection::connect(
+                server_id,
+                spec,
+                self.remote.as_ref(),
+            )?)
         };
 
         let mut connections = self.connections.lock().expect("mcp pool");

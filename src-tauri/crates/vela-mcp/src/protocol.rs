@@ -76,17 +76,30 @@ impl From<RpcError> for McpError {
     }
 }
 
-/// Serialise one outgoing request, framed.
-pub fn encode_request(id: u64, method: &str, params: Value) -> String {
-    let message = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-    format!("{message}\n")
+/// One outgoing request as a value, before any framing.
+///
+/// Split from [`encode_request`] because the two transports frame differently
+/// and the *message* is the part they share: stdio appends a newline, HTTP puts
+/// the same object in a POST body with no newline at all. Two `json!` literals
+/// would be two chances for the wire shapes to drift apart.
+pub fn request_message(id: u64, method: &str, params: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
 }
 
-/// Serialise one outgoing notification, framed. No `id`: a notification is by
+/// One outgoing notification as a value. No `id`: a notification is by
 /// definition the message nothing is owed for.
+pub fn notification_message(method: &str, params: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "method": method, "params": params })
+}
+
+/// Serialise one outgoing request, framed for stdio.
+pub fn encode_request(id: u64, method: &str, params: Value) -> String {
+    format!("{}\n", request_message(id, method, params))
+}
+
+/// Serialise one outgoing notification, framed for stdio.
 pub fn encode_notification(method: &str, params: Value) -> String {
-    let message = json!({ "jsonrpc": "2.0", "method": method, "params": params });
-    format!("{message}\n")
+    format!("{}\n", notification_message(method, params))
 }
 
 /// Classify one inbound line.

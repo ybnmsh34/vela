@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use vela_mcp::client::McpConnection;
-use vela_mcp::config::{McpConfig, StdioServer};
+use vela_mcp::config::{McpConfig, ServerSpec, StdioServer};
 use vela_mcp::error::McpError;
 use vela_mcp::pool::McpPool;
 
@@ -28,13 +28,25 @@ fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-mcp-server.mjs")
 }
 
-fn server() -> StdioServer {
+fn stdio_server() -> StdioServer {
     StdioServer {
         command: "node".to_owned(),
         args: vec![fixture().display().to_string()],
         env: BTreeMap::new(),
         cwd: None,
     }
+}
+
+fn server() -> ServerSpec {
+    ServerSpec::Stdio(stdio_server())
+}
+
+/// Every test here drives a local process, so no build of this crate needs an
+/// HTTP backend to run them — which is also the state a build without one is in,
+/// and `listing_every_server_reports_the_unwired_one_without_losing_the_working_one`
+/// is what holds that down.
+fn connect(id: &str, spec: &ServerSpec) -> vela_mcp::error::McpResult<McpConnection> {
+    McpConnection::connect(id, spec, None)
 }
 
 /// A configuration naming the fixture, as a user's own file would.
@@ -61,7 +73,7 @@ fn text_of(result: &serde_json::Value) -> String {
 
 #[test]
 fn a_real_server_process_answers_a_real_tool_list_over_a_real_pipe() {
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
     let tools = connection.list_tools().expect("tools/list");
 
     let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
@@ -79,7 +91,7 @@ fn a_real_server_process_answers_a_real_tool_list_over_a_real_pipe() {
 
 #[test]
 fn a_tool_call_round_trips_arguments_and_a_result() {
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
     let result = connection
         .call_tool("add", json!({ "a": 2, "b": 40 }))
         .expect("tools/call");
@@ -93,11 +105,11 @@ fn the_server_does_not_inherit_the_parent_environment() {
     // launched from a pasted command line.
     std::env::set_var("VELA_MCP_SECRET_CANARY", "must-not-reach-the-child");
 
-    let mut with_own_env = server();
+    let mut with_own_env = stdio_server();
     with_own_env
         .env
         .insert("VELA_MCP_DECLARED".to_owned(), "declared".to_owned());
-    let connection = McpConnection::connect("fixture", &with_own_env).expect("handshake");
+    let connection = connect("fixture", &ServerSpec::Stdio(with_own_env)).expect("handshake");
 
     let leaked = connection
         .call_tool("echo_env", json!({ "name": "VELA_MCP_SECRET_CANARY" }))
@@ -123,7 +135,7 @@ fn the_server_does_not_inherit_the_parent_environment() {
 
 #[test]
 fn a_second_read_of_the_tool_list_is_served_from_cache() {
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
     connection.list_tools().expect("first");
     connection.list_tools().expect("second");
     connection.list_tools().expect("third");
@@ -141,7 +153,7 @@ fn a_second_read_of_the_tool_list_is_served_from_cache() {
 
 #[test]
 fn a_list_changed_notification_invalidates_the_cached_tool_list() {
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
     let before = connection.list_tools().expect("first");
     assert!(!before.iter().any(|tool| tool.name == "grown_tool"));
 
@@ -167,7 +179,7 @@ fn a_list_changed_notification_invalidates_the_cached_tool_list() {
 
 #[test]
 fn a_server_that_dies_mid_request_fails_that_request_rather_than_hanging() {
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
 
     let started = std::time::Instant::now();
     let outcome = connection.call_tool("die", json!({}));
@@ -195,19 +207,19 @@ fn a_server_that_dies_mid_request_fails_that_request_rather_than_hanging() {
 fn stderr_output_is_captured_and_is_not_treated_as_a_failure() {
     // The fixture logs a line to stderr at startup, as many real servers do.
     // A client that read stderr as an error would refuse a working server.
-    let connection = McpConnection::connect("fixture", &server()).expect("handshake");
+    let connection = connect("fixture", &server()).expect("handshake");
     connection
         .list_tools()
         .expect("a chatty server still works");
 
     // The log line is read on another thread; give it a moment to arrive.
     for _ in 0..50 {
-        if !connection.recent_stderr().is_empty() {
+        if !connection.recent_diagnostics().is_empty() {
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    let logged = connection.recent_stderr();
+    let logged = connection.recent_diagnostics();
     assert!(
         logged.iter().any(|line| line.contains("ready")),
         "stderr should be captured for diagnostics, got {logged:?}"
@@ -252,7 +264,7 @@ fn the_pool_replaces_a_server_that_died() {
 }
 
 #[test]
-fn listing_every_server_reports_the_unsupported_one_without_losing_the_working_one() {
+fn listing_every_server_reports_the_unwired_one_without_losing_the_working_one() {
     let pool = McpPool::new(config_naming_the_fixture());
     let rows = pool.list_all_tools();
 
@@ -267,10 +279,15 @@ fn listing_every_server_reports_the_unsupported_one_without_losing_the_working_o
         .iter()
         .any(|tool| tool.name == "add"));
 
+    // `McpPool::new` builds a pool with no HTTP backend, which is what a build
+    // that did not wire one has. `TransportNotSupported` is still the answer —
+    // but it is now the answer to "this *build* cannot", not to "this client
+    // never can", and `tests/http_end_to_end.rs` drives the same entry through a
+    // pool that does have one.
     let remote_row = rows
         .iter()
         .find(|row| row.server_id == "remote")
-        .expect("an unsupported server must still be listed");
+        .expect("a server this build cannot reach must still be listed");
     assert!(matches!(
         remote_row.outcome,
         Err(McpError::TransportNotSupported { .. })
@@ -286,7 +303,7 @@ fn a_command_that_does_not_exist_fails_to_spawn_rather_than_hanging() {
         cwd: None,
     };
     assert!(matches!(
-        McpConnection::connect("missing", &missing),
+        connect("missing", &ServerSpec::Stdio(missing)),
         Err(McpError::SpawnFailed { .. })
     ));
 }

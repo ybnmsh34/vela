@@ -183,7 +183,9 @@ describe('a conversation is written as it happens', () => {
     });
 
     act(() => {
-      result.current.retry();
+      // Retry is bound to a turn now, so the test says which one: the last
+      // entry, which is where the button a user would press is drawn.
+      result.current.retry(result.current.entries[result.current.entries.length - 1]?.id ?? '');
     });
 
     await waitFor(async () => {

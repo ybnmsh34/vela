@@ -133,7 +133,7 @@ export function ConversationView({
             <EmptyConversation capabilities={capabilities} modelLabel={modelLabel} />
           ) : (
             <div className={styles.transcript} role="log" aria-live="polite" aria-busy={conversation.streaming}>
-              {conversation.entries.map((entry) =>
+              {conversation.entries.map((entry, index) =>
                 entry.kind === 'user' ? (
                   <UserTurn key={entry.id} text={entry.text} />
                 ) : (
@@ -143,7 +143,22 @@ export function ConversationView({
                     turn={entry.turn}
                     runDegradations={entry.runDegradations}
                     selectedProviderId={selectedProviderId ?? null}
-                    onRetry={conversation.streaming ? undefined : conversation.retry}
+                    // **Bound to this turn, not to the transcript.** Every
+                    // assistant turn used to be handed the same argument-less
+                    // `conversation.retry`, which re-sent whatever the *last*
+                    // user message was — so the button on an early failed turn
+                    // acted four turns away from itself. The id is the turn the
+                    // button is drawn on; `retry` resolves the question from it.
+                    onRetry={
+                      conversation.streaming
+                        ? undefined
+                        : () => {
+                            conversation.retry(entry.id);
+                          }
+                    }
+                    // Retrying replaces this turn and everything after it. When
+                    // there is an "after it", the button says so.
+                    laterTurnsFollow={index < conversation.entries.length - 1}
                   />
                 ),
               )}

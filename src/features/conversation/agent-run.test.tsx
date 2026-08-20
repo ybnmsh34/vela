@@ -756,7 +756,9 @@ describe('retrying an agent turn replaces the rows the run wrote', () => {
     });
 
     act(() => {
-      result.current.retry();
+      // Retry is bound to a turn now, so the test says which one: the last
+      // entry, which is where the button a user would press is drawn.
+      result.current.retry(result.current.entries[result.current.entries.length - 1]?.id ?? '');
     });
     await waitFor(() => {
       expect(reply(result.current).turn.answer).toBe('second answer');
@@ -806,7 +808,9 @@ describe('retrying an agent turn replaces the rows the run wrote', () => {
     });
 
     act(() => {
-      result.current.retry();
+      // Retry is bound to a turn now, so the test says which one: the last
+      // entry, which is where the button a user would press is drawn.
+      result.current.retry(result.current.entries[result.current.entries.length - 1]?.id ?? '');
     });
     act(() => {
       held.release();

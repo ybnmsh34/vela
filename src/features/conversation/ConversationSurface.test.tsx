@@ -914,3 +914,155 @@ describe('the conversation surface: what it reports about the turn to come', () 
     expect(measured.join(' ')).not.toContain('private deliberation');
   });
 });
+
+/**
+ * HOW A TURN ENDED, AND WHICH TURN A BUTTON ACTS ON.
+ *
+ * `turn-ending.test.ts` pins the decision; this pins that the decision reaches
+ * a screen, through the real hook and the real view, with nothing about the
+ * ending stubbed. Both defects here were *silences* rather than wrong output,
+ * which is why nothing in the suite before them went red: an empty reply drew an
+ * empty box, and a truncated answer drew an ordinary one.
+ */
+describe('the conversation surface: how a turn ended', () => {
+  it('gives a reply that arrived with nothing in it a state the user can act on', async () => {
+    const host = new ScriptedHost();
+    const user = userEvent.setup();
+    mount(host);
+    await ask('say nothing');
+
+    // A finished reply with no parts. Nothing failed — this is what a model that
+    // returns an empty completion actually produces.
+    act(() => {
+      host.push(done());
+    });
+
+    expect(visibleText()).toContain('The model returned nothing');
+    // "A state a user can act on" is the requirement, and a sentence is not one.
+    const again = screen.getByRole('button', { name: 'Try again' });
+    await user.click(again);
+    await waitFor(() => {
+      expect(host.sent).toHaveLength(2);
+    });
+    expect(host.sent[1]?.messages).toEqual([{ role: 'user', text: 'say nothing' }]);
+  });
+
+  it('marks an answer cut off at the model’s output limit', async () => {
+    const host = new ScriptedHost();
+    mount(host);
+    await ask('write me an essay');
+
+    act(() => {
+      host.push(
+        done({ parts: [{ kind: 'text', text: 'It begins, and then it' }], stopReason: 'maxTokens' }),
+      );
+    });
+
+    expect(screen.getByText('It begins, and then it')).toBeInTheDocument();
+    expect(visibleText()).toContain('Cut off at the model’s output limit');
+    // Re-running the same request hits the same cap. The control offered must
+    // not be the one that does that.
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('does not mark an ordinary finish', async () => {
+    const host = new ScriptedHost();
+    mount(host);
+    await ask('hello');
+
+    act(() => {
+      host.push(done({ parts: [{ kind: 'text', text: 'Hello back.' }] }));
+    });
+
+    expect(visibleText()).not.toContain('Cut off at the model');
+    expect(visibleText()).not.toContain('The model returned nothing');
+    expect(visibleText()).not.toContain('Stopped before it finished');
+  });
+
+  it('draws one ending and one retry control, never two', async () => {
+    const host = new ScriptedHost();
+    mount(host);
+    await ask('try me');
+
+    act(() => {
+      host.push({
+        type: 'error',
+        error: {
+          kind: 'malformedResponse',
+          diagnosis: { cause: 'response_was_not_json', correlation: 43 },
+        },
+      });
+    });
+
+    // The error block owns this ending. The ending block must stay silent, or
+    // the turn carries two sentences about one ending and two buttons.
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+    expect(visibleText()).not.toContain('The model returned nothing');
+  });
+});
+
+describe('the conversation surface: retry acts on the turn it is drawn on', () => {
+  it('re-sends the question the pressed turn answers, not the newest one', async () => {
+    const host = new ScriptedHost();
+    const user = userEvent.setup();
+    mount(host);
+
+    // Turn one fails in a way that offers a retry…
+    await ask('first question');
+    act(() => {
+      host.push({
+        type: 'error',
+        error: {
+          kind: 'malformedResponse',
+          diagnosis: { cause: 'response_was_not_json', correlation: 1 },
+        },
+      });
+    });
+
+    // …and the user moves on and asks something else, which works.
+    await ask('second question');
+    act(() => {
+      host.push(done({ parts: [{ kind: 'text', text: 'the second answer' }] }));
+    });
+    expect(host.sent).toHaveLength(2);
+
+    // The button on the *first* turn. It is labelled for what it does: retrying
+    // it replaces that turn and everything after it.
+    const again = screen.getByRole('button', { name: 'Try again from here' });
+    await user.click(again);
+
+    await waitFor(() => {
+      expect(host.sent).toHaveLength(3);
+    });
+    // The whole defect in one assertion. Before this, every assistant turn was
+    // handed the same argument-less `retry`, which re-sent the *last* user
+    // message — so this read `second question`.
+    expect(host.sent[2]?.messages).toEqual([{ role: 'user', text: 'first question' }]);
+
+    // And the transcript is the one that question belongs to: the later turn
+    // was written against the reply being replaced, so it goes with it.
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('Your message')).toHaveLength(1);
+    });
+    expect(visibleText()).not.toContain('second question');
+    expect(visibleText()).not.toContain('the second answer');
+  });
+
+  it('says "Try again" plainly when there is nothing after the turn to discard', async () => {
+    const host = new ScriptedHost();
+    mount(host);
+    await ask('only question');
+    act(() => {
+      host.push({
+        type: 'error',
+        error: {
+          kind: 'malformedResponse',
+          diagnosis: { cause: 'response_was_not_json', correlation: 2 },
+        },
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again from here' })).not.toBeInTheDocument();
+  });
+});

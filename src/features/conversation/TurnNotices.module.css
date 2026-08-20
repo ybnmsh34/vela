@@ -34,3 +34,17 @@
 }
 
 /* Tool-call cards live in `ToolCallList.module.css`. */
+
+/* See the note in `MessageTurn.module.css`: in a forced-colours mode the two
+   tones' fills and border colours are both replaced by the user's single pair,
+   so a warning note and an informational one become the same box. Border style
+   carries the distinction instead, and carries it without a colour. */
+@media (forced-colors: active) {
+  .note {
+    border-style: solid;
+  }
+
+  .note[data-tone='warning'] {
+    border-style: dashed;
+  }
+}

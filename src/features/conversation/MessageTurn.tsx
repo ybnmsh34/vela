@@ -17,6 +17,7 @@ import { Markdown } from './Markdown';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AnsweredByNote, DegradationNotes, RunDegradationNotes, ToolCalls } from './TurnNotices';
 import { describeChatError } from './notices';
+import { describeTurnEnding } from './turn-ending';
 import { hasReportedUsage, type TurnState } from './turn-stream';
 import styles from './MessageTurn.module.css';
 
@@ -57,6 +58,17 @@ interface AssistantTurnProps {
    * answered — and nothing branches on its value.
    */
   readonly selectedProviderId?: string | null | undefined;
+  /**
+   * Whether the transcript continues past this turn.
+   *
+   * Only the retry control's **wording** depends on it. Retrying a turn that
+   * something follows replaces this turn *and everything after it* — see
+   * `use-conversation.ts`'s `retry` — and a button labelled "Try again" is not a
+   * truthful name for a control that discards four later turns. The default is
+   * `false`, which is the last turn, which is the case every existing caller and
+   * test is in.
+   */
+  readonly laterTurnsFollow?: boolean | undefined;
 }
 
 export function AssistantTurn({
@@ -65,10 +77,32 @@ export function AssistantTurn({
   onRetry,
   runDegradations,
   selectedProviderId,
+  laterTurnsFollow = false,
 }: AssistantTurnProps) {
   const streaming = turn.phase === 'streaming' || turn.phase === 'awaiting';
   const error = turn.error === null ? null : describeChatError(turn.error);
   const showThinkingOnly = turn.answer === '' && turn.reasoning !== '';
+  const retryLabel = laterTurnsFollow ? 'Try again from here' : 'Try again';
+
+  /**
+   * How this turn ended, when the text above does not say — the empty reply, the
+   * answer cut off at the output cap, the turn stopped part-way, and the failure
+   * a reopened conversation restores without its reason.
+   *
+   * `describeTurnEnding` is total over both `TurnPhase` and `StopReason`, and it
+   * returns `null` whenever the error or refusal block below is already stating
+   * the ending, so exactly one of the two ever speaks and there is never a
+   * second **Try again** beside the first.
+   */
+  const ending = describeTurnEnding({
+    phase: turn.phase,
+    stopReason: turn.stopReason,
+    hasAnswer: turn.answer !== '',
+    hasReasoning: turn.reasoning !== '',
+    hasToolCalls: turn.outcomes.length > 0 || turn.toolProgress.length > 0,
+    hasError: turn.error !== null,
+    hasRefusal: turn.refusal !== null,
+  });
 
   // The `trace` id is a reference into the local debug log, and it is shown
   // only while that log is recording. It used to be shown unconditionally —
@@ -101,6 +135,18 @@ export function AssistantTurn({
         </p>
       ) : null}
 
+      {ending === null ? null : (
+        <div className={styles.ending} data-kind={ending.kind} data-tone={ending.tone}>
+          <p className={styles.errorTitle}>{ending.title}</p>
+          <p className={styles.errorDetail}>{ending.detail}</p>
+          {ending.offerRetry && onRetry !== undefined ? (
+            <button type="button" className={styles.retry} onClick={onRetry}>
+              {retryLabel}
+            </button>
+          ) : null}
+        </div>
+      )}
+
       <ToolCalls outcomes={turn.outcomes} progress={turn.toolProgress} />
       <AnsweredByNote answeredBy={turn.answeredBy} selected={selectedProviderId ?? null} />
       <DegradationNotes items={turn.degradations} />
@@ -116,7 +162,7 @@ export function AssistantTurn({
           </p>
           {onRetry === undefined ? null : (
             <button type="button" className={styles.retry} onClick={onRetry}>
-              Try again
+              {retryLabel}
             </button>
           )}
         </div>
@@ -142,7 +188,7 @@ export function AssistantTurn({
           )}
           {error.retryable && onRetry !== undefined ? (
             <button type="button" className={styles.retry} onClick={onRetry}>
-              Try again
+              {retryLabel}
             </button>
           ) : null}
         </div>

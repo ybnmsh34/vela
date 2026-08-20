@@ -194,3 +194,57 @@
   color: var(--vela-text-subtle);
   font-variant-numeric: tabular-nums;
 }
+
+/* HOW A TURN ENDED, WHEN THE TEXT ABOVE DOES NOT SAY.
+
+   Drawn as a block rather than as a line of muted text in the footer, because
+   the footer is where the token counts go and it is hidden until the turn is
+   hovered or focused. "Stopped" lived there — the same size, the same colour and
+   the same row as a token count — which is precisely the complaint: a turn that
+   was cut short looked like one that simply ended.
+
+   The thick left edge is what separates this from the degradation notes further
+   down. Those say what Vela changed *inside* a turn that finished; this says the
+   turn did not finish the way the text implies. */
+.ending {
+  margin-top: var(--vela-space-3);
+  padding: var(--vela-space-3);
+  border: 1px solid var(--vela-border);
+  border-left-width: 3px;
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-notice-bg);
+}
+
+.ending[data-tone='warning'] {
+  border-color: var(--vela-warning);
+  background: var(--vela-warning-bg);
+}
+
+/* FORCED COLOURS: THE TONE HAS TO SURVIVE LOSING EVERY COLOUR.
+
+   In a forced-colours mode the engine replaces author backgrounds and border
+   colours with the user's own pair, so `--vela-notice-bg` and `--vela-warning-bg`
+   resolve to the same fill and `--vela-border` and `--vela-warning` to the same
+   line: the two tones above become one box. The distinction is restated in a
+   property forced colours does not touch — the border's *style* — so a warning
+   still reads as a warning with no colour involved at all.
+
+   The same substitution is applied to `.error` and to the notes in
+   `TurnNotices.module.css`, which had the identical problem. */
+@media (forced-colors: active) {
+  .ending {
+    border-style: solid;
+  }
+
+  .ending[data-tone='warning'] {
+    border-style: dashed;
+  }
+
+  .error {
+    border-style: dashed;
+  }
+
+  .error[data-kind='stopped'] {
+    border-style: solid;
+  }
+}

@@ -224,3 +224,29 @@
 .handle:focus-visible::after {
   opacity: 1;
 }
+
+/* WHERE YOU ARE, IN THE RAIL.
+
+   `aria-current="page"` is the semantics; these two rules are the pixels. They
+   reuse the exact declarations the `:hover` rules on the same two elements
+   already make — `--vela-text` on `--vela-surface`, `--vela-border-strong` — so
+   no composition enters this stylesheet that `contrast.test.ts` has not already
+   measured. */
+.searchButton[aria-current='page'] {
+  border-color: var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.iconButton[aria-current='page'] {
+  background: var(--vela-surface);
+  color: var(--vela-text);
+}
+
+/* Forced colours replaces both of those with the user's own pair, and "current"
+   stops being visible at all. Border style is not a colour and survives. */
+@media (forced-colors: active) {
+  .searchButton[aria-current='page'],
+  .iconButton[aria-current='page'] {
+    border-style: dashed;
+  }
+}

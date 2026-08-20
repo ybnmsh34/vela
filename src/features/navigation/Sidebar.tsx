@@ -11,6 +11,16 @@
  * `Enter`/`Space` open (the row is a button, so that is free), `F2` renames,
  * `Delete` asks to delete, `Home`/`End` jump.
  *
+ * ## Home
+ *
+ * The rail's **Home** control is the only thing in the product that clears the
+ * selection. `select(null)` had one caller before it — `deleteConversation` —
+ * which meant the home screen was reachable exactly by deleting the
+ * conversation you were reading. It is offered in both branches of this
+ * component, expanded and collapsed, because a control that exists only in the
+ * expanded rail is not reachable from a collapsed one, and `sidebarCollapsed` is
+ * persisted across restarts.
+ *
  * ## Resizing
  *
  * The handle is a `separator` with `aria-valuenow`, which makes it operable
@@ -186,6 +196,17 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           type="button"
           className={styles.iconButton}
           onClick={() => {
+            select(null);
+          }}
+          aria-label="Home"
+          {...(selectedId === null ? { 'aria-current': 'page' as const } : {})}
+        >
+          <HomeIcon />
+        </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
             openPalette('search');
           }}
           aria-label="Search conversations"
@@ -271,6 +292,17 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             <ChevronIcon direction="left" />
           </button>
         </div>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            select(null);
+          }}
+          {...(selectedId === null ? { 'aria-current': 'page' as const } : {})}
+        >
+          <HomeIcon />
+          <span>Home</span>
+        </button>
         <button
           type="button"
           className={styles.searchButton}
@@ -421,6 +453,25 @@ function PlusIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
       <path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * A roof over a doorway. Drawn from the same 16-unit box and 1.4 stroke as the
+ * rest of the rail, so the set still reads as one set.
+ */
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M2.6 7.2 8 2.8l5.4 4.4v5.4a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M6.4 13.6V9.4h3.2v4.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
     </svg>
   );
 }

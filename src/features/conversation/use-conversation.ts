@@ -250,8 +250,19 @@ export interface Conversation {
   readonly blockedReason: string | null;
   send: (text: string) => void;
   stop: () => void;
-  /** Re-runs the last user message. No-op when there is nothing to re-run. */
-  retry: () => void;
+  /**
+   * Re-runs the turn with this entry id: the nearest user message at or before
+   * it is re-sent, and that message and everything after it is replaced — in the
+   * transcript and in the store.
+   *
+   * The id is required rather than optional. Defaulting it to "the last turn"
+   * is the behaviour this argument was added to end, and an optional parameter
+   * would leave that behaviour one forgotten call site away.
+   *
+   * No-op for an id that is not in the transcript, and for one with no user
+   * message at or before it.
+   */
+  retry: (entryId: string) => void;
   /** Whether the next turn runs through the agent runtime, and whether it may. */
   readonly agent: AgentMode;
 }
@@ -996,14 +1007,47 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     void handle.cancel();
   }, []);
 
-  const retry = useCallback(() => {
+  /**
+   * Re-run **the turn whose button was pressed**, not the last one.
+   *
+   * This took an entry id because it did not have one and could not have been
+   * right without it. Every assistant turn in the transcript is handed the same
+   * zero-argument `retry`, and every one of them renders a **Try again** button
+   * whenever its error is retryable — so a conversation holding an early
+   * rate-limited turn and four good ones after it showed a button on the early
+   * turn that re-sent the *fifth* message and deleted the fifth turn. The button
+   * was on one turn and the action was on another, and nothing on screen said so.
+   *
+   * The question a reply answers is the nearest user turn **at or before** it,
+   * which is the entry itself when a user turn is what was retried. Everything
+   * from that question onward is dropped, here and in the store: the later turns
+   * were written against the reply being replaced, so keeping them would leave
+   * the transcript answering a question that is no longer in it.
+   *
+   * Callers say which turn: `ConversationView.tsx` binds each turn's button to
+   * its own entry id, and labels the button "Try again from here" whenever
+   * anything follows — the discard is the part a user must not discover after
+   * the fact.
+   */
+  const retry = useCallback((entryId: string) => {
     if (streaming) return;
     const current = entriesRef.current;
-    const lastUser = [...current].reverse().find((entry) => entry.kind === 'user');
-    if (lastUser === undefined) return;
+    const at = current.findIndex((entry) => entry.id === entryId);
+    // An id no longer in the transcript. Falling back to "the last turn" is what
+    // this function used to do unconditionally, and doing it here would put the
+    // defect back for exactly the case — a stale button — where it does the most
+    // damage.
+    if (at === -1) return;
+    const questionIndex = current
+      .slice(0, at + 1)
+      .map((entry) => entry.kind)
+      .lastIndexOf('user');
+    if (questionIndex === -1) return;
+    const lastUser = current[questionIndex];
+    if (lastUser === undefined || lastUser.kind !== 'user') return;
     // Everything before that user turn is the history; the failed reply and the
     // message itself are replaced, not appended to.
-    const dropped = current.slice(current.indexOf(lastUser));
+    const dropped = current.slice(questionIndex);
     // …and replaced in the store too. Without this the record grows a second
     // copy of every retried message, so the transcript that comes back after a
     // retry is not the transcript the user was looking at when they retried.
@@ -1069,7 +1113,7 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     // parts on the entry are the record of what this message carries.
     const carried = lastUser.parts ?? NO_PARTS;
     const begin = agentOn ? startRun : start;
-    begin(current.slice(0, current.indexOf(lastUser)), lastUser.text, () =>
+    begin(current.slice(0, questionIndex), lastUser.text, () =>
       Promise.resolve(carried),
     );
   }, [agentOn, conversationId, enqueue, start, startRun, streaming, transcript]);

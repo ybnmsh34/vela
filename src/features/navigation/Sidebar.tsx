@@ -33,6 +33,7 @@ import { useMemoryStore } from '@/state/memory-store';
 import { useSkillsStore } from '@/state/skills-store';
 import { useSchedulesStore } from '@/state/schedules-store';
 import { useProjectStore } from '@/state/project-store';
+import { useCoworkStore } from '@/state/cowork-store';
 import type { ConversationSummary } from '@/platform/contract';
 import {
   clampSidebarWidth,
@@ -84,6 +85,9 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
   // and this one may not import it either.
   const setSchedulesOpen = useSchedulesStore((state) => state.setOpen);
   const setProjectsOpen = useProjectStore((state) => state.setOpen);
+  // The sixth pane, reached across the same seam and for the same reason: the
+  // cowork dock is another feature and this one may not import it.
+  const setCoworkOpen = useCoworkStore((state) => state.setOpen);
 
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -232,6 +236,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
         </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => {
+            setCoworkOpen(true);
+          }}
+          aria-label="Cowork"
+        >
+          <CoworkIcon />
+        </button>
       </nav>
     );
   }
@@ -321,6 +335,16 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         >
           <ProjectsIcon />
           <span>Projects</span>
+        </button>
+        <button
+          type="button"
+          className={styles.searchButton}
+          onClick={() => {
+            setCoworkOpen(true);
+          }}
+        >
+          <CoworkIcon />
+          <span>Cowork</span>
         </button>
       </div>
 
@@ -501,6 +525,24 @@ function ScheduleIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** A checklist: the cowork dock leads with a plan. Same 16-unit box and stroke
+ *  weight as every other glyph in this file. */
+function CoworkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M2.8 4.6 4 5.8l2.2-2.2M2.8 11 4 12.2l2.2-2.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M8.4 4.8h4.8M8.4 11.2h4.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

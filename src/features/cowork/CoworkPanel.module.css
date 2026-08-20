@@ -1,0 +1,469 @@
+/* The cowork dock: task switcher on the left, one of three panels on the right.
+ *
+ * Every colour, radius, size and duration below is a `--vela-*` token, per
+ * conventions §7 and `src/styles/design-system.test.ts`. Note what is NOT here:
+ * a 16px radius. The brief that asked for this surface named radii 8/12/16/pill,
+ * and `src/styles/tokens.css` defines xs/sm/md/lg/pill = 2/4/8/12/999 with no
+ * 16px step. The token file wins, so the largest box radius here is
+ * `--vela-radius-lg`. Adding a `--vela-radius-xl` to satisfy a brief would be
+ * answering a settled design question a second time. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* A dock taller than a scaled-up window overflows downwards into a scroll
+     rather than symmetrically off both edges, where its heading would be
+     unreachable. Same rule the other four panes keep — it is what makes 150%
+     display scaling usable rather than merely rendered. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-panel-measure), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.intro,
+.note,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.footnote {
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+/* ---- the panel tabs ------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: var(--vela-space-1);
+  padding-bottom: var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.tab {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text-muted);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--vela-row-hover);
+}
+
+/* `aria-selected` rather than a class: the attribute is what a screen reader
+   reads, so styling from it makes the two impossible to disagree. */
+.tab[aria-selected='true'] {
+  background: var(--vela-row-selected);
+  border-color: var(--vela-border-strong);
+  color: var(--vela-row-selected-text);
+  font-weight: var(--vela-weight-medium);
+}
+
+/* ---- the task switcher --------------------------------------------------- */
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  width: 100%;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskRow:hover {
+  background: var(--vela-row-hover);
+}
+
+/* The active conversation carries `aria-current="page"`, which is the same
+   attribute the sidebar's own rows carry. Styling from it means the thing a
+   screen reader announces and the thing an eye sees cannot drift apart. */
+.taskRow[aria-current='page'] {
+  background: var(--vela-row-selected);
+  border-color: var(--vela-border-strong);
+  color: var(--vela-row-selected-text);
+}
+
+.taskCount {
+  margin-left: auto;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the plan ------------------------------------------------------------ */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--vela-space-1) var(--vela-space-3);
+  align-items: baseline;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+}
+
+/* The current step is marked with a border and a weight, never with colour
+   alone: a user who cannot separate the two hues still has to be able to see
+   which step is running. */
+.stepCurrent {
+  background: var(--vela-bg-inset);
+  border-color: var(--vela-border-strong);
+}
+
+.stepAhead .stepTitle {
+  color: var(--vela-text-muted);
+}
+
+.marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.markerDone {
+  background: var(--vela-accent-quiet);
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.markerCurrent {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.stepTitle {
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.stepCurrent .stepTitle {
+  font-weight: var(--vela-weight-semibold);
+}
+
+.stepBody {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+/* ---- a comment on a step ------------------------------------------------- */
+
+.directive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-notice-bg);
+  border-left: 2px solid var(--vela-accent);
+  border-radius: var(--vela-radius-sm);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.directiveLabel {
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+}
+
+/* A comment the run never read. Warning-coloured *and* labelled in words,
+   because the whole reason this state is rendered is that it must not look like
+   the ones that landed. */
+.directiveLost {
+  background: var(--vela-warning-bg);
+  border-left-color: var(--vela-warning);
+}
+
+.commentForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.commentInput {
+  width: 100%;
+  min-height: var(--vela-space-7);
+  padding: var(--vela-space-2);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+  resize: vertical;
+}
+
+.commentActions {
+  display: flex;
+  gap: var(--vela-space-2);
+}
+
+.button {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--vela-row-hover);
+}
+
+.button:disabled {
+  color: var(--vela-text-subtle);
+  cursor: not-allowed;
+}
+
+.buttonPrimary {
+  background: var(--vela-accent);
+  border-color: var(--vela-accent);
+  color: var(--vela-text-on-accent);
+}
+
+.buttonPrimary:hover:not(:disabled) {
+  background: var(--vela-accent-hover);
+  border-color: var(--vela-accent-hover);
+}
+
+/* ---- rows shared by the project and context panels ----------------------- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  padding: var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+}
+
+.rowName {
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.path {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  letter-spacing: var(--vela-tracking-code);
+  line-height: var(--vela-leading-code);
+  overflow-wrap: anywhere;
+}
+
+/* A status word, not a bare dot: a dot has to be explained and a word does not,
+   and `--vela-dot` sized indicators were already the thing four features each
+   invented separately. */
+.badge {
+  margin-left: auto;
+  padding: 0 var(--vela-space-2);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-2xs);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badgeOk {
+  border-color: var(--vela-success);
+  color: var(--vela-success);
+}
+
+.badgeWarn {
+  border-color: var(--vela-warning);
+  color: var(--vela-warning);
+}
+
+.badgeBad {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tool {
+  padding: 0 var(--vela-space-2);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-pill);
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-2xs);
+  letter-spacing: var(--vela-tracking-code);
+}
+
+/* ---- Windows High Contrast ----------------------------------------------- *
+ * In forced-colors the OS replaces every colour, so a state carried *only* by
+ * colour disappears — the selected tab, the current step and the three badges
+ * would all flatten into their neighbours. The system keywords below are not
+ * colour literals in the sense conventions §7 forbids; they are the names of
+ * whatever the user chose, which is the whole point of the mode. `forced-color-
+ * adjust: none` is deliberately NOT used: overriding the user's palette is the
+ * one thing this mode exists to prevent. */
+@media (forced-colors: active) {
+  .tab[aria-selected='true'],
+  .taskRow[aria-current='page'] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  /* A border the OS will actually paint, so "which step is running" survives
+     when every background collapses to Canvas. */
+  .stepCurrent,
+  .markerCurrent,
+  .markerDone {
+    border-color: Highlight;
+  }
+
+  .directive {
+    border-left-color: Highlight;
+  }
+
+  .badge,
+  .badgeOk,
+  .badgeWarn,
+  .badgeBad {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+}
+
+/* ---- text for the screen reader only ------------------------------------- *
+ * There is no app-wide `.sr-only` in `src/styles/base.css` — checked, not
+ * assumed — so this module carries its own. The clip-rect pattern rather than
+ * `display: none` or `visibility: hidden`, both of which remove the text from
+ * the accessibility tree as well as from the page, which is the opposite of
+ * what it is for. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

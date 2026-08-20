@@ -39,6 +39,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { COMMAND_ALLOWLIST } from '@/platform/contract';
+
 const REPO_ROOT = process.cwd();
 const SRC_ROOT = join(REPO_ROOT, 'src');
 const ENTRY = join(SRC_ROOT, 'main.tsx');
@@ -104,15 +106,15 @@ const NOT_SHIPPED = new Map<string, string>([
  * its own debt by one module for a whole wave.
  */
 const AWAITING_A_SURFACE = new Map<string, string>([
-  [
-    'src/data/mcp-repository.ts',
-    'the renderer’s door to `mcp_list_tools`, which `src-tauri/src/ipc/mcp.rs` ' +
-      'serves, `src-tauri/src/lib.rs` registers and `src-tauri/src/ipc/mod.rs` ' +
-      'allowlists. Its only importer in the whole tree is its own test. There is ' +
-      'no `src/features/mcp/` — no pane, no control, no store — so wiring it is a ' +
-      'surface, not a mount, and it is not this branch’s change. Delete this entry ' +
-      'when a user can press something that reaches `toolCatalogue()`',
-  ],
+  // `src/data/mcp-repository.ts` was the only entry and it is discharged. Its
+  // condition was, verbatim, "Delete this entry when a user can press something
+  // that reaches `toolCatalogue()`" — `src/features/cowork/ContextPanel.tsx` is
+  // that something, reached from the sidebar's Cowork control through
+  // `CoworkSurface`. The map is deliberately kept rather than removed: it is the
+  // shape a future debt gets recorded in. Nothing asserts that it stays empty,
+  // and this sentence says so rather than implying a guard: what would catch the
+  // next module of this kind is the walk itself, and what catches the next
+  // *command* of this kind is the command-level pair added below.
 ]);
 
 /** `.ts`/`.tsx` under a directory, recursively, tests excluded. */
@@ -433,6 +435,138 @@ describe('the renderer is wired into the product', () => {
         REACHABLE.has(join(REPO_ROOT, path)),
         `${path} is on the graph now. That is the fix landing, not a failure: ` +
           `delete its AWAITING_A_SURFACE entry. It was waiting for — ${waitingFor}`,
+      ).toBe(false);
+    }
+  });
+
+  /**
+   * THE SAME QUESTION, ASKED ONE NOTCH WIDER — about commands, not modules.
+   *
+   * Everything above measures **modules**: is this file on the import graph. That
+   * is not the question the map's own header poses, which is "a module this repo
+   * built … behind a host command that is registered and served, with nothing a
+   * user can press on the other end". A command can fail that description with no
+   * module for this walk to find missing, and one did.
+   *
+   * `project_layout` at `c997c89`: declared in `IpcContract`, in
+   * `COMMAND_ALLOWLIST`, in the Rust allowlist and `generate_handler!`,
+   * implemented in `src-tauri/src/ipc/project.rs`, faked in
+   * `browser-adapter.ts`, exercised by `browser-adapter-projects.test.ts` — and
+   * called from nothing under `src/`. It was invisible here because
+   * `projects-repository.ts` **declined to write the method**, saying so in its
+   * own header: "Four methods, not eight … a method here for each would be four
+   * more seams claiming a surface that does not exist." That is a defensible
+   * choice and it is also why the debt went uncounted: no door, no module, no
+   * entry, no red.
+   *
+   * So the question is asked in two parts, because a command needs both halves
+   * and the two failure modes look nothing alike:
+   *
+   *  1. **A door exists** — some shipping module under `src/` calls
+   *     `invoke('<name>', …)`. `project_layout` failed this one.
+   *  2. **The door is on the graph** — that module is reachable from
+   *     `src/main.tsx`. `mcp_list_tools` failed *this* one: `mcp-repository.ts`
+   *     called it perfectly well and nothing in the tree imported the file.
+   *
+   * The adapters are excluded because they *implement* commands rather than
+   * calling them: `browser-adapter.ts` names all 58 in a `switch`, so counting it
+   * as a caller would make this assertion vacuous in the direction that reads as
+   * clean — the same trap `walks a graph big enough to be worth walking` guards
+   * against above.
+   */
+  const ADAPTERS = ['src/platform/browser-adapter.ts', 'src/platform/tauri-adapter.ts'];
+
+  /**
+   * Commands with no renderer caller, each with the reason — the command-level
+   * twin of `AWAITING_A_SURFACE`, and asserted in both directions for the same
+   * reason: an exemption that has quietly stopped applying reads exactly like a
+   * clean tree.
+   */
+  const NO_RENDERER_CALLER = new Map<string, string>([
+    [
+      'project_delete',
+      'destroys a project root on disk. It needs a confirmation surface that says ' +
+        'what is destroyed and what is only unlinked — `vela_projects::remove_tree` ' +
+        'refuses to descend into a reparse point, so skill mounts are unlinked ' +
+        'rather than emptied — and no pane asks that question yet',
+    ],
+    [
+      'project_move_conversation',
+      'files a conversation into another project. Unreachable for a stated ' +
+        'contract reason rather than an oversight: `ConversationSummary` in ' +
+        '`contract.ts` carries no project id, so the renderer cannot show which ' +
+        'project a conversation is currently in, and a move control with no ' +
+        '"from" is a control the user cannot check',
+    ],
+    [
+      'project_reconcile_skills',
+      'the same host operation as `project_layout` under a second name — reading ' +
+        'a layout reconciles, per `ProjectCommands` — so the cowork project panel ' +
+        'already causes the reconcile it would ask for. It earns a caller when a ' +
+        'surface needs to reconcile *without* reading, which none does',
+    ],
+  ]);
+
+  it('every allowlisted command is reachable from something a user can press', () => {
+    const shipping = shippingModules(SRC_ROOT).filter(
+      (file) => !ADAPTERS.includes(asRepoPath(file)),
+    );
+
+    const callers = new Map<string, string[]>();
+    for (const file of shipping) {
+      const text = readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/\binvoke\(\s*'([a-z_]+)'/g)) {
+        const name = match[1] ?? '';
+        callers.set(name, [...(callers.get(name) ?? []), asRepoPath(file)]);
+      }
+    }
+
+    // Part 1: a door exists at all.
+    const doorless = COMMAND_ALLOWLIST.filter((name) => !callers.has(name)).filter(
+      (name) => !NO_RENDERER_CALLER.has(name),
+    );
+    expect(
+      doorless,
+      'these commands are served by the host and called by nothing under src/. ' +
+        'Either build the surface, or record the reason in NO_RENDERER_CALLER — ' +
+        'an uncounted one is how project_layout stayed unreachable for a whole phase',
+    ).toEqual([]);
+
+    // Part 2: the door is on the graph. A caller nothing imports is not a caller.
+    const stranded = COMMAND_ALLOWLIST.filter((name) => !NO_RENDERER_CALLER.has(name))
+      .filter((name) => {
+        const doors = callers.get(name) ?? [];
+        return doors.length > 0 && !doors.some((door) => REACHABLE.has(join(REPO_ROOT, door)));
+      })
+      .map((name) => `${name} — door(s): ${(callers.get(name) ?? []).join(', ')}`);
+    expect(
+      stranded,
+      'these commands have a renderer door and nothing on the import graph ' +
+        'reaches it. That is the mcp_list_tools shape: a correct, tested module ' +
+        'that the application never loads',
+    ).toEqual([]);
+  });
+
+  it('names every command exemption, and every exemption still applies', () => {
+    const shipping = shippingModules(SRC_ROOT).filter(
+      (file) => !ADAPTERS.includes(asRepoPath(file)),
+    );
+    const called = new Set<string>();
+    for (const file of shipping) {
+      for (const match of readFileSync(file, 'utf8').matchAll(/\binvoke\(\s*'([a-z_]+)'/g)) {
+        called.add(match[1] ?? '');
+      }
+    }
+
+    for (const [name, reason] of NO_RENDERER_CALLER) {
+      expect(
+        (COMMAND_ALLOWLIST as readonly string[]).includes(name),
+        `${name} is not an allowlisted command; fix NO_RENDERER_CALLER`,
+      ).toBe(true);
+      expect(
+        called.has(name),
+        `${name} has a renderer caller now. That is the fix landing, not a ` +
+          `failure: delete its NO_RENDERER_CALLER entry. It was exempt because — ${reason}`,
       ).toBe(false);
     }
   });

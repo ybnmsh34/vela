@@ -5,8 +5,9 @@
 
 import { useMemo, useState } from 'react';
 
-import { createSandboxRepository } from '@/data/sandbox-repository';
+import { createSandboxRepository, type SandboxRepository } from '@/data/sandbox-repository';
 import { CanvasSurface } from '@/features/canvas';
+import { CoworkSurface } from '@/features/cowork';
 import { ConversationSurface } from '@/features/conversation';
 import { MemorySurface } from '@/features/memory';
 import { ModelWorkspace, useSelectedModel } from '@/features/models';
@@ -32,30 +33,72 @@ export function App({ adapter }: AppProps) {
   return (
     <PlatformProvider {...(adapter === undefined ? {} : { adapter })}>
       <KeyboardProvider>
-        <AppShell>
-          <Workspace />
-        </AppShell>
-        {/* Mounted here rather than in the sidebar that opens it, because one
-            feature may not import another. Each renders nothing until the user
-            asks for it — and until then neither reads the host either. */}
-        <MemorySurface />
-        {/* The fifth joint, and the same shape as the four above:
-            `src/data/skills-repository.ts` was written, correct and covered by
-            its own tests, and its only importer in the tree was that test file
-            — so `skills_list` and `skills_read` were reachable from nothing a
-            user could press. This line is what makes the skill store visible in
-            the window; `src/app/skills-reachable.test.tsx` is what says so, and
-            fails if this line goes. */}
-        <SkillsSurface />
-        {/* The same shape, and it closes the same kind of hole: the five
-            `schedules_*` commands were registered, allowlisted and tested on
-            the host side with no renderer caller at all, so the poll thread ran
-            every thirty seconds over a table nothing could add a row to. This
-            line and the sidebar button are the joint. */}
-        <SchedulesSurface />
-        <ProjectsSurface />
+        <Composed />
       </KeyboardProvider>
     </PlatformProvider>
+  );
+}
+
+/**
+ * Everything that needs the adapter, one level inside the provider that supplies
+ * it.
+ *
+ * This layer exists because two things now need the **same** runtime instance
+ * and they are not in an ancestor relationship: the workspace, which starts
+ * runs, and the cowork dock, which watches them. `createAgentRuntime` is still
+ * called exactly once and still only in this file — `src/runtime/reachable.test.ts`
+ * asserts that by grepping every module under `src/` for the factory — but the
+ * call had to move up out of `Workspace` to be shared. Building a second runtime
+ * for the dock would have given it a live-run directory that could not see any
+ * run the transcript started, which is the "second directory nothing else can
+ * see" that guard names.
+ *
+ * The projects read is here for the same reason and was already app-wide: it
+ * runs whether or not any pane is opened, because every run depends on its
+ * answer.
+ */
+function Composed() {
+  const adapter = usePlatform();
+  const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
+  const sandbox = useMemo(() => createSandboxRepository(adapter), [adapter]);
+  const projectId = useActiveProjectId();
+
+  return (
+    <>
+      <AppShell>
+        <Workspace runtime={runtime} sandbox={sandbox} projectId={projectId} />
+      </AppShell>
+      {/* Mounted here rather than in the sidebar that opens it, because one
+          feature may not import another. Each renders nothing until the user
+          asks for it — and until then neither reads the host either. */}
+      <MemorySurface />
+      {/* The fifth joint, and the same shape as the four above:
+          `src/data/skills-repository.ts` was written, correct and covered by
+          its own tests, and its only importer in the tree was that test file
+          — so `skills_list` and `skills_read` were reachable from nothing a
+          user could press. This line is what makes the skill store visible in
+          the window; `src/app/skills-reachable.test.tsx` is what says so, and
+          fails if this line goes. */}
+      <SkillsSurface />
+      {/* The same shape, and it closes the same kind of hole: the five
+          `schedules_*` commands were registered, allowlisted and tested on
+          the host side with no renderer caller at all, so the poll thread ran
+          every thirty seconds over a table nothing could add a row to. This
+          line and the sidebar button are the joint. */}
+      <SchedulesSurface />
+      <ProjectsSurface />
+      {/* The sixth joint, and it closes two holes of the shape the five above
+          document. `project_layout` was allowlisted, registered in
+          `generate_handler!`, implemented in `src-tauri/src/ipc/project.rs` and
+          faked in `browser-adapter.ts` with **no caller under `src/`** — a
+          command a user could not reach, which the module-level reachability
+          guard cannot see because the door was never built for it to find
+          missing. And `src/data/mcp-repository.ts` sat in that guard's
+          `AWAITING_A_SURFACE` list waiting, in its own words, for "a user
+          [to] press something that reaches `toolCatalogue()`". This line and
+          the sidebar button are that something. */}
+      <CoworkSurface runtime={runtime} projectId={projectId} />
+    </>
   );
 }
 
@@ -158,14 +201,18 @@ export function App({ adapter }: AppProps) {
  * what `HarnessRuntime` in `src/platform/contract-harness.ts` means by "built
  * once at the composition root and passed down".
  */
-function Workspace() {
+function Workspace({
+  runtime,
+  sandbox,
+  projectId,
+}: {
+  readonly runtime: HarnessRuntime;
+  readonly sandbox: SandboxRepository;
+  readonly projectId: ProjectId | null;
+}) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
   const [turnTexts, setTurnTexts] = useState<readonly string[] | null>(null);
   const [answers, setAnswers] = useState<readonly string[]>(NO_ANSWERS);
-  const adapter = usePlatform();
-  const runtime = useMemo<HarnessRuntime>(() => createAgentRuntime(adapter), [adapter]);
-  const sandbox = useMemo(() => createSandboxRepository(adapter), [adapter]);
-  const projectId = useActiveProjectId();
 
   return (
     <ModelWorkspace hasHistory={conversationId !== null} turnTexts={turnTexts}>

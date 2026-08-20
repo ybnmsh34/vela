@@ -38,6 +38,18 @@
  * `resolves real colours, not jsdom's defaults` exists below and asserts on
  * **resolved values**, not on element counts.
  *
+ * That floor was necessary and it was not sufficient, in the way this repo keeps
+ * finding: it asked its question one notch too narrow. It asked whether *more
+ * than a hundred* compositions resolved, and it asked it of the **light**
+ * reading only — as did every other check in this file. Two things got through,
+ * both measured by doing them rather than argued: starving the dark walk to one
+ * of twenty-three fixtures left the file green at exit 0, and emptying
+ * `rootColour` — what a `base.css body` whose colour stopped resolving would do
+ * — deleted every *inherited* colour in the app and still left it green, because
+ * the minority of elements that declare their own colour cleared the hundred on
+ * their own. `measures every element it reaches, in both themes` replaces that
+ * threshold with two totality laws; see it for what each one forbids.
+ *
  * Nothing here asks jsdom for a style. It asks jsdom for exactly one thing —
  * **which element is inside which** — and reads every colour itself, from the
  * stylesheet text, with `css-model.ts`. The class names survive `css: false`
@@ -1169,12 +1181,38 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/skills/SkillsPanel.module.css — .rowDirectory',
 ];
 
+/**
+ * The shape of one fixture's walk: how many text-carrying elements it found and
+ * how many states it visited on them.
+ *
+ * Both numbers are **palette-independent by construction** — `paintsText` reads
+ * the DOM and nothing else, and `statesOn` reads selectors and nothing else. No
+ * colour value can move either. That is what makes comparing the two themes'
+ * walks a law rather than an observation (RULE Q): the readings differ only in
+ * the `Map` handed to `readPaint`, so a difference in the *walk* means one of
+ * them stopped early.
+ */
+interface Walked {
+  readonly fixture: string;
+  readonly elements: number;
+  readonly states: number;
+}
+
 interface Reading {
   readonly failures: readonly string[];
   readonly measured: number;
   readonly reached: ReadonlySet<string>;
   readonly unreadable: readonly string[];
   readonly unknownClasses: ReadonlySet<string>;
+  /** Per fixture, in fixture order — see {@link Walked}. */
+  readonly walk: readonly Walked[];
+  /**
+   * Every `(fixture, element, state)` the walk reached that yielded **no
+   * composition at all**. Not a count and not a floor: a totality property. An
+   * element whose colour resolves to nothing measures nothing, contributes no
+   * `failures`, and is indistinguishable from an element that passed.
+   */
+  readonly blank: readonly string[];
   /** One named composition, kept so the floors can assert on a resolved value. */
   readonly sample: { readonly ratio: number; readonly ground: string; readonly colour: string } | null;
 }
@@ -1196,6 +1234,8 @@ async function readTheApp(theme: Theme): Promise<Reading> {
   const reached = new Set<string>();
   const unreadable: string[] = [];
   const unknownClasses = new Set<string>();
+  const walk: Walked[] = [];
+  const blank: string[] = [];
   let measured = 0;
   let sample: Reading['sample'] = null;
 
@@ -1221,16 +1261,33 @@ async function readTheApp(theme: Theme): Promise<Reading> {
     mounting = fixture.name;
     await fixture.mount();
     const audit = new Audit(prepared, beneath, rootColour);
+    let elements = 0;
+    let states = 0;
     for (const element of Array.from(document.body.querySelectorAll('*'))) {
       audit.noteReach(element);
       if (!paintsText(element)) continue;
+      elements += 1;
       const pairs: { colour: Layer; ground: Layer }[] = [];
       for (const state of audit.statesOn(element)) {
+        states += 1;
+        const before = pairs.length;
         for (const ground of audit.groundIn(element, state)) {
           for (const colour of audit.colourIn(element, state)) pairs.push({ colour, ground });
           // A `::placeholder` or `::after` is painted on the element's own
           // ground, in its own colour.
           for (const colour of audit.pseudoColours(element)) pairs.push({ colour, ground });
+        }
+        // THE TOTALITY FLOOR. An element the walk reached but measured nothing
+        // on is not a pass — it is an absence wearing a pass's clothes. The way
+        // this whole file goes quietly vacuous is a colour chain that resolves
+        // to nothing: `coloursFor` bottoms out at `base.css body`, and if that
+        // ever stops resolving, every element that *inherits* its colour yields
+        // zero pairs, contributes zero `failures`, and reads as green.
+        if (pairs.length === before) {
+          blank.push(
+            `${fixture.name} — <${element.tagName.toLowerCase()}>` +
+              `${state === '' ? '' : ` in state \`${state}\``} measured nothing`,
+          );
         }
       }
       for (const { colour, ground } of pairs) {
@@ -1247,6 +1304,7 @@ async function readTheApp(theme: Theme): Promise<Reading> {
         }
       }
     }
+    walk.push({ fixture: fixture.name, elements, states });
     for (const name of audit.reached) reached.add(name);
     unreadable.push(...audit.unreadable);
     for (const name of audit.unknownClasses) unknownClasses.add(name);
@@ -1259,6 +1317,8 @@ async function readTheApp(theme: Theme): Promise<Reading> {
     reached,
     unreadable: [...new Set(unreadable)].sort(),
     unknownClasses,
+    walk,
+    blank: [...new Set(blank)].sort(),
     sample,
   };
 }
@@ -1276,17 +1336,85 @@ afterAll(() => {
   cleanup();
 });
 
+/**
+ * A budget, not a bound (RULE Q).
+ *
+ * One reading mounts every fixture in {@link FIXTURES}; on an idle box the two
+ * take a few seconds each, which is comfortably inside Vitest's 5 s default and
+ * not comfortably enough. Under load they run over it, and the failure that
+ * produces is not merely noisy — it is *misdirecting*. Vitest does not cancel
+ * the timed-out body, so the light reading goes on mounting and calling
+ * `cleanup()` while the dark one renders into the same jsdom document; the
+ * readings interleave, fixtures come up empty, and the loudest red is
+ * `every rule that paints text is reached by some fixture` reporting a dozen
+ * extra unreached rules. Its own message then advises the reader to *add the
+ * line to `NOT_RENDERED`* — that is, to answer a timing failure by permanently
+ * shrinking the audit. Observed twice while this file was being graded.
+ *
+ * So the budget is stated, generously, in one place. If a reading ever really
+ * does hang, it still fails — just not by quietly teaching someone to delete
+ * coverage.
+ */
+const READING_BUDGET_MS = 120_000;
+
 describe('every composition the rendered tree assembles clears WCAG AA', () => {
   for (const theme of ['light', 'dark'] as const) {
-    it(`holds in ${theme}`, async () => {
-      const result = await reading(theme);
-      expect(result.unreadable, 'a paint value the audit could not read').toEqual([]);
-      expect(
-        result.failures,
-        `${result.failures.length} rendered compositions are below AA in ${theme}`,
-      ).toEqual([]);
-    });
+    it(
+      `holds in ${theme}`,
+      async () => {
+        const result = await reading(theme);
+        expect(result.unreadable, 'a paint value the audit could not read').toEqual([]);
+        expect(
+          result.failures,
+          `${result.failures.length} rendered compositions are below AA in ${theme}`,
+        ).toEqual([]);
+      },
+      READING_BUDGET_MS,
+    );
   }
+
+  it(
+    'measures every element it reaches, in both themes',
+    async () => {
+      // THE FLOOR THE OTHER FLOORS NEEDED.
+      //
+      // Every anti-vacuity check in this file used to read `light` and only
+      // `light`: `measured > 100`, the `NOT_RENDERED` comparison, the
+      // `unknownClasses` check, `reached.size > 20`. The dark reading was held
+      // up by one thing — that its sample existed and differed from light's —
+      // and a single `--vela-text-muted` element in the first fixture satisfies
+      // that. Cutting the dark walk from 23 fixtures to 1 left this file green
+      // at exit 0, measured by doing it.
+      //
+      // Two laws replace the one floor, and neither is a number anybody chose:
+      //
+      // 1. `blank` — no element the walk reached may measure nothing. Emptying
+      //    `rootColour` (what a `base.css body` whose colour stopped resolving
+      //    would do) deletes every *inherited* colour in the app, and the old
+      //    floor stayed green because the minority of elements that declare
+      //    their own colour still cleared 100.
+      // 2. `walk` — the two themes must walk identically. The walk is
+      //    palette-independent by construction (see {@link Walked}), so this is
+      //    forced by mechanism rather than observed: the readings differ only
+      //    in a `Map` of colour values. Any short reading, in either theme,
+      //    from any cause, breaks it.
+      const light = await reading('light');
+      const dark = await reading('dark');
+
+      expect(light.blank, 'reached in light and measured nothing').toEqual([]);
+      expect(dark.blank, 'reached in dark and measured nothing').toEqual([]);
+      expect(dark.walk, 'the two themes did not walk the same tree').toEqual(light.walk);
+
+      // and the light-only checks, said of both.
+      expect(dark.unknownClasses, 'a rendered class this audit cannot attribute').toEqual(
+        new Set(),
+      );
+      expect([...dark.reached].sort(), 'the dark reading reached other rules').toEqual(
+        [...light.reached].sort(),
+      );
+    },
+    READING_BUDGET_MS,
+  );
 
   it('resolves real colours, not jsdom’s defaults', async () => {
     // THE ANTI-VACUITY FLOOR, asserted on resolved values.
@@ -1309,7 +1437,7 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     expect(light.sample?.ratio).toBeGreaterThan(THRESHOLD);
     // And no label may be an unresolved `var()` string.
     expect(light.failures.some((line) => line.includes('var('))).toBe(false);
-  });
+  }, READING_BUDGET_MS);
 
   it('every rule that paints text is reached by some fixture', async () => {
     const light = await reading('light');
@@ -1329,7 +1457,7 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
       painting.length - unreached.length,
       'the fixtures have stopped reaching rules',
     ).toBeGreaterThan(120);
-  });
+  }, READING_BUDGET_MS);
 
   it('the class-name map is intact', async () => {
     // If Vitest's class-name spelling changes, every `applies()` returns false,
@@ -1346,5 +1474,5 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     const light = await reading('light');
     expect(light.unknownClasses, 'a rendered class this audit cannot attribute').toEqual(new Set());
     expect(light.reached.size).toBeGreaterThan(20);
-  });
+  }, READING_BUDGET_MS);
 });

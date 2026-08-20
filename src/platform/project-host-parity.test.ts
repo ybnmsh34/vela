@@ -86,6 +86,8 @@ import {
   PROJECT_NAME_MAX_CHARS,
 } from './contract-project';
 import { declaredCommandsIn } from './declared-commands';
+import { parseRustItem, qualified, scanSerialisable, wireName, wireNames } from './serde-wire';
+import type { RustItem, SerialisableItem } from './serde-wire';
 
 /* -------------------------------------------------------------------------- */
 /* the TypeScript half — closed by the compiler                               */
@@ -120,7 +122,17 @@ const LINK_FALLBACK_REASON = everyVariantOf<LinkFallbackReason>()([
   'probeFailed',
 ]);
 
-const LINK_STRATEGY = everyVariantOf<TagsOf<LinkStrategy, 'kind'>>()([
+/**
+ * The key serde puts each internally-tagged enum's discriminant under.
+ *
+ * Named rather than spelled inline so the same literal closes the TypeScript
+ * union and is compared against the Rust container attribute. `TagsOf` stops
+ * compiling if the union does not discriminate on this key; `expectMembers`
+ * fails if the crate stops emitting it.
+ */
+const LINK_STRATEGY_TAG = 'kind';
+
+const LINK_STRATEGY = everyVariantOf<TagsOf<LinkStrategy, typeof LINK_STRATEGY_TAG>>()([
   'symlink',
   'junction',
   'copy',
@@ -135,7 +147,9 @@ const SKILL_MOUNT_PROBLEM = everyVariantOf<SkillMountProblem>()([
   'permissionDenied',
 ]);
 
-const SKILL_MOUNT_STATUS = everyVariantOf<TagsOf<SkillMountStatus, 'kind'>>()([
+const SKILL_MOUNT_STATUS_TAG = 'kind';
+
+const SKILL_MOUNT_STATUS = everyVariantOf<TagsOf<SkillMountStatus, typeof SKILL_MOUNT_STATUS_TAG>>()([
   'linked',
   'copied',
   'unavailable',
@@ -172,13 +186,19 @@ const WORKING_DIRECTORY_PROBLEM = everyVariantOf<WorkingDirectoryProblem>()([
   'volumeUnavailable',
 ]);
 
-const WORKING_DIRECTORY = everyVariantOf<TagsOf<WorkingDirectory, 'kind'>>()([
+const WORKING_DIRECTORY_TAG = 'kind';
+
+const WORKING_DIRECTORY = everyVariantOf<TagsOf<WorkingDirectory, typeof WORKING_DIRECTORY_TAG>>()([
   'none',
   'bound',
   'unavailable',
 ]);
 
-const WORKING_DIRECTORY_BINDING = everyVariantOf<TagsOf<WorkingDirectoryBinding, 'kind'>>()([
+const WORKING_DIRECTORY_BINDING_TAG = 'kind';
+
+const WORKING_DIRECTORY_BINDING = everyVariantOf<
+  TagsOf<WorkingDirectoryBinding, typeof WORKING_DIRECTORY_BINDING_TAG>
+>()([
   'none',
   'path',
 ]);
@@ -224,132 +244,160 @@ const SOURCES: Readonly<Record<string, string>> = Object.fromEntries(
   CRATE_FILES.map((file) => [file, readFileSync(join(CRATE, ...file.split('/')), 'utf8')]),
 );
 
-type RenameRule = 'camelCase' | 'snake_case' | 'none';
-
-interface RustItem {
-  /** Variant names for an enum, field names for a struct — Rust spelling. */
-  readonly members: readonly string[];
-  readonly renameAll: RenameRule;
-  /**
-   * Which of serde's two spellings of the same rule applies. Not decoration:
-   * see {@link wireName}.
-   */
-  readonly kind: 'variant' | 'field';
-}
-
-/**
- * Reads one `pub enum` / `pub struct` body.
- *
- * Line-oriented, which is sound because `cargo fmt --check` runs in
- * `pnpm verify`: every item is rustfmt's shape, one member per line with the
- * closing brace in column 0. A struct-bodied enum variant closes on `    },`,
- * which is not column 0, so the search for the item's own end is not confused by
- * one.
- *
- * Splitting on `/\r?\n/` rather than `'\n'` is not tidiness. Windows checkouts
- * of this repository have CRLF endings, and the two sibling parity tests both
- * record what splitting on `'\n'` alone did there: a trailing `'\r'` on every
- * line, the column-0 brace never found, and the guarantee advertised here not
- * executing on the only machine that builds the product.
- */
-function parseRustItem(source: string, keyword: 'enum' | 'struct', name: string): RustItem {
-  const declaration = new RegExp(`^pub ${keyword} ${name}\\b[^{\\r\\n]*\\{$`, 'm');
-  const at = source.search(declaration);
-  if (at < 0) throw new Error(`project-host-parity: no \`pub ${keyword} ${name}\``);
-
-  const head = source.slice(0, at);
-  const derive = head.lastIndexOf('#[derive');
-  const attributes = derive < 0 ? '' : head.slice(derive);
-  const rename = /rename_all\s*=\s*"(camelCase|snake_case)"/.exec(attributes);
-  const renameAll: RenameRule = rename ? (rename[1] as RenameRule) : 'none';
-
-  const lines = source.slice(at).split(/\r?\n/).slice(1);
-  const end = lines.indexOf('}');
-  if (end < 0) throw new Error(`project-host-parity: unterminated ${name}`);
-
-  const members: string[] = [];
-  let depth = 0;
-  for (const line of lines.slice(0, end)) {
-    const text = line.trim();
-    if (text.startsWith('//')) continue;
-    if (text.startsWith('#[')) continue;
-    // Inside a struct-bodied variant the lines are fields, not members. Tracked
-    // by brace depth so a field named like a variant cannot be read as one.
-    if (depth > 0) {
-      depth += (text.match(/\{/g) ?? []).length - (text.match(/\}/g) ?? []).length;
-      continue;
-    }
-    const member =
-      keyword === 'enum'
-        ? /^([A-Z][A-Za-z0-9]*)\s*(?:[,{(]|$)/.exec(text)
-        : /^(?:pub(?:\([a-z]+\))?\s+)?([a-z_][a-z0-9_]*)\s*:/.exec(text);
-    const captured = member?.[1];
-    if (captured === undefined) continue;
-    members.push(captured);
-    depth += (text.match(/\{/g) ?? []).length - (text.match(/\}/g) ?? []).length;
-  }
-  return { members, renameAll, kind: keyword === 'enum' ? 'variant' : 'field' };
-}
-
 function readRustItem(file: string, keyword: 'enum' | 'struct', name: string): RustItem {
   const source = SOURCES[file];
   if (source === undefined) throw new Error(`project-host-parity: ${file} is not loaded`);
-  return parseRustItem(source, keyword, name);
+  return parseRustItem(source, keyword, name, file);
 }
+
+interface Pairing {
+  readonly rust: string;
+  readonly file: string;
+  readonly keyword: 'enum' | 'struct';
+  readonly ts: string;
+  readonly listed: readonly string[];
+  /**
+   * The key serde puts the discriminant under, or `null` for an item that is
+   * not internally tagged.
+   *
+   * Required rather than optional, and that is the enforcement: a tagged enum
+   * added to this list without a decision about its tag does not compile. Four
+   * of the enums below are internally tagged, the tag key is a member of
+   * nothing, and until this field existed nothing compared it — so
+   * `tag = "kind"` could become `tag = "type"` on any of them, every
+   * `strategy.kind` / `status.kind` / `workingDirectory.kind` test in the
+   * renderer go false, and this file stay green.
+   */
+  readonly tag: string | null;
+}
+
+const PAIRINGS: readonly Pairing[] = [
+  {
+    rust: 'SkillLinkKind',
+    file: 'link.rs',
+    keyword: 'enum',
+    ts: 'SkillLinkKind',
+    tag: null,
+    listed: SKILL_LINK_KIND,
+  },
+  {
+    rust: 'LinkFallbackReason',
+    file: 'link.rs',
+    keyword: 'enum',
+    ts: 'LinkFallbackReason',
+    tag: null,
+    listed: LINK_FALLBACK_REASON,
+  },
+  {
+    rust: 'LinkStrategy',
+    file: 'link.rs',
+    keyword: 'enum',
+    ts: 'LinkStrategy',
+    tag: LINK_STRATEGY_TAG,
+    listed: LINK_STRATEGY,
+  },
+  {
+    rust: 'SkillMountProblem',
+    file: 'mount.rs',
+    keyword: 'enum',
+    ts: 'SkillMountProblem',
+    tag: null,
+    listed: SKILL_MOUNT_PROBLEM,
+  },
+  {
+    rust: 'SkillMountStatus',
+    file: 'mount.rs',
+    keyword: 'enum',
+    ts: 'SkillMountStatus',
+    tag: SKILL_MOUNT_STATUS_TAG,
+    listed: SKILL_MOUNT_STATUS,
+  },
+  {
+    rust: 'SkillMount',
+    file: 'mount.rs',
+    keyword: 'struct',
+    ts: 'SkillMount',
+    tag: null,
+    listed: SKILL_MOUNT_FIELDS,
+  },
+  {
+    rust: 'ProjectDirectory',
+    file: 'layout.rs',
+    keyword: 'enum',
+    ts: 'ProjectDirectory',
+    tag: null,
+    listed: PROJECT_DIRECTORY,
+  },
+  {
+    rust: 'ProjectPaths',
+    file: 'layout.rs',
+    keyword: 'struct',
+    ts: 'ProjectPaths',
+    tag: null,
+    listed: PROJECT_PATHS_FIELDS,
+  },
+  {
+    rust: 'ProjectLayout',
+    file: 'layout.rs',
+    keyword: 'struct',
+    ts: 'ProjectLayout',
+    tag: null,
+    listed: PROJECT_LAYOUT_FIELDS,
+  },
+  {
+    rust: 'WorkingDirectoryProblem',
+    file: 'workdir.rs',
+    keyword: 'enum',
+    ts: 'WorkingDirectoryProblem',
+    tag: null,
+    listed: WORKING_DIRECTORY_PROBLEM,
+  },
+  {
+    rust: 'WorkingDirectory',
+    file: 'workdir.rs',
+    keyword: 'enum',
+    ts: 'WorkingDirectory',
+    tag: WORKING_DIRECTORY_TAG,
+    listed: WORKING_DIRECTORY,
+  },
+  {
+    rust: 'WorkingDirectoryBinding',
+    file: 'workdir.rs',
+    keyword: 'enum',
+    ts: 'WorkingDirectoryBinding',
+    tag: WORKING_DIRECTORY_BINDING_TAG,
+    listed: WORKING_DIRECTORY_BINDING,
+  },
+];
 
 /**
- * Applies the item's own `rename_all`, exactly as serde does — **which is two
- * different transformations under one attribute name**, and that is the trap.
+ * The serialisable types in this crate that the renderer boundary deliberately
+ * does not pair, each with the reason.
  *
- * Serde reads a variant as PascalCase and a field as snake_case, so one
- * `rename_all = "camelCase"` means "lowercase the first character" on an enum
- * and "fold each underscore into the letter after it" on a struct. A single
- * implementation is wrong for one of the two, silently: this file's first draft
- * used the variant rule for everything and reported `ProjectPaths.skills_mount`
- * as the name the host sends, which would have made a real disagreement
- * unnoticeable behind a fake one.
+ * Empty, and that is a statement rather than an oversight: every type in this
+ * crate deriving `Serialize` is paired above. `CaseFolding`, `MountOccupant`
+ * and `WorkingDirectoryRefusal` derive no `Serialize` and put no keys on the
+ * wire, so the scanner does not offer them here.
  *
- * The sibling that is now `src/platform/skill-store-parity.test.ts` carried the
- * one-rule version for exactly as long, and got away with it only because every
- * struct field it reads is a single word — `scripts`, `references`, `assets`,
- * on which the two rules agree. That is recorded rather than dropped because it
- * is the shape of the trap, not a fact about one file: a wrong implementation
- * that happens to be indistinguishable on today's inputs reads as correct until
- * the first multi-word field arrives. Both files carry the two-rule version now,
- * and both hold it with field cases of their own.
- *
- * Within the variant rule there is a second trap the sibling file records
- * failing on: the intuitive reading — split on the lowercase-to-uppercase
- * boundary — is not serde's, and the two disagree the moment two capitals meet.
- * Serde sends `nameIsNotASinglePathSegment`; the word split answers
- * `nameIsNotAsinglePathSegment` and reports this contract as wrong about a name
- * the host really sends.
+ * A register, not a suppression list: its purpose is to make the count of
+ * *unaccounted* types exactly zero, so the assertion below can be an equality
+ * rather than a threshold.
  */
-function wireName(rustName: string, rule: RenameRule, kind: 'variant' | 'field'): string {
-  if (rule === 'none') return rustName;
-  if (rule === 'camelCase') {
-    return kind === 'variant'
-      ? rustName.charAt(0).toLowerCase() + rustName.slice(1)
-      : rustName.replace(/_([a-z0-9])/g, (_, after: string) => after.toUpperCase());
-  }
-  if (kind === 'field') return rustName;
-  return rustName
-    .split('')
-    .map((character, index) =>
-      character >= 'A' && character <= 'Z'
-        ? `${index === 0 ? '' : '_'}${character.toLowerCase()}`
-        : character,
-    )
-    .join('');
-}
+const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: string })[] = [];
 
-function wireNames(item: RustItem): readonly string[] {
-  return item.members.map((member) => wireName(member, item.renameAll, item.kind));
-}
-
-function expectMembers(actual: readonly string[], expected: readonly string[]): void {
-  expect(actual.length).toBeGreaterThan(0);
-  expect([...actual].sort()).toEqual([...expected].sort());
+/** Sets, not sequences: declaration order is not part of the wire contract. */
+function expectMembers(pairing: Pairing): void {
+  const item = readRustItem(pairing.file, pairing.keyword, pairing.rust);
+  const rust = wireNames(item);
+  expect(rust.length, `parser read nothing out of ${pairing.rust}`).toBeGreaterThan(1);
+  expect([...rust].sort(), `${pairing.file}::${pairing.rust} vs ${pairing.ts}`).toEqual(
+    [...pairing.listed].sort(),
+  );
+  // The discriminant key. Not a member of anything, so it needs its own
+  // comparison or it has none: the TypeScript side is closed by
+  // `TagsOf<…, typeof X_TAG>`, which stops compiling if the union does not
+  // carry that key, and this is the other half.
+  expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
 }
 
 /**
@@ -468,61 +516,48 @@ function removalsIn(file: string): readonly string[] {
 /* -------------------------------------------------------------------------- */
 
 describe('the project crate and the project contract spell the same vocabulary', () => {
-  it('agrees on how a skill is linked and on what a machine can do', () => {
-    expectMembers(wireNames(readRustItem('link.rs', 'enum', 'SkillLinkKind')), SKILL_LINK_KIND);
-    expectMembers(wireNames(readRustItem('link.rs', 'enum', 'LinkStrategy')), LINK_STRATEGY);
-    expectMembers(
-      wireNames(readRustItem('link.rs', 'enum', 'LinkFallbackReason')),
-      LINK_FALLBACK_REASON,
-    );
+  // The renderer words every one of these, and its switches are exhaustive: a
+  // seventh mount problem, or a sixth renamed, is a skill the user switched on
+  // that the UI can say nothing true about.
+  for (const pairing of PAIRINGS) {
+    it(`${pairing.ts} carries every ${pairing.rust} member, and no other`, () => {
+      expectMembers(pairing);
+    });
+  }
+
+  /**
+   * **The floor on the guard's own subject.**
+   *
+   * Everything above is of the form *for each pairing I happen to list, do the
+   * two sides agree*, and nothing said how many pairings there are. Deleting
+   * one deleted its runtime assertion and, with it, the compile-time half the
+   * header calls load-bearing — `everyVariantOf` can only close a union for a
+   * list that still exists. The whole visible trace was the vitest count moving
+   * by one, and no assertion read that number.
+   *
+   * So the pairing list is not the inventory; the crate is. This is an
+   * **equality**, not a threshold: `expect(PAIRINGS.length).toBeGreaterThan(11)`
+   * would be a measurement wearing a bound, passing for any list long enough
+   * and unable to name which pairing vanished. An equality against what is
+   * really in the crate fails on a deleted pairing *and* on a serialisable type
+   * nobody remembered to list, and its diff names both. It needs no anti-vacuity
+   * floor of its own: a scanner that read nothing would put an empty list
+   * against twelve accounted names, which is the loudest failure in the file.
+   *
+   * `CRATE_FILES` is a directory read, not a literal, so a type added in a
+   * module nobody enumerated is inside this question too.
+   */
+  it('accounts for every serialisable type in the crate', () => {
+    const scanned = CRATE_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file))
+      .map(qualified)
+      .sort();
+    const accounted = [...PAIRINGS.map(qualified), ...NOT_ON_THIS_BOUNDARY.map(qualified)].sort();
+    expect(scanned, 'a serialisable type is neither paired nor on the register').toEqual(accounted);
   });
 
-  it('agrees on why one skill could not be mounted', () => {
-    // The renderer words every one of these, and its switch is exhaustive: a
-    // seventh problem, or a sixth renamed, is a skill the user switched on that
-    // the UI can say nothing true about.
-    expectMembers(
-      wireNames(readRustItem('mount.rs', 'enum', 'SkillMountProblem')),
-      SKILL_MOUNT_PROBLEM,
-    );
-  });
-
-  it('agrees that a copy is not a link, and on what one mount entry carries', () => {
-    expectMembers(
-      wireNames(readRustItem('mount.rs', 'enum', 'SkillMountStatus')),
-      SKILL_MOUNT_STATUS,
-    );
-    expectMembers(wireNames(readRustItem('mount.rs', 'struct', 'SkillMount')), SKILL_MOUNT_FIELDS);
-  });
-
-  it('agrees on the layout, its paths, and which of them a read may repair', () => {
-    expectMembers(
-      wireNames(readRustItem('layout.rs', 'enum', 'ProjectDirectory')),
-      PROJECT_DIRECTORY,
-    );
-    expectMembers(
-      wireNames(readRustItem('layout.rs', 'struct', 'ProjectPaths')),
-      PROJECT_PATHS_FIELDS,
-    );
-    expectMembers(
-      wireNames(readRustItem('layout.rs', 'struct', 'ProjectLayout')),
-      PROJECT_LAYOUT_FIELDS,
-    );
-  });
-
-  it('agrees on the working directory, resolved and as a request', () => {
-    expectMembers(
-      wireNames(readRustItem('workdir.rs', 'enum', 'WorkingDirectoryProblem')),
-      WORKING_DIRECTORY_PROBLEM,
-    );
-    expectMembers(
-      wireNames(readRustItem('workdir.rs', 'enum', 'WorkingDirectory')),
-      WORKING_DIRECTORY,
-    );
-    expectMembers(
-      wireNames(readRustItem('workdir.rs', 'enum', 'WorkingDirectoryBinding')),
-      WORKING_DIRECTORY_BINDING,
-    );
+  it('pairs each type at most once', () => {
+    expect(new Set(PAIRINGS.map(qualified)).size).toBe(PAIRINGS.length);
+    expect(new Set(PAIRINGS.map((pairing) => pairing.ts)).size).toBe(PAIRINGS.length);
   });
 });
 

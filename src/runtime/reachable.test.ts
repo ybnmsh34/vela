@@ -74,6 +74,14 @@ const NOT_SHIPPED = new Map<string, string>([
       'nothing outside a test imports it',
   ],
   [
+    'src/platform/serde-wire.ts',
+    'turns a Rust identifier into the key serde puts on the wire, for the three ' +
+      'parity guards that read `.rs` sources off disk. Each of them used to carry ' +
+      'its own parse and two were a refactor behind, which is how `SkillResources` ' +
+      'could emit `Scripts`/`References`/`Assets` with the whole suite green. Test ' +
+      'infrastructure over the crate sources, never something the renderer loads',
+  ],
+  [
     'src/platform/capability-surface.ts',
     'derives the capability union from the `src-tauri/capabilities/` directory ' +
       'and `tauri.conf.json`, for the two guards that used to read one filename ' +

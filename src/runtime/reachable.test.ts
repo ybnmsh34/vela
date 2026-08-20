@@ -16,7 +16,11 @@
  * from what `index.html` loads and insists every shipping file **under `src/`**
  * is in it.
  *
- * ## Four times this asked a narrower question than the product's
+ * ## Six times this asked a narrower question than the product's
+ *
+ * Each entry below was executed against the guard as it then stood, not argued
+ * from reading it. Twice now the *fix* for one of these has shipped the same
+ * class one axis over, so the list is kept rather than tidied away.
  *
  * 1. **It walked one directory.** It walked `src/runtime/` and named exactly one
  *    module in `src/data/`. That limit was recorded *in prose*, and prose is not
@@ -96,6 +100,54 @@
  * behavioural half — that the runtime actually drives a turn a user asked for —
  * is `src/app/composition-root.test.tsx`, which drives the assembled app. This
  * one only says the code is on the graph; that one says it does something.
+ *
+ * 5. **It enumerated import syntax and called that "every edge".** Two holes,
+ *    both silent, both measured against the parser rebuild rather than against
+ *    the regexes it replaced.
+ *
+ *    `resolveSpecifier` answering `null` meant two unrelated things and `walk`
+ *    treated them the same: `'react'` is a package, correctly ignored, while
+ *    `'../runtime/run-doubles.ts?raw'` is a **file in this tree** whose name the
+ *    resolver could not spell, because Vite's query suffix was still attached
+ *    when `canonical` went looking on disk. One module-scope line of that in
+ *    `src/data/sandbox-repository.ts` put `FakeTurnDriver`'s **source text** into
+ *    `dist/assets/run-doubles-*.js` — `?raw` inlines the file — with this guard
+ *    green twice and `tsc --build --force` exit 0, because `?raw` matches an
+ *    ambient wildcard module in `vite/client` and `tsc` never resolves the path.
+ *    So the suffix is cut before resolution, **and** an in-tree specifier that
+ *    still resolves to nothing is reported by `GRAPH.unresolved` instead of
+ *    being `continue`d past. The second half is the part that does not depend on
+ *    knowing today's suffix list.
+ *
+ *    And `new URL('./w.ts', import.meta.url)` — the documented Vite spelling for
+ *    a module worker and for an asset — is an edge Rollup follows that ESM
+ *    syntax does not spell, so an extractor built out of `ImportDeclaration`,
+ *    `ExportDeclaration` and `import()` saw nothing: not an edge, and not an
+ *    unfollowable one either. `new Worker(new URL('../runtime/run-doubles.ts',
+ *    import.meta.url), { type: 'module' })` emitted a `run-doubles` chunk with
+ *    this file green twice. `isAssetUrl` reads it, and a computed one goes in
+ *    the loud list.
+ *
+ *    The shape both share is the one this file keeps repeating: the rebuild
+ *    asked *"can prose reach my extractor?"* and answered it completely, while
+ *    the product's question is *"what does the bundler load?"* — and the bundler
+ *    loads things through spellings that are not import statements at all.
+ *
+ * 6. **It fixed prose-makes-an-edge in TypeScript and left it standing in CSS.**
+ *    The rebuild that put defect 2 to bed moved the TypeScript extractor onto a
+ *    parser and, in the same commit, made stylesheets first-class — with a CSS
+ *    reader that stripped comments and then ran three regexes over the result,
+ *    each defining a specifier as "text between two quotes". A CSS *string* is
+ *    not a comment, so nothing stripped it. Appending
+ *
+ *        .t05Launder { content: "@import '…/T05Ghost.module.css'"; }
+ *
+ *    to a stylesheet already on the graph put a planted orphan stylesheet on the
+ *    graph and this file passed **21 of 21 in two consecutive runs**, with dead
+ *    shipped CSS in `src/features/canvas/`. That is defect 2 exactly, in the
+ *    commit that closed defect 2, one file kind over — which is why `readCss`
+ *    exists: strings come out as opaque tokens and each rule is matched only in
+ *    the half of the grammar where CSS honours it.
  *
  * ## What it still cannot see, stated rather than discovered later
  *
@@ -338,6 +390,42 @@ function isImportMetaGlob(node: ts.Node): node is ts.CallExpression {
   );
 }
 
+/** `import.meta.url` — the base a `new URL(…)` edge is resolved against. */
+function isImportMetaUrl(node: ts.Node): boolean {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isMetaProperty(node.expression) &&
+    node.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.name.text === 'url'
+  );
+}
+
+/**
+ * `new URL(<specifier>, import.meta.url)` — an edge Rollup follows and ESM syntax
+ * does not spell.
+ *
+ * This is not an exotic corner. It is the **documented** way to reference a
+ * worker or an asset in Vite, `new Worker(new URL('./w.ts', import.meta.url), {
+ * type: 'module' })` is the shape the docs give, and Rollup emits a chunk for
+ * the target. Nothing about it is an `ImportDeclaration` or an `import()` call,
+ * so an extractor that enumerates *import syntax* sees nothing at all — not an
+ * edge, and not an unfollowable one either. Measured: one module-scope line of
+ * exactly that form in `src/data/sandbox-repository.ts` naming
+ * `src/runtime/run-doubles.ts` left this file green in two consecutive runs
+ * while `vite build` emitted a `run-doubles` chunk under `dist/assets/`.
+ *
+ * The second argument is required to be `import.meta.url` precisely so that the
+ * ordinary runtime `new URL(text)` and `new URL(text, someBase)` in
+ * `src/lib/markdown-parser.ts` and `src/platform/browser-adapter.ts` stay what
+ * they are — parsing a URL a user typed is not a module edge.
+ */
+function isAssetUrl(node: ts.Node): node is ts.NewExpression {
+  if (!ts.isNewExpression(node)) return false;
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'URL') return false;
+  const base = node.arguments?.[1];
+  return base !== undefined && isImportMetaUrl(base);
+}
+
 /** A `require(...)` call, which has no business in this ESM renderer. */
 function isRequireCall(node: ts.Node): node is ts.CallExpression {
   return (
@@ -388,6 +476,12 @@ function specifiers(source: string, fileName = 'probe.tsx'): string[] {
       const argument = node.arguments[0];
       const specifier = argument === undefined ? null : staticSpecifier(argument);
       if (specifier !== null) found.push(specifier);
+      return;
+    }
+    if (isAssetUrl(node)) {
+      const argument = node.arguments?.[0];
+      const specifier = argument === undefined ? null : staticSpecifier(argument);
+      if (specifier !== null) found.push(specifier);
     }
   });
   return found;
@@ -418,55 +512,118 @@ function unanalysableImports(source: string, fileName = 'probe.tsx'): string[] {
       }
       return;
     }
+    if (isAssetUrl(node)) {
+      const argument = node.arguments?.[0];
+      if (argument === undefined || staticSpecifier(argument) === null) {
+        found.push(node.getText(parsed));
+      }
+      return;
+    }
     if (isImportMetaGlob(node) || isRequireCall(node)) found.push(node.getText(parsed));
   });
   return found;
 }
 
 /**
- * CSS with every comment replaced by a space, string literals left intact.
+ * The marker a string literal leaves behind in `readCss`'s output.
  *
- * The same argument as for TypeScript, made with the tools to hand. `postcss` is
- * present under `node_modules/.pnpm` as a transitive dependency of Vite but is
- * not resolvable from this package and is not a declared dependency of it, so
- * reaching for it is a lockfile change and not this branch's. CSS's comment
- * grammar is one rule — an opener, then everything up to the first closer, no
- * line comments and no nesting — so implementing that rule is exact rather than
- * a guess, and it runs *before* any pattern does. A commented-out `@import`
- * therefore cannot become an edge, which is the evasion that worked on the
- * TypeScript side.
+ * NUL delimits it rather than whitespace, and that is load-bearing rather than
+ * fastidious. CSS is full of bare numbers, so a marker written with spaces
+ * would let `margin: 0 12 0` be read as a specifier, and would let the
+ * unquoted `url(...)` pattern match the quoted pattern's own output. NUL cannot
+ * occur in a stylesheet, so a marker cannot be forged by the file being read.
  */
-function withoutCssComments(source: string): string {
-  let out = '';
+const CSS_STRING = /\u0000(\d+)\u0000/;
+
+/** A stylesheet split the way its grammar splits, not the way a regex reads it. */
+type CssText = {
+  /** Everything outside every `{ … }`, with each string literal a marker. */
+  readonly atRoot: string;
+  /** Everything inside a `{ … }`, with each string literal a marker. */
+  readonly inRules: string;
+  /** The string literals, in order, without their quotes. */
+  readonly literals: readonly string[];
+};
+
+/**
+ * A stylesheet read structurally: comments gone, strings opaque, depth tracked.
+ *
+ * The TypeScript half of this file was rebuilt onto a parser because a regex
+ * cannot tell code from prose. The CSS half kept the regexes and only stripped
+ * comments — which left the same defect standing one file kind over, and it was
+ * executed rather than argued about. Appending
+ *
+ *     .t05Launder { content: "@import '../../features/canvas/T05Ghost.module.css'"; }
+ *
+ * to `src/app/shell/AppShell.module.css`, a stylesheet already on the graph, put
+ * a planted orphan stylesheet on the graph too, and this file went **green in
+ * two consecutive runs** with dead shipped CSS sitting in `src/features/canvas/`.
+ * A string is not a rule, exactly as a comment is not a node.
+ *
+ * Two structural facts do the work, and both are properties of CSS rather than
+ * guesses about how people write it. A string literal is an opaque token, so its
+ * interior can never supply a keyword — the literals come out into `literals`
+ * and leave a marker behind, and a specifier is only ever *the whole of* one
+ * literal, never a substring found inside one. And `@import` is a top-level rule:
+ * a browser ignores one that appears after any other rule, so `atRoot` is where
+ * it may be honoured, while `composes` is a declaration and lives in `inRules`.
+ *
+ * `postcss` is present under `node_modules/.pnpm` as a transitive dependency of
+ * Vite but is not resolvable from this package and is not a declared dependency
+ * of it, so reaching for it is a lockfile change and not this branch's. What is
+ * implemented here is the part of the grammar this file needs — comments,
+ * strings, brace depth — and each of those is one rule with no nesting.
+ */
+function readCss(source: string): CssText {
+  let atRoot = '';
+  let inRules = '';
+  const literals: string[] = [];
+  let depth = 0;
   let index = 0;
+  const emit = (text: string): void => {
+    if (depth === 0) atRoot += text;
+    else inRules += text;
+  };
   while (index < source.length) {
     const character = source.charAt(index);
     if (character === '/' && source.charAt(index + 1) === '*') {
       const end = source.indexOf('*/', index + 2);
-      out += ' ';
+      emit(' ');
       index = end === -1 ? source.length : end + 2;
       continue;
     }
     if (character === '"' || character === "'") {
-      out += character;
+      let value = '';
       index += 1;
       while (index < source.length) {
         const inside = source.charAt(index);
-        out += inside;
         index += 1;
         if (inside === '\\' && index < source.length) {
-          out += source.charAt(index);
+          value += source.charAt(index);
           index += 1;
           continue;
         }
         if (inside === character) break;
+        value += inside;
       }
+      emit(`\u0000${literals.length}\u0000`);
+      literals.push(value);
       continue;
     }
-    out += character;
+    if (character === '{' || character === '}') {
+      // A `;` on both sides of every brace, so a declaration missing its own
+      // trailing semicolon cannot run on into the next rule's text and pick up a
+      // `from` that belongs to somebody else.
+      emit(';');
+      depth = character === '{' ? depth + 1 : Math.max(0, depth - 1);
+      emit(';');
+      index += 1;
+      continue;
+    }
+    emit(character);
     index += 1;
   }
-  return out;
+  return { atRoot, inRules, literals };
 }
 
 /**
@@ -476,22 +633,34 @@ function withoutCssComments(source: string): string {
  * which is how `src/styles/base.css` holds `tokens.css` and `typeface.css`) and
  * CSS Modules' `composes: name from './other.module.css'`. A form not listed
  * here drops an edge, and a dropped edge reddens the walk naming the file it
- * lost — the loud direction. It does not go quiet.
+ * lost — the loud direction, since the file it lost is itself enumerated. It
+ * does not go quiet.
+ *
+ * Each pattern runs over the half of the stylesheet where its rule is legal, and
+ * matches a **whole** string literal by marker rather than "text between two
+ * quotes". That is what stops `content: "@import '…'"` from manufacturing an
+ * edge, which it did, measured, with this file green twice.
  */
 function cssSpecifiers(source: string): string[] {
-  const text = withoutCssComments(source);
+  const css = readCss(source);
   const found: string[] = [];
-  for (const match of text.matchAll(/@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g)) {
+  const literalAt = (index: string | undefined): void => {
+    const value = index === undefined ? undefined : css.literals[Number(index)];
+    if (value !== undefined) found.push(value);
+  };
+  for (const match of css.atRoot.matchAll(
+    new RegExp(`@import\\s+(?:url\\(\\s*)?${CSS_STRING.source}`, 'g'),
+  )) {
+    literalAt(match[1]);
+  }
+  for (const match of css.atRoot.matchAll(/@import\s+url\(\s*([^)\s\u0000][^)]*?)\s*\)/g)) {
     const specifier = match[1];
     if (specifier !== undefined) found.push(specifier);
   }
-  for (const match of text.matchAll(/@import\s+url\(\s*([^'")\s][^)]*?)\s*\)/g)) {
-    const specifier = match[1];
-    if (specifier !== undefined) found.push(specifier);
-  }
-  for (const match of text.matchAll(/\bcomposes\s*:[^;}]*?\bfrom\s+['"]([^'"]+)['"]/g)) {
-    const specifier = match[1];
-    if (specifier !== undefined) found.push(specifier);
+  for (const match of css.inRules.matchAll(
+    new RegExp(`\\bcomposes\\s*:[^;]*?\\bfrom\\s+${CSS_STRING.source}`, 'g'),
+  )) {
+    literalAt(match[1]);
   }
   return found;
 }
@@ -500,6 +669,16 @@ function cssSpecifiers(source: string): string[] {
 function edgesOf(file: string, source: string): string[] {
   return extname(file).toLowerCase() === '.css' ? cssSpecifiers(source) : specifiers(source, file);
 }
+
+/** One specifier out of a file, and what became of it. */
+type Edge = {
+  /** As written, query suffix and all. */
+  readonly specifier: string;
+  /** The file it names, or `null` for a package or for nothing at all. */
+  readonly resolved: string | null;
+  /** It names a path in this repository and no file is there. */
+  readonly lost: boolean;
+};
 
 const FILES_IN_DIRECTORY = new Map<string, string[]>();
 
@@ -537,6 +716,35 @@ function canonical(path: string): string | null {
 }
 
 /**
+ * A specifier with Vite's query suffix removed.
+ *
+ * `?raw`, `?url`, `?inline`, `?worker` and friends are not part of the path;
+ * they select how Vite *loads* the file the path names. Leaving the suffix on
+ * meant `canonical` looked on disk for a file literally called
+ * `run-doubles.ts?raw`, found nothing, and the edge was dropped. `?` cannot
+ * appear in a filename on this filesystem, so cutting at the first one loses
+ * nothing.
+ */
+function withoutQuery(specifier: string): string {
+  const mark = specifier.indexOf('?');
+  return mark === -1 ? specifier : specifier.slice(0, mark);
+}
+
+/**
+ * True when a specifier names a file in this repository rather than a package.
+ *
+ * This is the distinction `walk` needs and did not have. `'react'` resolving to
+ * `null` means "not our file, correctly ignored"; `'./x?raw'` resolving to
+ * `null` means "this walk just lost an edge into its own tree", and the two used
+ * to be the same `continue`.
+ */
+function pointsIntoThisTree(specifier: string): boolean {
+  return (
+    specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('@/')
+  );
+}
+
+/**
  * A specifier resolved to a file in this tree, or `null` for anything else.
  *
  * The bare path is tried **first**, which is what makes `AppShell.module.css`
@@ -544,14 +752,24 @@ function canonical(path: string): string | null {
  * candidate was gated on `/\.tsx?$/` before `existsSync` ran. A root-absolute
  * specifier (`/src/main.tsx`) resolves against the project root, which is how
  * Vite reads the one in `index.html`.
+ *
+ * The query suffix is cut before any of that happens. `import('./x?raw')` is an
+ * edge to the file `./x` names: Vite reads it and inlines its **source text**
+ * into the bundle. Measured — one such line naming
+ * `src/runtime/run-doubles.ts` put `FakeTurnDriver`'s source into a
+ * `run-doubles` chunk under `dist/assets/` with this file
+ * green twice and `tsc --build --force` exit 0, because `?raw` matches an
+ * ambient wildcard module in `vite/client` and `tsc` therefore never resolves
+ * the path at all.
  */
 function resolveSpecifier(fromFile: string, specifier: string): string | null {
-  const base = specifier.startsWith('@/')
-    ? join(SRC_ROOT, specifier.slice(2))
-    : specifier.startsWith('/')
-      ? join(REPO_ROOT, specifier.slice(1))
-      : specifier.startsWith('.')
-        ? resolve(dirname(fromFile), specifier)
+  const path = withoutQuery(specifier);
+  const base = path.startsWith('@/')
+    ? join(SRC_ROOT, path.slice(2))
+    : path.startsWith('/')
+      ? join(REPO_ROOT, path.slice(1))
+      : path.startsWith('.')
+        ? resolve(dirname(fromFile), path)
         : null;
   if (base === null) return null;
   for (const candidate of [
@@ -603,7 +821,7 @@ function htmlEntries(html: string): string[] {
  * case-sensitive filesystem calls a blank screen.
  */
 function miscasedAgainst(specifier: string, resolved: string): boolean {
-  const written = basename(specifier);
+  const written = basename(withoutQuery(specifier));
   if (written === '' || written === '.' || written === '..') return false;
   const found = basename(resolved);
   return found.toLowerCase().startsWith(written.toLowerCase()) && !found.startsWith(written);
@@ -664,9 +882,27 @@ type Graph = {
   readonly entries: readonly string[];
   /** `file: text` for every edge the walk could not follow. */
   readonly unfollowable: readonly string[];
+  /** `file: specifier` for every in-tree specifier that resolved to nothing. */
+  readonly unresolved: readonly string[];
   /** `file: specifier` for every specifier whose case does not match the disk. */
   readonly miscased: readonly string[];
 };
+
+/**
+ * Every edge out of a file, each one classified.
+ *
+ * `walk` used to do this inline and had **no name for the third case**:
+ * `resolved === null` was `continue`, whether the specifier was `'react'` or
+ * `'./x?raw'`. Naming it is what makes it assertable — the tree has no lost edge
+ * today, so an assertion over `GRAPH.unresolved` alone would pass just as well
+ * with the classification deleted.
+ */
+function edgesFrom(file: string, source: string): Edge[] {
+  return edgesOf(file, source).map((specifier) => {
+    const resolved = resolveSpecifier(file, specifier);
+    return { specifier, resolved, lost: resolved === null && pointsIntoThisTree(specifier) };
+  });
+}
 
 /** Everything `index.html` reaches at runtime, transitively. */
 function walk(): Graph {
@@ -675,20 +911,30 @@ function walk(): Graph {
     .filter((file): file is string => file !== null);
   const reachable = new Set<string>();
   const unfollowable: string[] = [];
+  const unresolved: string[] = [];
   const miscased: string[] = [];
   const queue = [...entries];
   while (queue.length > 0) {
     const file = queue.pop();
     if (file === undefined || reachable.has(file)) continue;
     reachable.add(file);
+    // A file the bundler loads but that this file declares no edge reader for is
+    // a leaf: it is on the graph and nothing comes out of it. `?raw` on a `.md`
+    // lands here, which is what `declares every file kind under src/` then reads.
+    // It is also why nothing tries to parse a binary as TypeScript.
+    const extension = extname(file).toLowerCase();
+    if (!SHIPPING_EXTENSIONS.has(extension)) continue;
     const source = readFileSync(file, 'utf8');
-    if (extname(file).toLowerCase() !== '.css') {
+    if (extension !== '.css') {
       for (const text of unanalysableImports(source, file)) {
         unfollowable.push(`${asRepoPath(file)}: ${text}`);
       }
     }
-    for (const specifier of edgesOf(file, source)) {
-      const resolved = resolveSpecifier(file, specifier);
+    for (const { specifier, resolved, lost } of edgesFrom(file, source)) {
+      // A lost edge is not the same thing as `'react'`, and a lost edge shrinks
+      // `REACHABLE` — the direction `NOT_SHIPPED` reads as proof. It gets said
+      // out loud instead of `continue`d past.
+      if (lost) unresolved.push(`${asRepoPath(file)}: ${specifier}`);
       if (resolved === null) continue;
       if (miscasedAgainst(specifier, resolved)) {
         miscased.push(`${asRepoPath(file)}: ${specifier} is on disk as ${basename(resolved)}`);
@@ -696,7 +942,7 @@ function walk(): Graph {
       if (!reachable.has(resolved)) queue.push(resolved);
     }
   }
-  return { reachable, entries, unfollowable, miscased };
+  return { reachable, entries, unfollowable, unresolved, miscased };
 }
 
 function asRepoPath(file: string): string {
@@ -899,6 +1145,39 @@ describe('the renderer is wired into the product', () => {
     expect(unanalysableImports("import { a } from './a';\n")).toEqual([]);
   });
 
+  /**
+   * `new URL('./x', import.meta.url)` is an edge, and ESM syntax does not spell it.
+   *
+   * The extractor above enumerates *import syntax* — declarations, re-exports,
+   * `import()`. Vite's asset and worker edge is none of those, so it was neither
+   * followed nor reported: the one silent hole left in a function whose stated
+   * policy is that it never drops an edge quietly. It is the documented spelling
+   * for a module worker, and Rollup emits a chunk for the target — measured, one
+   * module-scope `new Worker(new URL('../runtime/run-doubles.ts', import.meta.url),
+   * { type: 'module' }))` in a file already on the graph produced
+   * `dist/assets/run-doubles-*.js` with this file green in two consecutive runs.
+   */
+  it('reads the asset and worker edge that is not import syntax', () => {
+    expect(specifiers("new Worker(new URL('./w.ts', import.meta.url), { type: 'module' });\n")).toEqual(
+      ['./w.ts'],
+    );
+    expect(specifiers("const u = new URL('./a.png', import.meta.url);\n")).toEqual(['./a.png']);
+    expect(specifiers('const u = new URL(`./a.png`, import.meta.url);\n')).toEqual(['./a.png']);
+
+    // A URL a user typed is not a module edge, which is the whole reason the
+    // base has to be `import.meta.url` rather than "there is a second argument".
+    expect(specifiers("const u = new URL(text);\n")).toEqual([]);
+    expect(specifiers("const u = new URL(text, base);\n")).toEqual([]);
+    expect(specifiers("const u = new URL('./a.png', base);\n")).toEqual([]);
+    expect(unanalysableImports("const u = new URL(text, base);\n")).toEqual([]);
+
+    // And a computed one goes in the loud list with everything else it cannot read.
+    expect(unanalysableImports('const u = new URL(name, import.meta.url);\n')).toEqual([
+      'new URL(name, import.meta.url)',
+    ]);
+    expect(unanalysableImports("const u = new URL('./a.png', import.meta.url);\n")).toEqual([]);
+  });
+
   it('follows every edge it finds', () => {
     expect(
       GRAPH.unfollowable,
@@ -907,6 +1186,70 @@ describe('the renderer is wired into the product', () => {
         'assertion below reports it as unreachable — teach this file the shape, ' +
         'or make the import a literal',
     ).toEqual([]);
+  });
+
+  /**
+   * A specifier that names a path in this repo and finds nothing is a lost edge.
+   *
+   * `resolveSpecifier` answering `null` used to mean one of two completely
+   * different things, and `walk` treated them identically: `'react'` is a
+   * package and correctly ignored, while `'./x?raw'` is a file in this tree that
+   * the resolver could not spell. The second was dropped in silence, and a
+   * dropped edge makes `REACHABLE` smaller — the direction `NOT_SHIPPED` reads
+   * as proof that nothing ships a module.
+   *
+   * Vite's query suffix is now cut before resolution, so `?raw` is an edge
+   * rather than a miss. This assertion is the part that does not depend on
+   * knowing the suffix list: whatever spelling comes next — a new Vite query, a
+   * typo, an extension `resolveSpecifier` does not try — reddens here naming the
+   * file and the specifier, instead of quietly shrinking the graph.
+   */
+  it('says so when a specifier into this tree resolves to nothing', () => {
+    expect(
+      GRAPH.unresolved,
+      'a specifier naming a path in this repository that resolves to no file. ' +
+        'The bundler resolves it or fails the build; either way this walk has ' +
+        'lost an edge, and a lost edge is how a module stays absent from ' +
+        'REACHABLE while sitting in the bundle',
+    ).toEqual([]);
+
+    // The control, driven through the same classifier the walk uses, because the
+    // list above is empty today and an empty list proves nothing about the
+    // instrument that produced it. A tree with no lost edge in it would pass the
+    // assertion above with the whole rule deleted.
+    const shell = join(SRC_ROOT, 'app', 'shell', 'AppShell.tsx');
+
+    // The suffix is part of how Vite loads the file, not part of its name. Both
+    // of these are edges, and the second one is the one that shipped a double.
+    expect(edgesFrom(shell, "import s from './AppShell.module.css?inline';\n")).toEqual([
+      {
+        specifier: './AppShell.module.css?inline',
+        resolved: join(SRC_ROOT, 'app', 'shell', 'AppShell.module.css'),
+        lost: false,
+      },
+    ]);
+    expect(
+      edgesFrom(shell, "const t = await import('../../runtime/run-doubles.ts?raw');\n").map(
+        (edge) => asRepoPath(edge.resolved ?? '<lost>'),
+      ),
+    ).toEqual(['src/runtime/run-doubles.ts']);
+
+    // A package is not a lost edge; a path in this repo naming no file is.
+    expect(edgesFrom(shell, "import 'react';\n")).toEqual([
+      { specifier: 'react', resolved: null, lost: false },
+    ]);
+    expect(edgesFrom(shell, "import '@tauri-apps/api/core';\n")).toEqual([
+      { specifier: '@tauri-apps/api/core', resolved: null, lost: false },
+    ]);
+    expect(edgesFrom(shell, "import './nothing-here.ts?raw';\n")).toEqual([
+      { specifier: './nothing-here.ts?raw', resolved: null, lost: true },
+    ]);
+    expect(edgesFrom(shell, "import '@/nothing-here';\n")).toEqual([
+      { specifier: '@/nothing-here', resolved: null, lost: true },
+    ]);
+    expect(edgesFrom(shell, "import '/src/nothing-here';\n")).toEqual([
+      { specifier: '/src/nothing-here', resolved: null, lost: true },
+    ]);
   });
 
   /**
@@ -930,6 +1273,30 @@ describe('the renderer is wired into the product', () => {
     expect(cssSpecifiers('.a { content: "/*"; }\n@import \'./kept.css\';\n')).toEqual([
       './kept.css',
     ]);
+
+    // A string is not a rule, exactly as a comment is not a node. Measured, not
+    // argued: appending the first of these to `src/app/shell/AppShell.module.css`
+    // put a planted orphan stylesheet on the graph and this file passed 21 of 21
+    // in two consecutive runs, with dead shipped CSS in `src/features/canvas/`.
+    expect(cssSpecifiers('.a { content: "@import \'./ghost.css\'"; }\n')).toEqual([]);
+    expect(
+      cssSpecifiers('.a { content: "composes: b from \'./ghost.module.css\'"; }\n'),
+    ).toEqual([]);
+
+    // `@import` is a top-level rule: a browser ignores one that sits inside a
+    // block, so reading one there would be inventing an edge the product has not
+    // got. `composes` is the mirror image — a declaration, never at the root.
+    expect(cssSpecifiers(".a { @import './ghost.css'; }\n")).toEqual([]);
+    expect(cssSpecifiers("composes: b from './ghost.module.css';\n")).toEqual([]);
+
+    // A bare number is not a marker, which is the reason the marker is NUL.
+    expect(cssSpecifiers('.a { margin: 0 12 0; }\n')).toEqual([]);
+
+    // A declaration missing its own semicolon does not reach into the next rule
+    // for a `from` that belongs to somebody else.
+    expect(
+      cssSpecifiers(".a { composes: b }\n.c { color: red; from: './ghost.css' }\n"),
+    ).toEqual([]);
 
     const base = join(SRC_ROOT, 'styles', 'base.css');
     expect(
@@ -984,6 +1351,22 @@ describe('the renderer is wired into the product', () => {
       [...new Set(shippingModules(SRC_ROOT).map((file) => extname(file).toLowerCase()))].sort(),
       'the enumerator walks a different set of file kinds than SHIPPING_EXTENSIONS declares',
     ).toEqual([...SHIPPING_EXTENSIONS.keys()].sort());
+
+    // The third direction, and the one the `.md` entry previously stated in
+    // prose: "if one is ever imported as `?raw` it has become a shipping kind
+    // and this entry has to move". Prose cannot enforce that. The walk can, now
+    // that `?raw` resolves — a file whose kind is declared *not loaded* turning
+    // up on the graph means the declaration is false, and a false declaration in
+    // this map is how the 43 stylesheets went ungoverned in the first place.
+    expect(
+      [...REACHABLE]
+        .filter((file) => NOT_LOADED_EXTENSIONS.has(extname(file).toLowerCase()))
+        .map(asRepoPath)
+        .sort(),
+      'this file kind is declared NOT_LOADED_EXTENSIONS and the entry point ' +
+        'reaches it. Either the import is wrong or the declaration is: move the ' +
+        'extension to SHIPPING_EXTENSIONS and say what reads its edges',
+    ).toEqual([]);
   });
 
   it('reaches every shipping module under src/ from index.html', () => {

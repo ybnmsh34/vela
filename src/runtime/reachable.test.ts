@@ -12,36 +12,135 @@
  * It is the same shape as `src/features/diagnostics/dead-pointer.test.ts`
  * (a trace id pointing into a log nothing could switch on) and as the two joints
  * `src/app/App.tsx` documents (a meter fed nothing, a tray read by nobody). Only
- * reading the tree catches it, so the tree is read: this walks the import graph
- * from `src/main.tsx` and insists every shipping module **under `src/`** is in
- * it.
+ * reading the tree catches it, so the tree is read: this walks the module graph
+ * from what `index.html` loads and insists every shipping file **under `src/`**
+ * is in it.
  *
- * ## This used to walk one directory
+ * ## Four times this asked a narrower question than the product's
  *
- * It walked `src/runtime/` and named exactly one module in `src/data/`. That
- * was a deliberate limit and it was recorded as one — but it was recorded *in
- * prose*, and prose is not enforced. What the prose said had already stopped
- * being true: it named `mcp-repository.ts` and `skills-repository.ts` as the two
- * modules a widened walk would find, and `skills-repository.ts` had been wired
- * to a sidebar control by then, leaving a comment that overstated the debt by
- * one and a guard that could not tell anybody so. The walk is now the whole of
- * `src/`, and every module allowed to be off the graph is a **named entry in a
- * map, asserted in both directions**, so an exemption that has stopped applying
- * fails instead of reading as a clean tree.
+ * 1. **It walked one directory.** It walked `src/runtime/` and named exactly one
+ *    module in `src/data/`. That limit was recorded *in prose*, and prose is not
+ *    enforced; what the prose said had already stopped being true. Fixed by
+ *    walking the whole of `src/` with every exemption a **named entry in a map,
+ *    asserted in both directions**.
+ *
+ * 2. **It read prose as code.** The extractor was a regex whose head was
+ *    `[\s\S]*?`, so a match beginning at any line-initial `import`/`export`
+ *    keyword ran forward *through comments* until it found `from` and a quoted
+ *    path. A planted orphan went green behind a single comment naming it.
+ *    Narrowing that head to `[^;/]` closed one route and left two open: the same
+ *    function ran two further regexes, for dynamic `import(…)` and for bare
+ *    side-effect `import '…'`, **with no head class at all**. So a line comment
+ *    mentioning a dynamic import of a module, or a block comment one of whose
+ *    interior lines begins with a side-effect import of it, still laundered an
+ *    orphan onto the graph. Both were executed against this guard and both went
+ *    green.
+ *
+ *    A regex cannot tell code from prose, and this file's own project-level
+ *    finding is that a comment is not evidence — so the extractor is now the
+ *    **TypeScript parser** (`ts.createSourceFile`). Comments are trivia in that
+ *    grammar: they are not nodes, so no comment can produce an edge, and all
+ *    three regexes are gone rather than hardened. The parser also gets back the
+ *    real edge the `[^;/]` head lost — an inline comment sitting inside an import
+ *    clause — and closes the hole that head conceded: a string literal in code
+ *    containing the word `from` and a quoted path is a `StringLiteral` node, not
+ *    an `ImportDeclaration`, and cannot manufacture anything.
+ *
+ * 3. **It walked one file extension of a product that ships several.** The
+ *    enumerator kept `/\.tsx?$/` and the resolver only ever returned a `.ts` or
+ *    `.tsx` candidate, so the **43 `.module.css` files under `src/`** were
+ *    neither enumerated nor resolvable: a CSS file with no importer was dead
+ *    shipped source that the guard reported as a clean tree. That is defect 1 one
+ *    axis over, and no amount of parser is any help with it — the fix has to be
+ *    in the enumerator and the resolver.
+ *
+ *    So the universe is no longer a list of extensions to keep. **Every file
+ *    under `src/` is enumerated**, and each extension present is declared either
+ *    in `SHIPPING_EXTENSIONS` or in `NOT_LOADED_EXTENSIONS`, asserted in both
+ *    directions. The next file kind somebody adds — `.svg`, `.json`, `.wasm` —
+ *    reddens this file until a human says which it is, instead of escaping the
+ *    walk in silence. CSS is a real node with real out-edges: `cssSpecifiers`
+ *    follows `@import` and `composes … from`, which is how `src/styles/base.css`
+ *    holds `tokens.css` and `typeface.css`.
+ *
+ * 4. **It dropped an import the build keeps.** `specifiers` used to discard a
+ *    brace list in which every binding carried an inline `type`, citing
+ *    `verbatimModuleSyntax: true` as making that *exact*. The flag says the
+ *    opposite, and it was measured with this repo's own settings — `tsc` emits
+ *    `import {} from './a'` for `import { type A } from './a'`, and a `vite
+ *    build` over a fixture whose tsconfig carries the flag put that module's
+ *    top-level `console.log` in `dist/assets/*` `.js`. An empty brace list is a
+ *    side-effect import: the module is fetched and its top level runs. The same
+ *    goes for `export { type A } from './a'`, which emits `export {} from
+ *    './a'`. Both are edges now, because both are in the graph the bundler
+ *    builds — which is the same line drawn everywhere else in this file, since
+ *    `import type … from` is erased before Rollup ever sees the module and
+ *    contributes nothing.
+ *
+ *    The direction of that old mistake is the one that matters: a dropped edge
+ *    shrinks the reachable set, and `NOT_SHIPPED` asserts modules are **absent**
+ *    from it, so an undercount is a false green on the map whose job is keeping
+ *    test doubles out of the build.
+ *
+ *    **Measured, and it does not go as far as it sounds.** Appending
+ *    `import { type RecordingTranscript } from '../runtime/run-doubles'` to
+ *    `src/data/sandbox-repository.ts` puts `run-doubles` on the module graph and
+ *    reddens this file — but `npx vite build` then emits **no** `run-doubles`
+ *    chunk, because that module's top level only declares things and Rollup
+ *    shakes an inert module back out. So the red is about the module graph, not
+ *    about `dist/`, which is the boundary the last bullet below draws for every
+ *    other assertion here as well. A dynamic import of the same module is a
+ *    different story: it cannot be shaken, and it really does ship.
  *
  * It is deliberately structural and deliberately weak about *behaviour*. The
  * behavioural half — that the runtime actually drives a turn a user asked for —
  * is `src/app/composition-root.test.tsx`, which drives the assembled app. This
  * one only says the code is on the graph; that one says it does something.
+ *
+ * ## What it still cannot see, stated rather than discovered later
+ *
+ * - A specifier that is not a literal — `import(someVariable)`, a template with
+ *   a substitution in it, `import.meta.glob`, `require` — is a real edge to
+ *   Rollup that no static reading of this kind can follow. Rather than drop one
+ *   silently (an undercount reads as a *smaller* graph, which is exactly how a
+ *   test double stays "unreachable" while sitting in `dist/`), every one is
+ *   collected by `unanalysableImports` and **reddens** this file with the file
+ *   and the text. There are none in the tree today; that is an observation about
+ *   today's tree and not a bound. A template literal with no substitution *is* a
+ *   literal and is followed — that spelling was used to put
+ *   `src/runtime/run-doubles.ts` into `dist/` as its own chunk carrying
+ *   `FakeTurnDriver`, with this guard green in two consecutive runs.
+ * - This models the bundler's *module graph*, not the bundler. It says a file is
+ *   loadable from the entry, not that Rollup emitted it — tree-shaking can still
+ *   drop a value-imported module whose exports are all unused and whose top
+ *   level is side-effect free. Proving emission needs `vite build` and a read of
+ *   `dist/`: a different, slower instrument than this one.
+ * - `src-tauri/` is not walked. This is the renderer's graph.
+ * - `readdirSync` is the authority on a filename's case, not `existsSync`, which
+ *   is case-blind on NTFS. `resolveSpecifier` returns the on-disk spelling, and
+ *   the mismatches are reported, because `forceConsistentCasingInFileNames`
+ *   covers what `tsc` resolves and `tsc` never resolves a `.css` path — those
+ *   come from an ambient wildcard module in `vite/client`.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = process.cwd();
 const SRC_ROOT = join(REPO_ROOT, 'src');
-const ENTRY = join(SRC_ROOT, 'main.tsx');
+
+/**
+ * The entry is read out of `index.html` rather than named here.
+ *
+ * `src/main.tsx` is the entry because one `<script type="module">` says so. A
+ * guard that names the entry itself keeps walking the module it *believes* is
+ * launched after somebody edits that tag, which is the prose-exemption mistake
+ * one level further out: the question stops being "what does the product load"
+ * and becomes "what did this file's author think it loads".
+ */
+const HTML_ENTRY = join(REPO_ROOT, 'index.html');
 
 /**
  * Modules that **must** be off the graph, each with the reason.
@@ -115,136 +214,345 @@ const AWAITING_A_SURFACE = new Map<string, string>([
   ],
 ]);
 
-/** `.ts`/`.tsx` under a directory, recursively, tests excluded. */
+/**
+ * File kinds under `src/` that the bundler loads, and what reads edges out of
+ * each.
+ *
+ * Declaring the universe here rather than writing `/\.tsx?$/` into the
+ * enumerator is the whole point: this map is **asserted against the tree in both
+ * directions** by `declares every file kind under src/`. An extension that
+ * appears under `src/` and is in neither this map nor `NOT_LOADED_EXTENSIONS`
+ * fails; an extension declared here that no longer exists fails too. The
+ * enumerator this replaced hard-coded `.ts`/`.tsx`, and 43 `.css` files were
+ * simply not part of the question it asked.
+ */
+const SHIPPING_EXTENSIONS = new Map<string, string>([
+  ['.ts', 'parsed by `ts.createSourceFile`; read by `specifiers`'],
+  ['.tsx', 'parsed by `ts.createSourceFile` as TSX; read by `specifiers`'],
+  [
+    '.css',
+    'a real module to Vite — `import styles from "./X.module.css"` loads one and ' +
+      '`@import` chains out of it. Read by `cssSpecifiers`',
+  ],
+]);
+
+/** File kinds under `src/` the bundler never loads, each with the reason. */
+const NOT_LOADED_EXTENSIONS = new Map<string, string>([
+  [
+    '.md',
+    'prose for whoever opens the directory — `src/features/README.md` and ' +
+      '`src/lib/README.md`. Nothing imports them and Vite has no loader for ' +
+      'them. If one is ever imported as `?raw` it has become a shipping kind and ' +
+      'this entry has to move',
+  ],
+]);
+
+/**
+ * A test file, in exactly the spelling `vite.config.ts` gives `test.include`.
+ *
+ * That match is what makes skipping these safe: a file this walk does not
+ * enumerate is a file the runner does enter. The exclusion this replaces was
+ * `/\.test\.[a-z]+$/`, which also swallowed spellings vitest does **not** run —
+ * a stylesheet with a test infix in its name, for one — leaving an escape hatch
+ * from both instruments at once.
+ */
+const TEST_FILE = /\.test\.tsx?$/;
+
+/** Every file under `directory` the bundler could load, recursively, tests excluded. */
 function shippingModules(directory: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...shippingModules(path));
-    else if (/\.tsx?$/.test(entry.name) && !/\.test\.[a-z]+$/.test(entry.name)) found.push(path);
+    if (entry.isDirectory()) {
+      found.push(...shippingModules(path));
+      continue;
+    }
+    if (!SHIPPING_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+    if (TEST_FILE.test(entry.name)) continue;
+    found.push(path);
   }
+  return found;
+}
+
+/** Every distinct file extension under `directory`, recursively. */
+function extensionsUnder(directory: string): Set<string> {
+  const found = new Set<string>();
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const extension of extensionsUnder(join(directory, entry.name))) found.add(extension);
+    } else {
+      found.add(extname(entry.name).toLowerCase());
+    }
+  }
+  return found;
+}
+
+/** `source` parsed as TypeScript, as TSX when the file name says so. */
+function parse(source: string, fileName: string): ts.SourceFile {
+  return ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.ESNext,
+    true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+}
+
+/** Depth-first over every node. Comments are trivia in this grammar, not nodes. */
+function eachNode(root: ts.Node, visit: (node: ts.Node) => void): void {
+  visit(root);
+  root.forEachChild((child) => {
+    eachNode(child, visit);
+  });
+}
+
+/**
+ * The text of a module specifier the bundler can read statically, or `null`.
+ *
+ * `ts.isStringLiteralLike` is `StringLiteral | NoSubstitutionTemplateLiteral`,
+ * and the second half is load-bearing rather than tidy. A backtick with nothing
+ * interpolated is a compile-time constant and Rollup follows it, while every
+ * regex this replaced defined a specifier as "text between a single or double
+ * quote". One module-scope dynamic import of `../runtime/run-doubles` written
+ * with backticks, in a file already on the graph, put that module into `dist/`
+ * as its own chunk carrying `FakeTurnDriver` — with the old guard green twice.
+ */
+function staticSpecifier(node: ts.Node): string | null {
+  return ts.isStringLiteralLike(node) ? node.text : null;
+}
+
+/** `import(...)` as a call — not `import('...').Thing`, which is a type. */
+function isDynamicImportCall(node: ts.Node): node is ts.CallExpression {
+  return ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword;
+}
+
+/** `import.meta.glob(...)`, Vite's compile-time directory expansion. */
+function isImportMetaGlob(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isMetaProperty(callee.expression) &&
+    callee.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    callee.name.text === 'glob'
+  );
+}
+
+/** A `require(...)` call, which has no business in this ESM renderer. */
+function isRequireCall(node: ts.Node): node is ts.CallExpression {
+  return (
+    ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require'
+  );
+}
+
+/**
+ * Every module specifier in a source file **that survives to runtime**, as written.
+ *
+ * The extractor is the TypeScript parser, and that is not a tidiness preference.
+ * This guard's job is to tell code from prose; comments are trivia in
+ * TypeScript's grammar rather than nodes; so the class of defect where a
+ * sentence in a doc comment manufactures an edge cannot be *expressed* here.
+ * Each of the regexes this replaced could be evaded by a comment and two of them
+ * had no defence at all.
+ *
+ * What counts as an edge, and why:
+ *
+ * - `ImportDeclaration`, unless the clause is `import type`, in which case the
+ *   whole statement is erased. **An empty or all-inline-`type` brace list is
+ *   still an edge**: `verbatimModuleSyntax: true` emits `import {} from './a'`,
+ *   which fetches the module and runs its top level.
+ * - `ExportDeclaration` carrying a specifier, unless `export type … from`. That
+ *   covers `export * from`, and `export { type A } from` for the same reason.
+ * - `import(...)` as a call, with a `StringLiteral` or a substitution-free
+ *   template literal.
+ * - `ImportTypeNode` — `typeof import('./a')` in a type position — is **not** a
+ *   call expression, so it never reaches here. It is erased syntax that a regex
+ *   hunting for the four bytes `import(` counted as a runtime edge.
+ */
+function specifiers(source: string, fileName = 'probe.tsx'): string[] {
+  const found: string[] = [];
+  eachNode(parse(source, fileName), (node) => {
+    if (ts.isImportDeclaration(node)) {
+      if (node.importClause?.isTypeOnly === true) return;
+      const specifier = staticSpecifier(node.moduleSpecifier);
+      if (specifier !== null) found.push(specifier);
+      return;
+    }
+    if (ts.isExportDeclaration(node)) {
+      if (node.isTypeOnly || node.moduleSpecifier === undefined) return;
+      const specifier = staticSpecifier(node.moduleSpecifier);
+      if (specifier !== null) found.push(specifier);
+      return;
+    }
+    if (isDynamicImportCall(node)) {
+      const argument = node.arguments[0];
+      const specifier = argument === undefined ? null : staticSpecifier(argument);
+      if (specifier !== null) found.push(specifier);
+    }
+  });
   return found;
 }
 
 /**
- * Every import specifier in a module **that survives to runtime**, as written.
+ * Every edge in a source file the walk **cannot follow**, as source text.
  *
- * Static `import`/`export … from` and dynamic `import(...)`. A regex rather than
- * a parser.
+ * This is the half that stops an undercount from being silent. A missed edge
+ * makes `REACHABLE` smaller, and smaller is not the safe direction: the
+ * `NOT_SHIPPED` assertions read a module's **absence** from that set as proof
+ * nothing ships it. So anything the bundler resolves and this file cannot —
+ * a computed `import()`, `import.meta.glob`, `require` — is reported by name and
+ * reddens `follows every edge it finds` instead of being dropped.
  *
- * ## The head class is `[^;/]`, and that is the whole ballgame
- *
- * This function used to say its weakness ran in the *safe* direction — "a
- * specifier this misses makes the reachable set smaller, so the guard fails
- * loudly rather than passing wrongly". **That was false, and it was measured
- * false on this codebase.** The head was `[\s\S]*?`, which spans lines. A match
- * begins at any line-initial `import`/`export` keyword, and one that is not an
- * import statement at all — `export interface`, `export function` — ran forward
- * through comments until it found any `from '…'`. Quoted prose became a
- * specifier, and a specifier that resolves is a runtime edge that nothing in the
- * tree actually has.
- *
- * A differential against the TypeScript AST over all 265 files under `src/` gave
- * **9 disagreements, every one an overcount, zero undercounts** — doc-comment
- * prose scraped out of `endpoint-repository.ts`, `settings-repository.ts`,
- * `turn-attachments.ts`, `EndpointsPanel.tsx`, `contract-sandbox.ts` and this
- * file. None of them resolved, so the verdict stayed right by luck.
- *
- * The consequence is not academic and was reproduced twice: plant an orphan in
- * `src/data`, and this guard correctly reddens; add to a file already on the
- * graph a **comment** reading `re-exported from './that-orphan'`, and the guard
- * goes **green 7/7 with a module nothing in the tree imports**. A guard whose
- * project-level finding is *a comment is not evidence* was reading comments as
- * evidence.
- *
- * So the head cannot cross a statement terminator **or a comment opener**.
- * Excluding `;` alone is not enough: an `export interface` block with no
- * semicolons in it reaches a following doc comment anyway, which was checked
- * rather than assumed. Excluding `/` closes the class outright, because every
- * comment in the language begins with one and no import clause contains one —
- * the specifier's own slashes sit after `from`, outside this class.
- *
- * **What it costs, stated rather than discovered later:** an inline comment
- * *inside* an import clause makes this miss a real edge. That direction is the
- * loud one — the module drops off the graph and the walk names it — and the
- * differential says the tree has none. A string literal holding `from '…'` with
- * no `;` or `/` before it can still manufacture an edge; three remain, all in
- * test files this walk never reads, since it enters only what `src/main.tsx`
- * imports.
- *
- * ## Why type-only imports are dropped rather than counted
- *
- * This used to count them, and that made the guard weaker than it read.
- * A specifier is a specifier whether the binding is a value or a type, so
- * severing the composition root's call — deleting `createSandboxRepository`
- * from `App.tsx` and handing `CanvasSurface` a stub — left the old guard
- * **green in two consecutive runs**, because `use-document-run.ts` and
- * `CanvasPanel.tsx` still `import type { SandboxRepository }` from that module.
- * Type imports vanish at build time; they keep a module on the graph while
- * nothing at runtime ever enters it. That is the original defect wearing the
- * guard written against it.
- *
- * **And the compiler does not see it either**, which is the sharpest way to put
- * why this distinction has to live here. Severing `harness-runtime.ts`'s value
- * import of `project-context.ts` down to `import type { ProjectInstructionsReader }`
- * and stubbing the call leaves `pnpm typecheck` at **exit 0** — measured, twice —
- * while `src/runtime/project-context.ts` has nothing entering it at runtime. A
- * type-only orphan is invisible to `tsc`, invisible to every behavioural test
- * that does not happen to drive it, and was invisible to this guard. That is
- * three instruments agreeing on a module that is not there.
- *
- * So a type-only statement contributes no edge. Three spellings are erased and
- * all three are dropped here: `import type … from`, `export type … from`, and a
- * brace list in which **every** specifier carries an inline `type` — the last
- * only when there is no default or namespace binding to keep the statement
- * alive.
- *
- * **This is exact for this codebase rather than a heuristic**, and the reason is
- * `verbatimModuleSyntax: true` in `tsconfig.app.json`: with it on, TypeScript
- * emits import statements exactly as written and elides only what is marked
- * `type`. An unmarked import is a runtime import even when every binding it
- * names happens to be a type, so there is no fourth, invisible spelling for this
- * to miss. Turn that flag off and this becomes an approximation again.
+ * The tree has none of these today. `import.meta.glob` in particular is a
+ * statically expanded directory read: if one is ever added, the honest fix is to
+ * teach this file the glob, not to widen an exemption.
  */
-function specifiers(source: string): string[] {
+function unanalysableImports(source: string, fileName = 'probe.tsx'): string[] {
+  const parsed = parse(source, fileName);
   const found: string[] = [];
-  for (const match of source.matchAll(
-    /(?:^|\n)\s*((?:import|export)[^;/]*?from\s*['"]([^'"]+)['"])/g,
-  )) {
-    const statement = match[1];
-    const specifier = match[2];
-    if (statement === undefined || specifier === undefined) continue;
-    if (/^\s*(?:import|export)\s+type\b/.test(statement)) continue;
-    const braced = /\{([\s\S]*?)\}/.exec(statement);
-    if (braced?.[1] !== undefined) {
-      const names = braced[1]
-        .split(',')
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0);
-      const bindsOutsideBraces = /^\s*import\s+(?!\{)[A-Za-z_$*]/.test(statement);
-      if (names.length > 0 && !bindsOutsideBraces && names.every((n) => /^type\s/.test(n))) continue;
+  eachNode(parsed, (node) => {
+    if (isDynamicImportCall(node)) {
+      const argument = node.arguments[0];
+      if (argument === undefined || staticSpecifier(argument) === null) {
+        found.push(node.getText(parsed));
+      }
+      return;
     }
-    found.push(specifier);
+    if (isImportMetaGlob(node) || isRequireCall(node)) found.push(node.getText(parsed));
+  });
+  return found;
+}
+
+/**
+ * CSS with every comment replaced by a space, string literals left intact.
+ *
+ * The same argument as for TypeScript, made with the tools to hand. `postcss` is
+ * present under `node_modules/.pnpm` as a transitive dependency of Vite but is
+ * not resolvable from this package and is not a declared dependency of it, so
+ * reaching for it is a lockfile change and not this branch's. CSS's comment
+ * grammar is one rule — an opener, then everything up to the first closer, no
+ * line comments and no nesting — so implementing that rule is exact rather than
+ * a guess, and it runs *before* any pattern does. A commented-out `@import`
+ * therefore cannot become an edge, which is the evasion that worked on the
+ * TypeScript side.
+ */
+function withoutCssComments(source: string): string {
+  let out = '';
+  let index = 0;
+  while (index < source.length) {
+    const character = source.charAt(index);
+    if (character === '/' && source.charAt(index + 1) === '*') {
+      const end = source.indexOf('*/', index + 2);
+      out += ' ';
+      index = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      out += character;
+      index += 1;
+      while (index < source.length) {
+        const inside = source.charAt(index);
+        out += inside;
+        index += 1;
+        if (inside === '\\' && index < source.length) {
+          out += source.charAt(index);
+          index += 1;
+          continue;
+        }
+        if (inside === character) break;
+      }
+      continue;
+    }
+    out += character;
+    index += 1;
   }
-  for (const pattern of [
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
-  ]) {
-    for (const match of source.matchAll(pattern)) {
-      const specifier = match[1];
-      if (specifier !== undefined) found.push(specifier);
-    }
+  return out;
+}
+
+/**
+ * Every module specifier a stylesheet pulls in.
+ *
+ * Two forms, both real in this tree's shape: `@import` (quoted or `url(...)`,
+ * which is how `src/styles/base.css` holds `tokens.css` and `typeface.css`) and
+ * CSS Modules' `composes: name from './other.module.css'`. A form not listed
+ * here drops an edge, and a dropped edge reddens the walk naming the file it
+ * lost — the loud direction. It does not go quiet.
+ */
+function cssSpecifiers(source: string): string[] {
+  const text = withoutCssComments(source);
+  const found: string[] = [];
+  for (const match of text.matchAll(/@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g)) {
+    const specifier = match[1];
+    if (specifier !== undefined) found.push(specifier);
+  }
+  for (const match of text.matchAll(/@import\s+url\(\s*([^'")\s][^)]*?)\s*\)/g)) {
+    const specifier = match[1];
+    if (specifier !== undefined) found.push(specifier);
+  }
+  for (const match of text.matchAll(/\bcomposes\s*:[^;}]*?\bfrom\s+['"]([^'"]+)['"]/g)) {
+    const specifier = match[1];
+    if (specifier !== undefined) found.push(specifier);
   }
   return found;
 }
 
-/** A specifier resolved to a file in this tree, or `null` for anything else. */
+/** Whichever extractor the file's kind calls for. */
+function edgesOf(file: string, source: string): string[] {
+  return extname(file).toLowerCase() === '.css' ? cssSpecifiers(source) : specifiers(source, file);
+}
+
+const FILES_IN_DIRECTORY = new Map<string, string[]>();
+
+/** The names of the plain files in `directory`, as the filesystem spells them. */
+function filesIn(directory: string): string[] {
+  const cached = FILES_IN_DIRECTORY.get(directory);
+  if (cached !== undefined) return cached;
+  let names: string[] = [];
+  try {
+    names = readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    names = [];
+  }
+  FILES_IN_DIRECTORY.set(directory, names);
+  return names;
+}
+
+/**
+ * `path` respelled the way the filesystem spells it, or `null` if no file is there.
+ *
+ * `existsSync` is the wrong instrument twice over on this box: it is case-blind
+ * on NTFS, so `'./Run-Doubles'` "exists", and it answers `true` for a directory,
+ * so a specifier naming a folder used to have to be filtered out by extension.
+ * `readdirSync` answers both questions at once, which is why the walk's keys and
+ * the enumerator's keys are guaranteed to be the same strings.
+ */
+function canonical(path: string): string | null {
+  const wanted = basename(path).toLowerCase();
+  for (const real of filesIn(dirname(path))) {
+    if (real.toLowerCase() === wanted) return join(dirname(path), real);
+  }
+  return null;
+}
+
+/**
+ * A specifier resolved to a file in this tree, or `null` for anything else.
+ *
+ * The bare path is tried **first**, which is what makes `AppShell.module.css`
+ * resolve; the old order could not reach a CSS file at all because every
+ * candidate was gated on `/\.tsx?$/` before `existsSync` ran. A root-absolute
+ * specifier (`/src/main.tsx`) resolves against the project root, which is how
+ * Vite reads the one in `index.html`.
+ */
 function resolveSpecifier(fromFile: string, specifier: string): string | null {
   const base = specifier.startsWith('@/')
     ? join(SRC_ROOT, specifier.slice(2))
-    : specifier.startsWith('.')
-      ? resolve(dirname(fromFile), specifier)
-      : null;
+    : specifier.startsWith('/')
+      ? join(REPO_ROOT, specifier.slice(1))
+      : specifier.startsWith('.')
+        ? resolve(dirname(fromFile), specifier)
+        : null;
   if (base === null) return null;
   for (const candidate of [
     base,
@@ -253,32 +561,150 @@ function resolveSpecifier(fromFile: string, specifier: string): string | null {
     join(base, 'index.ts'),
     join(base, 'index.tsx'),
   ]) {
-    if (/\.tsx?$/.test(candidate) && existsSync(candidate)) return candidate;
+    const real = canonical(candidate);
+    if (real !== null) return real;
   }
   return null;
 }
 
-/** Everything `src/main.tsx` reaches at runtime, transitively. */
-function reachableFromEntry(): Set<string> {
-  const seen = new Set<string>();
-  const queue = [ENTRY];
-  while (queue.length > 0) {
-    const file = queue.pop();
-    if (file === undefined || seen.has(file)) continue;
-    seen.add(file);
-    for (const specifier of specifiers(readFileSync(file, 'utf8'))) {
-      const resolved = resolveSpecifier(file, specifier);
-      if (resolved !== null && !seen.has(resolved)) queue.push(resolved);
-    }
+/**
+ * Everything `index.html` tells the browser to load, as written in the tag.
+ *
+ * HTML comments are stripped first, for the reason the whole rest of this file
+ * exists: a commented-out `<script>` tag is not an entry, and a guard that reads
+ * one as an entry is reading prose as code.
+ */
+function htmlEntries(html: string): string[] {
+  const text = html.replace(/<!--[\s\S]*?-->/g, ' ');
+  const found: string[] = [];
+  for (const match of text.matchAll(/<script\b([^>]*)>/gi)) {
+    const attributes = match[1] ?? '';
+    if (!/\btype\s*=\s*["']module["']/i.test(attributes)) continue;
+    const source = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
+    if (source !== undefined) found.push(source);
   }
-  return seen;
+  for (const match of text.matchAll(/<link\b([^>]*)>/gi)) {
+    const attributes = match[1] ?? '';
+    if (!/\brel\s*=\s*["']stylesheet["']/i.test(attributes)) continue;
+    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
+    if (href !== undefined) found.push(href);
+  }
+  return found;
 }
 
-const REACHABLE = reachableFromEntry();
+/**
+ * True when the disk spells this specifier's own last segment differently.
+ *
+ * Only the segment the specifier actually wrote is compared. An extensionless
+ * specifier resolving to the same stem plus `.ts`, or a directory specifier
+ * resolving to its index, is extension and index resolution doing its job and
+ * not a casing fault. What this catches is a specifier written in all-lowercase
+ * finding `AppShell.module.css`, which `existsSync` calls a hit on NTFS and a
+ * case-sensitive filesystem calls a blank screen.
+ */
+function miscasedAgainst(specifier: string, resolved: string): boolean {
+  const written = basename(specifier);
+  if (written === '' || written === '.' || written === '..') return false;
+  const found = basename(resolved);
+  return found.toLowerCase().startsWith(written.toLowerCase()) && !found.startsWith(written);
+}
+
+/**
+ * Facts this file would otherwise have hard-coded from `vite.config.ts`.
+ *
+ * Three of the rules above are really claims about that config: `resolveSpecifier`
+ * knows one alias prefix, `TEST_FILE` claims to match `test.include`, and
+ * `NOT_SHIPPED` exempts `src/test/setup.ts` on the grounds that it is a
+ * `setupFiles` entry. Each was written here as prose, and prose about a config
+ * is the same instrument failure as prose about an import: it can stop being
+ * true without anything noticing. Since the parser is already loaded, they are
+ * read out of the config and asserted instead.
+ */
+const VITE_CONFIG = parse(
+  readFileSync(join(REPO_ROOT, 'vite.config.ts'), 'utf8'),
+  'vite.config.ts',
+);
+
+/** The first `name:` property assignment anywhere in `vite.config.ts`. */
+function configProperty(name: string): ts.Expression | null {
+  let found: ts.Expression | null = null;
+  eachNode(VITE_CONFIG, (node) => {
+    if (found !== null || !ts.isPropertyAssignment(node)) return;
+    if (propertyName(node.name) === name) found = node.initializer;
+  });
+  return found;
+}
+
+function propertyName(name: ts.PropertyName): string | null {
+  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : null;
+}
+
+/** The string elements of an array literal, or `[]` for anything else. */
+function stringElements(node: ts.Expression | null): string[] {
+  if (node === null || !ts.isArrayLiteralExpression(node)) return [];
+  return node.elements.flatMap((element) =>
+    ts.isStringLiteralLike(element) ? [element.text] : [],
+  );
+}
+
+/** The keys of an object literal, or `[]` for anything else. */
+function objectKeys(node: ts.Expression | null): string[] {
+  if (node === null || !ts.isObjectLiteralExpression(node)) return [];
+  return node.properties.flatMap((property) => {
+    if (!ts.isPropertyAssignment(property)) return [];
+    const name = propertyName(property.name);
+    return name === null ? [] : [name];
+  });
+}
+
+type Graph = {
+  /** Every file the entry reaches, transitively, as an absolute path. */
+  readonly reachable: ReadonlySet<string>;
+  /** The entries `index.html` declares, resolved. */
+  readonly entries: readonly string[];
+  /** `file: text` for every edge the walk could not follow. */
+  readonly unfollowable: readonly string[];
+  /** `file: specifier` for every specifier whose case does not match the disk. */
+  readonly miscased: readonly string[];
+};
+
+/** Everything `index.html` reaches at runtime, transitively. */
+function walk(): Graph {
+  const entries = htmlEntries(readFileSync(HTML_ENTRY, 'utf8'))
+    .map((specifier) => resolveSpecifier(HTML_ENTRY, specifier))
+    .filter((file): file is string => file !== null);
+  const reachable = new Set<string>();
+  const unfollowable: string[] = [];
+  const miscased: string[] = [];
+  const queue = [...entries];
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (file === undefined || reachable.has(file)) continue;
+    reachable.add(file);
+    const source = readFileSync(file, 'utf8');
+    if (extname(file).toLowerCase() !== '.css') {
+      for (const text of unanalysableImports(source, file)) {
+        unfollowable.push(`${asRepoPath(file)}: ${text}`);
+      }
+    }
+    for (const specifier of edgesOf(file, source)) {
+      const resolved = resolveSpecifier(file, specifier);
+      if (resolved === null) continue;
+      if (miscasedAgainst(specifier, resolved)) {
+        miscased.push(`${asRepoPath(file)}: ${specifier} is on disk as ${basename(resolved)}`);
+      }
+      if (!reachable.has(resolved)) queue.push(resolved);
+    }
+  }
+  return { reachable, entries, unfollowable, miscased };
+}
 
 function asRepoPath(file: string): string {
   return relative(REPO_ROOT, file).split('\\').join('/');
 }
+
+const GRAPH = walk();
+const REACHABLE = GRAPH.reachable;
 
 describe('the renderer is wired into the product', () => {
   it('walks a graph big enough to be worth walking', () => {
@@ -291,16 +717,55 @@ describe('the renderer is wired into the product', () => {
     expect([...REACHABLE].map(asRepoPath)).toContain('src/app/App.tsx');
   });
 
+  it('starts where index.html starts, not where this file assumes', () => {
+    // If the tag moves, the walk moves. A hard-coded entry is a guard that keeps
+    // proving something about a module the product may no longer launch.
+    expect(
+      GRAPH.entries.map(asRepoPath),
+      'index.html declares no module entry this walk can resolve; the graph below is vacuous',
+    ).toEqual(['src/main.tsx']);
+    expect(htmlEntries('<!-- <script type="module" src="/src/ghost.tsx"></script> -->')).toEqual([]);
+    expect(htmlEntries('<script type="module" src="/src/main.tsx"></script>')).toEqual([
+      '/src/main.tsx',
+    ]);
+  });
+
+  /**
+   * The three claims this file makes about `vite.config.ts`, held to the config.
+   *
+   * `resolveSpecifier` translates exactly one alias prefix. That is not a
+   * property of the resolver, it is a property of `resolve.alias`, and a second
+   * alias added there would make every specifier using it resolve to `null` —
+   * an undercount, which is the direction that reads as a *smaller* graph and
+   * lets a `NOT_SHIPPED` entry stay green. Same for `TEST_FILE`, whose safety
+   * argument is that it matches `test.include` exactly, and for the
+   * `src/test/setup.ts` exemption, whose stated reason is that `setupFiles`
+   * names it.
+   */
+  it('holds its three claims about vite.config.ts to vite.config.ts', () => {
+    expect(
+      objectKeys(configProperty('alias')),
+      'resolveSpecifier translates one alias prefix and this is where the list lives',
+    ).toEqual(['@']);
+    expect(
+      stringElements(configProperty('include')),
+      'TEST_FILE is only safe while it is the same set of files vitest runs',
+    ).toEqual(['src/**/*.test.{ts,tsx}']);
+    expect(
+      stringElements(configProperty('setupFiles')),
+      'the src/test/setup.ts exemption says setupFiles names it',
+    ).toEqual(['./src/test/setup.ts']);
+  });
+
   /**
    * The extractor, exercised directly on text rather than on the tree.
    *
    * The walk above is only as good as what counts as an edge, and the failure
    * that matters is the silent one: counting an erased import as reachability
-   * reads as a bigger, healthier graph. On the tree these cases are currently
-   * indistinguishable — every module held by a type import is also held by a
-   * value import today, so both readings give the same 142 files — which means
-   * nothing in this repo would notice if the distinction broke. Hence a control
-   * on the function itself.
+   * reads as a bigger, healthier graph, and dropping a real one reads as a
+   * smaller graph in which a test double looks unshipped. On the tree these
+   * cases are largely indistinguishable today, which means nothing in this repo
+   * would notice if the distinction broke. Hence a control on the function.
    */
   it('counts a value import as an edge and an erased one as nothing', () => {
     expect(specifiers("import { thing } from './a';\n")).toEqual(['./a']);
@@ -309,37 +774,219 @@ describe('the renderer is wired into the product', () => {
     expect(specifiers("import Default, { type A } from './a';\n")).toEqual(['./a']);
     expect(specifiers("import * as ns from './a';\n")).toEqual(['./a']);
     expect(specifiers("import { value, type A } from './a';\n")).toEqual(['./a']);
+    expect(specifiers("export * from './a';\n")).toEqual(['./a']);
 
     expect(specifiers("import type { A } from './a';\n")).toEqual([]);
     expect(specifiers("import type A from './a';\n")).toEqual([]);
     expect(specifiers("export type { A } from './a';\n")).toEqual([]);
-    expect(specifiers("import { type A, type B } from './a';\n")).toEqual([]);
     expect(specifiers("import type {\n  A,\n} from './a';\n")).toEqual([]);
   });
 
   /**
-   * Prose is not an import — asserted, because this guard once believed it was.
+   * An empty brace list is a side-effect import, and `verbatimModuleSyntax` is
+   * the reason **for** that rather than against it.
    *
-   * Every case below is a comment naming a module, downstream of a line-initial
-   * `export` keyword that does not begin an import statement. Under the old
-   * `[\s\S]*?` head each one yielded a specifier, which is how a planted orphan
-   * was hidden from the walk by adding a sentence to a file that was already on
-   * the graph. The first two carry **no semicolon** before the comment, which is
-   * why excluding `;` alone does not close this and `/` has to go with it.
+   * The extractor this replaced dropped these two spellings and called the rule
+   * "exact for this codebase" on the strength of that flag. Measured instead of
+   * reasoned about, with the repo's own compiler options:
+   *
+   *     import { type A } from './a';   ->  tsc emits  import {} from './a';
+   *     export { type A } from './a';   ->  tsc emits  export {} from './a';
+   *
+   * and a `vite build` over a two-module fixture carrying the same flag put the
+   * imported module's top-level `console.log` in the bundle. Drop the edge and
+   * the module is still fetched and still runs — while `NOT_SHIPPED`, which
+   * reads a module's absence from `REACHABLE` as proof nothing ships it, reports
+   * a clean tree.
+   *
+   * The honest limit, measured rather than assumed: on the real tree this puts
+   * a module on the *graph*, and Rollup will still shake it back out if its top
+   * level does nothing, which is what happens to `run-doubles` specifically.
+   * That boundary is the header's last bullet and it applies to every assertion
+   * in this file, not just this one.
    */
-  it('does not manufacture an edge out of a comment that names a module', () => {
-    expect(specifiers('export interface Foo {\n  bar(): void\n}\n\n/**\n * re-exported from \'./ghost\'\n */\n')).toEqual([]);
-    expect(specifiers('export function foo() {\n  return 1\n}\n\n// used to be imported from \'./ghost\'\n')).toEqual([]);
-    expect(specifiers("export function make() {\n  return { a: 1 };\n}\n\n/**\n * re-exported from './ghost'\n */\n")).toEqual([]);
-    expect(specifiers("export const x = 1;\n/* loaded from './ghost' */\n")).toEqual([]);
-
-    // The control for the four above: the same shape, but a real import, which
-    // must still be found. A fix that returned [] for everything would pass the
-    // assertions above and silence the entire guard.
-    expect(specifiers("export const x = 1;\nimport { real } from './kept';\n")).toEqual(['./kept']);
+  it('counts an all-type brace list as the side-effect import the build emits', () => {
+    expect(specifiers("import { type A } from './a';\n")).toEqual(['./a']);
+    expect(specifiers("import { type A, type B } from './a';\n")).toEqual(['./a']);
+    expect(specifiers("import {} from './a';\n")).toEqual(['./a']);
+    expect(specifiers("export { type A } from './a';\n")).toEqual(['./a']);
   });
 
-  it('reaches every shipping module under src/ from src/main.tsx', () => {
+  /**
+   * Prose is not an import — asserted, because this guard twice believed it was.
+   *
+   * The first four are the shapes the `[\s\S]*?` head fell for. The next two are
+   * the ones that survived the `[^;/]` hardening, because that head was added to
+   * one of three regexes and the other two matched anywhere in the text: a line
+   * comment naming a dynamic import, and a block comment whose interior line
+   * begins with a side-effect import. Both were executed against the hardened
+   * guard and both laundered a planted orphan onto the graph.
+   *
+   * None of them can be expressed against a parser, which is the point: a
+   * comment is not a node, so there is no rule here doing the excluding that a
+   * cleverer sentence could get around.
+   */
+  it('does not manufacture an edge out of a comment that names a module', () => {
+    expect(specifiers("export interface Foo {\n  bar(): void\n}\n\n/**\n * re-exported from './ghost'\n */\n")).toEqual([]);
+    expect(specifiers("export function foo() {\n  return 1\n}\n\n// used to be imported from './ghost'\n")).toEqual([]);
+    expect(specifiers("export const x = 1;\n/* loaded from './ghost' */\n")).toEqual([]);
+    expect(specifiers("export const x = 1;\n// Wave 3 dropped it; it used to be `await import('./ghost')`.\n")).toEqual([]);
+    expect(specifiers('export const x = 1;\n/*\nimport \'./ghost\'\n*/\n')).toEqual([]);
+    expect(specifiers("const doc = \"see import { a } from './ghost'\";\n")).toEqual([]);
+    expect(specifiers("export const x = 1;\n// import('./ghost')\n// import './ghost2'\n")).toEqual([]);
+
+    // The control for the six above: the same shapes, but real code, which must
+    // still be found. A fix that returned [] for everything would pass every
+    // assertion above and silence the entire guard.
+    expect(specifiers("export const x = 1;\nimport { real } from './kept';\n")).toEqual(['./kept']);
+    expect(specifiers("export const x = 1;\nvoid import('./kept');\n")).toEqual(['./kept']);
+    expect(specifiers("export const x = 1;\nimport './kept';\n")).toEqual(['./kept']);
+  });
+
+  /**
+   * The two shapes the regex got wrong in the *other* direction, both recovered
+   * by the parser rather than by another exclusion class.
+   *
+   * `[^;/]` cannot cross a slash, so an inline comment inside an import clause
+   * dropped a genuine edge and the walk then reported a plainly-imported module
+   * as an orphan — a red naming a module anyone can see is imported, whose
+   * cheapest green is an exemption entry, which is how `NOT_SHIPPED` starts
+   * lying. And `import('./a').Thing` in a type position is fully erased, but the
+   * old dynamic-import regex was four bytes and a quote, so it counted it.
+   */
+  it('follows an import clause that carries a comment, and not a type-position import', () => {
+    expect(specifiers("import { /* wired later */ thing } from './a';\n")).toEqual(['./a']);
+    expect(specifiers("import {\n  // one day\n  thing,\n} from './a';\n")).toEqual(['./a']);
+    expect(specifiers("export type X = typeof import('./a');\n")).toEqual([]);
+    expect(specifiers("export type X = import('./a').Thing;\n")).toEqual([]);
+  });
+
+  /**
+   * A specifier is not "the text between two quotes".
+   *
+   * A substitution-free template literal is a compile-time constant that Rollup
+   * resolves like any other. One line of it at module scope in a file already on
+   * the graph — a dynamic import of `../runtime/run-doubles` written with
+   * backticks — emitted a `run-doubles` chunk into `dist/` carrying
+   * `FakeTurnDriver`, which is the exact thing the first `NOT_SHIPPED` entry
+   * exists to prevent, with the guard green twice over.
+   */
+  it('reads a template-literal specifier, because Rollup does', () => {
+    expect(specifiers('void import(`./a`);\n')).toEqual(['./a']);
+    expect(specifiers('void import(`../runtime/run-doubles`);\n')).toEqual([
+      '../runtime/run-doubles',
+    ]);
+  });
+
+  /**
+   * And when it genuinely cannot follow an edge, it says so instead of shrinking.
+   *
+   * An undercount is not the safe direction here, however often that gets
+   * written down. `NOT_SHIPPED` reads absence from `REACHABLE` as proof, so a
+   * dropped edge is a false green on the map whose whole job is keeping test
+   * doubles out of the bundle.
+   */
+  it('reports an edge it cannot follow rather than dropping it', () => {
+    expect(unanalysableImports('void import(name);\n')).toEqual(['import(name)']);
+    expect(unanalysableImports('void import(`./x/${name}`);\n')).toEqual(['import(`./x/${name}`)']);
+    expect(unanalysableImports("const all = import.meta.glob('./f/*.ts');\n")).toEqual([
+      "import.meta.glob('./f/*.ts')",
+    ]);
+    expect(unanalysableImports("const a = require('./a');\n")).toEqual(["require('./a')"]);
+
+    expect(unanalysableImports("void import('./a');\n")).toEqual([]);
+    expect(unanalysableImports('void import(`./a`);\n')).toEqual([]);
+    expect(unanalysableImports("import { a } from './a';\n")).toEqual([]);
+  });
+
+  it('follows every edge it finds', () => {
+    expect(
+      GRAPH.unfollowable,
+      'a specifier this walk cannot read statically is one the bundler can. ' +
+        'Every entry here is a module that may be in the bundle while every ' +
+        'assertion below reports it as unreachable — teach this file the shape, ' +
+        'or make the import a literal',
+    ).toEqual([]);
+  });
+
+  /**
+   * CSS is a module, and its comments are prose too.
+   *
+   * The `.module.css` files were invisible to this guard entirely: not
+   * enumerated, and not resolvable, so `import styles from './X.module.css'`
+   * produced `null` and CSS was never a node. A stylesheet with no importer was
+   * dead shipped source in a directory the walk claimed to govern.
+   */
+  it('reads a stylesheet as a module, and a CSS comment as prose', () => {
+    expect(cssSpecifiers("@import './tokens.css';\n")).toEqual(['./tokens.css']);
+    expect(cssSpecifiers('@import url("./tokens.css");\n')).toEqual(['./tokens.css']);
+    expect(cssSpecifiers('@import url(./tokens.css);\n')).toEqual(['./tokens.css']);
+    expect(cssSpecifiers(".a { composes: b from './other.module.css'; }\n")).toEqual([
+      './other.module.css',
+    ]);
+
+    expect(cssSpecifiers("/* @import './ghost.css'; */\n")).toEqual([]);
+    expect(cssSpecifiers("/*\n@import './ghost.css';\n*/\n.a { color: red }\n")).toEqual([]);
+    expect(cssSpecifiers('.a { content: "/*"; }\n@import \'./kept.css\';\n')).toEqual([
+      './kept.css',
+    ]);
+
+    const base = join(SRC_ROOT, 'styles', 'base.css');
+    expect(
+      cssSpecifiers(readFileSync(base, 'utf8')).map((specifier) =>
+        asRepoPath(resolveSpecifier(base, specifier) ?? '<unresolved>'),
+      ),
+      'base.css is the only stylesheet main.tsx imports; the rest hang off it',
+    ).toEqual(['src/styles/typeface.css', 'src/styles/tokens.css']);
+  });
+
+  it('resolves a stylesheet specifier to the stylesheet', () => {
+    const shell = join(SRC_ROOT, 'app', 'shell', 'AppShell.tsx');
+    expect(asRepoPath(resolveSpecifier(shell, './AppShell.module.css') ?? '')).toBe(
+      'src/app/shell/AppShell.module.css',
+    );
+    expect(resolveSpecifier(shell, './nothing-here.module.css')).toBeNull();
+  });
+
+  /**
+   * The universe, asserted in both directions.
+   *
+   * This is the assertion that makes the extension list a rule rather than a
+   * preference. The enumerator this replaced said `/\.tsx?$/` and 43 `.css`
+   * files were outside the question — the same shape as the walk that once
+   * covered one directory of a product shipping several, one axis over. A new
+   * kind of file under `src/` now reddens here until somebody says whether the
+   * bundler loads it.
+   */
+  it('declares every file kind under src/', () => {
+    const present = extensionsUnder(SRC_ROOT);
+    const declared = new Set([...SHIPPING_EXTENSIONS.keys(), ...NOT_LOADED_EXTENSIONS.keys()]);
+
+    expect(
+      [...present].filter((extension) => !declared.has(extension)).sort(),
+      'a file kind under src/ that this file has never heard of. If the bundler ' +
+        'loads it, it belongs in SHIPPING_EXTENSIONS with something that reads ' +
+        'its edges; if not, in NOT_LOADED_EXTENSIONS with why. It does not get ' +
+        'to be neither, because neither is how 43 stylesheets went ungoverned',
+    ).toEqual([]);
+    expect(
+      [...declared].filter((extension) => !present.has(extension)).sort(),
+      'declared under src/ and no longer there. A stale declaration reads exactly ' +
+        'like a governed tree',
+    ).toEqual([]);
+
+    // And the declaration is tied to what the enumerator actually walks, not
+    // only to what is on disk. Without this the two can drift silently: `.css`
+    // can be declared shipping, sit in `src/`, satisfy both assertions above,
+    // and still never be enumerated — which is precisely the state this file
+    // was in, with 43 stylesheets declared by nothing and walked by nothing.
+    expect(
+      [...new Set(shippingModules(SRC_ROOT).map((file) => extname(file).toLowerCase()))].sort(),
+      'the enumerator walks a different set of file kinds than SHIPPING_EXTENSIONS declares',
+    ).toEqual([...SHIPPING_EXTENSIONS.keys()].sort());
+  });
+
+  it('reaches every shipping module under src/ from index.html', () => {
     const unreachable = shippingModules(SRC_ROOT)
       .map(asRepoPath)
       .filter((path) => !NOT_SHIPPED.has(path))
@@ -355,6 +1002,26 @@ describe('the renderer is wired into the product', () => {
         'reason; if it is waiting for a surface it goes in AWAITING_A_SURFACE ' +
         'with what it is waiting for. It does not get to be neither',
     ).toEqual([]);
+  });
+
+  it('resolves every specifier to the name the filesystem actually uses', () => {
+    // `existsSync` is case-blind on NTFS, and `forceConsistentCasingInFileNames`
+    // only covers paths `tsc` resolves — which excludes every `.css` specifier,
+    // since those match an ambient wildcard module in `vite/client` and are
+    // never looked up on disk. On a case-sensitive filesystem, or in a Docker
+    // build, a mis-cased stylesheet import is a blank screen.
+    expect(GRAPH.miscased, 'a specifier whose case does not match the file on disk').toEqual([]);
+
+    // The control, against a real file, because the tree has no mis-cased
+    // specifier today and an assertion over an empty list proves nothing about
+    // the instrument that produced it. `readdirSync` answers with the disk's
+    // spelling where `existsSync` would just have said "yes".
+    const shell = join(SRC_ROOT, 'app', 'shell', 'AppShell.tsx');
+    const wrongCase = resolveSpecifier(shell, './appshell.module.css');
+    expect(asRepoPath(wrongCase ?? '')).toBe('src/app/shell/AppShell.module.css');
+    expect(miscasedAgainst('./appshell.module.css', wrongCase ?? '')).toBe(true);
+    expect(miscasedAgainst('./AppShell.module.css', wrongCase ?? '')).toBe(false);
+    expect(miscasedAgainst('.', join(SRC_ROOT, 'index.ts'))).toBe(false);
   });
 
   /**
@@ -373,9 +1040,9 @@ describe('the renderer is wired into the product', () => {
    * The walk above now covers it. This stays because a general assertion reports
    * a path in a list and this one reports what losing that path *means*.
    */
-  it('reaches the sandbox door from src/main.tsx', () => {
+  it('reaches the sandbox door from the entry', () => {
     const door = 'src/data/sandbox-repository.ts';
-    expect(existsSync(join(REPO_ROOT, door)), `${door} moved; fix this guard`).toBe(true);
+    expect(canonical(join(REPO_ROOT, door)), `${door} moved; fix this guard`).not.toBeNull();
     expect(
       REACHABLE.has(join(REPO_ROOT, door)),
       `${door} is the renderer's only door to the six sandbox_* commands. Nothing ` +
@@ -420,7 +1087,7 @@ describe('the renderer is wired into the product', () => {
     // AWAITING_A_SURFACE it means somebody did the work — good news, and the
     // entry has to go, because a debt list nobody is made to update is a comment.
     for (const [path] of NOT_SHIPPED) {
-      expect(existsSync(join(REPO_ROOT, path)), `${path} moved; fix NOT_SHIPPED`).toBe(true);
+      expect(canonical(join(REPO_ROOT, path)), `${path} moved; fix NOT_SHIPPED`).not.toBeNull();
       expect(
         REACHABLE.has(join(REPO_ROOT, path)),
         `${path} is exempt because nothing ships it. It is now on the graph: ` +
@@ -428,7 +1095,10 @@ describe('the renderer is wired into the product', () => {
       ).toBe(false);
     }
     for (const [path, waitingFor] of AWAITING_A_SURFACE) {
-      expect(existsSync(join(REPO_ROOT, path)), `${path} moved; fix AWAITING_A_SURFACE`).toBe(true);
+      expect(
+        canonical(join(REPO_ROOT, path)),
+        `${path} moved; fix AWAITING_A_SURFACE`,
+      ).not.toBeNull();
       expect(
         REACHABLE.has(join(REPO_ROOT, path)),
         `${path} is on the graph now. That is the fix landing, not a failure: ` +
@@ -444,6 +1114,7 @@ describe('the renderer is wired into the product', () => {
     // see, thrown away on every conversation switch.
     const builders = shippingModules(SRC_ROOT)
       .filter((file) => !file.startsWith(join(SRC_ROOT, 'runtime')))
+      .filter((file) => extname(file) !== '.css')
       .filter((file) => /\bcreateAgentRuntime\s*\(/.test(readFileSync(file, 'utf8')))
       .map(asRepoPath);
 

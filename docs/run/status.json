@@ -3,29 +3,29 @@
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
   "state": "RUNNING",
-  "round": 1,
+  "round": 2,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-17 round 1 partial",
+  "updated": "2026-08-21 — round 1 complete, round 2 running",
   "tracks": [
     {
       "id": "t01",
       "title": "Release path — the installer nobody has produced",
       "wt": "vela-t01",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "dev-clicked",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, MUTATION, DOC-HONESTY, WRITE-READ"
     },
     {
       "id": "t02",
       "title": "The Close collision",
       "wt": "vela-t02",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, DOC-HONESTY"
     },
     {
       "id": "t03",
@@ -34,8 +34,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 1,
-      "blocker": "PROBE failed: 4th evasion succeeded (React writes __reactContainer$ before any render commits). mount/status still exit 0 on THE RENDERER DID NOT MOUNT."
+      "round": 2,
+      "blocker": "LADDER, DOC-HONESTY, PROBE"
     },
     {
       "id": "t04",
@@ -44,8 +44,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 1,
-      "blocker": "PROBE failed: 4th evasion succeeded and is already shipped. COLOUR FIDELITY failed."
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE, COLOUR FIDELITY"
     },
     {
       "id": "t05",
@@ -54,8 +54,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 1,
-      "blocker": "PROBE failed. Extractor now structural (ts AST), defeats all 3 original evasions, a 4th got through."
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE"
     },
     {
       "id": "t06",
@@ -64,8 +64,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 1,
-      "blocker": "PROBE failed. MUTATION and WRITE-READ also failed."
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE"
     },
     {
       "id": "t07",
@@ -74,119 +74,119 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 1,
-      "blocker": "PROBE failed. Builder numbers reproduce; WRITE-READ failed."
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, WRITE-READ, PROBE"
     },
     {
       "id": "t08",
       "title": "MCP surface",
       "wt": "vela-t08",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY"
     },
     {
       "id": "t09",
       "title": "MCP HTTP/SSE transport",
       "wt": "vela-t09",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "dev-clicked",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, DOC-HONESTY"
     },
     {
       "id": "t10",
       "title": "Provenance closure",
       "wt": "vela-t10",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, ARCHITECTURE, DOC-HONESTY, WRITE-READ"
     },
     {
       "id": "t11",
       "title": "File creation",
       "wt": "vela-t11",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, ARCHITECTURE, DOC-HONESTY"
     },
     {
       "id": "t12",
       "title": "Plugins",
       "wt": "vela-t12",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, MUTATION, SECURITY, DOC-HONESTY"
     },
     {
       "id": "t13",
       "title": "Cowork surface",
       "wt": "vela-t13",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, WRITE-READ, ACCESSIBILITY"
     },
     {
       "id": "t14",
       "title": "Code workspace",
       "wt": "vela-t14",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, ACCESSIBILITY, INTERACTION"
     },
     {
       "id": "t15",
       "title": "Styles and incognito",
       "wt": "vela-t15",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, MUTATION, ARCHITECTURE, SECURITY, DOC-HONESTY, ACCESSIBILITY, INTERACTION"
     },
     {
       "id": "t16",
       "title": "Subagent fan-out",
       "wt": "vela-t16",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, MUTATION"
     },
     {
       "id": "t17",
       "title": "Shell and edge states",
       "wt": "vela-t17",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, ACCESSIBILITY"
     },
     {
       "id": "t18",
       "title": "Host boundary",
       "wt": "vela-t18",
       "guard": false,
-      "tier": "pending",
-      "verdict": "running",
-      "round": 1,
-      "blocker": null
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 2,
+      "blocker": "LADDER, FUNCTIONALITY, ARCHITECTURE, SECURITY, DOC-HONESTY"
     }
   ],
-  "note": "Round 1: a lead pipeline defect dropped 13 of 18 tracks before they reached a builder (docs/corrections.md). Fixed and resumed; those 13 are running now. All 5 guard tracks completed and ALL FIVE failed PROBE - a fourth evasion got past every fix."
+  "note": "Round 1 complete, all 18 tracks graded, ALL 18 FAIL. DOC-HONESTY failed on 17 of 18 — almost always on a comment the track had just written. PROBE failed on all 5 guards: a fourth evasion got past every fix. LADDER capped everywhere (nothing installed yet). T1 produced real installers: MSI 7,360,512 bytes + NSIS 5,444,437 bytes, both confirmed on disk by a critic, and the first genuine ten-gate green run on the project. Round 2 running: every track back to its builder with its own verdict, then a fresh critic."
 }

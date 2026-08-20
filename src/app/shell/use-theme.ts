@@ -20,10 +20,20 @@
  * is a control that feels broken, and appearance is a renderer concern that
  * needs no permission to change. It is written through immediately afterwards.
  *
- * **A refused write reverts.** If the host will not keep the choice, the
- * preference is put back to what the host actually holds. Leaving the new theme
- * on screen would mean the user sees the old one again at the next launch with
- * nothing to explain it — a silent failure that surfaces days later.
+ * **A refused write reverts — unless the refusal is incognito.** If the host
+ * will not keep the choice, the preference is put back to what the host
+ * actually holds. Leaving the new theme on screen would mean the user sees the
+ * old one again at the next launch with nothing to explain it — a silent
+ * failure that surfaces days later.
+ *
+ * `INCOGNITO_REFUSED` is the one refusal that must not revert, and it arrives
+ * here because `settings_set_theme` is classified `writes` in
+ * `src/platform/incognito-adapter.ts`. In that mode "this will not be kept" is
+ * not a failure, it is the entire promise the window is making — so the theme
+ * applies and does not persist, which is what the user asked for. Reverting
+ * would make the appearance control appear broken in incognito: click, watch it
+ * snap back, no explanation. The revert is right for a broken keychain or a
+ * failed disk write and wrong for a mode whose purpose is not writing.
  *
  * **A load never overwrites a choice.** The first read is asynchronous, so a
  * user who clicks before it lands must win: the stored value is applied only
@@ -34,6 +44,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { createSettingsRepository } from '@/data/settings-repository';
 import { usePlatform } from '@/platform/PlatformProvider';
+import { PlatformError } from '@/platform/errors';
 import { useThemeStore, type ThemePreference } from '@/state/theme-store';
 
 const CYCLE: readonly ThemePreference[] = ['system', 'light', 'dark'];
@@ -80,9 +91,13 @@ export function useTheme(): ThemeController {
       try {
         // The host answers with what it stored, not with what it was asked for.
         setPreference(await repository.setTheme(next));
-      } catch {
-        // Put back whatever the host actually holds, rather than leaving a
-        // preference on screen that will not survive the next launch.
+      } catch (thrown: unknown) {
+        // The one refusal that is not a failure. See the header: in incognito
+        // "not kept" is the promise, so the choice stands for this session and
+        // is deliberately not written down.
+        if (thrown instanceof PlatformError && thrown.code === 'INCOGNITO_REFUSED') return;
+        // Otherwise put back whatever the host actually holds, rather than
+        // leaving a preference on screen that will not survive the next launch.
         try {
           setPreference((await repository.load()).theme);
         } catch {

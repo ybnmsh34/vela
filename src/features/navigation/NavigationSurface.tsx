@@ -52,7 +52,6 @@ function NavigationLayout({ children, secretBackend = null, now }: NavigationSur
   const selectedId = useNavigationStore((state) => state.selectedConversationId);
   const select = useNavigationStore((state) => state.select);
   const incognito = useIncognitoStore((state) => state.active);
-  const incognitoEpoch = useIncognitoStore((state) => state.epoch);
 
   /**
    * AN INCOGNITO CONVERSATION IS AN UNSAVED ONE, and that is forced rather than
@@ -77,7 +76,7 @@ function NavigationLayout({ children, secretBackend = null, now }: NavigationSur
    * instructions do not reach a turn in this mode — the styles pane's resolved
    * view says so, because it says so for every ordinary send.
    */
-  const seenEpoch = useRef(incognitoEpoch);
+  const seenIncognito = useRef(incognito);
   useEffect(() => {
     // **On a transition, never on mount.** Written first as a bare
     // `select(null)` in this effect, which is one notch wider than the rule it
@@ -86,10 +85,10 @@ function NavigationLayout({ children, secretBackend = null, now }: NavigationSur
     // before render — `ModelWorkspace.test.tsx` sets one that way, and went red
     // — and it would clobber a restored-on-launch selection the same way. The
     // ref is what makes the first run a no-op.
-    if (seenEpoch.current === incognitoEpoch) return;
-    seenEpoch.current = incognitoEpoch;
+    if (seenIncognito.current === incognito) return;
+    seenIncognito.current = incognito;
     select(null);
-  }, [incognitoEpoch, select]);
+  }, [incognito, select]);
   // The floor of the focus ladder. `tabindex="-1"` makes the content region a
   // destination without making it a stop on the Tab order, so an overlay that
   // closes while nothing else can hold the keyboard lands here rather than on

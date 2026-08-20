@@ -1,44 +1,47 @@
 /**
- * Whether this window is in incognito, and the counter that makes leaving it
- * destroy what it held.
+ * Whether this window is in incognito.
  *
  * Conventions §5: state and actions only, no IPC. The one host call the mode
  * needs — turning the debug log off on the way in — is
  * `disarmDebugLogForIncognito` in `src/platform/incognito-adapter.ts`, called by
  * the hook that owns the transition, exactly as `use-theme.ts` owns the theme's.
  *
- * ## The epoch, and what it is for
+ * ## What is NOT here: a transition counter
  *
- * A privacy mode has to answer "does leaving destroy what it held?" with
- * something better than an intention. {@link IncognitoState.epoch} increments on
- * **every** transition, in and out. `src/app/App.tsx` puts it in the `key` of
- * the conversation surface, so entering and leaving both remount it, and a
- * remount discards the component state the transcript lives in — the same
- * mechanism the composition root already relies on to stop one conversation's
- * streaming state attaching to the next.
+ * An earlier draft of this file carried an `epoch` that incremented on every
+ * transition, so that `App.tsx` could put it in the conversation surface's
+ * `key` and make leaving the mode remount - an explicit, local destruction
+ * mechanism. It is gone, and the reason is worth keeping: **nothing observed
+ * it.** Weakening the key to a boolean, and then removing the epoch from it
+ * altogether, each left `src/app/instructions-and-incognito.test.tsx` green in
+ * two runs.
  *
- * It increments on the way *in* as well, which is deliberate: whatever was on
- * screen before the user asked for privacy must not be carried into the private
- * session either. Entering with a half-written exchange still visible would make
- * the first thing in the incognito window a thing from the ordinary one.
+ * The destruction is real but it is caused elsewhere. An incognito conversation
+ * is an unsaved one - `store_create_conversation` is refused, so there is no row
+ * to hang it on and `conversationId` is `null` - and `NavigationSurface` shows
+ * the home screen rather than the transcript once the mode ends. The subtree
+ * unmounts and the component state the entries live in goes with it. A counter
+ * whose only job was to cause an unmount that already happens is a mechanism
+ * with no reader, which is the thing RULE U is about.
  *
- * **The limit of that proof.** A remount removes the entries from the React
- * tree and drops the last reference to them. It does not zero the JavaScript
- * heap, and nothing in a renderer can: the strings live until the collector runs
- * and this process cannot force it. So the claim is "unreachable from the
- * application, and never written down", not "erased from memory". The panel
- * says that in the same terms.
+ * **The limit of the claim, either way.** An unmount removes the entries from
+ * the React tree and drops the last reference to them. It does not zero the
+ * JavaScript heap, and nothing in a renderer can: the strings live until the
+ * collector runs and this process cannot force it. So the claim is "unreachable
+ * from the application, and never written down", not "erased from memory". The
+ * panel says that in the same terms.
  *
- * ## RULE U — what reads what is written here
+ * ## RULE U - what reads what is written here
  *
  * `active` is read by `App.tsx` (which wraps the adapter with
- * `createIncognitoAdapter` and keys the surface), by `AppShell.tsx` (the banner
- * and the `data-incognito` attribute), by `Sidebar.tsx` (the control's pressed
- * state), by `use-navigation-shortcuts.ts` (the shortcut toggles it) and by
- * `StylePanel.tsx` (the switch and the explanation). `epoch` is read by
- * `App.tsx` and by nothing else. `debugLog` is read by `StylePanel.tsx`, which
- * is where the sentence about the debug log is shown. Nothing here is persisted,
- * so there is nothing else to name.
+ * `createIncognitoAdapter`), by `AppShell.tsx` (the banner and the
+ * `data-incognito` attribute), by `NavigationSurface.tsx` (which clears the
+ * selection on a transition and fills the content region), by `Sidebar.tsx`
+ * (the control's pressed state), by `use-navigation-shortcuts.ts` (the shortcut
+ * toggles it) and by `StylePanel.tsx` (the switch and the explanation).
+ * `debugLog` is read by `StylePanel.tsx`, which is where the sentence about the
+ * debug log is shown. Nothing here is persisted, so there is nothing else to
+ * name.
  */
 
 import { create } from 'zustand';
@@ -58,13 +61,11 @@ export type DebugLogOutcome = DebugLogDisarm | null;
 
 interface IncognitoState {
   readonly active: boolean;
-  /** Increments on every transition, in and out. Never decreases. */
-  readonly epoch: number;
   readonly debugLog: DebugLogOutcome;
   /**
    * Enter or leave. Idempotent: setting the value it already has changes
-   * nothing, including the epoch, so a re-render or a duplicated key event
-   * cannot destroy a session the user is still in.
+   * nothing, so a re-render or a repeating held key cannot clear the
+   * debug-log sentence out from under a session the user is still in.
    */
   setActive: (active: boolean) => void;
   /**
@@ -86,19 +87,14 @@ interface IncognitoState {
 
 export const useIncognitoStore = create<IncognitoState>((set, get) => ({
   active: false,
-  epoch: 0,
   debugLog: null,
   setActive: (active) => {
     if (get().active === active) return;
-    set({
-      active,
-      epoch: get().epoch + 1,
-      // Cleared on both transitions. Leaving, because the sentence is about the
-      // session being left; entering, because the answer for *this* session has
-      // not arrived yet and showing the previous one would be a stale claim
-      // about a log that may since have been re-armed.
-      debugLog: null,
-    });
+    // `debugLog` is cleared on both transitions. Leaving, because the sentence
+    // is about the session being left; entering, because the answer for *this*
+    // session has not arrived yet and showing the previous one would be a stale
+    // claim about a log that may since have been re-armed.
+    set({ active, debugLog: null });
   },
   noteDebugLog: (outcome) => {
     if (!get().active) return;
@@ -108,5 +104,5 @@ export const useIncognitoStore = create<IncognitoState>((set, get) => ({
 
 /** Test helper: put the store back to its initial values between renders. */
 export function resetIncognitoStore(): void {
-  useIncognitoStore.setState({ active: false, epoch: 0, debugLog: null });
+  useIncognitoStore.setState({ active: false, debugLog: null });
 }

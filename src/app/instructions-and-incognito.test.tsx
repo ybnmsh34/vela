@@ -200,7 +200,13 @@ describe('the user’s standing instructions reach the wire', () => {
     await waitFor(() => {
       expect(adapter.sent.length).toBeGreaterThan(0);
     });
-    expect(systemOfLastSend(adapter)).toContain(INSTRUCTION);
+    // Two assertions, because the two failures are different diagnoses and a
+    // `.toContain` on `null` reports neither: no system message at all means
+    // this path was never wired, and a system message without the words means
+    // it was wired to the wrong thing.
+    const system = systemOfLastSend(adapter);
+    expect(system, 'the ordinary send carried no system message at all').not.toBeNull();
+    expect(system ?? '').toContain(INSTRUCTION);
   });
 
   it('rides an agent run too, and the project’s instructions come after it', async () => {
@@ -256,6 +262,39 @@ describe('the user’s standing instructions reach the wire', () => {
       expect(adapter.sent.length).toBeGreaterThan(0);
     });
     expect(systemOfLastSend(adapter)).toBeNull();
+  });
+});
+
+describe('the meter weighs what the sender sends', () => {
+  it('counts the instruction block against the context window', async () => {
+    // `memory-prompt.ts` states the rule and the cost of breaking it: "a meter
+    // with its own opinion of what gets sent is a meter that drifts from the
+    // sender the first time either changes, and the user finds out by losing a
+    // message." Adding a preamble to `toMessages` without adding it to
+    // `pendingTurnTexts` is exactly that drift, and it went untested when this
+    // feature first landed — removing the fourth argument from the
+    // `pendingTurnTexts` call left the whole conversation and models suites
+    // green in two runs. This is the test that was missing.
+    //
+    // Read off `aria-valuenow`, which is the number the meter is actually
+    // drawing, not off the hook's return.
+    const user = userEvent.setup({ delay: null });
+    const adapter = await host();
+    render(<App adapter={adapter} />);
+
+    await openConversation(user);
+    const meter = (): number =>
+      Number(screen.getByRole('meter', { name: 'Estimated context used' }).getAttribute('aria-valuenow'));
+    const before = meter();
+
+    // Long enough that the four-characters-per-token estimate cannot round it
+    // away, and a single repeated character so the count is arithmetic rather
+    // than a property of the words.
+    await writeInstructions(user, 'z'.repeat(4000));
+
+    await waitFor(() => {
+      expect(meter()).toBeGreaterThan(before);
+    });
   });
 });
 
@@ -355,6 +394,38 @@ describe('incognito is reachable two ways, and both are the same mode', () => {
   });
 });
 
+describe('incognito refuses without looking broken', () => {
+  it('keeps a theme chosen in incognito instead of snapping it back', async () => {
+    // A consequence of the classification, found by reading `use-theme.ts`
+    // after `settings_set_theme` turned out to be `writes`. Its catch reverts
+    // to whatever the host holds, so in incognito the appearance control would
+    // move and then move back with nothing said — a control that looks broken.
+    //
+    // "Not kept" is the promise of the mode, not a failure of it, so the choice
+    // stands for the session and is not written down. Both halves are asserted:
+    // the preference sticks, and no `settings_set_theme` reached the host.
+    const user = userEvent.setup({ delay: null });
+    const adapter = await host();
+    render(<App adapter={adapter} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+    await screen.findByTestId('incognito-banner');
+    const from = adapter.commands.length;
+
+    await user.click(screen.getByRole('button', { name: /^Theme/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Theme/ })).toHaveAccessibleName(/light/i);
+    });
+    // Still on light a beat later: the revert path would have put it back.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    expect(screen.getByRole('button', { name: /^Theme/ })).toHaveAccessibleName(/light/i);
+    expect(adapter.commands.slice(from)).not.toContain('settings_set_theme');
+  });
+});
+
 describe('incognito writes nothing, and leaving destroys what it held', () => {
   it('sends the turn and writes no durable row for it', async () => {
     const user = userEvent.setup({ delay: null });
@@ -405,8 +476,18 @@ describe('incognito writes nothing, and leaving destroys what it held', () => {
     });
     expect(screen.queryAllByText('a private question')).toEqual([]);
 
-    // Re-entering starts empty rather than resuming: the epoch, not the flag,
-    // is what the surface is keyed on, so no two sessions share a key.
+    // Re-entering starts empty rather than resuming.
+    //
+    // **What this proves, and what it does not.** It proves the words are gone
+    // and that no durable write carried them anywhere. It does NOT isolate any
+    // one destruction mechanism: an earlier draft made the conversation surface
+    // remount on a transition counter, and removing that counter left this test
+    // green in two runs, because the subtree is already unmounted — an incognito
+    // conversation has no conversation id, and once the mode ends
+    // `NavigationSurface` fills the content region with the home screen. The
+    // counter went, rather than shipping as a mechanism nothing observed. Said
+    // here because a reader would otherwise take this test for proof of a
+    // mechanism it does not touch.
     pressIncognitoChord();
     await screen.findByRole('region', { name: 'Conversation' });
     expect(screen.queryAllByText('a private question')).toEqual([]);

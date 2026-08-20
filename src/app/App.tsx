@@ -19,7 +19,6 @@ import type { PlatformAdapter } from '@/platform/adapter';
 import type { HarnessRuntime } from '@/platform/contract-harness';
 import type { ProjectId } from '@/platform/contract-project';
 import { createAgentRuntime } from '@/runtime/app-runtime';
-import { useIncognitoStore } from '@/state/incognito-store';
 import { useNavigationStore } from '@/state/navigation-store';
 
 import { AppShell } from './shell/AppShell';
@@ -224,35 +223,11 @@ function Transcript({
   readonly projectId: ProjectId | null;
 }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
-  /**
-   * THE HALF OF INCOGNITO THAT IS NOT A REFUSAL: leaving it destroys what it
-   * held.
-   *
-   * `useIncognitoStore.epoch` increments on **every** transition, in and out, so
-   * this key changes on both. A changed key is a remount, and a remount drops
-   * the component state the transcript lives in — the same mechanism the
-   * paragraph below already relies on for switching conversations, used for the
-   * second thing it is good for.
-   *
-   * It is the epoch and not the `active` flag because a flag has two values and
-   * a session that is entered, left and entered again would otherwise be handed
-   * back the key it had the first time. React reuses the instance when the key
-   * matches; the counter makes each session's key unlike every earlier one.
-   *
-   * **What this proves and what it does not.** The entries are gone from the
-   * tree and nothing holds a reference to them; they were never written down,
-   * because every command that would have written them is refused at the
-   * adapter. It does not zero the JavaScript heap — no renderer can — so the
-   * claim is "unreachable and never recorded", not "erased from memory".
-   * `src/app/instructions-and-incognito.test.tsx` asserts the first, which is the part that is
-   * assertable.
-   */
-  const incognitoEpoch = useIncognitoStore((state) => state.epoch);
   const { selection, capabilities, attachments, report } = useSelectedModel();
 
   return (
     <ConversationSurface
-      key={`${conversationId ?? 'none'}:${String(incognitoEpoch)}`}
+      key={conversationId ?? 'none'}
       conversationId={conversationId}
       onAssistantMessages={onAssistantMessages}
       providerId={selection?.providerId ?? null}

@@ -43,7 +43,6 @@ import { useIncognitoStore } from '@/state/incognito-store';
 export function IncognitoGate({ children }: { readonly children: ReactNode }): ReactNode {
   const real = usePlatform();
   const active = useIncognitoStore((state) => state.active);
-  const epoch = useIncognitoStore((state) => state.epoch);
   const noteDebugLog = useIncognitoStore((state) => state.noteDebugLog);
 
   useEffect(() => {
@@ -55,10 +54,11 @@ export function IncognitoGate({ children }: { readonly children: ReactNode }): R
     return () => {
       live = false;
     };
-    // `epoch` is a dependency so that re-entering the mode asks again. Without
-    // it, leave-then-enter would keep the answer from the first entry, and the
-    // log may have been re-armed in between.
-  }, [active, epoch, real, noteDebugLog]);
+    // `active` alone is enough to re-ask: leaving sets it false, which runs the
+    // cleanup, and entering again runs the effect from the top. There is no
+    // enter-to-enter transition to miss, because `setActive` refuses a value it
+    // already has.
+  }, [active, real, noteDebugLog]);
 
   const adapter = useMemo(
     () => (active ? createIncognitoAdapter(real) : real),

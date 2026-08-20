@@ -938,6 +938,11 @@ describe('the conversation surface: how a turn ended', () => {
     });
 
     expect(visibleText()).toContain('The model returned nothing');
+    // The ending is identified by its `kind`, not only by its wording: the
+    // sentence may be rewritten, the ending reached may not change silently.
+    // This is also what reads `data-kind` — without a reader it is an unwritten
+    // write, which is a defect in its own right (RULE U).
+    expect(document.querySelector('[data-kind="silent"]')).not.toBeNull();
     // "A state a user can act on" is the requirement, and a sentence is not one.
     const again = screen.getByRole('button', { name: 'Try again' });
     await user.click(again);
@@ -960,6 +965,7 @@ describe('the conversation surface: how a turn ended', () => {
 
     expect(screen.getByText('It begins, and then it')).toBeInTheDocument();
     expect(visibleText()).toContain('Cut off at the model’s output limit');
+    expect(document.querySelector('[data-kind="truncated"]')).not.toBeNull();
     // Re-running the same request hits the same cap. The control offered must
     // not be the one that does that.
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
@@ -977,6 +983,9 @@ describe('the conversation surface: how a turn ended', () => {
     expect(visibleText()).not.toContain('Cut off at the model');
     expect(visibleText()).not.toContain('The model returned nothing');
     expect(visibleText()).not.toContain('Stopped before it finished');
+    for (const kind of ['silent', 'truncated', 'cutShort', 'failedUnrecorded']) {
+      expect(document.querySelector(`[data-kind="${kind}"]`), kind).toBeNull();
+    }
   });
 
   it('draws one ending and one retry control, never two', async () => {

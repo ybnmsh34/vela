@@ -9,6 +9,41 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — the lead committed under another agent's commit message
+
+**Claimed:** nothing, in the sense that the commit spoke for itself. That is the problem — it spoke
+in someone else's words.
+
+**What happened.** I wrote a commit message to `scratchpad/msg5.txt` and ran
+`git commit -F "$SP/msg5.txt"` in the same compound command. An earlier step in that chain failed,
+so the `&&` short-circuited and **the heredoc that would have written the file never ran** — but the
+`git commit` was on its own line and ran unconditionally. `msg5.txt` already existed: dated
+**Aug 15 21:11**, six days old, written by an agent in an earlier session that used the same shared
+scratchpad and the same obvious filename.
+
+So `docs/run/status.json` was committed under the title *"Prove the retraction guard against the
+defect's own bytes, not a retyped one"* — a true and well-written sentence about work that has
+nothing to do with that commit.
+
+**How it was caught.** The commit summary printed a title I did not write. Nothing else would have
+flagged it: `git commit -F` does not care whether the file is yours, `git status` was clean
+afterwards, and the diff was correct.
+
+**Undone** with `git reset --soft HEAD~1` and recommitted with the right message, from a file under
+a uniquely-named subdirectory (`scratchpad/lead-r5/`).
+
+**Why it belongs here.** `docs/vela-plan-2026-08-15.md` records this exact hazard — *"every agent
+brief requires a uniquely-named scratch subdirectory"* — and it was found the hard way once before,
+when a builder discovered a critic had overwritten its `mutate.mjs`. I put that rule in every agent
+brief I wrote this run and then did not follow it myself, because the lead does not read its own
+briefs.
+
+**The reusable part:** a filename generic enough to be obvious to you is generic enough to be
+obvious to everyone else. And a command that consumes a file it did not just verify exists will
+silently use whatever is there — `&&` protects the write, not the read.
+
+---
+
 ## 2026-08-21 — the lead wrote a panel rule that two critics read one way and five the other
 
 **Claimed:** the panel is binary and unambiguous — "PASS only if every applicable member PASSes",

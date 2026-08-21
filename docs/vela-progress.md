@@ -644,6 +644,58 @@ one notch **wider** than the real one, and four rounds have now shown that a que
 width grades nothing in either direction.
 
 
+### Round 5 — twelve capped-pass, and the class takes a fifth form
+
+31 agents. **T1, T13 and T15 reached CAPPED-PASS**, bringing the total to **twelve of eighteen**.
+Six remain: the four guards, plus T14 and T17.
+
+#### The reachability standard did not make anything pass
+
+That was the risk in changing it, and it did not happen. All four guards were evaded by
+constructions classified **genuinely reachable** — 4, 2, 6 and 5 of them — not adversarial-only. The
+failures now carry information instead of measuring a bar nothing could clear.
+
+**T15 measured 110 claims and found zero false** — the first clean DOC-HONESTY sweep of the run, by
+a measurer who ran the commands.
+
+#### The class, fifth form: an unguarded invariant
+
+T1's critic found it, and it is no longer a falsehood at all:
+
+> The defect is one level down and it has changed shape: it is no longer a false sentence or an
+> unread field, it is an **UNGUARDED INVARIANT**. The round-5 fixes are real and bite, but the
+> property that keeps each fix from silently regressing is stated in a comment rather than asserted
+> by a test.
+
+Two probes, each planted twice, each reddening **nothing**:
+
+- A docblock says *"a NO-DIR row — and an ABSENT row — is {target, verdict, path, detail}"*. The
+  test asserts only the NO-DIR half. Adding a `bytes` key to the ABSENT row leaves the suite green,
+  exit 0.
+- A comment reads *"THREE FIELDS, AND NO FOURTH."* Re-adding the exact field that round deleted
+  leaves the suite green, exit 0. **The guard whose commit message says the point is "a field with a
+  reader, not a field with a comment saying it has one" now protects its own row shape with a
+  comment saying so.**
+
+Neither is false. Both sentences are true today. That is exactly why neither fails DOC-HONESTY or
+WRITE-READ as those are defined — and why **RULE V** now exists: *if your fix establishes a
+property, a test must assert it.* Break the invariant; if nothing reds, it is unguarded.
+
+The critic's summary of five rounds: *"the closing move left exactly one unguarded copy of the thing
+it closed"* — four consecutive times.
+
+#### The form the class has taken, round by round
+
+1. a comment stated a false fact
+2. the comment **correcting it** carried a wrong number, which propagated to four files
+3. the number was fixed everywhere — and a **test block was named for a property it did not check**
+4. the unread fields it named got readers, and **two more sat one line above**
+5. those were closed, and the property keeping each fix from regressing is **stated in a comment**
+
+Each round it moves down a level *and changes kind*, which is why closing the previous form never
+prevents the next. Round 6 asks its critics directly what the sixth form looks like.
+
+
 ---
 
 # Previous runs

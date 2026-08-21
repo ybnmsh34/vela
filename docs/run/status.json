@@ -3,9 +3,9 @@
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
   "state": "RUNNING",
-  "round": 5,
+  "round": 6,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-21 — round 4 complete, round 5 running",
+  "updated": "2026-08-21 - round 5 complete, round 6 running",
   "tracks": [
     {
       "id": "t01",
@@ -13,9 +13,9 @@
       "wt": "vela-t01",
       "guard": false,
       "tier": "dev-clicked",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 5,
-      "blocker": "LADDER, DOC-HONESTY, WRITE-READ"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t02",
@@ -25,7 +25,7 @@
       "tier": "dev-clicked",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t03",
@@ -35,7 +35,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t04",
@@ -44,8 +44,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
-      "blocker": "LADDER, PROBE, DOC-HONESTY, WRITE-READ"
+      "round": 6,
+      "blocker": "LADDER, PROBE, DOC-HONESTY"
     },
     {
       "id": "t05",
@@ -54,8 +54,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
-      "blocker": "LADDER, FUNCTIONALITY, PROBE, REGRESSION, DOC-HONESTY"
+      "round": 6,
+      "blocker": "LADDER, PROBE, FUNCTIONALITY, DOC-HONESTY"
     },
     {
       "id": "t06",
@@ -64,7 +64,7 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
+      "round": 6,
       "blocker": "LADDER, DOC-HONESTY, PROBE"
     },
     {
@@ -74,7 +74,7 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
+      "round": 6,
       "blocker": "LADDER, DOC-HONESTY, PROBE"
     },
     {
@@ -85,7 +85,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t09",
@@ -95,7 +95,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t10",
@@ -105,7 +105,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t11",
@@ -115,7 +115,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t12",
@@ -125,7 +125,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t13",
@@ -133,9 +133,9 @@
       "wt": "vela-t13",
       "guard": false,
       "tier": "test-bites",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 5,
-      "blocker": "LADDER, DOC-HONESTY, WRITE-READ"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t14",
@@ -144,7 +144,7 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
+      "round": 6,
       "blocker": "LADDER, ACCESSIBILITY"
     },
     {
@@ -153,9 +153,9 @@
       "wt": "vela-t15",
       "guard": false,
       "tier": "test-bites",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 5,
-      "blocker": "LADDER, DOC-HONESTY"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t16",
@@ -165,7 +165,7 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     },
     {
       "id": "t17",
@@ -174,8 +174,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 5,
-      "blocker": "LADDER, MUTATION, DOC-HONESTY, ACCESSIBILITY"
+      "round": 6,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY"
     },
     {
       "id": "t18",
@@ -185,10 +185,10 @@
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
+      "blocker": "LADDER only - operator decision"
     }
   ],
-  "note": "Round 4 applied RULE P to prose: a MEASURER checked 1,110 claims across the run by running commands and found 75 false — in prose that had already survived three rounds of DOC-HONESTY grading. NINE of eighteen tracks are now CAPPED-PASS. Two lead rule defects recorded in corrections.md: the binary verdict had no defined answer for an externally-blocked member (two critics passed, five failed, identical facts), now fixed with CAPPED-PASS; and RULE P as written could not be satisfied — as guards improved, adversary success went UP, 16/19 then 21/23, so the standard is now reachability-classified rather than absolute.",
+  "note": "Round 5: TWELVE of eighteen tracks are CAPPED-PASS. The reachability standard for PROBE did not make guards pass - all four were evaded by constructions classed genuinely reachable (4,2,6,5), so the failures carry information instead of measuring an unsatisfiable bar. T15 measured 110 claims with ZERO false, the first clean sweep of the run. Round 6 adds RULE V after a critic found the class in a fifth form: no longer a false sentence or an unread field, but an UNGUARDED INVARIANT - a property the fix relies on, stated in a true comment, asserted by no test. Two probes reddened nothing.",
   "blocker": {
     "id": "ladder",
     "doc": "docs/run/BLOCKER-ladder.md",
@@ -198,5 +198,14 @@
     "PASS": "LADDER genuinely at reaches-user — impossible this session",
     "CAPPED_PASS": "every applicable member passes; LADDER is the only failure",
     "FAIL": "real members outstanding"
-  }
+  },
+  "rules": [
+    "RULE P (reachability-classified, round 5)",
+    "RULE Q measurement is not a bound",
+    "RULE R symbols not line numbers",
+    "RULE S grade against a tag",
+    "RULE T a comment is not evidence",
+    "RULE U name the reader",
+    "RULE V (new, round 6): an invariant stated in a comment is not guarded - if a fix establishes a property, a test must assert it"
+  ]
 }

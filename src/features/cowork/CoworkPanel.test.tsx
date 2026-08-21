@@ -512,7 +512,7 @@ describe('a comment on an upcoming step redirects the task', () => {
  *  - `noSuchStep` swapped: `Tests  1 failed | 25 passed (26)` — the one below,
  *    and nothing else in the file. With this file excluded the same mutation is
  *    SILENT across the rest of the suite: `122 passed (122)` files,
- *    `2478 passed (2478)` tests, EXIT=0.
+ *    `2479 passed (2479)` tests, EXIT=0.
  *
  * That last line is what this block is for, and `noSuchStep` is the only
  * sentence of the four that needs it.

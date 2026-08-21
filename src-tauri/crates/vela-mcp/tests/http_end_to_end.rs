@@ -139,8 +139,16 @@ fn harness_with(url: &str, extra: Value, store: Arc<dyn SecretStore>) -> Harness
 /// A [`LoopbackExchange`] that hangs — reports [`ExchangeError::TimedOut`] —
 /// for one nominated URL, and opens a real socket for every other.
 ///
-/// **This is the one simulated thing in this file, and it is simulated on
-/// purpose.** A real timeout means waiting out `DEFAULT_REQUEST_TIMEOUT`, which
+/// **This is the only place in this file where a transport behaviour is
+/// manufactured rather than observed, and it is manufactured on purpose.** That
+/// is a narrower claim than "the one fake here", and deliberately: the module
+/// docs list two other gaps under VERIFIED-BY-FAKE, and neither is this kind.
+/// `MemoryStore` is a real implementation of the credential trait standing in
+/// for the OS keychain — substituted, not synthesized — and TLS is not simulated
+/// at all, it is simply absent. This is the one thing in the file that reports a
+/// wire event that did not happen.
+///
+/// A real timeout means waiting out `DEFAULT_REQUEST_TIMEOUT`, which
 /// `crate::stdio` sets to thirty seconds; a test suite that waits half a minute
 /// to prove an attribution rule is a test suite nobody runs. What is faked is the clock
 /// expiring, at the one seam that reports it. Everything the assertion is about

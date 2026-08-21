@@ -2086,28 +2086,45 @@ const CI_SETTINGS: readonly string[] = [
   'ci.yml workflow env: {CARGO_TERM_COLOR: always, DO_NOT_TRACK: "1"}',
   'ci.yml job static name: Static checks',
   'ci.yml job static if: github.event_name != \'pull_request\' || github.event.pull_request.draft == false',
+  'ci.yml job static runs-on: ubuntu-latest',
+  'ci.yml job static step uses pnpm/action-setup@v4 with: {version: 10}',
+  'ci.yml job static step uses actions/setup-node@v4 with: {node-version: 22, cache: pnpm}',
   'ci.yml job static step run pnpm typecheck name: Typecheck',
   'ci.yml job static step run sudo apt-get update name: Install Tauri system dependencies',
+  'ci.yml job static step uses Swatinem/rust-cache@v2 with: {workspaces: src-tauri}',
   'ci.yml job static step run cargo fmt --all --check name: Rust formatting',
   'ci.yml job static step run cargo fmt --all --check working-directory: src-tauri',
   'ci.yml job static step run cargo clippy --workspace --all-targets -- -D warnings name: Clippy',
   'ci.yml job static step run cargo clippy --workspace --all-targets -- -D warnings working-directory: src-tauri',
   'ci.yml job test-ts name: Frontend and harness tests',
+  'ci.yml job test-ts runs-on: ubuntu-latest',
+  'ci.yml job test-ts needs: static',
+  'ci.yml job test-ts step uses pnpm/action-setup@v4 with: {version: 10}',
+  'ci.yml job test-ts step uses actions/setup-node@v4 with: {node-version: 22, cache: pnpm}',
   'ci.yml job test-ts step run pnpm test name: Unit tests',
   'ci.yml job test-ts step run pnpm test:harness name: GATE M Part 1 — mock capability matrix',
   'ci.yml job test-ts step run pnpm build name: Frontend build',
   'ci.yml job test-ts step run ./scripts/check-transcripts.sh name: Mock transcripts are reproducible',
   'ci.yml job test-rust name: Rust core tests',
+  'ci.yml job test-rust runs-on: ubuntu-latest',
+  'ci.yml job test-rust needs: static',
   'ci.yml job test-rust step run sudo apt-get update name: Install Tauri system dependencies',
+  'ci.yml job test-rust step uses actions/setup-node@v4 with: {node-version: 22}',
+  'ci.yml job test-rust step uses Swatinem/rust-cache@v2 with: {workspaces: src-tauri}',
   'ci.yml job test-rust step run cargo build --workspace --locked name: Build workspace',
   'ci.yml job test-rust step run cargo build --workspace --locked working-directory: src-tauri',
   'ci.yml job test-rust step run cargo test --workspace --locked name: Test workspace',
   'ci.yml job test-rust step run cargo test --workspace --locked working-directory: src-tauri',
   'ci.yml job test-windows name: Windows — the platform this ships on',
+  'ci.yml job test-windows runs-on: windows-latest',
+  'ci.yml job test-windows needs: static',
+  'ci.yml job test-windows step uses pnpm/action-setup@v4 with: {version: 10}',
+  'ci.yml job test-windows step uses actions/setup-node@v4 with: {node-version: 22, cache: pnpm}',
   'ci.yml job test-windows step run pnpm typecheck name: Typecheck',
   'ci.yml job test-windows step run pnpm test name: Unit tests',
   'ci.yml job test-windows step run node scripts/ci-retry-vitest-crash.mjs pnpm test:harness name: GATE M Part 1 — mock capability matrix',
   'ci.yml job test-windows step run pnpm build name: Frontend build',
+  'ci.yml job test-windows step uses Swatinem/rust-cache@v2 with: {workspaces: src-tauri, prefix-key: windows}',
   'ci.yml job test-windows step run cargo build --workspace --locked name: Build workspace',
   'ci.yml job test-windows step run cargo build --workspace --locked working-directory: src-tauri',
   'ci.yml job test-windows step run cargo test --workspace --locked name: Test workspace',
@@ -2115,6 +2132,7 @@ const CI_SETTINGS: readonly string[] = [
   'ci.yml job test-windows step run pnpm test:transcripts name: Mock transcripts are reproducible',
   'ci.yml job secret-tripwire name: No secrets on disk',
   'ci.yml job secret-tripwire if: github.event_name != \'pull_request\' || github.event.pull_request.draft == false',
+  'ci.yml job secret-tripwire runs-on: ubuntu-latest',
   'ci.yml job secret-tripwire step run ./scripts/secret-scan.test.sh name: The tripwire still catches planted keys',
   'ci.yml job secret-tripwire step run ./scripts/secret-scan.sh name: Scan tracked files for credential material',
 ];
@@ -2238,9 +2256,22 @@ describe('the local gate is a superset of the remote one', () => {
 
     expect(settingsOf('probe job j', entriesOf('if: false', 'runs-on: ubuntu-latest'))).toEqual([
       'probe job j if: false',
+      'probe job j runs-on: ubuntu-latest',
     ]);
-    // An interpreted key is not pinned: it has a reader that decides on it.
-    expect(settingsOf('probe job j', entriesOf('needs: static'))).toEqual([]);
+    // An interpreted key is not pinned only when it is not ALSO pinned: `run:`
+    // is decided on by the shell reader and the gate rules and emits no line,
+    // while `needs:` and `runs-on:` were exempt on the strength of readers that
+    // answered a different question and are now both read and pinned.
+    expect(settingsOf('probe job j', entriesOf('run: pnpm test'))).toEqual([]);
+    expect(settingsOf('probe job j', entriesOf('needs: static'))).toEqual([
+      'probe job j needs: static',
+    ]);
+    expect(settingsOf('probe job j', entriesOf('runs-on: macos-latest'))).toEqual([
+      'probe job j runs-on: macos-latest',
+    ]);
+    expect(settingsOf('probe workflow', entriesOf('defaults:', '  run:', '    shell: bash'))).toEqual([
+      'probe workflow defaults: {run: {shell: bash}}',
+    ]);
     // `env:` is in both lists and is pinned anyway, because
     // `refuseActionInputEnv` decides on one spelling of one key inside it.
     expect(settingsOf('probe workflow', entriesOf('env:', '  NODE_OPTIONS: --require ./probe.cjs'))).toEqual([
@@ -5043,6 +5074,16 @@ interface WorkflowJob {
   readonly file: string;
   readonly name: string;
   readonly runsOn: string;
+  /**
+   * The jobs this one waits for, as written.
+   *
+   * Read by {@link needsCycle}, and by nothing else. `modelOf` already resolved
+   * every name against the file's own jobs — that is defect twenty-six — and
+   * resolving a name is not the same question as what the resulting graph is:
+   * `needs: static` written on the `static` job resolves perfectly and is a
+   * self-cycle GitHub refuses to load.
+   */
+  readonly needs: readonly string[];
   readonly steps: readonly WorkflowStep[];
   /**
    * Every simple command the job's `run:` steps execute, each carrying whether
@@ -5088,6 +5129,13 @@ interface WorkflowModel {
    * interpret is one somebody read — defect twenty-eight*, and by nothing else.
    */
   readonly settings: readonly string[];
+  /**
+   * Every step of every job in this file, in document order, labelled by the
+   * work it does — the `uses:` target, or the first line of the `run:`. Read by
+   * {@link readWorkflowSurface}, which concatenates it across files for *every
+   * step CI runs is one somebody read*, and by nothing else.
+   */
+  readonly stepSurface: readonly string[];
   readonly jobs: readonly WorkflowJob[];
   /**
    * Every pinned third-party action this file admitted, in the order met. Read
@@ -5374,6 +5422,44 @@ const INTERPRETED_KEYS = [
  * unreachable, and the four falsifications above are what a list of exceptions
  * is worth here.
  *
+ * ### Round seven: five keys moved in, because "has a reader" is not "has a decider"
+ *
+ * The dichotomy above was closed in the wrong place. Membership in
+ * {@link INTERPRETED_KEYS} is what turns the pin OFF, and nothing asserted that
+ * the reader a key was exempted FOR decides the question the pin would have
+ * decided. Five keys sat in exactly that position, and each was walked through
+ * by a construction a maintainer would plausibly write, green twice:
+ *
+ * - `runs-on` — read by `modelOf` and decided on only inside the cargo rule,
+ *   whose classifier treated `windows-latest` and `macos-latest` as one value.
+ *   `runs-on: macos-latest` on the job named *Windows — the platform this ships
+ *   on* was green, and so was `runs-on: [self-hosted, linux]` on `test-ts`,
+ *   which the parser keeps as an opaque scalar.
+ * - `needs` — read by {@link needsNamesOf}, whose only decision is that each
+ *   name resolves to a job in the file. *Which* jobs a job waits on was decided
+ *   by nothing, so serialising `test-windows` behind the Linux test jobs was
+ *   green — and so were two spellings of a `needs:` cycle, which GitHub refuses
+ *   to load at all. See {@link needsCycle} for the second half of that fix.
+ * - `shell` — read by the {@link SPLITTABLE_SHELLS} membership test, which asks
+ *   whether the reader can *split* the body and never what the shell is.
+ *   `shell: bash` on `test-windows`'s transcripts step re-opens, verbatim, the
+ *   defect that step's own comment says it fixed.
+ * - `with` — {@link refuseWith} pins the KEYS. `node-version: 22` → `18` on
+ *   `test-rust`, against a comment beside it saying Node 22+ is required, was
+ *   green.
+ * - `defaults` — taken apart by `modelOf`, which checks its keys against
+ *   {@link DEFAULTS_KEYS}/{@link DEFAULTS_RUN_KEYS} and then only that the shell
+ *   is splittable. A workflow-level `defaults: run: shell: bash` moved every
+ *   step in every job onto Git Bash and was green. Round six disclosed the
+ *   sibling key `defaults.run.working-directory` and wrote that the hole was
+ *   "now one key wide rather than three"; the one remaining key was the wider of
+ *   the two, and both are closed by pinning the block.
+ *
+ * All five keep their readers — the readers are real and do useful work — and
+ * are pinned as well, the way `env` is. What is exempt now is only a key whose
+ * reader can be shown to tell two written values apart, which is what
+ * *an exempt key is one whose reader tells two values apart* asserts.
+ *
  * Read in two places, and by nothing else: {@link settingsOf}, which pins a key
  * named here even when {@link INTERPRETED_KEYS} also names it — that is how
  * `env` is both interpreted and pinned — and *every key these lists admit is one
@@ -5385,6 +5471,7 @@ const INTERPRETED_KEYS = [
 const PINNED_SETTING_KEYS = [
   'name', 'run-name', 'concurrency', 'permissions', 'id', 'if', 'environment',
   'outputs', 'timeout-minutes', 'strategy', 'working-directory', 'env',
+  'runs-on', 'needs', 'shell', 'with', 'defaults',
 ];
 
 /**
@@ -5874,6 +5961,17 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
   // {@link WORKFLOW_FILES} shows what a one-directional pin is worth.
   const actions: string[] = [];
   const actionInputs: string[] = [];
+  // Every step of every job, in document order, labelled by the work it does.
+  // Defect twenty-eight's pin only emits a line for a step that carries a key in
+  // PINNED_SETTING_KEYS, and eleven steps in `ci.yml` carry none — five bare
+  // `- uses: actions/checkout@v4`, three bare `- run: pnpm install
+  // --frozen-lockfile`, `dtolnay/rust-toolchain@stable` twice and one more — so
+  // deleting any one of them from any one job moved no line of CI_SETTINGS and
+  // was green. `unaccounted` is one-directional (every command present must be a
+  // gate or a setup command) and SETUP_COMMANDS' reverse rule only asks that
+  // each entry be run by SOME workflow, which the other jobs still satisfied.
+  // This list is the other direction, per job.
+  const stepSurface: string[] = [];
 
   const jobsNode = entry(top, 'jobs');
   const jobsMap = jobsNode === undefined ? undefined : mappingOf(jobsNode);
@@ -5983,7 +6081,10 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
 
     const stepsNode = entry(job, 'steps');
     if (stepsNode === undefined) {
-      if (jobUses !== undefined) return { file: workflow.file, name, runsOn: '', steps: [], commands: [] };
+      if (jobUses !== undefined) {
+        stepSurface.push(`${workflow.file} job ${name} calls ${jobUses}`);
+        return { file: workflow.file, name, runsOn: '', needs, steps: [], commands: [] };
+      }
       throw new Error(`${at(line)} declares job "${name}" with neither "steps:" nor "uses:"`);
     }
     if (stepsNode.kind !== 'sequence') {
@@ -6022,6 +6123,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       // under it. Every step has one or the other: the two throws above are what
       // make that true rather than assumed.
       const work = uses === undefined ? `run ${(run ?? '').split('\n')[0] ?? ''}` : `uses ${uses}`;
+      stepSurface.push(`${workflow.file} job ${name} step ${work}`);
       settings.push(...settingsOf(`${workflow.file} job ${name} step ${work}`, step));
       refuseSuppression(
         at(item.line),
@@ -6060,6 +6162,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       file: workflow.file,
       name,
       runsOn: scalarOf(entry(job, 'runs-on')) ?? '',
+      needs,
       steps,
       commands: steps.flatMap((step) =>
         step.run === undefined ? [] : shellCommands(step.run, `${at(step.line)} run:`),
@@ -6067,7 +6170,56 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     };
   });
 
-  return { file: workflow.file, triggers, settings, jobs, actions, actionInputs };
+  return { file: workflow.file, triggers, settings, stepSurface, jobs, actions, actionInputs };
+}
+
+/**
+ * The first `needs:` cycle in a set of jobs, written as the walk that closes it,
+ * or `undefined`.
+ *
+ * GitHub refuses to load a workflow whose `needs:` graph has a cycle, and a file
+ * the runner will not load runs no gates at all — which is defect twenty-six's
+ * own argument, left half-applied. That refusal guarded the case where a NAME
+ * does not resolve; a cycle is the case where every name resolves and the runner
+ * rejects the file anyway. Both spellings were green twice: `needs: test-ts`
+ * added to `static` (which the other three jobs all need), and `needs: static`
+ * on the `static` job itself, a line that sits four lines from where a
+ * copy-paste would land it.
+ *
+ * `needs` names resolve within one file, so the walk is keyed by file and name
+ * together rather than by name.
+ *
+ * Read by *the jobs CI runs are a graph the runner would actually load* and by
+ * *reports $situation — RULE W over needsCycle*, and by nothing else.
+ */
+function needsCycle(jobs: readonly WorkflowJob[]): string | undefined {
+  const keyOf = (file: string, name: string): string => `${file}:${name}`;
+  const edges = new Map(jobs.map((job) => [keyOf(job.file, job.name), job] as const));
+  const state = new Map<string, 'visiting' | 'done'>();
+  const stack: string[] = [];
+
+  function walk(key: string): string | undefined {
+    const seen = state.get(key);
+    if (seen === 'done') return undefined;
+    if (seen === 'visiting') return [...stack.slice(stack.indexOf(key)), key].join(' -> ');
+    const job = edges.get(key);
+    if (job === undefined) return undefined;
+    state.set(key, 'visiting');
+    stack.push(key);
+    for (const dependency of job.needs) {
+      const cycle = walk(keyOf(job.file, dependency));
+      if (cycle !== undefined) return cycle;
+    }
+    stack.pop();
+    state.set(key, 'done');
+    return undefined;
+  }
+
+  for (const job of jobs) {
+    const cycle = walk(keyOf(job.file, job.name));
+    if (cycle !== undefined) return cycle;
+  }
+  return undefined;
 }
 
 /**
@@ -6530,6 +6682,12 @@ interface WorkflowSurface {
    * interpret is one somebody read — defect twenty-eight*, and by nothing else.
    */
   readonly settings: readonly string[];
+  /**
+   * Every step of every job of every workflow, in document order, labelled by
+   * the work it does. Read by *every step CI runs is one somebody read*, and by
+   * nothing else.
+   */
+  readonly stepSurface: readonly string[];
   readonly models: readonly WorkflowModel[];
 }
 
@@ -6584,7 +6742,8 @@ function readWorkflowSurface(repoRoot: string): WorkflowSurface {
   const actions = [...new Set(models.flatMap((model) => model.actions))].sort();
   const actionInputs = [...new Set(models.flatMap((model) => model.actionInputs))].sort();
   const settings = models.flatMap((model) => model.settings);
-  return { files, ignoredFiles, actions, actionInputs, settings, models };
+  const stepSurface = models.flatMap((model) => model.stepSurface);
+  return { files, ignoredFiles, actions, actionInputs, settings, stepSurface, models };
 }
 
 const SURFACE = readWorkflowSurface(REPO_ROOT);
@@ -7222,6 +7381,7 @@ describe('the classifiers beside those readers are pinned by branch too — RULE
     file: 'probe.yml',
     name: 'probe',
     runsOn,
+    needs: [],
     steps: [],
     commands: commands.map((text) => ({ text, gating: true, reached: true })),
   });
@@ -7372,5 +7532,277 @@ describe('the classifiers beside those readers are pinned by branch too — RULE
     expect(() => modelOf({ file: 'probe.yml', text }, read)).toThrow(
       'has a "steps:" that is not a sequence this reader can walk',
     );
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the exemption from the pin, made to earn itself                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every step of every job in `.github/workflows/`, in document order, labelled
+ * by the work it does.
+ *
+ * ### Why a second pin beside {@link CI_SETTINGS}
+ *
+ * {@link settingsOf} emits a line for a step only when that step carries a key
+ * in {@link PINNED_SETTING_KEYS}. Of the forty-one steps this list holds, eleven
+ * carry none even after five keys moved into that list this round: five bare
+ * `- uses: actions/checkout@v4`, three bare `- run: pnpm install
+ * --frozen-lockfile`, and three bare `- uses: dtolnay/rust-toolchain@stable`.
+ * Deleting any one of them from any one job moved no line of `CI_SETTINGS` and
+ * was green, because the two rules that might have noticed both point the other
+ * way:
+ * {@link unaccounted} asks that every command PRESENT be a gate or a setup
+ * command, and {@link SETUP_COMMANDS}' reverse rule asks only that each entry be
+ * run by SOME workflow — which the other jobs still satisfy. Deleting
+ * `pnpm install --frozen-lockfile` from `test-windows` leaves that job's four
+ * gates running against no `node_modules`; deleting `dtolnay/rust-toolchain` or
+ * `Swatinem/rust-cache` is quieter still.
+ *
+ * The pin's cost paragraph says "Renaming a step reddens this file" — and that
+ * was only true of a step that HAS a name. This list is every step, named or
+ * not, so inserting, deleting or reordering one is a review.
+ *
+ * Read by *every step CI runs is one somebody read*, and by nothing else.
+ */
+const CI_STEP_SURFACE: readonly string[] = [
+  'ci.yml job static step uses actions/checkout@v4',
+  'ci.yml job static step uses pnpm/action-setup@v4',
+  'ci.yml job static step uses actions/setup-node@v4',
+  'ci.yml job static step run pnpm install --frozen-lockfile',
+  'ci.yml job static step run pnpm typecheck',
+  'ci.yml job static step run sudo apt-get update',
+  'ci.yml job static step uses dtolnay/rust-toolchain@stable',
+  'ci.yml job static step uses Swatinem/rust-cache@v2',
+  'ci.yml job static step run cargo fmt --all --check',
+  'ci.yml job static step run cargo clippy --workspace --all-targets -- -D warnings',
+  'ci.yml job test-ts step uses actions/checkout@v4',
+  'ci.yml job test-ts step uses pnpm/action-setup@v4',
+  'ci.yml job test-ts step uses actions/setup-node@v4',
+  'ci.yml job test-ts step run pnpm install --frozen-lockfile',
+  'ci.yml job test-ts step run pnpm test',
+  'ci.yml job test-ts step run pnpm test:harness',
+  'ci.yml job test-ts step run pnpm build',
+  'ci.yml job test-ts step run ./scripts/check-transcripts.sh',
+  'ci.yml job test-rust step uses actions/checkout@v4',
+  'ci.yml job test-rust step run sudo apt-get update',
+  'ci.yml job test-rust step uses actions/setup-node@v4',
+  'ci.yml job test-rust step uses dtolnay/rust-toolchain@stable',
+  'ci.yml job test-rust step uses Swatinem/rust-cache@v2',
+  'ci.yml job test-rust step run cargo build --workspace --locked',
+  'ci.yml job test-rust step run cargo test --workspace --locked',
+  'ci.yml job test-windows step uses actions/checkout@v4',
+  'ci.yml job test-windows step uses pnpm/action-setup@v4',
+  'ci.yml job test-windows step uses actions/setup-node@v4',
+  'ci.yml job test-windows step run pnpm install --frozen-lockfile',
+  'ci.yml job test-windows step run pnpm typecheck',
+  'ci.yml job test-windows step run pnpm test',
+  'ci.yml job test-windows step run node scripts/ci-retry-vitest-crash.mjs pnpm test:harness',
+  'ci.yml job test-windows step run pnpm build',
+  'ci.yml job test-windows step uses dtolnay/rust-toolchain@stable',
+  'ci.yml job test-windows step uses Swatinem/rust-cache@v2',
+  'ci.yml job test-windows step run cargo build --workspace --locked',
+  'ci.yml job test-windows step run cargo test --workspace --locked',
+  'ci.yml job test-windows step run pnpm test:transcripts',
+  'ci.yml job secret-tripwire step uses actions/checkout@v4',
+  'ci.yml job secret-tripwire step run ./scripts/secret-scan.test.sh',
+  'ci.yml job secret-tripwire step run ./scripts/secret-scan.sh',
+];
+
+/**
+ * One key per admitted key that {@link settingsOf} lets through unpinned, and
+ * two written values its reader has to tell apart.
+ *
+ * ### The seventh form, on the data side: an exemption whose warrant is a reader that answers a different question
+ *
+ * Round six made the pin the default and stated the result as a closed
+ * dichotomy: an admitted key is either interpreted or its value is compared
+ * against {@link CI_SETTINGS}, "there is no third option and no sentence
+ * granting one". There was a third option, and it was the word *interpreted*.
+ * `settingsOf`'s first line is
+ * `if (!PINNED_SETTING_KEYS.includes(key) && INTERPRETED_KEYS.includes(key)) continue;`,
+ * so membership in {@link INTERPRETED_KEYS} turns the pin OFF, and the only
+ * thing standing behind each of its names was the claim, in prose, that a named
+ * function "consumes and decides on" it. For `runs-on`, `needs`, `shell`, `with`
+ * and `defaults` the function decided something adjacent and not the value: that
+ * a name resolves, that a prefix is recognised, that a shell is splittable, that
+ * a key is known, that a default's keys are ones the reader has heard of. Five
+ * keys, five landed constructions, all green twice.
+ *
+ * {@link INTERPRETED_KEYS}' own residue paragraph conceded the gap at the level
+ * of existence — "No test can establish that a function reads a key without
+ * being the function" — and then treated *has a reader* as if it were *has a
+ * decider*. That concession is what this table withdraws. It does not try to
+ * establish that a function reads a key. It establishes the thing the exemption
+ * is actually worth: that **two documents differing only in that key get
+ * different verdicts out of `modelOf`**. A reader that answers a different
+ * question has no two values to tell apart, and no row to write here.
+ *
+ * Read by *an exempt key is one whose reader tells two values apart*, and by
+ * nothing else.
+ */
+const EXEMPT_KEY_DECISIONS: readonly {
+  readonly key: string;
+  readonly decides: string;
+  readonly one: readonly string[];
+  readonly other: readonly string[];
+}[] = [
+  {
+    key: 'on',
+    decides: 'which events reach the gates below it — triggersOf, pinned by CI_TRIGGERS',
+    one: ['on:', '  push:', '    branches: [main]', 'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'],
+    other: ['on:', '  workflow_dispatch:', 'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'],
+  },
+  {
+    key: 'jobs',
+    decides: 'which jobs exist at all — walked by modelOf into WorkflowJob values',
+    one: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'],
+    other: [
+      'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test',
+      '  b:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm build',
+    ],
+  },
+  {
+    key: 'steps',
+    decides: 'which steps a job runs — walked by modelOf into WorkflowStep values',
+    one: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'],
+    other: [
+      'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:',
+      '      - run: pnpm test', '      - run: pnpm build',
+    ],
+  },
+  {
+    key: 'run',
+    decides: 'which commands execute — split by shellCommands, checked by unaccounted',
+    one: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'],
+    other: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm build'],
+  },
+  {
+    key: 'uses',
+    decides: 'whether the steps it brings in were read — refuseUses, pinned by THIRD_PARTY_ACTIONS',
+    one: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - uses: actions/checkout@v4'],
+    other: ['jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:', '      - uses: some-org/some-action@v1'],
+  },
+  {
+    key: 'continue-on-error',
+    decides: 'whether a failure can fail the run — refuseSuppression',
+    one: [
+      'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:',
+      '      - run: pnpm test', '        continue-on-error: false',
+    ],
+    other: [
+      'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:',
+      '      - run: pnpm test', '        continue-on-error: true',
+    ],
+  },
+  {
+    key: 'secrets',
+    decides: 'whether credentials are handed to something unread — refused by name in modelOf',
+    one: ['jobs:', '  a:', '    uses: ./.github/workflows/probe.yml'],
+    other: ['jobs:', '  a:', '    uses: ./.github/workflows/probe.yml', '    secrets: inherit'],
+  },
+];
+
+/** One pair of job sets per arm of {@link needsCycle}. */
+const NEEDS_GRAPH_CASES: readonly {
+  readonly situation: string;
+  readonly edges: readonly (readonly [string, readonly string[]])[];
+  readonly cycle: string | null;
+}[] = [
+  { situation: 'the shape ci.yml really has', edges: [['static', []], ['test-ts', ['static']], ['test-rust', ['static']], ['test-windows', ['static']]], cycle: null },
+  { situation: 'a job that needs itself', edges: [['static', ['static']]], cycle: 'probe.yml:static -> probe.yml:static' },
+  { situation: 'a two-job cycle', edges: [['static', ['test-ts']], ['test-ts', ['static']]], cycle: 'probe.yml:static -> probe.yml:test-ts -> probe.yml:static' },
+  { situation: 'a three-job cycle', edges: [['a', ['b']], ['b', ['c']], ['c', ['a']]], cycle: 'probe.yml:a -> probe.yml:b -> probe.yml:c -> probe.yml:a' },
+  { situation: 'a diamond, which is legal', edges: [['a', []], ['b', ['a']], ['c', ['a']], ['d', ['b', 'c']]], cycle: null },
+];
+
+describe('an admitted key is pinned, interpreted, or neither — and neither is not an option', () => {
+  const read: ReadonlySet<string> = new Set(['.github/workflows/probe.yml']);
+
+  /**
+   * What this reader makes of one document, as one comparable string: either the
+   * refusal it produced, or everything the model carries.
+   */
+  const verdictOf = (lines: readonly string[]): string => {
+    try {
+      const model = modelOf({ file: 'probe.yml', text: lines.join('\n') }, read);
+      return JSON.stringify({
+        triggers: model.triggers,
+        settings: model.settings,
+        stepSurface: model.stepSurface,
+        actions: model.actions,
+        actionInputs: model.actionInputs,
+        jobs: model.jobs.map((job) => ({
+          name: job.name,
+          runsOn: job.runsOn,
+          needs: job.needs,
+          commands: job.commands.map(({ text, gating, reached }) => [text, gating, reached]),
+        })),
+      });
+    } catch (error) {
+      return `refused: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  };
+
+  it('every step CI runs is one somebody read', () => {
+    expect(
+      SURFACE.stepSurface,
+      'a step was added to, removed from or reordered inside a job in ' +
+        '.github/workflows/. Eleven steps in ci.yml carry no key this reader ' +
+        'pins, so CI_SETTINGS cannot see them come or go: deleting "pnpm install ' +
+        '--frozen-lockfile" from test-windows leaves that job\'s four gates ' +
+        'running against no node_modules, and deleting a checkout or a toolchain ' +
+        'step is quieter still. Read the change, then write it into ' +
+        'CI_STEP_SURFACE.',
+    ).toEqual([...CI_STEP_SURFACE]);
+  });
+
+  it('an exempt key is one whose reader tells two values apart', () => {
+    // Part one: the table's key set IS the exempt set. Without this the table is
+    // a subset nobody compares against `settingsOf`'s first line, which is the
+    // shape every one of the six previous rounds failed on.
+    const exempt = INTERPRETED_KEYS.filter((key) => !PINNED_SETTING_KEYS.includes(key)).sort();
+    expect(
+      EXEMPT_KEY_DECISIONS.map(({ key }) => key).sort(),
+      'a key is exempt from the CI_SETTINGS pin with no demonstration that its ' +
+        'reader decides anything about its value. Membership in INTERPRETED_KEYS ' +
+        'is what turns the pin off, and "has a reader" is not "has a decider": ' +
+        'runs-on, needs, shell, with and defaults were each exempt on the ' +
+        'strength of a reader that answered a different question, and one ' +
+        'construction walked through each. Either write two documents this ' +
+        'reader tells apart, or move the key into PINNED_SETTING_KEYS.',
+    ).toEqual(exempt);
+
+    // Part two: the demonstration itself. Two documents differing only in this
+    // key, and a verdict that moves.
+    for (const { key, one, other } of EXEMPT_KEY_DECISIONS) {
+      expect(verdictOf(one), `the reader for "${key}" gives one verdict to two different values of it`).not.toBe(
+        verdictOf(other),
+      );
+    }
+  });
+
+  it('the jobs CI runs are a graph the runner would actually load', () => {
+    expect(
+      needsCycle(JOBS),
+      'the needs: graph in .github/workflows/ has a cycle. GitHub refuses to ' +
+        'load a workflow whose needs: graph is cyclic, and a file the runner ' +
+        'will not load runs no gates at all — which is exactly the argument ' +
+        'defect twenty-six makes about a name that does not resolve, applied to ' +
+        'the case where every name resolves.',
+    ).toBeUndefined();
+  });
+
+  it.each(NEEDS_GRAPH_CASES)('reports $situation — RULE W over needsCycle', ({ edges, cycle }) => {
+    const jobs: readonly WorkflowJob[] = edges.map(([name, needs]) => ({
+      file: 'probe.yml',
+      name,
+      runsOn: 'ubuntu-latest',
+      needs,
+      steps: [],
+      commands: [],
+    }));
+    expect(needsCycle(jobs)).toBe(cycle ?? undefined);
   });
 });

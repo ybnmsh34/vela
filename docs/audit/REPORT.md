@@ -194,6 +194,18 @@ as "the app renders nothing" to anyone who trusts the return value. It is cold-s
 own `mount` command calls `THE RENDERER DID NOT MOUNT` is a harness that can manufacture a false
 verdict in either direction.
 
+**Closed, 2026-08-21, by `2d69b9c` "T03: make `up` grade its own mount report instead of watching
+one word".** Listed here rather than edited in place, per this file's own convention above. Neither
+half of the finding holds now, measured in `C:/Users/User/vela-t03` at the commit this line is
+committed in. `commands.up` in `tests/harness/desktop-click/vela-drive.mjs` ends with
+`if (!readiness.grade.mounted)` throwing `HarnessError(EXIT.FAILED, ...)`, so an unmounted renderer
+exits 7 carrying the mount verdict rather than returning `ok: true`. And the README no longer makes
+the `readyState` claim: the word occurs there 5 times, and the occurrence that names the old
+sentence is the heading paragraph of "What `up` waits for, and why it is not `readyState`", which
+opens by quoting the old sentence and calling it the defect. What this finding says about the
+`readyState` **mechanism** stands, and is why the fix took the shape it did — `readyState` reaches
+`complete` faster when the bundle fails than when it loads.
+
 ## What Wave 1 closed, and what it did not (2026-08-15)
 
 Six branches merged. Rows are listed here rather than edited in place, so the original grade and

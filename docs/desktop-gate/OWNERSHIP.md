@@ -192,7 +192,13 @@ filtering to the summary, so a recurrence can be compared.
 ### `git checkout -- <path>` can rewrite the file it restores, and `git status` will not say so
 
 This repository has `core.autocrlf=true` from the system gitconfig and **no `* text=auto` rule**.
-The working tree is mixed: `vela-drive.mjs` is CRLF on disk, `keys.mjs` and `keys.test.mjs` are LF.
+The working tree is mixed. **That example was stale and is corrected here rather than deleted, because
+the mechanism below is the point and the wrong example made it look like it applied to files it does
+not.** Measured 2026-08-21 in `C:/Users/User/vela-t03`, in `tests/harness/desktop-click/`:
+`vela-drive.mjs` is 1901 CRLF / 0 bare LF, `keys.mjs` is 160 / 0 and `keys.test.mjs` is 681 / 0 — all
+three CRLF, where this sentence used to name the last two as the LF ones. The pure-LF files in that
+directory are `mount-grade.mjs` (376 bare LF), `readiness.test.mjs` (525) and `verdicts.test.mjs`
+(359). Whether the original sentence was true when it was written was not measured.
 Restoring an LF file with `git checkout -- <path>` **writes it back as CRLF**, and because the
 filter normalises on the way in, `git status` still reports the tree clean.
 

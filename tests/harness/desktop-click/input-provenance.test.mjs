@@ -40,6 +40,7 @@ const TYPE_OS_WITH_CDP_FOCUS = [
   { name: 'cdp.focusStored' },
   { name: 'os.raise' },
   { name: 'os.sendInputKeyboard' },
+  { name: 'os.sendInputKeyboard.delivered' },
   { name: 'cdp.readActiveElement' },
 ];
 
@@ -50,6 +51,7 @@ const TYPE_OS_FOCUS_REQUIRED = [
   { name: 'cdp.focusState' },
   { name: 'os.raise' },
   { name: 'os.sendInputKeyboard' },
+  { name: 'os.sendInputKeyboard.delivered' },
   { name: 'cdp.readActiveElement' },
 ];
 
@@ -104,6 +106,7 @@ describe('the provenance grade composes delivery with what CDP did for it', () =
       { name: 'cdp.armPointerRecorder' },
       { name: 'os.sendInputMouse' },
       { name: 'cdp.pointerHit' },
+      { name: 'os.sendInputMouse.delivered' },
     ];
     const measured = gradeInputProvenance({
       delivery: 'os',

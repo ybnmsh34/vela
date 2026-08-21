@@ -28,22 +28,30 @@
  * they appear and they prove a byte is present, not that it runs.
  */
 
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { EXIT } from './cdp.mjs';
 import { CEILINGS, KNOWN_STEPS, REASONS, gradeInputProvenance } from './input-provenance.mjs';
 import {
+  FOCUS_REFUSALS,
   LEDGER_KEY,
   LEDGER_VERSION,
   declareEntry,
   emptyRun,
+  focusRequireRefusal,
   lastFocusMove,
   markUndeclared,
+  notMyLedger,
   openEntry,
   priorTo,
+  startRun,
+  unknownRun,
 } from './run-ledger.mjs';
 import { BOOTSTRAP } from './page.mjs';
 
@@ -77,6 +85,7 @@ const TYPE_OS_DEFAULTS = [
   { name: 'cdp.focusState' },
   { name: 'os.raise' },
   { name: 'os.sendInputKeyboard' },
+  { name: 'os.sendInputKeyboard.delivered' },
   { name: 'cdp.readActiveElement' },
 ];
 
@@ -93,13 +102,23 @@ const CLICK_OS_NO_SCROLL = [
   { name: 'cdp.pointerHit' },
   { name: 'cdp.digest' },
   { name: 'cdp.describeStored' },
+  { name: 'os.sendInputMouse.delivered' },
 ];
 
-/** A session whose ledger holds the given commands, in order, all declared. */
+/**
+ * A session whose ledger holds the given commands, in order, all declared.
+ *
+ * `startRun` first, because that is what the CLI does: `up` builds the session
+ * object and calls `startRun` on it, and every later command calls `openEntry`
+ * on the session it read back from disk. A fixture that skipped `startRun`
+ * would model a session no `up` can produce, and would come back
+ * `known: false` — which is this round's fix, not a fixture detail.
+ */
 function sessionWith(...commands) {
   const session = { pid: 4321, port: 9222 };
+  startRun(session);
   for (const [command, steps] of commands) {
-    const seq = openEntry(session, command, '2026-08-21T00:00:00.000Z');
+    const seq = openEntry(session, command);
     declareEntry(session, seq, steps);
   }
   return session;
@@ -231,10 +250,15 @@ describe('the class, not the instance', () => {
     // is nothing to launder — it is what a user does.
     const real = sessionWith([
       'click',
-      messageClick.map((s) => (s.name === 'os.postMessage' ? { name: 'os.sendInputMouse' } : s)),
+      [
+        ...messageClick.map((s) => (s.name === 'os.postMessage' ? { name: 'os.sendInputMouse' } : s)),
+        // The confirmation `click --via os` pushes once the page-side pointer
+        // recorder has seen the press. The attempt alone cannot supply focus.
+        { name: 'os.sendInputMouse.delivered' },
+      ],
     ]);
     expect(lastFocusMove(priorForNext(real))).toMatchObject({
-      name: 'os.sendInputMouse',
+      name: 'os.sendInputMouse.delivered',
       userEquivalent: true,
     });
     expect(
@@ -265,7 +289,8 @@ describe('the class, not the instance', () => {
 
   it('a command that attached and never declared is a hole, graded as one', () => {
     const session = { pid: 1, port: 9222 };
-    const seq = openEntry(session, 'click', '2026-08-21T00:00:00.000Z');
+    startRun(session);
+    const seq = openEntry(session, 'click');
     markUndeclared(session, seq);
     const prior = priorTo(session, seq + 1);
     expect(prior.known).toBe(true);
@@ -282,7 +307,8 @@ describe('the class, not the instance', () => {
 
   it('an entry left open by a killed command is the same hole', () => {
     const session = { pid: 1, port: 9222 };
-    openEntry(session, 'type', '2026-08-21T00:00:00.000Z');
+    startRun(session);
+    openEntry(session, 'type');
     const prior = priorTo(session, 2);
     expect(prior.unaccounted).toEqual([{ seq: 1, command: 'type', state: 'open' }]);
     expect(
@@ -290,7 +316,11 @@ describe('the class, not the instance', () => {
     ).toBe(CEILINGS.DEV_CLICKED);
   });
 
-  it('a session with no ledger this build can read is unknown, not empty', () => {
+  it('priorTo alone: a session with no ledger this build can read is unknown, not empty', () => {
+    // A property of `priorTo` called directly, and NOTHING MORE — which is
+    // exactly what the round-2 version of this test proved while carrying a
+    // name that read as a claim about a run. The run claim is the test below,
+    // and it needed a code change, not a rename.
     expect(priorTo({ pid: 1 }, 1)).toMatchObject({ known: false, version: null });
     expect(priorTo({ pid: 1, [LEDGER_KEY]: { version: LEDGER_VERSION + 1, entries: [] } }, 1)).toMatchObject({
       known: false,
@@ -308,6 +338,101 @@ describe('the class, not the instance', () => {
     expect(
       priorTo({ pid: 1, [LEDGER_KEY]: { version: 99, entries: [] } }, 1).unknownBecause,
     ).toContain('version 99');
+  });
+
+  describe('THE SECOND EVASION: the fix carried the defect it was closing, one level down', () => {
+    // Found by a fresh agent against round 2, twice, deterministically. The
+    // ledger closed the round-1 hole for any run that starts under this build —
+    // and `attach` calls `openEntry` BEFORE anything reads the ledger, and
+    // `openEntry` replaced a ledger it could not read with an empty one. So the
+    // two branches above were unreachable from the CLI: the evidence that the
+    // run was unaccountable was destroyed and replaced with a positive claim
+    // that the run was empty. A live window whose session.json predated the
+    // ledger, or any future LEDGER_VERSION bump, graded `substituted: false`,
+    // `ladderCeiling: "os-input-unsubstituted"`, `reason: "every-act-was-os"`.
+    //
+    // These three reproduce vela-drive's own call order — attach: openEntry
+    // then write; runContext: read then priorTo — so they are a claim about a
+    // RUN and not about a function. The order they mirror is pinned by a
+    // source-text assertion in "the CLI wiring" below.
+    const attachThenGrade = (session, command) => {
+      const seq = openEntry(session, command); // what `attach` does, first
+      const prior = priorTo(session, seq); // what `runContext` does, later
+      return {
+        prior,
+        grade: gradeInputProvenance({ delivery: 'os', steps: TYPE_OS_DEFAULTS, prior }),
+        refusal: focusRequireRefusal(prior, lastFocusMove(prior)),
+      };
+    };
+
+    it('EV-A: a session whose ledger predates this build stays unknown through attach', () => {
+      // The round-1 build wrote no `runLedger` key at all.
+      const session = { pid: 4321, port: 9222 };
+      const { prior, grade, refusal } = attachThenGrade(session, 'type');
+      expect(prior.known).toBe(false);
+      expect(prior.unknownBecause).toContain('carried no run ledger when this command attached');
+      expect(grade.ladderCeiling).toBe(CEILINGS.DEV_CLICKED);
+      expect(grade.reason).toBe(REASONS.UNACCOUNTED);
+      expect(grade.substituted).toBeNull();
+      // The sentence the evasion made this run print. It must not be reachable.
+      expect(grade.entails.does ?? '').not.toContain('would drive an app with no CDP attached');
+      expect(refusal.clause).toBe(FOCUS_REFUSALS.RUN_NOT_ESTABLISHED);
+    });
+
+    it('EV-B: a ledger at another version stays unknown through attach', () => {
+      const session = {
+        pid: 4321,
+        port: 9222,
+        [LEDGER_KEY]: { version: LEDGER_VERSION + 1, entries: [{ seq: 1, command: 'up' }] },
+      };
+      const { prior, grade, refusal } = attachThenGrade(session, 'type');
+      expect(prior.known).toBe(false);
+      expect(prior.unknownBecause).toContain(`was version ${LEDGER_VERSION + 1}`);
+      expect(grade.ladderCeiling).toBe(CEILINGS.DEV_CLICKED);
+      expect(refusal.clause).toBe(FOCUS_REFUSALS.RUN_NOT_ESTABLISHED);
+    });
+
+    it('the reset cannot be washed out by running more accountable commands', () => {
+      // The reason `priorUnknownBecause` is sticky. Three clean OS commands
+      // after the gap do not make the gap accountable, and the ledger they
+      // append to still refuses.
+      const session = { pid: 4321, port: 9222 };
+      for (const command of ['type', 'click', 'key']) {
+        const seq = openEntry(session, command);
+        declareEntry(session, seq, CLICK_OS_NO_SCROLL);
+      }
+      expect(session[LEDGER_KEY].entries).toHaveLength(3);
+      expect(priorForNext(session).known).toBe(false);
+      expect(focusRequireRefusal(priorForNext(session), null).clause).toBe(
+        FOCUS_REFUSALS.RUN_NOT_ESTABLISHED,
+      );
+    });
+
+    it('CONTROL: the same sequence under a run `up` started grades clean', () => {
+      // Isolates the cause. Identical steps, identical order — the only
+      // difference is that `startRun` was called, which is what `up` does and
+      // what the round-2 `openEntry` did silently for everyone.
+      const session = { pid: 4321, port: 9222 };
+      startRun(session);
+      const { prior, grade, refusal } = attachThenGrade(session, 'type');
+      expect(prior.known).toBe(true);
+      expect(grade.ladderCeiling).toBe(CEILINGS.UNSUBSTITUTED);
+      expect(grade.substituted).toBe(false);
+      expect(refusal).toBeNull();
+    });
+
+    it('a version-2 ledger that will not say is not a ledger that said no', () => {
+      // `priorUnknownBecause` missing from a current-version ledger is an edit
+      // or a truncation, not a clean run. Strict `!== null`, deliberately.
+      const session = {
+        pid: 4321,
+        port: 9222,
+        [LEDGER_KEY]: { version: LEDGER_VERSION, entries: [{ seq: 1, command: 'up', state: 'declared', steps: [] }] },
+      };
+      const prior = priorTo(session, 2);
+      expect(prior.known).toBe(false);
+      expect(prior.unknownBecause).toContain('will not say');
+    });
   });
 
   it('a ledger with an entry cut out of the middle is unknown, not shorter', () => {
@@ -407,10 +532,18 @@ describe('lastFocusMove: every value in the movesFocus column is load-bearing', 
   it('the LAST one wins, across commands as well as within one', () => {
     const session = sessionWith(
       ['type', TYPE_CDP_DEFAULTS], // ends cdp.focusStored / cdp.dispatchKeyEvent
-      ['key', [{ name: 'cdp.bootstrap' }, { name: 'os.raise' }, { name: 'os.sendInputKeyboard' }]],
+      [
+        'key',
+        [
+          { name: 'cdp.bootstrap' },
+          { name: 'os.raise' },
+          { name: 'os.sendInputKeyboard' },
+          { name: 'os.sendInputKeyboard.delivered' },
+        ],
+      ],
     );
     expect(lastFocusMove(priorForNext(session))).toMatchObject({
-      name: 'os.sendInputKeyboard',
+      name: 'os.sendInputKeyboard.delivered',
       channel: 'os',
       command: 'key',
       seq: 2,
@@ -435,10 +568,25 @@ describe('lastFocusMove: every value in the movesFocus column is load-bearing', 
     const canSupplyFocus = Object.entries(KNOWN_STEPS)
       .filter(([, entry]) => entry.movesFocus && entry.userEquivalent === true)
       .map(([name]) => name);
-    expect(canSupplyFocus).toEqual(['os.sendInputMouse', 'os.sendInputKeyboard']);
+    expect(canSupplyFocus).toEqual([
+      'os.sendInputMouse.delivered',
+      'os.sendInputKeyboard.delivered',
+    ]);
     // And the near miss the README calls out by name: an `os.` step that moves
     // focus and still cannot supply it.
     expect(KNOWN_STEPS['os.postMessage']).toMatchObject({ movesFocus: true, userEquivalent: false });
+    // The other near miss, new this round, and the reason the two above are
+    // spelled `.delivered`: the ATTEMPT is user-equivalent and still cannot
+    // supply focus, because it is declared before the call it names and a
+    // declaration is not evidence that anything happened.
+    expect(KNOWN_STEPS['os.sendInputMouse']).toMatchObject({
+      movesFocus: false,
+      userEquivalent: true,
+    });
+    expect(KNOWN_STEPS['os.sendInputKeyboard']).toMatchObject({
+      movesFocus: false,
+      userEquivalent: true,
+    });
     // ...and the one that is user-equivalent but cannot supply focus, because
     // it moves the window and not document.activeElement.
     expect(KNOWN_STEPS['os.raise']).toMatchObject({ movesFocus: false, userEquivalent: true });
@@ -451,7 +599,8 @@ describe('lastFocusMove: every value in the movesFocus column is load-bearing', 
 
   it('refuses a ledger naming a step this build does not know', () => {
     const session = { pid: 1 };
-    const seq = openEntry(session, 'type', '2026-08-21T00:00:00.000Z');
+    startRun(session);
+    const seq = openEntry(session, 'type');
     declareEntry(session, seq, [{ name: 'cdp.fromTheFuture' }]);
     expect(() => lastFocusMove(priorTo(session, seq + 1))).toThrow(/cdp\.fromTheFuture/);
   });
@@ -501,6 +650,284 @@ describe('page.mjs is why the ledger is needed: the DOM cannot answer the questi
   });
 });
 
+describe('the --focus require gate, every clause of it, executed', () => {
+  // WHY THIS EXISTS. A mutation disabled the whole gate — the refusal the
+  // README devotes its longest paragraph to — by prefixing its condition with
+  // `false &&`, and all 117 tests stayed green, twice. Nothing covered it, not
+  // even a byte-presence assertion, because the gate was inline in
+  // `commands.type` and reaching it needs a live window, a CDP socket and a
+  // real SendInput.
+  //
+  // The decision is now `focusRequireRefusal` in run-ledger.mjs, a pure
+  // function of (run, focus origin). Each clause below is disabled on its own
+  // by a mutation and reddens on its own here. What these do NOT prove is that
+  // `commands.type` calls it — that is one `if`, pinned by source text in the
+  // last describe of this file, and source text proves a byte and not a run.
+  const cleanRun = () => priorForNext(sessionWith(['up', [{ name: 'cdp.bootstrap' }]]));
+
+  it('CONTROL: a run that never moved focus is not refused', () => {
+    // Not vacuous: the gate has to let something through, and this is the case
+    // the README describes — focus is where the application itself put it,
+    // which is what a user finds on launch.
+    const prior = cleanRun();
+    expect(lastFocusMove(prior)).toBeNull();
+    expect(focusRequireRefusal(prior, null)).toBeNull();
+  });
+
+  it('CONTROL: a run whose focus came from a delivered OS act is not refused', () => {
+    const session = sessionWith([
+      'click',
+      [{ name: 'os.sendInputMouse' }, { name: 'os.sendInputMouse.delivered' }],
+    ]);
+    const prior = priorForNext(session);
+    expect(focusRequireRefusal(prior, lastFocusMove(prior))).toBeNull();
+  });
+
+  it('clause 1: a run that cannot be established is refused, and says why', () => {
+    const prior = unknownRun(null, 'THE REASON THE RUN COULD NOT BE READ.');
+    const refusal = focusRequireRefusal(prior, null);
+    expect(refusal.clause).toBe(FOCUS_REFUSALS.RUN_NOT_ESTABLISHED);
+    // The run's own sentence is carried through rather than replaced by a
+    // generic one, because the four ways a run can be unreadable want four
+    // different things done about them.
+    expect(refusal.message).toContain('THE REASON THE RUN COULD NOT BE READ.');
+    expect(refusal.message).toContain('--focus cdp');
+  });
+
+  it('clause 2: an unaccounted command is refused, and is named', () => {
+    const session = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    markUndeclared(session, openEntry(session, 'eval'));
+    const prior = priorForNext(session);
+    const refusal = focusRequireRefusal(prior, lastFocusMove(prior));
+    expect(refusal.clause).toBe(FOCUS_REFUSALS.COMMANDS_NOT_ACCOUNTED_FOR);
+    expect(refusal.message).toContain('eval #2 (undeclared)');
+    // Reached even though nothing in the run moved focus at all — the hole is
+    // the ground, not the focus origin.
+    expect(lastFocusMove(prior)).toBeNull();
+  });
+
+  it('clause 3: focus from an act a user has no route to is refused, and is named', () => {
+    const session = sessionWith(['type', TYPE_CDP_DEFAULTS]);
+    const prior = priorForNext(session);
+    const refusal = focusRequireRefusal(prior, lastFocusMove(prior));
+    expect(refusal.clause).toBe(FOCUS_REFUSALS.FOCUS_NOT_USER_EQUIVALENT);
+    expect(refusal.message).toContain('`cdp.dispatchKeyEvent` in `type` #1');
+    expect(refusal.message).toContain('Input.dispatchKeyEvent');
+  });
+
+  it('THE HOLE THIS ROUND: an OS click that delivered nothing cannot supply focus', () => {
+    // `os.sendInputMouse` is pushed BEFORE the SendInput call, so a click that
+    // delivered nothing — os-input.ps1 sends nothing at all when another
+    // process owns the pixel — still wrote a user-equivalent focus move into
+    // the ledger. That entry then satisfied this gate AND masked the CDP act
+    // that had really focused the field. Both halves are asserted here.
+    const laundered = sessionWith(
+      ['type', TYPE_CDP_DEFAULTS], // cdp.focusStored really put focus there
+      ['click', [{ name: 'cdp.resolve' }, { name: 'os.sendInputMouse' }]], // delivered nothing
+    );
+    const prior = priorForNext(laundered);
+    const origin = lastFocusMove(prior);
+    expect(origin.name).toBe('cdp.dispatchKeyEvent'); // NOT the undelivered click
+    expect(focusRequireRefusal(prior, origin).clause).toBe(
+      FOCUS_REFUSALS.FOCUS_NOT_USER_EQUIVALENT,
+    );
+
+    // CONTROL: the same click WITH its confirmation supplies focus, so the
+    // refusal above is about delivery and not about clicks.
+    const delivered = sessionWith(
+      ['type', TYPE_CDP_DEFAULTS],
+      [
+        'click',
+        [
+          { name: 'cdp.resolve' },
+          { name: 'os.sendInputMouse' },
+          { name: 'os.sendInputMouse.delivered' },
+        ],
+      ],
+    );
+    const deliveredPrior = priorForNext(delivered);
+    expect(lastFocusMove(deliveredPrior).name).toBe('os.sendInputMouse.delivered');
+    expect(focusRequireRefusal(deliveredPrior, lastFocusMove(deliveredPrior))).toBeNull();
+  });
+
+  it('every clause in FOCUS_REFUSALS is producible, and nothing else is', () => {
+    // RULE U for `clause`: this is its reader, along with the `refusedBy` field
+    // `commands.type` puts in the refusal payload. A clause added to the
+    // vocabulary and never returned, or returned and never listed, fails here.
+    const unaccounted = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    markUndeclared(unaccounted, openEntry(unaccounted, 'eval'));
+    const cdpFocus = priorForNext(sessionWith(['type', TYPE_CDP_DEFAULTS]));
+    const produced = [
+      focusRequireRefusal(unknownRun(null, 'why'), null),
+      focusRequireRefusal(priorForNext(unaccounted), null),
+      focusRequireRefusal(cdpFocus, lastFocusMove(cdpFocus)),
+    ].map((refusal) => refusal.clause);
+    expect(new Set(produced)).toEqual(new Set(Object.values(FOCUS_REFUSALS)));
+  });
+});
+
+describe('runContext: the second member of the class, executed against real files', () => {
+  // This block is why vela-drive.mjs no longer runs `main()` at import. Every
+  // assertion about the CLI in this file used to be a regex over its own
+  // source; these run its code.
+  let INTERNALS;
+  let root;
+  let sessionFile;
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'vela-drive-runcontext-'));
+    process.env.VELA_HARNESS_ROOT = root;
+    // Dynamic, and after the env var: HARNESS_ROOT is read once at module load.
+    const loaded = await import('./vela-drive.mjs');
+    INTERNALS = loaded.INTERNALS;
+    sessionFile = join(root, 'session.json');
+  });
+
+  afterAll(() => {
+    delete process.env.VELA_HARNESS_ROOT;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** The session a command holds in memory since `attach` — always readable. */
+  const inMemory = () =>
+    sessionWith(['up', [{ name: 'cdp.bootstrap' }]], ['type', TYPE_CDP_DEFAULTS]);
+
+  it('CONTROL: when the file agrees, the run is read from the FILE', () => {
+    const onDisk = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    // #2 is this command's own entry, still `open` — what `attach` leaves
+    // behind. #3 is a second vela-drive process opening one while this command
+    // runs; reading the file is the only way to see it, and seeing it is the
+    // point.
+    const mine = openEntry(onDisk, 'type');
+    openEntry(onDisk, 'click');
+    writeFileSync(sessionFile, JSON.stringify(onDisk), 'utf8');
+    const prior = INTERNALS.runContext({ pid: 4321 }, mine);
+    expect(prior.known).toBe(true);
+    expect(prior.unaccounted).toEqual([{ seq: 3, command: 'click', state: 'concurrent' }]);
+  });
+
+  it('a ledger this command is not in is unknown, however well-formed it is', () => {
+    // The lost write this file's bounds admit, and the ledger transplant they
+    // do not mention: both leave a ledger that is current-version, consecutive,
+    // stamped clean — and missing the entry `attach` wrote a moment ago.
+    const transplanted = sessionWith(
+      ['up', [{ name: 'cdp.bootstrap' }]],
+      ['click', CLICK_OS_NO_SCROLL],
+    );
+    expect(priorTo(transplanted, 3).known).toBe(true); // well-formed by every earlier check
+    writeFileSync(sessionFile, JSON.stringify(transplanted), 'utf8');
+    const prior = INTERNALS.runContext({ pid: 4321 }, 3);
+    expect(prior.known).toBe(false);
+    expect(prior.unknownBecause).toContain('no longer contains entry #3');
+    expect(focusRequireRefusal(prior, null).clause).toBe(FOCUS_REFUSALS.RUN_NOT_ESTABLISHED);
+  });
+
+  it("a ledger that declared this command's entry for it is unknown", () => {
+    const meddled = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    const mine = openEntry(meddled, 'type');
+    declareEntry(meddled, mine, [{ name: 'cdp.bootstrap' }]); // not mine to declare yet
+    writeFileSync(sessionFile, JSON.stringify(meddled), 'utf8');
+    const prior = INTERNALS.runContext({ pid: 4321 }, mine);
+    expect(prior.known).toBe(false);
+    expect(prior.unknownBecause).toContain('as `declared`');
+  });
+
+  it('an unreadable session file is unknown, NOT the copy held since attach', () => {
+    writeFileSync(sessionFile, '{ this is not json', 'utf8');
+    const held = inMemory();
+    const prior = INTERNALS.runContext(held, 3);
+    // The old code returned `priorTo(held, 3)` here — known, and one command
+    // short of the truth, because an in-memory copy cannot contain a command
+    // that ran alongside this one.
+    expect(priorTo(held, 3).known).toBe(true);
+    expect(prior.known).toBe(false);
+    expect(prior.unknownBecause).toContain('could not be read');
+    expect(focusRequireRefusal(prior, null).clause).toBe(FOCUS_REFUSALS.RUN_NOT_ESTABLISHED);
+  });
+
+  it('notMyLedger is a pure predicate, and says null when the entry is mine', () => {
+    // RULE U for `state` on the command's own entry, and the reader
+    // `runContext` calls. `null` is the only answer that lets a grade proceed.
+    const session = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    const mine = openEntry(session, 'type');
+    expect(notMyLedger(session, mine)).toBeNull();
+    expect(notMyLedger(session, mine + 1)).toContain(`no longer contains entry #${mine + 1}`);
+    expect(notMyLedger(session, 1)).toContain('as `declared`');
+    expect(notMyLedger({}, 1)).toContain('no longer contains entry #1');
+  });
+
+  it('a missing session file is unknown, not an empty run', () => {
+    rmSync(sessionFile, { force: true });
+    const prior = INTERNALS.runContext(inMemory(), 3);
+    expect(prior.known).toBe(false);
+    expect(prior.unknownBecause).toContain('no session file');
+  });
+
+  it('a session file that now belongs to another window is unknown', () => {
+    const other = sessionWith(['up', [{ name: 'cdp.bootstrap' }]]);
+    other.pid = 999;
+    writeFileSync(sessionFile, JSON.stringify(other), 'utf8');
+    const prior = INTERNALS.runContext({ pid: 4321 }, 2);
+    expect(prior.known).toBe(false);
+    expect(prior.unknownBecause).toContain('now records pid 999');
+  });
+
+  it('readSessionOutcome says WHICH way it failed, which is why it exists', () => {
+    rmSync(sessionFile, { force: true });
+    expect(INTERNALS.readSessionOutcome()).toMatchObject({ session: null });
+    expect(INTERNALS.readSessionOutcome().why).toContain('no session file');
+    writeFileSync(sessionFile, 'nope', 'utf8');
+    expect(INTERNALS.readSessionOutcome().why).toContain('could not be read');
+    writeFileSync(sessionFile, JSON.stringify({ pid: 7 }), 'utf8');
+    expect(INTERNALS.readSessionOutcome()).toEqual({ session: { pid: 7 }, why: null });
+  });
+
+  it('sessionForReport keeps the ledger out of every payload a command prints', () => {
+    const session = sessionWith(['type', TYPE_CDP_DEFAULTS]);
+    expect(session[LEDGER_KEY]).toBeDefined();
+    const reported = INTERNALS.sessionForReport(session);
+    expect(reported[LEDGER_KEY]).toBeUndefined();
+    expect(reported.pid).toBe(4321);
+    expect(INTERNALS.sessionForReport(null)).toBeNull();
+  });
+});
+
+describe('the entry-point guard', () => {
+  const cli = join(dirname(fileURLToPath(import.meta.url)), 'vela-drive.mjs');
+
+  it('the CLI still runs, and dispatches, when it is the entry point', () => {
+    // The guard that made the block above possible is also the one thing that
+    // could silently turn the whole harness into a no-op, and until this round
+    // nothing in the suite ran vela-drive.mjs at all. Both of these reach
+    // `main` and neither touches a session, a window or PowerShell.
+    const help = spawnSync(process.execPath, [cli, 'help'], { encoding: 'utf8' });
+    expect(help.status).toBe(EXIT.OK);
+    expect(help.stderr).toContain('vela-drive — launch Vela');
+
+    const unknown = spawnSync(process.execPath, [cli, 'no-such-command'], { encoding: 'utf8' });
+    expect(unknown.status).toBe(EXIT.USAGE);
+    expect(unknown.stderr).toContain('unknown command "no-such-command"');
+  });
+
+  it('importing it does not run a command', () => {
+    // The other half: if importing ran `main()`, the block above would have
+    // executed an arbitrary command with vitest's own argv.
+    const run = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `await import(${JSON.stringify(pathToFileURL(cli).href)});` +
+          " console.log('IMPORTED_ONLY');",
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.stderr).toBe('');
+    expect(run.status).toBe(0);
+    expect(run.stdout.trim()).toBe('IMPORTED_ONLY');
+  });
+});
+
 describe('the CLI wiring — source text only, which proves a byte and not a run', () => {
   const text = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'vela-drive.mjs'), 'utf8');
 
@@ -521,6 +948,92 @@ describe('the CLI wiring — source text only, which proves a byte and not a run
     const calls = [...text.matchAll(/gradeInputProvenance\(\{([^}]*)\}/g)].map((m) => m[1]);
     expect(calls.length).toBeGreaterThan(0);
     for (const args of calls) expect(args, args).toContain('prior');
+  });
+
+  it('THE ONE if THE GATE STILL HANGS ON: commands.type calls it and throws on it', () => {
+    // The critic deleted the whole gate and the suite did not notice. Its
+    // clauses are executable now (see "the --focus require gate, every clause of
+    // it, executed"), and this is the byte the sibling wiring assertions above
+    // already had and it did not: that the decision is reached at all.
+    const typeBody = text.slice(
+      text.indexOf('commands.type = async'),
+      text.indexOf('commands.key = async'),
+    );
+    expect(typeBody.length).toBeGreaterThan(200);
+    expect(typeBody).toContain('const refusal = focusRequireRefusal(prior, focusOrigin);');
+    expect(typeBody).toContain('if (refusal !== null) {');
+    expect(typeBody).toContain('throw new HarnessError(EXIT.FAILED, refusal.message, {');
+    expect(typeBody).toContain('refusedBy: refusal.clause,');
+    // Reached before anything is typed: the refusal has to happen before the
+    // SendInput call, not after it.
+    expect(typeBody.indexOf('focusRequireRefusal')).toBeLessThan(typeBody.indexOf('osKeyboard('));
+    // And exactly one call site, so there is no second copy of the decision to
+    // drift away from this one.
+    expect([...text.matchAll(/focusRequireRefusal\(/g)]).toHaveLength(1);
+  });
+
+  it('startRun is called once, by `up`, on the session `up` just built', () => {
+    // `startRun` is the only thing allowed to claim a run has no history, and
+    // the round-2 defect was `openEntry` making that claim for everybody.
+    expect([...text.matchAll(/startRun\(/g)]).toHaveLength(1);
+    // Bounded by the NEXT `commands.` definition, not by a named one: the
+    // command list is not in the order the file defines it, and a slice that
+    // ran past `up` would let this test pass on bytes from another command.
+    const upStart = text.indexOf('commands.up = async');
+    const upBody = text.slice(upStart, text.indexOf('\ncommands.', upStart + 1));
+    expect(upBody).toContain('startRun(session);');
+    expect(upBody.indexOf('startRun(session);')).toBeLessThan(
+      upBody.indexOf("openEntry(session, 'up')"),
+    );
+    // ...and the object it is called on is the one `up` constructed a few
+    // statements earlier, not one read back from disk. `up` does call
+    // `readSession` — once, near the top, to decide whether it may launch at
+    // all — and that call is nowhere near this one.
+    const built = upBody.indexOf('const session = {');
+    expect(built).toBeLessThan(upBody.indexOf('startRun(session);'));
+    expect(upBody.slice(built)).not.toContain('readSession(');
+  });
+
+  it('each `.delivered` step is pushed only after the thing that confirms it', () => {
+    // The attempt is declared before the call; the confirmation must not be, or
+    // the split does nothing. Two push sites for the keyboard (type and key),
+    // one for the mouse.
+    expect([...text.matchAll(/'os\.sendInputKeyboard\.delivered'/g)]).toHaveLength(2);
+    expect([...text.matchAll(/'os\.sendInputMouse\.delivered'/g)]).toHaveLength(1);
+    // The mouse confirmation reads the page-side recorder's answer.
+    expect(text).toContain(
+      "if (via === 'os' && hit.landed === true) steps.push({ name: 'os.sendInputMouse.delivered' });",
+    );
+    expect(text.indexOf('const hit = await cdp.evaluate')).toBeLessThan(
+      text.indexOf("steps.push({ name: 'os.sendInputMouse.delivered' })"),
+    );
+    // Each keyboard confirmation sits after its own `os.blocked || !os.delivered`
+    // refusal, so a route that delivered nothing never reaches it.
+    const blocks = text.split("steps.push({ name: 'os.sendInputKeyboard.delivered' });");
+    expect(blocks).toHaveLength(3);
+    for (const before of blocks.slice(0, 2)) {
+      expect(before.lastIndexOf('if (os.blocked || !os.delivered) {')).toBeGreaterThan(
+        before.lastIndexOf("{ name: 'os.sendInputKeyboard'"),
+      );
+    }
+  });
+
+  it('runContext refuses to answer rather than falling back to what it holds', () => {
+    // Covered by execution in "runContext: the second member of the class"; this
+    // pins that the two refusals are the ones in the shipped source, since that
+    // block imports this file rather than reading it.
+    const runContextBody = text.slice(
+      text.indexOf('function runContext('),
+      text.indexOf('// -----', text.indexOf('function runContext(')),
+    );
+    // Three refusals: cannot read the file, the file is another window's, and
+    // the ledger is not the one this command wrote into.
+    expect([...runContextBody.matchAll(/unknownRun\(/g)]).toHaveLength(3);
+    expect(runContextBody).toContain('readSessionOutcome()');
+    expect(runContextBody).toContain('notMyLedger(fresh.session, seq)');
+    // The fallback that was the defect, in the bytes it had.
+    expect(runContextBody).not.toContain('? fresh : session, seq)');
+    expect(runContextBody).toContain('return priorTo(fresh.session, seq);');
   });
 
   it('attach opens the entry before it touches the page, and nothing else reads the ledger raw', () => {

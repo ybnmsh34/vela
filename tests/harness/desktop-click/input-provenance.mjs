@@ -267,17 +267,46 @@ export const KNOWN_STEPS = {
     movesFocus: false,
     why: 'SetForegroundWindow on the session window. A user brings a window forward; this does it for them, through the OS rather than through CDP. It changes which window is foreground, not which element inside the document has focus.',
   },
+  // ATTEMPTED, then CONFIRMED — the two halves of each OS input step.
+  //
+  // Every step in this table is pushed BEFORE the call it names, so that a
+  // command killed part-way over-declares rather than under-declares. For the
+  // ceiling that is the safe direction. For `--focus require` it was the unsafe
+  // one, and it was a real hole: a `click --via os` whose SendInput was blocked
+  // (another window owns the pixel; the .ps1 sends nothing and says so) still
+  // wrote a user-equivalent focus move into the ledger, and a later
+  // `type --via os` read that entry as the hand that focused the field —
+  // masking whatever CDP act actually had. A declaration is not evidence that
+  // anything happened.
+  //
+  // So the attempt carries `movesFocus: false` and cannot supply focus to
+  // anyone, while the `.delivered` step — pushed only once the harness holds
+  // the confirmation named in its `why` — is the one `lastFocusMove` accepts.
+  // Both stay `userEquivalent: true`: an OS attempt is not a substitution
+  // whether or not it landed, and the ceiling reading was never the broken one.
   'os.sendInputMouse': {
     kind: 'act',
     userEquivalent: true,
+    movesFocus: false,
+    why: 'Win32 SendInput MOUSEEVENTF_LEFTDOWN/LEFTUP was ATTEMPTED. Declared before the call, so it may have delivered nothing — os-input.ps1 sends nothing at all when another process owns the pixel. Not evidence that focus moved; see os.sendInputMouse.delivered.',
+  },
+  'os.sendInputMouse.delivered': {
+    kind: 'act',
+    userEquivalent: true,
     movesFocus: true,
-    why: 'Win32 SendInput MOUSEEVENTF_LEFTDOWN/LEFTUP in the system input queue. A press focuses what it lands on.',
+    why: 'the page-side pointer recorder captured a pointer event after the SendInput press, which is the evidence os-input.ps1 itself names as the real one — SendInput returning 2 is not. A press focuses what it lands on.',
   },
   'os.sendInputKeyboard': {
     kind: 'act',
     userEquivalent: true,
+    movesFocus: false,
+    why: 'Win32 SendInput INPUT_KEYBOARD was ATTEMPTED. Declared before the call, so it may have delivered nothing — os-input.ps1 refuses to send when the foreground window is not this session. Not evidence that focus moved; see os.sendInputKeyboard.delivered.',
+  },
+  'os.sendInputKeyboard.delivered': {
+    kind: 'act',
+    userEquivalent: true,
     movesFocus: true,
-    why: 'Win32 SendInput INPUT_KEYBOARD in the system input queue. Tab and Shift+Tab move focus, so this is treated as a focus move whatever key it carried.',
+    why: 'os-input.ps1 reported the keystrokes accepted, not blocked, and its keyboard self-test observed its own injected keystroke first. Tab and Shift+Tab move focus, so this is treated as a focus move whatever key it carried.',
   },
   'os.postMessage': {
     kind: 'act',

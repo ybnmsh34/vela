@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * # vela-drive — launch Vela, click it, read what it shows
  *
@@ -8,6 +7,21 @@
  * list. Every command writes one JSON object to stdout and a one-line human
  * summary to stderr, so a script can pipe stdout into `jq` and a person reading
  * a transcript can still see what happened.
+ *
+ * ALWAYS `node <path>`, and there is no `#!` line any more. It was removed for
+ * one measured reason: with it present, `await import('./vela-drive.mjs')`
+ * inside the vitest project fails with `SyntaxError: Invalid or unexpected
+ * token` — vite's transform does not strip a shebang from a module it loads —
+ * so no test could execute a single line of this file, and everything the suite
+ * said about the CLI was a regex over its own source. A mutation used that: it
+ * deleted the whole `--focus require` gate and all 117 tests stayed green,
+ * twice. Nothing in this repo invokes the file as `./vela-drive.mjs`: the
+ * README names it 12 times, 11 of them are invocations and every one of the 11
+ * says `node`, and the 12th is a row in the file table. `git ls-files -s` gives
+ * this file mode 100644, so the shebang was never reachable as tracked in the
+ * first place — nothing could exec it. That is the trade, stated: a
+ * POSIX invocation nothing used, for a file a test can load. See `INTERNALS`
+ * and the entry-point guard at the bottom.
  *
  * ## The three things this file exists to get right
  *
@@ -60,6 +74,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -89,10 +104,14 @@ import { gradeInputProvenance } from './input-provenance.mjs';
 import {
   LEDGER_KEY,
   declareEntry,
+  focusRequireRefusal,
   lastFocusMove,
   markUndeclared,
+  notMyLedger,
   openEntry,
   priorTo,
+  startRun,
+  unknownRun,
 } from './run-ledger.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -150,13 +169,34 @@ function flagNumber(flags, name, fallback) {
 // session state
 // ---------------------------------------------------------------------------
 
-function readSession() {
-  if (!existsSync(SESSION_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(SESSION_FILE, 'utf8'));
-  } catch {
-    return null;
+/**
+ * The session file, plus WHY it is not there when it is not.
+ *
+ * The two are one function because they were two answers collapsed into one:
+ * `readSession` returned `null` for "no window has been brought up" and for
+ * "the file is there and is not JSON", and `runContext` — the one caller that
+ * grades on the difference — could not tell them apart. See `run-ledger.mjs`,
+ * "The rule, after the second time".
+ *
+ * @returns {{session: object|null, why: string|null}}
+ */
+function readSessionOutcome() {
+  if (!existsSync(SESSION_FILE)) {
+    return { session: null, why: `there is no session file at ${SESSION_FILE}` };
   }
+  try {
+    return { session: JSON.parse(readFileSync(SESSION_FILE, 'utf8')), why: null };
+  } catch (error) {
+    return {
+      session: null,
+      why: `the session file at ${SESSION_FILE} could not be read (${error.message})`,
+    };
+  }
+}
+
+/** The session, or `null`. Callers that grade on WHY use `readSessionOutcome`. */
+function readSession() {
+  return readSessionOutcome().session;
 }
 
 function writeSession(session) {
@@ -258,10 +298,39 @@ async function attach(session, command, steps = null) {
  * declared — `priorTo` reports it as `concurrent` and the grade caps on it.
  * Taking one snapshot at attach time would make that invisible, which is the
  * same mistake one frame smaller.
+ *
+ * The two ways that re-read can fail used to fall back to `session`, the copy
+ * held in memory since `attach`. That fallback was the same defect a third
+ * time: an in-memory copy is strictly MORE optimistic than the file it stands
+ * in for, because it cannot contain the concurrent entry the re-read exists to
+ * find. Both now refuse to answer instead. See `run-ledger.mjs`, "The rule,
+ * after the second time".
  */
 function runContext(session, seq) {
-  const fresh = readSession();
-  return priorTo(fresh !== null && fresh.pid === session.pid ? fresh : session, seq);
+  const fresh = readSessionOutcome();
+  if (fresh.session === null) {
+    return unknownRun(
+      null,
+      `${fresh.why}, so what this run did cannot be re-read at the moment it is being graded. ` +
+        'The copy this command has held since it attached is not a substitute: it cannot contain ' +
+        'a command that ran alongside this one, which is exactly what the re-read is for. Run ' +
+        '`down` then `up`.',
+    );
+  }
+  if (fresh.session.pid !== session.pid) {
+    return unknownRun(
+      null,
+      `the session file now records pid ${fresh.session.pid} and this command attached to pid ` +
+        `${session.pid}, so another window was brought up while this command was running and the ` +
+        'run this command belongs to can no longer be read. Run `down` then `up`.',
+    );
+  }
+  // ...and the ledger on disk must still be the one this command wrote into.
+  // The two checks above ask whether it can be READ; this asks whether it is
+  // MINE. See `notMyLedger`.
+  const notMine = notMyLedger(fresh.session, seq);
+  if (notMine !== null) return unknownRun(fresh.session[LEDGER_KEY]?.version ?? null, notMine);
+  return priorTo(fresh.session, seq);
 }
 
 /**
@@ -724,6 +793,14 @@ commands.up = async (flags) => {
   // act, so a run that has only had `up` in it starts clean — which is the
   // state the whole grade is relative to.
   const upSteps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.mountReport' }];
+  // The ONE call to `startRun` in this harness, and the only place permitted to
+  // claim a run has no history. It is true here and would be false anywhere
+  // else: this `session` object is the object literal that ends two statements
+  // above, built by `up` itself after it refused to proceed while any
+  // `vela.exe` was alive (`WRONG_PROCESS`, above). Every other command
+  // inherits a session it did not build, and for those `openEntry` — which
+  // cannot produce a run claiming to be empty — is the entry point.
+  startRun(session);
   const upSeq = openEntry(session, 'up');
   ATTACHED = { pid: session.pid, seq: upSeq, steps: upSteps };
   writeSession(session);
@@ -1066,6 +1143,14 @@ commands.click = async (flags) => {
   const after = await cdp.evaluate(`window.__velaHarness.digest(${literal(digestSelector)})`);
   const afterTarget = await cdp.evaluate(`window.__velaHarness.describeStored(${index})`);
   cdp.close();
+  // The SendInput press is only now known to have delivered anything, and only
+  // this second step can supply focus to a later `--focus require`. `hit.landed`
+  // is the page-side pointer recorder — the evidence os-input.ps1's own
+  // `caveat` field names as the real one, against its return value, which is 2
+  // whether or not the queue was drained. Withheld when the recorder saw
+  // nothing: the run then falls back to whatever moved focus before this click,
+  // which is the fail-closed direction.
+  if (via === 'os' && hit.landed === true) steps.push({ name: 'os.sendInputMouse.delivered' });
   const provenance = gradeInputProvenance({ delivery: via, steps, prior: runContext(session, seq) });
 
   const changed =
@@ -1233,44 +1318,28 @@ commands.type = async (flags) => {
     // command earlier. The session's run ledger is what can answer it.
     const prior = runContext(session, seq);
     focusOrigin = lastFocusMove(prior);
-    if (!prior.known) {
+    // Every clause of the decision lives in `focusRequireRefusal` in
+    // run-ledger.mjs, where a test can execute it. A mutation deleted this
+    // whole gate when it was inline here and all 117 tests stayed green, twice,
+    // because a CLI branch needing a live window and a real SendInput is
+    // reachable by no test in this suite. This `if` is the part that is still
+    // proven only by a source-text assertion.
+    const refusal = focusRequireRefusal(prior, focusOrigin);
+    if (refusal !== null) {
       cdp.close();
-      throw new HarnessError(
-        EXIT.FAILED,
-        'this session carries no run ledger this build can read, so the harness cannot establish ' +
-          `how the target came to have focus — only that it does, which is what let a CDP focus ` +
-          `from an earlier command pass as a hand. ${prior.unknownBecause} Or pass --focus cdp ` +
-          'and accept the dev-clicked ceiling.',
-        { query, match: result.matches[index], focusState, focusVia, prior },
-      );
-    }
-    if (prior.unaccounted.length > 0) {
-      cdp.close();
-      throw new HarnessError(
-        EXIT.FAILED,
-        `${prior.unaccounted.length} command(s) in this session cannot be accounted for ` +
-          `(${prior.unaccounted
-            .map((entry) => `${entry.command} #${entry.seq} (${entry.state})`)
-            .join(', ')}). Such a command may have focused this element over CDP, so ` +
-          'focus cannot be shown to have arrived any other way. Run `down` then `up`, or pass ' +
-          '--focus cdp and accept the dev-clicked ceiling.',
-        { query, match: result.matches[index], focusState, focusVia, unaccounted: prior.unaccounted },
-      );
-    }
-    if (focusOrigin !== null && focusOrigin.userEquivalent !== true) {
-      cdp.close();
-      throw new HarnessError(
-        EXIT.FAILED,
-        `the target has focus, but the last recorded step that could have moved it is ` +
-          `\`${focusOrigin.name}\` in \`${focusOrigin.command}\` #${focusOrigin.seq} — an act a ` +
-          `user has no route to (${focusOrigin.why}). ` +
-          'Focus being in the right place is not the same as focus having arrived the way a user ' +
-          'would put it there, and grading this run as OS input would make a claim about the ' +
-          'sequence that the sequence does not support. Click the field with `click --via os`, or ' +
-          'Tab to it with `key --via os --key Tab`, and type again. Pass --focus cdp to proceed ' +
-          'and be graded at dev-clicked.',
-        { query, match: result.matches[index], focusState, focusVia, focusOrigin },
-      );
+      throw new HarnessError(EXIT.FAILED, refusal.message, {
+        query,
+        match: result.matches[index],
+        focusState,
+        focusVia,
+        // A DISCLOSURE FIELD, like `clearMechanism`: no code in this harness
+        // reads it, and it is here so a person or a script sees WHICH clause
+        // refused without parsing the prose. Its vocabulary is closed
+        // (`FOCUS_REFUSALS`) and a test walks every value in it.
+        refusedBy: refusal.clause,
+        prior,
+        focusOrigin,
+      });
     }
   }
   // Read once, and let the same two consts drive both the behaviour and the
@@ -1320,6 +1389,11 @@ commands.type = async (flags) => {
         { query, value: text, os },
       );
     }
+    // Past the refusal above, so os-input.ps1 accepted every entry, was not
+    // blocked, and observed its own injected keystroke in the self-test first.
+    // Only this step can supply focus to a later `--focus require`; the
+    // attempt declared before the call cannot. See KNOWN_STEPS.
+    steps.push({ name: 'os.sendInputKeyboard.delivered' });
   } else if (cleared) {
     steps.push({ name: 'cdp.selectAll' }, { name: 'cdp.dispatchKeyEvent' });
     await cdp.evaluate(
@@ -1441,6 +1515,10 @@ commands.key = async (flags) => {
         os,
       });
     }
+    // Confirmation, and the reason `key --via os --key Tab` is a documented way
+    // to give a later `type --via os` the focus it requires: the attempt above
+    // cannot supply focus, this step can. See KNOWN_STEPS.
+    steps.push({ name: 'os.sendInputKeyboard.delivered' });
   } else {
     steps.push({ name: 'cdp.dispatchKeyEvent', detail: { repeat } });
     for (let i = 0; i < repeat; i++) await pressKey(cdp, spec, modifiers);
@@ -1787,4 +1865,37 @@ function finish(code) {
   backstop.unref();
 }
 
-await main();
+/**
+ * What a test may reach into. Nothing else in this file is exported.
+ *
+ * The reason this exists: a mutation deleted the whole `--focus require` gate
+ * and all 117 tests stayed green, twice, because this file ran `main()` at
+ * import and so no test could load it at all — every assertion about the CLI
+ * was a `readFileSync` and a regex over its own source. Grep proves a byte is
+ * present. It cannot prove a branch is taken.
+ *
+ * The entry-point guard below is what changed that, and these three are what it
+ * bought: `runContext` is the second member of the class this round closed and
+ * is now graded by execution rather than by reading it; `readSessionOutcome` is
+ * what it reads; `sessionForReport` is the function that keeps the ledger out of
+ * every payload. They are read by `run-ledger.test.mjs`, which points
+ * `VELA_HARNESS_ROOT` at a temp directory and imports this file dynamically.
+ *
+ * What is still NOT reachable this way, stated rather than implied: everything
+ * inside `commands.*`. Those need a live window, a CDP socket and a real
+ * `SendInput`, and no test in this suite has one.
+ */
+export const INTERNALS = { readSessionOutcome, runContext, sessionForReport };
+
+// `main()` runs when this file is the process entry point and not when it is
+// imported. `pnpm test:click-harness` spawns it as a subprocess for `help` to
+// prove this line still starts the CLI — because if this guard were wrong the
+// harness would silently do nothing, and until this round nothing in the suite
+// could have noticed.
+if (
+  process.argv[1] !== undefined &&
+  existsSync(process.argv[1]) &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
+  await main();
+}

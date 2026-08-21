@@ -37,6 +37,23 @@
  * session file so it lives exactly as long as the window does — `down` removes
  * the session and with it the ledger, because a new `up` is a new run.
  *
+ * The whole persisted shape, and nothing else:
+ *
+ *     runLedger: {
+ *       version: 2,
+ *       priorUnknownBecause: null | "<why this run cannot be established>",
+ *       entries: [ { seq: 1, command: "up", state: "declared", steps: ["cdp.bootstrap", ...] } ]
+ *     }
+ *
+ * Every field there is read: `version` by `openEntry` and `priorTo`,
+ * `priorUnknownBecause` by `priorTo`, `seq` by `findEntry` and the gap check,
+ * `command` and `seq` by the refusal text, `state` by the declared/unaccounted
+ * split, `steps` by `lastFocusMove` and by the substitution filters in
+ * input-provenance.mjs. An earlier draft also wrote a timestamp `at` into every
+ * entry; nothing read it, nothing printed it — `priorTo` dropped it and
+ * `sessionForReport` strips the whole ledger — and it was not labelled as a
+ * disclosure field either, so it is gone rather than decorated with a reader.
+ *
  * Each entry is opened by `attach` BEFORE the command does anything, and
  * declared at the end from the same `steps` array the command hands to
  * `gradeInputProvenance`. It is the same array, not a copy of it, so the ledger
@@ -62,22 +79,77 @@
  *   is deliberately the maximum — an arbitrary expression can focus, scroll,
  *   click or type, so it is graded as an act that moves focus whatever it
  *   actually contained.
- * - Steps are pushed before the CDP call they name, so a command that throws
- *   mid-way declares a step that may not have run. That over-declares, which
- *   caps more runs than strictly necessary and never fewer.
+ * - Steps are pushed before the call they name, so a command that throws
+ *   mid-way declares a step that may not have run. For the CEILING that
+ *   over-declares, which caps more runs than strictly necessary and never
+ *   fewer. For `--focus require` it ran BACKWARDS, and that was a real hole: a
+ *   `click --via os` whose SendInput was blocked delivered nothing, still wrote
+ *   a user-equivalent focus move into the ledger, and that entry then satisfied
+ *   a later `type --via os` while masking whatever CDP act had really put focus
+ *   there. A declaration is not evidence that anything happened, and only one
+ *   of the two readers may treat it as one. So the two steps that can SUPPLY
+ *   focus are split in two: `os.sendInputMouse` and `os.sendInputKeyboard` are
+ *   the ATTEMPT and carry `movesFocus: false`, because an attempt may have
+ *   moved nothing; `os.sendInputMouse.delivered` and
+ *   `os.sendInputKeyboard.delivered` are pushed only after the harness holds
+ *   confirmation, and they are the only steps `lastFocusMove` will accept.
+ *   Both halves stay `userEquivalent: true`, because an OS attempt is not a
+ *   substitution whether or not it landed — the ceiling reading was never the
+ *   broken one. Losing the confirmation step is fail-closed: `lastFocusMove`
+ *   walks back to whatever moved focus before it, and that refuses.
  * - Two vela-drive processes running against one session read-modify-write the
  *   same file and can lose an entry. There is no lock. What there IS: the run
  *   is re-read from disk at the moment it is used rather than snapshotted at
  *   attach, so an entry with a higher sequence number than mine shows up as
  *   `concurrent` and caps me. That covers the case where the other process
- *   wrote its entry; it does not cover the case where the two writes raced and
- *   one was lost.
+ *   wrote its entry. The case where the two writes raced and one was lost is
+ *   covered in ONE direction only: if the lost entry was MINE, `notMyLedger`
+ *   catches it, because a ledger missing the entry this command just wrote is
+ *   not the ledger this command is part of. A lost write belonging to the OTHER
+ *   process is still invisible from here, and is not claimed to be otherwise.
  * - Sequence numbers are consecutive by construction, so an entry CUT OUT OF
  *   THE MIDDLE of the ledger is detectable and is reported as an unreadable
  *   ledger. An entry cut off the END is not detectable and is not claimed to be.
  *   Nothing here defends against editing the session file generally; the
  *   numbering catches the one edit that would turn a capped run into a clean one
  *   without changing anything else.
+ *
+ * ## The rule, after the second time
+ *
+ * Two rounds running, the defect found here was the same one in a different
+ * coat: a frame narrower than the claim quoted out of it. The second one lived
+ * in this file's own initialisation. `openEntry` replaced a ledger it could not
+ * read with an empty one, so both of `priorTo`'s fail-closed branches were
+ * unreachable from the CLI, and a run whose entire history was unrecorded
+ * graded `os-input-unsubstituted` — the strongest thing this harness says —
+ * while printing "the same sequence would drive an app with no CDP attached".
+ * Naming the instance was not enough last time, so here is the class and the
+ * rule that closes it:
+ *
+ *   **Where the harness cannot read the evidence it needs, that failure is
+ *   part of the grade. Nothing may substitute a fresh object, a default, or an
+ *   older snapshot for evidence it failed to read.**
+ *
+ * Four members of that class existed. Three were handed to me and the fourth I
+ * found by attacking the fix. All four are closed:
+ *
+ * 1. `openEntry` resetting an absent or wrong-version ledger. It now stamps
+ *    `priorUnknownBecause` into the ledger it creates and never clears one, so
+ *    `priorTo` reports every later command in that session as unknown. The
+ *    reset became the evidence instead of destroying it.
+ * 2. `runContext` in vela-drive.mjs falling back to the attach-time in-memory
+ *    session when the file on disk could not be parsed or had been replaced by
+ *    a different session. That fallback was strictly more optimistic than the
+ *    file it replaced — an in-memory copy cannot contain a concurrent entry.
+ *    It returns `unknownRun` now.
+ * 3. A step declared before its effect, read as evidence the effect happened —
+ *    the last bullet above.
+ * 4. Nothing asked whether the ledger being graded was the one this command
+ *    wrote into. A lost write or a transplanted session file leaves a ledger
+ *    that passes every check above and is somebody else's. `notMyLedger`.
+ *
+ * `startRun` is the only thing in this harness allowed to assert that a run has
+ * no history. `up` calls it, nothing else does, and a test pins that.
  *
  * ## The evasion I expect next, and what would be needed for it
  *
@@ -108,8 +180,13 @@ import { KNOWN_STEPS } from './input-provenance.mjs';
  * Bumped when the entry shape changes. A ledger written under a different
  * version is treated as UNKNOWN rather than parsed optimistically, because a
  * misread ledger grades runs clean and that is the failure worth avoiding.
+ *
+ * 1 -> 2 because version 1 entries carried a timestamp and no ledger carried
+ * `priorUnknownBecause`. A version-1 ledger is exactly the case this round's
+ * evasion used, so it must not be readable by this build: a session left open
+ * across the upgrade is unknown, not empty.
  */
-export const LEDGER_VERSION = 1;
+export const LEDGER_VERSION = 2;
 
 /** The session field the ledger lives in. */
 export const LEDGER_KEY = 'runLedger';
@@ -125,18 +202,71 @@ export function emptyRun() {
 }
 
 /**
+ * The shape `priorTo` returns when it will not answer. Exported because
+ * `runContext` in vela-drive.mjs has its own two ways of failing to read the
+ * run — an unparseable session file and a session file that now belongs to a
+ * different window — and a second hand-rolled copy of this shape is exactly
+ * how the two ends of a guard drift apart.
+ */
+export function unknownRun(version, why) {
+  return { known: false, version, entries: [], unaccounted: [], unknownBecause: why };
+}
+
+/**
+ * Starts a run with no history. THE ONLY thing in this harness permitted to
+ * make that claim, and `up` is its only caller — pinned by a test, because the
+ * whole grade is relative to it.
+ *
+ * It is correct there and would be wrong anywhere else: `up` constructs the
+ * session object itself, having already refused to run while any `vela.exe` is
+ * alive, so there is no earlier command it could be forgetting. Every other
+ * command inherits a session it did not build, and for those `openEntry` is
+ * the entry point — which cannot produce a run that claims to be empty.
+ */
+export function startRun(session) {
+  session[LEDGER_KEY] = { version: LEDGER_VERSION, entries: [], priorUnknownBecause: null };
+}
+
+/**
  * Opens an entry for a command about to run. Mutates `session`; the caller
  * persists it. Returns the sequence number, which is how the entry is found
  * again when the command finishes.
+ *
+ * When there is no ledger it can read it creates one — it has to, or the
+ * command it is opening an entry for would itself go unrecorded — but the new
+ * ledger CARRIES THE REASON it had to. That sentence is the whole fix for this
+ * round's evasion. The old version replaced an unreadable ledger with an empty
+ * one and said nothing, which destroyed the evidence `priorTo` exists to
+ * report and replaced it with a positive claim that the run was empty; both of
+ * `priorTo`'s fail-closed branches were therefore unreachable from the CLI.
+ *
+ * `priorUnknownBecause` is never cleared here. A run does not become
+ * accountable because more accountable commands ran after the gap.
  */
-export function openEntry(session, command, at = new Date().toISOString()) {
+export function openEntry(session, command) {
   const ledger = session[LEDGER_KEY];
-  if (ledger === undefined || ledger === null || ledger.version !== LEDGER_VERSION) {
-    session[LEDGER_KEY] = { version: LEDGER_VERSION, entries: [] };
+  if (ledger === undefined || ledger === null) {
+    session[LEDGER_KEY] = {
+      version: LEDGER_VERSION,
+      priorUnknownBecause:
+        'the session carried no run ledger when this command attached, so what earlier commands ' +
+        'did is not recorded. Run `down` then `up` to start a run this build can grade.',
+      entries: [],
+    };
+  } else if (ledger.version !== LEDGER_VERSION) {
+    session[LEDGER_KEY] = {
+      version: LEDGER_VERSION,
+      priorUnknownBecause:
+        `the session's run ledger was version ${ledger.version ?? 'unknown'} when this command ` +
+        `attached and this build writes version ${LEDGER_VERSION}. A ledger read optimistically ` +
+        'under the wrong shape grades runs clean, which is the failure worth avoiding. Run ' +
+        '`down` then `up`.',
+      entries: [],
+    };
   }
   const entries = session[LEDGER_KEY].entries;
   const seq = entries.length === 0 ? 1 : entries[entries.length - 1].seq + 1;
-  entries.push({ seq, command, at, state: 'open' });
+  entries.push({ seq, command, state: 'open' });
   return seq;
 }
 
@@ -171,27 +301,29 @@ function findEntry(session, seq) {
 /**
  * Everything the run did before `seq`.
  *
- * `known: false` means there is no ledger to read — a session written before
- * this file existed, or under another version. It is reported rather than
- * silently treated as an empty run: "nothing was recorded" and "nothing
- * happened" are different answers and only one of them supports a clean grade.
+ * `known: false` means the run cannot be established — no ledger, a ledger at
+ * another version, a ledger whose sequence numbers have a hole cut in them, or
+ * a ledger `openEntry` had to create because it could not read what was there.
+ * "Nothing was recorded" and "nothing happened" are different answers and only
+ * one of them supports a clean grade.
+ *
+ * The fourth of those is the one that makes the first two reachable at all.
+ * `attach` opens this command's entry BEFORE anything reads the run, so by the
+ * time this function runs, the ledger is always current-version and always
+ * exists — the first two branches are dead from the CLI and live only for
+ * direct callers. What carries the first two conditions across `openEntry` is
+ * `priorUnknownBecause`, which it writes and nothing clears.
  *
  * `unaccounted` lists prior entries that were opened and never declared. They
  * are kept apart from `entries` because they are not steps — they are the
  * absence of steps, and the grade has to say so rather than average them in.
  *
- * @returns {{known: boolean, version: number|null, entries: Array<{seq:number,
- *   command:string, steps:string[]}>, unaccounted: Array<{seq:number, command:string,
- *   state:string}>}}
+ * @returns {{known: boolean, version: number|null, unknownBecause: string|null,
+ *   entries: Array<{seq:number, command:string, steps:string[]}>,
+ *   unaccounted: Array<{seq:number, command:string, state:string}>}}
  */
 export function priorTo(session, seq) {
-  const unknown = (version, why) => ({
-    known: false,
-    version,
-    entries: [],
-    unaccounted: [],
-    unknownBecause: why,
-  });
+  const unknown = unknownRun;
   const ledger = session?.[LEDGER_KEY];
   if (ledger === undefined || ledger === null) {
     return unknown(
@@ -206,6 +338,21 @@ export function priorTo(session, seq) {
       `the session's run ledger is version ${ledger.version ?? 'unknown'} and this build reads ` +
         `version ${LEDGER_VERSION}. A ledger read optimistically under the wrong shape grades ` +
         'runs clean, which is the failure worth avoiding. Run `down` then `up`.',
+    );
+  }
+  // The branch this round's evasion needed and did not have. `openEntry`
+  // creates a ledger when it cannot read one, and stamps WHY — so a run whose
+  // history was never recorded arrives here as a well-formed, current-version,
+  // possibly long ledger that must still be refused. Strict `!== null`: a
+  // version-2 ledger with the field missing altogether has been edited or
+  // truncated, and "it did not say" is not "it said no".
+  if (ledger.priorUnknownBecause !== null) {
+    return unknown(
+      ledger.version,
+      typeof ledger.priorUnknownBecause === 'string' && ledger.priorUnknownBecause.length > 0
+        ? ledger.priorUnknownBecause
+        : 'the run ledger does not record whether the run it continues could be read, and a ' +
+          'ledger that will not say is not a ledger that said no. Run `down` then `up`.',
     );
   }
   const all = ledger.entries ?? [];
@@ -291,5 +438,138 @@ export function lastFocusMove(prior) {
       }
     }
   }
+  return null;
+}
+
+/**
+ * Whether `--focus require` may proceed, decided over the RUN. Returns the
+ * refusal — a machine-readable `clause` and the sentence the operator sees — or
+ * `null` when there is nothing to refuse.
+ *
+ * This lives here, and not inline in `commands.type` where it used to, because
+ * of what a mutation found: the entire `--focus require` gate — the refusal the
+ * README devotes its longest paragraph to — could be disabled and all 117 tests
+ * stayed green, twice. Nothing covered it, not even a byte-presence assertion.
+ * It could not be covered where it was: `vela-drive.mjs` is a CLI, and reaching
+ * that branch means a live window, a CDP socket and a real SendInput.
+ *
+ * Pulled out into a pure function of (run, focus origin), every clause is
+ * executable and every clause has a test that reddens when it alone is
+ * disabled. WHAT IS STILL NOT COVERED, stated rather than implied: that
+ * `commands.type` calls this at all, and throws on what it returns. That is one
+ * `if`, and it is pinned by a source-text assertion in run-ledger.test.mjs,
+ * which proves a byte is present and not that it runs.
+ *
+ * The DOM half of the gate — `focusStateOf(index).storedIsActive`, "is the
+ * target focused at all" — stays in `commands.type`: it is a live read of a
+ * page, there is nothing pure about it, and it was never the half that was
+ * wrong. This is the half that answers WHO PUT FOCUS THERE.
+ *
+ * @param {{known:boolean, unknownBecause:string|null, unaccounted:Array<{seq:number,
+ *   command:string, state:string}>}} prior  from `priorTo`, via `runContext`.
+ * @param {{name:string, command:string, seq:number, userEquivalent:boolean,
+ *   why:string}|null} focusOrigin  from `lastFocusMove(prior)`.
+ * @returns {{clause:string, message:string}|null}
+ */
+/**
+ * Whether the ledger being graded is still the one this command wrote into.
+ *
+ * Found by attacking my own fix rather than by being shown it. Everything above
+ * asks whether the ledger can be read; nothing asked whether it is MINE.
+ * `attach` opens an entry and writes the file; `runContext` re-reads the file a
+ * moment later and grades over it. Between those two the file can stop
+ * containing the entry that was just written, and two ways of that are real
+ * rather than theoretical:
+ *
+ * - The lost write this file's bounds already admit. Two `vela-drive`
+ *   processes read-modify-write the session with no lock, and if the entry that
+ *   loses the race is MINE, the run I grade over is one my own command is
+ *   absent from — so the concurrent-entry detection that exists to cap me
+ *   cannot fire, because the seq it compares against is not there.
+ * - A ledger transplanted from elsewhere: overwrite session.json with a clean
+ *   ledger from another run, and every check above passes, because the
+ *   substituted ledger really is well-formed, current-version and stamped
+ *   `priorUnknownBecause: null`.
+ *
+ * Both leave the same fingerprint: entry `seq` is not there, or is not `open`.
+ * It cannot be anything else at this moment — `main`'s `finally` is what seals
+ * it, and that runs after every call to `runContext`.
+ *
+ * What this does NOT close, stated: editing the session file in place while
+ * leaving my entry alone. `priorUnknownBecause: null` typed by hand into a
+ * ledger that has all the right entries is indistinguishable from a run `up`
+ * started, and nothing here defends against that. The sequence numbering
+ * catches a middle-cut, this catches a substitution, and neither catches an
+ * edit that keeps the shape.
+ *
+ * @returns {string|null} why the ledger is not this command's, or `null`.
+ */
+export function notMyLedger(session, seq) {
+  const entries = session?.[LEDGER_KEY]?.entries ?? [];
+  const own = entries.find((entry) => entry.seq === seq);
+  if (own === undefined) {
+    return (
+      `the run ledger no longer contains entry #${seq}, which this command wrote into it before ` +
+      'it touched the page. The ledger being graded is therefore not the one this command is ' +
+      'part of — a concurrent `vela-drive` lost the write, or the session file was replaced. ' +
+      'Run `down` then `up`.'
+    );
+  }
+  if (own.state !== 'open') {
+    return (
+      `the run ledger records entry #${seq} — this command's own — as \`${own.state}\`, and this ` +
+      'command has not finished, so something else declared it. What the ledger says about this ' +
+      'run is not what this run did. Run `down` then `up`.'
+    );
+  }
+  return null;
+}
+
+export const FOCUS_REFUSALS = {
+  RUN_NOT_ESTABLISHED: 'run-not-established',
+  COMMANDS_NOT_ACCOUNTED_FOR: 'commands-not-accounted-for',
+  FOCUS_NOT_USER_EQUIVALENT: 'focus-not-user-equivalent',
+};
+
+export function focusRequireRefusal(prior, focusOrigin) {
+  if (prior.known !== true) {
+    return {
+      clause: FOCUS_REFUSALS.RUN_NOT_ESTABLISHED,
+      message:
+        'this session carries no run ledger this build can read, so the harness cannot establish ' +
+        'how the target came to have focus — only that it does, which is what let a CDP focus ' +
+        `from an earlier command pass as a hand. ${prior.unknownBecause} Or pass --focus cdp ` +
+        'and accept the dev-clicked ceiling.',
+    };
+  }
+  if (prior.unaccounted.length > 0) {
+    return {
+      clause: FOCUS_REFUSALS.COMMANDS_NOT_ACCOUNTED_FOR,
+      message:
+        `${prior.unaccounted.length} command(s) in this session cannot be accounted for ` +
+        `(${prior.unaccounted
+          .map((entry) => `${entry.command} #${entry.seq} (${entry.state})`)
+          .join(', ')}). Such a command may have focused this element over CDP, so ` +
+        'focus cannot be shown to have arrived any other way. Run `down` then `up`, or pass ' +
+        '--focus cdp and accept the dev-clicked ceiling.',
+    };
+  }
+  if (focusOrigin !== null && focusOrigin.userEquivalent !== true) {
+    return {
+      clause: FOCUS_REFUSALS.FOCUS_NOT_USER_EQUIVALENT,
+      message:
+        'the target has focus, but the last recorded step that could have moved it is ' +
+        `\`${focusOrigin.name}\` in \`${focusOrigin.command}\` #${focusOrigin.seq} — an act a ` +
+        `user has no route to (${focusOrigin.why}). ` +
+        'Focus being in the right place is not the same as focus having arrived the way a user ' +
+        'would put it there, and grading this run as OS input would make a claim about the ' +
+        'sequence that the sequence does not support. Click the field with `click --via os`, or ' +
+        'Tab to it with `key --via os --key Tab`, and type again. Pass --focus cdp to proceed ' +
+        'and be graded at dev-clicked.',
+    };
+  }
+  // `focusOrigin === null` reaches here and is deliberate: a run that has never
+  // moved focus leaves it where the application itself put it, which is what a
+  // user finds on launch too.
   return null;
 }

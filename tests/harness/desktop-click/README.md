@@ -377,8 +377,22 @@ inside the session file, and the grade is composed over the whole session:
 - A run that cannot be **established** grades `dev-clicked` with
   `reason: "earlier-commands-not-accounted-for"`, which is a different answer
   from "CDP was caught". That happens when a command attached and never
-  declared what it did (killed part-way), or when the session carries no ledger
+  declared what it did (killed part-way), when the session's ledger has an entry
+  cut out of the middle of it, when the session file cannot be re-read at the
+  moment the grade is composed, when the ledger being graded no longer contains
+  the entry this command opened in it, or when the session carries no ledger
   this build can read. Silence is not innocence.
+
+  **That last one was false when this paragraph first said it**, and it is worth
+  saying how. `attach` opens the command's ledger entry before anything reads
+  the ledger, and `openEntry` used to replace an absent or wrong-version ledger
+  with an empty one and say nothing — so a live window whose session file
+  predated the ledger graded `os-input-unsubstituted`, the strongest thing this
+  harness issues, on a run whose earlier commands were entirely unrecorded. The
+  guard was unreachable from the CLI and the sentence describing it was quoted
+  anyway. `openEntry` now stamps `priorUnknownBecause` into the ledger it has to
+  create, nothing ever clears it, and `run-ledger.mjs` states the rule the three
+  members of that class are closed under.
 - `eval` is now graded, at the maximum an arbitrary expression could be: an act
   that moved focus. It used to be a CDP channel that entered no grade at all.
 - `status` prints the run so far, including `focusOrigin`.
@@ -401,12 +415,23 @@ Two consequences you will meet:
   the last step this session recorded that could have moved focus was a CDP act
   — naming that step and the command it was in. What it enforces, exactly: the
   target is `document.activeElement`, AND `lastFocusMove` over the session's
-  ledger is either a step `KNOWN_STEPS` marks `userEquivalent` — one a user
-  could have produced themselves, which today means `os.sendInputMouse`,
-  `os.sendInputKeyboard` — or nothing at all (nothing meaning the run has never
-  moved focus, so it is where the application itself put it, which is what a
-  user finds on launch). Note what that excludes: `os.postMessage` is spelled
-  `os.` and is **not** user-equivalent, because nobody posts a
+  ledger is either a step `KNOWN_STEPS` marks BOTH `movesFocus` and
+  `userEquivalent` — one a user could have produced themselves, which today
+  means exactly `os.sendInputMouse.delivered` and
+  `os.sendInputKeyboard.delivered` — or nothing at all (nothing meaning the run
+  has never moved focus, so it is where the application itself put it, which is
+  what a user finds on launch). Note what that excludes. `os.sendInputMouse`
+  and `os.sendInputKeyboard` **without** the `.delivered` suffix are the
+  attempt: they are declared before the SendInput call, so they are not evidence
+  that anything arrived, and they carry `movesFocus: false`. A `click --via os`
+  that another window's ownership of the pixel turned into a no-op used to write
+  a user-equivalent focus move into the ledger, satisfy this gate, and mask the
+  CDP act that had really focused the field. The confirmation is pushed only
+  once the page-side pointer recorder has seen the press (mouse), or
+  `os-input.ps1` has reported the keystrokes accepted and unblocked after
+  observing its own self-test keystroke (keyboard). Also excluded:
+  `os.postMessage` is spelled `os.` and is **not** user-equivalent, because
+  nobody posts a
   `WM_LBUTTONDOWN` to a child window they looked up by handle — so a
   `click --via message` cannot supply the focus either. That distinction was a
   hole in the first draft of this fix, found by attacking it. The gate cannot

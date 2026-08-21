@@ -34,10 +34,42 @@
  *
  * So the load-bearing assertion here is not "the pane renders". It is
  * `a tool the catalogue withheld is on screen saying why` — a fact about one
- * specific tool that **only `toolCatalogueOf` decides**. Nothing in the pane
- * re-runs `isSchemaObject`; the withheld marking is read back off the catalogue
- * that function produced. If the projection is not running on the real response,
- * that test cannot pass by accident.
+ * specific tool, decided by the rule `toolCatalogueOf` applies and by nothing
+ * else in `src/features/mcp/`. That assertion cannot be satisfied by a pane
+ * that merely *imports* the repository.
+ *
+ * ## What that assertion does not say, and the guard that says it
+ *
+ * It used to be written here as "if the projection is not running on the real
+ * response, that test cannot pass by accident", and that sentence overstated
+ * it. **Measured, twice:** replace `toolCatalogueOf(answer)` in
+ * `src/features/mcp/use-mcp.ts` with a private inline copy of the same rule and
+ * all eight of the on-screen tests in this file stay green — because a copy of
+ * a rule draws the same screen as the rule. What they pin is the *rule*.
+ * Which function is applying it is a different question, and the reason it
+ * matters is `src/data/mcp-repository.ts`'s own argument: two callers deciding
+ * separately which tools are offerable is two answers to what a turn may use,
+ * and the second one drifts silently the first time either is edited.
+ *
+ * So that question is asked separately, and structurally, by
+ * `the pane's projections are the repository's` below. It reads the hook's
+ * source and insists on two things: the runtime import naming both projections,
+ * and a call site for each of them.
+ *
+ * **The call site is asserted because the compiler turned out not to.** The
+ * first draft of this paragraph said an import the hook stops calling fails
+ * `pnpm typecheck`, since `tsconfig.app.json` sets `noUnusedLocals`. Measured
+ * before it was written down, and it is only half true: with the inline copy in
+ * place and the import left behind, `pnpm typecheck` exits **0**. Delete the
+ * two `{@link toolCatalogueOf}` mentions from the hook's own doc comments and
+ * the same tree fails with `TS6133: 'toolCatalogueOf' is declared but its value
+ * is never read` — measured on `toolCatalogueOf`. TypeScript resolves a
+ * `{@link}` target and counts it as a use, so a module that documents a symbol
+ * it has stopped calling is exactly the module `noUnusedLocals` cannot see, and
+ * `use-mcp.ts` `{@link}`s both of these.
+ * Hence the call-site assertion, over a copy of the source with its comments
+ * removed: a mention is not a call, and here that distinction is the whole
+ * difference between a guard and a comfort.
  *
  * **Honesty (conventions §10):** VERIFIED-BY-FAKE, and only that.
  * `BrowserAdapter` answers `mcp_list_tools` from a canned response; a browser
@@ -48,6 +80,9 @@
  * Whether a human clicking the real window sees this is not established by this
  * file and is not claimed anywhere in it.
  */
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -200,7 +235,9 @@ describe('a user can see what their MCP servers offer', () => {
     // It is also the only assertion in this file that cannot be satisfied by a
     // pane that merely *imports* the repository. The withheld marking is read
     // back off the catalogue; nothing in `src/features/mcp/` re-runs
-    // `isSchemaObject`.
+    // `isSchemaObject`. What it does not pin is *which* function applied the
+    // rule — see the header, and the structural test at the bottom of this file
+    // that asks that question instead.
     const user = driver();
     render(<App adapter={new BrowserAdapter({ mcp: FIXTURE })} />);
 
@@ -294,5 +331,104 @@ describe('a user can see what their MCP servers offer', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement, 'focus was dropped to <body>').not.toBe(document.body);
     expect(screen.getByRole('button', { name: 'MCP servers' })).toHaveFocus();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The bindings one module imports from another at **runtime**, as written.
+ *
+ * A type-only import does not match: `import type { … }` starts with the word
+ * `type`, and `type`-prefixed bindings inside a value clause are dropped. Both
+ * vanish at build time, so neither is evidence that one module calls another —
+ * which is the whole question this reader exists to answer.
+ *
+ * Deliberately not a module-graph walk. `src/runtime/reachable.test.ts` already
+ * owns that, and what is wanted here is narrower and sharper: not "is the
+ * repository on the graph" but "does this one hook name these two functions".
+ */
+function runtimeBindingsFrom(source: string, specifier: string): readonly string[] {
+  // A literal rather than a `new RegExp` over the specifier: the specifier is
+  // compared as a string, so nothing in it has to be escaped and no character
+  // in a module path can quietly become a metacharacter.
+  const statements = /(?:^|\n)import\s*\{([^}]*)\}\s*from\s*'([^']+)';/g;
+  for (const statement of source.matchAll(statements)) {
+    if (statement[2] !== specifier) continue;
+    return (statement[1] ?? '')
+      .split(',')
+      .map((binding) => binding.trim())
+      .filter((binding) => binding.length > 0 && !binding.startsWith('type '));
+  }
+  throw new Error(`no runtime import from '${specifier}'`);
+}
+
+/**
+ * The source with its comments removed, so that a mention is not read as a call.
+ *
+ * `use-mcp.ts` writes `{@link toolCatalogueOf}` twice in its doc comments —
+ * once in the module header, once on `McpSurvey.offered` — which is the reason
+ * this exists and, measured, the reason `noUnusedLocals` does not catch a hook
+ * that imports the projection and stops calling it. Block
+ * comments go whole; line comments only when the line is nothing else, which
+ * leaves a `//` inside a string literal alone.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
+}
+
+describe("the pane's projections are the repository's", () => {
+  const HOOK_PATH = join(process.cwd(), 'src', 'features', 'mcp', 'use-mcp.ts');
+  const HOOK = readFileSync(HOOK_PATH, 'utf8');
+
+  it('takes both projections from the module that defines them', () => {
+    // The half the on-screen assertions cannot make. `toolCatalogueOf` decides
+    // which tools a turn may be offered and `unavailableServersOf` decides which
+    // servers get a sentence; a second copy of either rule inside the feature is
+    // a second answer that drifts the first time one of them is edited, and the
+    // screen looks identical on the day it is written. See the header for what
+    // was measured and what the other half of this pair is.
+    const bindings = runtimeBindingsFrom(HOOK, '@/data/mcp-repository');
+    expect(bindings).toContain('toolCatalogueOf');
+    expect(bindings).toContain('unavailableServersOf');
+
+    // Control: this list is really the hook's import clause. `createMcpRepository`
+    // is in the same clause and is how the command gets called at all, so a
+    // reader that answered an empty list would fail here rather than reporting
+    // three satisfied `toContain`s about nothing.
+    expect(bindings).toContain('createMcpRepository');
+    // And the `type` filter runs: the same clause carries two type-only bindings.
+    expect(bindings).not.toContain('type McpRepository');
+  });
+
+  it('calls each of them, rather than importing and then not', () => {
+    // The half `noUnusedLocals` cannot supply. See the header: the hook's own
+    // `{@link}` mentions count as uses to TypeScript, so an import left behind
+    // beside a private copy of the rule leaves `pnpm typecheck` at exit 0.
+    // Measured, and measured again with those two mentions deleted, which is
+    // when TS6133 finally appears.
+    const code = withoutComments(HOOK);
+    expect(code).toContain('toolCatalogueOf(');
+    expect(code).toContain('unavailableServersOf(');
+
+    // The controls that make the two lines above mean something. The mentions
+    // really are in the file, and the stripper really did remove them — without
+    // both, `toContain` would be satisfied by the header prose alone and this
+    // test would pass over a hook that calls neither function.
+    expect(HOOK).toContain('{@link toolCatalogueOf}');
+    expect(code).not.toContain('@link');
+  });
+
+  it('does not accept an import that vanishes at build time', () => {
+    // Both controls on the reader itself. A missing import throws rather than
+    // answering an empty list, and a type-only import — which compiles away and
+    // proves nothing about who calls what — is not a runtime import.
+    expect(() => runtimeBindingsFrom(HOOK, '@/data/no-such-module')).toThrow();
+    expect(() =>
+      runtimeBindingsFrom(
+        "import type { toolCatalogueOf } from '@/data/mcp-repository';",
+        '@/data/mcp-repository',
+      ),
+    ).toThrow();
   });
 });

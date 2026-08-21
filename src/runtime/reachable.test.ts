@@ -2210,12 +2210,17 @@ describe('the renderer is wired into the product', () => {
     // NOT_SHIPPED a hit means a test helper reached the bundle. For
     // AWAITING_A_SURFACE it means somebody did the work — good news, and the
     // entry has to go, because a debt list nobody is made to update is a comment.
-    for (const [path] of NOT_SHIPPED) {
+    // The reason is interpolated, exactly as AWAITING_A_SURFACE's is. This loop
+    // discarded it — `for (const [path] of NOT_SHIPPED)` — so the one assertion
+    // that fires when a test double reaches the bundle told the operator which
+    // module and not why it was ever exempt, which is the half that says whether
+    // the import or the exemption is the mistake.
+    for (const [path, reason] of NOT_SHIPPED) {
       expect(canonical(join(REPO_ROOT, path)), `${path} moved; fix NOT_SHIPPED`).not.toBeNull();
       expect(
         REACHABLE.has(join(REPO_ROOT, path)),
         `${path} is exempt because nothing ships it. It is now on the graph: ` +
-          'either that is the bug, or the exemption should go.',
+          `either that is the bug, or the exemption should go. It is exempt as — ${reason}`,
       ).toBe(false);
     }
     for (const [path, waitingFor] of AWAITING_A_SURFACE) {

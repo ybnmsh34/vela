@@ -122,7 +122,10 @@ const NO_MEMORY: readonly MemoryEntry[] = [];
  *
  * Never sent to a model: `historyMessages` skips a settled assistant entry whose
  * `answer` is `''`, so a restored empty reply is a thing the transcript shows
- * and the next request does not carry.
+ * and the next request does not carry. That is asserted rather than stated —
+ * *shows a restored empty reply and does not send it to the model* in
+ * `use-conversation-record.test.tsx` reads the messages off the request the
+ * hook hands the chat repository.
  */
 const ENDED_WITH_NOTHING: readonly ContentPartInput[] = [{ kind: 'text', text: '' }];
 

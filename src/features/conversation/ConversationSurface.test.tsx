@@ -1183,14 +1183,32 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
  * name.
  */
 describe('the conversation surface: no two controls in a transcript share a name', () => {
-  function storedMessage(id: string, role: 'user' | 'assistant', text: string): StoredMessage {
+  function storedMessage(
+    id: string,
+    role: 'user' | 'assistant',
+    text: string,
+    /**
+     * The reply's reasoning, when the case under test needs the turn's other
+     * model-authored channel. `partsOfTurn` writes it as a `reasoning` part and
+     * `turnFromParts` reads it back into `TurnState.reasoning`, so a row built
+     * this way restores as a turn with both channels — which is the shape a
+     * reopened conversation has and the shape a copy-control collision needs.
+     */
+    reasoning: string | null = null,
+  ): StoredMessage {
     return {
       id,
       conversationId: 'conv_1',
       seq: 0,
       role,
       status: role === 'user' ? 'complete' : 'failed',
-      parts: [{ kind: 'text', text }],
+      parts:
+        reasoning === null
+          ? [{ kind: 'text', text }]
+          : [
+              { kind: 'reasoning', text: reasoning },
+              { kind: 'text', text },
+            ],
       providerId: 'workstation',
       modelId: 'local-model',
       answeredByProviderId: null,
@@ -1393,6 +1411,54 @@ describe('the conversation surface: no two controls in a transcript share a name
 
     // WCAG 2.5.3 again: the visible text is still the word the name starts with.
     for (const button of controls) expect(button).toHaveTextContent('Copy');
+  });
+
+  it('keeps the two channels of one reply apart when there are several replies', async () => {
+    // THE MULTI-REPLY HALF OF THE CHANNEL FIX, WHICH NOTHING HELD.
+    //
+    // `MessageTurn.tsx` names the two documents of a turn with two phrases:
+    // `answerContext` is 'the reply' or `reply N of M`, and `reasoningContext`
+    // is 'the reasoning' or `the reasoning behind reply N of M`. The
+    // single-reply pair is asserted below, in *keeps a fence in the reasoning
+    // apart from the same fence in the answer*. The multi-reply pair was
+    // asserted nowhere: the round-6 measurer changed `reasoningContext`'s
+    // multi-reply branch to `reply${position}` — byte-identical to
+    // `answerContext` — and the whole renderer suite stayed green, 121 files /
+    // 2443 tests, exit 0, while a two-reply transcript fencing `ts` in both
+    // channels of its first reply drew two controls both called
+    // 'Copy ts code — in reply 1 of 2'.
+    //
+    // That is the exact defect the copy-control work exists to close, one
+    // branch over from where it was closed, so the branch is asserted here.
+    // Re-measured with this test in place: the same change now fails the whole
+    // suite here and nowhere else — 1 failed | 2450 passed at this commit, with
+    // the failure message quoting both names.
+    const fence = (name: string) => `\`\`\`ts\n${name}\n\`\`\`\n`;
+    show([
+      storedMessage('m0', 'user', 'work through it and then answer'),
+      storedMessage('m1', 'assistant', fence('const answered = 1;'), fence('const considered = 1;')),
+      storedMessage('m2', 'assistant', 'and that is the answer'),
+    ]);
+
+    // The reasoning settles collapsed, and a collapsed block is `hidden`, so
+    // its control is out of the accessibility tree until a reader opens it —
+    // which is when the collision would be heard. Both halves are asserted.
+    expect(screen.queryAllByRole('button', { name: /^Copy ts code/u })).toHaveLength(1);
+    await userEvent.setup().click(screen.getByRole('button', { name: /Thought process/ }));
+
+    const names = screen
+      .getAllByRole('button', { name: /^Copy ts code/u })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `two controls, names ${JSON.stringify(names)}`).toBe(2);
+    // Verbatim, both of them: a mutation that makes the two phrases equal is
+    // caught by the set size above, and a mutation that makes them differently
+    // wrong is caught here.
+    expect(names).toContain('Copy ts code \u2014 in the reasoning behind reply 1 of 2');
+    expect(names).toContain('Copy ts code \u2014 in reply 1 of 2');
+    // WCAG 2.5.3: the visible text is still the word the name begins with.
+    for (const button of screen.getAllByRole('button', { name: /^Copy ts code/u }))
+      expect(button).toHaveTextContent('Copy');
   });
 
   it('keeps a fence in the reasoning apart from the same fence in the answer', async () => {

@@ -42,7 +42,16 @@ import styles from './CodeBlock.module.css';
 export interface CodePlace {
   /** 1-based position among the code blocks of the document it was parsed from. */
   readonly index: number;
-  /** How many code blocks that document holds. */
+  /**
+   * How many code blocks that document holds.
+   *
+   * Counted from the parsed document, so it moves while one is arriving: a
+   * second fence landing in a streaming answer renumbers the first control from
+   * `Copy ts code — in the reply` to
+   * `Copy ts code — code block 1 of 2, in the reply`. Correct at rest and
+   * unavoidable while the count is derived rather than declared — a name that
+   * did not renumber would have to be wrong about one of the two states.
+   */
   readonly count: number;
   /** That document, in the reader's terms — 'reply 2 of 3', 'the reasoning'. */
   readonly within: string | undefined;
@@ -66,7 +75,7 @@ interface CodeBlockProps {
  * one fence the phrase would be noise, and the document phrase alone already
  * tells that button apart from every other one on the screen.
  */
-export function copyControlName(label: string | null, place: CodePlace | undefined): string {
+function copyControlName(label: string | null, place: CodePlace | undefined): string {
   const base = label === null ? 'Copy code' : `Copy ${label} code`;
   if (place === undefined) return base;
   const parts: string[] = [];

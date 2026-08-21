@@ -40,6 +40,12 @@
  * way to arrive that costs nothing, which makes this component the second
  * caller and not the only one.
  *
+ * Both branches are asserted where they are drawn: *marks itself as the current
+ * location only while nothing is selected* covers the expanded head and *marks
+ * it from the collapsed rail too, which is the other branch* covers the rail,
+ * both in `home-reachable.test.tsx`. The second exists because removing
+ * `aria-current` from the rail's button alone changed no test result.
+ *
  * It is drawn twice — once in the collapsed rail and once in the expanded head,
  * so there are two `select(null)` call sites in this file — because a control
  * that exists only in the expanded rail is not reachable from a collapsed one,

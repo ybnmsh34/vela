@@ -58,10 +58,19 @@ function answered(
  * is exactly the shape of bug this file exists to catch, and it would have hid
  * it instead.
  */
-function scripted(scripts: readonly (readonly ChatStreamEvent[])[]): ChatRepository {
+function scripted(
+  scripts: readonly (readonly ChatStreamEvent[])[],
+  /**
+   * Every request the hook sent, in order, appended as it is sent. Passed in
+   * rather than returned so the repository keeps its single-value shape; the
+   * caller owns the array and reads it after the send it is about.
+   */
+  sent: StreamTurnRequest[] = [],
+): ChatRepository {
   let call = 0;
   return {
     streamTurn(request: StreamTurnRequest): Promise<TurnHandle> {
+      sent.push(request);
       const script = scripts[call] ?? [];
       call += 1;
       for (const event of script) request.onEvent(event);
@@ -226,6 +235,83 @@ describe('a conversation is written as it happens', () => {
     const messages = await messagesIn(adapter, conversationId);
     expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
     expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'ask once' }]);
+  });
+
+  it('shows a restored empty reply and does not send it to the model', async () => {
+    // WHAT THE EMPTY-REPLY ROW COSTS ON THE NEXT TURN, AND WHO PAYS IT.
+    //
+    // Writing a reply that produced nothing is the fix above. It creates a
+    // transcript state that could not exist before it — a settled assistant
+    // entry whose answer is `''` — and `ENDED_WITH_NOTHING`'s docblock says in
+    // as many words what keeps that state off the wire: `historyMessages` skips
+    // it, so the next request does not carry an empty assistant message that
+    // some endpoints reject.
+    //
+    // Nothing asserted it. The round-6 measurer deleted the `answer !== ''`
+    // arm, so a restored empty reply was sent as `{ role: 'assistant', text:
+    // '' }`, and both the conversation suite and the whole renderer suite
+    // stayed green — 121 files / 2443 tests, exit 0. The pre-existing docblock
+    // on `historyMessages` states the same property, so the guarantee the new
+    // persistence path leans on was a comment in two places and an assertion in
+    // none. Re-measured with this test in place: deleting that arm now fails the
+    // whole suite here and nowhere else — 1 failed | 2450 passed at this
+    // commit.
+    //
+    // Restored rather than live, because restored is what the docblock claims:
+    // the rows are written first and the hook reads them back the way reopening
+    // the conversation does.
+    const { adapter, wrapper, conversationId } = await fixture();
+    const transcript = createTranscriptRepository(adapter);
+    await transcript.append({
+      conversationId,
+      role: 'user',
+      parts: [{ kind: 'text', text: 'into the void' }],
+    });
+    await transcript.append({
+      conversationId,
+      role: 'assistant',
+      parts: [{ kind: 'text', text: '' }],
+      status: 'cancelled',
+    });
+
+    const sent: StreamTurnRequest[] = [];
+    const chat = scripted([answered('this one says something')], sent);
+    const { result } = renderHook(
+      () =>
+        useConversation({
+          conversationId,
+          providerId: 'workstation',
+          modelId: 'local-model',
+          repository: chat,
+          scheduleCommit: (run) => {
+            run();
+          },
+        }),
+      { wrapper },
+    );
+
+    // The transcript shows it: two entries, the second an assistant turn with
+    // nothing in it. That half is what the row was written for.
+    await waitFor(() => {
+      expect(result.current.entries).toHaveLength(2);
+    });
+    const restored = result.current.entries[1];
+    expect(restored?.kind).toBe('assistant');
+    expect(restored?.kind === 'assistant' ? restored.turn.answer : null).toBe('');
+
+    act(() => {
+      result.current.send('ask again');
+    });
+    await waitFor(() => {
+      expect(sent).toHaveLength(1);
+    });
+
+    // And the request does not: the question, then the new question. No
+    // assistant message at all, empty or otherwise.
+    expect(sent[0]?.messages.map((message) => [message.role, message.text])).toEqual([
+      ['user', 'into the void'],
+      ['user', 'ask again'],
+    ]);
   });
 
   it('says the transcript is unreadable rather than showing it as empty', async () => {

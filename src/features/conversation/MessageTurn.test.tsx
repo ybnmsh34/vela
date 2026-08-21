@@ -294,3 +294,106 @@ describe('a turn states how it ended exactly once', () => {
     expect(within(reply).queryByText('Stopped before it finished')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * WHERE THE ENDING SITS, WHICH WAS A COMMENT AND IS NOW AN ASSERTION.
+ *
+ * The ending block used to render above `<ToolCalls>`. That position was chosen
+ * for the empty ending — the case where nothing else is on the turn at all —
+ * and never re-examined for the others, so a truncated turn that had made tool
+ * calls put "Cut off at the model's output limit" *above* the cards for the
+ * calls that happened before the cut, and put it on the opposite side of the
+ * notes from the `.error` block underneath, which states the same class of
+ * fact. It was moved below both; the move is described in a JSX comment in
+ * `MessageTurn.tsx`.
+ *
+ * Nothing asserted it. The round-6 measurer moved the whole block back above
+ * `<ToolCalls>` — undoing the fix and making that comment false — and the
+ * renderer suite stayed at 121 files / 2443 tests, exit 0. Every existing
+ * assertion about an ending is existence-or-content: `visibleText()`,
+ * `querySelector('[data-kind=…]')`, `toHaveLength(1)`. None is order.
+ *
+ * Order is what the fix was, so order is what this reads: the position of each
+ * landmark in the rendered article, compared against the order the turn
+ * happened in. Re-measured with these two in place: moving the block back above
+ * `<ToolCalls>` fails the whole suite on the first of them and on nothing else
+ * — 1 failed | 2450 passed at this commit.
+ */
+describe('a turn is laid out in the order the turn happened', () => {
+  /** Every landmark of an assistant turn that has a position, in reading order. */
+  const LANDMARKS: readonly (readonly [string, string])[] = [
+    ['the tool calls', '[aria-label="Tool calls"]'],
+    ['which endpoint answered', '[aria-label="Which endpoint answered"]'],
+    ['what Vela had to change', '[aria-label="What Vela had to change for this model"]'],
+    ['the ending', '[data-kind="truncated"]'],
+    ['the failure', '[data-kind="failed"]'],
+  ];
+
+  /**
+   * The landmarks present in `reply`, named, in the order they appear in it.
+   *
+   * Read off the flattened element list rather than off `children`, because
+   * these are not all siblings and a test that assumed they were would be
+   * asserting the shape of the tree instead of the order of the page.
+   */
+  function layoutOf(reply: HTMLElement): readonly string[] {
+    const elements = [...reply.querySelectorAll('*')];
+    return LANDMARKS.map(([name, selector]) => [name, reply.querySelector(selector)] as const)
+      .filter((entry): entry is readonly [string, Element] => entry[1] !== null)
+      .map(([name, element]) => [name, elements.indexOf(element)] as const)
+      .sort((left, right) => left[1] - right[1])
+      .map(([name]) => name);
+  }
+
+  const withToolCallsAndNotes = {
+    answer: 'as far as it got',
+    outcomes: [
+      { status: 'ok', callId: 'call_1', name: 'read_file', arguments: {}, emulated: false },
+    ],
+    degradations: [{ kind: 'toolCatalogueWithheld' }],
+    answeredBy: { providerId: 'laptop', modelId: 'other-model' },
+  } as const;
+
+  it('puts a truncated turn’s ending below the calls it made before the cut', () => {
+    const turn: TurnState = {
+      ...EMPTY_TURN,
+      ...withToolCallsAndNotes,
+      phase: 'complete',
+      stopReason: 'maxTokens',
+    };
+    render(<AssistantTurn turn={turn} id="t7" selectedProviderId="workstation" />);
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+
+    // The four are all drawn — a layout assertion over one element would hold
+    // however the page was ordered.
+    expect(layoutOf(reply)).toEqual([
+      'the tool calls',
+      'which endpoint answered',
+      'what Vela had to change',
+      'the ending',
+    ]);
+    expect(within(reply).getByText('Cut off at the model’s output limit')).toBeInTheDocument();
+  });
+
+  it('puts a failure in the same place, which is why the ending moved there', () => {
+    // The `.error` block was always last. The ending block states the same
+    // class of fact and sat on the other side of the notes from it; both now
+    // read the same way, and this is the half that fixes the position of the
+    // one the other was moved to match.
+    const turn: TurnState = {
+      ...EMPTY_TURN,
+      ...withToolCallsAndNotes,
+      phase: 'failed',
+      error: { kind: 'authFailed', diagnosis: { cause: 'credential_rejected', correlation: 0 } },
+    };
+    render(<AssistantTurn turn={turn} id="t8" selectedProviderId="workstation" />);
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+
+    expect(layoutOf(reply)).toEqual([
+      'the tool calls',
+      'which endpoint answered',
+      'what Vela had to change',
+      'the failure',
+    ]);
+  });
+});

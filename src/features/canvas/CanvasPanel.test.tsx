@@ -189,6 +189,53 @@ describe('a revision is a version of the same artifact', () => {
     expect(diff).toHaveTextContent('1 added, 1 removed');
     expect(diff).toHaveTextContent('r="9"');
   });
+
+  it('tells an added row from a removed one without using any colour', async () => {
+    // THE CLAIM `forced-colors.test.ts` MAKES ABOUT THIS COMPONENT, ASSERTED
+    // WHERE THE COMPONENT IS.
+    //
+    // `.diffRow[data-kind='added']` and `.diffRow[data-kind='removed']` differ
+    // by `background` and nothing else, so in a forced-colours mode they are one
+    // colour and the reader is told which lines changed by nothing at all. That
+    // is allowed exactly because of the prefix below — the panel is on
+    // `CARRIED_BY_CONTENT`'s escape hatch, and 'the + prefix' is the whole
+    // excuse.
+    //
+    // Until now the excuse was a comment. The round-6 measurer deleted the
+    // prefix expression from `CanvasPanel.tsx` and the entire renderer suite
+    // stayed green — 121 files, 2443 tests, exit 0 — because the escape hatch's
+    // companion test reads the *stylesheet* and this file never read the rows.
+    // Re-measured with this test in place: the same deletion now fails here and
+    // in `forced-colors.test.ts`, and nowhere else — 2 failed | 2449 passed at
+    // this commit.
+    //
+    // So: the rendered rows, not the source, and the first character of each,
+    // which is the character a forced-colours user has instead of the fill.
+    // Three lines rather than the one-liners above, so the diff carries an
+    // unchanged row as well as the two that changed.
+    const before = '<svg xmlns="http://www.w3.org/2000/svg">\n<circle r="4"/>\n</svg>';
+    const after = '<svg xmlns="http://www.w3.org/2000/svg">\n<circle r="9"/>\n</svg>';
+    const user = userEvent.setup();
+    mount([answer(before), answer(after)]);
+
+    await user.click(screen.getByRole('tab', { name: 'Changes' }));
+    const rows = [...screen.getByTestId('canvas-diff').querySelectorAll('[data-kind]')];
+    const firstCharacter = (kind: string): readonly string[] =>
+      rows
+        .filter((row) => row.getAttribute('data-kind') === kind)
+        .map((row) => (row.textContent ?? '').slice(0, 1));
+
+    // A floor first: an empty diff would satisfy every `every` below.
+    expect(firstCharacter('added')).toHaveLength(1);
+    expect(firstCharacter('removed')).toHaveLength(1);
+    expect(firstCharacter('added').every((one) => one === '+')).toBe(true);
+    expect(firstCharacter('removed').every((one) => one === '-')).toBe(true);
+    // And the unchanged rows carry the column too, so the prefix is a column
+    // rather than a decoration on two of the three kinds — a space here is what
+    // keeps the '+' and the '-' in a line the eye can run down.
+    expect(firstCharacter('same')).toHaveLength(2);
+    expect(firstCharacter('same').every((one) => one === ' ')).toBe(true);
+  });
 });
 
 describe('closing the panel sticks to the artifact, not to the panel', () => {

@@ -118,6 +118,47 @@ describe('the home screen is reachable without destroying anything', () => {
     expect(screen.getByRole('button', { name: 'Home' })).not.toHaveAttribute('aria-current');
   });
 
+  it('marks it from the collapsed rail too, which is the other branch', async () => {
+    // THE FIX LANDED IN TWO BRANCHES AND ONE OF THEM WAS ASSERTED.
+    //
+    // `Sidebar.tsx` draws Home twice — once in the collapsed rail, once in the
+    // expanded head — and `aria-current='page'` was added to both, together
+    // with `.iconButton[aria-current='page']` in the sheet and a forced-colours
+    // restatement of it. The test above never collapses the sidebar, so it
+    // asserts the expanded button only. The round-6 measurer removed the
+    // attribute from the rail's button alone and the whole renderer suite
+    // stayed green — 121 files, 2443 tests, exit 0 — while
+    // `.iconButton[aria-current='page']` became a rule nothing sets and
+    // *keeps the rail saying where you are* in `forced-colors.test.ts` kept
+    // passing, because that one reads the stylesheet and not the component.
+    // Re-measured with this test in place: the same removal now fails the whole
+    // suite here and nowhere else — 1 failed | 2450 passed at this commit.
+    //
+    // A user who collapses the sidebar stays collapsed: `sidebarCollapsed` is
+    // persisted through `layout-repository` and restored on mount. This is the
+    // branch they are in.
+    const user = userEvent.setup();
+    const adapter = host();
+    adapter.seedConversation({ title: 'Star charts' });
+    mount(adapter);
+
+    await screen.findByRole('button', { name: 'Open Star charts' });
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    // The rail, not the expanded head: the conversation rows are gone.
+    expect(screen.queryByRole('button', { name: 'Open Star charts' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
+
+    // And it stops saying so once a conversation is open, which is the half
+    // that makes the attribute mean anything. The rail draws no rows, so the
+    // conversation is opened from the expanded sidebar and the rail is what the
+    // user comes back to.
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
+    await user.click(screen.getByRole('button', { name: 'Open Star charts' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(screen.queryByRole('button', { name: 'Open Star charts' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Home' })).not.toHaveAttribute('aria-current');
+  });
+
   it('names every icon in the collapsed rail to the pointer, not only to a reader', async () => {
     // The rail collapsed is a column of buttons whose only content is a 14px
     // glyph. `aria-label` names each one for assistive technology and names it

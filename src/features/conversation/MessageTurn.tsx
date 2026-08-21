@@ -315,7 +315,12 @@ export function AssistantTurn({
           the calls that happened before the cut, and it put the ending block on
           the opposite side of the notes from the `.error` block underneath,
           which states the same class of fact. Both are now last, in the order
-          the turn happened. */}
+          the turn happened.
+
+          Asserted, not described: *a turn is laid out in the order the turn
+          happened* in `MessageTurn.test.tsx` reads the position of this block
+          and of the `.error` block against `<ToolCalls>` and both note lists.
+          Moving either back above them reds it. */}
       {ending === null ? null : (
         <div className={styles.ending} data-kind={ending.kind} data-tone={ending.tone}>
           <p className={styles.errorTitle}>{ending.title}</p>

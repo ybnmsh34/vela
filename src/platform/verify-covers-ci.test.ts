@@ -21,8 +21,8 @@
  * ## The question this file has to answer, and the times it asked a narrower one
  *
  * The wide question is **"what can make `pnpm verify` weaker than CI while every
- * string this file looks for is still present?"** Twenty-seven defects over
- * seven rounds each answered a narrower one, and each fix shipped the same
+ * string this file looks for is still present?"** Twenty-nine defects over
+ * eight rounds each answered a narrower one, and each fix shipped the same
  * defect with a smaller mouth:
  *
  * 1. *One filename out of a directory the runner reads whole.* Every assertion
@@ -549,6 +549,48 @@
  *   181/181 green with the same two lines the step-level refusal rejects. Fixed
  *   by {@link refuseActionInputEnv}, at all three scopes and unconditionally.
  *
+ * ## Defects twenty-eight and twenty-nine: whether the runner reaches the gate, and the one list that admitted by default
+ *
+ * Both measured on the tree that shipped after round five, whose whole suite was
+ * 196, each twice, with every other tracked byte identical.
+ *
+ * - **Twenty-eight: the file asked what CI is *written* to run, not what CI
+ *   runs.** Every refusal it owned was about text that exists; not one was about
+ *   whether the runner ever reaches that text. `if:` on a **job** had no reader
+ *   at any scope — `grep` found the token only as a member of {@link JOB_KEYS}
+ *   and {@link STEP_KEYS} — so `if: false` on `static`, which `test-ts`,
+ *   `test-rust` and `test-windows` all `needs:`, was `196 passed (196)`, exit 0.
+ *   The mirror is what makes it this file's own class rather than a new opinion:
+ *   the byte-equivalent statement of the same fact about the same job,
+ *   `continue-on-error: true`, is `no tests`, exit 1, refused **by name** with
+ *   "a job whose failure cannot fail the workflow run, so no gate in \"static\"
+ *   can fail it either". One referent, two spellings in one document, opposite
+ *   verdicts — and the admitted spelling is the stronger, because under
+ *   `if: false` the gates do not merely stop counting, they never execute. Two
+ *   narrowings a maintainer would really write measure the same: deleting the
+ *   `github.event_name != 'pull_request' ||` clause from the draft guard already
+ *   on two jobs, and `if: github.event_name == 'workflow_dispatch'` on
+ *   `test-windows` — the only job that runs `node
+ *   scripts/ci-retry-vitest-crash.mjs pnpm test:harness` and `pnpm
+ *   test:transcripts`. `strategy: matrix: include: []` on `test-ts` is the same
+ *   hole one key over, and `NODE_OPTIONS: --require ./scripts/ci-probe-gate.cjs`
+ *   and `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` in the workflow-level `env:`
+ *   are the same hole pointed at what a written command *means*. All five were
+ *   `196 passed (196)`, exit 0. Fixed not by a fourth named refusal but by
+ *   deleting the licence those keys sat under and pinning what they say:
+ *   {@link CI_SETTINGS}, {@link settingsOf}, {@link PINNED_SETTING_KEYS}.
+ * - **Twenty-nine: the one allow-by-default list in a refuse-by-default file.**
+ *   {@link lifecycleScriptsIn} filters a manifest's script names against
+ *   {@link LIFECYCLE_SCRIPTS}, so a hook name that list does not carry is not
+ *   refused, it is invisible. pnpm's own documented `pnpm:devPreinstall` was
+ *   `196 passed (196)`, exit 0, while the byte-identical body under
+ *   `postinstall` was `1 failed | 195 passed (196)`, exit 1. Round five's critic
+ *   and both of round six's adversaries reached that construction
+ *   independently. Fixed by pinning the complement — {@link SCRIPT_NAMES} — so
+ *   that any script name is a review before anything decides what it is.
+ *   Appending `pnpm:devPreinstall` to {@link LIFECYCLE_SCRIPTS} would have been
+ *   fixing the instance, which is what every previous round did.
+ *
  * ## What the reader is now, on both sides
  *
  * Both documents are read as **structure**, and both readers are *total*: every
@@ -613,14 +655,18 @@
  *   `scripts/secret-scan.sh`. The *argument list* of a gate is now pinned; the
  *   *definition* of the gate is not, and pinning it is a different guard.
  * - **`working-directory:` and `env:` on a `run:` step.** Both change what a
- *   command does without changing its text. They are read as known step keys and
- *   their values are not compared with anything. `defaults.run.working-directory`
- *   is the same, and is admitted for the same reason; `defaults.run.shell` is
- *   not, because that one changes how this reader may split a body at all —
- *   defect nine. This is the boundary to watch: it is drawn at *what changes how
- *   the reader reads*, not at *what changes what runs*, and the second of those
- *   is the wider question. A `working-directory` that moves a gate to a tree with
- *   a different `Cargo.toml` would not be seen here.
+ *   command does without changing its text, and for five rounds their values
+ *   were "read as known step keys and not compared with anything". That is no
+ *   longer true and the sentence saying it was is defect twenty-eight: every
+ *   written value of both is now pinned by {@link CI_SETTINGS}, so moving the
+ *   Clippy step's `working-directory: src-tauri` to another tree is
+ *   `1 failed | 209 passed (210)`, exit 1, twice on the tree this comment ships
+ *   in — the same edit was `196 passed (196)`, exit 0 one round ago.
+ *   `defaults.run.working-directory` is still admitted without a pin, because
+ *   `defaults` is taken apart by `modelOf` rather than reaching `settingsOf`;
+ *   `defaults.run.shell` is refused, because that one changes how this reader
+ *   may split a body at all — defect nine. What remains unpinned there is the
+ *   boundary to watch, and it is now one key wide rather than three.
  *
  *   **`env:` on a `uses:` step is NOT in this list any more** — it is refused,
  *   and defect twenty-one is that it sat here without ever being covered by the
@@ -637,17 +683,36 @@
  *
  *   1. *Which shell reads the body.* Refused, not modelled:
  *      {@link NPMRC_KEYS} makes `.npmrc` total and {@link SHELL_SETTING_FILES}
- *      pins which files may decide it. **Still unseen:** a `script-shell` set
- *      outside this repository — a user or global `.npmrc`, or
- *      `NPM_CONFIG_SCRIPT_SHELL` in the environment. That is not a tracked file,
- *      so it is not a thing a review of this repository could catch, which is
- *      the honest reason the line is drawn at the tree.
+ *      pins which files may decide it. **The justification this bullet used to
+ *      carry was false, and that is half of defect twenty-eight.** It read:
+ *      "Still unseen: a `script-shell` set outside this repository — a user or
+ *      global `.npmrc`, or `NPM_CONFIG_SCRIPT_SHELL` in the environment. That is
+ *      not a tracked file, so it is not a thing a review of this repository
+ *      could catch." `ci.yml` **is** a tracked file, and
+ *      `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` written in its workflow-level
+ *      `env:` block was `196 passed (196)`, exit 0, twice on the tree that
+ *      shipped after round five, while the byte-equivalent `script-shell=` line
+ *      in the tracked `.npmrc` was refused at module load by name. One referent,
+ *      two tracked documents, opposite verdicts. Every `env:` value at every
+ *      scope is pinned now, so the same line is `1 failed | 209 passed (210)`,
+ *      exit 1, twice on the tree this comment ships in. **Still unseen:** the
+ *      same setting in a user or global `.npmrc`, or exported into the runner's
+ *      environment by something outside every document this reader opens — which
+ *      is the honest bound, and it is "outside the documents", not "outside the
+ *      tree".
  *   2. *Which manifest a script name binds to.* Refused once a `cd` has moved
  *      the working directory — {@link VerifyCommand.rebound}. **Still unseen:**
  *      what any other program in the chain does to the working directory, since
  *      only `cd` is modelled as moving it.
  *   3. *Which other bodies the package manager runs unasked.* The lifecycle keys
- *      are refused outright by {@link LIFECYCLE_SCRIPTS}; the manifest key that
+ *      are refused outright by {@link LIFECYCLE_SCRIPTS} — which is a MEMBERSHIP
+ *      filter and so could only ever object to a name somebody had already
+ *      listed, which is defect twenty-nine: pnpm's own `pnpm:devPreinstall` was
+ *      `196 passed (196)`, exit 0 on the tree that shipped after round five,
+ *      against `1 failed | 195 passed (196)` for the byte-identical body under
+ *      `postinstall`. The complement is pinned now by {@link SCRIPT_NAMES}, so
+ *      any script name at all is a review before {@link LIFECYCLE_SCRIPTS}
+ *      decides what it is; the manifest key that
  *      decides which *dependencies* may run theirs is pinned by
  *      {@link ONLY_BUILT_DEPENDENCIES}; and a hook file written next to the
  *      manifest rather than in it — `.pnpmfile.cjs` — is a new file at the
@@ -667,7 +732,17 @@
  *   `.gitignore`. Two things it does not cover, stated because a pin reads as
  *   more than it is. **Directories are not enumerated**, so a root directory
  *   some future tool loads unasked would not be seen; the only one in that class
- *   today is `node_modules`, which is the install's own output. And a mutation
+ *   today is `node_modules`, which is the install's own output. Nor is the
+ *   membership of any directory pinned: a new file under `scripts/` is seen only
+ *   when a `run:` or a script body names it, which is how
+ *   `scripts/ci-retry-vitest-crash.mjs` — CI-only work no `pnpm verify` reaches
+ *   — is visible here at all. What made that a hole rather than a limit was
+ *   the channel that could reach such a file without naming it in a command,
+ *   and that channel is `env:`, which is pinned now: `NODE_OPTIONS: --require
+ *   ./scripts/ci-probe-gate.cjs` in the workflow-level block was
+ *   `196 passed (196)`, exit 0, twice on the tree that shipped after round five,
+ *   and is `1 failed | 209 passed (210)`, exit 1, twice on this one. The limit
+ *   that remains is the unpinned directory itself. And a mutation
  *   that replaces the enumeration's *result* with a copy of the pinned list is
  *   invisible to it — measured on the tree this comment ships in, twice:
  *   `ROOT_SURFACE = [...ROOT_FILES]` is `196 passed (196)`, exit 0. That is true
@@ -691,14 +766,30 @@
  *   gates for this commit" — it means "the workflow that runs these gates is
  *   triggered on the events written down here". Defect twenty-five is that the
  *   file could not tell that arrangement from one filtered down to nothing.
- * - **`strategy:` on a job.** A matrix can multiply a job; the `run:` text it
+ * - **`strategy:` on a job, and `if:` at either scope — NOT in this list any
+ *   more, and defect twenty-eight is that they were.** What the `strategy:`
+ *   bullet used to say is "a matrix can multiply a job; the `run:` text it
  *   multiplies is fixed, because a `run:` carrying `${{ matrix.… }}` is refused.
- *   The multiplication itself is not modelled.
- * - **A step behind `if: false`.** The invariant is one-directional — `verify`
- *   may not be looser than CI — so a step the runner skips is not something
- *   this file objects to. Measured on the tree this comment ships in, twice:
- *   `if: false` on the `Typecheck` step of `static` is `196 passed (196)`,
- *   exit 0 twice.
+ *   The multiplication itself is not modelled." That is a disclosure about
+ *   multiplying by MORE than one. `strategy: matrix: include: []` multiplies by
+ *   zero — `pnpm test`, `pnpm test:harness`, `pnpm build` and
+ *   `./scripts/check-transcripts.sh` written in CI and executed by it never —
+ *   and was `196 passed (196)`, exit 0, twice on the tree that shipped after
+ *   round five. What the `if:` bullet used to say is that the invariant is
+ *   one-directional, so a step the runner skips is not something this file
+ *   objects to, measured **on a step**: `if: false` on the `Typecheck` step of
+ *   `static`. The key it licensed by that measurement was the one on the **job**
+ *   at the root of the `needs:` graph, and three spellings of it were each
+ *   `196 passed (196)`, exit 0, twice on that tree: `if: false` on `static`,
+ *   the existing draft guard with its `github.event_name != 'pull_request' ||`
+ *   clause deleted, and `if: github.event_name == 'workflow_dispatch'` on
+ *   `test-windows`. Both keys are pinned by {@link CI_SETTINGS} now, at every
+ *   scope, and each of those five constructions is
+ *   `1 failed | 209 passed (210)`, exit 1, twice on the tree this comment ships
+ *   in. The one-directional argument is still true and it is no longer an
+ *   exemption: a step or job the runner skips is a **review**, because this
+ *   reader cannot tell the skip that removes nothing from the skip that removes
+ *   eleven of thirteen gate rows.
  *
  *   **A job removed entirely is NOT in this list.** The version of this bullet
  *   that said it was is two rounds back, at `19b9f94`, where it read "so a step
@@ -734,7 +825,13 @@
  *
  *   **That sentence was itself the bound one round too narrow, which is defect
  *   twenty-one — and the sentence that replaced it was the same mistake one
- *   scope up, which is defect twenty-seven.** It said `with:`, and GitHub
+ *   scope up, which is defect twenty-seven; the same sentence was then
+ *   one-directional about the inputs it names, which is half of defect
+ *   twenty-eight's RULE V finding. `refuseWith` refused an input the pin does
+ *   not list and nothing asked whether a listed input was handed to anybody:
+ *   adding `'probe-input'` to `actions/checkout@v4` was `196 passed (196)`, exit
+ *   0, twice on the tree that shipped after round five, and is `1 failed | 209
+ *   passed (210)`, exit 1, twice on the tree this comment ships in.** It said `with:`, and GitHub
  *   reaches the same inputs through `env: INPUT_<NAME>`; the correction said
  *   "both keys are refused on a `uses:` step now, so the bound is the five names
  *   times the inputs listed beside each, through either spelling", and round
@@ -748,34 +845,52 @@
  *   because that is the mapping the pin is about. An input that reaches an
  *   admitted action by some other route is not something this reader has a model
  *   of, and neither is what those five actions *do* with what they are given.
- * - **What a key that cannot carry a command does.** Every key in
- *   {@link TOP_LEVEL_KEYS}, {@link JOB_KEYS} and {@link STEP_KEYS} is now
- *   either read by something below or in this sentence. Read (13): `jobs`,
- *   `defaults`, `steps`, `runs-on`, `run`, `uses`, `shell`, `with`,
- *   `continue-on-error` (both levels), `on` (defect twenty-five), `needs`
- *   (defect twenty-six), `env` (defect twenty-seven, at all three scopes), and
- *   `secrets`, which is refused by name. Consumed and compared with nothing (9):
- *   `name`, `run-name`, `concurrency`, `permissions`, `id`, `if`,
- *   `environment`, `outputs`, `timeout-minutes`. Each of *those* can only name,
- *   remove or reorder work, which is the one-directional weakening above —
- *   `on` and `needs` were in that list for four rounds under the same licence,
- *   and neither of them belonged there. 13 + 9 + `strategy` and
- *   `working-directory`, argued separately below, is 24, which is every distinct
- *   key in the three lists. An `env:` block is read for one thing: a key spelled
- *   the way GitHub spells an action input. What it changes about a `run:` gate
- *   whose text is unchanged is still not seen here. `env:` and `strategy:` are the two
- *   that could in principle change what a `run:` command *means*, and what
- *   bounds them there is checked rather than argued: a `run:` containing `${{`
- *   is refused by {@link modelOf}, a `$` outside single quotes is refused by
+ * - **What a key that cannot carry a command does — the sentence that used to
+ *   stand here was the defect, four times over.** Every key in
+ *   {@link TOP_LEVEL_KEYS}, {@link JOB_KEYS} and {@link STEP_KEYS} used to be
+ *   accounted for by a paragraph splitting them into "read (13)" and "consumed
+ *   and compared with nothing (9)", with one licence over the second group:
+ *   *"each of those can only name, remove or reorder work, which is the
+ *   one-directional weakening above"*. `continue-on-error` falsified that
+ *   sentence in round two, `on` and `needs` in round four, and `if` in round
+ *   six. A licence four constructions have walked through is not a licence.
+ *
+ *   Two things replace it, and neither is a fourth named refusal. First, the
+ *   **default is now a pin**: {@link settingsOf} carries the written value of
+ *   every admitted key that is not in {@link INTERPRETED_KEYS} — plus `env`,
+ *   which is in both lists because {@link refuseActionInputEnv} decides on one
+ *   spelling of one key inside it — and {@link CI_SETTINGS} compares the lot by
+ *   equality. Second, **the accounting is asserted rather than written**: *every
+ *   key these lists admit is one something reads or something pins* demands that
+ *   the 24 distinct names in the three lists equal the union of
+ *   {@link INTERPRETED_KEYS} and {@link PINNED_SETTING_KEYS}, in both
+ *   directions. Appending `'container'` to `JOB_KEYS` was `196 passed (196)`,
+ *   exit 0, twice on the tree that shipped after round five — with and without a
+ *   real `container: image: …` on `test-ts` — and is
+ *   `1 failed | 209 passed (210)` and `2 failed | 208 passed (210)`
+ *   respectively, exit 1, twice on the tree this comment ships in.
+ *
+ *   **The residue, stated because a pin reads as more than it is.** This closes
+ *   "a key listed as known and read by nothing". It does not close "a name
+ *   written into {@link INTERPRETED_KEYS} that no function reads" — that is the
+ *   same defect one level up, and no test can settle it, because establishing
+ *   that a function reads a key means being the function. What stands behind
+ *   each entry there is a mutation, recorded in that function's own doc comment.
+ *
+ *   What the pin does **not** claim: it compares text, not meaning. `if:
+ *   github.event_name != 'pull_request' || …` is pinned as those bytes, and what
+ *   GitHub's expression evaluator does with them is not a fact this reader has —
+ *   the same bound {@link CI_TRIGGERS} states for the trigger matcher. An `env:`
+ *   value that changes what an already-listed `run:` command *means* is likewise
+ *   pinned rather than understood, which turns it from a silent change into a
+ *   review. What bounds a matrix inside a command's text is separate and is
+ *   checked rather than argued: a `run:` containing `${{` is refused by
+ *   {@link modelOf}, a `$` outside single quotes is refused by
  *   {@link shellCommands}, and every surviving command's text is compared with
  *   {@link CI_GATES} by **equality** — so a matrix value cannot reach a
  *   command's text at all, and any other variable reference (`%FOO%` under
  *   `cmd`, a `$` inside single quotes) makes the text differ from every listed
  *   gate and lands in `unaccounted`.
- *   `working-directory:` is the one that genuinely escapes —
- *   measured on this tree, twice: moving the Clippy step's
- *   `working-directory: src-tauri` to another tree is `196 passed (196)`, exit
- *   0 twice.
  *
  * ### Two claims this file does not make
  *
@@ -790,13 +905,15 @@
  *    carrying the fix for eleven, whose full suite was 141; defects seventeen to
  *    twenty-one on the tree carrying the fix for twelve to sixteen, whose full
  *    suite was 172; defects twenty-two to twenty-seven on the tree carrying the
- *    fix for seventeen to twenty-one, whose full suite was 181. Every count
- *    quoted against **the tree this comment ships in** is out of 196, and every
+ *    fix for seventeen to twenty-one, whose full suite was 181; defects
+ *    twenty-eight and twenty-nine on the tree carrying the fix for twenty-two to
+ *    twenty-seven, whose full suite was 196. Every count
+ *    quoted against **the tree this comment ships in** is out of 210, and every
  *    one of them was run twice this round with its exit code read from the log
  *    body — including the ones that were true at 181 and are re-stated here,
  *    which had to be re-run rather than re-scaled. The counts that appear inside
  *    function doc comments and case comments below — 89/89, 91/91, 115/115,
- *    116/116, 117/117, 141/141, 172/172, 181/181 — each name the tree that
+ *    116/116, 117/117, 141/141, 172/172, 181/181, 196/196 — each name the tree that
  *    printed them, and each was printed by the round that made that change.
  *    **These are exact totals of one file's cases at one commit, not a range and
  *    not a bound** — the number moves whenever a case is added, and nothing
@@ -807,8 +924,8 @@
  *    are intra-round working states that were never committed, and the mutation
  *    counts attributed to trees before the immediately preceding one were each
  *    printed once, by the round that made the change, and not re-run since. The
- *    counts named against **the immediately preceding tree** (181) and against
- *    **this one** (196) were both run twice in this round.
+ *    counts named against **the immediately preceding tree** (196) and against
+ *    **this one** (210) were both run twice in this round.
  * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
  *    not established.** No YAML parser was run against GitHub. It does not
  *    matter here, and that is by construction rather than by luck: if GitHub
@@ -855,7 +972,23 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = process.cwd();
 const WORKFLOW_DIRECTORY = ['.github', 'workflows'] as const;
 
-/** The two extensions GitHub Actions loads. */
+/**
+ * The two extensions GitHub Actions loads.
+ *
+ * This is what decides whether a file in `.github/workflows/` is READ and
+ * modelled or merely counted in {@link WorkflowSurface.ignoredFiles}, and it had
+ * no case of its own: dropping `'.yaml'` was `196 passed (196)`, exit 0, twice
+ * on the tree that shipped after round five. The property survived by accident
+ * — a real `.yaml` then lands in `ignoredFiles` and reddens the equality against
+ * {@link IGNORED_WORKFLOW_FILES} — but an invariant that holds because of what
+ * the tree happens to contain is not an invariant this file has asserted. The
+ * rule is asked now of a directory this tree does not have, inside *every
+ * workflow file the runner would load is one this guard reads*, and the same
+ * mutation is `1 failed | 209 passed (210)`, exit 1, twice on the tree this
+ * comment ships in.
+ *
+ * Read by {@link readWorkflowSurface}, and by nothing else.
+ */
 const LOADED_EXTENSIONS = ['.yml', '.yaml'] as const;
 
 /**
@@ -1099,17 +1232,41 @@ const ROOT_FILES = [
  * pin that reddened on them would be a pin somebody deletes. The skip is tied to
  * that fact rather than to this list's own say-so: {@link readRootSurface}
  * refuses to start unless every pattern here occurs verbatim as a line of the
- * tracked `.gitignore`, so nothing can be skipped here that git would carry into
- * a commit — and `.pnpmfile.cjs`, which git tracks, cannot be written into this
- * list without also being written into `.gitignore`, where it would then not
- * reach CI at all.
+ * tracked `.gitignore`, so a name cannot be skipped here on this list's own
+ * authority.
+ *
+ * **That tie is weaker than the sentence it replaced, and the difference is
+ * measurable.** The previous version said "nothing can be skipped here that git
+ * would carry into a commit — and `.pnpmfile.cjs`, which git tracks, cannot be
+ * written into this list without also being written into `.gitignore`, where it
+ * would then not reach CI at all". `.gitignore` governs **untracked** files
+ * only: `git add -f` tracks an ignored file and a file already tracked stays
+ * tracked whatever `.gitignore` says. Measured on the tree this comment ships
+ * in, twice: a root `.env` — already on this list and already a `.gitignore`
+ * line — is skipped by the enumeration and invisible to the pin
+ * (`210 passed (210)`, exit 0), while `git check-ignore -v .env` prints
+ * `.gitignore:33:.env` and `git add -f --dry-run .env` prints `add '.env'`. So a root file that is both gitignored and force-tracked would
+ * reach CI unseen by this guard. **That is a known limit, not a closed hole**,
+ * and it is left open rather than closed because closing it means asking git
+ * what it tracks — a subprocess in a unit test — and because every name on this
+ * list is a build output or an editor artefact somebody would have to choose to
+ * force-add. The honest bound is: this list is tied to what `.gitignore` says,
+ * and `.gitignore` is not the same question as what git tracks.
  *
  * Spellings are limited to `*.suffix` and a whole filename, and anything else is
  * refused: a pattern language this reader half-implements is a pattern language
  * that skips a file somebody thought was pinned.
  *
- * Read by {@link readRootSurface} — which module load hands this list and the
- * cases hand a scratch root and a list of their own — and by nothing else.
+ * Read in three places, and by nothing else: {@link ROOT_SURFACE}'s module-load
+ * call to {@link readRootSurface}; `surfaceOf`'s default parameter in *every
+ * file at the repository root is one this guard has been shown*, which three of
+ * that case's four calls use; and `IGNORING_EVERYTHING` in the same case, which
+ * joins this list into the `.gitignore` its scratch roots carry. The last of
+ * those is worth naming rather than eliding: it means the tie-to-git rule is
+ * satisfied **by construction** in those three calls, and what really asks the
+ * rule a question is the fourth call plus the two `toThrow` rows beside them,
+ * which hand it a `.gitignore` that does not carry a pattern and a pattern
+ * spelling this reader does not implement.
  */
 const ROOT_IGNORED_PATTERNS: readonly string[] = [
   '*.tsbuildinfo',
@@ -1420,10 +1577,25 @@ const PACKAGE = MANIFEST as { scripts: Record<string, string> };
  * carries no such body, and *the setup exemption for `pnpm install` covers no
  * work of its own* asserts exactly that — see {@link LIFECYCLE_SCRIPTS}.
  *
- * Read by the `unaccounted` filter in *every gate command in the workflows is
- * accounted for above*, and by the four `unaccounted` calls in *does not exempt
- * a command that merely begins with a setup command*, two of which are the
- * controls that only pass because this list is consulted.
+ * **Its membership was pinned by nothing until round six, which is RULE V over
+ * the list that decides what the totality net may ignore.** Measured on the tree
+ * that shipped after round five, twice each: appending `'pnpm
+ * probe-smuggled-gate'` here was `196 passed (196)`, exit 0, and so was the same
+ * edit with the matching step really added to `ci.yml`'s `static` job — CI
+ * running a gate `pnpm verify` never reaches, at full green. Removing an entry
+ * CI does run reddens; adding one was invisible. Two rules stand behind it now,
+ * both in *every command the setup list exempts is setup, and is one CI runs*:
+ * {@link nonSetupCommands} demands that an entry BE a setup invocation rather
+ * than merely sit here, and the case demands that every entry is a command some
+ * workflow really runs, so an exemption that exempts nothing cannot wait here
+ * for a command to arrive and use it.
+ *
+ * Read in four places, and by nothing else: the `unaccounted` filter in *every
+ * gate command in the workflows is accounted for above*; the four `unaccounted`
+ * calls in *does not exempt a command that merely begins with a setup command*,
+ * two of which are the controls that only pass because this list is consulted;
+ * and both assertions of *every command the setup list exempts is setup, and is
+ * one CI runs*.
  */
 const SETUP_COMMANDS: readonly string[] = [
   'pnpm install --frozen-lockfile',
@@ -1457,6 +1629,25 @@ const SETUP_COMMANDS: readonly string[] = [
  * one reddens this file until somebody decides whether the work belongs in
  * `verify`, in a workflow step, or nowhere.
  *
+ * **This is a membership filter, so it can only object to a name somebody has
+ * already listed** — which is defect twenty-nine, and why {@link SCRIPT_NAMES}
+ * now pins the complement. The division of labour: `SCRIPT_NAMES` makes ANY
+ * script name a review, and this list says which of them pnpm runs unasked. The
+ * eight here are npm's, and pnpm's own `pnpm:devPreinstall` is not among them.
+ *
+ * **This list's own membership is still pinned by nothing, and with
+ * {@link SCRIPT_NAMES} in place that no longer admits a gate.** Measured on
+ * both trees, twice each: narrowing this list to `['postinstall', 'prepare']` —
+ * the only two the case below hands it — and adding `"preinstall": "node
+ * scripts/run-bash.mjs scripts/probe-preinstall-gate.sh"` to `package.json` was
+ * `196 passed (196)`, exit 0 on the tree that shipped after round five, and is
+ * `1 failed | 209 passed (210)`, exit 1 on the tree this comment ships in, at
+ * *the setup exemption for "pnpm install" covers no work of its own* — because
+ * the script name is now a review before this list gets a say. Shrinking this
+ * list alone still reddens nothing, and what that costs is now an
+ * under-description of a script somebody has already had to write down, rather
+ * than a gate nobody sees.
+ *
  * Read by {@link lifecycleScriptsIn}, and by nothing else — which *the setup
  * exemption for "pnpm install" covers no work of its own* calls three times, on
  * the real manifest and on two hand-built ones. The two hand-built calls are why
@@ -1488,6 +1679,100 @@ function lifecycleScriptsIn(scripts: Record<string, string>): string[] {
 }
 
 /**
+ * Every script name the root `package.json` declares.
+ *
+ * ### Defect twenty-nine: the one allow-by-default filter left in a refuse-by-default file
+ *
+ * {@link lifecycleScriptsIn} is a **membership** filter, so a hook name
+ * {@link LIFECYCLE_SCRIPTS} does not carry is not refused — it is invisible.
+ * Every other totality in this file refuses the unknown: an unlisted `.npmrc`
+ * key, an unlisted manifest key, an unlisted workflow key, an unlisted root
+ * file. This one admitted it, and the eight names it carries are npm's, so
+ * pnpm's own documented `pnpm:devPreinstall` was not among them. Measured on the
+ * tree that shipped after round five, twice: `"pnpm:devPreinstall": "node
+ * scripts/run-bash.mjs scripts/probe-devpreinstall-gate.sh"` added to `scripts`
+ * was `196 passed (196)`, exit 0, while the **byte-identical body** written
+ * under `"postinstall"` was `1 failed | 195 passed (196)`, exit 1, at *the setup
+ * exemption for "pnpm install" covers no work of its own*. One referent, two key
+ * spellings in one document, opposite verdicts, in the direction this file
+ * exists to forbid — CI work no `pnpm verify` ever runs, riding the one command
+ * {@link SETUP_COMMANDS} exempts by name. Round five's critic and both of round
+ * six's adversaries reached it independently.
+ *
+ * Appending `pnpm:devPreinstall` to {@link LIFECYCLE_SCRIPTS} would be fixing
+ * the instance, which is what every previous round did. The complement is what
+ * was missing, so the complement is what is pinned: the manifest's script names
+ * are compared with this list by equality, and **any** new one — a hook pnpm
+ * runs, a hook a future pnpm invents, or an ordinary script — is a review before
+ * it is anything else. What each name is for is then decided by
+ * {@link LIFECYCLE_SCRIPTS}, which still refuses the eight it knows are run
+ * unasked.
+ *
+ * Read by *the setup exemption for "pnpm install" covers no work of its own*,
+ * and by nothing else.
+ */
+const SCRIPT_NAMES: readonly string[] = [
+  'build',
+  'dev',
+  'lint:rust',
+  'mock-provider',
+  'preview',
+  'tauri',
+  'test',
+  'test:click-harness',
+  'test:coverage',
+  'test:harness',
+  'test:secrets',
+  'test:transcripts',
+  'test:watch',
+  'typecheck',
+  'verify',
+];
+
+/**
+ * The setup invocations {@link SETUP_COMMANDS} may exempt, as `program` and
+ * first argument.
+ *
+ * RULE V applied to that list. `SETUP_COMMANDS` decides which commands CI runs
+ * that the totality net `unaccounted` is allowed to ignore, and its membership
+ * was pinned by nothing: appending `'pnpm probe-smuggled-gate'` to it was
+ * `196 passed (196)`, exit 0, twice on the tree that shipped after round five,
+ * and so was the same edit with a matching real step added to `ci.yml` — CI
+ * running a gate `pnpm verify` never reaches, at full green. Removing an entry
+ * reddens; adding one was invisible.
+ *
+ * Two things stand behind the list now. This rule says an entry must *be* a
+ * setup invocation rather than merely sit in the list, which is the difference
+ * between a membership test and a check; and the case asserts every entry is a
+ * command some workflow really runs, so an entry that exempts nothing cannot sit
+ * here waiting for a command to arrive and use it.
+ *
+ * Read by {@link nonSetupCommands}, and by nothing else.
+ */
+const SETUP_INVOCATIONS: readonly (readonly [string, string])[] = [
+  // Installs the dependency tree. Conditional on the manifest declaring no
+  // lifecycle body — see the paragraph in {@link SETUP_COMMANDS}.
+  ['pnpm', 'install'],
+  // Refreshes the apt index and installs the Tauri system libraries. Neither
+  // reads the state of this tree.
+  ['sudo', 'apt-get'],
+];
+
+/**
+ * The entries of a setup list that are not setup invocations, named.
+ *
+ * A named function for the reason {@link unaccounted} is one: the shipped list
+ * satisfies the rule, so a rule written inline where the list is used would only
+ * ever see input that satisfies it.
+ */
+function nonSetupCommands(commands: readonly string[]): string[] {
+  return commands.filter((text) => {
+    const parsed = parseCommand(text);
+    return !SETUP_INVOCATIONS.some(([program, first]) => parsed.program === program && parsed.args[0] === first);
+  });
+}
+
+/**
  * A **path in this repository**, or `undefined`.
  *
  * The referential question defect eleven made {@link refuseUses} ask, asked on
@@ -1496,8 +1781,9 @@ function lifecycleScriptsIn(scripts: Record<string, string>): string[] {
  * than re-derived, so a `..` that climbs out of the tree is `undefined` on both
  * sides for the same reason.
  *
- * Called from seven places: four {@link VERIFY_INVOCATIONS} predicates (`node`,
- * `vitest`, `cd`, and `vite` through `everyArgumentIsFlagOrPath`), and three
+ * Called from seven places: four {@link VERIFY_INVOCATIONS} predicates —
+ * `node` and `cd` directly, `vite` and `vitest` through
+ * `everyArgumentIsFlagOrPath` — and three
  * direct calls in *accepts the argument shapes the shipped chain really uses —
  * the control*, which are what stop the existence check from being a rule the
  * shipped chain happens to satisfy. A previous version of this sentence said
@@ -1781,6 +2067,58 @@ const CI_TRIGGERS: Record<string, readonly string[]> = {
   ],
 };
 
+/**
+ * Every written value of an admitted key nothing here interprets, as
+ * {@link settingsOf} spells it.
+ *
+ * Defect twenty-eight, and the argument for pinning rather than interpreting is
+ * {@link CI_TRIGGERS}'s: the property that wants checking for `if:` — *"this
+ * expression cannot leave the gates below unrun for the commit somebody is
+ * asking about"* — is a claim about GitHub's expression evaluator, and an
+ * equality against what a human read is a fact about this repository.
+ *
+ * Read by *every setting this reader does not interpret is one somebody read —
+ * defect twenty-eight*, and by nothing else.
+ */
+const CI_SETTINGS: readonly string[] = [
+  'ci.yml workflow name: CI',
+  'ci.yml workflow concurrency: {group: ci-${{ github.ref }}, cancel-in-progress: true}',
+  'ci.yml workflow env: {CARGO_TERM_COLOR: always, DO_NOT_TRACK: "1"}',
+  'ci.yml job static name: Static checks',
+  'ci.yml job static if: github.event_name != \'pull_request\' || github.event.pull_request.draft == false',
+  'ci.yml job static step run pnpm typecheck name: Typecheck',
+  'ci.yml job static step run sudo apt-get update name: Install Tauri system dependencies',
+  'ci.yml job static step run cargo fmt --all --check name: Rust formatting',
+  'ci.yml job static step run cargo fmt --all --check working-directory: src-tauri',
+  'ci.yml job static step run cargo clippy --workspace --all-targets -- -D warnings name: Clippy',
+  'ci.yml job static step run cargo clippy --workspace --all-targets -- -D warnings working-directory: src-tauri',
+  'ci.yml job test-ts name: Frontend and harness tests',
+  'ci.yml job test-ts step run pnpm test name: Unit tests',
+  'ci.yml job test-ts step run pnpm test:harness name: GATE M Part 1 — mock capability matrix',
+  'ci.yml job test-ts step run pnpm build name: Frontend build',
+  'ci.yml job test-ts step run ./scripts/check-transcripts.sh name: Mock transcripts are reproducible',
+  'ci.yml job test-rust name: Rust core tests',
+  'ci.yml job test-rust step run sudo apt-get update name: Install Tauri system dependencies',
+  'ci.yml job test-rust step run cargo build --workspace --locked name: Build workspace',
+  'ci.yml job test-rust step run cargo build --workspace --locked working-directory: src-tauri',
+  'ci.yml job test-rust step run cargo test --workspace --locked name: Test workspace',
+  'ci.yml job test-rust step run cargo test --workspace --locked working-directory: src-tauri',
+  'ci.yml job test-windows name: Windows — the platform this ships on',
+  'ci.yml job test-windows step run pnpm typecheck name: Typecheck',
+  'ci.yml job test-windows step run pnpm test name: Unit tests',
+  'ci.yml job test-windows step run node scripts/ci-retry-vitest-crash.mjs pnpm test:harness name: GATE M Part 1 — mock capability matrix',
+  'ci.yml job test-windows step run pnpm build name: Frontend build',
+  'ci.yml job test-windows step run cargo build --workspace --locked name: Build workspace',
+  'ci.yml job test-windows step run cargo build --workspace --locked working-directory: src-tauri',
+  'ci.yml job test-windows step run cargo test --workspace --locked name: Test workspace',
+  'ci.yml job test-windows step run cargo test --workspace --locked working-directory: src-tauri',
+  'ci.yml job test-windows step run pnpm test:transcripts name: Mock transcripts are reproducible',
+  'ci.yml job secret-tripwire name: No secrets on disk',
+  'ci.yml job secret-tripwire if: github.event_name != \'pull_request\' || github.event.pull_request.draft == false',
+  'ci.yml job secret-tripwire step run ./scripts/secret-scan.test.sh name: The tripwire still catches planted keys',
+  'ci.yml job secret-tripwire step run ./scripts/secret-scan.sh name: Scan tracked files for credential material',
+];
+
 describe('the local gate is a superset of the remote one', () => {
   it('every workflow file the runner would load is one this guard reads', () => {
     // The membership assertion the union needs. See WORKFLOW_FILES.
@@ -1800,6 +2138,38 @@ describe('the local gate is a superset of the remote one', () => {
         'say so by listing it in IGNORED_WORKFLOW_FILES; if it was meant to be a ' +
         'workflow, it is not running.',
     ).toEqual([...IGNORED_WORKFLOW_FILES]);
+
+    // RULE V over LOADED_EXTENSIONS. The split above is what decides whether a
+    // file in that directory is READ or merely counted, and the constant had no
+    // case of its own: dropping `'.yaml'` was `196 passed (196)`, exit 0, twice
+    // on the tree that shipped after round five. The property survived by
+    // accident — a real `.yaml` in the directory then lands in `ignoredFiles`
+    // and reddens the equality above — so what was missing is the rule, asked of
+    // a directory this tree does not have.
+    const directory = mkdtempSync(join(tmpdir(), 'verify-workflows-'));
+    try {
+      mkdirSync(join(directory, '.github', 'workflows'), { recursive: true });
+      const body = [
+        'on:',
+        '  push:',
+        '    branches: [main]',
+        'jobs:',
+        '  probe:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: pnpm typecheck',
+        '',
+      ].join('\n');
+      for (const name of ['a.yml', 'b.yaml', 'c.txt', 'd.yaml.bak']) {
+        writeFileSync(join(directory, '.github', 'workflows', name), body, 'utf8');
+      }
+      const probe = readWorkflowSurface(directory);
+      expect(probe.files).toEqual(['a.yml', 'b.yaml']);
+      expect(probe.ignoredFiles).toEqual(['c.txt', 'd.yaml.bak']);
+      expect(probe.models.map((model) => model.file)).toEqual(['a.yml', 'b.yaml']);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('every pinned third-party action is one the workflows really use', () => {
@@ -1813,6 +2183,97 @@ describe('the local gate is a superset of the remote one', () => {
         'drifted apart. A pinned action nobody uses should go; an action in use ' +
         'that is not pinned would have been refused at module load.',
     ).toEqual([...THIRD_PARTY_ACTIONS.map((action) => action.uses)].sort());
+
+    // The other half of the same row, and it was unpinned in the widening
+    // direction until round six: `refuseWith` refuses an input that is NOT
+    // listed, so removing `'version'` from `pnpm/action-setup@v4` is `no tests`
+    // at module load — while ADDING `'probe-input'` to `actions/checkout@v4`'s
+    // empty list was `196 passed (196)`, exit 0, twice on the tree that shipped
+    // after round five. An input listed here and handed to nobody is the hole
+    // the comment above describes, held open one key further in.
+    expect(
+      SURFACE.actionInputs,
+      'THIRD_PARTY_ACTIONS lists an input beside an action that no workflow ' +
+        'hands it. An unused input is a name a future "with:" can use without ' +
+        'anybody deciding about it, which is what pinning these rows is for.',
+    ).toEqual(
+      [
+        ...new Set(
+          THIRD_PARTY_ACTIONS.flatMap((action) => action.inputs.map((input) => `${action.uses} with ${input}`)),
+        ),
+      ].sort(),
+    );
+  });
+
+  it('every setting this reader does not interpret is one somebody read — defect twenty-eight', () => {
+    // The pin. Every admitted key that no named function below decides on has
+    // its written value compared with what a human read, which is what removes
+    // the header sentence that licensed nine keys and was false about four of
+    // them. `if:` and `strategy:` are the two this round falsified it with.
+    expect(
+      SURFACE.settings,
+      'a value changed under a key this reader admits and does not interpret. It ' +
+        'cannot tell a renamed step from a job put behind "if: false", or from a ' +
+        '"strategy: matrix:" that expands the job to no runs at all, so both are ' +
+        'a review: every other assertion in this file describes gates that are ' +
+        'WRITTEN in CI, and these keys decide whether the runner reaches them. ' +
+        'Read the change, then write it into CI_SETTINGS.',
+    ).toEqual([...CI_SETTINGS]);
+
+    // The rule, on scopes this tree does not contain — without these the pin
+    // above is satisfied by a `settingsOf` that returns nothing.
+    const document = (...lines: readonly string[]): YamlNode =>
+      parseWorkflowYaml('probe.yml', lines.join('\n'));
+    const entriesOf = (...lines: readonly string[]): readonly YamlEntry[] =>
+      mappingOf(document(...lines)) ?? [];
+
+    expect(settingsOf('probe job j', entriesOf('if: false', 'runs-on: ubuntu-latest'))).toEqual([
+      'probe job j if: false',
+    ]);
+    // An interpreted key is not pinned: it has a reader that decides on it.
+    expect(settingsOf('probe job j', entriesOf('needs: static'))).toEqual([]);
+    // `env:` is in both lists and is pinned anyway, because
+    // `refuseActionInputEnv` decides on one spelling of one key inside it.
+    expect(settingsOf('probe workflow', entriesOf('env:', '  NODE_OPTIONS: --require ./probe.cjs'))).toEqual([
+      'probe workflow env: {NODE_OPTIONS: --require ./probe.cjs}',
+    ]);
+    // A key in NEITHER list is pinned by the fall-through, which is what makes
+    // adding a name to JOB_KEYS insufficient to admit it in silence.
+    expect(settingsOf('probe job j', entriesOf('container: ghcr.io/some-org/ci-base:latest'))).toEqual([
+      'probe job j container: ghcr.io/some-org/ci-base:latest',
+    ]);
+    // Quoting survives the render, because '1' and 1 are not one scalar here.
+    expect(settingsOf('probe workflow', entriesOf("env:", "  DO_NOT_TRACK: '1'"))).toEqual([
+      'probe workflow env: {DO_NOT_TRACK: "1"}',
+    ]);
+    // A matrix that multiplies a job by zero, which the header used to disclose
+    // only in the direction that multiplies it by more than one. The `[]`
+    // arrives quoted because `parseWorkflowYaml` keeps a flow sequence as
+    // opaque text and marks it not-plain, and `renderYaml` reports the scalar
+    // it was handed rather than one it would prefer.
+    expect(
+      settingsOf('probe job j', entriesOf('strategy:', '  matrix:', '    include: []')),
+    ).toEqual(['probe job j strategy: {matrix: {include: "[]"}}']);
+  });
+
+  it('every key these lists admit is one something reads or something pins', () => {
+    // RULE V applied to the header's own accounting. That accounting used to be
+    // a sentence — "Every key in TOP_LEVEL_KEYS, JOB_KEYS and STEP_KEYS is now
+    // either read by something below or in this sentence" — and a sentence is
+    // not a guard: appending 'container' to JOB_KEYS and writing a `container:`
+    // on `test-ts` was `196 passed (196)`, exit 0, twice on the tree that
+    // shipped after round five, which is the "listed as known and read by
+    // nothing" shape this file has now fixed five times.
+    const admitted = [...new Set([...TOP_LEVEL_KEYS, ...JOB_KEYS, ...STEP_KEYS])].sort();
+    expect(
+      admitted,
+      'a key was added to TOP_LEVEL_KEYS, JOB_KEYS or STEP_KEYS without being ' +
+        'either interpreted or pinned. Write a reader for it and add it to ' +
+        'INTERPRETED_KEYS, or accept that its written value is a review and add ' +
+        'it to PINNED_SETTING_KEYS. Admitting it on the strength of a sentence ' +
+        'about what such keys can do is what defects fifteen, twenty-five, ' +
+        'twenty-six and twenty-eight each were.',
+    ).toEqual([...new Set([...INTERPRETED_KEYS, ...PINNED_SETTING_KEYS])].sort());
   });
 
   it.each(CI_GATES)('verify reaches the CI gate: $ci', ({ ci, runs }) => {
@@ -3516,6 +3977,42 @@ describe('verify is read as commands that execute, not as text that mentions the
   });
 
   it.each([
+    // A shell in the program position runs text that is not in this repository,
+    // which is defect eighteen's own mirror: there, `sh` was the program of a
+    // command whose ARGUMENTS the reader was reading.
+    'sh -c "exit 0"',
+    'bash -c "exit 0"',
+    'cmd /c "exit 0"',
+    'eval scripts/gates.sh',
+    'source scripts/env.sh',
+    '. scripts/env.sh',
+    // A program that stands where a gate should be and reports nothing about
+    // the tree.
+    'true',
+    ':',
+    'false',
+    // The two pnpm spellings that run a program nobody here named, listed in
+    // VERIFY_INVOCATIONS' own comment as things it refuses.
+    'pnpm exec vitest run',
+    'pnpm dlx some-package',
+  ])('refuses "%s" wherever it stands in the chain — RULE V over VERIFY_INVOCATIONS', (text) => {
+    // RULE V. VERIFY_INVOCATIONS' doc names the class it exists to refuse, and
+    // nothing asserted it: prepending `{ program: 'sh', shape: 'sh <anything>',
+    // accepts: () => true }` to the list was `196 passed (196)`, exit 0, twice
+    // on the tree that shipped after round five. All four *defect eighteen* rows
+    // put a program the list DOES name in the program position, so every one of
+    // them stayed green. The rule is asked here directly, of the programs the
+    // doc says are refused.
+    expect(acceptsInvocation(parseCommand(text))).toBeUndefined();
+
+    // And through the chain, so the refusal is the verdict a `verify` carrying
+    // this text would really get rather than a property of the lookup alone.
+    expect(
+      unclassifiedVerifyCommands(chainOf('probe', { probe: text })),
+    ).toHaveLength(1);
+  });
+
+  it.each([
     {
       what: 'pnpm exec, which runs a program nobody here named',
       body: 'pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh"',
@@ -3662,6 +4159,58 @@ describe('verify is read as commands that execute, not as text that mentions the
         'here is CI work every check above would report as covered. Decide where ' +
         'the work belongs: in the verify chain, in a workflow step of its own, ' +
         'or nowhere.',
+    ).toEqual([]);
+
+    // Defect twenty-nine. The assertion above is a MEMBERSHIP filter, so it can
+    // only ever object to a name somebody already wrote down. What it says
+    // nothing about is the complement, and pnpm's own `pnpm:devPreinstall` sits
+    // there: `196 passed (196)`, exit 0, twice, against `1 failed | 195 passed
+    // (196)` for the byte-identical body under `postinstall`. The complement is
+    // pinned here, so a script name nobody has decided about is a review whether
+    // or not this reader knows what pnpm does with it.
+    expect(
+      Object.keys(PACKAGE.scripts).sort(),
+      'package.json declares a script name this guard has never been shown. A ' +
+        'script name is where work hides that no command in a workflow and no ' +
+        'command in "pnpm verify" names: pnpm runs some of them at every ' +
+        'install, and LIFECYCLE_SCRIPTS can only refuse the ones somebody ' +
+        'already listed. Decide what runs this one and when, then add its name ' +
+        'to SCRIPT_NAMES.',
+    ).toEqual([...SCRIPT_NAMES]);
+  });
+
+  it('every command the setup list exempts is setup, and is one CI runs', () => {
+    // RULE V over SETUP_COMMANDS. That list decides what the totality net is
+    // allowed to ignore, and nothing pinned its membership: appending
+    // `'pnpm probe-smuggled-gate'` was `196 passed (196)`, exit 0, twice on the
+    // tree that shipped after round five, and so was the same edit with the
+    // matching step really added to `ci.yml`'s `static` job.
+    //
+    // The rule first, on entries this list does not carry.
+    expect(nonSetupCommands(['pnpm probe-smuggled-gate', 'true', './scripts/x.sh'])).toEqual([
+      'pnpm probe-smuggled-gate',
+      'true',
+      './scripts/x.sh',
+    ]);
+    expect(nonSetupCommands(['pnpm install --frozen-lockfile', 'sudo apt-get update'])).toEqual([]);
+
+    expect(
+      nonSetupCommands(SETUP_COMMANDS),
+      'SETUP_COMMANDS carries a command that is not one of the setup ' +
+        'invocations this reader has been shown. An entry here is a command CI ' +
+        'runs that no gate row has to account for, so it must fetch or install ' +
+        'something rather than test the tree. Decide which it is, then either ' +
+        'make it a gate or add its shape to SETUP_INVOCATIONS.',
+    ).toEqual([]);
+
+    // The other direction, which is WORKFLOW_FILES' and THIRD_PARTY_ACTIONS'
+    // argument applied here: an exemption that exempts nothing is a hole held
+    // open, waiting for a command to arrive and use it.
+    expect(
+      SETUP_COMMANDS.filter((text) => !COMMANDS.some(({ command }) => command === text)),
+      'SETUP_COMMANDS exempts a command no workflow runs. Remove it: an unused ' +
+        'exemption is where a future command lands without anybody deciding ' +
+        'whether it is a gate.',
     ).toEqual([]);
   });
 
@@ -4411,10 +4960,24 @@ interface WorkflowModel {
   readonly file: string;
   /**
    * The events this workflow runs on, one line each, as {@link triggersOf}
-   * spells them. Read by *every gate CI has is one it runs on the events this
-   * claim assumes*, and by nothing else.
+   * spells them. Read in two places, and by nothing else: *every gate CI has is
+   * one it runs on the events this claim assumes*, which pins them per file, and
+   * *reads the events a workflow runs on — defect twenty-five*, which asserts on
+   * this field directly for a document this tree does not contain. A previous
+   * version of this sentence named only the first and said "and by nothing
+   * else"; both readers were added by the same commit that wrote it. Mutating
+   * {@link triggersOf} to return the pinned list reddens **both**, which is the
+   * measurement that shows the sentence was wrong rather than merely imprecise:
+   * `5 failed | 191 passed (196)` on the tree that shipped after round five.
    */
   readonly triggers: readonly string[];
+  /**
+   * Every written value of a key nothing here interprets, as {@link settingsOf}
+   * spells it, in the order met. Read by {@link readWorkflowSurface}, which
+   * concatenates it across files for *every setting this reader does not
+   * interpret is one somebody read — defect twenty-eight*, and by nothing else.
+   */
+  readonly settings: readonly string[];
   readonly jobs: readonly WorkflowJob[];
   /**
    * Every pinned third-party action this file admitted, in the order met. Read
@@ -4422,6 +4985,13 @@ interface WorkflowModel {
    * pinned third-party action is one the workflows really use*.
    */
   readonly actions: readonly string[];
+  /**
+   * Every `<uses> with <key>` this workflow really writes, in the order met.
+   * Read by {@link readWorkflowSurface}, which unions it across files for the
+   * widening half of *every pinned third-party action is one the workflows
+   * really use*, and by nothing else.
+   */
+  readonly actionInputs: readonly string[];
 }
 
 /** One simple command CI runs, carrying the file and job that run it. */
@@ -4610,7 +5180,166 @@ const STEP_KEYS = [
   'id', 'if', 'name', 'uses', 'run', 'working-directory', 'shell', 'with', 'env',
   'continue-on-error', 'timeout-minutes',
 ];
-/** Shells whose `&&`, `||`, `;` and `|` mean what {@link shellCommands} assumes. */
+
+/**
+ * The admitted keys a named function below **consumes and decides on**.
+ *
+ * Every other admitted key falls through to {@link settingsOf}, whose output is
+ * pinned by equality against {@link CI_SETTINGS}. That fall-through is the
+ * whole of the fix for defect twenty-eight and it is deliberately the *default*:
+ * to admit a key without writing a reader for it, somebody has to write the key
+ * into {@link TOP_LEVEL_KEYS}/{@link JOB_KEYS}/{@link STEP_KEYS} **and** accept
+ * that its written value is pinned. There is no third option and no sentence
+ * granting one.
+ *
+ * The reader each name here is claimed to have: `jobs`, `steps`, `runs-on` and
+ * `run` in {@link modelOf}; `defaults` in `modelOf`'s defaults block;
+ * `uses` in {@link refuseUses}; `shell` in the {@link SPLITTABLE_SHELLS} test;
+ * `with` in {@link refuseWith}; `continue-on-error` in
+ * {@link refuseSuppression}; `on` in {@link triggersOf}; `needs` in
+ * {@link needsNamesOf}; `env` in {@link refuseActionInputEnv} and
+ * {@link refuseEnvOnUses}; `secrets` in `modelOf`'s refusal by name.
+ *
+ * **The residue, stated rather than implied.** This list is names, and a name
+ * written here that no function reads would be the same defect one level up —
+ * the thing this file has now closed four times. No test can establish that a
+ * function reads a key without being the function; what stands behind each entry
+ * instead is a mutation, and the doc comment on each of those functions records
+ * the count its no-op prints. `env` is the one key that is in **both** lists:
+ * `refuseActionInputEnv` decides on one spelling of one key and says nothing
+ * about the rest of the block, so the rest of the block is pinned.
+ *
+ * Read by {@link settingsOf} and by *every key these lists admit is one
+ * something reads or something pins*, and by nothing else.
+ */
+const INTERPRETED_KEYS = [
+  'jobs', 'defaults', 'steps', 'runs-on', 'run', 'uses', 'shell', 'with',
+  'continue-on-error', 'on', 'needs', 'env', 'secrets',
+];
+
+/**
+ * The admitted keys whose **written value** is compared with what a human read,
+ * because nothing here interprets them.
+ *
+ * ### Defect twenty-eight: one sentence licensed nine keys, and four walked through it
+ *
+ * Nine of these keys used to sit under the header sentence *"each of those
+ * can only name, remove or reorder work, which is the one-directional weakening
+ * above"*. `continue-on-error` falsified it in round two, `on` and `needs` in
+ * round four, and `if` falsifies it now — four constructions through one
+ * licence. `strategy` was never under that sentence; it was disclosed
+ * separately, in a bullet that stated only half of what it does. Both are keys
+ * that decide whether a written gate **executes**:
+ *
+ * - `if: false` on the `static` job — which `test-ts`, `test-rust` and
+ *   `test-windows` all `needs:` — was `196 passed (196)`, exit 0, twice on the
+ *   tree that shipped after round five, while the byte-equivalent statement of
+ *   the same fact about the same job, `continue-on-error: true`, was `no tests`,
+ *   exit 1, refused **by name**. One referent, two spellings in one document,
+ *   opposite verdicts, and the admitted spelling is the stronger of the two: the
+ *   gates do not merely stop counting, they never run. The narrowings a
+ *   maintainer would really write are the same measurement:
+ *   `if: github.event.pull_request.draft == false` (the existing expression with
+ *   its `github.event_name != 'pull_request' ||` clause deleted, which skips
+ *   every push) and `if: github.event_name == 'workflow_dispatch'` on
+ *   `test-windows` (which takes the two gates only that job runs out of every
+ *   push and pull request) were each `196 passed (196)`, exit 0.
+ * - `strategy: matrix: include: []` on `test-ts` expands the job to no runs at
+ *   all: `196 passed (196)`, exit 0. The header disclosed only that a matrix can
+ *   *multiply* a job. Multiplication by zero is the other direction.
+ *
+ * The fix is not a fourth named refusal. It is that the licence is gone: a key
+ * this reader does not interpret has its value **pinned**, the way
+ * {@link CI_TRIGGERS} pins what `on:` says. Widening is a review; narrowing to
+ * nothing is a red. `env:` is in this list for the same reason and closes a
+ * third construction — `NODE_OPTIONS: --require ./scripts/ci-probe-gate.cjs`
+ * and `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` in `ci.yml`'s workflow-level
+ * `env:` were each `196 passed (196)`, exit 0 on that same tree, the second
+ * while the byte-equivalent `script-shell=` line in the tracked `.npmrc` was
+ * refused at module load by name.
+ *
+ * **What this costs, said plainly, because a pin somebody deletes is worse than
+ * no pin.** Renaming a step reddens this file. That is the price of having no
+ * key-by-key licence: this reader cannot tell a renamed step from a job made
+ * unreachable, and the four falsifications above are what a list of exceptions
+ * is worth here.
+ *
+ * Read in two places, and by nothing else: {@link settingsOf}, which pins a key
+ * named here even when {@link INTERPRETED_KEYS} also names it — that is how
+ * `env` is both interpreted and pinned — and *every key these lists admit is one
+ * something reads or something pins*, which is the accounting somebody has to
+ * keep true. Note what the first reader means: a key in NEITHER list is pinned
+ * too, by the fall-through, so this list is not the whole of what gets pinned
+ * and shrinking it does not shrink the pin.
+ */
+const PINNED_SETTING_KEYS = [
+  'name', 'run-name', 'concurrency', 'permissions', 'id', 'if', 'environment',
+  'outputs', 'timeout-minutes', 'strategy', 'working-directory', 'env',
+];
+
+/**
+ * One line per written value of a key nothing here interprets, labelled by the
+ * file, the job and the step that carry it.
+ *
+ * The label names a step by the work it does — its `uses:` target or the first
+ * line of its `run:` — rather than by its position, so that adding a step is a
+ * new line here and not a renumbering of every line below it.
+ *
+ * A key is pinned when it is in {@link PINNED_SETTING_KEYS} **or** when it is in
+ * none of the interpreted names: the default for an admitted key is that its
+ * value is a review. `env` is in both lists and is pinned, because
+ * {@link refuseActionInputEnv} decides on one spelling of one key inside it and
+ * says nothing about the rest.
+ *
+ * A named function taking its entries as an argument, for the reason
+ * {@link unaccounted} is one: `ci.yml` satisfies the pin by construction, so a
+ * rule written inline inside {@link modelOf} would only ever be handed input
+ * that satisfies it. Its cases hand it scopes this tree does not contain.
+ */
+function settingsOf(scope: string, entries: readonly YamlEntry[] | undefined): string[] {
+  const out: string[] = [];
+  for (const { key, value } of entries ?? []) {
+    if (!PINNED_SETTING_KEYS.includes(key) && INTERPRETED_KEYS.includes(key)) continue;
+    out.push(`${scope} ${key}: ${renderYaml(value)}`);
+  }
+  return out;
+}
+
+/**
+ * One node written back as one line, so that a pin over it is an equality
+ * against text a human can read in a failure message.
+ *
+ * Quoting is kept, because `'1'` and `1` are not the same scalar to YAML's core
+ * schema and {@link yamlBooleanOf} is built on exactly that distinction — a
+ * renderer that dropped it would report two different documents as one string.
+ * Newlines inside a block scalar become `\n`, so one written value is one line
+ * here however it was spelled.
+ */
+function renderYaml(node: YamlNode): string {
+  if (node.kind === 'scalar') {
+    const text = node.value.replace(/\r?\n/gu, '\\n');
+    return node.plain ? text : `"${text}"`;
+  }
+  if (node.kind === 'sequence') return `[${node.items.map(renderYaml).join(', ')}]`;
+  return `{${node.entries.map(({ key, value }) => `${key}: ${renderYaml(value)}`).join(', ')}}`;
+}
+/**
+ * Shells whose `&&`, `||`, `;` and `|` mean what {@link shellCommands} assumes.
+ *
+ * Guarded in the direction that matters and **unguarded in the other**, stated
+ * rather than left to be found. Widening reddens: adding `'python'` is
+ * `2 failed | 208 passed (210)`, exit 1, twice on the tree this comment ships
+ * in, at *refuses a run: whose shell is not one this reader can split* and
+ * *refuses the same shell set as a workflow default — defect nine*, which are
+ * hand-built documents this tree does not contain. **Narrowing does not**:
+ * dropping `'cmd'` is `210 passed (210)`, exit 0, twice. That is left unguarded
+ * on purpose — a shell removed from this list is refused rather than
+ * mis-split, so the error is an over-report costing a review, which is the
+ * direction this file trades for everywhere else. It is written down because an
+ * unstated limit is the defect even when the limit is harmless.
+ *
+ * Read by {@link modelOf}, and by nothing else.
+ */
 const SPLITTABLE_SHELLS = ['bash', 'sh', 'pwsh', 'powershell', 'cmd'];
 /**
  * The `defaults:` shape this reader can reason about. Anything else is refused
@@ -4646,10 +5375,18 @@ const DEFAULTS_RUN_KEYS = ['shell', 'working-directory'];
  * triggers is a review; narrowing them to nothing is a red.
  *
  * Read by {@link triggersOf}, and by nothing else. Load-bearing, measured on
- * the tree this comment ships in, twice: making {@link triggersOf} return the
- * pinned list for any `on:` it is handed is `5 failed | 191 passed (196)`, exit
- * 1 — the pin itself plus the four refusal rows, which is the shape of a reader
- * that reports what it was told to expect instead of what it read.
+ * the tree that shipped after round five, twice: making {@link triggersOf}
+ * return the pinned list for any `on:` it is handed is `5 failed | 191 passed
+ * (196)`, exit 1. **The five are the parse case *reads the events a workflow
+ * runs on — defect twenty-five* plus the four refusal rows — NOT the pin.** A
+ * previous version of this sentence said "the pin itself plus the four refusal
+ * rows", and the pin is the one case that necessarily PASSES under that
+ * mutation, because the mutation returns exactly the value the pin expects.
+ * That is this file's own rule about {@link ROOT_SURFACE} — a pin whose expected
+ * value equals the truth cannot catch a substituted enumeration — contradicted
+ * two paragraphs after it was stated. The count was right and the composition
+ * was not, which is why what a red proves is worth writing down as carefully as
+ * how many there are.
  */
 const TRIGGER_EVENTS = ['push', 'pull_request', 'workflow_dispatch'];
 
@@ -4973,6 +5710,13 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
   // it is the key that decides whether any gate below runs at all.
   const triggers = triggersOf(at, entry(top, 'on'));
 
+  // Defect twenty-eight. Everything admitted and not interpreted, collected so
+  // that its value is compared with what somebody read instead of being
+  // consumed in silence. The workflow scope first; the job and step scopes are
+  // appended as the walk below reaches them, so the order of this list is the
+  // order of the document.
+  const settings: string[] = settingsOf(`${workflow.file} workflow`, top);
+
   // Defect nine. The step-level `shell:` below is refused when this reader
   // cannot split its body — and the identical setting written as a workflow
   // default was listed in TOP_LEVEL_KEYS as a key this reader "knows" and then
@@ -5019,6 +5763,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
   // directions. A pin row nothing uses is a hole held open for no reason, and
   // {@link WORKFLOW_FILES} shows what a one-directional pin is worth.
   const actions: string[] = [];
+  const actionInputs: string[] = [];
 
   const jobsNode = entry(top, 'jobs');
   const jobsMap = jobsNode === undefined ? undefined : mappingOf(jobsNode);
@@ -5039,6 +5784,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
   const jobs = jobsMap.map(({ key: name, value, line }): WorkflowJob => {
     const job = mappingOf(value);
     if (job === undefined) throw new Error(`${at(line)} declares job "${name}" as something other than a mapping`);
+    settings.push(...settingsOf(`${workflow.file} job ${name}`, job));
     for (const { key, line: keyLine } of job) {
       if (!JOB_KEYS.includes(key)) {
         throw new Error(
@@ -5107,7 +5853,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     }
     const jobAction = jobUses === undefined ? undefined : refuseUses(where, line, jobUses, readWorkflows);
     if (jobAction !== undefined) actions.push(jobAction.uses);
-    refuseWith(at(line), jobAction, entry(job, 'with'));
+    actionInputs.push(...refuseWith(at(line), jobAction, entry(job, 'with')));
     refuseEnvOnUses(at(line), jobUses, entry(job, 'env'));
     refuseActionInputEnv(at, entry(job, 'env'));
 
@@ -5161,6 +5907,12 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       if (run === undefined && uses === undefined) {
         throw new Error(`${at(item.line)} is a step with neither a "run:" nor a "uses:", so this reader cannot say what it does`);
       }
+      // Labelled by the work the step does rather than by its index, so that
+      // inserting a step adds a line here instead of renumbering every line
+      // under it. Every step has one or the other: the two throws above are what
+      // make that true rather than assumed.
+      const work = uses === undefined ? `run ${(run ?? '').split('\n')[0] ?? ''}` : `uses ${uses}`;
+      settings.push(...settingsOf(`${workflow.file} job ${name} step ${work}`, step));
       refuseSuppression(
         at(item.line),
         entry(step, 'continue-on-error'),
@@ -5188,7 +5940,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       }
       const stepAction = uses === undefined ? undefined : refuseUses(where, item.line, uses, readWorkflows);
       if (stepAction !== undefined) actions.push(stepAction.uses);
-      refuseWith(at(item.line), stepAction, entry(step, 'with'));
+      actionInputs.push(...refuseWith(at(item.line), stepAction, entry(step, 'with')));
       refuseEnvOnUses(at(item.line), uses, entry(step, 'env'));
       refuseActionInputEnv(at, entry(step, 'env'));
       return { line: item.line, run };
@@ -5205,7 +5957,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     };
   });
 
-  return { file: workflow.file, triggers, jobs, actions };
+  return { file: workflow.file, triggers, settings, jobs, actions, actionInputs };
 }
 
 /**
@@ -5277,7 +6029,19 @@ function normaliseUsesPath(target: string): string | undefined {
 interface ThirdPartyAction {
   /** The exact `uses:` string, ref included. */
   readonly uses: string;
-  /** The `with:` keys the workflows in this repository hand it. */
+  /**
+   * The `with:` keys the workflows in this repository hand it.
+   *
+   * Checked in **both** directions, which it was not until round six:
+   * {@link refuseWith} refuses a key that is not listed here, and the widening
+   * half — a key listed here that no workflow hands — is now asserted by *every
+   * pinned third-party action is one the workflows really use* against the
+   * `actionInputs` that function returns. Measured on the tree that shipped
+   * after round five, twice: adding `'probe-input'` to
+   * `actions/checkout@v4`'s empty list was `196 passed (196)`, exit 0, and is
+   * `1 failed | 209 passed (210)`, exit 1, on the tree this comment ships in.
+   * Read by {@link refuseWith} and by that case, and by nothing else.
+   */
   readonly inputs: readonly string[];
 }
 
@@ -5510,9 +6274,22 @@ function refuseUses(
  * The refusal is the default here too. A `with:` on anything but a pinned
  * third-party action names a receiver this reader has not read the inputs of,
  * and a key not in that action's `inputs` is an input nobody decided about.
+ *
+ * **It returns the keys it admitted**, which is what makes the pin
+ * two-directional. Refusing an unlisted key bounds what a workflow may hand an
+ * action; it says nothing about a name sitting in {@link ThirdPartyAction} that
+ * no workflow hands, and that name is where a removed input would wait to admit
+ * its return unreviewed. Adding `'probe-input'` to `actions/checkout@v4`'s empty
+ * list was `196 passed (196)`, exit 0, twice on the tree that shipped after
+ * round five — the same shape the case beside {@link THIRD_PARTY_ACTIONS} argues
+ * against for the `uses` half, one key further in.
+ *
+ * Read by {@link modelOf} at both levels — whose caller collects the return into
+ * {@link WorkflowModel.actionInputs} — and by *an env: on a uses: step is the
+ * with: pin written the other way — defect twenty-one*.
  */
-function refuseWith(at: string, action: ThirdPartyAction | undefined, node: YamlNode | undefined): void {
-  if (node === undefined) return;
+function refuseWith(at: string, action: ThirdPartyAction | undefined, node: YamlNode | undefined): string[] {
+  if (node === undefined) return [];
   if (action === undefined) {
     throw new Error(
       `${at} has a "with:" this reader cannot attach to anything it has read. ` +
@@ -5535,6 +6312,14 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
       );
     }
   }
+  // The inputs this workflow really hands that action, so the `inputs` half of
+  // a pin row can be checked in the widening direction too. Round six measured
+  // that half unpinned: adding `'probe-input'` to `actions/checkout@v4`'s empty
+  // list was `196 passed (196)`, exit 0, twice, because the case beside
+  // THIRD_PARTY_ACTIONS read the `uses` half of every row and never this one —
+  // the same one-directional pin the comment in that case argues against, in
+  // the row it argues about.
+  return entries.map(({ key }) => `${action.uses} with ${key}`);
 }
 
 /**
@@ -5611,6 +6396,18 @@ interface WorkflowSurface {
    * really use*, and by nothing else.
    */
   readonly actions: readonly string[];
+  /**
+   * Every `<uses> with <key>` any workflow really writes, sorted, without
+   * repeats. Read by *every pinned third-party action is one the workflows
+   * really use*, and by nothing else.
+   */
+  readonly actionInputs: readonly string[];
+  /**
+   * Every written value of an admitted key nothing here interprets, in document
+   * order, across every workflow. Read by *every setting this reader does not
+   * interpret is one somebody read — defect twenty-eight*, and by nothing else.
+   */
+  readonly settings: readonly string[];
   readonly models: readonly WorkflowModel[];
 }
 
@@ -5663,7 +6460,9 @@ function readWorkflowSurface(repoRoot: string): WorkflowSurface {
   );
 
   const actions = [...new Set(models.flatMap((model) => model.actions))].sort();
-  return { files, ignoredFiles, actions, models };
+  const actionInputs = [...new Set(models.flatMap((model) => model.actionInputs))].sort();
+  const settings = models.flatMap((model) => model.settings);
+  return { files, ignoredFiles, actions, actionInputs, settings, models };
 }
 
 const SURFACE = readWorkflowSurface(REPO_ROOT);

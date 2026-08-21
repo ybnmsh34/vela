@@ -62,7 +62,7 @@
  * guard installs, and it is one notch narrower than "every composition": a
  * fixture that renders a list never renders the empty state, `:hover` is not a
  * state a DOM has, and `[data-kind='removed']` is invisible if the fixture only
- * builds `added`. Two things push back on it:
+ * builds `added`. Four things push back on it:
  *
  * 1. **The shape is the unit, not the state.** A rule applies to an element when
  *    its subject compound's classes are on that element *and* its element type,
@@ -75,10 +75,11 @@
  *    `::placeholder` and `data-` variants are covered without a fixture per
  *    state.
  * 2. **Un-reached rules are named, not skipped.** `every rule that paints text
- *    is reached by some fixture` lists every colour-declaring rule that no
- *    fixture reached, and compares that list against `NOT_RENDERED` — an exact
- *    set, not a floor. A colour rule added anywhere in `src/` fails this file
- *    until a fixture reaches it or somebody writes down why it cannot. The debt
+ *    is reached by some fixture` lists every rule that declares a colour — or an
+ *    `opacity`, which dims one — that no fixture reached, and compares that list
+ *    against `NOT_RENDERED` — an exact set, not a floor. Such a rule added
+ *    anywhere in `src/` fails this file until a fixture reaches it or somebody
+ *    writes down why it cannot. The debt
  *    is large and it is *enumerated*; before this file it was invisible. What
  *    that list may not be used for is the subject of {@link NOT_RENDERED}'s own
  *    comment: it enumerates what is unreached, and "unreached" once quietly
@@ -93,6 +94,22 @@
  *    enumerated in {@link GLOBAL_PAINT} with the guard that reads each, so the
  *    edge of this file's universe is held by an assertion rather than by
  *    `base.css`'s request that nobody put component styles in it.
+ * 4. **A property this file does not read is a failure, not a miss.** The two
+ *    answers above both presuppose that the paint arrives as a value of
+ *    `color`, `background` or `background-color`, and for two rounds those three
+ *    names were the whole question. They are not the whole engine: `opacity`
+ *    composites the glyphs exactly as an `rgba()` value would,
+ *    `-webkit-text-fill-color` overrides `color` for glyph fill, a `filter` or a
+ *    `mix-blend-mode` rewrites the pixel after both values are chosen, and a
+ *    `--vela-*` custom property re-declared on an *ancestor* changes what every
+ *    `var()` below it resolves to. None of those produce a value the reader is
+ *    handed, so none of them can be called `unreadable`; "this rule declares no
+ *    foreground I can see" collapses back into "this rule declares no
+ *    foreground". So `opacity` is **modelled** — see {@link Layer} — and every
+ *    other paint-moving property is **reported by name** against
+ *    {@link UNMODELLED_PAINT}, while a custom property outside `tokens.css`
+ *    fails outright. See {@link MOVES_PAINT} and
+ *    {@link customPropertiesOutsideTheTokenSheet}.
  *
  * ## Colours are frozen
  *
@@ -145,7 +162,9 @@ import { resetSkillsStore } from '@/state/skills-store';
 import {
   composite,
   contrastRatio,
+  declaredBy,
   declaredValue,
+  expandVars,
   loadSheets,
   paletteFor,
   parseStylesheet,
@@ -154,6 +173,7 @@ import {
   type Paint,
   type Rgba,
   type Rule,
+  type Sheet,
   type Theme,
 } from './css-model';
 
@@ -395,11 +415,35 @@ function parseSelector(selector: string): readonly SelectorPart[] {
   });
 }
 
+/** One declaration this audit reads, with the flag the cascade has to rank. */
+interface Ranked<T> {
+  readonly value: T;
+  readonly important: boolean;
+}
+
+/**
+ * A group opacity, read the way {@link Paint} reads a colour.
+ *
+ * `null` is the third answer again: `opacity` is a property that moves every
+ * painted pixel of an element and of everything inside it, and a value this
+ * audit cannot turn into a number must be a named failure rather than a silent
+ * `1`. `opacity: var(--something-undeclared)` and `opacity: calc(1 / 3)` both
+ * land here.
+ */
+interface Alpha {
+  readonly value: number | null;
+  readonly text: string;
+}
+
 interface Prepared {
   readonly rule: Rule;
   readonly parts: readonly SelectorPart[];
-  readonly foreground: Paint | undefined;
-  readonly ground: Paint | undefined;
+  readonly foreground: Ranked<Paint> | undefined;
+  readonly ground: Ranked<Paint> | undefined;
+  /** `opacity`, which dims this rule's element and everything inside it. */
+  readonly opacity: Ranked<Alpha> | undefined;
+  /** `content`, which decides whether a `::before`/`::after` paints glyphs. */
+  readonly content: Ranked<string> | undefined;
   /** Source order across the whole audit, the cascade's last tie-break. */
   readonly order: number;
 }
@@ -438,17 +482,57 @@ function partsOf(rule: Rule): readonly SelectorPart[] {
   }));
 }
 
+/**
+ * `opacity`, read to a number.
+ *
+ * A percentage is the same value in this property's other spelling, and a number
+ * outside 0..1 is clamped, which is what the engine does with it. Anything
+ * else — a `calc()`, a custom property with no declaration — comes back with a
+ * `null` value and is reported by name, never rounded up to `1`.
+ */
+function readAlpha(value: string, lookup: Lookup): Alpha {
+  const expansion = expandVars(value, lookup);
+  const text = expansion.text.trim();
+  if (expansion.unresolved.length > 0) return { value: null, text: value };
+  const percent = /^([\d.]+)%$/u.exec(text);
+  const number = /^([\d.]+)$/u.exec(text);
+  const raw =
+    percent !== null
+      ? Number.parseFloat(percent[1] ?? '') / 100
+      : number !== null
+        ? Number.parseFloat(number[1] ?? '')
+        : Number.NaN;
+  if (!Number.isFinite(raw)) return { value: null, text: value };
+  return { value: Math.min(1, Math.max(0, raw)), text: value };
+}
+
 function prepare(rules: readonly Rule[], palette: Map<string, string>): readonly Prepared[] {
   return rules.map((rule, order) => {
     const lookup = lookupFor(rule, palette);
-    const colour = declaredValue(rule, 'color');
-    const ground = declaredValue(rule, 'background', 'background-color');
+    const colour = declaredBy(rule, 'color');
+    const ground = declaredBy(rule, 'background', 'background-color');
+    const alpha = declaredBy(rule, 'opacity');
+    const content = declaredBy(rule, 'content');
     return {
       rule,
       order,
       parts: partsOf(rule),
-      foreground: colour === undefined ? undefined : readPaint(colour, lookup),
-      ground: ground === undefined ? undefined : readPaint(ground, lookup),
+      foreground:
+        colour === undefined
+          ? undefined
+          : { value: readPaint(colour.value, lookup), important: colour.important },
+      ground:
+        ground === undefined
+          ? undefined
+          : { value: readPaint(ground.value, lookup), important: ground.important },
+      opacity:
+        alpha === undefined
+          ? undefined
+          : { value: readAlpha(alpha.value, lookup), important: alpha.important },
+      content:
+        content === undefined
+          ? undefined
+          : { value: expandVars(content.value, lookup).text.trim(), important: content.important },
     };
   });
 }
@@ -500,11 +584,21 @@ function matchingParts(prepared: Prepared, element: Element): readonly SelectorP
     // The whole cost of this file is here, so the cheap rejection comes first:
     // a part whose subject names a class cannot reach an element carrying none
     // of this sheet's classes. A part whose subject names no class has to walk
-    // instead. Measured over the module sheets as this was written: 618 rules,
-    // 670 selector parts, of which 31 have a subject naming no class and 27 of
-    // those name an element type. Two of the 27 are `.fact dt` and `.fact dd`,
-    // the composition that got past the previous matcher. Observed and open —
-    // a sheet can add or remove one at any time.
+    // instead.
+    //
+    // Measured over the module sheets as this was written: 618 rules, 670
+    // selector parts, of which **44** have a subject naming no class. Thirteen
+    // of those 44 are `@keyframes` stops — the five distinct texts `0%`, `30%`,
+    // `50%`, `60%` and `100%`, which `partsOf` emits into the same 670 and
+    // which `anchored` rejects before this loop ever walks them. The other 31
+    // are anchored by a class on an ancestor and do walk, and 27 of those 31
+    // name an element type. Two of the 27 are `.fact dt` and `.fact dd`, the
+    // composition that got past the previous matcher.
+    //
+    // The number this sentence used to give was 31 for the whole 44, which is
+    // the count *after* the `anchored` filter above — a different proposition
+    // about the same 670, and wrong. Observed and open: a sheet can add or
+    // remove one at any time.
     if (part.subject.classes.length > 0 && own === undefined) return false;
     if (!compoundMatches(part.subject, element, prepared.rule.file)) return false;
     let index = part.ancestors.length - 1;
@@ -539,11 +633,197 @@ function unanchoredParts(rules: readonly Rule[]): readonly string[] {
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/* the third answer, at the property level                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE PROPERTIES THAT MOVE A PAINTED PIXEL.
+ *
+ * Two rounds of this file narrowed onto three property names — `color`,
+ * `background`, `background-color` — and then spent their effort on *which
+ * element* the cascade reaches. Nothing asked **which property paints**, and
+ * that is a door of exactly the shape the two repairs before it closed. A paint
+ * declared in a fourth property never becomes a value, so `readPaint`'s
+ * `unreadable` arm has nothing to be about: "this rule declares no foreground I
+ * can see" collapses back into "this rule declares no foreground", which is the
+ * original defect wearing a property name instead of a value.
+ *
+ * So this is the third answer one level up. Every property below changes the
+ * pixel a glyph or its ground is painted in, and each one is either **modelled**
+ * or **reported by name**:
+ *
+ * - `opacity` is modelled — see {@link Layer} — for every rule the cascade can
+ *   reach. It is still reported inside `@keyframes`, where the value is a
+ *   function of time and this audit measures a still frame.
+ * - everything else is reported, and the report is compared against
+ *   {@link UNMODELLED_PAINT}, which is the only way to be exempt and names a
+ *   reason per declaration.
+ *
+ * A `-webkit-text-fill-color`, a `filter`, a `mix-blend-mode` or a
+ * `background-image` added anywhere under `src/` fails this file until somebody
+ * either teaches it the property or writes down why that declaration cannot hide
+ * a sub-AA composition.
+ */
+const MOVES_PAINT: readonly string[] = [
+  'opacity',
+  'filter',
+  'backdrop-filter',
+  'mix-blend-mode',
+  'background-blend-mode',
+  'background-image',
+  'background-clip',
+  '-webkit-background-clip',
+  '-webkit-text-fill-color',
+  '-webkit-text-stroke',
+  '-webkit-text-stroke-color',
+  'text-shadow',
+  'color-scheme',
+  'forced-color-adjust',
+  'visibility',
+];
+
+const IN_KEYFRAMES = (rule: Rule): boolean =>
+  rule.conditions.some((condition) => condition.startsWith('@keyframes'));
+
+/** `file — selector — property`, the key {@link UNMODELLED_PAINT} is written in. */
+function paintMovers(sheets: readonly Sheet[]): readonly string[] {
+  const found: string[] = [];
+  for (const sheet of sheets) {
+    for (const rule of sheet.rules) {
+      const where =
+        rule.conditions.length === 0
+          ? rule.selector
+          : `${rule.conditions.join(' ')} — ${rule.selector}`;
+      for (const declaration of rule.declarations) {
+        if (!MOVES_PAINT.includes(declaration.property)) continue;
+        // The one modelled property, on the one kind of rule the cascade reaches.
+        if (declaration.property === 'opacity' && !IN_KEYFRAMES(rule)) continue;
+        found.push(`${rule.file} — ${where} — ${declaration.property}`);
+      }
+    }
+  }
+  return [...new Set(found)].sort();
+}
+
+/**
+ * Every declaration of a paint-moving property this file does not model, with
+ * why it cannot hide a composition.
+ *
+ * Same contract as {@link GLOBAL_PAINT} and as `contrast.test.ts`'s
+ * `NOT_A_TEXT_GROUND`: this list is the only way to be exempt, and every entry
+ * is a claim a reviewer can check against the component. An entry whose reason
+ * is empty fails alongside a declaration that has no entry at all.
+ */
+const UNMODELLED_PAINT: ReadonlyMap<string, string> = new Map([
+  [
+    'src/features/conversation/Markdown.module.css — @keyframes caret — 0%, 50% — opacity',
+    "the streaming caret: `.paragraph[data-last='true']::after` with `content: ''`, a filled box carrying no glyphs",
+  ],
+  [
+    'src/features/conversation/Markdown.module.css — @keyframes caret — 50.01%, 100% — opacity',
+    'the other half of the same caret blink',
+  ],
+  [
+    'src/features/conversation/MessageTurn.module.css — @keyframes bounce — 0%, 60%, 100% — opacity',
+    'the waiting dots: `MessageTurn.tsx` renders three empty `<span>` children inside `.dots`, each sized by `--vela-dot` and filled with `currentcolor`; no glyphs',
+  ],
+  [
+    'src/features/conversation/MessageTurn.module.css — @keyframes bounce — 30% — opacity',
+    'the other stop of the same bounce',
+  ],
+  [
+    'src/features/conversation/ThinkingBlock.module.css — @keyframes pulse — 0%, 100% — opacity',
+    'the thinking dot: `ThinkingBlock.tsx` renders `.pulse` as an empty `<span aria-hidden>` filled with --vela-accent; no glyphs',
+  ],
+  [
+    'src/features/conversation/ThinkingBlock.module.css — @keyframes pulse — 50% — opacity',
+    'the other stop of the same pulse',
+  ],
+  [
+    'src/features/conversation/ToolCallList.module.css — @keyframes pulse — 0%, 100% — opacity',
+    'the running-tool dot: `ToolCallList.tsx` renders `.pulse` as an empty `<span aria-hidden>` filled with `currentcolor`; no glyphs',
+  ],
+  [
+    'src/features/conversation/ToolCallList.module.css — @keyframes pulse — 50% — opacity',
+    'the other stop of the same pulse',
+  ],
+  [
+    'src/features/navigation/DeleteConversationDialog.module.css — .confirm:hover — filter',
+    'a `brightness()` over the whole button, so the label and the fill it sits on move together; the composition this audit measures is the base state, which is the one the pointer is not on',
+  ],
+  [
+    'src/styles/base.css — ::-webkit-scrollbar-thumb — background-clip',
+    'the scrollbar thumb carries no text; the thumb itself is audited as a foreground in contrast.test.ts',
+  ],
+  [
+    'src/styles/base.css — ::-webkit-scrollbar-thumb:hover — background-clip',
+    'the same thumb, hovered',
+  ],
+  [
+    "src/styles/tokens.css — :root — color-scheme",
+    'the document-level scheme, which supplies a colour only where nothing else does: `base.css body` declares an explicit colour and ground — read by `rootPaint` — and `base.css button, input, textarea, select` declares `color: inherit`; both rules are entries in GLOBAL_PAINT',
+  ],
+  [
+    "src/styles/tokens.css — :root[data-theme='dark'] — color-scheme",
+    'the same declaration under an explicit theme choice',
+  ],
+  [
+    "src/styles/tokens.css — @media (prefers-color-scheme: dark) — :root:not([data-theme='light']) — color-scheme",
+    'the same declaration under the system preference',
+  ],
+]);
+
+/**
+ * Every custom property declared outside the token sheet.
+ *
+ * Empty today, and this is the door {@link lookupFor} leaves open. That function
+ * resolves a `var()` against **the declaring rule's own custom properties plus
+ * `:root`'s** — which closed round one's escape (`--panel-bg: var(--vela-x);
+ * background: var(--panel-bg);` in one rule) and left the identical blindness
+ * one scope up. A custom property is inherited: an *ancestor* rule can declare
+ * `--vela-code-bg: var(--vela-bg)` and every `background: var(--vela-code-bg)`
+ * below it resolves to something else, while this audit goes on reporting the
+ * global value with full confidence. That is a confident wrong answer, which is
+ * worse than silence, and it costs one line in a rule that declares no paint at
+ * all and so enters no painting set.
+ *
+ * Modelling custom-property inheritance is a second cascade. Forbidding the
+ * shape is one assertion, and it is the honest one while nothing needs it: no
+ * sheet under `src/` outside `tokens.css` declares a custom property today. A
+ * *new* name declared on an ancestor and read by a descendant already fails
+ * loudly — `readPaint` returns `unreadable` because the descendant's lookup has
+ * no declaration for it — so the only shape this adds is **re-pointing a name
+ * the palette already answers**.
+ */
+function customPropertiesOutsideTheTokenSheet(sheets: readonly Sheet[]): readonly string[] {
+  const found: string[] = [];
+  for (const sheet of sheets) {
+    if (sheet.name === 'src/styles/tokens.css') continue;
+    for (const rule of sheet.rules) {
+      for (const declaration of rule.declarations) {
+        if (!declaration.property.startsWith('--')) continue;
+        found.push(`${rule.file} — ${rule.selector} — ${declaration.property}`);
+      }
+    }
+  }
+  return [...new Set(found)].sort();
+}
+
 /** One rule reaching one element, with what the cascade needs to order it. */
 interface Hit {
   readonly prepared: Prepared;
   readonly conditional: boolean;
-  readonly pseudoElement: boolean;
+  /**
+   * `::after`, `::placeholder`, … — the pseudo-element this hit paints, by
+   * name, or `null` when it paints the element itself.
+   *
+   * It was a boolean, and the name is what the boolean could not carry: a
+   * pseudo-element has a box of its own, so its `background` is a ground of its
+   * own and two different pseudo-elements on one element are two different
+   * cascades. See {@link Audit.pseudoPairs}.
+   */
+  readonly pseudoElement: string | null;
   readonly state: string;
   readonly specificity: number;
 }
@@ -567,7 +847,7 @@ function hitsOn(prepared: readonly Prepared[], element: Element): readonly Hit[]
       found.push({
         prepared: candidate,
         conditional: part.conditional,
-        pseudoElement: part.pseudoElement !== null,
+        pseudoElement: part.pseudoElement,
         state: part.state,
         specificity: part.specificity,
       });
@@ -590,19 +870,31 @@ function hitsOn(prepared: readonly Prepared[], element: Element): readonly Hit[]
 function inState<T>(
   hits: readonly Hit[],
   state: string,
-  read: (hit: Hit) => T | undefined,
+  read: (hit: Hit) => Ranked<T> | undefined,
 ): T | undefined {
   const candidates = hits.filter(
     (hit) => read(hit) !== undefined && (!hit.conditional || hit.state === state),
   );
+  // IMPORTANCE FIRST, AND IT IS NOT A REFINEMENT OF SPECIFICITY.
+  //
+  // `!important` beats every normal author declaration whatever its
+  // specificity, so it is a separate, higher key — not a tie-break. Sorting by
+  // specificity alone made this file answer with the higher-specificity normal
+  // declaration and name a colour the engine never paints: `.body { color: X
+  // !important }` really does beat `.detail .body { color: Y }`, and the audit
+  // reported Y. `css-model.ts` used to strip the word before this function
+  // could see it, which is the same "no" that meant "I cannot tell" one axis
+  // over.
+  const weight = (hit: Hit): number => (read(hit)?.important === true ? 1 : 0);
   const winner = [...candidates]
-    .sort((a, b) =>
-      a.specificity === b.specificity
+    .sort((a, b) => {
+      if (weight(a) !== weight(b)) return weight(a) - weight(b);
+      return a.specificity === b.specificity
         ? a.prepared.order - b.prepared.order
-        : a.specificity - b.specificity,
-    )
+        : a.specificity - b.specificity;
+    })
     .at(-1);
-  return winner === undefined ? undefined : read(winner);
+  return winner === undefined ? undefined : read(winner)?.value;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -612,10 +904,47 @@ function inState<T>(
 /** A {@link Paint} that resolved to an actual colour. */
 type Solid = Extract<Paint, { readonly kind: 'colour' }>;
 
+/**
+ * A ground, as painted — and the two extra numbers a group `opacity` needs.
+ *
+ * `opacity` is not a colour and it is not a state: it renders an element and
+ * everything inside it into a buffer and composites that buffer over what is
+ * behind at `alpha`. So text inside the group and the ground inside the group
+ * are **both** mixed toward the same backdrop, and neither of them is what its
+ * own declaration says. Reading only `color` and `background` reports the
+ * undimmed pair with full confidence — which is how `--vela-text-muted` on
+ * `--vela-surface-raised`, a genuine 7.23:1, is painted at 2.82:1 by one extra
+ * word in the same rule.
+ *
+ * `alpha` is the group's opacity and `outside` is the pixel the group
+ * composites over, so a caller can reconstruct both painted pixels:
+ *
+ * - the ground is `rgba`, which is already `composite(declared × alpha, outside)`;
+ * - the text is `composite(colour × alpha, outside)` — see {@link paintedOn}.
+ *
+ * When `alpha` is 1 there is no group, `outside` is `rgba`, and both reduce to
+ * what this file did before: the text painted straight onto the ground.
+ */
 interface Layer {
   readonly rgba: Rgba;
   /** The role chain, nearest first, for the failure message. */
   readonly label: string;
+  /** The `opacity` of the group this ground is inside; 1 when there is none. */
+  readonly alpha: number;
+  /** The painted pixel that group composites over; `rgba` when `alpha` is 1. */
+  readonly outside: Rgba;
+}
+
+/** A ground nothing dims. */
+const undimmed = (rgba: Rgba, label: string): Layer => ({ rgba, label, alpha: 1, outside: rgba });
+
+const fade = (rgba: Rgba, alpha: number): Rgba => ({ ...rgba, a: rgba.a * alpha });
+
+/** What a text colour becomes once the group it is painted in is composited. */
+function paintedOn(colour: Rgba, ground: Layer): Rgba {
+  return ground.alpha >= 1
+    ? composite(colour, ground.rgba)
+    : composite(fade(colour, ground.alpha), ground.outside);
 }
 
 const ROOT = 'src/styles/base.css';
@@ -656,6 +985,18 @@ class Audit {
   readonly reached = new Set<string>();
   readonly unreadable: string[] = [];
   readonly unknownClasses = new Set<string>();
+  /**
+   * Compositions this file declines to compute, by name.
+   *
+   * The group-opacity arithmetic in {@link Layer} is exact for one group: a
+   * dimmed element, and text either on its own ground or on the ground above
+   * it. Nest a second `opacity` inside the first and the buffers stack, and the
+   * one-multiplication form stops being the right answer. That is reported here
+   * rather than computed wrongly, which is this file's whole method.
+   */
+  readonly unmodelled: string[] = [];
+  /** Set by the walk so a failure names the fixture it came from. */
+  where = '';
 
   constructor(
     private readonly prepared: readonly Prepared[],
@@ -673,7 +1014,14 @@ class Audit {
     }
     const found = hitsOn(this.prepared, element);
     for (const hit of found) {
-      if (hit.prepared.foreground !== undefined || hit.prepared.ground !== undefined) {
+      // `opacity` counts as paint here for the same reason it counts in the
+      // census that reads this set: a rule that dims text is a rule that
+      // changes what the text is painted in.
+      if (
+        hit.prepared.foreground !== undefined ||
+        hit.prepared.ground !== undefined ||
+        hit.prepared.opacity !== undefined
+      ) {
         this.reached.add(`${hit.prepared.rule.file} — ${hit.prepared.rule.selector}`);
       }
     }
@@ -687,6 +1035,41 @@ class Audit {
         `${hit.prepared.rule.file} \`${hit.prepared.rule.selector}\` — ${paint.why}`,
       );
     }
+  }
+
+  /** The `opacity` this element declares in one of its states, as a number. */
+  private ownAlpha(element: Element, state: string): number {
+    const found = inState(this.hitsFor(element), state, (hit) =>
+      hit.pseudoElement !== null || hit.prepared.opacity === undefined
+        ? undefined
+        : hit.prepared.opacity,
+    );
+    if (found === undefined) return 1;
+    if (found.value === null) {
+      this.unreadable.push(`opacity \`${found.text}\` is not a number this audit can read`);
+      return 1;
+    }
+    return found.value;
+  }
+
+  /**
+   * The ground layer an element hands to its own text, given the ground above.
+   *
+   * This is where a group starts. An element that declares `opacity` below 1
+   * opens one: everything it and its descendants paint is composited over the
+   * pixel that was already there, which is `under.rgba`. An element that
+   * declares none stays in whatever group it was already in and passes both
+   * numbers through unchanged.
+   */
+  private dim(element: Element, state: string, under: Layer): { alpha: number; outside: Rgba } {
+    const own = this.ownAlpha(element, state);
+    if (own >= 1) return { alpha: under.alpha, outside: under.outside };
+    if (under.alpha >= 1) return { alpha: own, outside: under.rgba };
+    this.unmodelled.push(
+      `${this.where} — <${element.tagName.toLowerCase()}> is at opacity ${own} inside a group ` +
+        `already at opacity ${under.alpha}; this audit models one group, not two`,
+    );
+    return { alpha: own * under.alpha, outside: under.outside };
   }
 
   /**
@@ -705,7 +1088,7 @@ class Audit {
   statesOn(element: Element): readonly string[] {
     const states = new Set<string>(['']);
     for (const hit of this.hitsFor(element)) {
-      if (hit.conditional && !hit.pseudoElement) states.add(hit.state);
+      if (hit.conditional && hit.pseudoElement === null) states.add(hit.state);
     }
     return [...states];
   }
@@ -727,20 +1110,30 @@ class Audit {
     const above = this.groundsFor(element.parentElement);
     const paint = inState(this.hitsFor(element), state, (hit) => {
       // A pseudo-element's fill is not the element's own ground.
-      if (hit.pseudoElement) return undefined;
+      if (hit.pseudoElement !== null) return undefined;
       const found = hit.prepared.ground;
-      if (found !== undefined) this.note(hit, found);
+      if (found !== undefined) this.note(hit, found.value);
       return found;
     });
-    // `transparent`, `none` and `currentcolor` paint nothing a text ground can be
-    // read off — the dot fills that use `currentcolor` carry no text — so what is
-    // behind them shows through unchanged.
-    if (paint === undefined || paint.kind !== 'colour') return above;
-    if (paint.rgba.a >= 1) return [{ rgba: paint.rgba, label: paint.token ?? 'a literal colour' }];
-    return above.map((under) => ({
-      rgba: composite(paint.rgba, under.rgba),
-      label: `${paint.token ?? 'a literal colour'} over ${under.label}`,
-    }));
+    return above.map((under) => {
+      const { alpha, outside } = this.dim(element, state, under);
+      // Named only where the group *starts*. A descendant inherits the group
+      // rather than opening a second one, and appending the suffix again at
+      // every level made the label read `at opacity 0.75 at opacity 0.75`.
+      const dimmed = alpha >= 1 || alpha === under.alpha ? '' : ` at opacity ${alpha}`;
+      // `transparent`, `none` and `currentcolor` paint nothing a text ground can
+      // be read off — the dot fills that use `currentcolor` carry no text — so
+      // what is behind them shows through unchanged. A group opacity is not like
+      // that: an element with no ground of its own still dims its own text.
+      if (paint === undefined || paint.kind !== 'colour') {
+        return { rgba: under.rgba, label: `${under.label}${dimmed}`, alpha, outside };
+      }
+      const rgba = composite(fade(paint.rgba, alpha), outside);
+      const role = paint.token ?? 'a literal colour';
+      const label =
+        paint.rgba.a >= 1 && alpha >= 1 ? role : `${role} over ${under.label}${dimmed}`;
+      return { rgba, label, alpha, outside: alpha >= 1 ? rgba : outside };
+    });
   }
 
   /** Every colour this element's text can take, over all its states. */
@@ -758,28 +1151,78 @@ class Audit {
   /** The colour this element's text takes in one of its states. */
   colourIn(element: Element, state: string): readonly Layer[] {
     const paint = inState(this.hitsFor(element), state, (hit) => {
-      if (hit.pseudoElement) return undefined;
+      if (hit.pseudoElement !== null) return undefined;
       const found = hit.prepared.foreground;
-      if (found !== undefined) this.note(hit, found);
+      if (found !== undefined) this.note(hit, found.value);
       return found;
     });
     // `inherit` and `currentcolor` are whatever the parent already resolved to.
     if (paint === undefined || paint.kind !== 'colour') return this.coloursFor(element.parentElement);
-    return [{ rgba: paint.rgba, label: paint.token ?? 'a literal colour' }];
+    return [undimmed(paint.rgba, paint.token ?? 'a literal colour')];
   }
 
-  /** What a `::placeholder` or `::after` paints, if the element has one. */
-  pseudoColours(element: Element): readonly Layer[] {
-    const out: Layer[] = [];
-    for (const hit of this.hitsFor(element)) {
-      if (!hit.pseudoElement) continue;
-      const paint = hit.prepared.foreground;
-      if (paint === undefined) continue;
-      this.note(hit, paint);
-      if (paint.kind !== 'colour') continue;
-      out.push({ rgba: paint.rgba, label: paint.token ?? 'a literal colour' });
+  /**
+   * WHAT A PSEUDO-ELEMENT PAINTS, **AND WHAT IT PAINTS IT ON**.
+   *
+   * The half that was missing is the ground. A `::before`/`::after` has a box of
+   * its own, so a `background` on it is that box's ground and not the element's
+   * — {@link Audit.groundIn} is right to refuse it — and the reader this
+   * replaces then measured the pseudo's *colour* against the **element's**
+   * ground and read the pseudo's own ground nowhere. A pseudo that declares a
+   * ground and no colour therefore produced no reading at all: it takes the
+   * element's inherited text colour and paints it on its own fill, and both
+   * halves were written in the sheet.
+   *
+   * `content` is what decides whether there are glyphs to measure. `::after`
+   * with `content: ''` is a caret or a rail — this repo has two, both filled
+   * with `--vela-accent`, neither carrying a character — and pairing the
+   * inherited text colour with their fill would manufacture a composition
+   * nothing paints. See {@link paintsGlyphs}.
+   */
+  pseudoPairs(element: Element, elementState: string): readonly { colour: Layer; ground: Layer }[] {
+    const pseudo = this.hitsFor(element).filter((hit) => hit.pseudoElement !== null);
+    const out: { colour: Layer; ground: Layer }[] = [];
+    for (const name of new Set(pseudo.map((hit) => hit.pseudoElement ?? ''))) {
+      const mine = pseudo.filter((hit) => hit.pseudoElement === name);
+      const states = new Set<string>(['']);
+      for (const hit of mine) if (hit.conditional) states.add(hit.state);
+      for (const state of states) {
+        const content = inState(mine, state, (hit) => hit.prepared.content);
+        if (!paintsGlyphs(name, content)) continue;
+        const paint = inState(mine, state, (hit) => {
+          const found = hit.prepared.foreground;
+          if (found !== undefined) this.note(hit, found.value);
+          return found;
+        });
+        const fill = inState(mine, state, (hit) => {
+          const found = hit.prepared.ground;
+          if (found !== undefined) this.note(hit, found.value);
+          return found;
+        });
+        for (const under of this.groundIn(element, elementState)) {
+          // The pseudo-element sits inside its originating element's box, so
+          // whatever dims the element dims it by exactly as much.
+          const ground: Layer =
+            fill === undefined || fill.kind !== 'colour'
+              ? under
+              : {
+                  rgba: composite(fade(fill.rgba, under.alpha), under.outside),
+                  label:
+                    fill.rgba.a >= 1 && under.alpha >= 1
+                      ? `${fill.token ?? 'a literal colour'} (${name})`
+                      : `${fill.token ?? 'a literal colour'} (${name}) over ${under.label}`,
+                  alpha: under.alpha,
+                  outside: under.outside,
+                };
+          const colours =
+            paint !== undefined && paint.kind === 'colour'
+              ? [undimmed(paint.rgba, `${paint.token ?? 'a literal colour'} (${name})`)]
+              : this.colourIn(element, elementState);
+          for (const colour of colours) out.push({ colour, ground });
+        }
+      }
     }
-    return dedupe(out);
+    return out;
   }
 
   /** Records that a rule was mounted, whether or not it paints anything. */
@@ -788,9 +1231,27 @@ class Audit {
   }
 }
 
+/**
+ * The pseudo-elements whose glyphs exist only because `content` says so.
+ *
+ * `::before` and `::after` are not generated at all without a `content`
+ * declaration, and `content: ''` generates a box with no characters in it.
+ * Every other pseudo-element in this repo's vocabulary — `::placeholder`,
+ * `::marker`, `::selection`, `::first-line`, `::first-letter` — decorates text
+ * the element already has.
+ */
+const GENERATED = new Set(['::before', '::after', ':before', ':after']);
+
+function paintsGlyphs(pseudoElement: string, content: string | undefined): boolean {
+  if (!GENERATED.has(pseudoElement)) return true;
+  if (content === undefined) return false;
+  const text = content.trim().toLowerCase();
+  return text !== "''" && text !== '""' && text !== 'none' && text !== '';
+}
+
 function dedupe(layers: readonly Layer[]): readonly Layer[] {
   const seen = new Map<string, Layer>();
-  for (const layer of layers) seen.set(layer.label, layer);
+  for (const layer of layers) seen.set(`${layer.label}|${layer.alpha}`, layer);
   return [...seen.values()];
 }
 
@@ -1283,10 +1744,21 @@ const THRESHOLD = 4.5;
  * are covered that way: the three `.diagnostics li` rules and `.selected .main`.
  * Everything else in this list is unmeasured.
  *
- * The way to shrink it is a fixture, not an edit here. 276 rules declare a
- * colour and 168 of them are reached at the time of writing — observed, and
- * open in both directions: a fixture that renders one more state moves both
- * numbers, and nothing here forces either bound.
+ * **What counts as painting text widened when `opacity` did.** The census that
+ * reads this list quantifies over every module rule that declares a `color`
+ * *or* an `opacity` outside `@keyframes`, because a rule that dims text changes
+ * what the text is painted in — see {@link Layer}. Five of the entries below
+ * are dimming rules with no `color` of their own; four belong to components
+ * (`MessageTurn`, `EndpointForm`) whose every colour rule is already here, and
+ * the fifth, `SchedulesPanel .rowOff`, is the off-state of a row the fixture
+ * mounts only in its on-state. Before that widening they were unmeasured
+ * *and* unlisted, which is the worse of the two.
+ *
+ * The way to shrink it is a fixture, not an edit here. Measured over the module
+ * sheets as this was written: 618 rules, of which 276 declare a colour, 291
+ * declare a colour or a non-keyframe opacity, and 178 of those 291 are reached —
+ * observed, and open in both directions: a fixture that renders one more state
+ * moves every one of those numbers, and nothing here forces any bound.
  */
 const NOT_RENDERED: readonly string[] = [
   'src/app/shell/AppShell.module.css — .statusBar',
@@ -1316,12 +1788,15 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/conversation/Composer.module.css — .stop:hover',
   'src/features/conversation/EmptyConversation.module.css — .note',
   'src/features/conversation/MessageTurn.module.css — .awaiting',
+  'src/features/conversation/MessageTurn.module.css — .dots span',
   'src/features/conversation/MessageTurn.module.css — .errorDetail',
   'src/features/conversation/MessageTurn.module.css — .errorTitle',
   'src/features/conversation/MessageTurn.module.css — .errorTrace',
+  'src/features/conversation/MessageTurn.module.css — .footer',
   'src/features/conversation/MessageTurn.module.css — .noAnswer',
   'src/features/conversation/MessageTurn.module.css — .retry',
   'src/features/conversation/MessageTurn.module.css — .retry:hover',
+  'src/features/conversation/MessageTurn.module.css — .turn:hover .footer, .turn:focus-within .footer',
   'src/features/conversation/MessageTurn.module.css — .usage',
   'src/features/conversation/MessageTurn.module.css — .userText',
   'src/features/conversation/ThinkingBlock.module.css — .notice',
@@ -1353,6 +1828,7 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/models/EndpointForm.module.css — .label',
   'src/features/models/EndpointForm.module.css — .optional',
   'src/features/models/EndpointForm.module.css — .save',
+  'src/features/models/EndpointForm.module.css — .save:disabled',
   'src/features/models/EndpointsPanel.module.css — .close, .add',
   'src/features/models/EndpointsPanel.module.css — .credentialState',
   'src/features/models/EndpointsPanel.module.css — .error',
@@ -1391,12 +1867,59 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/schedules/SchedulesPanel.module.css — .delete:hover',
   'src/features/schedules/SchedulesPanel.module.css — .error',
   'src/features/schedules/SchedulesPanel.module.css — .rowMeta',
+  'src/features/schedules/SchedulesPanel.module.css — .rowOff',
   'src/features/schedules/SchedulesPanel.module.css — .rowPrompt',
   'src/features/schedules/SchedulesPanel.module.css — .switch',
   'src/features/schedules/SchedulesPanel.module.css — .switchOn',
   'src/features/skills/SkillsPanel.module.css — .error',
   'src/features/skills/SkillsPanel.module.css — .resourceName',
   'src/features/skills/SkillsPanel.module.css — .rowDirectory',
+];
+
+/**
+ * Every `(fixture, element, state)` the walk found at `opacity: 0`.
+ *
+ * An element at zero opacity displays nothing, so there is no composition to
+ * measure — and measuring one anyway would report a ground against itself at
+ * 1:1 and red three rules whose whole purpose is to be revealed by a hover or a
+ * focus. But "measured nothing" is also what a matcher that stopped matching
+ * produces, so the set is written down instead of skipped, exactly as
+ * {@link NOT_RENDERED} is.
+ *
+ * Empty as measured: no text-carrying element any fixture mounts is inside a
+ * group at zero opacity. The three declarations of `opacity: 0` under `src/` —
+ * `MessageTurn .footer`, `ConversationRow .actions` and `Sidebar .handle::after`
+ * — are reveal-on-engagement wrappers, and each has a `:hover` rule setting it
+ * back to `1`, which is a state this audit measures. Written as an exact set
+ * and not a floor, so the first element that *does* go quiet this way is named
+ * here rather than counted as a pass. `an element at opacity 0 has no
+ * composition to measure` is the unit test that proves the arm is live.
+ */
+const NOT_PAINTED: readonly string[] = [];
+
+/**
+ * Sub-AA compositions on a control in its `:disabled` state.
+ *
+ * WCAG 2.2 SC 1.4.3 exempts "text ... that is part of an inactive user interface
+ * component" from the 4.5:1 minimum, and every one of these is a button dimmed
+ * by `opacity` in its `:disabled` state — the four `.save:disabled` rules,
+ * `ProjectPanel .secondary:disabled` and `LocalEndpointSection .primary:disabled`.
+ * The exemption is an *exact set* and not a rule: a new sub-AA disabled
+ * composition fails this file until somebody adds the line, which is the
+ * difference between an exemption and a hole. It is
+ * also the reason the dimming is modelled rather than ignored — the same
+ * `opacity` on a control that is *not* disabled is a ship-blocker and is
+ * reported as one.
+ */
+const INACTIVE: readonly string[] = [
+  '2.30:1 (needs 4.5) in light — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in MemoryPanel',
+  '2.30:1 (needs 4.5) in light — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in ProjectPanel',
+  '2.30:1 (needs 4.5) in light — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in SchedulesPanel',
+  '3.43:1 (needs 4.5) in light — --vela-text-on-accent on --vela-accent over --vela-surface at opacity 0.7 — <button> in LocalEndpointSection — one endpoint on the loopback',
+  '3.46:1 (needs 4.5) in light — --vela-text on --vela-surface-raised at opacity 0.5 — <button> in ProjectPanel',
+  '4.01:1 (needs 4.5) in dark — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in MemoryPanel',
+  '4.01:1 (needs 4.5) in dark — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in ProjectPanel',
+  '4.01:1 (needs 4.5) in dark — --vela-text-on-accent on --vela-accent over --vela-surface-raised at opacity 0.5 — <button> in SchedulesPanel',
 ];
 
 /**
@@ -1424,6 +1947,15 @@ interface Reading {
   readonly unknownClasses: ReadonlySet<string>;
   /** Per fixture, in fixture order — see {@link Walked}. */
   readonly walk: readonly Walked[];
+  /** See {@link Audit.unmodelled}. */
+  readonly unmodelled: readonly string[];
+  /**
+   * `(fixture, element, state)` triples that paint nothing because the group
+   * they are in is at `opacity: 0`. Compared against {@link NOT_PAINTED}.
+   */
+  readonly notPainted: readonly string[];
+  /** Sub-AA compositions on a control in its `:disabled` state — see {@link INACTIVE}. */
+  readonly inactive: readonly string[];
   /**
    * Every `(fixture, element, state)` the walk reached that yielded **no
    * composition at all**. Not a count and not a floor: a totality property. An
@@ -1433,6 +1965,26 @@ interface Reading {
   readonly blank: readonly string[];
   /** One named composition, kept so the floors can assert on a resolved value. */
   readonly sample: { readonly ratio: number; readonly ground: string; readonly colour: string } | null;
+}
+
+/**
+ * Whether a state describes a control the user cannot activate.
+ *
+ * WCAG 2.2 SC 1.4.3 exempts "text ... that is part of an inactive user interface
+ * component" from the 4.5:1 minimum, so a composition measured in a `:disabled`
+ * state is routed to {@link INACTIVE} rather than to the failures.
+ *
+ * `:not(...)` is stripped first, and that is not pedantry. Five module sheets
+ * write a `:hover:not(:disabled)` rule — `Composer .send`,
+ * `CapabilitySummary .probe`, `EndpointForm .save`,
+ * `LocalEndpointSection .primary` and `ModelSwitcher .option` — and
+ * {@link SelectorPart.state} keeps the whole condition, so the state string for
+ * one of those *contains* `:disabled` while describing a control that is
+ * emphatically enabled. A plain substring test would have exempted it, which is
+ * an exemption widening itself by accident.
+ */
+function inactiveState(state: string): boolean {
+  return state.replace(/:not\([^)]*\)/gu, '').includes(':disabled');
 }
 
 function paintsText(element: Element): boolean {
@@ -1453,40 +2005,61 @@ async function readTheApp(theme: Theme): Promise<Reading> {
   const unknownClasses = new Set<string>();
   const walk: Walked[] = [];
   const blank: string[] = [];
+  const unmodelled: string[] = [];
+  const notPainted: string[] = [];
+  const inactive: string[] = [];
   let measured = 0;
   let sample: Reading['sample'] = null;
 
   for (const fixture of FIXTURES) {
     const beneath: readonly Layer[] =
       fixture.beneath === undefined
-        ? [{ rgba: root.ground.rgba, label: root.ground.token ?? 'base.css body' }]
+        ? [undimmed(root.ground.rgba, root.ground.token ?? 'base.css body')]
         : fixture.beneath.map((token) => {
             const paint = readPaint(`var(${token})`, (name) => palette.get(name));
             if (paint.kind !== 'colour') throw new Error(`${fixture.name}: ${token} is not a colour`);
-            return { rgba: paint.rgba, label: token };
+            return undimmed(paint.rgba, token);
           });
     const rootColour: readonly Layer[] = [
-      { rgba: root.colour.rgba, label: root.colour.token ?? 'base.css body' },
+      undimmed(root.colour.rgba, root.colour.token ?? 'base.css body'),
     ];
 
     mounting = fixture.name;
     await fixture.mount();
     const audit = new Audit(prepared, beneath, rootColour);
+    audit.where = fixture.name;
     let elements = 0;
     let states = 0;
     for (const element of Array.from(document.body.querySelectorAll('*'))) {
       audit.noteReach(element);
       if (!paintsText(element)) continue;
       elements += 1;
-      const pairs: { colour: Layer; ground: Layer }[] = [];
+      const pairs: { colour: Layer; ground: Layer; state: string }[] = [];
       for (const state of audit.statesOn(element)) {
         states += 1;
         const before = pairs.length;
+        let invisible = false;
         for (const ground of audit.groundIn(element, state)) {
-          for (const colour of audit.colourIn(element, state)) pairs.push({ colour, ground });
-          // A `::placeholder` or `::after` is painted on the element's own
-          // ground, in its own colour.
-          for (const colour of audit.pseudoColours(element)) pairs.push({ colour, ground });
+          // AN ELEMENT AT `opacity: 0` DISPLAYS NOTHING.
+          //
+          // There is no composition to measure, and measuring one anyway would
+          // report the ground against itself at 1:1 — a red on three rules that
+          // exist precisely so a hover or focus state can reveal them. It is
+          // recorded by name instead of skipped: see {@link NOT_PAINTED}.
+          if (ground.alpha <= 0) {
+            invisible = true;
+            notPainted.push(
+              `${fixture.name} — <${element.tagName.toLowerCase()}>` +
+                `${state === '' ? '' : ` in state \`${state}\``} is at opacity 0`,
+            );
+            continue;
+          }
+          for (const colour of audit.colourIn(element, state)) pairs.push({ colour, ground, state });
+        }
+        // A `::placeholder`, `::marker` or `::after` paints its own colour — or
+        // the one it inherits — on its own ground.
+        for (const pair of audit.pseudoPairs(element, state)) {
+          if (pair.ground.alpha > 0) pairs.push({ ...pair, state });
         }
         // THE TOTALITY FLOOR. An element the walk reached but measured nothing
         // on is not a pass — it is an absence wearing a pass's clothes. The way
@@ -1497,30 +2070,34 @@ async function readTheApp(theme: Theme): Promise<Reading> {
         // to hand back a `base.css body` that stopped resolving, so that is one
         // route closed at the source; this catches the rest, wherever a chain
         // comes back empty.
-        if (pairs.length === before) {
+        if (pairs.length === before && !invisible) {
           blank.push(
             `${fixture.name} — <${element.tagName.toLowerCase()}>` +
               `${state === '' ? '' : ` in state \`${state}\``} measured nothing`,
           );
         }
       }
-      for (const { colour, ground } of pairs) {
+      for (const { colour, ground, state } of pairs) {
         measured += 1;
-        const ratio = contrastRatio(composite(colour.rgba, ground.rgba), ground.rgba);
+        const ratio = contrastRatio(paintedOn(colour.rgba, ground), ground.rgba);
         if (sample === null && colour.label === '--vela-text-muted') {
           sample = { ratio, ground: ground.label, colour: colour.label };
         }
         if (ratio + 0.005 < THRESHOLD) {
-          failures.push(
+          const line =
             `${ratio.toFixed(2)}:1 (needs ${THRESHOLD.toFixed(1)}) in ${theme} — ` +
-              `${colour.label} on ${ground.label} — <${element.tagName.toLowerCase()}> in ${fixture.name}`,
-          );
+            `${colour.label} on ${ground.label} — <${element.tagName.toLowerCase()}> in ${fixture.name}`;
+          // See {@link inactiveState}: WCAG exempts an inactive control, and
+          // the exemption is routed to a list rather than dropped.
+          if (inactiveState(state)) inactive.push(line);
+          else failures.push(line);
         }
       }
     }
     walk.push({ fixture: fixture.name, elements, states });
     for (const name of audit.reached) reached.add(name);
     unreadable.push(...audit.unreadable);
+    unmodelled.push(...audit.unmodelled);
     for (const name of audit.unknownClasses) unknownClasses.add(name);
     cleanup();
   }
@@ -1533,6 +2110,9 @@ async function readTheApp(theme: Theme): Promise<Reading> {
     unknownClasses,
     walk,
     blank: [...new Set(blank)].sort(),
+    unmodelled: [...new Set(unmodelled)].sort(),
+    notPainted: [...new Set(notPainted)].sort(),
+    inactive: [...new Set(inactive)].sort(),
     sample,
   };
 }
@@ -1617,6 +2197,16 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
       expect(light.blank, 'reached in light and measured nothing').toEqual([]);
       expect(dark.blank, 'reached in dark and measured nothing').toEqual([]);
       expect(dark.walk, 'the two themes did not walk the same tree').toEqual(light.walk);
+      // The two lists the group-opacity model is allowed to hand back instead
+      // of a ratio, both exact sets rather than floors.
+      expect(light.unmodelled, 'a composition this audit declined to compute').toEqual([]);
+      expect(dark.unmodelled, 'a composition this audit declined to compute').toEqual([]);
+      expect(light.notPainted, 'an element at opacity 0').toEqual(NOT_PAINTED);
+      expect(dark.notPainted, 'an element at opacity 0').toEqual(NOT_PAINTED);
+      expect(
+        [...light.inactive, ...dark.inactive].sort(),
+        'a sub-AA composition on a disabled control — see INACTIVE',
+      ).toEqual([...INACTIVE].sort());
 
       // and the light-only checks, said of both.
       expect(dark.unknownClasses, 'a rendered class this audit cannot attribute').toEqual(
@@ -1654,11 +2244,20 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
 
   it('every rule that paints text is reached by some fixture', async () => {
     const light = await reading('light');
+    // A rule that DIMS text paints text. `opacity` is modelled now, and a
+    // dimming rule no fixture reaches is unmeasured in exactly the way a
+    // colour rule no fixture reaches is — so the census quantifies over both,
+    // and the debt is enumerated in NOT_RENDERED rather than being invisible
+    // because the rule happens to declare no `color`. Keyframe stops are not
+    // selectors and no cascade reaches them; they are accounted for in
+    // UNMODELLED_PAINT instead.
     const painting = [
       ...new Set(
-        MODULE_RULES.filter((rule) => declaredValue(rule, 'color') !== undefined).map(
-          (rule) => `${rule.file} — ${rule.selector}`,
-        ),
+        MODULE_RULES.filter(
+          (rule) =>
+            declaredValue(rule, 'color') !== undefined ||
+            (declaredValue(rule, 'opacity') !== undefined && !IN_KEYFRAMES(rule)),
+        ).map((rule) => `${rule.file} — ${rule.selector}`),
       ),
     ];
     const unreached = painting.filter((name) => !light.reached.has(name)).sort();
@@ -1695,7 +2294,7 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     for (const theme of ['light', 'dark'] as const) {
       const prepared = prepare(MODULE_RULES, paletteFor(theme, SHEETS));
       for (const ground of prepared) {
-        const paint = ground.ground;
+        const paint = ground.ground?.value;
         if (paint === undefined || paint.kind !== 'colour' || paint.rgba.a < 1) continue;
         for (const outer of ground.parts) {
           // Only a plain, unconditional class ground: a `:hover` or
@@ -1705,11 +2304,11 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
           if (outer.subject.classes.length === 0 || outer.pseudoElement !== null) continue;
           for (const text of prepared) {
             if (text.rule.file !== ground.rule.file) continue;
-            const colour = text.foreground;
+            const colour = text.foreground?.value;
             if (colour === undefined || colour.kind !== 'colour') continue;
             // A descendant that grounds itself stands on its own ground, and
             // contrast.test.ts already measures a rule that declares both.
-            const own = text.ground;
+            const own = text.ground?.value;
             if (own !== undefined && own.kind === 'colour' && own.rgba.a >= 1) continue;
             for (const inner of text.parts) {
               const nested = inner.ancestors.some((one) =>
@@ -1751,6 +2350,47 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     ).toEqual([]);
   });
 
+  it('no audited rule paints through a property this audit does not model', () => {
+    // THE THIRD ANSWER, ON THE PROPERTY SIDE.
+    //
+    // `css-model.ts` gave the *value* reader a third answer and
+    // `no audited rule is scoped to the DOM by something this audit cannot see`
+    // gave the *selector* matcher one. Both of them presuppose that the paint
+    // arrives as a value of a property this file reads, and for two rounds that
+    // was three names. A `-webkit-text-fill-color` overrides `color` for glyph
+    // fill in the WebView2 this app ships in; an `opacity` beside a `color`
+    // composites the glyphs the same way an `rgba()` value would, which
+    // `composite()` models when it is spelled inside the value and could not
+    // see when it was spelled as a property; a `filter` or a `mix-blend-mode`
+    // rewrites the pixel after both values are chosen. None of them produced a
+    // value the reader was handed, so none of them could be called unreadable.
+    //
+    // See MOVES_PAINT for the list and UNMODELLED_PAINT for the exemptions.
+    expect(
+      paintMovers(SHEETS),
+      'model this property, or name in UNMODELLED_PAINT why this declaration cannot hide a composition',
+    ).toEqual([...UNMODELLED_PAINT.keys()].sort());
+    expect(
+      [...UNMODELLED_PAINT].filter(([, why]) => why.trim() === '').map(([key]) => key),
+      'say why this declaration is out of reach, or it is exempt rather than accounted for',
+    ).toEqual([]);
+  });
+
+  it('no stylesheet outside the token sheet declares a custom property', () => {
+    // THE ANCESTOR THAT RE-POINTS A ROLE.
+    //
+    // See customPropertiesOutsideTheTokenSheet. One line in a rule that declares
+    // no paint — `.detail { --vela-code-bg: var(--vela-bg); }` — moves what
+    // every `background: var(--vela-code-bg)` underneath it resolves to, and
+    // `lookupFor` answers with the palette's value at full confidence because a
+    // custom property declared on an *ancestor* is not merely unresolved here,
+    // it is invisible.
+    expect(
+      customPropertiesOutsideTheTokenSheet(SHEETS),
+      'declare it in tokens.css, or this audit resolves every var() below it to the wrong value',
+    ).toEqual([]);
+  });
+
   it('no global stylesheet paints outside what is already measured', () => {
     // See GLOBAL_PAINT. This file's universe is the module sheets; the reason
     // that is not a hole is that the global sheets are small, enumerated, and
@@ -1778,9 +2418,13 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
   });
 
   it('the class-name map is intact', async () => {
-    // If Vitest's class-name spelling changes, every `applies()` returns false,
-    // every element resolves to the root colour on the root ground, and the two
-    // assertions above pass while measuring nothing real.
+    // If Vitest's class-name spelling changes, `localClass` stops recognising
+    // the hashed name, `classesByFile` comes back empty for every element, and
+    // `compoundMatches` then answers false for every compound that names a
+    // class. Every element resolves to the root colour on the root ground and
+    // the two assertions above pass while measuring nothing real. (`unknownClasses`
+    // would also fill up, and is asserted empty below — but only for classes the
+    // DOM still carries, so it is a second net and not the same one.)
     expect(FILE_BY_HASH.size).toBe(Object.keys(MODULES).length);
     expect(new Set(FILE_BY_HASH.values()).size).toBe(FILE_BY_HASH.size);
     const skills = MODULES['/src/features/skills/SkillsPanel.module.css']?.default['body'] ?? '';
@@ -1825,7 +2469,7 @@ describe('the matcher is not fooled by the shapes that fooled it', () => {
   const layer = (token: string): Layer => {
     const paint = readPaint(`var(${token})`, (name) => PALETTE.get(name));
     if (paint.kind !== 'colour') throw new Error(`${token} is not a colour`);
-    return { rgba: paint.rgba, label: token };
+    return undimmed(paint.rgba, token);
   };
 
   /**
@@ -1923,6 +2567,155 @@ describe('the matcher is not fooled by the shapes that fooled it', () => {
     const found = unanchoredParts(parseStylesheet(FILE, `li { color: var(--vela-danger); }`));
     expect(found).toEqual([`${FILE} — li — \`li\` names no CSS-module class`]);
     expect(unanchoredParts(parseStylesheet(FILE, `.fact li { color: var(--vela-danger); }`))).toEqual(
+      [],
+    );
+  });
+
+  it('never lets specificity outrank an !important the engine obeys', () => {
+    // `!important` beats every normal author declaration whatever its
+    // specificity. `css-model.ts` used to drop the word in `toDeclaration`, so
+    // the cascade here ordered on specificity alone and answered with the
+    // *loser*: the composition it then reported was one the engine does not
+    // paint, which is worse than reporting nothing. The important rule is
+    // written first so that source order cannot be what saves it.
+    const dd = tree('dd', 'fact');
+    const audit = auditOf(
+      `.fact { color: var(--vela-danger) !important; } .fact .fact { color: var(--vela-code-text); }`,
+    );
+    expect(audit.colourIn(dd, '').map((one) => one.label)).toEqual(['--vela-danger']);
+    // and with the word removed, specificity decides — so the test above is
+    // measuring importance and not something else about these two selectors.
+    const plain = auditOf(
+      `.fact { color: var(--vela-danger); } .fact .fact { color: var(--vela-code-text); }`,
+    );
+    expect(plain.colourIn(tree('dd', 'fact'), '').map((one) => one.label)).toEqual([
+      '--vela-code-text',
+    ]);
+  });
+
+  it('dims the text when the translucency is spelled as a property', () => {
+    // `composite()` has always modelled translucency spelled *inside* a colour
+    // value — an `rgba()` ground over what is behind it. The identical operation
+    // spelled as `opacity` beside the colour was invisible, because no value
+    // ever reached the reader: `declaredValue(rule, 'color')` returns the opaque
+    // token and `opacity` was not a property either guard had heard of. One word
+    // added to a rule that already passes takes a 4.5-clearing pair below the
+    // bar, with every token it names still measuring fine on its own.
+    const dt = tree('dt');
+    const audit = auditOf(
+      `.fact { background: var(--vela-surface-raised); }` +
+        ` .fact dt { color: var(--vela-text-muted); opacity: 0.6; }`,
+    );
+    const [ground] = audit.groundIn(dt, '');
+    const [colour] = audit.colourIn(dt, '');
+    if (ground === undefined || colour === undefined) throw new Error('nothing to measure');
+    expect(ground.alpha).toBe(0.6);
+    expect(ground.label).toBe('--vela-surface-raised at opacity 0.6');
+    // What the engine paints, and what reading the two declarations alone says.
+    expect(contrastRatio(paintedOn(colour.rgba, ground), ground.rgba)).toBeCloseTo(2.82, 2);
+    expect(contrastRatio(composite(colour.rgba, ground.rgba), ground.rgba)).toBeCloseTo(7.23, 2);
+  });
+
+  it('an element at opacity 0 has no composition to measure', () => {
+    // The arm {@link NOT_PAINTED} accounts for. Measuring this one anyway would
+    // report the ground against itself at 1:1 and red every reveal-on-hover
+    // wrapper in the app.
+    const dt = tree('dt');
+    const audit = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { opacity: 0; }`,
+    );
+    expect(audit.groundIn(dt, '').map((one) => one.alpha)).toEqual([0]);
+  });
+
+  it('measures a pseudo-element against the ground the pseudo-element declares', () => {
+    // The reader this replaced — `pseudoColours`, deleted in this change and
+    // present in the tree round 2 was graded on — was added so a
+    // pseudo-element's *colour* would stop being invisible, and it measured that
+    // colour against the **element's** ground. A `::after` that declares a
+    // ground and no colour was then read by nobody: `groundIn` refuses a
+    // pseudo's fill (correctly — it is not the element's ground) and the pseudo
+    // reader returned early on a rule with no `color`. Both halves are in the
+    // sheet: the pseudo inherits the `<h3>`'s text colour and paints it on its
+    // own fill.
+    const h3 = tree('h3');
+    const audit = auditOf(
+      `.fact { background: var(--vela-surface-raised); }` +
+        ` .fact h3::after { content: ' preview'; background: var(--vela-text-subtle); }`,
+    );
+    const pairs = audit.pseudoPairs(h3, '');
+    expect(pairs.map((pair) => `${pair.colour.label} on ${pair.ground.label}`)).toEqual([
+      '--vela-text on --vela-text-subtle (::after)',
+    ]);
+    const [pair] = pairs;
+    if (pair === undefined) throw new Error('nothing to measure');
+    expect(contrastRatio(paintedOn(pair.colour.rgba, pair.ground), pair.ground.rgba)).toBeCloseTo(
+      3.05,
+      2,
+    );
+    // A `::after` with no characters in it is a rail or a caret, and pairing the
+    // inherited text colour with its fill would be a composition nothing paints.
+    const empty = auditOf(
+      `.fact { background: var(--vela-surface-raised); }` +
+        ` .fact h3::after { content: ''; background: var(--vela-accent); }`,
+    );
+    expect(empty.pseudoPairs(tree('h3'), '')).toEqual([]);
+  });
+
+  it('reports a paint declared in a property it does not model', () => {
+    // THE THIRD ANSWER AT THE PROPERTY LEVEL, as an input rather than as
+    // "nothing is wrong today". `-webkit-text-fill-color` overrides `color` for
+    // glyph fill in a Chromium WebView, and it produced no value at all for the
+    // reader to call unreadable.
+    const sheet = (css: string): Sheet => ({
+      name: FILE,
+      text: css,
+      rules: parseStylesheet(FILE, css),
+    });
+    expect(
+      paintMovers([
+        sheet(
+          `.body { color: var(--vela-code-text); -webkit-text-fill-color: var(--vela-danger); }`,
+        ),
+      ]),
+    ).toEqual([`${FILE} — .body — -webkit-text-fill-color`]);
+    // `opacity` is the one that is modelled instead of reported — but only where
+    // the cascade can reach it. Inside `@keyframes` the value is a function of
+    // time and this audit reads a still frame.
+    expect(paintMovers([sheet(`.body { opacity: 0.6; }`)])).toEqual([]);
+    expect(paintMovers([sheet(`@keyframes fade { 50% { opacity: 0.6; } }`)])).toEqual([
+      `${FILE} — @keyframes fade — 50% — opacity`,
+    ]);
+  });
+
+  it('does not read `:not(:disabled)` as a disabled control', () => {
+    // The WCAG exemption in {@link inactiveState} is the one place this file
+    // deliberately declines to fail on a sub-AA number, so its predicate is the
+    // one place an exemption could widen itself by accident.
+    expect(inactiveState(':disabled')).toBe(true);
+    expect(inactiveState("[data-outcome='copied']:disabled")).toBe(true);
+    expect(inactiveState(':hover:not(:disabled)')).toBe(false);
+    expect(inactiveState(':hover')).toBe(false);
+    expect(inactiveState('')).toBe(false);
+  });
+
+  it('reports a custom property declared where an ancestor could re-point a role', () => {
+    // `lookupFor` reads the declaring rule's own custom properties and the
+    // `:root` palette, and nothing between. A `--vela-*` name re-pointed by an
+    // ancestor is therefore not unresolved — it is invisible, and the palette's
+    // value is returned with full confidence for a `var()` the engine resolves
+    // to something else.
+    const sheet = (css: string): Sheet => ({
+      name: FILE,
+      text: css,
+      rules: parseStylesheet(FILE, css),
+    });
+    expect(
+      customPropertiesOutsideTheTokenSheet([sheet(`.detail { --vela-code-bg: var(--vela-bg); }`)]),
+    ).toEqual([`${FILE} — .detail — --vela-code-bg`]);
+    // A *new* local name is a different shape and was closed a round ago: the
+    // rule that declares it can see it, and a rule below cannot, which
+    // `readPaint` reports as unreadable rather than as absent.
+    expect(customPropertiesOutsideTheTokenSheet([sheet(`.detail { color: var(--vela-text); }`)])).toEqual(
       [],
     );
   });

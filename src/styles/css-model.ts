@@ -47,6 +47,12 @@
  * stylesheets are written in and fails loudly outside it, which is the only
  * honest shape for a guard: the alternative — a partial parser that silently
  * drops what it does not understand — is the defect it was written to remove.
+ *
+ * The one piece of cascade it does carry is {@link Declaration.important}, and
+ * it carries it *outwards* rather than resolving it: importance cannot be
+ * ranked by a reader that sees one rule at a time, and dropping it — which this
+ * file did until the reader below was asked to rank two rules — turns
+ * "I cannot tell which of these wins" into a confident wrong answer.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -62,8 +68,20 @@ export const SRC_ROOT = join(REPO_ROOT, 'src');
 export interface Declaration {
   /** Lower-cased property name, e.g. `background-color`. */
   readonly property: string;
-  /** The value exactly as written, whitespace collapsed, `!important` stripped. */
+  /** The value exactly as written, whitespace collapsed, without `!important`. */
   readonly value: string;
+  /**
+   * Whether the declaration carried `!important`.
+   *
+   * It used to be stripped and forgotten, and that was the same collapse this
+   * file exists to remove, one axis over. An important declaration beats every
+   * normal one in the author origin *regardless of specificity*, so a reader
+   * that cannot see importance will confidently hand its caller the
+   * higher-specificity normal declaration and name a colour the engine never
+   * paints. Carrying the flag is what lets `painted-contrast.test.tsx`'s
+   * cascade sort it above the rules it really does beat.
+   */
+  readonly important: boolean;
 }
 
 export interface Rule {
@@ -134,8 +152,9 @@ function toDeclaration(chunk: string): Declaration | null {
   if (colon < 0) return null;
   const property = text.slice(0, colon).trim().toLowerCase();
   if (property === '') return null;
-  const value = collapse(text.slice(colon + 1)).replace(/\s*!important$/iu, '');
-  return { property, value };
+  const written = collapse(text.slice(colon + 1));
+  const value = written.replace(/\s*!important$/iu, '');
+  return { property, value, important: value !== written };
 }
 
 interface OpenBlock {
@@ -237,13 +256,34 @@ export function parseStylesheet(file: string, text: string): readonly Rule[] {
     }));
 }
 
-/** The winning value of a property in one rule — the last one written. */
-export function declaredValue(rule: Rule, ...properties: readonly string[]): string | undefined {
-  let found: string | undefined;
+/** A declaration that won inside one rule, with the flag its caller has to rank. */
+export interface Won {
+  readonly value: string;
+  readonly important: boolean;
+}
+
+/**
+ * The winning declaration of a property in one rule.
+ *
+ * Within a single rule the later declaration wins — except that an `!important`
+ * one is never displaced by a normal one written after it, which is the
+ * cascade's importance step applied at the only scope this function can see.
+ * Ordering *between* rules is the caller's problem, and is why {@link Won}
+ * carries the flag out rather than resolving it here.
+ */
+export function declaredBy(rule: Rule, ...properties: readonly string[]): Won | undefined {
+  let found: Won | undefined;
   for (const declaration of rule.declarations) {
-    if (properties.includes(declaration.property)) found = declaration.value;
+    if (!properties.includes(declaration.property)) continue;
+    if (found?.important === true && !declaration.important) continue;
+    found = { value: declaration.value, important: declaration.important };
   }
   return found;
+}
+
+/** {@link declaredBy} when the caller has no cascade to run. */
+export function declaredValue(rule: Rule, ...properties: readonly string[]): string | undefined {
+  return declaredBy(rule, ...properties)?.value;
 }
 
 /* -------------------------------------------------------------------------- */

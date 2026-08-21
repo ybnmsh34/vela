@@ -124,6 +124,16 @@
   outline-offset: var(--vela-focus-offset);
 }
 
+/* No `opacity` here, and that is the fix rather than a tidy-up. The badge was
+   dimmed to 0.75, which is a *group* opacity: it fades the glyphs and the fill
+   toward whatever is behind the button, so the hint fell below AA in both
+   themes inside `.searchButton`. The composition itself is in
+   `contrast.test.ts`'s table — `T('--vela-text-muted', ['--vela-row-hover',
+   '--vela-surface'], 'Sidebar .kbd')` — and passes there, because that table
+   measures the two declared values and a group opacity is neither of them.
+   The quietness the dimming was buying is already carried by --vela-row-hover
+   and by --vela-text-xs, and the composition is now measured by
+   `src/styles/painted-contrast.test.tsx`, which models the property. */
 .kbd {
   flex: 0 0 auto;
   padding: 1px var(--vela-space-1);
@@ -131,7 +141,6 @@
   background: var(--vela-row-hover);
   font-family: var(--vela-font-sans);
   font-size: var(--vela-text-xs);
-  opacity: 0.75;
 }
 
 .iconButton {

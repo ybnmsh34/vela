@@ -501,11 +501,15 @@ export interface ScriptedReply {
  * `scheduleFrame` hook is per adapter, so holding it holds every turn.
  *
  * **It must not reject.** There is no honest translation from "the test's
- * script threw" into a {@link ChatError}: every arm of that union carries a
- * {@link Diagnosis} describing something a real endpoint or a real transport
- * did, and minting one here would put a fabricated wire failure in front of the
- * code under test. So a rejection is rethrown on its own macrotask, where the
- * runner reports it as the defect in the test that it is.
+ * script threw" into a {@link ChatError}. Seven of that union's eight arms
+ * carry a {@link Diagnosis} describing something a real endpoint or a real
+ * transport did, and minting one here would put a fabricated wire failure in
+ * front of the code under test. The eighth carries no `Diagnosis`, and it is
+ * `cancelled` — the arm this same file emits from the `step` inside
+ * `#chatSend`'s `stream`, for a turn the caller actually cancelled — so
+ * answering a thrown script with it would report a cancellation nobody asked
+ * for. A rejection is therefore rethrown on its own macrotask, where the runner
+ * reports it as the defect in the test that it is.
  */
 export type ReplyScript = (request: ChatSendReq) => ScriptedReply | Promise<ScriptedReply>;
 
@@ -1758,8 +1762,8 @@ export class BrowserAdapter implements PlatformAdapter {
             stream(reply);
           },
           (error: unknown) => {
-            // See `ReplyScript`: not laundered into a `ChatError`, because this
-            // fake has no honest `Diagnosis` to put behind one.
+            // See `ReplyScript` for why a thrown script is not laundered into
+            // a `ChatError`.
             setTimeout(() => {
               throw error;
             }, 0);

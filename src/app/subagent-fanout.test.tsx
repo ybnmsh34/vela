@@ -426,8 +426,10 @@ describe('the fan-out reaches a second run through the composition root', () => 
     'leaves each child a conversation of its own that the user can open',
     async () => {
       // The fan-out's caller of `store_create_conversation` is
-      // `createAgentRuntime`'s `newConversationId` — the only caller of that
-      // command under `src/runtime/` — and this file is where that closure
+      // `createAgentRuntime`'s `newConversationId` — the only *non-test*
+      // caller of that command under `src/runtime/`, the qualifier this file's
+      // header carries too, because `adapter-integration.test.ts` invokes the
+      // command itself — and this file is where that closure
       // runs: with a counter in the adapter's command case, a full-suite run
       // (119 files, 2397 tests) reached it four times, twice in this test and
       // twice in the one above, and from nowhere else.
@@ -477,11 +479,10 @@ describe('the fan-out reaches a second run through the composition root', () => 
       // this test's own, direct on the adapter — fifteen call sites across six
       // test files do that, this one included. What reads it back for the
       // *user* takes the other route: `use-conversations.ts` loads the list
-      // through `conversations-repository`'s `list`, the only caller of
-      // `store_list_conversations` in `src/` outside `browser-adapter.ts`'s own
-      // case for it and `contract.ts`'s declarations of it, and
-      // `ConversationRow` renders `conversation.title` on the row it draws for
-      // each one.
+      // through `conversations-repository`'s `list` — the only *non-test*
+      // caller of `store_list_conversations` in `src/`, the fifteen above being
+      // the test ones — and `ConversationRow` renders `conversation.title` on
+      // the row it draws for each one.
       expect(children.map((child) => child.title).sort()).toEqual(['Subagent 1', 'Subagent 2']);
 
       // Each child's own transcript holds its own answer, and only its own.

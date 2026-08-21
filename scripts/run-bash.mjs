@@ -7,8 +7,10 @@
  *
  * WHY THIS FILE EXISTS
  *
- * `pnpm verify` chains nine gates with `&&`, and two of them are shell scripts
- * that `package.json` used to invoke by bare relative path —
+ * At tag `run-start-2026-08-17`, `pnpm verify` was one shell string chaining
+ * ten gates with `&&` (it is `node scripts/verify.mjs` now), and two of those
+ * gates are shell scripts that `package.json` used to invoke by bare relative
+ * path —
  * `./scripts/check-transcripts.sh` and `./scripts/secret-scan.sh`. pnpm runs
  * script bodies through the platform shell, which on Windows is `cmd.exe`, and
  * cmd has no idea what a leading `./` means:

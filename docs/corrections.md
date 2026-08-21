@@ -9,6 +9,208 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 (round 5) — a guard that computed its verdict twice, and five claims that were false when they were written
+
+Round 4's prose was measured before this round started: **83** checkable claims, **5** false. Three
+of the five sit in this file's own round-4 section, and two of those three were falsified by the
+very commit that wrote them. That is the pattern round 4 was convened to close, reproduced instead
+of closed, so this section states the rule it broke:
+
+> A present-tense claim about what a grep returns, or about how many times a word appears, is
+> falsified by the entry that makes it, because the entry adds text to the tree the grep runs over.
+> Anchor such a claim to a commit and put it in the past tense, or do not make it.
+
+Every claim added below is either anchored to a commit, or is a property of a file that this round
+re-measured after writing it.
+
+### 1. `scripts/check-rust-tail.mjs` wrote four fields no reader ever consumed, and computed its verdict twice
+
+**Claimed:** round 4's report carried a heading the round-4 critic quotes as `WRITE-READ — the
+unread writes, both closed`, and its §6, "What I found and did not fix", did not mention this file.
+
+**True:** the heading was true of `scripts/check-bundle.mjs` and false of the track. The sibling
+guard this track added in round 1 carried four writes with no reader anywhere in the repository:
+
+- `rows[].source`, on all three row shapes;
+- `rows[].binary` — the whole binary descriptor object — on the STALE and BUILT shapes;
+- `binary.path`, inside that descriptor, which nothing read even through `row.binary`;
+- `result.ok`.
+
+The file has no exports, `parseArgs` accepts only `--target-dir`, `--since` and `--root` so there
+is no `--json` mode, `main` printed only `row.verdict`, `row.name` and `row.detail`, and
+`src/platform/rust-tail.test.ts` drives the script as a subprocess and asserts on its combined
+stdout and stderr. The last
+of the four is the interesting one: `main` re-derived the overall verdict from a `bad.length > 0`
+of its own while `checkRustTail` computed `ok` and nobody read it. A guard with two derivations of
+one verdict can disagree with itself, and while they agree the second derivation is invisible.
+
+**Fix.** `binary` and `binary.path` are deleted; the two values inside that object which ever reach
+a reader already do so through the detail strings — `mtimeMs` as the date in a STALE detail, `size`
+as the byte count in a BUILT one. `source` is not deleted but printed: a MISSING row now reads
+`no test binary in deps/ for src-tauri/tests/<name>.rs`, because the expectation set is derived
+from the tree and a MISSING row is only actionable if it says which file it was derived from. The
+path is normalised to forward slashes by a new `repoRelative`, so the row reads the same on Windows
+and on a CI runner. `main` now branches on `result.ok`; `bad` survives only to count rows for the
+failure message, which was also reworded — it said "have no compiled binary", which is false of a
+STALE row, and now says "are not BUILT; see the rows above". Every row carries `name`, `verdict`
+and `detail`, and `main` prints all three.
+
+**Mutation evidence, each planted twice on a byte snapshot restored and re-hashed after every
+cycle** (`sha256(scripts/check-rust-tail.mjs) = 878c997c…ff8f3e4b`, identical before and after).
+Baseline across the five release-path test files is `91 passed (91)`, exit 0.
+
+| mutation | result, twice | message |
+| --- | --- | --- |
+| `ok:` loses its `every(BUILT)` clause | `6 failed \| 85 passed (91)` | `expected 'check-rust-tail: deps directory C:\Us…' to contain '2 of 3 integration test targets are n…'`, plus five |
+| the MISSING detail drops `+ repoRelative(root, target.source)` | `1 failed \| 90 passed (91)` | `expected 'check-rust-tail: deps directory C:\Us…' to contain 'no test binary in deps/ for src-tauri…'` |
+| `repoRelative` returns `relative(root, path)` unnormalised | `1 failed \| 90 passed (91)` | same message — the Windows separators make the row unreadable to the assertion |
+
+**And the control that proves the write was unread before, not merely undertested.** Restoring
+round 4's `main` — `const bad = …; if (bad.length > 0)`, with `result.ok` consulted by nobody — and
+planting the *first* mutation on top of it gives `91 passed (91)`, exit 0, twice. The same
+corruption of the same field reds six tests once `main` reads it and reds nothing while it does
+not. That is the difference between a field with a reader and a field with a comment saying it has
+one.
+
+### 2. "a row carries exactly two numeric fields" was a false universal, in the sentence written to replace a false universal
+
+**Claimed:** round 4, entry 1 of this file — "a row carries exactly two numeric fields, `bytes` and
+`signatureAt`" — and, more explicitly, the docblock round 4 wrote above
+`src/platform/bundle-guard.test.ts`'s renamed block: "A row carries `target`, `file`, `path`,
+`verdict` and `detail`, all strings, plus exactly two numeric fields: **`bytes` on every row**".
+
+**True:** not every row reaches a file. Running the shipped guard against a tree with no
+`release/bundle` directory prints rows whose keys are exactly `target`, `verdict`, `path`,
+`detail` — no `file`, no `bytes`, no numeric field of any kind. `check-bundle.mjs`'s own human
+output path writes `String(row.file ?? row.path)` for precisely that reason, which the round-4
+critic pointed out. Round 3 failed for a block *name* that was a false universal about this
+document; round 4 replaced the name and wrote a false universal about the same document in the
+docblock underneath it.
+
+**Fix.** The docblock now states the two shapes separately and says which one carries numbers, and
+the claim is asserted rather than described: a new test,
+`a row that never reached a file carries no number to read`, drives the guard over a config-only
+tree and asserts both rows' key sets exactly. Adding `bytes: 0` to the NO-DIR row literal reds it
+and nothing else, twice, `1 failed | 90 passed (91)`,
+`expected [ 'bytes', 'detail', 'path', …(2) ] to deeply equal [ 'detail', 'path', 'target', …(1) ]`.
+The block name `every number the --json row carries is read back here` is unchanged; it was true
+and the critic said so.
+
+### 3. The "ten-link" parenthetical was refuted by the fix described in its own paragraph
+
+**Claimed:** round 4, entry 7b — "(The measurer attributed the "ten-link" phrase to
+`scripts/verify.mjs`; it is in `scripts/check-rust-tail.mjs`. `grep -rn 'ten-link'` over the tree
+returns that one site and no other.)"
+
+**True:** both halves were false at the commit that stated them. The same entry's own fix had
+rewritten that header, so the phrase was no longer in the script; and the tree-wide grep it invited
+returned only this file, because this file had just quoted the phrase three times while describing
+its removal. `git grep -n ten-link 52e6f37 -- scripts/` returns exactly one line, inside
+`scripts/check-rust-tail.mjs`'s file header, which is where it *was*.
+
+**Fix.** Past tense, and scoped to a directory this file cannot contaminate: the parenthetical now
+says the phrase was in that header until the fix rewrote it, and that no file under `scripts/`
+carries it now.
+
+### 4. A count that its own commit invalidated: 97
+
+**Claimed:** round 4, entry 3 — "the whole tracked repository gives 97".
+
+**True:** 97 was the count at the parent commit, `52e6f37`. The commit that wrote the sentence,
+`4517644`, added twelve more occurrences of the word `backup` — nine in this file (7 → 16) and
+three in `docs/release-posture.md` (7 → 10) — so the tracked-repository count at the commit that
+states 97 was **109**. Counted with `git grep -oih backup <commit> --`.
+
+**Fix.** The figure is anchored and dated: `git grep -oih backup 52e6f37 -- | wc -l` gives 97, and
+the sentence now says so, with a parenthetical noting that this particular figure moves every time
+an entry discusses the word.
+
+### 5. A sentence about `bundleRoot` that belonged to no investigation in this file
+
+**Claimed:** round 4, entry 1, "How it was caught" — "The only `src/platform/` hits were a local
+variable also called `bundleRoot`, used to build fixture paths."
+
+**True:** false under every reading. The grep described is for `mtimeMs` and `.bytes`; neither
+string occurs in the identifier `bundleRoot`, so `bundleRoot` cannot be a hit of it. At the pre-fix
+commit the grep had no `src/platform/` hits at all: `git grep -n mtimeMs 52e6f37 -- src/` returns
+nothing, and `git grep -n '\.bytes' 52e6f37 -- src/` returns three lines, all in `src/lib/base64.ts`
+and `src/lib/base64.test.ts`.
+
+**Fix.** The sentence is deleted and the paragraph is anchored to `52e6f37` in the past tense, with
+the two greps quoted and the note that the `src/platform/` hits which exist today are the readers
+that entry's own fix added.
+
+### 6. "No gate reads this document" — gate 8 does
+
+**Claimed:** `docs/release-posture.md` §13b, the scope statement above the ten-gate table — "No
+gate reads this document — `check-transcripts.sh` reads only
+`docs/regression-baseline/mock-matrix`, and the comment-claim guard's roots are …".
+
+**True:** the two named gates were described correctly, but the sentence they supported was false,
+and this track is what made it false. `scripts/secret-scan.sh` sets `excluded_paths=()`, so gate 8,
+`test:secrets`, `git grep`s every tracked file — `docs/release-posture.md` among them — and its
+verdict depends on this document's bytes. §13b already said so further down its own length —
+"`test:secrets` reads tracked file contents, and this subsection was written after the runs it
+describes" — so the subsection contradicted itself between its scope statement and its closing
+paragraphs.
+
+**Fix.** The paragraph now states that gate 8 reads this file, why nothing is excluded, and what
+that gate reads it *for* — credential shapes, not claims — and then separates out the gates that
+read prose for its content, naming `CLAIM_ROOTS` in `src/platform/claimed-guards.test.ts` and the
+fact that this file is under none of them.
+
+### 7. The fourth copy of the `&&`-chain sentence, in a file round 4 edited
+
+**Claimed:** round 4, entry 7b — "Fixed in all three places". And
+`src/platform/rust-tail.test.ts`'s docblock — "`pnpm verify` **ends** with `cargo build --workspace
+--locked && cargo test --workspace --locked`".
+
+**True:** "all three places" was accurate about the three sites carrying the phrase "eight `&&`
+links", which is what that entry was about. But the same tense defect sat untouched in a fourth
+site, and round 4 edited that file without correcting it. `package.json`'s `verify` is
+`node scripts/verify.mjs`, and the last two gates are separate `command` entries in
+`scripts/gates.json`; there is no `&&` chain to end with.
+
+**Fix.** That docblock now opens "At tag `run-start-2026-08-17`, `pnpm verify` was one shell string
+ending in …", says what replaced the chain, and says what survives the replacement — that an exit
+code still cannot distinguish a tail that passed from a tail that never started, which is why the
+guard exists. Its "cargo is on no shell's PATH" is also narrowed to what is true: cargo is not on
+the default PATH here, it is in `%USERPROFILE%\.cargo\bin`, and a runner has to prepend it by hand.
+
+**A fifth site, outside this track's diff, fixed anyway.** `scripts/run-bash.mjs` opened with
+"`pnpm verify` chains nine gates with `&&`" — present tense, and nine was wrong at the tag too. It
+predates `run-start-2026-08-17`, so this track did not write it; this track's round-1 change is
+what made it false. Now past tense, anchored to the tag, with the replacement named.
+
+### 8. A test labelled for a property it does not check
+
+**Claimed:** `scripts/secret-scan.test.sh`, at the tag — `expect_clean "an empty repository is
+clean"`.
+
+**True:** that case plants a `README.md` and then asserts clean, so it never checked an empty
+repository. It was harmless until this track added
+`a_repository_with_no_tracked_files_is_refused`, which proves the scanner exits 2 on a genuinely
+empty repository — at which point the file asserted a property that another test in it refutes
+it. Not a sentence this track wrote; this track is what made it self-contradictory.
+
+**Fix.** Retitled `a repository with one harmless file is clean`, with a comment saying why.
+
+### 9. A round-1 transcript that reads as current output
+
+**Claimed:** nothing, explicitly — `docs/release-posture.md` §13's `### The run on this branch`
+block is framed as a past run and does not claim to be current. But it sits directly under the
+paragraph explaining round 2's signature clause and shows
+`OK ... NSIS setup (PE image)`, which is what the guard printed before that clause existed.
+
+**True:** the shipped guard prints `NSIS setup (PE image carrying an NSIS payload)`, and the gap
+between `OK` and the filename is 13 spaces in that block against the 17 that
+`row.verdict.padEnd(18)` produces. Both are tells that the block is a round-1 capture.
+
+**Fix.** The block is now labelled as a round-1 capture, the two tells are named, and a fresh
+`check-bundle` run against the same artefacts on disk is printed above it.
+
+---
+
 ## 2026-08-21 (round 4) — the numbers in the section whose job was to record what was measured
 
 Round 3's write-up was itself measured, before this round committed, by an agent that ran the
@@ -34,9 +236,13 @@ reader. The round-3 critic's words for this were "the round-2 defect displaced b
 than removed", and the measurer reached the same finding independently by running the shipped
 guard against a synthetic tree and enumerating the document it printed.
 
-**How it was caught:** a repository-wide grep for `mtimeMs` and for `.bytes` across `src`,
-`scripts` and `tests` returns the write site and nothing that consumes it. The only `src/platform/`
-hits were a local variable also called `bundleRoot`, used to build fixture paths.
+**How it was caught:** at commit `52e6f37`, the state this entry was measured against, a
+repository-wide grep for `mtimeMs` and for `.bytes` across `src`, `scripts` and `tests` returned
+the write site in `scripts/check-bundle.mjs` and nothing that consumes it: `git grep -n mtimeMs
+52e6f37 -- src/` returned nothing at all, and `git grep -n '\.bytes' 52e6f37 -- src/` returned only
+`src/lib/base64.ts` and `src/lib/base64.test.ts`, with no hit under `src/platform/`. The two
+`src/platform/bundle-guard.test.ts` hits for `.bytes` that exist today are the readers this entry's
+own fix added.
 
 **Fix, and why each half went the way it did.** `mtimeMs` is **deleted** from the row. It was
 never load-bearing: the freshness check reads `stat.mtimeMs` directly and so does the STALE detail
@@ -50,9 +256,19 @@ is 1,024 **and** the OK NSIS row's `bytes` is 4,000,000 — two different number
 stamped a constant, or that reported the 262,144-byte floor it compared against, fails.
 
 The block is renamed to `every number the --json row carries is read back here`, which is a
-statement about the two tests inside it and is checkable: a row carries exactly two numeric fields,
-`bytes` and `signatureAt`, and each has a test in that block that reads it back and compares it to
-a value the fixture chose. Everything else in a row is a string the human output path prints.
+statement about the tests inside it and is checkable: two numeric field NAMES exist anywhere in the
+document, `bytes` and `signatureAt`, and each has a test in that block that reads it back and
+compares it to a value the fixture chose. Everything else in a row is a string the human output
+path prints.
+
+*Corrected in round 5.* This paragraph originally read "a row carries exactly two numeric fields",
+and the docblock above the block said the same thing more explicitly — "`bytes` on every row". That
+is a false universal, of the same kind as the block name it was written to replace. Measured by
+running the shipped guard: a row that never reached a file is `{target, verdict, path, detail}`,
+four strings, no `file` and no number at all, and `check-bundle.mjs`'s own `String(row.file ??
+row.path)` is there because of it. Round 5 rewrote the docblock and added a test,
+`a row that never reached a file carries no number to read`, so the shape is asserted rather than
+described. Round 5, entry 2.
 
 **Mutation evidence.** Three mutations of the write site, each planted, run twice across all five
 release-path test files, and restored from a byte snapshot confirmed by sha256. Every one reds the
@@ -99,8 +315,11 @@ example."
 
 **True:** the substantive claim — no backups directory, no backup path constant, no backup routine
 — holds. The count does not: there are **21** occurrences on **18** lines in **six** files. No
-widening produces 34 either; including untracked build artefacts under `src-tauri/target` gives 43,
-and the whole tracked repository gives 97. The enumeration also named neither
+widening produces 34 either: including the untracked build artefacts under `src-tauri/target` gave
+43, and `git grep -oih backup 52e6f37 -- | wc -l` over the whole tracked repository gave **97** at
+commit `52e6f37`, the tree this entry was measured against. (That last figure is a moving one and
+is dated for that reason — every entry in this file that discusses the word adds occurrences of
+it.) The enumeration also named neither
 `vela-settings/src/service.rs` (2, doc-comment prose about database backups) nor
 `vela-store/src/location.rs` (1, the `.pre-cleanup-` rename from the other side).
 
@@ -199,9 +418,9 @@ scripts/verify.mjs` in round 1 — so a present-tense sentence about its `&&` li
 something the tree does not contain. Fixed in all three places: both `ci.yml` copies and the
 `check-rust-tail.mjs` header now say ten operators and nine ahead of `cargo build`, in the past
 tense, and each says what replaced the chain and why the replacement still does not make the
-disk-reading step redundant. (The measurer attributed the "ten-link" phrase to
-`scripts/verify.mjs`; it is in `scripts/check-rust-tail.mjs`. `grep -rn 'ten-link'` over the tree
-returns that one site and no other.)
+disk-reading step redundant. (The measurer attributed the phrase "a ten-link `&&` chain" to
+`scripts/verify.mjs`. It was in `scripts/check-rust-tail.mjs`'s header, until this entry's own fix
+rewrote that header; no file under `scripts/` carries it now.)
 
 ---
 

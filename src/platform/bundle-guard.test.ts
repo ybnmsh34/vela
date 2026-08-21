@@ -352,20 +352,33 @@ describe('the guard reads the real repository configuration', { timeout: SPAWN_T
 });
 
 /**
- * The two NUMBERS in a `--json` row, and the tests that read them.
+ * The two NUMBERS a `--json` row can carry, and the tests that read them.
  *
- * A row carries `target`, `file`, `path`, `verdict` and `detail`, all strings,
- * plus exactly two numeric fields: `bytes` on every row, and `signatureAt` on a
- * row whose target demands an installer signature and where one was found. The
- * strings are the ones the human output path prints — `verdict`, `file ?? path`
- * and `detail` — so a wrong one is wrong where somebody reads it. A number is
- * not: `signatureAt` shipped in round 2 written and read by nothing, and the
+ * Row shape depends on whether the row reached a file, and the round-4 version
+ * of this docblock stated a universal about it that is false — as did the round-3
+ * block name it was written to replace, about the same document. Measured by
+ * running the shipped guard: a NO-DIR row — and an ABSENT row — is
+ * `{target, verdict, path, detail}`, four strings with no `file` and no numeric
+ * field at all, because there was no artefact to measure; `check-bundle.mjs`'s
+ * own human output path prints `String(row.file ?? row.path)` for exactly that
+ * reason. A row that DID reach a file adds `file` and `bytes`, and adds
+ * `signatureAt` when its target demands an installer signature and one was
+ * found. Two numeric field NAMES exist across the whole document, `bytes` and
+ * `signatureAt`, and each appears on a subset of rows rather than on all of
+ * them.
+ *
+ * The strings are the ones the human output path prints — `verdict`,
+ * `file ?? path` and `detail` — so a wrong one is wrong where somebody reads
+ * it. A number is not: `signatureAt` shipped in round 2 written and read by
+ * nothing, and the
  * offset it was documented at was wrong by four bytes, and both survived a full
  * green run. So each number gets a test that reads it back out of the document
  * and compares it against a value the fixture chose.
  *
- * The block is named for what these two tests check and not for a property of
- * the whole document. It was named `the --json document has a reader for
+ * The block is named for what the tests inside it check and not for a property
+ * of the whole document. Round 5 added a third, the negative case: a row that
+ * never reached a file carries no number, so there is nothing there to read
+ * back. It was named `the --json document has a reader for
  * every field it carries` in round 3, which was a claim the block did not
  * check and which was not true of the tree it sat in; `docs/corrections.md`,
  * round 4, entry 1.
@@ -458,6 +471,39 @@ describe('every number the --json row carries is read back here', { timeout: SPA
     const nsis = (parsed.rows ?? []).find((row) => row.target === 'nsis');
     expect(nsis?.verdict).toBe('OK');
     expect(nsis?.bytes).toBe(BIG);
+
+    expect(parsed.ok).toBe(false);
+    expect(child.status).toBe(1);
+  });
+
+  it('a row that never reached a file carries no number to read', () => {
+    // The negative half of this block, and the reason the docblock above no
+    // longer says "bytes on every row". A NO-DIR row is produced before any
+    // file is opened, so there is nothing to measure and the row carries no
+    // `bytes` and no `file` — only `target`, `verdict`, `path` and `detail`.
+    // This is asserted rather than described because the previous two attempts
+    // at describing it were both false universals about this document, and a
+    // sentence cannot fail when the shape changes under it.
+    writeConfig({ active: true, targets: 'all' });
+    // No artefacts written at all: `release/bundle` does not exist, so both
+    // declared targets take the NO-DIR branch.
+
+    const child = spawnSync(
+      process.execPath,
+      [GUARD, '--root', root, '--platform', 'win32', '--json'],
+      { encoding: 'utf8', shell: false },
+    );
+    const parsed = JSON.parse(child.stdout ?? '{}') as {
+      ok?: boolean;
+      rows?: Record<string, unknown>[];
+    };
+
+    const rows = parsed.rows ?? [];
+    expect(rows.map((row) => row.verdict)).toEqual(['NO-DIR', 'NO-DIR']);
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(['detail', 'path', 'target', 'verdict']);
+      expect(Object.values(row).some((value) => typeof value === 'number')).toBe(false);
+    }
 
     expect(parsed.ok).toBe(false);
     expect(child.status).toBe(1);

@@ -136,7 +136,11 @@ expect_clean "a placeholder that is not key-shaped is left alone" \
   "docs/architecture/conventions.md" \
   "Store the value under <providerId>/primary. Never a literal like sk-REPLACE-ME."
 
-expect_clean "an empty repository is clean" \
+# Retitled in round 5. This plants a file and asserts clean, so it never
+# checked an EMPTY repository — and since this file's own
+# `a_repository_with_no_tracked_files_is_refused` proves the scanner exits 2 on
+# one, the old label stated a property the scanner contradicts.
+expect_clean "a repository with one harmless file is clean" \
   "README.md" \
   "# Vela"
 

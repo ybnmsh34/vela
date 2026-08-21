@@ -3,11 +3,17 @@
  *
  * ## The claim under test
  *
- * `pnpm verify` ends with `cargo build --workspace --locked && cargo test
- * --workspace --locked`, and on this machine those two links were never
- * executed by anyone running the documented command: cargo is on no shell's
- * PATH, gate 2 dies, and `&&` short-circuits. An exit code cannot distinguish
- * "the tail passed" from "the tail never started", so the guard asks the disk
+ * At tag `run-start-2026-08-17`, `pnpm verify` was one shell string ending in
+ * `cargo build --workspace --locked && cargo test --workspace --locked`, and on
+ * this machine those two links were never executed by anyone running the
+ * documented command: cargo is not on the default PATH here — it lives in
+ * `%USERPROFILE%\.cargo\bin`, which a runner has to prepend by hand — so gate 2
+ * died on `'cargo' is not recognized` and `&&` short-circuited. That chain is
+ * gone: `pnpm verify` has been `node scripts/verify.mjs` since round 1 of this
+ * branch, and the last two gates are separate `command` entries in
+ * `scripts/gates.json` rather than links in a string. What survives the rewrite
+ * is the reason this guard exists — an exit code still cannot distinguish "the
+ * tail passed" from "the tail never started", so the guard asks the disk
  * instead — and the whole guard rests on one factual claim:
  *
  *     `cargo build` does not compile `tests/`; only `cargo test` does.
@@ -222,5 +228,55 @@ describe('the guard fails the trees a weaker one would pass', { timeout: SPAWN_T
     const { code, out } = runGuard();
     expect(out).toMatch(/BUILT\s+a_b/u);
     expect(code).toBe(0);
+  });
+});
+
+/**
+ * Everything `checkRustTail` writes, read back through the only surface it has.
+ *
+ * The guard has no exports and no `--json` mode, so its rows reach a reader
+ * exactly one way: `main` prints them. The guard shipped in round 1, and through
+ * round 4, with rows carrying a `source` field, the whole `binary` descriptor on
+ * two of the three shapes, and a `result.ok` that `main` ignored in favour of
+ * recomputing the same verdict from a `bad.length` of its own. Nothing anywhere
+ * read any of them. Round 5 deleted `binary`, printed `source` where it is
+ * actionable, and made `main` branch on `ok` — and these two tests are what make
+ * that bite instead of being asserted in a comment.
+ */
+describe('what the guard writes is what the guard prints', { timeout: SPAWN_TIMEOUT_MS }, () => {
+  it('a MISSING row names the source file the expectation was derived from', () => {
+    // The expectation set is derived from the tree, so a MISSING row is only
+    // actionable if it says which file it was derived FROM: `alpha` alone does
+    // not tell a reader whether to build the target or delete a stray `.rs`.
+    // Both roots are checked because they format differently — the host package
+    // under `src-tauri/tests`, a crate under `src-tauri/crates/<crate>/tests` —
+    // and the path is normalised to forward slashes so this reads the same on
+    // Windows and on a CI runner.
+    testSource(null, 'alpha');
+    testSource('vela-thing', 'beta');
+
+    const { code, out } = runGuard();
+    expect(out).toContain('no test binary in deps/ for src-tauri/tests/alpha.rs');
+    expect(out).toContain('no test binary in deps/ for src-tauri/crates/vela-thing/tests/beta.rs');
+    expect(out).not.toContain('\\tests\\');
+    expect(code).toBe(1);
+  });
+
+  it('the failure count and the exit code come from the same verdict', () => {
+    // One target built, two not. A guard that computes its verdict twice can
+    // disagree with itself, and the disagreement is invisible while both
+    // derivations happen to agree. Asserting the count, the summary line and
+    // the exit code together means a verdict that stops depending on the rows
+    // cannot stay green here: hardcode `ok` and the exit code goes to 0 with
+    // the summary line gone, widen it to `rows.length > 0` and the same.
+    testSource(null, 'alpha');
+    testSource(null, 'gamma');
+    testSource('vela-thing', 'delta');
+    depsFile('alpha-1111111111111111' + EXE);
+
+    const { code, out } = runGuard();
+    expect(out).toContain('2 of 3 integration test targets are not BUILT');
+    expect(out).toContain('RUST_TAIL_RAN=no');
+    expect(code).toBe(1);
   });
 });

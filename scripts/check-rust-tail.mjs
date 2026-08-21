@@ -93,7 +93,7 @@
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -132,6 +132,15 @@ function parseArgs(argv) {
  */
 function targetName(fileStem) {
   return fileStem.replace(/-/gu, '_');
+}
+
+/**
+ * A source path as a reader of this repository would type it: relative to the
+ * root the guard was pointed at, with forward slashes on every platform, so the
+ * same MISSING row reads the same way on Windows and on a CI runner.
+ */
+function repoRelative(root, path) {
+  return relative(root, path).replace(/\\/gu, '/');
 }
 
 /** Every `tests/*.rs` in the workspace: the host package and every crate. */
@@ -184,9 +193,12 @@ function binaryFor(depsDir, name, isWindows) {
       if (!rest.endsWith(suffix)) continue;
       if (rest.slice(0, -suffix.length).includes('.')) continue;
     }
-    const path = join(depsDir, file);
-    const stat = statSync(path);
-    found.push({ path, mtimeMs: stat.mtimeMs, size: stat.size });
+    const stat = statSync(join(depsDir, file));
+    // Two fields, both read below: `mtimeMs` by the sort here and by the
+    // `--since` comparison in `checkRustTail`, `size` by the BUILT detail
+    // string. The full path was on this object too until round 5 and nothing
+    // ever read it; `docs/corrections.md`, round 5, entry 1.
+    found.push({ mtimeMs: stat.mtimeMs, size: stat.size });
   }
   if (found.length === 0) return null;
   // Several metadata hashes can coexist across feature sets; the newest is the
@@ -213,30 +225,39 @@ function checkRustTail({ root, targetDir, since, platform = process.platform }) 
     : 'no age is demanded; see this header on why an mtime rule cannot answer ' +
       'that, and verify.mjs on what does';
 
+  // THREE FIELDS, AND NO FOURTH. Every row carries exactly `name`, `verdict`
+  // and `detail`, and `main` below prints all three of them. Rows used to carry
+  // `source` and, on two of the three shapes, the whole `binary` object; no
+  // exported reader, no `--json` mode and no test ever consumed either, so the
+  // enumeration's provenance was being recorded where nobody could see it. The
+  // fix is not to delete the provenance but to print it: a MISSING row now
+  // names the file the expectation was derived from, which is the one row shape
+  // where a reader has to go looking for it. `docs/corrections.md`, round 5,
+  // entry 1.
   const rows = targets.map((target) => {
     const binary = binaryFor(depsDir, target.name, isWindows);
     if (binary === null) {
-      return { name: target.name, source: target.source, verdict: 'MISSING', detail: 'no test binary in deps/' };
+      return {
+        name: target.name,
+        verdict: 'MISSING',
+        detail: 'no test binary in deps/ for ' + repoRelative(root, target.source),
+      };
     }
     if (thresholdMs > 0 && binary.mtimeMs < thresholdMs) {
       return {
         name: target.name,
-        source: target.source,
         verdict: 'STALE',
         detail:
           'built ' +
           new Date(binary.mtimeMs).toISOString() +
           ', older than ' +
           new Date(thresholdMs).toISOString(),
-        binary,
       };
     }
     return {
       name: target.name,
-      source: target.source,
       verdict: 'BUILT',
       detail: String(binary.size) + ' bytes',
-      binary,
     };
   });
 
@@ -245,6 +266,12 @@ function checkRustTail({ root, targetDir, since, platform = process.platform }) 
     rows,
     thresholdMs,
     thresholdWhy,
+    // The verdict, and the only place it is computed. `main` branches on this
+    // field; it used to re-derive the same answer from a `bad.length > 0` of
+    // its own while this one was read by nothing, which is a guard with two
+    // verdicts that are free to disagree. `bad` still exists below, but only to
+    // count rows for the failure message. `docs/corrections.md`, round 5,
+    // entry 1.
     ok: rows.length > 0 && rows.every((row) => row.verdict === 'BUILT'),
   };
 }
@@ -279,14 +306,14 @@ function main() {
     process.exit(1);
   }
 
-  const bad = result.rows.filter((row) => row.verdict !== 'BUILT');
-  if (bad.length > 0) {
+  if (!result.ok) {
+    const bad = result.rows.filter((row) => row.verdict !== 'BUILT');
     process.stderr.write(
       'check-rust-tail: FAILED - ' +
         String(bad.length) +
         ' of ' +
         String(result.rows.length) +
-        ' integration test targets have no compiled binary.\n' +
+        ' integration test targets are not BUILT; see the rows above.\n' +
         '`cargo build` does not compile tests/; only `cargo test` does. The Rust tail\n' +
         'of this run did not execute, whatever the exit codes said.\n',
     );

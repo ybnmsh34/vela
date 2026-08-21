@@ -948,6 +948,30 @@ files; see
 
 ### The run on this branch
 
+A ROUND-1 CAPTURE, AND ITS `check-bundle` LINES ARE NOT WHAT THE GUARD PRINTS
+TODAY. The block below is the transcript of the `pnpm bundle` run that produced
+the artefacts in the table under it, taken in round 1 and kept as the record of
+that run. Its second half must not be read as current output. The nsis detail
+string was `NSIS setup (PE image)` then and is
+`NSIS setup (PE image carrying an NSIS payload)` now, because round 2 added the
+first-header check and the wording follows it; the gap between `OK` and the
+filename is 13 spaces there against the 17 that `row.verdict.padEnd(18)` in
+`check-bundle.mjs` produces; and the guard's framing lines around the rows have
+changed too. Re-running only the disk-reading half today, against the same
+artefacts on disk, gives:
+
+```
+check-bundle: C:\Users\User\vela-t01\src-tauri\target\release\bundle
+check-bundle: expecting msi, nsis for version 0.1.0
+  OK                 Vela_0.1.0_x64_en-US.msi  7360512 bytes, MSI (OLE2 compound file)
+  OK                 Vela_0.1.0_x64-setup.exe  5444437 bytes, NSIS setup (PE image carrying an NSIS payload)
+check-bundle: every declared target produced an installer.
+BUNDLE_OK=yes
+CHECK_BUNDLE_EXIT=0
+```
+
+The round-1 capture, unedited:
+
 ```
 bundle: sentinel 2026-08-20T20:21:06.060Z
     Running light to produce ...\bundle\msi\Vela_0.1.0_x64_en-US.msi
@@ -1148,12 +1172,19 @@ the reporting command.
 
 A document cannot quote a run of itself, so the honest statement of scope is
 this: every file in the repository was in its committed state when this run
-started, and the only edit afterwards was writing this section. No gate reads
-this document — `check-transcripts.sh` reads only
-`docs/regression-baseline/mock-matrix`, and the comment-claim guard's roots are
-`src`, `src-tauri`, `tests`, `scripts`, `.github`, `docs/architecture` and
-`docs/vela-progress.md`. `pnpm test` was nevertheless re-run on the exact
-committed bytes afterwards; the round-2 report carries that result.
+started, and the only edit afterwards was writing this section.
+
+One gate does read this document. Gate 8, `test:secrets`, runs `git grep` over
+every tracked file: `scripts/secret-scan.sh` sets `excluded_paths=()`, so
+nothing is excluded and `docs/` is scanned like anything else. These bytes are
+therefore in that gate's input and its verdict depends on them. It reads them
+for credential *shapes*, not for claims, and it passed over 1270 tracked files.
+The gates that read prose for its content read other files: `check-transcripts.sh`
+reads only `docs/regression-baseline/mock-matrix`, and the comment-claim guard
+in `src/platform/claimed-guards.test.ts` has `CLAIM_ROOTS` of `src`, `src-tauri`,
+`tests`, `scripts`, `.github`, `docs/architecture` and `docs/vela-progress.md`,
+none of which contains this file. `pnpm test` was nevertheless re-run on the
+exact committed bytes afterwards; the round-2 report carries that result.
 
 ```
 GATE                       STATUS    EXIT   SECONDS
@@ -1415,6 +1446,67 @@ is 41 jsdom tests about key mapping and verdict parsing.
 the runs it describes. The scan was therefore re-run over the working tree with
 this subsection in it, and reported the same all-clear over the same 1270 tracked
 files, exit 0.
+
+#### Round 5's run, and what changed under it
+
+Round 5 changed the Rust-tail guard in ways a gate can see, and prose in ways
+only a reader can. Seen by a gate: `scripts/check-rust-tail.mjs` lost the four
+fields nothing read (`rows[].source`, `rows[].binary`, `binary.path`, and the
+`result.ok` `main` refused to read), its MISSING detail gained the source path,
+and its failure summary stopped saying "have no compiled binary" — which was
+false of a STALE row — in favour of "are not BUILT; see the rows above". Three
+tests were added — two for those changes, one for the `--json` row shape — which is
+why `test` reports 2451 where round 4's runs reported 2448. Seen only by a
+reader: five sentences the measurer found false, listed in `docs/corrections.md`,
+round 5.
+
+Two full runs, each one process, no `--from`, cargo prepended to PATH, on
+2026-08-21. Run 1 was taken with the code and test changes in place and the
+prose of this round half written; run 2 was taken on the bytes this round
+commits, with only this subsection edited afterwards. Statuses and exit codes
+are read from the log body, not from a reporting command. Run 2, the record:
+
+```
+GATE                       STATUS    EXIT   SECONDS
+typecheck                  PASS         0      45.6
+lint:rust                  PASS         0      13.9
+test                       PASS         0      79.7
+test:harness               PASS         0       6.8
+test:click-harness         PASS         0       4.9
+build                      PASS         0      61.8
+test:transcripts           PASS         0       7.6
+test:secrets               PASS         0      67.5
+cargo-build                PASS         0      34.2
+cargo-test                 PASS         0     192.9
+
+RUST_TAIL=CONFIRMED
+
+10 passed, 0 failed, 0 SKIPPED (skipped is not passed), 0 NOT-RUN (not-run is not passed either)
+VERIFY_EXIT=0
+```
+
+| gate | what it reported |
+| --- | --- |
+| `test` | 122 files, 2451 tests, all passed — three more than the 2448 the round-4 runs reported, which are the three tests round 5 adds |
+| `test:harness` | 12 files, 142 tests |
+| `test:click-harness` | 2 files, 41 tests |
+| `test:secrets` | `no credential material found in 1270 tracked files (docs/ included)` |
+| `cargo-test` | 65 `test result: ok` lines, zero `test result: FAILED` |
+| the probe | `all 40 integration test targets have a compiled binary`, and no MISSING or STALE row |
+
+Run 1 reported the same ten PASS rows, the same `RUST_TAIL=CONFIRMED` and the
+same `VERIFY_EXIT=0`, and every countable in the table above was identical to
+run 2's. Only the SECONDS differed, and in both directions — run 1 was faster on
+`build` (21.6 against 61.8) and slower on `typecheck` (56.8 against 45.6). No
+rule is drawn from that: two observations of a shared machine under changing
+load are two observations, and this document does not turn them into a range.
+Neither run produced a `Test timed out in 5000ms` failure, so the flakes the
+paragraphs above record did not recur — which is an observation, not a repair.
+
+This subsection was written after the run it describes, and gate 8 reads it.
+`scripts/secret-scan.sh` was therefore re-run over the working tree with this
+subsection in it and reported the same all-clear over the same 1270 tracked
+files, exit 0, as did `scripts/secret-scan.test.sh` at `15 passed, 0 failed`.
 
 ### 13c. How `pnpm verify` behaves when it cannot run everything
 

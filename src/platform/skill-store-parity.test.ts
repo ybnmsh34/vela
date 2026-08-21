@@ -82,6 +82,7 @@ import type {
 } from './contract';
 import {
   parseRustItem,
+  payloadRecord,
   payloadWireKeys,
   qualified,
   rustPathsNamedIn,
@@ -154,14 +155,7 @@ function everyFieldOfEveryArm<U, T extends PropertyKey>() {
     // the Rust side has no entry for it. An arm that gains or loses its fields
     // therefore moves an entry into or out of this record, and the diff names
     // the arm.
-    Object.fromEntries(
-      Object.entries(record as Record<string, readonly string[]>)
-        .filter(([, fields]) => fields.length > 0)
-        // Sets, not sequences, the same as every other comparison here: the
-        // arms are written in the order the Rust declares them, and the order
-        // is not part of the wire contract.
-        .map(([arm, fields]) => [arm, [...fields].sort()]),
-    );
+    payloadRecord(record as Record<string, readonly string[]>);
 }
 
 const SKILL_PROBLEM = everyVariantOf<SkillProblem>()([

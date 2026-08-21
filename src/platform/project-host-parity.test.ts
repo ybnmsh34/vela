@@ -88,6 +88,7 @@ import {
 import { declaredCommandsIn } from './declared-commands';
 import {
   parseRustItem,
+  payloadRecord,
   payloadWireKeys,
   qualified,
   rustPathsNamedIn,
@@ -264,14 +265,7 @@ function everyFieldOfEveryArm<U, T extends PropertyKey>() {
     // Every arm must be *written*, so a new one cannot be forgotten; only the
     // ones that carry fields are *compared*, because a unit arm puts no key on
     // the wire and the Rust side has no entry for it.
-    Object.fromEntries(
-      Object.entries(record as Record<string, readonly string[]>)
-        .filter(([, fields]) => fields.length > 0)
-        // Sets, not sequences, the same as every other comparison here: the
-        // arms are written in the order the Rust declares them, and the order
-        // is not part of the wire contract.
-        .map(([arm, fields]) => [arm, [...fields].sort()]),
-    );
+    payloadRecord(record as Record<string, readonly string[]>);
 }
 
 const LINK_STRATEGY_PAYLOAD = everyFieldOfEveryArm<LinkStrategy, typeof LINK_STRATEGY_TAG>()({

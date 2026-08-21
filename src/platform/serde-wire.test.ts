@@ -251,6 +251,7 @@ const OWN_PARSE = [
   /function\s+parseRustItem\b/,
   /function\s+wireName\b/,
   /function\s+payloadWireKeys\b/,
+  /function\s+payloadRecord\b/,
   /function\s+readAttributeText\b/,
   /function\s+scanSerialisable\b/,
   /rename_all\\s\*=/,

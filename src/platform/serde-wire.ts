@@ -1227,6 +1227,33 @@ export function payloadWireKeys(item: RustItem): Readonly<Record<string, readonl
   return keys;
 }
 
+/**
+ * The other side of {@link payloadWireKeys}: a hand-written per-arm record,
+ * normalised so the two can be compared.
+ *
+ * Arms with no fields are dropped, because a unit or tuple variant puts no key
+ * on the wire and the Rust side has no entry for one; the fields of each
+ * remaining arm are sorted, because declaration order is not part of the wire
+ * contract. Every arm still has to be *written* on the TypeScript side — that
+ * is what the per-guard type-level check enforces, and it is why an arm can be
+ * dropped here without a new arm being able to go unnoticed.
+ *
+ * Here rather than in each guard, and the distinction is the one this whole
+ * file exists over: `everyVariantOf` is copied into all three guards because a
+ * type-level helper has no behaviour and a second copy is the same helper by
+ * construction. This has behaviour. Three copies would be three behaviours, and
+ * the copy that is one refactor behind is the one that quietly compares less.
+ */
+export function payloadRecord(
+  record: Readonly<Record<string, readonly string[]>>,
+): Readonly<Record<string, readonly string[]>> {
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([, fields]) => fields.length > 0)
+      .map(([arm, fields]) => [arm, [...fields].sort()]),
+  );
+}
+
 export interface SerialisableItem {
   readonly file: string;
   readonly keyword: 'enum' | 'struct';

@@ -129,6 +129,7 @@ import type {
 } from './contract';
 import {
   parseRustItem,
+  payloadRecord,
   payloadWireKeys,
   qualified,
   RENAME_RULES,
@@ -467,14 +468,7 @@ function everyFieldOfEveryArm<U, T extends PropertyKey>() {
     // Every arm must be *written*, so a new one cannot be forgotten; only the
     // ones that carry fields are *compared*, because a unit arm puts no key on
     // the wire and the Rust side has no entry for it.
-    Object.fromEntries(
-      Object.entries(record as Record<string, readonly string[]>)
-        .filter(([, fields]) => fields.length > 0)
-        // Sets, not sequences, the same as every other comparison here: the
-        // arms are written in the order the Rust declares them, and the order
-        // is not part of the wire contract.
-        .map(([arm, fields]) => [arm, [...fields].sort()]),
-    );
+    payloadRecord(record as Record<string, readonly string[]>);
 }
 
 const CONTENT_PART_PAYLOAD = everyFieldOfEveryArm<ContentPart, typeof CONTENT_PART_TAG>()({
@@ -559,14 +553,7 @@ function everyFieldOfEveryExternalArm<U>() {
           ];
     },
   ): Readonly<Record<string, readonly string[]>> =>
-    Object.fromEntries(
-      Object.entries(record as Record<string, readonly string[]>)
-        .filter(([, fields]) => fields.length > 0)
-        // Sets, not sequences, the same as every other comparison here: the
-        // arms are written in the order the Rust declares them, and the order
-        // is not part of the wire contract.
-        .map(([arm, fields]) => [arm, [...fields].sort()]),
-    );
+    payloadRecord(record as Record<string, readonly string[]>);
 }
 
 const TRANSPORT_FAILURE_PAYLOAD = everyFieldOfEveryExternalArm<TransportFailure>()({

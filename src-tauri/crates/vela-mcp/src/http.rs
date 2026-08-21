@@ -4,13 +4,20 @@
 //! ## Read `stdio.rs` beside this
 //!
 //! The two transports are deliberately the same shape. Each owns one server,
-//! each answers `request` / `notify` / `is_alive` / `recent_diagnostics` /
-//! `shutdown`, each keeps a bounded ring of diagnostic lines that is **never
+//! each answers `request` / `notify` / `is_alive` / `shutdown` under exactly
+//! those names, each keeps a bounded ring of diagnostic lines that is **never
 //! evidence of failure**, each buries itself exactly once when it learns its
 //! server is gone, and each is reached through `crate::transport::Transport` so
 //! `McpConnection` cannot tell them apart. An MCP transport that behaved
 //! differently from the one beside it would be a maintenance defect even while
 //! it worked.
+//!
+//! The ring is the one accessor whose *name* differs, and deliberately:
+//! `StdioTransport` answers `recent_stderr`, `HttpTransport` answers
+//! `recent_diagnostics`, because a remote server has no stderr.
+//! `Transport::recent_diagnostics` is where the two become one method — it
+//! dispatches `Stdio` to `recent_stderr` — and its own doc argues why the enum
+//! took the substrate-neutral name.
 //!
 //! Where they genuinely differ, they differ because the substrate does:
 //!
@@ -584,9 +591,13 @@ impl HttpTransport {
         // `exchange`, not `send`: the authorization server does not get to set
         // this client's MCP session id, and a token endpoint that cannot be
         // reached is not this transport dying — the MCP server may be answering
-        // perfectly. What comes back from here is `McpError::Unreachable`
-        // naming `config.token_endpoint`, which is the host that went quiet.
-        // See [`Self::send`] for both halves of that.
+        // perfectly. What comes back from here on failure is one of two arms,
+        // `McpError::TimedOut` or `McpError::Unreachable`, and both name
+        // `config.token_endpoint` — the host that went quiet — because
+        // [`Self::exchange`] takes the name from `call.url` once and feeds both.
+        // The enumeration used to say only `Unreachable`; the timeout arm gained
+        // a `peer` field afterwards and this line was the site the correction
+        // was not grepped for. See [`Self::send`] for both halves of that.
         let mut reply = self.exchange(oauth::refresh_call(config, refresh_token))?;
         self.note(format!("token endpoint -> {}", reply.status));
         // The body is parsed whatever the status was: RFC 6749 puts the machine-

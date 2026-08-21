@@ -1,10 +1,21 @@
-//! **VERIFIED AGAINST A REAL SOCKET.** Every test in this file opens a real
-//! TCP connection to a real HTTP server on loopback, writes real HTTP/1.1 bytes
-//! and reads real bytes back. The server is a fixture — `support::MockServer`,
+//! **VERIFIED AGAINST A REAL SOCKET.** Twenty-one of this file's twenty-two
+//! tests open a real TCP connection to a real HTTP server on loopback, write
+//! real HTTP/1.1 bytes and read real bytes back. The twenty-second is
+//! `an_endpoint_nothing_is_listening_on_is_unreachable_rather_than_a_handshake_failure`,
+//! which starts no server deliberately: its subject is a port that was bound and
+//! released, so there is nothing there to connect to, and that absence is the
+//! whole assertion. Recount both numbers rather than trust them: `grep -c
+//! '^#\[test\]'` gives twenty-two, and `grep 'MockServer::start' … | grep -v
+//! '//'` gives twenty-eight, because several tests script more than one server.
+//! The `grep -v '//'` is not decoration — without it this very paragraph is
+//! counted as a twenty-ninth server, which is the mistake this sentence made in
+//! its first draft.
+//!
+//! The server in the other twenty-one is a fixture — `support::MockServer`,
 //! scripted per test — but nothing about the transport is simulated: the
-//! framing, the headers, the session, the SSE parsing, the connection that
-//! closes and the port that nothing is listening on are all real, and they are
-//! the parts that are easy to get wrong behind a fake.
+//! framing, the headers, the session, the SSE parsing and the connection that
+//! closes are all real, and they are the parts that are easy to get wrong
+//! behind a fake.
 //!
 //! The distinction is the one `stdio_end_to_end.rs` opens with, and it is the
 //! same distinction: a fake exchange that hands back a `HttpReply` struct proves
@@ -47,8 +58,18 @@ const SESSION: &str = "session-7f3c";
 // Scripting
 // ---------------------------------------------------------------------------
 
-/// The answer a well-behaved server gives, for the three methods this client
-/// sends. `grown` decides whether `tools/list` has picked up the extra tool.
+/// The answer a well-behaved server gives. It scripts the four JSON-RPC methods
+/// this client sends over HTTP — `initialize`, `notifications/initialized`,
+/// `tools/list` and `tools/call` — plus the HTTP `DELETE` that ends a session,
+/// and answers `400 unscripted` to anything else, which is what makes an
+/// unexpected fifth method a test failure rather than a silent pass.
+///
+/// Four, not three, and not the six `protocol.rs` declares: of the other two
+/// constants, `notifications/cancelled` is sent only by the stdio transport, and
+/// `notifications/tools/list_changed` travels the other way — the client reads
+/// it, and never sends it.
+///
+/// `grown` decides whether `tools/list` has picked up the extra tool.
 fn mcp_answer(request: &support::Received, grown: bool) -> Reply {
     if request.method == "DELETE" {
         return Reply::status(204);

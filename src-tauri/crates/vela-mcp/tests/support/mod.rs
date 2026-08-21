@@ -13,10 +13,20 @@
 //!
 //! `vela-settings/tests/capability_matrix_endpoints.rs` asserts that exactly one
 //! **crate manifest** declares an HTTP client crate, and `vela-mcp`'s declares
-//! none — this is fifty lines of `std::net` in a test, the same shape and the
-//! same argument as `vela-providers/tests/wire_auth_headers.rs`, which opens a
-//! loopback socket to record the literal bytes Vela puts on the wire. It talks
-//! to `127.0.0.1` and to nothing else, and it is `#[cfg(test)]` by living here.
+//! none. What that guard is about is the declared dependency, not a byte count:
+//! this file adds nothing to any manifest — it is `std::net` and `std::io` in a
+//! test target, it talks to `127.0.0.1` and to nothing else, and it is
+//! test-only by living here. Same shape and same argument as
+//! `vela-providers/tests/wire_auth_headers.rs`, which opens a loopback socket to
+//! record the literal bytes Vela puts on the wire.
+//!
+//! It is not small, and the version of this paragraph before this one called it
+//! "fifty lines" while arguing from that it was too small to count. The file is
+//! 331 lines, 246 of them neither blank nor comment, and the socket machinery
+//! proper — `MockServer` with its `start` and its `Drop`, `read_request`,
+//! `write_reply`, `LoopbackExchange::send` and `parse_reply` — is 171 of those
+//! 246. Size was never what made it allowed; carrying no dependency of its own
+//! is.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};

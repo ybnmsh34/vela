@@ -235,8 +235,14 @@ impl TokenSet {
 /// this comment has now been wrong twice; the count below is against the crate.
 ///
 /// How the eight were counted, written out so the next reader redoes the count
-/// instead of trusting it. **Four** come from `grep -rn '\.expose()' src/`,
-/// discarding the hits below this file's `mod tests`: those four are every point
+/// instead of trusting it. **Four** come from `grep -rn '\.expose()' src/ |
+/// grep -v '///'`, discarding the hits below each file's `mod tests`. Both
+/// filters are load-bearing and the version of this recipe before this one had
+/// neither: without the second grep the search also returns this very
+/// paragraph, which writes `.expose()` as prose rather than calling it, so the
+/// recipe printed six lines while the ledger beneath it said four; and it is
+/// *each* file's `mod tests`, not this file's, because `exchange.rs` has one
+/// too. Those four are every point
 /// where material leaves a [`SecretValue`] into something that is not one —
 /// `with_credential_header`, `with_form_body`, the point where
 /// [`TokenSet::parse`] deserialises the stored credential, and the `json!` in

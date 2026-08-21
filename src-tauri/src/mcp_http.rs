@@ -9,10 +9,21 @@
 //! `vela-providers`. `vela-providers` in turn knows nothing about MCP.
 //!
 //! So the two halves meet in the one crate that is allowed to know about both,
-//! which is this one. That is the same shape as `endpoint_host.rs`, whose own
-//! docs say it is "the only place in the workspace that calls
-//! `vela_endpoint::server::serve`", and for the same reason: a join between two
-//! domain crates is composition, not domain logic.
+//! which is this one. `endpoint_host.rs` is the same shape for the same reason:
+//! it is the only place outside `vela-endpoint` itself that calls
+//! `vela_endpoint::server::serve`, and a join between two domain crates is
+//! composition, not domain logic.
+//!
+//! That is a grep and not a quotation — `endpoint_host.rs` does not describe
+//! itself in those words, the claim is this file's, and here is what backs it,
+//! stated so it can be redone. Searching `src/` and `crates/*/src/` for
+//! `vela_endpoint::server` returns four lines and only four: the `use` in
+//! `endpoint_host.rs`, one line of that file's own module docs, and two of this
+//! paragraph. The call that `use` feeds is the one `serve(` in `endpoint_host.rs`.
+//! `vela-endpoint` also calls `serve` inside its own `mod tests`, which is why
+//! the claim is scoped to outside that crate rather than to the workspace; and
+//! the application crate is the only crate whose manifest depends on
+//! `vela-endpoint` at all, so there is nowhere else the call could come from.
 //!
 //! # What an MCP server therefore inherits
 //!

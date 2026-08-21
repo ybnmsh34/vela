@@ -1,9 +1,15 @@
-//! **VERIFIED AGAINST A REAL PROCESS.** Every test in this file launches an
-//! actual OS process, hands it actual pipes, and reads actual bytes back. The
-//! server on the other end is a fixture — `tests/fixtures/mock-mcp-server.mjs`,
-//! a node script — but nothing about the transport is simulated: the framing,
-//! the buffering, the handshake, the process teardown and the death are all
-//! real, and they are the parts that are hard.
+//! **VERIFIED AGAINST A REAL PROCESS.** Eleven of this file's twelve tests
+//! launch an actual OS process, hand it actual pipes, and read actual bytes
+//! back. The twelfth is
+//! `a_command_that_does_not_exist_fails_to_spawn_rather_than_hanging`, which
+//! names a binary that is not on the machine: the OS creates no process, and
+//! that refusal is the whole assertion. Recount with `grep -c '^#\[test\]'`.
+//!
+//! The server the other eleven reach is a fixture —
+//! `tests/fixtures/mock-mcp-server.mjs`, a node script — but nothing about the
+//! transport is simulated: the framing, the buffering, the handshake, the
+//! process teardown and the death are all real, and they are the parts that are
+//! hard.
 //!
 //! The distinction matters because a mocked transport can pass while the app
 //! hangs. A client that never notices end-of-file, or that buffers a line
@@ -43,10 +49,16 @@ fn server() -> ServerSpec {
     ServerSpec::Stdio(stdio_server())
 }
 
-/// Every test here drives a local process, so no build of this crate needs an
-/// HTTP backend to run them — which is also the state a build without one is in,
-/// and `listing_every_server_reports_the_unwired_one_without_losing_the_working_one`
+/// Nothing in this file reaches the network: every server it actually reaches is
+/// a local process, so no build of this crate needs an HTTP backend to run these
+/// tests — which is also the state a build without one is in, and
+/// `listing_every_server_reports_the_unwired_one_without_losing_the_working_one`
 /// is what holds that down.
+///
+/// `config_naming_the_fixture` does name an `https://` server, which is the one
+/// thing here that looks like a counter-example and is not: the pool it is given
+/// has no HTTP backend, so that entry is refused with `TransportNotSupported`
+/// before anything dials it. Its being unreachable is the assertion.
 fn connect(id: &str, spec: &ServerSpec) -> vela_mcp::error::McpResult<McpConnection> {
     McpConnection::connect(id, spec, None)
 }

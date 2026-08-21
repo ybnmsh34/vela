@@ -31,8 +31,19 @@ serde_json.workspace = true
 thiserror.workspace = true
 vela-core.workspace = true
 vela-secrets.workspace = true
-# One call site: `oauth::TokenSet::to_secret` builds a JSON string holding both
-# tokens in plain text, and a `String` dropped normally leaves them in freed
-# heap for the life of the process. `SecretValue` does this for itself; that
-# buffer is the only credential material in this crate that lives outside one.
+# Four production call sites, in two files: `oauth::TokenSet::to_secret_scrubbing`
+# (`json.zeroize()`), `oauth::scrub` (`text.zeroize()`, the recursive one),
+# `oauth::refresh_call` (`encoded.zeroize()`) and `http::HttpTransport::renew`
+# (`reply.body.zeroize()`). Each is a `String` or a `Vec<u8>` holding credential
+# material in plain text, and a buffer dropped normally leaves its bytes in freed
+# heap for the life of the process; `SecretValue` does this for itself and for
+# nothing else.
+#
+# This line names the call sites and deliberately states no total. The ledger of
+# every plain-text copy the crate makes — which are scrubbed, and which two are
+# not — is `oauth::scrub`'s docblock, and a count kept in two places is a count
+# that goes wrong in one of them: the sentence this replaces claimed "one call
+# site" and called that buffer "the only credential material in this crate that
+# lives outside" a `SecretValue`, which `TokenSet::to_secret` retracts in its own
+# docblock while the retracted wording went on standing here.
 zeroize = "1"

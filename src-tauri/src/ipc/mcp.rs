@@ -315,7 +315,13 @@ mod tests {
     /// A remote MCP server on a loopback port, answering the two methods this
     /// command's path sends. Small on purpose: what is under test here is the
     /// **command**, not the transport — `vela-mcp/tests/http_end_to_end.rs`
-    /// tests the transport, against nineteen scripted servers.
+    /// tests the transport, in twenty-two tests scripting twenty-eight mock
+    /// servers between them. Recount rather than trust: over that file,
+    /// `grep -c '^#\[test\]'` gives twenty-two and
+    /// `grep 'MockServer::start' … | grep -v '//'` gives twenty-eight — the
+    /// second filter matters, because that file's own module docs name the
+    /// symbol in prose. `cargo test -p vela-mcp --test http_end_to_end` prints
+    /// the test count back.
     fn remote_mcp_server() -> (u16, std::sync::Arc<std::sync::atomic::AtomicBool>) {
         use std::io::{BufRead, BufReader, Read, Write};
 

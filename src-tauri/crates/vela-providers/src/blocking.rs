@@ -70,9 +70,11 @@
 //! them this object is never used; starting three threads at launch to serve a
 //! feature nobody asked for is a cost paid by everybody. It also keeps
 //! application startup free of a thread-creation burst — which matters on a
-//! machine under load, where `tests/endpoint_runtime_control.rs` polls a fixture
-//! on a 10 ms sleep against a network timeout and is measurably sensitive to
-//! scheduling pressure at exactly that moment.
+//! machine under load, where `src-tauri/tests/endpoint_runtime_control.rs` polls
+//! a fixture on a 10 ms sleep against a 500 ms `TcpStream::connect_timeout` and
+//! is measurably sensitive to scheduling pressure at exactly that moment. The
+//! path is crate-qualified because that test belongs to the application crate,
+//! not to this one — a bare `tests/…` here would read as `vela-providers/tests/`.
 
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
 use std::sync::OnceLock;
@@ -138,7 +140,11 @@ impl std::fmt::Display for BlockingError {
 
 /// A client and the runtime that drives it.
 ///
-/// Build one per process and share it. Building one starts a thread.
+/// Build one per process and share it. Construction starts no thread: it builds
+/// a `reqwest::Client` and an empty `OnceLock`. The runtime that drives the
+/// client starts on the first [`BlockingHttp::send`] — see the `handle` field
+/// below and the module docs, which argue at length why that is a decision and
+/// not an optimisation.
 pub struct BlockingHttp {
     client: reqwest::Client,
     /// Built on the first [`BlockingHttp::send`]. See the module docs.

@@ -37,10 +37,17 @@ import { CodeWorkspace } from './CodeWorkspace';
  * `delay: null` for the reason `src/app/modal-containment.test.tsx` records:
  * `userEvent`'s default yields once per simulated input step and a
  * `setTimeout(0)` turn costs a full Windows scheduler tick whether the box is
- * idle or loaded. Nothing here asserts how long a click took — and this file
- * drives enough of them that its default-delay form took thirty seconds of the
- * suite's wall clock, which is enough parallel load to push the source-scanning
- * guards in `src/platform/` past their five-second per-test budget.
+ * idle or loaded. Nothing here asserts how long a click took, and this file and
+ * its sibling drive enough of them for the default to show up in the clock. Run
+ * as a pair, their `tests` time measures 31.10s, 14.89s and 18.46s with
+ * `delay: null` (three runs, the first cold) against 82.64s and 49.56s with a
+ * plain `userEvent.setup()` (two runs), same machine, same session.
+ *
+ * What that costs any *other* file is not measured. Every test in this repo has
+ * a five-second per-test budget and a contended full run does cross it — one
+ * run here went `4 failed | 2518 passed (2522)`, all four `Test timed out in
+ * 5000ms`, and the next run of the same tree was clean — but no measurement
+ * here attributes a specific crossing to this file's delay setting.
  */
 function driver(): ReturnType<typeof userEvent.setup> {
   return userEvent.setup({ delay: null });
@@ -66,7 +73,14 @@ function mount(adapter: BrowserAdapter, onClose: () => void = () => undefined) {
   );
 }
 
-/** Fill in the four choices and press Start. */
+/**
+ * Fill in all five choices and press Start.
+ *
+ * Five, not the spec's four: this build adds the worktree name, and
+ * `isComplete` in `src/state/code-workspace-store.ts` refuses a draft missing
+ * any of them — which `refuses a half-filled form and says which half` measures
+ * with the worktree alone filled in.
+ */
 async function startSession(
   user: ReturnType<typeof userEvent.setup>,
   worktree: string,
@@ -121,7 +135,7 @@ describe('the session gate', () => {
     expect(useCodeWorkspaceStore.getState().sessions).toHaveLength(0);
   });
 
-  it('opens the panes once all four choices are made', async () => {
+  it('opens the panes once all five choices are made', async () => {
     const user = driver();
     mount(await host());
 
@@ -138,14 +152,22 @@ describe('the session gate', () => {
 
     await startSession(user, 'fix-a');
 
-    // All four choices, read back off the session line. Three of them were
-    // rendered and asserted by nothing, which is how a field becomes decoration.
+    // The session line carries four of the five choices — worktree, folder,
+    // environment, permission mode — and this reads all four back off it. The
+    // model is the fifth and it is on no line, so it is read back off the
+    // session itself. Before that last pair of assertions, every other
+    // `modelId` and `providerId` in a test under `src/` was a value being
+    // written into a seeded session, never one being read back out of a session
+    // the form had built — the Model select was driven and its result checked
+    // by nothing.
     const line = screen.getByTestId('code-session-line');
     expect(line).toHaveTextContent('fix-a');
     expect(line).toHaveTextContent('C:/code/vela');
     expect(line).toHaveTextContent('local');
     expect(line).toHaveTextContent('acceptEdits');
     expect(useCodeWorkspaceStore.getState().sessions[0]?.permissionMode).toBe('acceptEdits');
+    expect(useCodeWorkspaceStore.getState().sessions[0]?.providerId).toBe('workstation');
+    expect(useCodeWorkspaceStore.getState().sessions[0]?.modelId).toBe('local-model');
   });
 });
 

@@ -44,10 +44,17 @@ const SESSION = 'fix-a';
  * `delay: null` for the reason `src/app/modal-containment.test.tsx` records:
  * `userEvent`'s default yields once per simulated input step and a
  * `setTimeout(0)` turn costs a full Windows scheduler tick whether the box is
- * idle or loaded. Nothing here asserts how long a click took — and this file
- * drives enough of them that its default-delay form took thirty seconds of the
- * suite's wall clock, which is enough parallel load to push the source-scanning
- * guards in `src/platform/` past their five-second per-test budget.
+ * idle or loaded. Nothing here asserts how long a click took, and this file and
+ * its sibling drive enough of them for the default to show up in the clock. Run
+ * as a pair, their `tests` time measures 31.10s, 14.89s and 18.46s with
+ * `delay: null` (three runs, the first cold) against 82.64s and 49.56s with a
+ * plain `userEvent.setup()` (two runs), same machine, same session.
+ *
+ * What that costs any *other* file is not measured. Every test in this repo has
+ * a five-second per-test budget and a contended full run does cross it — one
+ * run here went `4 failed | 2518 passed (2522)`, all four `Test timed out in
+ * 5000ms`, and the next run of the same tree was clean — but no measurement
+ * here attributes a specific crossing to this file's delay setting.
  */
 function driver(): ReturnType<typeof userEvent.setup> {
   return userEvent.setup({ delay: null });
@@ -138,11 +145,15 @@ describe('what the diff pane shows', () => {
     it('says the change was not aligned, rather than printing a line count as a change count', () => {
       // The huge file is listed *second*, so the pane selects the first and
       // never renders four thousand row buttons — this test is about the stat
-      // on the file row, and the lead beside the rows is asserted below. It ran
-      // to 5776ms solo before this change, which is the ceiling-versus-cost
-      // argument `src/features/models/EndpointsPanel.test.tsx` makes at length:
-      // a budget raised to cover a cost that scales with load gets raised
-      // again.
+      // on the file row, and the lead beside the rows is asserted below.
+      // Measured by swapping the two seeds and running this test alone, twice
+      // each: 518ms and 422ms as written, 2796ms and 2530ms with the huge file
+      // first. Six times the cost for nothing this test asserts, and while
+      // neither figure crosses the 5s per-test budget on a quiet machine, a
+      // contended full run of this repo does cross it — which is the
+      // ceiling-versus-cost argument `src/features/models/EndpointsPanel.test.tsx`
+      // makes at length: a budget raised to cover a cost that scales with load
+      // gets raised again.
       seed([
         { path: 'src/small.ts', baseline: 'one', working: 'ONE' },
         { path: 'src/huge.ts', baseline: before, working: after },
@@ -176,12 +187,18 @@ describe('what the diff pane shows', () => {
 
       // Two rows still read `shared header` — the prefix and the suffix. A
       // whole-file replacement would have neither. `getAllByText` rather than a
-      // role-and-name query on purpose: this diff renders 2004 row buttons
-      // (1 prefix + 2001 removed + 1 added + 1 suffix), and computing an
-      // accessible name for each of them ran past the 5s per-test budget when
-      // this test was first written that way. Only the left side is over the
-      // cap — that is enough to refuse the alignment, and it halves the rows
-      // against a version where both sides were.
+      // role-and-name query for two reasons, both measured by swapping this one
+      // line for `getAllByRole('button', { name: new RegExp(shared) })` and
+      // running this test alone, twice. It does not work: a row button's
+      // accessible name is its `aria-label`, `Comment on line N after`, never
+      // its text, so the query reports `Unable to find an accessible element
+      // with the role "button" and name `/shared header/`` both times. And it
+      // is expensive, because this diff renders 2004 row buttons (1 prefix +
+      // 2001 removed + 1 added + 1 suffix) and the query computes a name for
+      // every one: `tests` time went 4.75s and 2.83s as written against 28.06s
+      // and 32.97s that way. Only the left side is over the cap — that is
+      // enough to refuse the alignment, and it halves the rows against a
+      // version where both sides were.
       const group = within(screen.getByRole('group', { name: /^Changes in/ }));
       expect(group.getAllByText(shared)).toHaveLength(2);
     });
@@ -449,7 +466,9 @@ describe('a comment when the file moves under it', () => {
     expect(stranded.getByText(/no longer in the changed-file list/)).toBeInTheDocument();
     expect(stranded.getByText(/sent as line 1 after/)).toBeInTheDocument();
     expect(
-      stranded.getByRole('button', { name: 'Remove comment on line 1 after: this line worries me' }),
+      stranded.getByRole('button', {
+        name: 'Remove comment on src/a.ts, line 1 after: this line worries me',
+      }),
     ).toBeInTheDocument();
 
     await user.click(stranded.getByRole('button', { name: /^Remove comment/ }));
@@ -472,6 +491,55 @@ describe('a comment when the file moves under it', () => {
       .map((button) => button.getAttribute('aria-label'));
     expect(names).toHaveLength(2);
     expect(new Set(names).size).toBe(2);
+  });
+
+  it('tells two Remove buttons apart when the comments are on different files', async () => {
+    // The uniqueness above is measured inside one file, so it is blind to the
+    // case `drifted` opened: a card whose file has left the changed-file list
+    // sits beside a row-attached card of the file that is on screen. Same line,
+    // same side, same body is then one accessible name for two buttons that
+    // remove different comments — while the reviewer looking at the screen has
+    // the path, printed by `.driftedQuote` directly above the button that
+    // withheld it.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/other.ts', baseline: 'alpha', working: 'alpha\nGAMMA' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    // On src/a.ts, on the CONTEXT line, so the anchor survives the revert below.
+    await user.click(screen.getByRole('button', { name: 'Comment on line 1 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 1'));
+    await user.paste('fix this');
+    await user.keyboard('{Enter}');
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+
+    // src/other.ts is now the file on screen, and this is the collision: the
+    // same body on the same line and side of a different file.
+    await user.click(screen.getByRole('button', { name: 'Comment on line 1 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 1'));
+    await user.paste('fix this');
+    await user.keyboard('{Enter}');
+
+    const names = screen
+      .getAllByRole('button', { name: /^Remove comment/ })
+      .map((button) => button.getAttribute('aria-label'));
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    expect(names).toContain('Remove comment on src/a.ts, line 1 after: fix this');
+    expect(names).toContain('Remove comment on line 1 after: fix this');
+
+    // Distinct is not enough on its own: the name has to be the name of the
+    // comment that button actually removes.
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on src/a.ts, line 1 after: fix this' }),
+    );
+    const left = useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? [];
+    expect(left.map((comment) => comment.path)).toEqual(['src/other.ts']);
   });
 });
 

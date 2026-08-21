@@ -62,7 +62,9 @@
  * under: `anchorComments` re-finds the quoted line in the diff as it reads now,
  * and every card, every Remove button and the submitted message are placed from
  * that answer. A comment the rows cannot show is shown apart instead, saying
- * which of the two reasons applies to it — see `drifted` below.
+ * which of the two reasons applies to it — see `drifted` below, which states
+ * the qualifier on each arm, and the early return above it, which states the
+ * one arrangement still not covered.
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -86,18 +88,40 @@ const GUTTER: Record<DiffRow['kind'], string> = { same: ' ', added: '+', removed
  * Every card renders one and every one of them read "Remove", so a round of N
  * comments was N controls with one name and N different consequences — the
  * collision this file's own test helper had already worked around with a name
- * regex rather than fixing. Measured at N = 2: reverting this function leaves
- * both buttons with the same accessible name, and
- * `names each Remove button for the comment it removes` goes red. The body is
- * what the reviewer would use to tell two of their own comments apart, so it is
- * what the name carries.
+ * regex rather than fixing. Reverting the whole function body to a bare
+ * `'Remove comment'` gives `3 failed | 20 passed (23)` in this file, twice:
+ * `names each Remove button for the comment it removes`,
+ * `tells two Remove buttons apart when the comments are on different files`,
+ * and `keeps a comment removable when its file leaves the changed list with the
+ * quoted line intact`. The body is what the reviewer would use to tell two of
+ * their own comments apart, so it is what the name carries.
+ *
+ * `onScreen` is the path of the file whose rows are drawn below. Every card in
+ * `DiffRows` is on that file by construction, but a `drifted` card need not be —
+ * the `!listed` arm shows a comment from a file that has left the changed-file
+ * list, wherever the reviewer happens to be. Line, side and body alone are then
+ * not a discriminator: two comments with the same body on line 1 of two
+ * different files produce one name for two buttons that remove different
+ * things. Naming the file for exactly those cards is what
+ * `tells two Remove buttons apart when the comments are on different files`
+ * measures. Replacing the clause with `''` was run twice and gives
+ * `2 failed | 21 passed (23)` in this file both times: that test with
+ * `expected 1 to be 2` on the count of distinct names, and
+ * `keeps a comment removable when its file leaves the changed list with the
+ * quoted line intact` with
+ * `Unable to find an accessible element with the role "button" and name
+ * "Remove comment on src/a.ts, line 1 after: this line worries me"`.
+ *
+ * The path is also what `.driftedQuote` already prints above the same card, so
+ * this gives the accessible name the discriminator the screen already had.
  */
-function removeLabel(entry: AnchoredComment): string {
+function removeLabel(entry: AnchoredComment, onScreen: string): string {
   const where =
     entry.line === null
       ? 'a line no longer in the diff'
       : `line ${entry.line} ${entry.comment.side === 'left' ? 'before' : 'after'}`;
-  return `Remove comment on ${where}: ${entry.comment.body}`;
+  const file = entry.comment.path === onScreen ? '' : `${entry.comment.path}, `;
+  return `Remove comment on ${file}${where}: ${entry.comment.body}`;
 }
 
 export function DiffPane({ sessionId }: { readonly sessionId: string }) {
@@ -145,6 +169,17 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
   const [commentingRow, setCommentingRow] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 
+  // KNOWN HOLE, undisclosed until now and not closed here. `drifted` is computed
+  // below this return, so when the LAST changed file is reverted there is no
+  // changed file left, this branch renders, and a pending comment on that file
+  // is invisible and un-removable again — the state round 3 fixed for every
+  // other arrangement. It is bounded: with no changed file there is no review
+  // bar, no Submit control and no Ctrl+Enter handler on screen, so nothing is
+  // sent while it is hidden, and the card returns the moment any file differs
+  // again. Closing it means hoisting `drifted` above this return and rendering
+  // the group inside the empty state, which is a second layout for this pane
+  // rather than a clause; it predates this track's diff work and is on the
+  // lead's list, not disguised as done.
   if (changed.length === 0 || current === null) {
     return (
       <p className={styles.empty}>
@@ -262,7 +297,7 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
                 <button
                   type="button"
                   className={styles.paneButton}
-                  aria-label={removeLabel(entry)}
+                  aria-label={removeLabel(entry, current.file.path)}
                   onClick={() => removeComment(sessionId, entry.comment.id)}
                 >
                   Remove
@@ -449,7 +484,7 @@ function DiffRows({
                 <button
                   type="button"
                   className={styles.paneButton}
-                  aria-label={removeLabel(entry)}
+                  aria-label={removeLabel(entry, path)}
                   onClick={() => onRemove(entry.comment.id)}
                 >
                   Remove

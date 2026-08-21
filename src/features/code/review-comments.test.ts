@@ -1,14 +1,21 @@
 /**
  * The one message a review round sends.
  *
- * Two of these are about ordering and they are the ones worth having: a review
- * read out of order is a different review, and the two ways to get the order
- * wrong here — sorting by the comment id, and an unstable tie-break — both
- * produce output that looks plausible.
+ * Fourteen tests, and three of them are about ordering: a review read out of
+ * order is a different review. Two cover the ways to get it wrong while every
+ * comment still has a line — sorting by the comment id, and an unstable
+ * tie-break — and both produce output that looks plausible. The third,
+ * `sorts a comment whose line is gone after the ones that still have one`, is
+ * the case where one comment has no line to sort by at all.
  *
- * The rest are about the coordinate. `path:line` is the one part of the message
- * that goes stale the moment the file is edited above it, and the version that
- * printed `comment.line` printed a coordinate it had never re-checked.
+ * Eight are about the coordinate — the `path:line (side)` triple. It is the one
+ * part of the message that goes stale the moment the file is edited above it,
+ * and the version that printed `comment.line` printed a coordinate it had never
+ * re-checked.
+ *
+ * The remaining three are about the message rather than any comment in it: no
+ * comments at all, one message rather than one each, and "1 file" rather than
+ * "1 files".
  */
 
 import { describe, expect, it } from 'vitest';

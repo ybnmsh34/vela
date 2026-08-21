@@ -10,18 +10,34 @@ isolated by worktree, and diff review with line comments.
 | Pane system — columns of stacked panes, drag a header to move, drag an edge to resize | built |
 | Keyboard equivalents for every pointer gesture (F6, `Ctrl/Cmd+\`, arrow-key splitters, a move menu) | built |
 | Diff review — file list, `+N/-N` per file, click a line to comment, submit the round with `Ctrl/Cmd+Enter` | built |
-| Session setup gate — environment, folder, model and permission mode before the first message | built |
+| Session setup gate — worktree name, environment, folder, model and permission mode before the first message | built |
 | Worktree isolation — one session per worktree, compared case-insensitively, work kept per session | built in the registry only; see below |
 | Chat pane — model, context readout, the session's queue, a composer | built |
 | Editor pane — open a file, edit it, Save | built against session memory, not disk |
 
 ## What is NOT here, and what each one needs first
 
-**Five of the spec's eight panes.** Browser/preview, terminal, file tree, plan, tasks and
-subagent are not built, and are deliberately absent from `PaneKind` rather than present and
-empty — the Views menu is drawn from that union, so a pane in it is a pane that works. The
-pane system itself is generic (`src/lib/pane-layout.ts` is generic over the pane id), so
-adding one is a union member, a title in `PANE_TITLES` and a component.
+**Five of the spec's eight panes.** `docs/spec-parts/claude-code-desktop.md` names eight, twice:
+"panes you can arrange in any layout: chat, diff, browser, terminal, file, plan, tasks, and
+subagent". Chat, diff and file are built (the last as the Editor pane in the table above).
+Browser, terminal, plan, tasks and subagent are not, and are deliberately absent from
+`PaneKind` rather than present and empty, so nothing can open a pane with nothing behind it.
+
+The pane arithmetic is generic (`src/lib/pane-layout.ts` is generic over the pane id), so the
+layout side of a sixth pane is free. The wiring side is not, and only one of its three sites is
+enforced by the compiler. Adding `'terminal'` to `PaneKind` and running
+`pnpm exec tsc --build --force` exits 2 with exactly one distinct diagnostic, twice measured:
+`src/features/code/PaneFrame.tsx(57,14): error TS2741: Property 'terminal' is missing in type
+'{ chat: string; diff: string; editor: string; }' but required in type 'Record<PaneKind, string>'.`
+Nothing at all is said about the other two, and both would be wrong:
+
+- `ALL_PANES` in `CodeWorkspace.tsx` is a hand-written `readonly PaneKind[]`, which does not
+  have to be exhaustive — a fourth kind silently never appears in the Views menu;
+- `renderPane` in the same file ends `return <DiffPane … />` with no branch for an unknown
+  kind, so a fourth pane would render the diff.
+
+So the recipe is five steps, not three: the union member, the title, the component, and **both
+of those two sites** — of which the compiler names only the title.
 
 **Anything that touches a real worktree.** `src/platform/contract.ts` declares no filesystem
 and no git command — there is no `git_*`, no `fs_*`, nothing that can `git worktree add`, read
@@ -54,8 +70,13 @@ its **text and side** rather than trusting the stored number. That is a heuristi
 known limit: it cannot tell two identical lines apart, and picks the one nearest to where the
 comment was written. A comment whose quoted line is nowhere in the diff is shown apart and
 submitted without a coordinate rather than being attached to whatever now occupies its old
-line number. So is a comment whose **file** has left the changed-file list, and that is a
-different case rather than a special case of the first: editing a file back to its baseline
+line number — shown apart **on its own file's diff**, because that file is still in the
+changed list and has a row to select, so this arm waits for the reviewer to go there rather
+than following them onto every other file. `DiffPane.tsx`'s `drifted` states the same
+qualifier as `entry.comment.path === current.file.path`.
+
+So is a comment whose **file** has left the changed-file list, and that is a different case
+rather than a special case of the first: editing a file back to its baseline
 does not take its rows away — `diffText('alpha', 'alpha')` returns one `same` row — so a
 comment on a context line keeps a perfectly good anchor while its file has no row on screen
 at all. Round 2 treated the two as one condition, and that comment was invisible,

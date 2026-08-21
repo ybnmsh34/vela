@@ -60,8 +60,13 @@ export function ChatPane({ session }: { readonly session: CodeSession }) {
               same three strings this does, because this call site always hands
               `contextBudget` an array and so can never see the null; that is
               precisely the sort of unreachable that stops being unreachable
-              when a caller changes. No test bites this: there is no way to
-              reach it from the product today. */}
+              when a caller changes. Nothing bites the null arm: `Context
+              unknown` occurs once in the whole of `src/`, on the line below,
+              and no test asserts it. This pane's one call to `contextBudget`
+              is above and always passes an array, so nothing renders the arm
+              from here; another caller of `contextBudget`
+              (`src/features/models/ContextMeter.tsx`) is not this component and
+              cannot reach this line at all. */}
           {budget.approxUsedTokens === null
             ? 'Context unknown'
             : budget.windowTokens === null

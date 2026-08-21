@@ -172,10 +172,13 @@
 }
 
 /* `--vela-border`, not `--vela-border-strong`. Both would read; only one of them
-   is already a ground the audit knows about. `src/styles/contrast.test.ts`
-   failed on `--vela-border-strong — first used in
-   src/features/code/CodeWorkspace.module.css`, and the two honest answers were
-   to add a pair for a ground that carries no text, or to paint the hover with a
+   is already a ground the audit knows about. Painting this hover with
+   `--vela-border-strong` instead and running `src/styles/contrast.test.ts`
+   gives `1 failed | 10 passed (11)`, twice, on
+   `expected [ Array(1) ] to deeply equal []` where that one element is
+   `--vela-border-strong — first used in
+   src\features\code\CodeWorkspace.module.css`. The two honest answers were to
+   add a pair for a ground that carries no text, or to paint the hover with a
    token already exempt as a hairline. The second invents nothing and touches no
    guard another track owns. */
 .splitterVertical:hover,

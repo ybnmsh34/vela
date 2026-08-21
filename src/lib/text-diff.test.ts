@@ -10,9 +10,16 @@
  * "everything changed" — a difference the module this replaced could not
  * express, and got wrong in the only direction that reaches a user.
  *
- * Seven of these assertions moved here verbatim from the canvas feature's own
- * diff test, which this file replaces; the over-cap one did not, because the
- * behaviour it pinned was the defect.
+ * This file replaces the canvas feature's own diff test, which had seven cases.
+ * Six carried over by name; the seventh — `falls back to a whole-file
+ * replacement rather than freezing the panel` — did not, because the behaviour
+ * it pinned was the defect. The assertions themselves did not move verbatim:
+ * of that file's twelve `expect(` lines exactly two are byte-identical here
+ * (the two `same[0]` / `same[1]` row assertions), and the rest were rewritten
+ * against the new shape — bare `rows` became `diff.rows`, and each
+ * `expect(summariseDiff(rows)).toEqual({ added, removed })` split into separate
+ * `diff.added`, `diff.removed` and `diff.aligned` assertions, which is the whole
+ * point of the replacement.
  */
 
 import { describe, expect, it } from 'vitest';

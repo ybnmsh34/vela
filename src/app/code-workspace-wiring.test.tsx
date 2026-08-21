@@ -18,7 +18,7 @@
  * rail is not even in the tree they search — and `opens it from the collapsed
  * rail too` is the only thing anywhere in this suite that presses the rail's
  * icon. Remove that icon from `src/features/navigation/Sidebar.tsx` and it is
- * the one test in all 123 files that goes red (`1 failed | 2520 passed (2521)`,
+ * the one test in all 123 files that goes red (`1 failed | 2521 passed (2522)`,
  * measured twice); remove the expanded row and it is the only test here that
  * stays green.
  *

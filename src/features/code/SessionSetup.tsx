@@ -100,7 +100,7 @@ export function SessionSetup() {
       <h2 className={styles.setupTitle}>Start a session</h2>
       <p className={styles.setupLead}>
         Each session works in its own git worktree, so changes in one do not reach another until
-        you commit them. All four choices below are made before the first message.
+        you commit them. All five choices below are made before the first message.
       </p>
 
       <label className={styles.field} htmlFor={`${ids}-worktree`}>

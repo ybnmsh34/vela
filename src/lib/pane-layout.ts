@@ -16,9 +16,12 @@
  * `src/lib/` sits at the bottom of the graph and may not know which panes the
  * product has (`src/lib/README.md`). It is also what makes the invariants
  * testable: the feature's `PaneKind` is a closed union of the panes that exist,
- * so a test written against it could not build the eight-column case that breaks
- * a naively-written minimum-size floor. `pane-layout.test.ts` builds it with
- * string ids.
+ * so a test written against it could not build the thirteen-column case that
+ * breaks a naively-written minimum-size floor — thirteen siblings cannot each
+ * hold `MINIMUM_SHARE` of 1/12, so `floorFor` has to give way to 1/13.
+ * `pane-layout.test.ts` builds it with string ids
+ * (`still contains where the edge is when the floor is all there is`), and a
+ * twenty-column layout with them too.
  *
  * ## Weights, not pixels
  *
@@ -64,11 +67,11 @@ export interface PanePosition {
  * room for it.
  *
  * A **share**, so it has to survive being asked of a layout that cannot grant
- * it: eight columns cannot each hold a tenth and a half. {@link floorFor} is
- * what turns the wish into an answer, and it is the reason this is not simply
- * compared against — a floor larger than `1 / count` makes every drag a no-op
- * and every layout un-normalisable, which is the kind of thing that looks fine
- * until someone opens the sixth pane.
+ * it: thirteen columns cannot each hold a twelfth, because thirteen twelfths is
+ * more than the whole. {@link floorFor} is what turns the wish into an answer,
+ * and it is the reason this is not simply compared against — a floor larger than
+ * `1 / count` makes every drag a no-op and every layout un-normalisable, which
+ * is the kind of thing that looks fine until someone opens the thirteenth pane.
  *
  * The value itself is a judgement, not a measurement: at a 1280px workspace a
  * twelfth is 107px, which is about where a pane header's own controls stop

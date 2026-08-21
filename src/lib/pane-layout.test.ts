@@ -2,14 +2,14 @@
  * The pane layout arithmetic.
  *
  * Written against string ids rather than the workspace's `PaneKind`, because the
- * cases worth testing are the ones a three-pane product cannot reach: eight
- * columns, where a fixed minimum share stops being satisfiable, and repeated
- * drags against a floor, where per-side clamping loses a sliver of the total
- * each time.
+ * cases worth testing are the ones a three-pane product cannot reach: thirteen
+ * columns, the smallest count at which `MINIMUM_SHARE` of 1/12 stops being
+ * satisfiable and `floorFor` has to give way to 1/13, and repeated drags against
+ * a floor, where per-side clamping loses a sliver of the total each time.
  *
- * Every assertion about a set of weights also asserts the sum. A layout whose
- * shares do not sum to 1 renders as a gap or an overflow, and the sum is the
- * invariant every operation here has to keep.
+ * Eight of the thirty-one tests here assert the sum of a set of weights. A
+ * layout whose shares do not sum to 1 renders as a gap or an overflow, and the
+ * sum is the invariant every operation that redistributes weight has to keep.
  */
 
 import { describe, expect, it } from 'vitest';

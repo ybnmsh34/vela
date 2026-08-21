@@ -53,7 +53,16 @@ import {
  * The spec (`docs/spec-parts/claude-code-desktop.md` §7) lists eight, plus the
  * iOS simulator. Three are built. The union names three, deliberately: a pane
  * listed in the Views menu that opens an empty box is worse than a Views menu
- * that is short, and this union is what the menu is drawn from.
+ * that is short.
+ *
+ * The union is the *type* of what the menu lists, not its contents. The list
+ * itself is `ALL_PANES` in `CodeWorkspace.tsx`, a hand-written
+ * `readonly PaneKind[]`, and an array type does not have to be exhaustive — so
+ * a fourth member added here appears in no menu until that literal is edited
+ * too, and `renderPane` beside it would draw the diff pane for it. Measured
+ * twice: adding `'terminal'` here and running `pnpm exec tsc --build --force`
+ * exits 2 with one distinct diagnostic and it names `PANE_TITLES`, not either
+ * of those two sites. `src/features/code/README.md` carries the whole recipe.
  */
 export type PaneKind = 'chat' | 'diff' | 'editor';
 
@@ -69,7 +78,15 @@ export type CodeEnvironment = 'local' | 'container' | 'ssh' | 'wsl';
  */
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'auto';
 
-/** What the user filled in before the first message. All four are required. */
+/**
+ * What the user filled in before the first message.
+ *
+ * Six fields, five controls, all required — `isComplete` below rejects the draft
+ * unless every one of them is set. `providerId` and `modelId` are two fields
+ * behind one Model select, because a model is a pair; the spec's four choices
+ * (environment, project folder, model, permission mode) are joined here by the
+ * worktree name, which this build makes the user type rather than derive.
+ */
 export interface SessionDraft {
   readonly worktree: string;
   readonly folder: string;

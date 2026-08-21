@@ -1247,34 +1247,53 @@ describe('the conversation surface: no two retry controls share a name', () => {
     const second = `${shared} the rollback story holds up`;
     expect(first.slice(0, 60)).toBe(second.slice(0, 60));
 
+    // A THIRD TURN, SO THE TWO THAT COLLIDE ALSO SHARE A LABEL. `laterTurnsFollow`
+    // makes the last turn's button read "Try again" and every earlier one "Try
+    // again from here", so a two-turn transcript hides this collision behind
+    // that difference — the last turn is named apart for a reason that has
+    // nothing to do with the question. The first two turns here both have
+    // something after them, so both read "Try again from here", and the quoted
+    // question is then the only thing left to tell them apart.
     show([
       storedMessage('m0', 'user', first),
       storedMessage('m1', 'assistant', 'on the migration'),
       storedMessage('m2', 'user', second),
       storedMessage('m3', 'assistant', 'on the rollback'),
+      storedMessage('m4', 'user', 'and now something else'),
+      storedMessage('m5', 'assistant', 'on the something else'),
     ]);
 
     const names = retryNames();
-    expect(names).toHaveLength(2);
-    // Named by the question alone both of these read
-    // '…— the reply to “please review the attached design document and tell m…”'.
-    expect(new Set(names).size, `two controls, names ${JSON.stringify(names)}`).toBe(2);
-    expect(names[0]).toContain('reply 1 of 2');
-    expect(names[1]).toContain('reply 2 of 2');
+    expect(names).toHaveLength(3);
+    expect(names[0]?.startsWith('Try again from here')).toBe(true);
+    expect(names[1]?.startsWith('Try again from here')).toBe(true);
+    // Named by the question alone the first two both read
+    // 'Try again from here — the reply to
+    //  “please review the attached design document and tell me whether…”'.
+    expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+    expect(names[0]).toContain('reply 1 of 3');
+    expect(names[1]).toContain('reply 2 of 3');
   });
 
   it('still names a control when no question precedes the turn', () => {
     // `questionAnswered` returns `undefined` for an assistant turn with no user
     // message in front of it — a transcript restored from rows whose question
-    // was never written, or trimmed away. The position is not optional, so the
-    // two controls are still distinct and the name still begins with the label
-    // a voice-control user can read (WCAG 2.5.3).
+    // was never written, or trimmed away. Three of them, so two share the
+    // "from here" label and have nothing but the position to tell them apart.
+    // The name still begins with the visible label a voice-control user can
+    // read (WCAG 2.5.3).
     show([
       storedMessage('m1', 'assistant', 'an orphan reply'),
       storedMessage('m2', 'assistant', 'another orphan reply'),
+      storedMessage('m3', 'assistant', 'a third orphan reply'),
     ]);
 
     const names = retryNames();
-    expect(names).toEqual(['Try again from here — reply 1 of 2', 'Try again — reply 2 of 2']);
+    expect(names).toEqual([
+      'Try again from here — reply 1 of 3',
+      'Try again from here — reply 2 of 3',
+      'Try again — reply 3 of 3',
+    ]);
+    expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
   });
 });

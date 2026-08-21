@@ -38,7 +38,7 @@ import { describe, expect, it } from 'vitest';
 import { createSandboxRepository, type SandboxRepository } from '@/data/sandbox-repository';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
-import type { SandboxProgram } from '@/platform/contract-sandbox';
+import type { SandboxProgram, SandboxRunId } from '@/platform/contract-sandbox';
 import { PlatformError } from '@/platform/errors';
 
 import { CanvasSurface } from './CanvasSurface';
@@ -522,10 +522,11 @@ describe('the card and the frame are one program, not two that agree', () => {
    * The narrowing has to land somewhere, and where it lands is a decision.
    *
    * The phase carries a `SandboxProgram` because that is what the host said, and
-   * `drawable` is the one place it becomes a `DocumentProgram`. A host that
-   * approved a program this surface has no frame for gets nothing drawn and a
-   * sentence saying so — not a fallback to the copy this renderer submitted,
-   * which is the second source the whole change exists to remove.
+   * `frameable` is where it becomes a `DocumentProgram` — `drawable`, which an
+   * earlier version of this comment named, only picks the pair to hand it. A
+   * host that approved a program this surface has no frame for gets nothing
+   * drawn and a sentence saying so — not a fallback to the copy this renderer
+   * submitted, which is the second source the whole change exists to remove.
    */
   it('draws nothing when the host approves a program it has no frame for', async () => {
     const user = userEvent.setup();
@@ -547,5 +548,57 @@ describe('the card and the frame are one program, not two that agree', () => {
       'no way to draw what the host approved',
     );
     expect(screen.queryByTestId('canvas-frame')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * **Which run an observation is reported under.**
+ *
+ * `report` in `use-document-run.ts` used to pair an observation with a ref the
+ * effect re-points at the next run before any event for that run has arrived. It
+ * now reads the run id off the same `AcceptedRun` record the frame was built
+ * from — and that change shipped with a note saying, truthfully at the time,
+ * that no test in this tree constrained the pairing: the suites that name
+ * `reportDocument` call the host double directly with run ids they wrote
+ * themselves, and none of them drives the callback. This is that test. The note
+ * has gone with it.
+ *
+ * The instrument records both sides rather than stubbing either: the run id the
+ * host named in its own `ApprovalRequest`, and the run id every `reportDocument`
+ * call carries. The double still runs underneath, so the observation still
+ * settles the run and the frame stays drawn.
+ */
+describe('an observation names the run the frame was drawn for', () => {
+  it('reports a rendered frame under the run id the host asked about', async () => {
+    const user = userEvent.setup();
+    const inner = documentHostDouble();
+    const askedAbout: SandboxRunId[] = [];
+    const reportedUnder: SandboxRunId[] = [];
+    const sandbox: SandboxRepository = {
+      ...inner,
+      watch: (runId, handler) =>
+        inner.watch(runId, (watched) => {
+          if (watched.event.type === 'awaitingApproval') {
+            askedAbout.push(watched.event.request.runId);
+          }
+          handler(watched);
+        }),
+      reportDocument: async (runId, observation) => {
+        reportedUnder.push(runId);
+        return inner.reportDocument(runId, observation);
+      },
+    };
+
+    mount([answer(CHART_V1)], sandbox);
+    await user.click(await renderOnce());
+    // No synthetic `load` here. jsdom attaches the `<iframe>`, fires `load` for
+    // its empty document, and that is what `onLoad` — and so `report` — hangs
+    // off; firing one by hand as well produced two reports on the first run of
+    // this test. What is under test is which run id the callback pairs with.
+    await waitFor(() => {
+      expect(reportedUnder).toHaveLength(1);
+    });
+    expect(askedAbout).toHaveLength(1);
+    expect(reportedUnder[0]).toBe(askedAbout[0]);
   });
 });

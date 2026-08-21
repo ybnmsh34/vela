@@ -34,8 +34,10 @@
  * for a report to belong to. So the observations below are produced correctly and
  * land nowhere, and nothing on this surface may be read as evidence that a
  * document outcome was recorded. That is the fork the contract draws
- * deliberately, and it is why three of the four observation kinds are produced
- * here:
+ * deliberately, and it is why all four arms of `DocumentObservation` have a
+ * producer here. An inherited line said three of the four; there are three
+ * bullets below and the last one names two kinds, which is where that
+ * miscount came from:
  *
  *  - `rendered` — the frame's own `load`, timed from the moment it was mounted.
  *  - `failed` — only for SVG, only from a parse performed *outside* the frame.
@@ -110,10 +112,19 @@ function drawable(run: DocumentRun): { grant: EffectiveGrant; program: DocumentP
  * The two together, and only for a program there is a frame for.
  *
  * The phase carries a {@link SandboxProgram} because that is what the host said;
- * this is the one place it is narrowed. A `process` program answers `null` and
- * nothing is drawn — the alternative is falling back to the copy this renderer
- * submitted, which is precisely the second source the phase exists to remove.
- * See {@link PreviewNotice} for what the reader is told instead.
+ * this is where the *accepted* arm's program is narrowed, and the only
+ * expression that narrows it. Two other narrowings in this feature read
+ * different values and are not alternatives to this one:
+ * {@link scriptDecision} below narrows the `ApprovalRequest`'s copy, for the
+ * card's Script row, and `documentRefusal` in `document-run.ts` narrows the
+ * outbound `SandboxSubmitReq`'s, for the order refusals are decided in. An
+ * earlier version of this line said "the one place it is narrowed" flatly, which
+ * is not true of the file, let alone the feature.
+ *
+ * A `process` program answers `null` and nothing is drawn — the alternative is
+ * falling back to the copy this renderer submitted, which is precisely the
+ * second source the phase exists to remove. See {@link PreviewNotice} for what
+ * the reader is told instead.
  */
 function frameable(
   grant: EffectiveGrant,
@@ -244,15 +255,39 @@ export function DocumentPreview({ run, title }: DocumentPreviewProps) {
 function ApprovalCard({ run, title }: { readonly run: DocumentRun; readonly title: string }) {
   if (run.phase.kind !== 'awaitingApproval') return null;
   const request = run.phase.request;
-  const grant = request.grant;
-  // **Every row comes off the request the digest is over — and so does the
-  // frame.** `Isolation` and `Network` always did; `Script` came off a copy of
-  // the program the panel held beside the run, which is the same two-sources
-  // defect `drawable` above was rewritten to close. The contract calls
+  // **Every row comes off the one `ApprovalRequest` — and so does the frame.**
+  // `Isolation` and `Network` always did; `Script` came off a copy of the
+  // program the panel held beside the run, which is the same two-sources defect
+  // `drawable` above was rewritten to close. The contract calls
   // `ApprovalRequest.program` "the exact program text that will run", so it is
   // what a person is being asked about, and a card sourcing one row from
   // somewhere else is describing a run other than the one `allowOnce` would
   // approve.
+  //
+  // **The rows are not all covered by the same thing, and this is where that is
+  // written down.** `request.program` is inside the digest: `SandboxHost::drive`
+  // in the `vela-sandbox` crate hashes the serialised `SandboxSubmitReq` whole,
+  // and `digestOf` in `document-host-double.ts` hashes seven of its fields,
+  // `program` among them. `request.grant` is not — the host computes it during
+  // admission and no digest covers it — and the frame below is drawn under a
+  // *second* grant, `SandboxAccepted.grant`, the one the contract points a
+  // Canvas surface at: it "draws no frame until this event arrives, and it draws
+  // it under the grant this event carries". Nothing in the contract requires the
+  // two grants to be equal; the ceiling note on `SandboxLimits` names
+  // `SandboxAccepted.grant` as where a lowered limit must be reported, and says
+  // nothing about the copy on the card. This surface cannot bind them either:
+  // the branch above returns this card or the frame and never both, so the card
+  // is gone before the frame exists. Both hosts that emit the pair make them
+  // agree without being obliged to, and by different means: `SandboxHost::drive`
+  // in the `vela-sandbox` crate clones one `grant` binding into the
+  // `AwaitingApproval` request and again into `Accepted`, while
+  // `document-host-double.ts` calls `#grantFor` twice over the same stored
+  // request. So the divergence is not reachable from anything in this tree — it
+  // is a contract question, not a surface one, and closing it would mean
+  // `ApprovalRequest` saying that the grant it carries is the grant the run
+  // gets. Recorded as open, because it is the same two-values shape as the
+  // `Script` row's and this file is where a reader would look for it.
+  const grant = request.grant;
   //
   // Moving this row here without moving the frame's bytes with it swaps one
   // instance of that defect for another, and the first attempt did exactly

@@ -117,9 +117,12 @@ export type RunPhase =
        *
        * {@link SandboxProgram} rather than {@link DocumentProgram}, because the
        * value is the host's and narrowing it here would be this surface assuming
-       * what came back instead of reading it. `drawable` in
-       * `DocumentPreview.tsx` is the one place the narrowing happens, and a
-       * program it has no frame for draws nothing at all.
+       * what came back instead of reading it. `frameable` in
+       * `DocumentPreview.tsx` is where it is narrowed — the only expression in
+       * the tree that narrows *this* field — and a program it has no frame for
+       * draws nothing at all. `drawable`, which an earlier version of this note
+       * named, holds no narrowing: it chooses which phase's grant-and-program
+       * pair to hand `frameable` and hands `null` for the rest.
        */
       readonly program: SandboxProgram;
     }
@@ -385,15 +388,16 @@ export function useDocumentRun(
       // `null` from the moment a new run starts until that run is itself
       // accepted.
       //
-      // Recorded honestly, and measured rather than asserted: **no test in this
-      // tree constrains which run id an observation is reported under.** With
-      // this call mutated to report every observation under a run id that does
-      // not exist, `pnpm test` was 118 files and 2399 tests, all passing, exit
-      // 0. The suites that name `reportDocument` call the host double directly
-      // with a run id they wrote themselves; none drives this callback. So this
-      // change removes a second source and is not backed by a red — the same
-      // standing as the `answer` pairing, and not the standing of the program
-      // carried on `accepted`, which two named tests hold.
+      // The pairing is held by a test rather than by this paragraph:
+      // `reports a rendered frame under the run id the host asked about`, in
+      // `CanvasPanel.test.tsx`, records the run id the host names in its own
+      // `ApprovalRequest` and the run id every `reportDocument` call carries,
+      // and asserts they are the one id. It had to drive the surface to do it:
+      // every other suite naming `reportDocument` calls the host double or the
+      // repository directly, with a run id it wrote itself, and none of them
+      // reaches this callback. Until that test existed this change removed a
+      // second source without a red behind it, which is what the note here used
+      // to say.
       const accepted = acceptedRef.current;
       if (accepted === null) return;
       // An observation is a statement, not a question. This build's host

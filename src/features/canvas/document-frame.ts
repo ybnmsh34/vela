@@ -152,10 +152,18 @@ const XML_PROLOGUE = /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!DOCTYPE[^>]*>\s*)?/i;
  * `sandbox`, and whether the CSP carries a `script-src` line — come off
  * `program.scripts` and nothing else. `EffectiveGrant` is not a parameter here,
  * and three of its fields are read anywhere in `DocumentPreview`:
- * `backend.isolation` and `network.kind`, for two sentences on the approval
- * card, and `limits.outputBytes`, for a byte budget. Every other mention of the
- * grant there tests the object for `null` — which is the question "was there an
- * acceptance", not a question about confinement.
+ * `backend.isolation`, which `isolationSentence` turns into one sentence on the
+ * approval card, `network.kind`, which is another, and `limits.outputBytes`,
+ * which bounds the diagnostics byte counter. Two sentences and a counter: no
+ * field of the grant reaches this function, and none of those three decides what
+ * the frame is confined by.
+ *
+ * An earlier version of this paragraph ended "every other mention of the grant
+ * there tests the object for `null`". That is false, and it was corrected here
+ * rather than softened: the object is also passed to `frameable` and to
+ * `isolationSentence`, constructed into a pair, read off `drawable`'s result,
+ * and listed in two dependency arrays. The count of *fields read* was the true
+ * half, and it is the half that bears on this function.
  *
  * That is defensible exactly as far as `program` is the host's own copy — which
  * is what `RunPhase` in `use-document-run.ts` now carries and what the approval

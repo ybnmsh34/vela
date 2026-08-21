@@ -3795,6 +3795,17 @@ describe('the matcher is not fooled by the shapes that fooled it', () => {
     expect(
       paintMovers([sheet(`.scroller { mask-image: linear-gradient(black, transparent); }`)], nothingModelled),
     ).toEqual([`${FILE} — .scroller — mask-image: linear-gradient(black, transparent)`]);
+    // `composes` is the CSS-Modules directive that pulls a second class onto
+    // an element the Vitest module proxy renders with only one — named by the
+    // round-three adversary as an axis it had not tested. Nobody wrote a rule
+    // about it; the allow-list reports it because it is not on the allow-list,
+    // which is the whole point of inverting the test.
+    expect(
+      paintMovers(
+        [sheet(`.body { composes: panel from './other.module.css'; }`)],
+        nothingModelled,
+      ),
+    ).toEqual([`${FILE} — .body — composes: panel from './other.module.css'`]);
     // A property this file has never named, in a spelling nobody has used: an
     // allow-list answers for it and a deny-list cannot.
     expect(

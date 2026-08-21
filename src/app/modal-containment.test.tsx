@@ -155,8 +155,10 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
 
     // The control for the whole assertion: if the application behind the dialog
     // had no focusable elements, staying inside would prove nothing at all. It
-    // measured fourteen here — window chrome, the sidebar, the row controls, the
+    // measures eighteen here — window chrome, the sidebar, the row controls, the
     // resize separator, the model switcher, the composer and its send button.
+    // (This line said fourteen until 2026-08-21, when it was re-counted twice
+    // off this drive; nothing asserts the figure, which is how it went stale.)
     // The floor is written loose because the number is a property of the app on
     // screen, and this test is about the dialog.
     const reachableIfUntrapped = behind(dialog);
@@ -245,8 +247,10 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
     // through `ModalSurface` — driven for the same property rather than assumed
     // to inherit it. The background here is a different one from the two above:
     // the endpoints panel, its rows, the local-endpoint form and the debug
-    // switch. So the non-vacuity floor is measured against that screen rather
-    // than carried over.
+    // switch. The floor stays the same loose `> 8` the two tests above use —
+    // it is a vacuity guard, not a census — but the screen it guards was
+    // measured rather than assumed: 27 focusable elements behind this dialog,
+    // against 18 behind each of the other two, reproduced twice.
     const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await openConversation(user);

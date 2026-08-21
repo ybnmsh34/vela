@@ -11,14 +11,26 @@
  *
  * ## How a name is obtained
  *
- * By rendering, never by reading JSX. An accessible name is *computed*:
- * `aria-label`, `aria-labelledby`, the element's own text, `title` and the
- * `<title>` of an inline SVG all feed it, in that precedence, and a
- * `<kbd class="srOnly">Control N</kbd>` inside a button silently becomes part of
- * it — which is why the *expanded* sidebar's new-conversation button is called
- * `New conversation Control N` below, while the collapsed rail's, which carries
- * no hint, is called `New conversation` — a difference the sweep only sees
- * because it drives both, and one no amount of reading the JSX produces.
+ * By rendering, never by reading JSX. An accessible name is *computed*, and the
+ * precedence is not the order these attributes get listed in from memory:
+ * **`aria-labelledby` outranks `aria-label`**, then comes the element's own
+ * text, and `title` answers only when there is no text at all. Measured rather
+ * than recalled, through the same library Testing Library computes names with
+ * (`dom-accessibility-api@0.5.16`, resolved out of `@testing-library/dom`'s own
+ * directory), on buttons carrying every combination: one with all four resolves
+ * to the `aria-labelledby` text; drop that and it resolves to `aria-label`;
+ * drop that and it resolves to the text; empty the text and only then does
+ * `title` answer. The `<title>` of an inline SVG counts as text, so it beats a
+ * `title` attribute on the button around it.
+ *
+ * Being *text* is why a keyboard hint lands in a button's name.
+ * `src/components/ShortcutHint.tsx` renders a `<kbd>` holding two spans — an
+ * `aria-hidden` glyph and a visually hidden `Control N` — and a
+ * screen-reader-only span is text like any other. Which is why the *expanded*
+ * sidebar's new-conversation button is called `New conversation Control N`
+ * below, while the collapsed rail's, which carries no hint, is called
+ * `New conversation` — a difference the sweep only sees because it drives both,
+ * and one no amount of reading the JSX produces.
  *
  * The computation used here is Testing Library's own. `queryAllByRole`'s `name`
  * option accepts a **matcher function**, and `queryAllByRole` applies it as
@@ -270,11 +282,17 @@ const ACTIONABLE: ReadonlySet<string> = new Set([
  * That is the same defect one level down a second time: a guard that checks the
  * family it was written for and calls the question answered. Playwright's
  * `getByRole(…, { name })` is a **case-insensitive substring** match unless
- * `exact: true` is passed. Measured against the built bundle in Chromium, not
- * assumed: `{ name: 'close' }` matches two controls, `{ name: 'CLOSE THE
- * ENDPOINTS PANEL' }` matches one, and `{ name: 'close', exact: true }` matches
- * none. So every nesting anywhere in the product is a query that can land on
- * the wrong control — not only the ones with `Close` in them.
+ * `exact: true` is passed. On the endpoints-panel screen that means
+ * `{ name: 'close' }` matches two controls, `{ name: 'CLOSE THE ENDPOINTS
+ * PANEL' }` matches one, and `{ name: 'close', exact: true }` matches none —
+ * measured in real Chromium against the built bundle in round 2 of this branch,
+ * which is a run nobody can re-take from these bytes alone. What *is*
+ * re-takeable from here, and was, twice: on that same screen in jsdom the
+ * actionable names containing `close` are exactly `["Close Vela","Close the
+ * endpoints panel"]`, and nothing at all is named exactly `Close` — the two
+ * halves the Chromium run turns on. So every nesting anywhere in the product is
+ * a query that can land on the wrong control, not only the ones with `Close` in
+ * them.
  *
  * ## The rule for admitting one
  *
@@ -855,10 +873,26 @@ const observedNestings = new Set<Key>();
 const observedCrossRole = new Set<Key>();
 
 /**
- * Generous, and deliberately not a claim about how long anything takes. These
- * render the whole application; measured idle they finish in well under a
- * second each, and this box fabricates timeouts under parallel load (see
- * `src/app/modal-containment.test.tsx`).
+ * Generous, and deliberately not a claim about how long anything takes. Each of
+ * the per-state tests renders the whole application and drives it into one
+ * {@link STATES} entry; the three coverage tests that follow render nothing and
+ * cost 0-1ms.
+ *
+ * No bound below 30s would be honest, because the spread between identical runs
+ * is larger than the tests are. Three consecutive runs of this file alone,
+ * `npx vitest run src/app/accessible-names.test.tsx --reporter=verbose`, on an
+ * otherwise idle box, across the 21 state tests:
+ *
+ * | | slowest | fastest |
+ * |---|---|---|
+ * | run 1 | the endpoint edit form 3764ms | the command bar 1319ms |
+ * | run 2 | the launch screen 2360ms | the command bar 911ms |
+ * | run 3 | a transcript of two answered turns 3294ms | the command bar 1301ms |
+ *
+ * Same bytes, same machine, nothing else running: 911ms to 3764ms, a factor of
+ * four. Nothing here asserts a duration, and this box also fabricates timeouts
+ * under parallel load (see `src/app/modal-containment.test.tsx`), so the budget
+ * is headroom rather than a measurement of anything.
  */
 const BUDGET_MS = 30_000;
 

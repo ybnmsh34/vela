@@ -86,7 +86,11 @@
      light mode and light in dark mode, so this token inverts with it; that is
      the whole reason it is a token and not a component's guess. Two components
      used to write `--vela-night-0` here, which is white in both themes and so
-     was 1.4:1 on the dark theme's cyan fill. */
+     was 1.57:1 on the dark theme's cyan fill — #ffffff on --vela-signal-300
+     #5fe2d6, by WCAG 2.x relative luminance. (This line said 1.4:1 until
+     2026-08-21; that figure was never computed from these two values, and the
+     same unmeasured number stood in four other files. src/styles/contrast.test.ts
+     computes its own and reads no comment.) */
   --vela-text-on-accent: var(--vela-night-0);
   --vela-text-on-danger: var(--vela-night-0);
 

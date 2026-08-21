@@ -148,9 +148,24 @@ type User = ReturnType<typeof userEvent.setup>;
 
 /**
  * Generous, and deliberately not a claim about how long anything takes. Each of
- * these renders the whole application and drives four clicks through it;
- * measured on an idle box they finish in one to two seconds. Vitest's 5s default
- * is not enough on this machine under parallel load — `canvas-wiring`,
+ * these renders the whole application and drives the four clicks in
+ * {@link threeWayState}; the second drives three more on top of those.
+ *
+ * What the budget is sized for is *spread*, not size. Three consecutive runs of
+ * this file alone on an otherwise idle box, `npx vitest run
+ * src/app/close-collision.test.tsx --reporter=verbose`, per test:
+ *
+ * | | run 1 | run 2 | run 3 |
+ * |---|---|---|---|
+ * | a name no other one contains | 1364ms | 2754ms | 833ms |
+ * | reaches the window seam | 1372ms | 2177ms | 875ms |
+ * | answers nothing to the bare name | 551ms | 772ms | 727ms |
+ *
+ * Same bytes, same machine, nothing else running: a factor of three between the
+ * fastest and slowest observation of a single test, and of five across the nine.
+ * That spread — not any one of the numbers — is why this is 30s rather than
+ * something tighter, and why nothing in this file asserts a duration. Vitest's
+ * 5s default is not enough on this machine under parallel load — `canvas-wiring`,
  * `schedules-wiring` and `staged-attachment-payload` were all observed timing
  * out at 5000ms in the same full-suite run that this file did, having passed in
  * the run before it. A guard that reddens because the box was busy is a guard

@@ -9,6 +9,54 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — six sentences a separate agent measured, and none of them inherited
+
+**Claimed**, all six on this branch, all six written by me, two of them inside the entries below
+that exist to correct exactly this. Someone else went through the diff and ran a command against
+every checkable sentence in it — 76 by their count — before I committed. Six failed.
+
+| # | where | claimed | true |
+|---|---|---|---|
+| 1 | `docs/corrections.md`, the nesting entry | the **five** scoped dismiss names each put a panel's opener inside its dismisser | **four**. The endpoints panel's opener is `Manage endpoints…`, not a substring of `Close the endpoints panel`. `ACCEPTED_NESTINGS` held four such pairs at `8e91daf`, the commit that wrote the sentence — so it was false when written, not stale |
+| 2 | `src/app/accessible-names.test.tsx` docblock | `aria-label`, `aria-labelledby`, text, `title` "in that precedence" | `aria-labelledby` outranks `aria-label`. Measured through the library that computes these names: a button carrying all four resolves to the `aria-labelledby` text |
+| 3 | `src/app/close-collision.test.tsx`, `BUDGET_MS` | "measured on an idle box they finish in one to two seconds"; "each … drives four clicks" | Three runs here give 551–2754ms; the four clicks are the shared setup's, and the second test drives three more |
+| 4 | `src/app/accessible-names.test.tsx`, `BUDGET_MS` | "measured idle they finish in well under a second each" | 911–3764ms across three runs. No run had every state under a second |
+| 5 | `docs/corrections.md`, the nesting entry | "the **19** states the sweep now drives" | **21**. 19 was right at `8e91daf`; `6ed60a3` added two states and the present-tense sentence was not re-taken |
+| 6 | `src/app/modal-containment.test.tsx` | "the non-vacuity floor is measured against that screen rather than carried over" | The floor is `> 8`, the same literal the two tests above it use. The screen holds **27** focusables |
+
+**And one more, from the round-3 critic, in a report rather than in the tree:** the mutation
+snapshot for `RemoveEndpointDialog.module.css` was given as `03bd7f08…`, 3128 bytes. The committed
+file is `e8be4094…`, 3490 bytes; `03bd7f08…` is the blob at `6ed60a3` with CRLF applied. One
+mutation was therefore run against the tree as it stood a commit before the one handed over — the
+defect the entry two sections down promises to have fixed, in the same commit that promises it.
+
+**The pattern, and it is not "be careful".** Three of the six (#3, #4, #5) are a number or a bound
+written without running the command that would produce it — two timing ranges and a state count.
+Two more (#1, #6) describe code that was open in the same editor and says otherwise: the ledger
+directly below the sentence held four entries where the sentence said five, and the `> 8` on the
+next line is the literal the sentence called measured. The sixth is a fact recalled instead of
+looked up. **None is inherited prose; all six were written by this branch.** Three rounds of being
+told to check did not catch one of them. One agent told to run a command per sentence caught all
+six in a single pass.
+
+**How it was caught:** by a measurer given the diff and told to run a command per sentence, before
+the commit rather than after it — the same move that made mutation evidence trustworthy, applied
+to prose.
+
+**What changed:** all six corrected in place, each now carrying the command that produced it and,
+where the number moves between runs, the spread rather than a bound. The two timing docblocks say
+what the budget is *for* (spread) instead of asserting a duration nothing measures. Where a claim
+could not be made true it was deleted rather than softened. Three writes with no reader also got
+one — the dialog's credential sentence, both branches, and its Escape path — because a sentence
+nothing reads is the same defect in a different file.
+
+And the standing rule got the piece it was missing: after correcting a claim, **grep the tree, and
+count what the grep returns**. The entry directly below corrected two of the six files carrying
+its figure, deliberately left two as historical records, and silently missed two — one of them
+live source. Missing them is finding #1's shape one turn earlier.
+
+---
+
 ## 2026-08-21 — a contrast figure four files repeat, and none of them measured
 
 **Claimed**, in `src/features/navigation/DeleteConversationDialog.module.css`: that white on the
@@ -20,8 +68,10 @@ docblock, listing what the gate found on its first run: that `EndpointForm .save
 `--vela-accent` is `--vela-signal-300` `#5fe2d6`, dark `--vela-danger` is `--vela-rose-400`
 `#f2668b`, and `--vela-night-0` is `#ffffff` in both themes — and computed by WCAG 2.x relative
 luminance, on a function checked against black-on-white = 21.000:1. Neither token has changed
-since `bb6f768`, the first commit in this repository, so the figures were not stale: they were
-never measured. For completeness the same run gives `--vela-text-on-accent` at 12.47:1 and
+since `bb6f768`, the commit that created `src/styles/tokens.css` — the fifth commit in this
+repository, not the first, which is `d205a88` (`git rev-list --count bb6f768` = 5 of 366). So the
+figures were not stale: they were never measured. For completeness the same run gives
+`--vela-text-on-accent` at 12.47:1 and
 `--vela-text-on-danger` at 6.59:1 on those fills, which is what the repair bought.
 
 **Nothing about the conclusion changes.** 1.57 and 2.98 are as far under AA as 1.4 and 2.5, the
@@ -33,10 +83,23 @@ and it survived a full contrast audit written by the same hand.
 the same role inversion, and the comment beside it was pasted from the file next door. Re-deriving
 it before writing it down was the only reason it came up.
 
-**What changed:** the two source comments now carry the measured figures and say where the old one
-came from. Two records that repeat the old figure are left as written, because they are records of
-what was reported at the time and this entry is the correction:
-`docs/desktop-gate/REQUESTS.md` and `docs/regression-baseline/platform-defaults/RESULTS.md`.
+**What changed:** the source comments now carry the measured figures and say where the old one came
+from. The title of this entry says *four files*, and that was never counted. Measured at the tag —
+`git grep -l "1\.4:1" run-start-2026-08-17 -- src docs tests` gives five files,
+`git grep -l "2\.5:1"` gives four, and the union is **six**. The first pass corrected two of them
+and left `src/styles/tokens.css` and `docs/design/vela-tokens.md` standing, the first of which is
+live source *and* the file this entry names as its own resolution source. That is this entry's own
+defect one turn later: correcting a claim without grepping the tree for the claim. Both corrected
+2026-08-21. The full inventory, and what each got:
+
+| file | then | now |
+|---|---|---|
+| `src/features/navigation/DeleteConversationDialog.module.css` | `2.5:1` | measured `2.98:1`, with the old figure named |
+| `src/styles/contrast.test.ts` | `~1.4:1 and ~2.5:1` | measured `1.57:1` and `2.98:1`, with the old figures named |
+| `src/styles/tokens.css` | `1.4:1` | measured `1.57:1`, with the two hex values it comes from |
+| `docs/design/vela-tokens.md` | `1.4:1` | measured `1.57:1`, pointing here |
+| `docs/desktop-gate/REQUESTS.md` | `1.4:1 and 2.5:1` | **left as written** — a record of what was reported at the time |
+| `docs/regression-baseline/platform-defaults/RESULTS.md` | `1.4:1 and 2.5:1` | **left as written**, same reason |
 
 ---
 
@@ -52,8 +115,13 @@ while the account of it did not.
 **True:**
 
 1. The package actually sitting in the directory the report says it installed into reads
-   `"version": "1.61.1"` — re-measured here by reading `package.json` in that same scratch
-   directory, which is still on disk. Whether `1.60.1` was ever published I could not check from
+   `"version": "1.61.1"` — read out of `package.json` in that same scratch directory, which the
+   entry originally declined to name and so left uncheckable by anyone else. It is
+   `…/Temp/claude/C--Users-User-vela/6df8af95-5781-4f9f-aacd-0bb2bf1120da/scratchpad/t02r2/node_modules/playwright-core`,
+   and it still reads `1.61.1` on 2026-08-21, as does the round-2 critic's own copy under
+   `…/scratchpad/critic-t02-r2/pw/node_modules/playwright-core`. (A scratch path is not durable
+   evidence — it will be swept — but an unnamed one is not evidence at all.) Whether `1.60.1` was
+   ever published I could not check from
    this session: `npm view playwright-core versions` did not return and was killed at 120s, so the
    claim that the version does not exist stands on the round-2 critic's measurement, not on mine.
    Either way the number was written without looking at the thing it named.
@@ -120,13 +188,19 @@ changed to destroy first and close after.
    entries.
 
 **True:** neither was complete, and the incompleteness included nestings this branch *created*.
-Giving the five panel dismiss buttons scoped names (`Close the memory panel`, and the same for
-Skills, Schedules, Projects, Endpoints) put each panel's **opener** inside its dismisser — before
-the branch each dismiss button was called `Close`, which nested with nothing but the control that
-quits Vela. Beside those, the product already held a `button` and a `combobox` sharing the exact
-name `Search conversations`, which the sweep could not see at all because it keyed on
-`(role, name)`. Rendering the 19 states the sweep now drives and comparing every actionable name
-against every other produces **17** containments, not four.
+Five panel dismiss buttons were given scoped names (`Close the memory panel`, and the same for
+Skills, Schedules, Projects, Endpoints), and **four** of the five put that panel's own **opener**
+inside its dismisser: Memory, Skills, Schedules, Projects — exactly the four opener/dismisser pairs
+`ACCEPTED_NESTINGS` carries. Endpoints is the exception, and it is worth naming rather than
+rounding up: that panel's opener is the menu item `Manage endpoints…`
+(`src/features/models/ModelSwitcher.tsx`), which is not a substring of `Close the endpoints panel`.
+The word `Endpoints` occurs there only as the region's `aria-label` and as an `<h2>`, neither of
+which is a control, and the sweep compares actionable names only. Before the branch each dismiss
+button was called `Close`, which nested with nothing but the control that quits Vela. Beside those,
+the product already held a `button` and a `combobox` sharing the exact name `Search conversations`,
+which the sweep could not see at all because it keyed on `(role, name)`. Rendering the **21** states
+the sweep now drives and comparing every actionable name against every other produces **17**
+containments, not four.
 
 The branch report also gave a baseline of `Tests 2393 passed (2393)` and *"21 new tests"*. Both
 figures were wrong and neither had been measured in the tree they described: the two new files held

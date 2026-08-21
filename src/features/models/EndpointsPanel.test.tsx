@@ -80,6 +80,63 @@ async function addEndpoint(
   }
 }
 
+/**
+ * Two endpoints the user called one thing.
+ *
+ * Seeded through the host rather than typed. `EndpointForm` derives the
+ * identifier from the display name but leaves the field editable, so this state
+ * is reachable in the shipping UI with no store poke at all — and it is reached
+ * that way, through the form, in `src/app/accessible-names.test.tsx`. What is
+ * under test here is not how the state is arrived at; it is what one Remove
+ * click does once two buttons answer to one name.
+ *
+ * The identifier is a pure function of the port so a test can name the row it
+ * clicked without the row having to display an id.
+ */
+const TWIN_PORTS = { workstation: 8080, 'study-box': 8081 } as const;
+
+async function twinNamedHost(): Promise<BrowserAdapter> {
+  const adapter = new BrowserAdapter();
+  for (const [id, port] of Object.entries(TWIN_PORTS)) {
+    await adapter.invoke('settings_put_provider', {
+      id,
+      displayName: 'The workstation',
+      kind: 'local',
+      baseUrl: `http://127.0.0.1:${String(port)}/v1`,
+      modelId: 'local-model',
+    });
+  }
+  return adapter;
+}
+
+/** The address stated by the row a given Remove button sits in. */
+function addressOf(button: HTMLElement): string {
+  const row = button.closest('li');
+  if (!(row instanceof HTMLElement)) throw new Error('a Remove button outside any endpoint row');
+  const address = within(row).getByText(/^http:\/\/127\.0\.0\.1:\d+\/v1$/u).textContent;
+  if (address === null) throw new Error('an endpoint row that states no address');
+  return address;
+}
+
+/** Which of the two twins an address belongs to. */
+function identifierOf(address: string): string {
+  const found = Object.entries(TWIN_PORTS).find(([, port]) =>
+    address.includes(`:${String(port)}/`),
+  );
+  if (found === undefined) throw new Error(`no seeded endpoint at ${address}`);
+  return found[0];
+}
+
+/**
+ * A literal, as a pattern. `toHaveAccessibleDescription` takes a string only as
+ * an exact whole-description match, and what is wanted here is a substring of a
+ * sentence — so the address has to go through a `RegExp`, and an address is full
+ * of characters a `RegExp` reads as syntax.
+ */
+function escapeForRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&');
+}
+
 describe('adding an endpoint with no authentication', () => {
   it('renders no credential field at all, because there is no credential', async () => {
     // Not an empty optional input. Absent. A field that is rendered and ignored
@@ -253,6 +310,11 @@ describe('the endpoint list', () => {
     // paragraph would be a write nothing reads.
     expect(dialog).toHaveAccessibleDescription(/http:\/\/127\.0\.0\.1:9999\/v1/u);
     expect(dialog).toHaveAccessibleDescription(/identified as temporary/u);
+    // The keyless branch of the credential sentence. It is the one fact on this
+    // screen that is not on the screen behind it, so it is the reason the dialog
+    // exists at all — and until this assertion existed it was a string nothing
+    // read: garbling it left the whole suite green.
+    expect(dialog).toHaveAccessibleDescription(/No key is stored for it\./u);
 
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => {
@@ -262,6 +324,103 @@ describe('the endpoint list', () => {
     expect(screen.getByRole('button', { name: 'Remove: Temporary' })).toBeInTheDocument();
   });
 
+  it('takes Escape as the answer no, and destroys nothing', async () => {
+    // The dialog's own `onKeyDown` handles this; `ModalSurface` has no Escape
+    // branch of its own (`grep -n Escape src/components/ModalSurface.tsx` is
+    // empty). So without this test the branch is a write nothing reads —
+    // measured, twice: disabling it left five test files at 59 passed, exit 0.
+    const user = userEvent.setup({ delay: null });
+    const adapter = new BrowserAdapter();
+    mount(adapter);
+
+    await addEndpoint(user, { name: 'Temporary', address: 'http://127.0.0.1:9999/v1' });
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }));
+    await screen.findByText('Temporary');
+
+    await user.click(screen.getByRole('button', { name: 'Remove: Temporary' }));
+    await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect((await adapter.invoke('settings_get', {})).providers).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Remove: Temporary' })).toBeInTheDocument();
+  });
+
+  it('says what becomes of the stored key, in the words the dialog exists for', async () => {
+    // The other branch of the same sentence. A schedule gets no dialog because
+    // it is re-creatable from what is on screen; an endpoint is too, *except*
+    // its credential, which `use-providers.storeCredential` can never read back.
+    // That asymmetry is the whole argument in `RemoveEndpointDialog`'s docblock
+    // for why this row asks and that row does not, and it was carried entirely
+    // by a string with no reader.
+    const user = userEvent.setup({ delay: null });
+    const adapter = new BrowserAdapter();
+    mount(adapter);
+
+    await addEndpoint(user, { name: 'Hosted', address: 'https://api.example.test/v1' });
+    await user.selectOptions(screen.getByLabelText('Authentication'), 'bearerToken');
+    await user.type(screen.getByLabelText('Access token'), 'sk-live-canary-DO-NOT-LOG');
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }));
+    await screen.findByText('Key stored');
+
+    await user.click(screen.getByRole('button', { name: 'Remove: Hosted' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+
+    expect(dialog).toHaveAccessibleDescription(/The key stored for it is deleted with it/u);
+    expect(dialog).toHaveAccessibleDescription(/cannot read a stored key back/u);
+    // Stating that a key exists is not the same as showing it, and the dialog
+    // does the first only.
+    expect(dialog).not.toHaveTextContent('sk-live-canary');
+  });
+
+  it('asks about the row that was clicked, not the first row that answers to its name', async () => {
+    // The property this dialog was added for, and the one thing nothing in the
+    // tree guarded: with two rows the user called one thing, the question must
+    // name — and the confirm must destroy — the row whose button was pressed.
+    // Measured before this test existed: changing `onConfirm` to remove
+    // `state.providers[0].id` instead of the clicked target left the full suite
+    // at 2427 passed, exit 0. So the click below is deliberately the *second*
+    // rendered row, and both the address it names and the address that survives
+    // are read off the DOM rather than off the seed — a test that assumed an
+    // order would start agreeing with that mutation the day the order changed.
+    const user = userEvent.setup({ delay: null });
+    const adapter = await twinNamedHost();
+    mount(adapter);
+
+    const buttons = await screen.findAllByRole('button', { name: 'Remove: The workstation' });
+    expect(buttons).toHaveLength(2);
+    const [firstRow, secondRow] = buttons;
+    if (firstRow === undefined || secondRow === undefined) {
+      throw new Error('two rows share this name or the premise of this test is gone');
+    }
+
+    const clicked = addressOf(secondRow);
+    const untouched = addressOf(firstRow);
+    expect(clicked).not.toBe(untouched);
+
+    await user.click(secondRow);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+
+    // The address and the identifier of the row that was pressed, and not the
+    // other one's — announced, not merely present.
+    expect(dialog).toHaveAccessibleDescription(new RegExp(escapeForRegExp(clicked), 'u'));
+    expect(dialog).toHaveAccessibleDescription(
+      new RegExp(`identified as ${escapeForRegExp(identifierOf(clicked))}`, 'u'),
+    );
+    expect(dialog.textContent ?? '').not.toContain(untouched);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Remove this endpoint' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
+    const left = (await adapter.invoke('settings_get', {})).providers;
+    expect(left.map((view) => view.baseUrl)).toEqual([untouched]);
+    expect(left.map((view) => view.id)).toEqual([identifierOf(untouched)]);
+    expect(screen.getAllByRole('button', { name: 'Remove: The workstation' })).toHaveLength(1);
+  });
 
   it('names the credential store it is actually using, rather than implying one', async () => {
     mount(new BrowserAdapter());

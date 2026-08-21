@@ -238,7 +238,7 @@ CDP with `getComputedStyle` on real elements. 441 values across 63 groups.
 | `--vela-text` | `night-900 #101426 → night-50 #eef0f6` | Most-referenced colour role in the tree (66 var() refs in component CSS). |
 | `--vela-text-muted` | `night-500 #4d5675 → night-300 #9aa2bd` |  |
 | `--vela-text-subtle` | `night-450 #5b6280 → night-350 #868fac` | The quiet role — composer placeholder, row timestamp, status line. Was night-400 #6f7896 in BOTH themes and measured 4.16:1 light / 4.43:1 dark, under AA in both. The defect contrast.test.ts was written for. |
-| `--vela-text-on-accent` | `night-0 #ffffff → night-950 #080b16` | Inverts with the accent fill. Two components once wrote --vela-night-0 here directly, giving 1.4:1 on the dark theme's cyan fill. |
+| `--vela-text-on-accent` | `night-0 #ffffff → night-950 #080b16` | Inverts with the accent fill. Two components once wrote --vela-night-0 here directly, giving 1.57:1 on the dark theme's cyan fill (measured; this cell said 1.4:1 until 2026-08-21 — see docs/corrections.md). |
 | `--vela-text-on-danger` | `night-0 #ffffff → night-950 #080b16` | Same inversion for the destructive fill. |
 
 ## Semantic — accent and focus

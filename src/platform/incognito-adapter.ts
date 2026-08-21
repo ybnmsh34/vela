@@ -30,6 +30,19 @@
  * *less* behind, not more, and refusing it would be a privacy mode that stops
  * you removing things.
  *
+ * **One `erases` row also modifies rows, and it is named here rather than left
+ * to be found.** `project_delete` reaches
+ * `vela-store/src/sqlite.rs`'s `delete_project_reassigning`, whose body runs
+ * `UPDATE conversations SET project_id = ?2 WHERE project_id = ?1` in the same
+ * transaction as its `DELETE FROM projects`. That is a change to rows that
+ * already existed — the conversations are re-filed onto the sentinel default
+ * project so none is left unfiled — and it records nothing about the session,
+ * which is why the row stands. It is not nothing, though, so **no surface in
+ * this feature may say that a window in incognito changes nothing on this
+ * machine**: what it may say is that the commands which would write something
+ * down are refused. `command-durability.test.ts`'s erase-may-not-write check
+ * reports any `erases` row in this position and demands the argument in `why`.
+ *
  * ## Why the table is a total `Record`, and what that does NOT defend against
  *
  * A denylist defaults to *allow*, so a command added to `IpcContract` next month
@@ -274,6 +287,31 @@ export async function disarmDebugLogForIncognito(
  * The command name is still on the error, where a log or a test can read it;
  * `incognito-adapter.test.ts` asserts it. What changed is that it is no longer
  * in the sentence.
+ *
+ * ## …and it promises nothing about the machine, because it cannot keep one
+ *
+ * The sentence that replaced the command name was `This window is in incognito,
+ * so nothing it does is written to this machine.` — and that was the defect the
+ * same commit had just removed from `StylePanel.tsx`, reintroduced one file
+ * along in the copy that *every* failure surface renders verbatim. It is false
+ * twice over:
+ *
+ * 1. When {@link disarmDebugLogForIncognito} answers `'failed'`, the host's
+ *    provider debug log is still recording raw prompts and answers to a file.
+ *    The band in `AppShell.tsx` says so, in `BAND.failed`; a refusal saying
+ *    the opposite, in the same window at the same moment, is the mode being
+ *    wrong about itself.
+ * 2. Even with the log off, `project_delete` is `erases`, is forwarded, and its
+ *    host body runs an `UPDATE`. See the header.
+ *
+ * So the message states **what happened to the command that was refused** and
+ * makes no claim about the machine at all. That is the only claim this function
+ * is in a position to make: it knows the command's row and it knows it did not
+ * forward it, and it knows nothing about the debug log or about what an
+ * allowed command is doing. `incognito-adapter.test.ts` pins it — the oracle is
+ * anchored on the withdrawn sentence, so an empty word list cannot pass — and
+ * `instructions-and-incognito.test.tsx` provokes the refusal with the band in
+ * its `failed` state and fails if the two contradict each other.
  */
 export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapter {
   return {
@@ -283,7 +321,7 @@ export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapte
       if (isRefusedInIncognito(command)) {
         throw new PlatformError(
           'INCOGNITO_REFUSED',
-          'This window is in incognito, so nothing it does is written to this machine.',
+          'This window is in incognito, and that command would write to this machine, so it was refused.',
           command,
         );
       }

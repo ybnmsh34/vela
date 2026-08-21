@@ -187,11 +187,32 @@ export function StylePanel({ onClose }: StylePanelProps) {
           `incognito-adapter.test.ts` sweeps the whole contract for — is that
           every command classified `writes` is refused. That is the claim made
           here, and the debug log gets its own sentence directly underneath.
+
+          The second clause is scoped for a second reason, found later and
+          smaller. "It may still delete" left the reader to assume a delete only
+          subtracts, and one of them does not: `project_delete` is `erases`, so
+          it is forwarded, and `delete_project_reassigning` in
+          `src-tauri/crates/vela-store/src/sqlite.rs` runs
+          `UPDATE conversations SET project_id = ?2 WHERE project_id = ?1`
+          alongside its `DELETE FROM projects`, in one transaction, so that no
+          conversation is left unfiled. Nothing about this session is recorded by
+          it — but rows on this machine do change, so the sentence says so
+          instead of letting "refuses every command that would write" be read as
+          a promise that nothing at all is written while the mode is on.
         */}
-        <p className={styles.note}>
-          In incognito this window refuses every command that would write to this machine. It may
-          still read, and it may still delete. Leaving discards the conversation held in it: the
-          transcript is dropped from the window and was never written down.
+        {/*
+          The testid is read by `instructions-and-incognito.test.tsx`, which
+          holds this paragraph to the two properties above: that it says what is
+          refused, and that it does not round the delete case off. Matched by
+          testid rather than by a phrase, so a rewrite of the sentence meets the
+          assertion instead of slipping past a stale regex.
+        */}
+        <p className={styles.note} data-testid="incognito-standing-note">
+          In incognito this window refuses every command that would record something on this
+          machine. It may still read, and it may still delete — and a delete can rewrite what is
+          already stored: removing a project re-files its conversations onto your default project.
+          Leaving discards the conversation held in it: the transcript is dropped from the window
+          and was never written down.
         </p>
         {incognito && (
           <p className={styles.note} role="status" data-testid="incognito-debug-log">

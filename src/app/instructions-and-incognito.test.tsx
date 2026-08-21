@@ -398,7 +398,7 @@ describe('incognito is reachable two ways, and both are the same mode', () => {
     // answered — see the `failed` test below for why it is not unconditional.
     await waitFor(() => {
       expect(screen.getByTestId('incognito-banner')).toHaveTextContent(
-        /nothing from this window is being saved/i,
+        /nothing you say here is being saved/i,
       );
     });
     expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · not saved');
@@ -550,7 +550,11 @@ describe('the mode’s own claim is not made when it cannot be kept', () => {
     });
     const banner = screen.getByTestId('incognito-banner');
     expect(banner).toHaveTextContent(/provider debug log could not be switched off/i);
-    expect(banner).not.toHaveTextContent(/nothing from this window is being saved/i);
+    // The fragment, not the whole sentence: the claim has been reworded once
+    // already, and an assertion pinned to wording a rewrite drops passes
+    // vacuously afterwards. The `clear` test below asserts the same fragment
+    // positively, so the two anchor each other.
+    expect(banner).not.toHaveTextContent(/is being saved on this machine/i);
     expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · debug log still on');
   });
 
@@ -568,6 +572,71 @@ describe('the mode’s own claim is not made when it cannot be kept', () => {
     );
   });
 
+  it('says in the pane what the mode refuses, and does not round off the delete that rewrites', async () => {
+    // The pane's standing sentence — the one a user reads when they go looking
+    // for what the mode is. It used to say the window "refuses every command
+    // that would write to this machine", which is not true of `project_delete`:
+    // that command is `erases`, so the wrapper forwards it, and
+    // `delete_project_reassigning` runs `UPDATE conversations SET project_id`
+    // beside its `DELETE FROM projects` so no conversation is left unfiled.
+    const user = userEvent.setup({ delay: null });
+    render(<App adapter={await host()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+    await user.click(screen.getByRole('button', { name: 'Style and instructions' }));
+
+    const note = await screen.findByTestId('incognito-standing-note');
+    expect(note).toHaveTextContent(/refuses every command that would record something/i);
+    // The caveat, in the user's words rather than in a comment.
+    expect(note).toHaveTextContent(/re-files its conversations/i);
+    for (const shape of [/writes nothing/i, /nothing durable/i, /changes nothing/i]) {
+      expect(note.textContent ?? '', `the pane promises ${String(shape)}`).not.toMatch(shape);
+    }
+  });
+
+  it('does not promise on the failure surface what the band above it has withdrawn', async () => {
+    // The two strings in the document at one moment. The band is the mode's
+    // headline and it has just said the debug log could not be switched off;
+    // the memory pane, open over it, renders `PlatformError.message` verbatim
+    // through `use-memory.ts`'s `problem`. The refusal used to read
+    // "This window is in incognito, so nothing it does is written to this
+    // machine." — a flat promise, contradicting the band the same window was
+    // showing at the same moment, and
+    // false a second time even with the log off because `project_delete` is
+    // `erases`, is forwarded, and runs an `UPDATE`.
+    const user = userEvent.setup({ delay: null });
+    render(<App adapter={new DeafToDiagnostics()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+    await waitFor(() => {
+      expect(screen.getByTestId('incognito-banner')).toHaveAttribute('data-debug-log', 'failed');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Memory' }));
+    const box = await screen.findByRole('textbox', { name: 'Remember something' });
+    await user.click(box);
+    await user.paste('a fact about me');
+    await user.click(within(pane()).getByRole('button', { name: 'Remember this' }));
+
+    const refusal = await screen.findByText(/That did not save/);
+    // Both still on screen, together — the contradiction was a property of the
+    // pair, so asserting either one alone would miss it.
+    expect(screen.getByTestId('incognito-banner')).toHaveAttribute('data-debug-log', 'failed');
+    expect(refusal).toHaveTextContent(/incognito/i);
+    for (const shape of [/nothing/i, /never/i, /not written/i, /not saved/i]) {
+      expect(
+        refusal.textContent ?? '',
+        `the refusal promises ${String(shape)} while the band says the debug log is still on`,
+      ).not.toMatch(shape);
+    }
+    // And it still names no command, which is the round-1 defect this surface
+    // shares with the sidebar.
+    const painted = refusal.textContent ?? '';
+    expect(
+      (COMMAND_ALLOWLIST as readonly string[]).filter((command) => painted.includes(command)),
+    ).toEqual([]);
+  });
+
   it('makes the claim once the host says the log is off', async () => {
     // The control: the same three surfaces, against a host that answers. Without
     // this the test above passes over a window that never claims anything.
@@ -577,6 +646,14 @@ describe('the mode’s own claim is not made when it cannot be kept', () => {
     await waitFor(() => {
       expect(screen.getByTestId('incognito-banner')).toHaveAttribute('data-debug-log', 'clear');
     });
+    // The positive half of the pair. Without it the `failed` test's negative
+    // assertion passes over a band that never makes the claim at all.
+    const banner = screen.getByTestId('incognito-banner');
+    expect(banner).toHaveTextContent(/is being saved on this machine/i);
+    // And the claim is the narrow one. `project_delete` is `erases`, so it is
+    // forwarded, and its host body runs an `UPDATE` beside its `DELETE` — the
+    // band may not say that this window changes nothing on this machine.
+    expect(banner).toHaveTextContent(/nothing you say here/i);
     expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · not saved');
   });
 });

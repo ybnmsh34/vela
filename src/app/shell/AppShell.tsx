@@ -37,10 +37,12 @@ interface AppShellProps {
  * failure does not abort entering the mode — and in that state
  * `vela_providers::debuglog` goes on writing the raw upstream request and
  * response bodies, the user's prompt and the model's answer, to a file under
- * the application-data directory. A window asserting `nothing from this window
- * is being saved on this machine` over that is the exact failure
+ * the application-data directory. A window asserting `nothing you say here is
+ * being saved on this machine` over that is the exact failure
  * `incognito-adapter.ts`'s header names: a mode a user can be wrong about is
- * worse than none.
+ * worse than none. What the user says is exactly what that sink records, so the
+ * `clear` sentence and the `failed` sentence are answers to the same question
+ * and only one of them can be on screen.
  *
  * `null` is not the same as `'failed'` and is not treated as one. It is the
  * round trip still being in flight, which is the sub-second window the
@@ -52,10 +54,26 @@ interface AppShellProps {
  * the user has to open. It is here now because this is the surface a user
  * cannot miss, and the pane's fuller wording — what to do about it — stays
  * there.
+ *
+ * ## Why `clear` says "nothing you say here" and not "nothing from this window"
+ *
+ * The wider sentence was the one shipped first, and it takes in a case it
+ * should not. `project_delete` is classified `erases` in `COMMAND_DURABILITY`,
+ * so incognito forwards it, and its host body —
+ * `delete_project_reassigning` in `src-tauri/crates/vela-store/src/sqlite.rs` —
+ * runs `UPDATE conversations SET project_id = ?2 WHERE project_id = ?1` in the
+ * same transaction as its `DELETE FROM projects`, so that no conversation is
+ * left unfiled. Rows on this machine change because of something done in this
+ * window. Nothing the user *said* is saved by it, and that narrower claim is
+ * the one the mode actually keeps: every command that would record what was
+ * typed or answered here is classified `writes` and refused at the seam.
+ *
+ * `PRIVACY_LINE.clear` is the same claim at status-bar length, and is read in
+ * the footer beside it rather than on its own.
  */
 const BAND: Readonly<Record<'checking' | 'clear' | 'failed', string>> = Object.freeze({
   checking: 'Incognito · checking whether the provider debug log is on',
-  clear: 'Incognito · nothing from this window is being saved on this machine',
+  clear: 'Incognito · nothing you say here is being saved on this machine',
   failed:
     'Incognito · the provider debug log could not be switched off, so your prompts and answers may still be written to this machine',
 });
@@ -66,8 +84,17 @@ const PRIVACY_LINE: Readonly<Record<'checking' | 'clear' | 'failed', string>> = 
   failed: 'Incognito · debug log still on',
 });
 
-/** Which of the three sentences this window has earned the right to show. */
-export function bandState(debugLog: DebugLogOutcome): 'checking' | 'clear' | 'failed' {
+/**
+ * Which of the three sentences this window has earned the right to show.
+ *
+ * Module-private on purpose. It was exported in the commit that introduced it,
+ * and nothing outside this file ever read it — a dead export created in the
+ * same change that deleted one for exactly that reason. The band and the status
+ * line are both drawn here, so there is nowhere else that needs it; the
+ * behaviour is observed through the rendered text and the `data-debug-log`
+ * attribute, which is what `instructions-and-incognito.test.tsx` asserts on.
+ */
+function bandState(debugLog: DebugLogOutcome): 'checking' | 'clear' | 'failed' {
   if (debugLog === null) return 'checking';
   return debugLog === 'failed' ? 'failed' : 'clear';
 }
@@ -112,6 +139,21 @@ export function AppShell({ children, now }: AppShellProps) {
         Two of the three carry the debug-log state as well, because an
         indication that says the wrong thing is worse than one that is missed.
         See `BAND` above.
+
+        OPEN, and not resolvable where this was written. The band is rendered
+        *above* `<TitleBar/>`, whose spacer carries `data-tauri-drag-region` and
+        is what makes the top strip of an undecorated window draggable. Whether
+        pushing that strip down by the height of this element — one line, or two
+        once `BAND.failed` wraps — costs the user anything is a question about a
+        laid-out window. Every test that renders this component runs under
+        jsdom, which has no layout engine and no window manager: the app project
+        sets `environment: 'jsdom'` in `vite.config.ts`, and of the repository's
+        two other vitest projects, `tests/harness/desktop-click` is jsdom too and
+        `tests/harness/mock-provider` is plain node and mounts no component at
+        all. So this is recorded rather than answered, and
+        `data-tauri-drag-region` is deliberately NOT added to this
+        `role="status"` element on a guess: a draggable status region is a
+        different defect from a shorter drag strip.
       */}
       {incognito && (
         <div

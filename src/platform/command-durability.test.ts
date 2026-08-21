@@ -43,27 +43,69 @@
  * It does not prove that a `no-write` command writes nothing anywhere in its
  * transitive call graph. That was tried first and it is not sound here: Rust
  * function names collide across the workspace, and a walk that unions the
- * candidates goes to the wrong place. Counted over the non-test bodies under
- * `src-tauri/src` and every crate's `src` directory, on the tree this file was
- * written against: `fn get` has 16 definitions, `fn delete` 8, `fn list` 8,
- * `fn set` 6, `fn status` 6, `fn create` 3. A prototype walk that resolved by
- * name resolved `schedules_create` into `ipc::project::create`, `secrets_set`
- * into `ipc::ui::set`, and `sandbox_submit` — through `spawn`, which has two
- * definitions, and `take`, which has one in the wrong module — into
- * `vela-store`'s `delete_project`. Every one of those is wrong, and each looked
- * like an answer. A guard built on that would be confidently wrong, which is
- * worse than a guard that says what it covers.
+ * candidates goes to the wrong place.
  *
- * (Those six counts are the state of this tree when the file was written, not a
- * bound on anything. They will drift; the argument does not depend on the exact
- * numbers, only on their being greater than one.)
+ * The counts, with the counting rule stated, because the first version of this
+ * paragraph said "definitions" and left two different numbers both defensible.
+ * Scanning `src-tauri/src` together with the `src` directory of every crate
+ * under `src-tauri/crates` — 12 such roots, 124 `.rs` files below them,
+ * recursively — and cutting each file at its first `\n#[cfg(test)]` as
+ * {@link hostSource} does, the occurrences of `fn <name>` as a whole word are:
+ * `fn get` 16, `fn delete` 8, `fn list` 8, `fn set` 6, `fn status` 6,
+ * `fn create` 3. Some of those are trait declarations, which end in `;` and have
+ * no body for {@link bodyOf} to brace-match; counting only the ones with a body,
+ * the same six are 14, 7, 7, 5, 6, 3. Both sets are re-measured on the tree this
+ * sentence is committed in. The argument needs neither exact set — only that
+ * each is greater than one.
  *
- * What the `in-process` and `off-machine` kinds do instead is the strongest
- * bounded thing available: **none of the cited bodies may contain any marker in
- * {@link DURABLE_MARKERS}**, and the chain must be at least two links long, so
- * the claim cannot be satisfied by citing a thin `#[tauri::command]` adapter and
- * stopping. That is a claim about the reviewed path, not about the whole graph,
- * and it is written down here so nobody reads it as more.
+ * A prototype walk that resolved by name resolved `schedules_create` into
+ * `ipc::project::create`, `secrets_set` into `ipc::ui::set`, and
+ * `sandbox_submit` — through `spawn`, which has two definitions, and `take`,
+ * which has one in the wrong module — into `vela-store`'s `delete_project`.
+ * Every one of those is wrong, and each looked like an answer. A guard built on
+ * that would be confidently wrong, which is worse than a guard that says what
+ * it covers.
+ *
+ * What the `in-process` and `off-machine` kinds do instead is bounded:
+ * **none of the cited bodies may contain any marker in
+ * {@link DURABLE_MARKERS}**, and the chain must be at least two links long.
+ *
+ * **What the two-link rule does and does not stop, measured rather than
+ * asserted.** It stops a row satisfying the absence check by citing a thin
+ * `#[tauri::command]` adapter and stopping — a one-link chain fails outright.
+ * It does **not** stop the same trick one shim deeper, and the earlier wording
+ * here claimed it did.
+ *
+ * Measured, twice, on this tree: declare `secrets_set` `in-process` over
+ * `secrets_set` → `ipc::secrets::set`, and `sandbox_submit` `in-process` over
+ * `sandbox_submit` → `host::submit`, flip both rows of `COMMAND_DURABILITY` to
+ * `no-write` to match, and **every check in this section passes on both rows** —
+ * both citations are truthful, both chains are two links, and neither cited body
+ * holds a marker in {@link DURABLE_MARKERS}. Meanwhile a credential still
+ * reaches the platform keychain through `store.set(`, one call past the last
+ * body this file reads.
+ *
+ * What reddened instead was the size pin below: `× pins the two numbers the
+ * header quotes for its own open hole — update the header: rows resting on
+ * absence: expected 19 to be 17`, by that name in both runs (whole suite
+ * `2683 passed | 1 failed (2684)` on the second; on the first, one further
+ * unrelated app test timed out at 5000ms and passed again on the rerun, so that
+ * run read `2682 passed | 2 failed`). That is worth exactly what it is. The pin
+ * does not follow
+ * the call graph and cannot; it makes *growing the set of claims resting on
+ * absence* a thing that has to be admitted in this paragraph, so the mutation
+ * costs a second edit in a second place rather than none. A mutant willing to
+ * edit this file can edit the number too.
+ *
+ * Two things follow. First, the honest name for this guard's coverage is a
+ * **reviewed path**, not a call graph — which is what the rest of this header
+ * already said and what the sentence above now stops contradicting. Second, the
+ * hole is only reachable by editing this file at all: the mutation is a rewrite
+ * of the evidence rows, not a change to shipped code, and every reclassification
+ * of `COMMAND_DURABILITY` alone reddens here by name. Closing it properly needs
+ * the terminal link forced out of the `src-tauri/src/ipc` adapter layer and into
+ * the implementing crate, which today would demand a new citation for 12 of the
+ * 17 rows resting on absence; it is written down as open rather than half-done.
  *
  * Two kinds — `guest-process` and `fail-closed` — are conservative by
  * construction: they may only ever produce `writes`, and each must say why in
@@ -973,6 +1015,19 @@ describe('the claims that would leak are the ones checked hardest', () => {
 
   it('has some rows resting on absence, so the sweep below is not empty', () => {
     expect(notWritten.length).toBeGreaterThan(5);
+  });
+
+  it('pins the two numbers the header quotes for its own open hole', () => {
+    // The header says the absence sweep would need a new citation for 12 of the
+    // 17 rows before a terminal link could be forced out of the `ipc` adapter
+    // layer. Numbers in prose rot; this is the same two numbers, derived, so a
+    // new `no-write` command cannot move them without someone re-reading the
+    // paragraph that quotes them.
+    const insideIpc = notWritten.filter((row) =>
+      (row.chain[row.chain.length - 1] as Link).file.startsWith(`${IPC}/`),
+    );
+    expect(notWritten.length, 'update the header: rows resting on absence').toBe(17);
+    expect(insideIpc.length, 'update the header: of those, terminating inside ipc').toBe(12);
   });
 
   it.each(notWritten.map((row) => [row.command, row] as const))(

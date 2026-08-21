@@ -217,6 +217,95 @@ describe('the wrapper refuses at the seam', () => {
   });
 });
 
+/**
+ * The sentence this file exists to keep out of the refusal, kept verbatim.
+ *
+ * It was the shipped message until this pin was written. It is here so the word
+ * list below is anchored on something that really was on screen: a list that
+ * matched nothing would pass over any message at all, which is the vacuous-oracle
+ * shape `refusedCommands()` was already caught in once.
+ */
+const WITHDRAWN_REFUSAL =
+  'This window is in incognito, so nothing it does is written to this machine.';
+
+/**
+ * Shapes that turn a refusal into a promise about the machine.
+ *
+ * The refusal is rendered verbatim by every failure surface in the application
+ * — `use-memory.ts` sets `problem` from `toPlatformError(error).message`, and
+ * use-projects and use-schedules do the same — so it is user-facing copy
+ * whatever it was written as. Two states make a blanket promise false, and the
+ * wrapper can see neither of them: `disarmDebugLogForIncognito` answering
+ * `'failed'`, in which the host's provider debug log is still writing raw
+ * prompts and answers to a file; and `project_delete`, which is `erases`, is
+ * forwarded, and whose host body runs an `UPDATE` beside its `DELETE`.
+ *
+ * So the message may say what was refused and why. It may not say what is or is
+ * not being written.
+ */
+const BLANKET_PROMISES: readonly RegExp[] = [
+  /nothing/i,
+  /never/i,
+  /no trace/i,
+  /not (?:written|saved|kept|stored|recorded)/i,
+];
+
+describe('the refusal is copy, and it promises only what this wrapper can keep', () => {
+  it('would have caught the sentence it replaced', () => {
+    // The anchor. Without it an empty or misspelt list below passes anything.
+    expect(BLANKET_PROMISES.filter((shape) => shape.test(WITHDRAWN_REFUSAL)).length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('makes no claim about what this machine is writing', async () => {
+    const incognito = createIncognitoAdapter(recording());
+    const error = (await incognito
+      .invoke('memory_add', {
+        scope: { kind: 'global' },
+        category: 'other',
+        content: 'x',
+      })
+      .catch((thrown: unknown) => thrown)) as PlatformError;
+
+    expect(error).toBeInstanceOf(PlatformError);
+    // Not vacuous: it is a real sentence, and it does say why.
+    expect(error.message.length).toBeGreaterThan(30);
+    expect(error.message).toMatch(/incognito/i);
+
+    // The substantive assertion first, so a regression reports *which* promise
+    // came back rather than only that the sentence changed.
+    const promised = BLANKET_PROMISES.filter((shape) => shape.test(error.message)).map(String);
+    expect(
+      promised,
+      'the refusal may say what it refused; it may not promise what the machine is doing',
+    ).toEqual([]);
+    expect(error.message).not.toBe(WITHDRAWN_REFUSAL);
+  });
+
+  it('says the same thing for every command it refuses, and names none of them', async () => {
+    // The sweep. A per-command message would let one of them carry a promise
+    // the others do not, and would put a Rust command name back on screen.
+    const messages = new Set<string>();
+    for (const command of refusedCommands()) {
+      const incognito = createIncognitoAdapter(recording());
+      const error = (await incognito
+        .invoke(command, {} as never)
+        .catch((thrown: unknown) => thrown)) as PlatformError;
+      messages.add(error.message);
+      expect(
+        (COMMAND_ALLOWLIST as readonly string[]).filter((name) => error.message.includes(name)),
+        `the refusal for ${command} names a command`,
+      ).toEqual([]);
+    }
+    expect(refusedCommands().length).toBeGreaterThan(15);
+    expect(messages.size, 'one refusal sentence, not one per command').toBe(1);
+    expect(
+      [...messages].filter((message) => BLANKET_PROMISES.some((shape) => shape.test(message))),
+    ).toEqual([]);
+  });
+});
+
 describe('the debug log is disarmed on the way in', () => {
   it('turns off a log that was on, and says so', async () => {
     const adapter = new BrowserAdapter();

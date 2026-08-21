@@ -482,7 +482,11 @@ export interface ScriptedReply {
   /**
    * Omitted is derived, not defaulted: a turn that asked for a tool stopped
    * because it asked for a tool. Stated explicitly only to test the
-   * combinations a real endpoint can produce and this derivation cannot.
+   * combinations a real endpoint can produce and this derivation cannot —
+   * which nothing does yet. Every `ScriptedReply` written in the tree omits
+   * this field, so the `reply.stopReason ??` in `#chatSend` is a reader with
+   * no exercising writer: an untested branch, said out loud rather than left
+   * to look covered.
    */
   readonly stopReason?: StopReason;
 }

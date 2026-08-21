@@ -16,13 +16,15 @@
  * with an empty `tools` fans out to nothing, and every assertion below the
  * offer goes with it.
  *
- * **The execution.** That half had no executing test anywhere in the tree.
+ * **The execution.** That half had no test that executed it through the app.
  * `BrowserAdapter`'s `#chatSend` answered every turn with `toolCalls: []` — a
  * literal, not a decision the request could influence — so the agent loop's
  * `executableCalls` came back empty on every turn `<App />` could produce, the
- * toolkit's `execute` was never called, and `createAgentRuntime`'s `newRunId`
- * and `newConversationId` closures never ran. (`newConversationId` is the only
- * non-test caller of `store_create_conversation` under `src/runtime/`;
+ * toolkit's `execute` was never reached that way, and `createAgentRuntime`'s
+ * `newRunId` and `newConversationId` closures never ran at all — the counter
+ * described below attributes every one of its hits to this file.
+ * (`newConversationId` is the only non-test caller of
+ * `store_create_conversation` under `src/runtime/`;
  * `adapter-integration.test.ts` invokes the command itself.)
  *
  * The existing subagent proof, `src/runtime/subagent-toolkit.test.ts`, has no
@@ -423,14 +425,21 @@ describe('the fan-out reaches a second run through the composition root', () => 
   it(
     'leaves each child a conversation of its own that the user can open',
     async () => {
-      // `createAgentRuntime`'s `newConversationId` is where the product calls
-      // `store_create_conversation`, and this file is where that closure runs:
-      // with a counter in it, a full-suite run reached it four times, twice in
-      // this test and twice in the one above, and from nowhere else. (Other
-      // tests do call the command — `adapter-integration.test.ts` invokes it on
-      // the adapter directly — but nothing else executes the product's caller.
-      // An observation of one run, and the sort of thing that changes the
-      // moment another test drives an agent fan-out.)
+      // The fan-out's caller of `store_create_conversation` is
+      // `createAgentRuntime`'s `newConversationId` — the only caller of that
+      // command under `src/runtime/` — and this file is where that closure
+      // runs: with a counter in the adapter's command case, a full-suite run
+      // (119 files, 2397 tests) reached it four times, twice in this test and
+      // twice in the one above, and from nowhere else.
+      //
+      // It is not the product's only caller of that command, and this test
+      // fires the other one first: `conversations-repository`'s `create`,
+      // reached from `use-conversations.ts`'s `createConversation`, is what
+      // this test's `openConversation` click runs. The same instrumented run
+      // counted that caller 58 times across the suite, four of them in this
+      // file — one per test. Both counts are observations of one run, and
+      // both move the moment another test drives a fan-out or opens a
+      // conversation.
       //
       // What it buys the user is asserted rather than assumed: a real row,
       // named, with the child's own answer in it — not a synthetic id whose
@@ -464,11 +473,15 @@ describe('the fan-out reaches a second run through the composition root', () => 
       const { conversations } = await adapter.invoke('store_list_conversations', {});
       const children = conversations.filter((conversation) => conversation.id !== parentId);
       expect(children).toHaveLength(2);
-      // The title is `subagentConversationTitle`'s. What reads it back is the
-      // sidebar: `use-conversations.ts` loads the list through
-      // `conversations-repository`'s `list`, which is the caller of
-      // `store_list_conversations`, and `ConversationRow` renders
-      // `conversation.title` on the row it draws for each one.
+      // The title is `subagentConversationTitle`'s. The read just above is
+      // this test's own, direct on the adapter — fifteen call sites across six
+      // test files do that, this one included. What reads it back for the
+      // *user* takes the other route: `use-conversations.ts` loads the list
+      // through `conversations-repository`'s `list`, the only caller of
+      // `store_list_conversations` in `src/` outside `browser-adapter.ts`'s own
+      // case for it and `contract.ts`'s declarations of it, and
+      // `ConversationRow` renders `conversation.title` on the row it draws for
+      // each one.
       expect(children.map((child) => child.title).sort()).toEqual(['Subagent 1', 'Subagent 2']);
 
       // Each child's own transcript holds its own answer, and only its own.

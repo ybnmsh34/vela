@@ -88,8 +88,8 @@ import { documentSubmit } from './document-run';
  * same idea. It is the same defect one level down, and it shipped in the first
  * draft of this file: the card read the echo while the frame read the submit,
  * two independent values with nothing binding them. Measured on a double that
- * echoes a program disagreeing with the submit, both directions, each run twice
- * — with the panel's script checkbox on and the echo saying `denied`, the card
+ * echoes a program disagreeing with the submit, in both directions — with the
+ * panel's script checkbox on and the echo saying `denied`, the card
  * rendered "Will not execute" while the frame drawn on `allowOnce` was
  * `sandbox="allow-scripts"`, carrying `script-src 'unsafe-inline'` and the
  * diagnostic bridge; with the submit denied and the echo saying
@@ -291,7 +291,10 @@ export function useDocumentRun(
           case 'accepted': {
             // The host's echo where it asked a person, and the effect's own
             // closure variable — the one passed to `documentSubmit` below,
-            // minted beside the run id — where it asked nobody. See the note on
+            // closed over by the same effect run that mints the run id — where
+            // it asked nobody. (`program` is minted above this effect, by
+            // `useStableProgram` at render; `runId` is minted inside it. What
+            // this effect run establishes is the pair.) See the note on
             // {@link RunPhase} for why those are not interchangeable.
             const accepted: AcceptedRun = {
               runId,

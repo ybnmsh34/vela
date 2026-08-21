@@ -558,10 +558,12 @@ describe('the card and the frame are one program, not two that agree', () => {
  * effect re-points at the next run before any event for that run has arrived. It
  * now reads the run id off the same `AcceptedRun` record the frame was built
  * from — and that change shipped with a note saying, truthfully at the time,
- * that no test in this tree constrained the pairing: the suites that name
- * `reportDocument` call the host double directly with run ids they wrote
- * themselves, and none of them drives the callback. This is that test. The note
- * has gone with it.
+ * that no test in this tree constrained the pairing: the two other suites that
+ * name `reportDocument` call it directly with run ids they wrote themselves —
+ * `document-host-double.test.ts` on the double, and
+ * `src/data/sandbox-repository.test.ts` on the repository built over
+ * `BrowserAdapter` — and neither of them drives this callback. This is that
+ * test. The note has gone with it.
  *
  * The instrument records both sides rather than stubbing either: the run id the
  * host named in its own `ApprovalRequest`, and the run id every `reportDocument`

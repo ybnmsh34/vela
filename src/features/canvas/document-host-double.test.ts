@@ -16,9 +16,14 @@
  * sequence these tests are about. What is genuinely unbuilt is the list
  * `src/platform/contract-sandbox.ts` keeps under "Still unbuilt" in its opening
  * note: every document command path, `python`, both copying materialisations,
- * and any surface rendering an approval prompt. (A line range stood here until
- * it was measured and found off at both ends; `document-host-double.ts` says
- * what happened to the other six.)
+ * and "any approval prompt a user can actually reach" — that last item quoted,
+ * because the paraphrase that stood here, "any surface rendering an approval
+ * prompt", was false. The surface is built and shipped: `ApprovalCard` in
+ * `DocumentPreview.tsx`, mounted from `App.tsx`, driven by the suites in
+ * `CanvasPanel.test.tsx`. What no host in this tree can do is bring a user to
+ * it, which is the item the contract keeps open, under amendment 6. (A line
+ * range stood here until it was measured and found off at both ends;
+ * `document-host-double.ts` says what happened to the other six.)
  *
  * So these assertions are evidence about lifetime and sequencing and about
  * nothing else — not about a boundary, not about a policy a request cannot

@@ -149,8 +149,12 @@ const XML_PROLOGUE = /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!DOCTYPE[^>]*>\s*)?/i;
  *
  * Stated because it is the largest renderer-side decision left in this feature
  * and it is invisible from the signature's shape. Both values returned here —
- * `sandbox`, and whether the CSP carries a `script-src` line — come off
- * `program.scripts` and nothing else. `EffectiveGrant` is not a parameter here,
+ * `sandbox`, and whether the CSP carries a `script-src` line — come off the
+ * program and nothing else: off `program.scripts` in the `html`/`react` arm,
+ * and off the arm itself for `svg`/`mermaid`, where the union carries no
+ * `scripts` field and both values are literals in that arm,
+ * `contentSecurityPolicy('denied')` and `sandbox: ''`. `EffectiveGrant` is not
+ * a parameter here,
  * and three of its fields are read anywhere in `DocumentPreview`:
  * `backend.isolation`, which `isolationSentence` turns into one sentence on the
  * approval card, `network.kind`, which is another, and `limits.outputBytes`,

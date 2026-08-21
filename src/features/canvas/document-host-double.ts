@@ -38,9 +38,18 @@
  *    This file is not on it.**
  *
  * What is genuinely unbuilt is the list `src/platform/contract-sandbox.ts` keeps
- * under "Still unbuilt" in its opening note, and nothing wider: every document
- * command path, `python`, both copying materialisations, and any surface that
- * renders an approval prompt.
+ * under "Still unbuilt" in its opening note: every document command path,
+ * `python`, both copying materialisations, and "any approval prompt a user can
+ * actually reach". That fourth item is quoted rather than paraphrased, because
+ * the paraphrase this file carried — "any surface that renders an approval
+ * prompt" — was false, and the contract had already said so in the sentence
+ * right after the list: "See amendment 6 for that last item: an approval
+ * surface now exists and is wired, and no host in this tree can drive it."
+ * `ApprovalCard` in `DocumentPreview.tsx` is that surface: built, mounted from
+ * `App.tsx` through `CanvasSurface` and `CanvasPanel`, and driven by the suites
+ * in `CanvasPanel.test.tsx`. Amendment 6 records built-and-unreachable as a
+ * different state from unbuilt, which is why the open item is the reachability
+ * and not the prompt.
  * Concretely for this feature — the host's `languages` carries no document
  * language and `absent_document_backend` reports the document family at
  * `sameOrigin`, one rank below the `opaqueOriginFrame` every Canvas submit

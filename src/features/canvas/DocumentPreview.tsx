@@ -113,11 +113,15 @@ function drawable(run: DocumentRun): { grant: EffectiveGrant; program: DocumentP
  *
  * The phase carries a {@link SandboxProgram} because that is what the host said;
  * this is where the *accepted* arm's program is narrowed, and the only
- * expression that narrows it. Two other narrowings in this feature read
- * different values and are not alternatives to this one:
+ * expression that narrows it. Three other expressions narrow the same
+ * discriminant on a different value, and none is an alternative to this one:
  * {@link scriptDecision} below narrows the `ApprovalRequest`'s copy, for the
- * card's Script row, and `documentRefusal` in `document-run.ts` narrows the
- * outbound `SandboxSubmitReq`'s, for the order refusals are decided in. An
+ * card's Script row; `documentRefusal` in `document-run.ts` narrows the
+ * outbound `SandboxSubmitReq`'s, for the order refusals are decided in; and the
+ * `echoingScripts` helper in `CanvasPanel.test.tsx` narrows a program on its
+ * way through a test double. Those four are every `kind === 'document'` and
+ * `kind !== 'document'` in `src/`; an earlier version of this sentence said two
+ * and silently dropped the helper. An
  * earlier version of this line said "the one place it is narrowed" flatly, which
  * is not true of the file, let alone the feature.
  *
@@ -255,7 +259,9 @@ export function DocumentPreview({ run, title }: DocumentPreviewProps) {
 function ApprovalCard({ run, title }: { readonly run: DocumentRun; readonly title: string }) {
   if (run.phase.kind !== 'awaitingApproval') return null;
   const request = run.phase.request;
-  // **Every row comes off the one `ApprovalRequest` — and so does the frame.**
+  // **Every row on this card comes off the one `ApprovalRequest` — and so does
+  // the frame — except `Files`, which comes off nothing. That exception is
+  // written down at the end of this note.**
   // `Isolation` and `Network` always did; `Script` came off a copy of the
   // program the panel held beside the run, which is the same two-sources defect
   // `drawable` above was rewritten to close. The contract calls
@@ -287,8 +293,20 @@ function ApprovalCard({ run, title }: { readonly run: DocumentRun; readonly titl
   // `ApprovalRequest` saying that the grant it carries is the grant the run
   // gets. Recorded as open, because it is the same two-values shape as the
   // `Script` row's and this file is where a reader would look for it.
-  const grant = request.grant;
   //
+  // **The `Files` row is in neither category, because it reads nothing.**
+  // `<dt>Files</dt><dd>No filesystem access</dd>` below is a literal:
+  // `grep -rn "grant\.filesystem" src/` returns no hits, so no renderer in this
+  // tree reads `EffectiveGrant.filesystem` at all. The sentence is true of every
+  // document submit this tree can make — the contract fixes `mounts` empty for
+  // one, and `documentRefusal` in `document-run.ts` refuses
+  // `documentGrantInvalid` when it is not — but it is true by construction, not
+  // because the host said it about this run. It is the one consent row a host
+  // could not contradict here even if its grant said otherwise, and until this
+  // round the headline above claimed it came off the `ApprovalRequest` like the
+  // others.
+  const grant = request.grant;
+
   // Moving this row here without moving the frame's bytes with it swaps one
   // instance of that defect for another, and the first attempt did exactly
   // that: the card read the echo, the `<iframe>` still read the submit, and

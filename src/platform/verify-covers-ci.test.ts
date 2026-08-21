@@ -2163,10 +2163,19 @@ describe('the local gate is a superset of the remote one', () => {
       for (const name of ['a.yml', 'b.yaml', 'c.txt', 'd.yaml.bak']) {
         writeFileSync(join(directory, '.github', 'workflows', name), body, 'utf8');
       }
+      // RULE W over `filesUnder`'s recursion, which `readWorkflowSurface`'s
+      // docblock is entirely about — "this recurses, so a nested `.yml` is
+      // parsed and counted even though the runner would ignore it" — and which
+      // nothing asserted: replacing the recursive call with `continue` was `tsc`
+      // exit 0 and the whole suite green, because this scratch directory was
+      // flat and could not see the difference. It is not flat now.
+      mkdirSync(join(directory, '.github', 'workflows', 'nested'), { recursive: true });
+      writeFileSync(join(directory, '.github', 'workflows', 'nested', 'e.yml'), body, 'utf8');
+      writeFileSync(join(directory, '.github', 'workflows', 'nested', 'f.txt'), body, 'utf8');
       const probe = readWorkflowSurface(directory);
-      expect(probe.files).toEqual(['a.yml', 'b.yaml']);
-      expect(probe.ignoredFiles).toEqual(['c.txt', 'd.yaml.bak']);
-      expect(probe.models.map((model) => model.file)).toEqual(['a.yml', 'b.yaml']);
+      expect(probe.files).toEqual(['a.yml', 'b.yaml', 'nested/e.yml']);
+      expect(probe.ignoredFiles).toEqual(['c.txt', 'd.yaml.bak', 'nested/f.txt']);
+      expect(probe.models.map((model) => model.file)).toEqual(['a.yml', 'b.yaml', 'nested/e.yml']);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -2520,37 +2529,20 @@ describe('the local gate is a superset of the remote one', () => {
     // searching the job's text for the word. `cd src-tauri && cargo build` is
     // two commands and the second one's program is `cargo`; a job that merely
     // mentions cargo in a comment has no such command.
-    for (const job of JOBS) {
-      const name = `${job.file}:${job.name}`;
-      const commands = job.commands.map(({ text }) => text);
-      if (!commands.some((command) => parseCommand(command).program === 'cargo')) continue;
-
-      expect(job.runsOn, `CI job "${name}" has no runs-on this test can read`).not.toBe('');
-
-      if (job.runsOn.startsWith('ubuntu')) {
-        expect(
-          commands.some((command) => command.includes('libwebkit2gtk-4.1-dev')),
-          `CI job "${name}" runs cargo on Linux but never installs the Tauri ` +
-            'system dependencies. It will fail in a build script before linting ' +
-            'or testing anything. Copy the "Install Tauri system dependencies" step.',
-        ).toBe(true);
-      } else if (job.runsOn.startsWith('windows') || job.runsOn.startsWith('macos')) {
-        // Assert the absence of the Linux step as well. Copying it here would
-        // fail on a runner with no apt, so its absence should read as a decision
-        // rather than as something nobody got round to.
-        expect(
-          commands.some((command) => command.includes('apt-get')),
-          `CI job "${name}" runs on ${job.runsOn} and installs Linux packages. The ` +
-            'webview ships with the OS there; apt-get does not exist on it.',
-        ).toBe(false);
-      } else {
-        expect.fail(
-          `CI job "${name}" runs cargo on "${job.runsOn}", which this guard cannot ` +
-            'reason about. Teach it what that runner provides before trusting a ' +
-            'green run from it.',
-        );
-      }
-    }
+    //
+    // The rule moved out of this case into {@link cargoGraphFaults} and
+    // {@link runnerClassOf} this round, for the reason {@link unaccounted} is a
+    // named function and stated in this file's own words: "a rule written inline
+    // inside `modelOf` would only ever be handed input that satisfies it". That
+    // was true of this classifier — every synthetic workflow in this file writes
+    // `runs-on: ubuntu-latest`, so the `windows`, `macos` and unrecognised arms
+    // had only the real `ci.yml` as input, which is what they were widened for.
+    // All three could be deleted with `tsc` at exit 0 and the whole suite green,
+    // and so could the reader itself: replacing `runsOn` with a two-valued
+    // function of `startsWith('ubuntu')` was invisible. The rows of *classifies
+    // $runsOn — RULE W over RUNNER_CLASSES* and *reports $situation — RULE W
+    // over cargoGraphFaults* are what notice now.
+    expect(cargoGraphFaults(JOBS)).toEqual([]);
   });
 });
 
@@ -2746,7 +2738,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // is refused rather than parsed, because this reader does not implement
       // flow mappings and the alternative to refusing is to skip it in silence.
       expect(probe('      - { run: pnpm probe-unlisted-gate }')).toThrow(
-        'a flow mapping',
+        PARSER_REFUSALS.keyFlowMapping,
       );
     });
   });
@@ -3328,7 +3320,7 @@ describe('the workflow is read as a document, not as lines', () => {
     });
 
     it('refuses a YAML anchor', () => {
-      expect(probe('      - run: &base pnpm test')).toThrow('an anchor, alias or tag');
+      expect(probe('      - run: &base pnpm test')).toThrow(PARSER_REFUSALS.anchor);
     });
 
     it('refuses a tab in the indentation', () => {
@@ -3337,7 +3329,9 @@ describe('the workflow is read as a document, not as lines', () => {
 
     it('refuses a second YAML document in one file', () => {
       const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test', '---', 'jobs: {}'].join('\n');
-      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow('a document separator');
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow(
+        PARSER_REFUSALS.documentStart,
+      );
     });
 
     it('refuses a document with anything left unread after it', () => {
@@ -3488,7 +3482,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // the whole reason that branch is not written.
       const blockSequence = (): unknown =>
         parseWorkflowYaml('probe.yml', ['needs:', '  - first', '  - second'].join('\n'));
-      expect(blockSequence).toThrow('is at mapping depth but is not a key this reader can read');
+      expect(blockSequence).toThrow(PARSER_REFUSALS.unreadableKey);
     });
 
     it.each([
@@ -3749,18 +3743,14 @@ describe('a command line is read as the commands it runs', () => {
     expect(reached(source)).toEqual(expected);
   });
 
-  it.each([
-    { construct: 'a subshell', source: 'a && (b || c)', names: 'a subshell or group' },
-    { construct: 'a command substitution', source: 'a $(b)', names: 'a command substitution' },
-    { construct: 'a backtick substitution', source: 'a `b`', names: 'a command substitution' },
-    { construct: 'a background job', source: 'a & b', names: 'a background job' },
-    { construct: 'a shell expansion', source: 'a $B', names: 'a shell expansion' },
-  ])('refuses $construct rather than guessing what it runs', ({ source, names }) => {
-    // Refusal, not a best guess. Each of these can put a command into the run
-    // whose text is not in the file, and this reader's one job is never to
-    // report a clean read of something it did not read.
-    expect(() => shellCommands(source, 'probe')).toThrow(names);
-  });
+  // The five rows that used to sit here — a subshell, `$(`, a backtick, a
+  // background job and a bare `$` — asserted five spellings drawn from three of
+  // the four families the docblock named, against a reader with ten arms, and
+  // three of them shared one message with a second arm so no assertion could
+  // have told those arms apart. They are superseded by *refuses $construct —
+  // RULE W over SHELL_REFUSALS*, which is one row per arm and is pinned against
+  // the arm list rather than against a paragraph. See the RULE W block at the
+  // foot of this file.
 
   it('reads text inside quotes as an argument, never as a command', () => {
     // Defect six in one line. `echo "… pnpm typecheck …"` used to satisfy the
@@ -4334,6 +4324,65 @@ interface YamlEntry {
 }
 
 /**
+ * Every construct {@link parseWorkflowYaml} refuses — one id per **branch of
+ * the reader**, not one per noun in a sentence.
+ *
+ * ### The seventh form: the data lists were pinned and the reader's refusals were not
+ *
+ * Round six pinned a reader's branch list where the reader was a `switch` over
+ * node kinds. This reader is a hand-written parser whose branch list is a wall
+ * of `if (…) refuse(…)` lines, and the file pinned the parser's OUTPUT — every
+ * totality equality, every settings pin, every `uses:` arm — while leaving the
+ * parser's REFUSALS asserted by nothing. The docblock below enumerated nine
+ * refused constructs and the suite reddened on four of them: the `*` alias arm,
+ * the `!` tag arm, the `%` directive arm, the `...` document-end arm, the
+ * flow-mapping refusal in `parseValue`, the key-level unterminated quote, the
+ * duplicate-key refusal, the over-indent refusal and the indented-document
+ * refusal each deleted with `tsc` at exit 0 and the whole suite green. A law
+ * whose universe is a filter it never asserts, one level below where round six
+ * found it.
+ *
+ * The fix is this record and the type below it. {@link parseWorkflowYaml}'s
+ * `refuse` takes an **id**, not a message, so a new branch cannot be written
+ * without adding a key here — that much the compiler enforces. What the
+ * compiler cannot do is notice a branch that is *deleted*, and that is what
+ * *refuses $construct — RULE W over PARSER_REFUSALS* is for: one synthetic
+ * document per key, and a key-set equality between this record and that table,
+ * so a deleted arm names the construct that stopped being refused and an added
+ * arm names the construct nothing tries.
+ *
+ * Read by {@link parseWorkflowYaml}'s `refuse`, by *refuses $construct — RULE W
+ * over PARSER_REFUSALS*, and by nothing else.
+ */
+const PARSER_REFUSALS = {
+  documentStart: 'is a document-start separator',
+  documentEnd: 'is a document-end separator',
+  directive: 'is a YAML directive',
+  tabIndent: 'is indented with a tab',
+  indentedDocument: 'starts the document indented',
+  leftover: 'was left unread after the document ended',
+  valueFlowMapping: 'is a flow mapping where a value belongs',
+  anchor: 'is a YAML anchor',
+  alias: 'is a YAML alias',
+  tag: 'is a YAML tag',
+  unclosedFlowSequence: 'is a flow sequence that does not close on its line',
+  flowMappingInFlowSequence: 'is a flow mapping inside a flow sequence',
+  valueBackslash: 'is a quoted scalar containing a backslash escape',
+  valueUnclosedQuote: 'is a scalar whose quote never closes',
+  textAfterValueQuote: 'has text after the closing quote of its value',
+  overIndentedKey: 'is indented deeper than the mapping it belongs to',
+  sequenceItemWhereKeyBelongs: 'is a sequence item where this reader expects a mapping key',
+  keyFlowMapping: 'is a flow mapping where a mapping key belongs',
+  keyUnclosedQuote: 'has a key whose quote never closes',
+  keyBackslash: 'has a quoted key containing a backslash escape',
+  quotedScalarWhereKeyBelongs: 'is a quoted scalar where a mapping key belongs',
+  unreadableKey: 'is at mapping depth but is not a key this reader can read',
+  duplicateKey: 'repeats a key in one mapping',
+} as const;
+
+type ParserRefusal = keyof typeof PARSER_REFUSALS;
+
+/**
  * A block-YAML subset, parsed **totally**: every non-blank, non-comment line is
  * consumed by a construct this reader implements, or the file is refused by
  * name and line.
@@ -4349,9 +4398,11 @@ interface YamlEntry {
  * plain / quoted / literal / folded scalars, flow sequences kept as opaque text
  * (`branches: [main]` — nothing here looks inside one), and comments.
  *
- * Refused: flow mappings, anchors, aliases, tags, document separators,
- * directives, tabs in indentation, an unterminated quote, and anything left over
- * after the document ends.
+ * Refused: every construct in {@link PARSER_REFUSALS}, which is the branch list
+ * itself rather than a sentence about it. This paragraph used to be the
+ * enumeration, and RULE T is why it no longer is: prose neither creates nor
+ * proves an edge, and of the nine constructs it named, five were held by arms
+ * anything could delete with the suite green.
  *
  * Not a general YAML implementation and not trying to be. A construct outside
  * the subset costs a review, which is the trade rule 2 of this file has always
@@ -4362,9 +4413,9 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
   let index = 0;
 
   const at = (line: number): string => `.github/workflows/${file}:${String(line + 1)}`;
-  function refuse(line: number, what: string): never {
+  function refuse(line: number, construct: ParserRefusal, detail = ''): never {
     throw new Error(
-      `${at(line)} ${what}. This reader parses a block-YAML subset and refuses ` +
+      `${at(line)} ${PARSER_REFUSALS[construct]}${detail}. This reader parses a block-YAML subset and refuses ` +
         'what it cannot take apart, because reading past a construct is how a ' +
         'gate reaches CI unseen. Rewrite it in the subset, or teach this reader.',
     );
@@ -4394,7 +4445,7 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
   function indentOf(line: number): number {
     const raw = lines[line] ?? '';
     if (raw.slice(0, raw.length - raw.trimStart().length).includes('\t')) {
-      refuse(line, 'is indented with a tab');
+      refuse(line, 'tabIndent');
     }
     return raw.length - raw.trimStart().length;
   }
@@ -4407,8 +4458,9 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
 
   for (const [line, raw] of lines.entries()) {
     const trimmed = raw.trim();
-    if (trimmed === '---' || trimmed === '...') refuse(line, 'is a document separator');
-    if (raw.startsWith('%')) refuse(line, 'is a YAML directive');
+    if (trimmed === '---') refuse(line, 'documentStart');
+    if (trimmed === '...') refuse(line, 'documentEnd');
+    if (raw.startsWith('%')) refuse(line, 'directive');
   }
 
   /** The scalar text of a block scalar (`|`, `>`) whose key sits at `indent`. */
@@ -4492,25 +4544,25 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
 
     index = line + 1;
 
-    if (value.startsWith('{')) refuse(line, 'is a flow mapping');
-    if (value.startsWith('&') || value.startsWith('*') || value.startsWith('!')) {
-      refuse(line, 'is an anchor, alias or tag');
-    }
+    if (value.startsWith('{')) refuse(line, 'valueFlowMapping');
+    if (value.startsWith('&')) refuse(line, 'anchor');
+    if (value.startsWith('*')) refuse(line, 'alias');
+    if (value.startsWith('!')) refuse(line, 'tag');
     if (value.startsWith('[')) {
-      if (!value.includes(']')) refuse(line, 'is a flow sequence that does not close on its line');
-      if (value.includes('{')) refuse(line, 'is a flow mapping inside a flow sequence');
+      if (!value.includes(']')) refuse(line, 'unclosedFlowSequence');
+      if (value.includes('{')) refuse(line, 'flowMappingInFlowSequence');
       // Kept as opaque text: nothing here looks inside one (`branches: [main]`).
       return { kind: 'scalar', value, line, plain: false };
     }
 
     const quote = value[0];
     if (quote === '"' || quote === "'") {
-      if (value.includes('\\')) refuse(line, 'is a quoted scalar containing a backslash escape');
+      if (value.includes('\\')) refuse(line, 'valueBackslash');
       const close = value.indexOf(quote, 1);
-      if (close === -1) refuse(line, 'is a scalar whose quote never closes');
+      if (close === -1) refuse(line, 'valueUnclosedQuote');
       const after = value.slice(close + 1).trim();
       if (after !== '' && !after.startsWith('#')) {
-        refuse(line, 'has text after the closing quote of its value');
+        refuse(line, 'textAfterValueQuote');
       }
       return { kind: 'scalar', value: value.slice(1, close), line, plain: false };
     }
@@ -4538,38 +4590,38 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
       if (depth < indent) break;
       const raw = lines[line] ?? '';
       const trimmed = raw.trim();
-      if (depth > indent) refuse(line, 'is indented deeper than the mapping it belongs to');
+      if (depth > indent) refuse(line, 'overIndentedKey');
       if (trimmed === '-' || trimmed.startsWith('- ')) {
-        refuse(line, 'is a sequence item where this reader expects a mapping key');
+        refuse(line, 'sequenceItemWhereKeyBelongs');
       }
       // `- { run: pnpm x }` — defect four's second spelling. A line reader has
       // no line beginning `run:` to find here, and neither has this one; the
       // difference is that this one says so.
-      if (trimmed.startsWith('{')) refuse(line, 'is a flow mapping');
+      if (trimmed.startsWith('{')) refuse(line, 'keyFlowMapping');
 
       let key: string;
       let rest: string;
       const quote = trimmed[0];
       if (quote === '"' || quote === "'") {
         const close = trimmed.indexOf(quote, 1);
-        if (close === -1) refuse(line, 'has a key whose quote never closes');
+        if (close === -1) refuse(line, 'keyUnclosedQuote');
         if (trimmed.slice(0, close).includes('\\')) {
-          refuse(line, 'has a quoted key containing a backslash escape');
+          refuse(line, 'keyBackslash');
         }
         const after = trimmed.slice(close + 1);
-        if (!after.startsWith(':')) refuse(line, 'is a quoted scalar where a mapping key belongs');
+        if (!after.startsWith(':')) refuse(line, 'quotedScalarWhereKeyBelongs');
         key = trimmed.slice(1, close);
         rest = after.slice(1);
       } else {
         const parsed = PLAIN_KEY.exec(trimmed);
-        if (parsed === null) refuse(line, `is at mapping depth but is not a key this reader can read: "${trimmed}"`);
+        if (parsed === null) refuse(line, 'unreadableKey', `: "${trimmed}"`);
         key = parsed[1] ?? '';
         rest = parsed[2] ?? '';
       }
 
       // Last-wins is YAML's rule and first-wins is what a reader like this
       // naturally does, so the two can disagree about what runs. Refused.
-      if (seen.has(key)) refuse(line, `repeats the key "${key}" in one mapping`);
+      if (seen.has(key)) refuse(line, 'duplicateKey', `: "${key}"`);
       seen.add(key);
 
       index = line + 1;
@@ -4626,14 +4678,14 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
 
   const first = nextContent(0);
   if (first >= lines.length) throw new Error(`.github/workflows/${file} has nothing in it to read`);
-  if (indentOf(first) !== 0) refuse(first, 'starts the document indented');
+  if (indentOf(first) !== 0) refuse(first, 'indentedDocument');
   index = first;
   const root = parseNode(0);
 
   // The totality net. If anything is left, the parser walked past a construct
   // instead of refusing it, and that is the bug this whole file is about.
   const leftover = nextContent(index);
-  if (leftover < lines.length) refuse(leftover, 'was left unread after the document ended');
+  if (leftover < lines.length) refuse(leftover, 'leftover');
 
   return root;
 }
@@ -4641,6 +4693,45 @@ function parseWorkflowYaml(file: string, text: string): YamlNode {
 /* -------------------------------------------------------------------------- */
 /* the shell reader                                                           */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Every construct {@link shellCommands} refuses — one id per **arm**, not one
+ * per family named in a comment.
+ *
+ * The same seventh-form finding as {@link PARSER_REFUSALS}, in the reader
+ * underneath it. `shellCommands`' docblock named four families; its `it.each`
+ * table asserted five spellings drawn from three of them; the reader had ten
+ * arms. Deleting the process-substitution arm, the `{`/`}` arms, the
+ * double-quoted `$` arm, the double-quoted backtick arm or the trailing
+ * unterminated-quote arm was `tsc` exit 0 and the whole suite green. Where two
+ * arms shared one message — `` ` ``, `$(` and a backtick inside double quotes
+ * all said "a command substitution" — no assertion could tell them apart even
+ * in principle, so the messages are now one per arm.
+ *
+ * `refuse` takes an **id**: the compiler will not let a new arm be written
+ * without a key here, and *refuses $construct — RULE W over SHELL_REFUSALS*
+ * pins this record's key set against a table with one source line per key, so a
+ * deleted arm names the construct that stopped being refused.
+ *
+ * Read by {@link shellCommands}' `refuse`, by *refuses $construct — RULE W over
+ * SHELL_REFUSALS*, and by nothing else.
+ */
+const SHELL_REFUSALS = {
+  expansionInDoubleQuotes: 'a shell expansion inside double quotes',
+  substitutionInDoubleQuotes: 'a command substitution inside double quotes',
+  backtickSubstitution: 'a command substitution written with backticks',
+  dollarSubstitution: 'a command substitution written with $(',
+  expansion: 'a shell expansion',
+  processSubstitution: 'a process substitution',
+  subshellOpen: 'a subshell',
+  subshellClose: 'a subshell closing where none opened',
+  braceGroupOpen: 'a brace group',
+  braceGroupClose: 'a brace group closing where none opened',
+  backgroundJob: 'a background job',
+  unterminatedQuote: 'a quote that never closes',
+} as const;
+
+type ShellRefusal = keyof typeof SHELL_REFUSALS;
 
 /** One simple command, and whether its failure fails the run it is part of. */
 interface ShellCommand {
@@ -4697,15 +4788,19 @@ interface ShellCommand {
  *    from `gating` — in `a && b`, `b` is also skipped when `a` fails, but that
  *    run is red, so nothing is hidden.
  *
- * Refusals, not guesses: command substitution, subshells and brace groups,
- * background jobs, and any `$` expansion outside single quotes. Each of them can
+ * Refusals, not guesses: every construct in {@link SHELL_REFUSALS}, which is the
+ * branch list itself. This paragraph used to name four families — "command
+ * substitution, subshells and brace groups, background jobs, and any `$`
+ * expansion outside single quotes" — while the table beside it asserted five
+ * spellings drawn from three of them, and the ten arms below were held by five.
+ * RULE T: prose neither creates nor proves an edge. Each of these constructs can
  * make the text of the command differ from what runs, and this file's one rule
  * is that a reader which cannot see a value must say so.
  */
 function shellCommands(source: string, where: string): ShellCommand[] {
-  const refuse = (what: string): never => {
+  const refuse = (construct: ShellRefusal): never => {
     throw new Error(
-      `${where} contains ${what}, which this reader cannot evaluate. It refuses ` +
+      `${where} contains ${SHELL_REFUSALS[construct]}, which this reader cannot evaluate. It refuses ` +
         'rather than guess: a command whose text is not in the file is a gate ' +
         'nobody here is checking. Write the chain out, or teach this reader.',
     );
@@ -4741,8 +4836,8 @@ function shellCommands(source: string, where: string): ShellCommand[] {
     const next = text[i + 1] ?? '';
 
     if (quote !== null) {
-      if (quote === '"' && char === '$') refuse('a shell expansion inside double quotes');
-      if (quote === '"' && char === '`') refuse('a command substitution');
+      if (quote === '"' && char === '$') refuse('expansionInDoubleQuotes');
+      if (quote === '"' && char === '`') refuse('substitutionInDoubleQuotes');
       if (char === quote) quote = null;
       current += char;
       continue;
@@ -4753,17 +4848,20 @@ function shellCommands(source: string, where: string): ShellCommand[] {
       current += char;
       continue;
     }
-    if (char === '`') refuse('a command substitution');
-    if (char === '$') refuse(next === '(' ? 'a command substitution' : 'a shell expansion');
-    if ((char === '<' || char === '>') && next === '(') refuse('a process substitution');
-    if (char === '(' || char === ')' || char === '{' || char === '}') refuse('a subshell or group');
+    if (char === '`') refuse('backtickSubstitution');
+    if (char === '$') refuse(next === '(' ? 'dollarSubstitution' : 'expansion');
+    if ((char === '<' || char === '>') && next === '(') refuse('processSubstitution');
+    if (char === '(') refuse('subshellOpen');
+    if (char === ')') refuse('subshellClose');
+    if (char === '{') refuse('braceGroupOpen');
+    if (char === '}') refuse('braceGroupClose');
 
     if (char === '&' && next === '&') {
       endSegment();
       i += 1;
       continue;
     }
-    if (char === '&') refuse('a background job');
+    if (char === '&') refuse('backgroundJob');
     if (char === '|' && next === '|') {
       endSegment();
       flush(false);
@@ -4781,7 +4879,7 @@ function shellCommands(source: string, where: string): ShellCommand[] {
     current += char;
   }
 
-  if (quote !== null) refuse('a quote that never closes');
+  if (quote !== null) refuse('unterminatedQuote');
   endSegment();
   flush(true);
   return out;
@@ -4875,13 +4973,25 @@ function runsPnpm(command: ParsedCommand, script: string): boolean {
  * The name has to be a key in `scripts` — `pnpm install --frozen-lockfile`
  * invokes no script — and it has to be in the *program's argument* position, not
  * merely somewhere in the text. That last clause is defect six.
+ *
+ * `scripts` is a parameter, defaulting to this repository's manifest, for the
+ * reason {@link unaccounted} is a named function: the flag clause below cannot
+ * be exercised against a manifest that has no script named like a flag, so a
+ * rule that only ever sees the real manifest is a rule its own input satisfies.
+ * Deleting `name.startsWith('-')` here was `tsc` exit 0 and the whole suite
+ * green. The argument is read by *does not read a pnpm flag as the script it
+ * happens to be named after — RULE W over pnpmScript* and by
+ * {@link runsPnpm}'s callers, which pass nothing and get the manifest.
  */
-function pnpmScript(command: ParsedCommand): string | undefined {
+function pnpmScript(
+  command: ParsedCommand,
+  scripts: Record<string, string> = PACKAGE.scripts,
+): string | undefined {
   if (command.program !== 'pnpm') return undefined;
   const at = command.args[0] === 'run' ? 1 : 0;
   const name = command.args[at];
   if (name === undefined || name.startsWith('-')) return undefined;
-  return Object.hasOwn(PACKAGE.scripts, name) ? name : undefined;
+  return Object.hasOwn(scripts, name) ? name : undefined;
 }
 
 /**
@@ -5854,7 +5964,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     const jobAction = jobUses === undefined ? undefined : refuseUses(where, line, jobUses, readWorkflows);
     if (jobAction !== undefined) actions.push(jobAction.uses);
     actionInputs.push(...refuseWith(at(line), jobAction, entry(job, 'with')));
-    refuseEnvOnUses(at(line), jobUses, entry(job, 'env'));
+    refuseEnvOnUses(at(line), 'job', jobUses, entry(job, 'env'));
     refuseActionInputEnv(at, entry(job, 'env'));
 
     // `secrets:` was the third key listed as known and read nowhere. `secrets:
@@ -5941,7 +6051,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       const stepAction = uses === undefined ? undefined : refuseUses(where, item.line, uses, readWorkflows);
       if (stepAction !== undefined) actions.push(stepAction.uses);
       actionInputs.push(...refuseWith(at(item.line), stepAction, entry(step, 'with')));
-      refuseEnvOnUses(at(item.line), uses, entry(step, 'env'));
+      refuseEnvOnUses(at(item.line), 'step', uses, entry(step, 'env'));
       refuseActionInputEnv(at, entry(step, 'env'));
       return { line: item.line, run };
     });
@@ -6075,8 +6185,15 @@ const THIRD_PARTY_ACTIONS: readonly ThirdPartyAction[] = [
  * are what make bytes a path, and a path is the other arm's business.
  */
 function isThirdPartyAction(target: string): boolean {
+  // `< 0`, not `<= 0`. The `<= 0` spelling that stood here was a branch nothing
+  // could notice: a target beginning `@` leaves `target.slice(0, 0).split('/')`
+  // as one empty segment, so the `segments.length < 2` guard below already
+  // refuses it, and reducing this to `< 0` was `tsc` exit 0 and the suite green.
+  // A guard whose deletion changes no verdict is not a guard; the leading-`@`
+  // shape is now decided by `singleSegment` and *is not a third-party action:
+  // an owner with no repository after it* has the row that says so.
   const split = target.indexOf('@');
-  if (split <= 0) return false;
+  if (split < 0) return false;
   const ref = target.slice(split + 1);
   if (ref === '' || ref.includes('@') || /\s/u.test(ref)) return false;
   const segments = target.slice(0, split).split('/');
@@ -6372,11 +6489,16 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
  * what only this function refuses is an **ordinary** key on a `uses:` step,
  * which is the second row of that case.
  */
-function refuseEnvOnUses(at: string, uses: string | undefined, node: YamlNode | undefined): void {
+function refuseEnvOnUses(
+  at: string,
+  scope: 'job' | 'step',
+  uses: string | undefined,
+  node: YamlNode | undefined,
+): void {
   if (node === undefined || uses === undefined) return;
   const keys = mappingOf(node)?.map(({ key }) => key) ?? [];
   throw new Error(
-    `${at} sets "env:" on a step whose work is "${uses}". GitHub hands a "with:" ` +
+    `${at} sets "env:" on a ${scope} whose work is "${uses}". GitHub hands a "with:" ` +
       'input to an action as the environment variable INPUT_<NAME>, so this is ' +
       'the key THIRD_PARTY_ACTIONS pins, spelled the other way' +
       (keys.length === 0 ? '' : `: ${keys.join(', ')}`) +
@@ -6665,3 +6787,590 @@ const VERIFY_CHAIN: readonly VerifyCommand[] = (() => {
   }
   return chainOf('verify', PACKAGE.scripts);
 })();
+
+/* -------------------------------------------------------------------------- */
+/* RULE W: the readers' branch lists, pinned the way the data lists are        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ### The seventh form of this file's governing class, and the fix for it
+ *
+ * Round six pinned a data list and left the reader's branch list unpinned.
+ * Round seven's sweep found the same shape one level down and in a different
+ * kind of reader: this file pinned every reader's OUTPUT — the totality
+ * equalities, the settings pin, the `uses:` arms — and left the REFUSALS of the
+ * two readers underneath (`parseWorkflowYaml`, `shellCommands`) and the
+ * classifiers beside them (`runnerClassOf`, `isThirdPartyAction`, `refuseUses`,
+ * `pnpmScript`, `chainOf`) asserted by nothing. Twenty-six structural branches
+ * deleted with `tsc` at exit 0 and the whole suite green.
+ *
+ * The tell was unchanged in shape: **a law whose universe is a filter it never
+ * asserts.** `parseWorkflowYaml`'s docblock enumerated nine refused constructs
+ * and five arms held them; `shellCommands`' docblock named four families and its
+ * table asserted five spellings drawn from three. In both cases the list in the
+ * comment was the branch list and the list in the test was a strict subset
+ * nobody compared them against.
+ *
+ * Every block below has the same three parts, which is the shape this file
+ * already built for `ROOT_FILES`, `WORKFLOW_FILES` and `SCRIPT_NAMES` and had
+ * never built for a reader:
+ *
+ * 1. the branch list as **data** — a record whose keys are the reader's
+ *    structural positions, which the reader indexes into, so the compiler
+ *    refuses a new branch that is not in it;
+ * 2. a table with **one synthetic input per key**, so deleting a branch reds a
+ *    row that names the position that stopped being read;
+ * 3. a **key-set equality** between (1) and (2), so a branch added with no input
+ *    beside it, or an input for a branch that no longer exists, is a red rather
+ *    than a silent subset.
+ *
+ * Part 3 is the part that makes it a class fix rather than twenty-six instance
+ * fixes: it is the assertion of the filter that the previous six rounds each
+ * left unasserted one level further down.
+ */
+const escapeForRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
+/**
+ * The refusal a reader must produce, matched where the message really sits, so
+ * that one construct's message cannot satisfy another's row by being a prefix
+ * of it. `refuses a subshell` and `refuses an unmatched subshell close` are two
+ * arms, and a substring match on the first is satisfied by the second.
+ */
+const refusalMatching = (message: string, follows: string): RegExp =>
+  new RegExp(`${escapeForRegExp(message)}${follows}`, 'u');
+
+/** One document per structural position of {@link parseWorkflowYaml}'s refusal wall. */
+const PARSER_REFUSAL_CASES: readonly {
+  readonly construct: ParserRefusal;
+  readonly document: readonly string[];
+}[] = [
+  { construct: 'documentStart', document: ['name: CI', '---', 'name: CD'] },
+  { construct: 'documentEnd', document: ['name: CI', '...'] },
+  { construct: 'directive', document: ['%YAML 1.2', 'name: CI'] },
+  { construct: 'tabIndent', document: ['jobs:', '\tprobe: x'] },
+  { construct: 'indentedDocument', document: ['  name: CI'] },
+  { construct: 'leftover', document: ['- a: 1', 'b: c'] },
+  { construct: 'valueFlowMapping', document: ['strategy: {matrix: {os: x}}'] },
+  { construct: 'anchor', document: ['name: &base CI'] },
+  { construct: 'alias', document: ['name: *base'] },
+  { construct: 'tag', document: ['name: !!str CI'] },
+  { construct: 'unclosedFlowSequence', document: ['branches: [main'] },
+  { construct: 'flowMappingInFlowSequence', document: ['include: [{os: x}]'] },
+  { construct: 'valueBackslash', document: ['name: "a\\b"'] },
+  { construct: 'valueUnclosedQuote', document: ['name: "CI'] },
+  { construct: 'textAfterValueQuote', document: ['name: "CI" and more'] },
+  { construct: 'overIndentedKey', document: ['name: CI', '  extra: x'] },
+  { construct: 'sequenceItemWhereKeyBelongs', document: ['name: CI', '- extra'] },
+  { construct: 'keyFlowMapping', document: ['steps:', '  - { run: pnpm test }'] },
+  { construct: 'keyUnclosedQuote', document: ['"name: CI'] },
+  { construct: 'keyBackslash', document: ['"na\\me": CI'] },
+  { construct: 'quotedScalarWhereKeyBelongs', document: ['"CI"'] },
+  { construct: 'unreadableKey', document: ['name CI'] },
+  { construct: 'duplicateKey', document: ['name: CI', 'name: CD'] },
+];
+
+/** One command line per structural position of {@link shellCommands}' refusal wall. */
+const SHELL_REFUSAL_CASES: readonly {
+  readonly construct: ShellRefusal;
+  readonly source: string;
+}[] = [
+  { construct: 'expansionInDoubleQuotes', source: 'echo "$HOME"' },
+  { construct: 'substitutionInDoubleQuotes', source: 'echo "`date`"' },
+  { construct: 'backtickSubstitution', source: 'echo `date`' },
+  { construct: 'dollarSubstitution', source: 'echo $(date)' },
+  { construct: 'expansion', source: 'echo $HOME' },
+  { construct: 'processSubstitution', source: 'diff <(a) b' },
+  { construct: 'subshellOpen', source: 'a && (b || c)' },
+  { construct: 'subshellClose', source: 'a b )' },
+  { construct: 'braceGroupOpen', source: 'a && { b ; }' },
+  { construct: 'braceGroupClose', source: 'a b }' },
+  { construct: 'backgroundJob', source: 'a & b' },
+  { construct: 'unterminatedQuote', source: 'echo "b' },
+];
+
+describe('the readers underneath are pinned by branch, not by paragraph — RULE W', () => {
+  const document = (...lines: readonly string[]): string => lines.join('\n');
+
+  it('every construct PARSER_REFUSALS names is one a document below really trips', () => {
+    // Part 3. Without this the table is a subset nobody compares against the
+    // reader, which is precisely what the nine-construct paragraph in
+    // `parseWorkflowYaml`'s docblock was for six rounds.
+    expect(
+      PARSER_REFUSAL_CASES.map(({ construct }) => construct).sort(),
+      'a branch of parseWorkflowYaml has no document that trips it, or a ' +
+        'document names a construct the reader no longer refuses. The refusal ' +
+        'wall IS the branch list: a row missing here is an arm anything can ' +
+        'delete with this suite green, which is what twenty-six of them were.',
+    ).toEqual(Object.keys(PARSER_REFUSALS).sort());
+  });
+
+  it.each(PARSER_REFUSAL_CASES)('refuses $construct — RULE W over PARSER_REFUSALS', ({ construct, document: lines }) => {
+    // The message is matched where it really sits — followed by the `.` that
+    // ends it or by the `:` that introduces its detail — so that no arm's row
+    // can be satisfied by a different arm firing.
+    expect(() => parseWorkflowYaml('probe.yml', document(...lines))).toThrow(
+      refusalMatching(PARSER_REFUSALS[construct], '[.:]'),
+    );
+  });
+
+  it('every construct SHELL_REFUSALS names is one a command line below really trips', () => {
+    expect(
+      SHELL_REFUSAL_CASES.map(({ construct }) => construct).sort(),
+      'an arm of shellCommands has no command line that trips it, or a line ' +
+        'names a construct the reader no longer refuses.',
+    ).toEqual(Object.keys(SHELL_REFUSALS).sort());
+  });
+
+  it.each(SHELL_REFUSAL_CASES)('refuses $construct — RULE W over SHELL_REFUSALS', ({ construct, source }) => {
+    expect(() => shellCommands(source, 'probe')).toThrow(
+      refusalMatching(SHELL_REFUSALS[construct], ','),
+    );
+  });
+
+  it('reads a quoted key written below its own key — the isKeyLine branch', () => {
+    // `isKeyLine` is the reader's own "is this line a key?" question, and its
+    // quoted arm could be replaced by `return false` with `tsc` at 0 and the
+    // whole suite green — even though a quoted key is defect four's headline.
+    // What it decides is the SHAPE below a key: with the arm, `"FOO": bar` is a
+    // mapping entry; without it, the same two lines fold into one plain scalar
+    // and the key vanishes into text.
+    expect(renderYaml(parseWorkflowYaml('probe.yml', document('env:', '  "FOO": bar')))).toBe(
+      '{env: {FOO: bar}}',
+    );
+  });
+
+  it('renders a block sequence as the sequence it is', () => {
+    // `renderYaml`'s sequence arm was held by the compiler and by nothing in
+    // the suite: no case ever handed it a sequence node, because flow sequences
+    // are kept as opaque scalars and the only block sequences this tree writes
+    // are `steps:` and `jobs:`, which are interpreted rather than pinned. It is
+    // live all the same — a `strategy: matrix: include:` written as a block
+    // sequence reaches it through `settingsOf` — so the arm going missing would
+    // have been a module-load crash on a document nobody had written yet.
+    expect(
+      settingsOf(
+        'probe job j',
+        mappingOf(
+          parseWorkflowYaml(
+            'probe.yml',
+            document(
+              'strategy:',
+              '  matrix:',
+              '    include:',
+              '      - os: ubuntu-latest',
+              '      - os: windows-latest',
+            ),
+          ),
+        ),
+      ),
+    ).toEqual([
+      'probe job j strategy: {matrix: {include: [{os: ubuntu-latest}, {os: windows-latest}]}}',
+    ]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the runner a job asks for, read as a class this guard can reason about      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What this guard knows about the machine a job asks for.
+ *
+ * One key per **arm** of {@link runnerClassOf}, for the reason
+ * {@link PARSER_REFUSALS} exists: the classifier used to be three `startsWith`
+ * tests written inline inside *every job that runs cargo can actually build the
+ * dependency graph*, and every synthetic workflow this file builds writes
+ * `runs-on: ubuntu-latest`. Its `windows` arm, its `macos` arm and its
+ * unrecognised arm therefore had exactly one input each — the real `ci.yml` —
+ * which is the input they were widened for. Dropping the `macos` disjunct,
+ * deleting the `expect.fail` arm, and collapsing the whole reader to
+ * `startsWith('ubuntu') ? 'ubuntu-latest' : 'windows-latest'` were each `tsc`
+ * exit 0 and the whole suite green.
+ *
+ * `windows` and `macos` are separate arms even though *this* rule treats them
+ * alike, and that is deliberate rather than tidy: a classifier that collapses
+ * two runners into one class is exactly what let `runs-on: macos-latest` be
+ * written on the job named "Windows — the platform this ships on" with nothing
+ * red. The collapse is now visible here, and the value itself is pinned by
+ * {@link CI_SETTINGS} rather than left to whatever this reader happens to
+ * decide about it.
+ *
+ * Read by {@link runnerClassOf}, by {@link cargoGraphFaults} and by *classifies
+ * $runsOn — RULE W over RUNNER_CLASSES*, and by nothing else.
+ */
+const RUNNER_CLASSES = {
+  ubuntu: 'a Linux runner, which has no webview of its own and needs the Tauri system packages',
+  windows: 'a Windows runner, which ships WebView2 in the image and has no apt',
+  macos: 'a macOS runner, which ships WebKit with the OS and has no apt',
+  unknown: 'a runner this guard has not been taught anything about',
+} as const;
+
+type RunnerClass = keyof typeof RUNNER_CLASSES;
+
+/** Which class of machine a `runs-on:` names, or `unknown`. */
+function runnerClassOf(runsOn: string): RunnerClass {
+  if (runsOn.startsWith('ubuntu')) return 'ubuntu';
+  if (runsOn.startsWith('windows')) return 'windows';
+  if (runsOn.startsWith('macos')) return 'macos';
+  return 'unknown';
+}
+
+/**
+ * One message per job that runs `cargo` on a machine that cannot build the
+ * dependency graph it needs, or that installs packages that machine has no
+ * package manager for.
+ *
+ * A named function taking its jobs as an argument, for the reason
+ * {@link unaccounted} is one: `ci.yml` satisfies this rule by construction, so a
+ * rule written inline in the case would only ever be handed input that
+ * satisfies it — which is what it was, and is why three of its four arms were
+ * deletable with the suite green.
+ *
+ * Read by *every job that runs cargo can actually build the dependency graph*
+ * and by *reports $situation — RULE W over cargoGraphFaults*, and by nothing
+ * else.
+ */
+function cargoGraphFaults(jobs: readonly WorkflowJob[]): string[] {
+  const out: string[] = [];
+  for (const job of jobs) {
+    const name = `${job.file}:${job.name}`;
+    const commands = job.commands.map(({ text }) => text);
+    if (!commands.some((command) => parseCommand(command).program === 'cargo')) continue;
+    const installsLinuxPackages = commands.some((command) => command.includes('apt-get'));
+    const runner = runnerClassOf(job.runsOn);
+    if (runner === 'ubuntu') {
+      if (!commands.some((command) => command.includes('libwebkit2gtk-4.1-dev'))) {
+        out.push(
+          `CI job "${name}" runs cargo on Linux but never installs the Tauri ` +
+            'system dependencies. It will fail in a build script before linting ' +
+            'or testing anything. Copy the "Install Tauri system dependencies" step.',
+        );
+      }
+      continue;
+    }
+    if (runner === 'unknown') {
+      out.push(
+        `CI job "${name}" runs cargo on "${job.runsOn}", which is ` +
+          `${RUNNER_CLASSES.unknown}. Teach it what that runner provides before ` +
+          'trusting a green run from it.',
+      );
+      continue;
+    }
+    // Windows and macOS. The absence of the Linux step is asserted as well:
+    // copying it here would fail on a runner with no apt, so its absence should
+    // read as a decision rather than as something nobody got round to.
+    if (installsLinuxPackages) {
+      out.push(
+        `CI job "${name}" runs on ${job.runsOn} — ${RUNNER_CLASSES[runner]} — and ` +
+          'installs Linux packages. The webview ships with the OS there; apt-get ' +
+          'does not exist on it.',
+      );
+    }
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/* RULE W, continued: the classifiers beside the two readers                   */
+/* -------------------------------------------------------------------------- */
+
+/** One `runs-on:` value per arm of {@link runnerClassOf}. */
+const RUNNER_CLASS_CASES: readonly { readonly runsOn: string; readonly expected: RunnerClass }[] = [
+  { runsOn: 'ubuntu-latest', expected: 'ubuntu' },
+  { runsOn: 'ubuntu-22.04', expected: 'ubuntu' },
+  { runsOn: 'windows-latest', expected: 'windows' },
+  { runsOn: 'windows-2022', expected: 'windows' },
+  { runsOn: 'macos-latest', expected: 'macos' },
+  { runsOn: 'macos-14', expected: 'macos' },
+  { runsOn: 'self-hosted', expected: 'unknown' },
+  { runsOn: '[self-hosted, linux]', expected: 'unknown' },
+  { runsOn: '', expected: 'unknown' },
+];
+
+/** One hand-built job per arm of {@link cargoGraphFaults}. */
+const CARGO_GRAPH_CASES: readonly {
+  readonly situation: string;
+  readonly runsOn: string;
+  readonly commands: readonly string[];
+  readonly fault: string | null;
+}[] = [
+  {
+    situation: 'a Linux job that installs the packages',
+    runsOn: 'ubuntu-latest',
+    commands: ['sudo apt-get install -y libwebkit2gtk-4.1-dev', 'cargo build --workspace --locked'],
+    fault: null,
+  },
+  {
+    situation: 'a Linux job that does not',
+    runsOn: 'ubuntu-latest',
+    commands: ['cargo build --workspace --locked'],
+    fault: 'never installs the Tauri system dependencies',
+  },
+  {
+    situation: 'a Windows job with no apt step',
+    runsOn: 'windows-latest',
+    commands: ['cargo build --workspace --locked'],
+    fault: null,
+  },
+  {
+    situation: 'a Windows job that installs Linux packages',
+    runsOn: 'windows-latest',
+    commands: ['sudo apt-get update', 'cargo build --workspace --locked'],
+    fault: 'installs Linux packages',
+  },
+  {
+    situation: 'a macOS job with no apt step',
+    runsOn: 'macos-latest',
+    commands: ['cargo build --workspace --locked'],
+    fault: null,
+  },
+  {
+    situation: 'a macOS job that installs Linux packages',
+    runsOn: 'macos-latest',
+    commands: ['sudo apt-get update', 'cargo build --workspace --locked'],
+    fault: 'installs Linux packages',
+  },
+  {
+    situation: 'a job on a runner this guard has never heard of',
+    runsOn: 'self-hosted',
+    commands: ['cargo build --workspace --locked'],
+    fault: 'Teach it what that runner provides',
+  },
+  {
+    situation: 'a job with no runs-on at all',
+    runsOn: '',
+    commands: ['cargo build --workspace --locked'],
+    fault: 'Teach it what that runner provides',
+  },
+  {
+    situation: 'a job that only mentions cargo',
+    runsOn: 'self-hosted',
+    commands: ['echo cargo build'],
+    fault: null,
+  },
+];
+
+/**
+ * One target per guard of {@link isThirdPartyAction}, and the verdict that guard
+ * is responsible for.
+ *
+ * Two of its guards were held by nothing: `segments.length < 2` deleted admitted
+ * `owner@ref` as an action in another repository, and the leading-`@` clause
+ * decided nothing at all. Both ran at `tsc` exit 0 with the whole suite green.
+ */
+const THIRD_PARTY_SHAPE_CASES: readonly {
+  readonly guard: string;
+  readonly target: string;
+  readonly shaped: boolean;
+}[] = [
+  { guard: 'the control — the shape a pinned action really has', target: 'actions/checkout@v4', shaped: true },
+  { guard: 'the control — a deeper path inside an action repository', target: 'owner/repo/sub/path@v1.2.3', shaped: true },
+  { guard: 'noRef: a target with no @ref at all', target: 'actions/checkout', shaped: false },
+  { guard: 'emptyRef: a target whose ref is empty', target: 'actions/checkout@', shaped: false },
+  { guard: 'repeatedRef: a target carrying a second @', target: 'actions/checkout@v4@v5', shaped: false },
+  { guard: 'whitespaceRef: a ref with whitespace in it', target: 'actions/checkout@v4 v5', shaped: false },
+  { guard: 'singleSegment: an owner with no repository after it', target: 'checkout@v4', shaped: false },
+  { guard: 'singleSegment: an owner with no repository after it', target: '@v4', shaped: false },
+  { guard: 'ownerShape: an owner that is not a GitHub account name', target: '-bad/checkout@v4', shaped: false },
+  { guard: 'dotSegment: a path segment that stands still', target: 'owner/./checkout@v4', shaped: false },
+  { guard: 'dotSegment: a path segment that climbs', target: 'owner/../checkout@v4', shaped: false },
+  { guard: 'segmentShape: a path segment a repository path cannot hold', target: 'owner/che kout@v4', shaped: false },
+];
+
+/**
+ * One target per arm of {@link refuseUses}, and what that arm does with it.
+ *
+ * `refuseUses`' docblock calls the whole function “one question … written as a
+ * default refusal with two allow-arms”, and the empty-target arm was asserted by
+ * nothing: deleting it was `tsc` exit 0 and the whole suite green.
+ */
+const USES_ARM_CASES: readonly {
+  readonly arm: string;
+  readonly target: string;
+  /** The refusal this arm produces, or `null` when the arm admits the target. */
+  readonly refusal: string | null;
+}[] = [
+  { arm: 'empty', target: '', refusal: 'has a "uses:" with no target this reader can read' },
+  { arm: 'whitespacePadded', target: ' actions/checkout@v4', refusal: 'padded with whitespace' },
+  { arm: 'expression', target: '${{ env.PROBE_ACTION }}', refusal: 'whose target is a GitHub expression' },
+  {
+    arm: 'remoteReusableWorkflow',
+    target: 'other-org/shared-ci/.github/workflows/gates.yml@main',
+    refusal: 'a reusable workflow in another repository',
+  },
+  {
+    arm: 'unpinnedThirdParty',
+    target: 'some-org/some-action@v1',
+    refusal: 'that this guard has never been told about',
+  },
+  { arm: 'pinnedThirdParty', target: 'actions/checkout@v4', refusal: null },
+  { arm: 'localPlainPath', target: './.github/workflows/probe.yml', refusal: null },
+  {
+    arm: 'localNonPlainPath',
+    target: './.github/workflows/./probe.yml',
+    refusal: 'not written as the plain path to it',
+  },
+  {
+    arm: 'unplaceable',
+    target: '.github/actions/probe-composite',
+    refusal: 'has a "uses:" this reader cannot place',
+  },
+];
+
+describe('the classifiers beside those readers are pinned by branch too — RULE W', () => {
+  const jobWith = (runsOn: string, commands: readonly string[]): WorkflowJob => ({
+    file: 'probe.yml',
+    name: 'probe',
+    runsOn,
+    steps: [],
+    commands: commands.map((text) => ({ text, gating: true, reached: true })),
+  });
+
+  it('every class RUNNER_CLASSES names is one a runs-on below really produces', () => {
+    expect(
+      [...new Set(RUNNER_CLASS_CASES.map(({ expected }) => expected))].sort(),
+      'an arm of runnerClassOf has no runs-on value that reaches it, or a row ' +
+        'names a class the reader can no longer return.',
+    ).toEqual(Object.keys(RUNNER_CLASSES).sort());
+  });
+
+  it.each(RUNNER_CLASS_CASES)('classifies $runsOn — RULE W over RUNNER_CLASSES', ({ runsOn, expected }) => {
+    expect(runnerClassOf(runsOn)).toBe(expected);
+  });
+
+  it.each(CARGO_GRAPH_CASES)('reports $situation — RULE W over cargoGraphFaults', ({ runsOn, commands, fault }) => {
+    const faults = cargoGraphFaults([jobWith(runsOn, commands)]);
+    if (fault === null) {
+      expect(faults).toEqual([]);
+      return;
+    }
+    expect(faults).toHaveLength(1);
+    expect(faults[0]).toContain(fault);
+  });
+
+  it('every guard THIRD_PARTY_SHAPE_CASES names decides at least one target', () => {
+    // The enumerated list, so a guard added to isThirdPartyAction with no target
+    // beside it is a red rather than a silent subset.
+    expect([...new Set(THIRD_PARTY_SHAPE_CASES.map(({ guard }) => guard.split(':')[0]))].sort()).toEqual([
+      'dotSegment',
+      'emptyRef',
+      'noRef',
+      'ownerShape',
+      'repeatedRef',
+      'segmentShape',
+      'singleSegment',
+      'the control — a deeper path inside an action repository',
+      'the control — the shape a pinned action really has',
+      'whitespaceRef',
+    ]);
+  });
+
+  it.each(THIRD_PARTY_SHAPE_CASES)('$guard — RULE W over isThirdPartyAction', ({ target, shaped }) => {
+    expect(isThirdPartyAction(target)).toBe(shaped);
+  });
+
+  it('every arm USES_ARM_CASES names is one refuseUses still has', () => {
+    expect(USES_ARM_CASES.map(({ arm }) => arm).sort()).toEqual([
+      'empty',
+      'expression',
+      'localNonPlainPath',
+      'localPlainPath',
+      'pinnedThirdParty',
+      'remoteReusableWorkflow',
+      'unpinnedThirdParty',
+      'unplaceable',
+      'whitespacePadded',
+    ]);
+  });
+
+  it.each(USES_ARM_CASES)('takes the $arm arm — RULE W over refuseUses', ({ arm, target, refusal }) => {
+    const read: ReadonlySet<string> = new Set(['.github/workflows/probe.yml']);
+    const call = (): ThirdPartyAction | undefined =>
+      refuseUses('.github/workflows/probe.yml', 0, target, read);
+    if (refusal !== null) {
+      expect(call).toThrow(refusal);
+      return;
+    }
+    // The two admitting arms return different things, and which one answered is
+    // the fact the row is about: the pinned arm hands back the pin the `with:`
+    // check is then bounded by, and the local arm hands back nothing at all.
+    expect(call()?.uses).toBe(arm === 'pinnedThirdParty' ? target : undefined);
+  });
+
+  it('does not read a pnpm flag as the script it happens to be named after — RULE W over pnpmScript', () => {
+    // The flag clause is stated in `pnpmScript`'s docblock — "it has to be in the
+    // *program's argument* position" — and was asserted by nothing, because the
+    // real manifest has no script named like a flag and the real manifest was
+    // the only input the function ever got.
+    const scripts = { '--filter': 'vitest run', test: 'vitest run' };
+    expect(pnpmScript(parseCommand('pnpm --filter test'), scripts)).toBeUndefined();
+    expect(pnpmScript(parseCommand('pnpm test'), scripts)).toBe('test');
+    expect(pnpmScript(parseCommand('pnpm run test'), scripts)).toBe('test');
+  });
+
+  it('follows a pnpm run <script> edge the way it follows pnpm <script> — RULE W over chainOf', () => {
+    // One referent, two sites, and only one of them was guarded. The line
+    // `const at = command.args[0] === 'run' ? 1 : 0;` appears byte-identically in
+    // `pnpmScript` and in `chainOf`. Replacing it with `const at = 0;` in
+    // `pnpmScript` reds twice; the copy in `chainOf` — the one that decides
+    // whether the walk FOLLOWS the edge, and so whether `verify` is expanded at
+    // all — was `tsc` exit 0 and the whole suite green. A `verify` written wholly
+    // as `pnpm run <script>` would have expanded to nothing, and every gate row
+    // would have been satisfied by a chain that was never walked.
+    const scripts = { verify: 'pnpm run inner', inner: 'pnpm typecheck' };
+    expect(chainOf('verify', scripts).map((entry) => entry.command.text)).toEqual([
+      'pnpm run inner',
+      'pnpm typecheck',
+    ]);
+  });
+
+  it('does not follow a pnpm flag into a script of that name — RULE W over chainOf', () => {
+    const scripts = { verify: 'pnpm --filter inner', '--filter': 'pnpm typecheck' };
+    expect(chainOf('verify', scripts).map((entry) => entry.command.text)).toEqual([
+      'pnpm --filter inner',
+    ]);
+  });
+
+  it('refuses an env: beside a uses: at BOTH scopes — RULE W over refuseEnvOnUses', () => {
+    // Two wirings, one law, and only the step wiring was asserted: the
+    // job-level `refuseEnvOnUses(...)` call site could be deleted with the whole
+    // suite green, because every assertion about the function went through the
+    // step site one screen below it. The scope is now a parameter and the
+    // message names it, so the two wirings are separately visible.
+    const read: ReadonlySet<string> = new Set(['.github/workflows/probe.yml']);
+    const jobLevel = [
+      'jobs:',
+      '  probe:',
+      '    uses: ./.github/workflows/probe.yml',
+      '    env:',
+      '      INPUT_TOKEN: x',
+    ].join('\n');
+    expect(() => modelOf({ file: 'probe.yml', text: jobLevel }, read)).toThrow(
+      'sets "env:" on a job whose work is "./.github/workflows/probe.yml"',
+    );
+
+    const stepLevel = [
+      'jobs:',
+      '  probe:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - uses: actions/checkout@v4',
+      '        env:',
+      '          SOMETHING: x',
+    ].join('\n');
+    expect(() => modelOf({ file: 'probe.yml', text: stepLevel }, read)).toThrow(
+      'sets "env:" on a step whose work is "actions/checkout@v4"',
+    );
+  });
+
+  it('refuses a steps: that is not a sequence — RULE W over modelOf', () => {
+    // Held by `tsc` and by nothing in the suite: deleting the refusal left the
+    // whole file green and turned the named failure into an unhandled TypeError
+    // on `stepsNode.items.map`.
+    const read: ReadonlySet<string> = new Set(['.github/workflows/probe.yml']);
+    const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps: pnpm test'].join('\n');
+    expect(() => modelOf({ file: 'probe.yml', text }, read)).toThrow(
+      'has a "steps:" that is not a sequence this reader can walk',
+    );
+  });
+});

@@ -313,7 +313,9 @@ describe('the endpoint list', () => {
     // The keyless branch of the credential sentence. It is the one fact on this
     // screen that is not on the screen behind it, so it is the reason the dialog
     // exists at all — and until this assertion existed it was a string nothing
-    // read: garbling it left the whole suite green.
+    // read: the round-3 critic replaced it with garbage and the whole suite
+    // stayed green. Garbling both branches now gives 2 failed | 52 passed (54),
+    // exit 1, reproduced twice.
     expect(dialog).toHaveAccessibleDescription(/No key is stored for it\./u);
 
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -326,9 +328,12 @@ describe('the endpoint list', () => {
 
   it('takes Escape as the answer no, and destroys nothing', async () => {
     // The dialog's own `onKeyDown` handles this; `ModalSurface` has no Escape
-    // branch of its own (`grep -n Escape src/components/ModalSurface.tsx` is
-    // empty). So without this test the branch is a write nothing reads —
-    // measured, twice: disabling it left five test files at 59 passed, exit 0.
+    // branch of its own (`grep -n Escape src/components/ModalSurface.tsx`
+    // returns nothing). So without this test the branch was a write nothing
+    // read — the round-3 critic disabled it and the suite stayed green. With
+    // this test, changing the compared key to one no keyboard sends reddens it
+    // and nothing else: 1 failed | 56 passed (57) across the five files that
+    // touch this dialog, exit 1, reproduced twice.
     const user = userEvent.setup({ delay: null });
     const adapter = new BrowserAdapter();
     mount(adapter);
@@ -379,9 +384,13 @@ describe('the endpoint list', () => {
     // The property this dialog was added for, and the one thing nothing in the
     // tree guarded: with two rows the user called one thing, the question must
     // name — and the confirm must destroy — the row whose button was pressed.
-    // Measured before this test existed: changing `onConfirm` to remove
-    // `state.providers[0].id` instead of the clicked target left the full suite
-    // at 2427 passed, exit 0. So the click below is deliberately the *second*
+    // Before this test existed the round-3 critic made `onConfirm` remove
+    // `state.providers[0].id` instead of the clicked target and the full suite
+    // stayed green. Re-run against this test: `vitest run src/app
+    // src/features/models` gives 1 failed | 201 passed (202), exit 1,
+    // `expected [ 'http://127.0.0.1:8080/v1' ] to deeply equal
+    // [ 'http://127.0.0.1:8081/v1' ]`, and this is the only test that moves.
+    // So the click below is deliberately the *second*
     // rendered row, and both the address it names and the address that survives
     // are read off the DOM rather than off the seed — a test that assumed an
     // order would start agreeing with that mutation the day the order changed.

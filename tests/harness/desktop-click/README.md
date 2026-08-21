@@ -347,13 +347,72 @@ ladder tier: it is the delivery half of `reaches-user`, and the other half is an
 installed bundle this harness knows nothing about. `entails.doesNot` says so in
 every result.
 
+### The frame is the session, and once it was not
+
+The first version of that grade saw only the steps of the command that called
+it, while the sentence it printed — `entails.does` — made a claim about the run:
+"no CDP call on this run did anything a user would have had to do". A third
+agent falsified it with two documented commands at their default flags:
+
+```
+vela-drive type --via cdp --value x --selector #q   # --focus cdp is its default
+vela-drive type --via os  --value y --selector #q   # --focus require is its default
+```
+
+The first focuses the field over CDP and grades itself honestly at
+`dev-clicked`. The second finds the field focused, so the refusal does not fire,
+and grades `os-input-unsubstituted` — the strongest thing this harness says —
+about a sequence whose precondition CDP manufactured one command earlier. The
+class is not focus: a guard whose frame is narrower than the claim its output is
+quoted for.
+
+So every command that attaches now writes what it did into a **run ledger** kept
+inside the session file, and the grade is composed over the whole session:
+
+- `provenance.ladderCeiling`, `substituted` and `substitutions` are the RUN
+  answer. A CDP act in any earlier command caps this one, and each substitution
+  names the command and sequence number it came from.
+- `provenance.command.*` is the narrower per-command answer. It is kept, because
+  it is true and useful — it is simply not the headline any more.
+- A run that cannot be **established** grades `dev-clicked` with
+  `reason: "earlier-commands-not-accounted-for"`, which is a different answer
+  from "CDP was caught". That happens when a command attached and never
+  declared what it did (killed part-way), or when the session carries no ledger
+  this build can read. Silence is not innocence.
+- `eval` is now graded, at the maximum an arbitrary expression could be: an act
+  that moved focus. It used to be a CDP channel that entered no grade at all.
+- `status` prints the run so far, including `focusOrigin`.
+
+The ledger records **what this harness did**. A second CDP client on the port, or
+a hand on the real keyboard, is outside it — `run-ledger.mjs` says so in its
+header, and `entails.does` says so in every clean result. Two smaller things it
+does do: the run is re-read from disk at the moment it is used rather than
+snapshotted, so a command from another `vela-drive` process that ran *during*
+this one shows up as `concurrent` and caps it; and sequence numbers are
+consecutive by construction, so an entry cut out of the middle of the ledger is
+reported as an unreadable ledger rather than as a shorter run. An entry cut off
+the **end** is not detectable, and `run-ledger.mjs` names the measurement that
+would close the whole class — a `focusin` counter compared against what the run
+accounts for — as something it does **not** implement.
+
 Two consequences you will meet:
 
-- `type --via os` **refuses to focus the target for you.** Focus must already be
-  on it, put there by a real `click --via os` or a real `key --via os --key Tab`
-  — which is what a user does and what works with no CDP. `--focus cdp` opts
-  back in and reports `ladderCeiling: "dev-clicked"` with `cdp.focusStored` in
-  `substitutions`.
+- `type --via os` **refuses to focus the target for you**, and also refuses when
+  the last step this session recorded that could have moved focus was a CDP act
+  — naming that step and the command it was in. What it enforces, exactly: the
+  target is `document.activeElement`, AND `lastFocusMove` over the session's
+  ledger is either a step `KNOWN_STEPS` marks `userEquivalent` — one a user
+  could have produced themselves, which today means `os.sendInputMouse`,
+  `os.sendInputKeyboard` — or nothing at all (nothing meaning the run has never
+  moved focus, so it is where the application itself put it, which is what a
+  user finds on launch). Note what that excludes: `os.postMessage` is spelled
+  `os.` and is **not** user-equivalent, because nobody posts a
+  `WM_LBUTTONDOWN` to a child window they looked up by handle — so a
+  `click --via message` cannot supply the focus either. That distinction was a
+  hole in the first draft of this fix, found by attacking it. The gate cannot
+  prove causation — it names the last recorded step that *could* have been the
+  one. `--focus cdp` opts back in and reports `ladderCeiling: "dev-clicked"`
+  with `cdp.focusStored` in `substitutions`.
 - `type --via os --clear` sends **Ctrl+A then Backspace** through the same
   `SendInput` call, not a CDP `activeElement.select()`. It is not identical:
   `select()` is defined on input and textarea, whereas Ctrl+A goes to whatever

@@ -578,7 +578,7 @@ describe('typing has two routes, and the silent one is never the default', () =>
     // The check must come before `attach`, or a failure leaves a half-typed
     // field for the next command to read as evidence.
     const check = typeCommand.indexOf('unmappableCharacters(text)');
-    const attach = typeCommand.indexOf('await attach(session)');
+    const attach = typeCommand.indexOf('await attach(session,');
     expect(check, 'no pre-flight check on the string to be typed').toBeGreaterThan(-1);
     expect(attach).toBeGreaterThan(-1);
     expect(check).toBeLessThan(attach);

@@ -86,6 +86,14 @@ import { BOOTSTRAP, literal } from './page.mjs';
 import { NAMED_KEYS, keySpecFor, unmappableCharacters } from './keys.mjs';
 import { describeWait, gradeMount, waitForRenderer } from './mount-grade.mjs';
 import { gradeInputProvenance } from './input-provenance.mjs';
+import {
+  LEDGER_KEY,
+  declareEntry,
+  lastFocusMove,
+  markUndeclared,
+  openEntry,
+  priorTo,
+} from './run-ledger.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -160,6 +168,22 @@ function clearSession() {
   if (existsSync(SESSION_FILE)) rmSync(SESSION_FILE, { force: true });
 }
 
+/**
+ * The session as a command reports it: everything except the run ledger.
+ *
+ * The ledger is left out because the reporting command's own entry is still
+ * `open` at the moment the payload is serialised — it is sealed in `main`'s
+ * `finally`, after stdout — so printing it inline would show every command
+ * describing itself as unaccounted for. `status` reports the run instead, as of
+ * before its own entry, which is the frame that actually answers "what can a
+ * later command still claim".
+ */
+function sessionForReport(session) {
+  if (session === null || session === undefined) return session;
+  const { [LEDGER_KEY]: _ledger, ...rest } = session;
+  return rest;
+}
+
 async function requireSession() {
   const session = readSession();
   if (!session) {
@@ -180,21 +204,90 @@ async function requireSession() {
 }
 
 /**
+ * The command currently attached to the session, so `main` can close its ledger
+ * entry whether the command returned, threw, or was killed part-way.
+ *
+ * `steps` is the command's own live array — the same object it later hands to
+ * `gradeInputProvenance` — so what the ledger records and what was graded
+ * cannot diverge. `null` means the command attached without declaring one,
+ * which is recorded as a hole rather than as nothing; see `run-ledger.mjs`.
+ */
+let ATTACHED = null;
+
+/**
  * Connects to the window the session recorded, after re-proving the port still
  * belongs to it. The proof is repeated on every command, not just on `up`,
  * because the failure it guards against — a second `vela.exe` appearing and the
  * port ending up somewhere else — can happen between two commands.
+ *
+ * It also opens this command's ledger entry and reads back what the run did
+ * before it. Both live here rather than in each command for the same reason
+ * `cdp.bootstrap` is pushed here: this function is what evaluates `BOOTSTRAP`,
+ * so this function is what declares it, and a command cannot reach the page
+ * without going through the accounting.
+ *
+ * @param {object} session
+ * @param {string} command  the ledger label for this run of this command.
+ * @param {Array<{name:string, detail?:object}>|null} steps  the command's live step array.
  */
-async function attach(session) {
+async function attach(session, command, steps = null) {
   const ownership = await assertPortBelongsTo(session.port, session.pid);
   const targets = await cdpHttp(session.port, '/json/list');
   const page = pickPage(targets);
   if (!page) {
     throw new HarnessError(EXIT.FAILED, `no page target on port ${session.port}`, { targets });
   }
+  // Opened BEFORE the first CDP call, so a command killed between here and its
+  // return leaves a visible hole rather than none.
+  const seq = openEntry(session, command);
+  writeSession(session);
+  ATTACHED = { pid: session.pid, seq, steps };
+
   const cdp = await CdpSession.connect(page.webSocketDebuggerUrl);
+  if (steps !== null) steps.push({ name: 'cdp.bootstrap' });
   await cdp.evaluate(BOOTSTRAP);
-  return { cdp, page, ownership };
+  return { cdp, page, ownership, seq };
+}
+
+/**
+ * What the run had done, as of NOW rather than as of `attach`.
+ *
+ * Re-read from disk on every call, deliberately. A second vela-drive process
+ * can open or declare an entry while this command is running, and a command
+ * that ran DURING this one is exactly as unaccountable as one that never
+ * declared — `priorTo` reports it as `concurrent` and the grade caps on it.
+ * Taking one snapshot at attach time would make that invisible, which is the
+ * same mistake one frame smaller.
+ */
+function runContext(session, seq) {
+  const fresh = readSession();
+  return priorTo(fresh !== null && fresh.pid === session.pid ? fresh : session, seq);
+}
+
+/**
+ * Closes the open ledger entry. Called from `main`'s `finally`, so the entry is
+ * sealed on the error path too — a command that threw still did whatever CDP
+ * calls it had made by then, and a later command has to be able to see them.
+ *
+ * The session is re-read rather than reused: `down` deletes it, and writing a
+ * ledger entry into a file that command just removed would resurrect a dead
+ * session.
+ */
+function closeLedgerEntry() {
+  const attached = ATTACHED;
+  ATTACHED = null;
+  if (attached === null) return;
+  try {
+    const session = readSession();
+    if (session === null || session.pid !== attached.pid) return;
+    if (attached.steps === null) markUndeclared(session, attached.seq);
+    else declareEntry(session, attached.seq, attached.steps);
+    writeSession(session);
+  } catch {
+    // The ledger is evidence, not a lock. Failing to write it must not change
+    // the exit code the command earned — and the entry stays `open`, which is
+    // the fail-closed direction: the next command sees a hole and caps itself.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -625,6 +718,14 @@ commands.up = async (flags) => {
     vite,
     startedAt: new Date().toISOString(),
   };
+  // `up` reaches the page without going through `attach`, so it opens and
+  // declares its own ledger entry. Its steps are an instrument and a read: it
+  // defines `window.__velaHarness` and polls `mountReport()`. Neither is an
+  // act, so a run that has only had `up` in it starts clean — which is the
+  // state the whole grade is relative to.
+  const upSteps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.mountReport' }];
+  const upSeq = openEntry(session, 'up');
+  ATTACHED = { pid: session.pid, seq: upSeq, steps: upSteps };
   writeSession(session);
 
   const cdp = await CdpSession.connect(endpoint.target.webSocketDebuggerUrl);
@@ -655,7 +756,7 @@ commands.up = async (flags) => {
   cdp.close();
 
   const payload = {
-    session,
+    session: sessionForReport(session),
     build: buildReport,
     version: endpoint.version,
     target: {
@@ -711,7 +812,9 @@ commands.up = async (flags) => {
 
 commands.status = async () => {
   const session = await requireSession();
-  const { cdp, page, ownership } = await attach(session);
+  const steps = [];
+  const { cdp, page, ownership, seq } = await attach(session, 'status', steps);
+  steps.push({ name: 'cdp.mountReport' });
   const report = await cdp.evaluate('window.__velaHarness.mountReport()');
   const version = await cdpHttp(session.port, '/json/version');
   cdp.close();
@@ -719,8 +822,24 @@ commands.status = async () => {
   // a raw mount report with no verdict at all, which meant three commands
   // showed the same object and only one of them said what it meant.
   const grade = gradeMount(report, { acceptedBecause: null, targetUrl: page.url ?? null });
+  const runSoFar = runContext(session, seq);
   return {
-    session,
+    session: sessionForReport(session),
+    // What this session has already done, and therefore what a later
+    // `--via os` command can still claim. `focusOrigin` is null when the run
+    // has not moved focus at all, in which case focus is wherever the
+    // application itself put it.
+    run: {
+      known: runSoFar.known,
+      unknownBecause: runSoFar.unknownBecause,
+      commands: runSoFar.entries.map((entry) => ({
+        seq: entry.seq,
+        command: entry.command,
+        steps: entry.steps,
+      })),
+      unaccounted: runSoFar.unaccounted,
+      focusOrigin: lastFocusMove(runSoFar),
+    },
     ownership,
     version,
     target: { url: page.url, title: page.title },
@@ -732,7 +851,9 @@ commands.status = async () => {
 
 commands.mount = async () => {
   const session = await requireSession();
-  const { cdp, page } = await attach(session);
+  const steps = [];
+  const { cdp, page } = await attach(session, 'mount', steps);
+  steps.push({ name: 'cdp.mountReport' });
   const report = await cdp.evaluate('window.__velaHarness.mountReport()');
   cdp.close();
   // The verdict used to be `rootPresent && rootDescendants > 0 && bodyTextChars
@@ -753,9 +874,11 @@ commands.mount = async () => {
 
 commands.read = async (flags) => {
   const session = await requireSession();
-  const { cdp } = await attach(session);
+  const steps = [];
+  const { cdp } = await attach(session, 'read', steps);
   const selector = flags.selector === undefined ? null : String(flags.selector);
   const limit = flagNumber(flags, 'limit', 0);
+  steps.push({ name: 'cdp.visibleText' });
   const lines = await cdp.evaluate(
     `window.__velaHarness.visibleText(${literal(selector)}, ${literal(limit || null)})`,
   );
@@ -772,7 +895,9 @@ commands.read = async (flags) => {
 commands.find = async (flags) => {
   const session = await requireSession();
   const query = queryFrom(flags);
-  const { cdp } = await attach(session);
+  const steps = [];
+  const { cdp } = await attach(session, 'find', steps);
+  steps.push({ name: 'cdp.resolve' });
   const result = await resolveQuery(cdp, query);
   cdp.close();
   const payload = { found: result.count > 0, query, count: result.count, matches: result.matches };
@@ -806,8 +931,9 @@ commands.click = async (flags) => {
   const settle = flagNumber(flags, 'settle', 400);
   const digestSelector = flags.watch === undefined ? null : String(flags.watch);
 
-  const { cdp } = await attach(session);
-  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.resolve' }];
+  const steps = [];
+  const { cdp, seq } = await attach(session, 'click', steps);
+  steps.push({ name: 'cdp.resolve' });
   const result = await resolveQuery(cdp, query);
   let index;
   try {
@@ -834,7 +960,6 @@ commands.click = async (flags) => {
 
   steps.push({ name: 'cdp.digest' });
   const before = await cdp.evaluate(`window.__velaHarness.digest(${literal(digestSelector)})`);
-  const point = await cdp.evaluate(`window.__velaHarness.pointFor(${index})`);
   // `pointFor` calls scrollIntoView on the way to computing the screen point.
   // Whether that was an act or a measurement is not a property of the call, it
   // is a property of whether anything moved — so the element's rect is compared
@@ -842,10 +967,16 @@ commands.click = async (flags) => {
   // rather than assumed either way. An off-screen target means the harness
   // scrolled the app for itself, and this run cannot grade above dev-clicked
   // however the buttons were delivered.
-  steps.push({
-    name: point?.scrolled ? 'cdp.pointFor.scroll' : 'cdp.pointFor.measure',
-    detail: { scrolled: point?.scrolled ?? null, scrollDelta: point?.scrollDelta ?? null },
-  });
+  //
+  // The step is declared BEFORE the call, at the worse of the two names, and
+  // downgraded afterwards on the measurement. Declaring it after would drop a
+  // scroll that really happened out of the ledger if the evaluate threw between
+  // the two lines; declaring first and correcting on evidence can only over-cap.
+  const pointStep = { name: 'cdp.pointFor.scroll', detail: { scrolled: null, scrollDelta: null } };
+  steps.push(pointStep);
+  const point = await cdp.evaluate(`window.__velaHarness.pointFor(${index})`);
+  if (point?.scrolled !== true) pointStep.name = 'cdp.pointFor.measure';
+  pointStep.detail = { scrolled: point?.scrolled ?? null, scrollDelta: point?.scrollDelta ?? null };
   steps.push({ name: 'cdp.armPointerRecorder' });
   await cdp.evaluate('window.__velaHarness.armPointerRecorder()');
 
@@ -935,7 +1066,7 @@ commands.click = async (flags) => {
   const after = await cdp.evaluate(`window.__velaHarness.digest(${literal(digestSelector)})`);
   const afterTarget = await cdp.evaluate(`window.__velaHarness.describeStored(${index})`);
   cdp.close();
-  const provenance = gradeInputProvenance({ delivery: via, steps });
+  const provenance = gradeInputProvenance({ delivery: via, steps, prior: runContext(session, seq) });
 
   const changed =
     before && after ? before.hash !== after.hash || before.elements !== after.elements : null;
@@ -1046,8 +1177,14 @@ commands.type = async (flags) => {
   if (focusVia !== 'cdp' && focusVia !== 'require') {
     throw new HarnessError(EXIT.USAGE, 'type --focus must be cdp or require');
   }
-  const { cdp } = await attach(session);
-  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.resolve' }];
+  const steps = [];
+  const { cdp, seq } = await attach(session, 'type', steps);
+  steps.push({ name: 'cdp.resolve' });
+  // Where the run last moved focus from, or null when it never has — in which
+  // case focus is where the application itself put it, which is what a user
+  // finds on launch too. Read by the `--focus require` gate below and reported
+  // in the payload, so a reader can see the precondition and not just the act.
+  let focusOrigin = null;
   const result = await resolveQuery(cdp, query);
   let index;
   try {
@@ -1083,6 +1220,56 @@ commands.type = async (flags) => {
             focusState.active ? focusState.active.tag : 'nothing'
           }.`,
         { query, match: result.matches[index], focusState, focusVia },
+      );
+    }
+    // ---- and now the question `storedIsActive` cannot answer -----------------
+    //
+    // The field the refusal above reads, `focusStateOf(index).storedIsActive`,
+    // is `Boolean(el) && active === el` in page.mjs. It says WHERE focus is.
+    // It cannot say WHO PUT IT THERE, and the refusal above was quoted as if it
+    // could: `type --via cdp` (whose `--focus cdp` default calls `focusStored`)
+    // followed by `type --via os` walked straight past it and graded
+    // `os-input-unsubstituted` on a precondition CDP had manufactured one
+    // command earlier. The session's run ledger is what can answer it.
+    const prior = runContext(session, seq);
+    focusOrigin = lastFocusMove(prior);
+    if (!prior.known) {
+      cdp.close();
+      throw new HarnessError(
+        EXIT.FAILED,
+        'this session carries no run ledger this build can read, so the harness cannot establish ' +
+          `how the target came to have focus — only that it does, which is what let a CDP focus ` +
+          `from an earlier command pass as a hand. ${prior.unknownBecause} Or pass --focus cdp ` +
+          'and accept the dev-clicked ceiling.',
+        { query, match: result.matches[index], focusState, focusVia, prior },
+      );
+    }
+    if (prior.unaccounted.length > 0) {
+      cdp.close();
+      throw new HarnessError(
+        EXIT.FAILED,
+        `${prior.unaccounted.length} command(s) in this session cannot be accounted for ` +
+          `(${prior.unaccounted
+            .map((entry) => `${entry.command} #${entry.seq} (${entry.state})`)
+            .join(', ')}). Such a command may have focused this element over CDP, so ` +
+          'focus cannot be shown to have arrived any other way. Run `down` then `up`, or pass ' +
+          '--focus cdp and accept the dev-clicked ceiling.',
+        { query, match: result.matches[index], focusState, focusVia, unaccounted: prior.unaccounted },
+      );
+    }
+    if (focusOrigin !== null && focusOrigin.userEquivalent !== true) {
+      cdp.close();
+      throw new HarnessError(
+        EXIT.FAILED,
+        `the target has focus, but the last recorded step that could have moved it is ` +
+          `\`${focusOrigin.name}\` in \`${focusOrigin.command}\` #${focusOrigin.seq} — an act a ` +
+          `user has no route to (${focusOrigin.why}). ` +
+          'Focus being in the right place is not the same as focus having arrived the way a user ' +
+          'would put it there, and grading this run as OS input would make a claim about the ' +
+          'sequence that the sequence does not support. Click the field with `click --via os`, or ' +
+          'Tab to it with `key --via os --key Tab`, and type again. Pass --focus cdp to proceed ' +
+          'and be graded at dev-clicked.',
+        { query, match: result.matches[index], focusState, focusVia, focusOrigin },
       );
     }
   }
@@ -1168,7 +1355,7 @@ commands.type = async (flags) => {
       "return { tag: el.tagName, value: 'value' in el ? el.value : el.textContent }; })()",
   );
   cdp.close();
-  const provenance = gradeInputProvenance({ delivery: via, steps });
+  const provenance = gradeInputProvenance({ delivery: via, steps, prior: runContext(session, seq) });
   return {
     typed: text,
     charactersSent: insertText ? 0 : [...text].length,
@@ -1201,6 +1388,12 @@ commands.type = async (flags) => {
     // over every step. Read that.
     isOsInput: via === 'os',
     focusVia,
+    // HOW focus came to be on the target, as far as the session recorded it —
+    // not merely that it is. `null` on the require route means the run never
+    // moved focus, so it is where the application put it. On the `--focus cdp`
+    // route it stays null and this command's own `focusStored` is the act, in
+    // `provenance.substitutions`.
+    focusOrigin,
     clearMechanism,
     // `activeElementAfter` is read over CDP even on the OS route. That is a
     // *verification* channel, not a delivery one: the keystrokes went through
@@ -1227,12 +1420,14 @@ commands.key = async (flags) => {
   if (via !== 'cdp' && via !== 'os') {
     throw new HarnessError(EXIT.USAGE, 'key --via must be cdp or os');
   }
-  const { cdp } = await attach(session);
-  // `key` never focuses anything: it sends to whatever has focus, exactly as a
-  // keyboard does. So on the OS route every acting step is an OS step and the
-  // provenance grade is unsubstituted — which is what makes it the control
-  // showing the grade is not vacuously "dev-clicked" for everything.
-  const steps = [{ name: 'cdp.bootstrap' }, { name: 'cdp.digest' }];
+  // `key` never focuses anything itself: it sends to whatever has focus,
+  // exactly as a keyboard does. So on the OS route every acting step of THIS
+  // COMMAND is an OS step — which is what makes it the control showing the grade
+  // is not vacuously "dev-clicked" for everything. Whether the RUN it sits in is
+  // clean is a different question, and `runContext` is how it gets asked.
+  const steps = [];
+  const { cdp, seq } = await attach(session, 'key', steps);
+  steps.push({ name: 'cdp.digest' });
   const before = await cdp.evaluate('window.__velaHarness.digest(null)');
   let os = null;
   if (via === 'os') {
@@ -1268,7 +1463,7 @@ commands.key = async (flags) => {
     via,
     // Narrow on purpose; `provenance.ladderCeiling` is the composed answer.
     isOsInput: via === 'os',
-    provenance: gradeInputProvenance({ delivery: via, steps }),
+    provenance: gradeInputProvenance({ delivery: via, steps, prior: runContext(session, seq) }),
     mechanism:
       via === 'os'
         ? 'Win32 SendInput (INPUT_KEYBOARD) into the system input queue, real virtual-key and ' +
@@ -1291,16 +1486,34 @@ commands.eval = async (flags) => {
         ? String(flags.expr)
         : null;
   if (expression === null) throw new HarnessError(EXIT.USAGE, 'eval needs --expr or --file');
-  const { cdp } = await attach(session);
+  const steps = [];
+  const { cdp } = await attach(session, 'eval', steps);
+  // `eval` was an arbitrary CDP-act channel that entered no ledger and no
+  // grade: `--expr "document.querySelector('input').focus()"` did a user's work
+  // and left no trace for the next command to see. It is now a step like any
+  // other, classified at the maximum of what an arbitrary expression can do —
+  // an act that moves focus — because nothing here can read the string and tell.
+  // The consequence is deliberate: one `eval` caps every later command in the
+  // session at dev-clicked and makes `type --via os --focus require` refuse.
+  // Use `read`, `find` or `status` when you want to look without paying that.
+  steps.push({ name: 'cdp.eval' });
   const value = await cdp.evaluate(expression);
   cdp.close();
-  return { value };
+  return {
+    value,
+    provenanceNote:
+      'this command is recorded in the session run ledger as `cdp.eval`, an act. Every later ' +
+      'command in this session is capped at dev-clicked and `type --via os --focus require` will ' +
+      'refuse, because an arbitrary expression cannot be shown to have done less.',
+  };
 };
 
 commands.screenshot = async (flags) => {
   const session = await requireSession();
   const out = resolvePath(String(flags.out ?? join(session.runDir, `shot-${Date.now()}.png`)));
-  const { cdp } = await attach(session);
+  const steps = [];
+  const { cdp } = await attach(session, 'screenshot', steps);
+  steps.push({ name: 'cdp.screenshot' });
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   cdp.close();
   mkdirSync(dirname(out), { recursive: true });
@@ -1448,7 +1661,9 @@ Lifecycle
        waits for the MOUNT GRADE, not for readyState, and exits 7 if it never
        passes. readyState reaching "complete" is not evidence: about:blank and a
        document whose bundle 404s both reach it immediately and stay there.
-  status                            session, CDP /json/version, graded mount report
+  status                            session, CDP /json/version, graded mount report, and
+                                    the run ledger so far (what this session already did,
+                                    and where focus last came from)
   down [--all]                      stop, confirm the port closed, confirm no vela.exe
 
 Reading
@@ -1475,24 +1690,36 @@ Driving
                  run in one call, real virtual-key and scan codes. Raises the window and
                  refuses if the foreground is not this session; self-tests delivery by
                  reading the key state back, never by SendInput's return count.
-                 REFUSES to focus the target for you: focus it with a real 'click --via os'
-                 or 'key --via os --key Tab' first. --focus cdp opts back in and reports
-                 ladderCeiling "dev-clicked". --clear becomes Ctrl+A + Backspace in the
-                 same SendInput call, not a CDP select().
+                 REFUSES to focus the target for you, AND refuses when the last step this
+                 session recorded that could have moved focus was a CDP act — focus being in
+                 the right place is not focus having arrived the way a user puts it there.
+                 Focus it with a real 'click --via os' or 'key --via os --key Tab' first.
+                 --focus cdp opts back in and reports ladderCeiling "dev-clicked".
+                 --clear becomes Ctrl+A + Backspace in the same SendInput call, not a CDP
+                 select().
         --insert-text  CDP Input.insertText: fills the field in one insertion and fires NO
                  keydown/keyup. Use for text no key produces; never for anything whose
                  handler listens for keys. Not combinable with --via os.
   key   --key Enter|Escape|Tab|ArrowDown|<char> [--via cdp|os] [--modifiers ctrl,shift]
         [--repeat N]
   eval  --expr "..." | --file FILE
+        An arbitrary expression cannot be shown to have done less than a user's work, so it
+        is recorded as an act: every later command in the session is capped at dev-clicked
+        and 'type --via os --focus require' refuses. Use read/find/status to look for free.
 
 Reading the result
   Every driving command carries 'provenance'. Read provenance.ladderCeiling, NOT
   isOsInput: the latter answers only "did the events go through SendInput", and a run
   whose focus or scroll came from CDP is capped at "dev-clicked" whatever it says.
-  provenance.substitutions names the step that capped it. "os-input-unsubstituted" is
+  The frame is THE SESSION, not the command: a CDP act in any earlier command caps
+  this one, and provenance.substitutions names the step and the command it came from.
+  provenance.command.* is the narrower per-command answer, kept but not the headline.
+  A session that cannot be established — a command that attached and never declared,
+  or no ledger at all — grades dev-clicked with reason "earlier-commands-not-accounted
+  -for", which is not the same answer as "CDP was caught". "os-input-unsubstituted" is
   the delivery half of reaches-user and is not the tier — that also needs an installed
-  bundle, which this harness cannot attest. See input-provenance.mjs.
+  bundle, which this harness cannot attest. 'status' prints the run so far.
+  See input-provenance.mjs and run-ledger.mjs.
 
 Query flags (ANDed; at least one required)
   --selector CSS   --role ROLE   --name TEXT   --text TEXT   --exact   --include-hidden
@@ -1535,6 +1762,12 @@ async function main() {
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     process.stderr.write(`vela-drive ${command}: ${error.message}\n`);
     finish(code);
+  } finally {
+    // Seals whatever `attach` opened, on the success path and the error path
+    // alike: a command that threw still made the CDP calls it had made by then,
+    // and the next command has to be able to see them. A command killed before
+    // this runs leaves its entry `open`, which later commands read as a hole.
+    closeLedgerEntry();
   }
 }
 

@@ -31,16 +31,18 @@
  *    feature's wiring has to get right before anything else about it matters.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { createSandboxRepository, type SandboxRepository } from '@/data/sandbox-repository';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { DEFAULT_PROJECT_ID } from '@/platform/contract-project';
+import type { SandboxProgram } from '@/platform/contract-sandbox';
 import { PlatformError } from '@/platform/errors';
 
 import { CanvasSurface } from './CanvasSurface';
+import { CANVAS_FRAME_MESSAGE } from './document-frame';
 import { documentHostDouble } from './document-host-double';
 
 const CHART_V1 = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4" fill="red"/></svg>';
@@ -412,23 +414,28 @@ describe('a revision is a different run, and reaches no frame before the host sa
 });
 
 /**
- * **The card describes the request the digest is over, not a copy of it.**
+ * **One program: the one the digest is over, described on the card and drawn in
+ * the frame.**
  *
  * `Isolation` and `Network` always came off `ApprovalRequest`. `Script` came off
  * a program the panel held separately — the same two-sources shape as the frame
- * above, on the row that decides whether model-authored code executes.
+ * above, on the row that decides whether model-authored code executes. Moving
+ * that row alone was not a fix: it left the card reading the host's echo and the
+ * `<iframe>` reading the surface's submitted copy, which is the identical defect
+ * with the two halves swapped, and the suite below is what caught it.
  *
- * The double below echoes a `request.program` that disagrees with what was
- * submitted. **The shipped host would not do that**, and this test is not a
- * claim that it might: it is the only way to ask which of the two sources the
- * card actually reads, and the contract has already answered which it should —
- * `ApprovalRequest.program` is "the exact program text that will run", and it is
- * what `requestDigest` is computed over, so it is what `allowOnce` consents to.
- * A card that reads anything else is describing a different run to the person
- * answering for this one.
+ * The double echoes a `request.program` that disagrees with what was submitted.
+ * **The shipped host would not do that**, and none of this is a claim that it
+ * might: a divergent echo is the only instrument that can ask *which* of two
+ * sources a value came from, and the contract has already answered which it
+ * should be — `ApprovalRequest.program` is "the exact program text that will
+ * run", and it is part of the submit `requestDigest` is computed over, so it is
+ * what `allowOnce` consents to. A card that reads anything else describes a
+ * different run to the person answering for this one; a frame built from
+ * anything else *is* a different run.
  */
-describe('the approval card reads the host’s request, not the surface’s copy', () => {
-  function echoingScripts(scripts: 'denied' | 'sandboxedNullOrigin'): SandboxRepository {
+describe('the card and the frame are one program, not two that agree', () => {
+  function echoing(rewrite: (program: SandboxProgram) => SandboxProgram): SandboxRepository {
     const inner = documentHostDouble();
     return {
       ...inner,
@@ -439,29 +446,106 @@ describe('the approval card reads the host’s request, not the surface’s copy
             return;
           }
           const request = watched.event.request;
-          if (request.program.kind !== 'document') {
-            handler(watched);
-            return;
-          }
           handler({
             seq: watched.seq,
             event: {
               ...watched.event,
-              request: {
-                ...request,
-                program: { ...request.program, language: 'html', source: 'x', scripts },
-              },
+              request: { ...request, program: rewrite(request.program) },
             },
           });
         }),
     };
   }
 
+  function echoingScripts(scripts: 'denied' | 'sandboxedNullOrigin'): SandboxRepository {
+    return echoing((program) =>
+      program.kind === 'document'
+        ? { ...program, language: 'html', source: ECHOED_SOURCE, scripts }
+        : program,
+    );
+  }
+
+  const SUBMITTED = '<p id="submitted">a paragraph long enough to be an artifact</p>';
+  const ECHOED_SOURCE = '<p id="echoed">a different paragraph, long enough to count as one</p>';
+
   it('says script executes when the host’s request says so', async () => {
     // Submitted with `scripts: 'denied'` — the panel's checkbox is untouched.
-    mount([answer('<p>a paragraph long enough to be an artifact</p>', 'html')], echoingScripts('sandboxedNullOrigin'));
+    mount([answer(SUBMITTED, 'html')], echoingScripts('sandboxedNullOrigin'));
 
     expect(await screen.findByText('Executes in the isolated frame')).toBeInTheDocument();
     expect(screen.queryByText('Will not execute')).not.toBeInTheDocument();
+  });
+
+  it('draws the program the card described, script and bytes together', async () => {
+    const user = userEvent.setup();
+    mount([answer(SUBMITTED, 'html')], echoingScripts('sandboxedNullOrigin'));
+
+    await screen.findByText('Executes in the isolated frame');
+    await user.click(await renderOnce());
+
+    const frame = await screen.findByTestId('canvas-frame');
+    const srcdoc = frame.getAttribute('srcdoc') ?? '';
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(srcdoc).toContain('id="echoed"');
+    expect(srcdoc).not.toContain('id="submitted"');
+  });
+
+  /**
+   * The direction that matters, because it is the one a person is misled by: the
+   * card says script will not run, and the frame runs it. Nothing here is
+   * clicked twice by accident — ticking the checkbox builds a different program,
+   * which is a different run with its own approval, so the assertions are read
+   * off the card that is up when `Render once` is finally pressed.
+   */
+  it('never draws script the card said would not execute', async () => {
+    const user = userEvent.setup();
+    mount([answer(SUBMITTED, 'html')], echoingScripts('denied'));
+
+    const firstCard = await renderOnce();
+    await user.click(screen.getByRole('checkbox'));
+    // The submit now carries `scripts: 'sandboxedNullOrigin'`; the echo still
+    // says `denied`. Wait for the second card rather than the first.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Render once' })).not.toBe(firstCard);
+    });
+    expect(screen.getByText('Will not execute')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Render once' }));
+    const frame = await screen.findByTestId('canvas-frame');
+    const srcdoc = frame.getAttribute('srcdoc') ?? '';
+    expect(frame.getAttribute('sandbox')).toBe('');
+    expect(srcdoc).not.toContain("script-src 'unsafe-inline'");
+    expect(srcdoc).not.toContain(CANVAS_FRAME_MESSAGE);
+  });
+
+  /**
+   * The narrowing has to land somewhere, and where it lands is a decision.
+   *
+   * The phase carries a `SandboxProgram` because that is what the host said, and
+   * `drawable` is the one place it becomes a `DocumentProgram`. A host that
+   * approved a program this surface has no frame for gets nothing drawn and a
+   * sentence saying so — not a fallback to the copy this renderer submitted,
+   * which is the second source the whole change exists to remove.
+   */
+  it('draws nothing when the host approves a program it has no frame for', async () => {
+    const user = userEvent.setup();
+    mount(
+      [answer(SUBMITTED, 'html')],
+      echoing(() => ({
+        kind: 'process',
+        language: 'python',
+        source: 'print(1)',
+        workingDirectory: { kind: 'scratch' },
+        environment: [],
+        stdin: null,
+      })),
+    );
+
+    await user.click(await renderOnce());
+
+    expect(await screen.findByTestId('canvas-notice')).toHaveTextContent(
+      'no way to draw what the host approved',
+    );
+    expect(screen.queryByTestId('canvas-frame')).not.toBeInTheDocument();
   });
 });

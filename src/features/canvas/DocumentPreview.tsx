@@ -15,8 +15,14 @@
  * `<iframe>` below is behind {@link drawable}, which hands back the grant and the
  * program the host granted *for*, together or not at all — not a boolean the
  * component also sets elsewhere, not an optimistic draw with a later teardown,
- * and no longer a program prop travelling beside the run. `CanvasPanel.test.tsx`
- * holds both halves.
+ * and no longer a program prop travelling beside the run.
+ *
+ * **And the program is the host's own copy of it**, the one
+ * `ApprovalRequest.program` carried and {@link ApprovalCard} described, not the
+ * one this renderer submitted. Those are two values wherever the host does not
+ * echo the submit back unchanged, and a frame built from the second while a
+ * person read the first is a consent card describing a run other than the one
+ * that runs. `CanvasPanel.test.tsx` holds every half of this.
  *
  * ## Who observes what
  *
@@ -80,16 +86,40 @@ interface DocumentPreviewProps {
  * `use-document-run.ts` for one run, and there is no second source to disagree
  * with. A frame cannot be built from a program the host said nothing about,
  * because there is nowhere left to get one.
+ *
+ * **The program is the host's.** Where a person was asked, the phase carries the
+ * `ApprovalRequest.program` the card below described — the contract's "exact
+ * program text that will run", and part of the submit `requestDigest` is
+ * computed over — so the bytes drawn and the bytes described are one value
+ * rather than two that agree. Where the host asked nobody there is no card and
+ * no echo, and the phase carries what the surface submitted; nothing was
+ * described, so nothing can be contradicted.
  */
 function drawable(run: DocumentRun): { grant: EffectiveGrant; program: DocumentProgram } | null {
   const phase = run.phase;
-  if (phase.kind === 'accepted') return { grant: phase.grant, program: phase.program };
+  if (phase.kind === 'accepted') return frameable(phase.grant, phase.program);
   if (phase.kind === 'settled' && phase.outcome.kind === 'rendered') {
     return phase.grant === null || phase.program === null
       ? null
-      : { grant: phase.grant, program: phase.program };
+      : frameable(phase.grant, phase.program);
   }
   return null;
+}
+
+/**
+ * The two together, and only for a program there is a frame for.
+ *
+ * The phase carries a {@link SandboxProgram} because that is what the host said;
+ * this is the one place it is narrowed. A `process` program answers `null` and
+ * nothing is drawn — the alternative is falling back to the copy this renderer
+ * submitted, which is precisely the second source the phase exists to remove.
+ * See {@link PreviewNotice} for what the reader is told instead.
+ */
+function frameable(
+  grant: EffectiveGrant,
+  program: SandboxProgram,
+): { grant: EffectiveGrant; program: DocumentProgram } | null {
+  return program.kind === 'document' ? { grant, program } : null;
 }
 
 export function DocumentPreview({ run, title }: DocumentPreviewProps) {
@@ -118,6 +148,16 @@ export function DocumentPreview({ run, title }: DocumentPreviewProps) {
     spentBytes.current = 0;
   }, [grant]);
 
+  // `outputBytes` is the host's number and the counter below is this renderer
+  // keeping to it. **That is not a boundary and is not offered as one.** A
+  // document frame's output never passes through the host: the frame posts to
+  // `window`, this component decides what to do with it, and what the host is
+  // told afterwards is a `truncated` observation through `report_document` —
+  // which this build's host discards. So the only thing bounding what an
+  // artifact's console can put into this panel's diagnostics list is
+  // `spentBytes`. It is here because the messages arrive here and nowhere else,
+  // and it is recorded as a renderer-side enforcement of a host-stated limit
+  // rather than dressed up as one of the host's.
   const budget = grant?.limits.outputBytes ?? 0;
 
   useEffect(() => {
@@ -205,13 +245,22 @@ function ApprovalCard({ run, title }: { readonly run: DocumentRun; readonly titl
   if (run.phase.kind !== 'awaitingApproval') return null;
   const request = run.phase.request;
   const grant = request.grant;
-  // **Every row comes off the request the digest is over.** `Isolation` and
-  // `Network` already did; `Script` came off a copy of the program the panel
-  // held beside the run, which is the same two-sources defect `drawable` above
-  // was rewritten to close. The contract calls `ApprovalRequest.program` "the
-  // exact program text that will run", so it is what a person is being asked
-  // about, and a card sourcing one row from somewhere else is describing a run
-  // other than the one `allowOnce` would approve.
+  // **Every row comes off the request the digest is over — and so does the
+  // frame.** `Isolation` and `Network` always did; `Script` came off a copy of
+  // the program the panel held beside the run, which is the same two-sources
+  // defect `drawable` above was rewritten to close. The contract calls
+  // `ApprovalRequest.program` "the exact program text that will run", so it is
+  // what a person is being asked about, and a card sourcing one row from
+  // somewhere else is describing a run other than the one `allowOnce` would
+  // approve.
+  //
+  // Moving this row here without moving the frame's bytes with it swaps one
+  // instance of that defect for another, and the first attempt did exactly
+  // that: the card read the echo, the `<iframe>` still read the submit, and
+  // under a host echoing a disagreeing program the card said "Will not execute"
+  // over a frame with `allow-scripts` and `script-src 'unsafe-inline'`. The
+  // phase now carries `request.program` forward to `accepted`, so this row and
+  // that frame are one value.
   const scripts = scriptDecision(request.program);
 
   return (
@@ -284,6 +333,26 @@ function isolationSentence(grant: EffectiveGrant): string {
 }
 
 function PreviewNotice({ run }: { readonly run: DocumentRun }) {
+  // Reached only from the one branch in {@link DocumentPreview}, so `accepted`
+  // here means the run was accepted and {@link drawable} still handed back
+  // nothing: the host described a program this surface has no frame for.
+  // "Preparing…" would be false — nothing here is going to draw it — and drawing
+  // this renderer's own copy instead is the second source the phase exists to
+  // remove.
+  //
+  // **No host in this tree produces this state.** Both hosts that can build an
+  // `ApprovalRequest` echo the submit's own program verbatim — `SandboxHost::drive`
+  // in the `vela-sandbox` crate and `documentHostDouble` — and `BrowserAdapter`
+  // never reaches an approval at all, because it refuses a Canvas submit first.
+  // The double in `CanvasPanel.test.tsx` rewrites one, which is the only reason
+  // this sentence has bytes behind it rather than being an invented state.
+  if (run.phase.kind === 'accepted') {
+    return (
+      <p className={styles.notice} data-testid="canvas-notice">
+        Vela has no way to draw what the host approved. The source is in the Code tab.
+      </p>
+    );
+  }
   if (run.phase.kind === 'notSubmitted') {
     return (
       <p className={styles.notice} data-testid="canvas-notice">

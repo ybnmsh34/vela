@@ -144,6 +144,28 @@ const XML_PROLOGUE = /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!DOCTYPE[^>]*>\s*)?/i;
  * which is what a `default:` returning the source would have done for `mermaid`,
  * and drawing a Mermaid diagram's text as an HTML page is exactly the sort of
  * quiet wrong answer this repo's guards exist to prevent.
+ *
+ * ## The confinement is computed from the program, not from the grant
+ *
+ * Stated because it is the largest renderer-side decision left in this feature
+ * and it is invisible from the signature's shape. Both values returned here —
+ * `sandbox`, and whether the CSP carries a `script-src` line — come off
+ * `program.scripts` and nothing else. `EffectiveGrant` is not a parameter here,
+ * and three of its fields are read anywhere in `DocumentPreview`:
+ * `backend.isolation` and `network.kind`, for two sentences on the approval
+ * card, and `limits.outputBytes`, for a byte budget. Every other mention of the
+ * grant there tests the object for `null` — which is the question "was there an
+ * acceptance", not a question about confinement.
+ *
+ * That is defensible exactly as far as `program` is the host's own copy — which
+ * is what `RunPhase` in `use-document-run.ts` now carries and what the approval
+ * card describes — and no further. It is not that the grant is being ignored in
+ * favour of the renderer: it is that a host wanting a document confined
+ * differently from what its own `ApprovalRequest.program` says has nowhere on
+ * `EffectiveGrant` to say it. That interface is `backend`, `filesystem`,
+ * `network`, `limits` and `workingDirectory`, and none of the five names script
+ * execution in a drawn frame. If one ever does, this function is where it has to
+ * be read, and today it would not be.
  */
 export function frameFor(program: DocumentProgram): FrameSource {
   switch (program.language) {

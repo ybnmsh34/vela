@@ -49,6 +49,7 @@ import type {
   RunUsage,
   SandboxDiagnostic,
   SandboxOutcome,
+  SandboxProgram,
   SandboxRunId,
 } from '@/platform/contract-sandbox';
 
@@ -75,17 +76,35 @@ import { documentSubmit } from './document-run';
  * on: one `<iframe sandbox="allow-scripts">` holding v2's source reached the DOM
  * while the host was still being asked about it.
  *
- * So the program travels with the phase. `accepted` and `settled` carry the
- * program this hook submitted for *this* run — the effect's own closure
- * variable, minted alongside the run id, so it cannot be a different one — and
- * `awaitingApproval` carries the host's echo instead, because
- * {@link ApprovalRequest} calls that "the exact program text that will run" and
- * a consent card that described the surface's own copy would be describing
- * something other than what the digest binds.
+ * So the program travels with the phase, and it is **the host's own copy of
+ * it**. {@link ApprovalRequest} calls `program` "the exact program text that
+ * will run"; it is the value the approval card in `DocumentPreview.tsx`
+ * describes, and it is part of the submit `requestDigest` is computed over —
+ * `SandboxHost::drive` in the `vela-sandbox` crate hashes the serialised
+ * `SandboxSubmitReq` whole, program included. So `accepted` and `settled` carry
+ * that same value forward and the frame is built from it.
+ *
+ * Carrying the *submitted* copy here instead is not a smaller version of the
+ * same idea. It is the same defect one level down, and it shipped in the first
+ * draft of this file: the card read the echo while the frame read the submit,
+ * two independent values with nothing binding them. Measured on a double that
+ * echoes a program disagreeing with the submit, both directions, each run twice
+ * — with the panel's script checkbox on and the echo saying `denied`, the card
+ * rendered "Will not execute" while the frame drawn on `allowOnce` was
+ * `sandbox="allow-scripts"`, carrying `script-src 'unsafe-inline'` and the
+ * diagnostic bridge; with the submit denied and the echo saying
+ * `sandboxedNullOrigin`, the card promised script and the frame denied it.
+ * `CanvasPanel.test.tsx` holds both reds.
+ *
+ * When the host asks nobody — auto-approval, or permission `full` — no echo
+ * arrives and no card is drawn, and `accepted` carries the program this effect
+ * submitted: its own closure variable, minted alongside the run id. Nothing was
+ * described to anyone, so there is nothing for it to disagree with.
  *
  * The point is not that the pairing is now checked. It is that there is nothing
  * left to check: a caller cannot obtain a grant without obtaining the program it
- * was granted for.
+ * was granted for, and where a person was asked, that program is the one they
+ * were asked about.
  */
 export type RunPhase =
   | { readonly kind: 'submitting' }
@@ -93,8 +112,16 @@ export type RunPhase =
   | {
       readonly kind: 'accepted';
       readonly grant: EffectiveGrant;
-      /** What this run was submitted with. See the note above. */
-      readonly program: DocumentProgram;
+      /**
+       * What the host said would run. See the note above.
+       *
+       * {@link SandboxProgram} rather than {@link DocumentProgram}, because the
+       * value is the host's and narrowing it here would be this surface assuming
+       * what came back instead of reading it. `drawable` in
+       * `DocumentPreview.tsx` is the one place the narrowing happens, and a
+       * program it has no frame for draws nothing at all.
+       */
+      readonly program: SandboxProgram;
     }
   | {
       readonly kind: 'settled';
@@ -102,8 +129,12 @@ export type RunPhase =
       readonly usage: RunUsage;
       /** The grant it ran under, kept so a rendered document can stay drawn. */
       readonly grant: EffectiveGrant | null;
-      /** The program that grant was for. `null` exactly when `grant` is. */
-      readonly program: DocumentProgram | null;
+      /**
+       * The program that grant was for. `null` exactly when `grant` is — both
+       * are read off the one {@link AcceptedRun} record, so the two cannot
+       * disagree about whether there was an acceptance.
+       */
+      readonly program: SandboxProgram | null;
     }
   /**
    * The submit was rejected rather than settled, so there is no run and there
@@ -125,6 +156,21 @@ export interface DocumentRun {
   readonly diagnostics: readonly SandboxDiagnostic[];
   readonly answer: (decision: 'allowOnce' | 'deny') => void;
   readonly report: (observation: DocumentObservation) => void;
+}
+
+/**
+ * The one record a drawn frame and a reported observation both come off.
+ *
+ * One object rather than two refs and a closure variable, so "which run was
+ * accepted, under what grant, to run what" cannot be assembled out of three
+ * values that moved at three different times. That is the shape of every defect
+ * this file has been audited for, and it is cheaper to make unrepresentable
+ * than to check.
+ */
+interface AcceptedRun {
+  readonly runId: SandboxRunId;
+  readonly grant: EffectiveGrant;
+  readonly program: SandboxProgram;
 }
 
 /**
@@ -207,15 +253,19 @@ export function useDocumentRun(
   const program = useStableProgram(incoming);
   const [phase, setPhase] = useState<RunPhase>({ kind: 'submitting' });
   const [diagnostics, setDiagnostics] = useState<readonly SandboxDiagnostic[]>(NO_DIAGNOSTICS);
-  const runIdRef = useRef<SandboxRunId | null>(null);
-  const grantRef = useRef<EffectiveGrant | null>(null);
+  // Cleared at the top of every effect run below, so a run that has been
+  // superseded and not yet accepted answers `null` rather than answering for its
+  // predecessor.
+  const acceptedRef = useRef<AcceptedRun | null>(null);
+  /** The host's echo, held from `awaitingApproval`. See {@link RunPhase}. */
+  const echoRef = useRef<SandboxProgram | null>(null);
 
   useEffect(() => {
     if (program === null) return;
 
     const runId = newRunId();
-    runIdRef.current = runId;
-    grantRef.current = null;
+    acceptedRef.current = null;
+    echoRef.current = null;
     setPhase({ kind: 'submitting' });
     setDiagnostics(NO_DIAGNOSTICS);
 
@@ -230,24 +280,36 @@ export function useDocumentRun(
       const stop = await sandbox.watch(runId, ({ event }) => {
         switch (event.type) {
           case 'awaitingApproval':
+            // Held for the `accepted` arm below: the program the card is about
+            // to describe is the program the frame has to be built from.
+            echoRef.current = event.request.program;
             setPhase({ kind: 'awaitingApproval', request: event.request });
             break;
-          case 'accepted':
-            grantRef.current = event.grant;
-            // `program` is the effect's own closure variable — the one passed to
-            // `documentSubmit` four lines below — so the grant and the program
-            // it is a grant *for* are minted together and cannot drift apart.
-            setPhase({ kind: 'accepted', grant: event.grant, program });
+          case 'accepted': {
+            // The host's echo where it asked a person, and the effect's own
+            // closure variable — the one passed to `documentSubmit` below,
+            // minted beside the run id — where it asked nobody. See the note on
+            // {@link RunPhase} for why those are not interchangeable.
+            const accepted: AcceptedRun = {
+              runId,
+              grant: event.grant,
+              program: echoRef.current ?? program,
+            };
+            acceptedRef.current = accepted;
+            setPhase({ kind: 'accepted', grant: accepted.grant, program: accepted.program });
             break;
-          case 'settled':
+          }
+          case 'settled': {
+            const accepted = acceptedRef.current;
             setPhase({
               kind: 'settled',
               outcome: event.outcome,
               usage: event.usage,
-              grant: grantRef.current,
-              program: grantRef.current === null ? null : program,
+              grant: accepted?.grant ?? null,
+              program: accepted?.program ?? null,
             });
             break;
+          }
           case 'diagnostic':
             setDiagnostics((current) => [...current, event]);
             break;
@@ -281,7 +343,8 @@ export function useDocumentRun(
       // A run that was never admitted has nothing to release and the host
       // answers `{ ok: false }`, which is not an error and is not read.
       void sandbox.release(runId).catch(() => undefined);
-      runIdRef.current = null;
+      acceptedRef.current = null;
+      echoRef.current = null;
     };
   }, [sandbox, projectId, program]);
 
@@ -289,8 +352,8 @@ export function useDocumentRun(
     (decision: 'allowOnce' | 'deny') => {
       if (phase.kind !== 'awaitingApproval') return;
       // **Both halves of the answer come off the same request.** They used to
-      // come off two: the digest from `phase`, the run id from `runIdRef`, which
-      // the effect moves on to the next run before any event for that run has
+      // come off two: the digest from `phase`, and the run id from a ref the
+      // effect moves on to the next run before any event for that run has
       // arrived. That is the same defect the phase union above was widened to
       // close, one size smaller — a pairing held by timing rather than by a
       // value. `ApprovalRequest.runId` is the host's own statement of which run
@@ -313,13 +376,31 @@ export function useDocumentRun(
 
   const report = useCallback(
     (observation: DocumentObservation) => {
-      const runId = runIdRef.current;
-      if (runId === null) return;
+      // **The run the frame was drawn for, not whichever run this hook is on
+      // now.** This read `runIdRef.current` until the pairing was audited: that
+      // ref moved to the next run at the top of the effect, before any event for
+      // it had arrived, so an observation crossing that boundary named a run the
+      // frame it came from had nothing to do with. It now comes off the same
+      // {@link AcceptedRun} record the frame was built from, and the record is
+      // `null` from the moment a new run starts until that run is itself
+      // accepted.
+      //
+      // Recorded honestly, and measured rather than asserted: **no test in this
+      // tree constrains which run id an observation is reported under.** With
+      // this call mutated to report every observation under a run id that does
+      // not exist, `pnpm test` was 118 files and 2399 tests, all passing, exit
+      // 0. The suites that name `reportDocument` call the host double directly
+      // with a run id they wrote themselves; none drives this callback. So this
+      // change removes a second source and is not backed by a red — the same
+      // standing as the `answer` pairing, and not the standing of the program
+      // carried on `accepted`, which two named tests hold.
+      const accepted = acceptedRef.current;
+      if (accepted === null) return;
       // An observation is a statement, not a question. This build's host
-      // discards every one of them — `report_document` in the `vela-sandbox`
-      // crate is an empty body — so there is nothing in the `Ack` to read and
-      // nothing a rejection would change about what is on screen.
-      void sandbox.reportDocument(runId, observation).catch(() => undefined);
+      // discards every one of them — `report_document` on `SandboxHost` in the
+      // `vela-sandbox` crate is an empty body — so there is nothing in the `Ack`
+      // to read and nothing a rejection would change about what is on screen.
+      void sandbox.reportDocument(accepted.runId, observation).catch(() => undefined);
     },
     [sandbox],
   );

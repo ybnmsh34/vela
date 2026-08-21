@@ -68,12 +68,41 @@
  * *"can this identifier still be trusted as the wire key?"*, and the only
  * answer that survives a determined edit is **to account for every byte of
  * attribute text attached to the item, and refuse anything left over**. That is
- * what {@link parseRustItem} does now: {@link readAttributeText} consumes the
- * whole block — comments, `cfg_attr` wrappers and all — reports the first
- * stretch it could not classify, and any attribute whose effect on the wire
- * this file has not written down is an error naming it. {@link INERT_ATTRIBUTES},
+ * what {@link parseRustItem} does: {@link readAttributeText} consumes the whole
+ * region — comments, `cfg_attr` wrappers and all — reports the first stretch it
+ * could not classify, and any attribute whose effect on the wire this file has
+ * not written down is an error naming it. {@link INERT_ATTRIBUTES},
  * {@link CONTAINER_KEYS} and {@link FIELD_KEYS} are the whole of what it claims
  * to understand.
+ *
+ * ## The third thing it had to learn: everything on either side of the text
+ *
+ * Accounting for every byte of attribute text was the whole of the previous
+ * round's fix, and a probe then went around it four times without touching an
+ * attribute this file reads wrongly. Each of the four is a *recogniser standing
+ * in for a question*, one layer out from the last one, and each is now answered
+ * rather than recognised:
+ *
+ * - **Where the attributes are.** The region was whatever run of lines read as
+ *   attribute text, so a block comment between the serde attribute and the
+ *   derive truncated it and the attribute fell outside the refusal.
+ *   {@link attributeRegionBefore} takes the region from the end of the previous
+ *   item instead — a position, which nothing written inside it can move.
+ * - **What a declaration is.** `^pub ` missed `pub(crate)`, missed anything
+ *   indented inside a `mod`, and a `derive` naming `Serialize` missed a
+ *   hand-written `impl serde::Serialize for X` — which satisfies the same trait
+ *   and puts whatever keys its body writes on the wire. {@link declarationsIn}
+ *   and {@link IMPL_SERIALIZE} answer both.
+ * - **What a member is.** The identifier alphabet could not spell `r#type`, the
+ *   only legal name for a field whose wire key is `type`, and dropped it
+ *   silently. {@link FIELD_DECLARATION} spells it, and a body line that is none
+ *   of the shapes this file knows is now {@link refuseUnreadable} rather than a
+ *   `continue`.
+ * - **What the answer is compared against.** {@link RustItem.payloadFields} was
+ *   one pooled set across every struct-bodied variant, so `#[serde(skip)]` on a
+ *   field a sibling variant also declares left the comparison unmoved — a
+ *   perfect read feeding a lossy comparison. It is keyed by variant now, and
+ *   {@link payloadWireKeys} is what the guards compare.
  *
  * Nothing outside a test imports this, so it is not in the shipped bundle, and
  * `src/runtime/reachable.test.ts` asserts that rather than assuming it.
@@ -159,15 +188,25 @@ export interface RustItem {
    */
   readonly tag: string | null;
   /**
-   * The fields inside an enum's struct-bodied variants, deduplicated and
-   * sorted, in Rust spelling. Empty for a struct, and for an enum whose
-   * variants are all unit or tuple.
+   * The fields inside an enum's struct-bodied variants, **keyed by the variant
+   * they belong to**, each list sorted, in Rust spelling. One entry per
+   * struct-bodied variant and no entry for a unit or tuple one; empty for a
+   * struct, which has no variants at all.
    *
    * These are keys on the wire and they are members of nothing, so — exactly
    * like {@link tag} — they had no comparison at all until one was written for
-   * them. {@link payloadWireNames} applies {@link renameAllFields} to them.
+   * them. {@link payloadWireKeys} applies {@link renameAllFields} to them.
+   *
+   * **Keyed rather than pooled**, and that is not a presentation choice. The
+   * first version of this was one deduplicated `Set` across every struct-bodied
+   * variant, compared as a flat sorted union. A probe put `#[serde(skip)]` on
+   * `SkillListing::Invalid`'s `directory` — a field the sibling `Skill` variant
+   * also declares — and the union did not move: the key stopped crossing on the
+   * arm `src/features/skills/SkillsPanel.tsx` labels its non-skill rows with,
+   * and every assertion stayed green. Which variant a key belongs to has to be
+   * part of the question or a key can move between arms, or leave one, unseen.
    */
-  readonly payloadFields: readonly string[];
+  readonly payloadFields: ReadonlyMap<string, readonly string[]>;
   /**
    * `rename_all_fields`: the rule serde applies to the fields *inside*
    * struct-bodied variants, which is a different rule from the one it applies
@@ -528,48 +567,85 @@ function accountedSerdeArguments(
 /* finding the item                                                           */
 /* -------------------------------------------------------------------------- */
 
-/** Source with `//` comments and string literals blanked, for bracket counting. */
+/**
+ * Source with comments and string literals blanked, byte-for-byte the same
+ * length, so an index into the blanked text is an index into the source.
+ *
+ * Every structural read in this file — where an item's body opens, where the
+ * previous item ended, how deep a line sits — runs on the output rather than on
+ * the source, so that a brace inside a doc comment or a string literal cannot
+ * move it.
+ *
+ * Raw strings are handled explicitly rather than as ordinary strings, and the
+ * reason is in this tree: `src-tauri/crates/vela-projects/src/workdir.rs`
+ * spells `r"\\?\UNC\"`, whose *contents* end in a backslash. A raw string has
+ * no escapes, so that backslash is content — but read with escape rules the
+ * `\"` is taken as an escaped quote, the literal never closes, and the blanking
+ * runs on past it. Measured on the committed tree: `workdir.rs` holds 4 such
+ * literals and `link.rs` 2 — every one in either crate — and the first of
+ * `workdir.rs`'s is inside `without_verbatim_prefix`. Running the previous
+ * escape-only blanking over `workdir.rs` leaves 25 of the file's 84 braces
+ * standing, starting with the `{` of that `if let`. It was not already a wrong
+ * answer only because no `enum` or `struct` declaration in either file sits
+ * after the first raw literal — measured, not assumed. **Throws** if the text
+ * ends inside an unterminated literal, because that is the one outcome in which
+ * every index this returns is wrong and nothing downstream could tell.
+ */
 function withoutCommentsOrStrings(text: string): string {
+  const blank = (from: number, to: number): string =>
+    text.slice(from, to).replace(/[^\r\n]/g, ' ');
   let out = '';
   let index = 0;
-  let inString = false;
   while (index < text.length) {
     const character = text[index] as string;
-    if (inString) {
-      // Byte-for-byte the same length as the input, so an index into the
-      // blanked text is an index into the source. An escape consumes two
-      // characters and must therefore emit two.
-      if (character === '\\') {
-        out += '  ';
-        index += 2;
-        continue;
-      }
-      if (character === '"') inString = false;
-      out += character === '\n' ? '\n' : ' ';
-      index += 1;
-      continue;
-    }
     if (text.startsWith('//', index)) {
       const end = text.indexOf('\n', index);
       const stop = end < 0 ? text.length : end;
-      out += ' '.repeat(stop - index);
+      out += blank(index, stop);
       index = stop;
       continue;
     }
     if (text.startsWith('/*', index)) {
       const end = text.indexOf('*/', index + 2);
       const stop = end < 0 ? text.length : end + 2;
-      out += text.slice(index, stop).replace(/[^\r\n]/g, ' ');
+      out += blank(index, stop);
+      index = stop;
+      continue;
+    }
+    const couldOpenRaw =
+      (character === 'r' || character === 'b') && !/[A-Za-z0-9_]/.test(text[index - 1] ?? ' ');
+    const raw = couldOpenRaw ? /^b?r(#*)"/.exec(text.slice(index, index + 16)) : null;
+    if (raw !== null) {
+      const fence = `"${raw[1] as string}`;
+      const opened = index + (raw[0] as string).length;
+      const end = text.indexOf(fence, opened);
+      if (end < 0) {
+        throw new Error('serde-wire: unterminated raw string literal in a Rust source');
+      }
+      const stop = end + fence.length;
+      out += blank(index, stop);
       index = stop;
       continue;
     }
     if (character === '"') {
+      let cursor = index + 1;
+      while (cursor < text.length) {
+        const inner = text[cursor] as string;
+        if (inner === '\\') {
+          cursor += 2;
+          continue;
+        }
+        if (inner === '"') break;
+        cursor += 1;
+      }
+      if (cursor >= text.length) {
+        throw new Error('serde-wire: unterminated string literal in a Rust source');
+      }
       // The opening quote is blanked too. Leaving it in place would hand a
       // lone `"` to every reader of this text, and the first of them to be
       // string-aware would swallow the rest of the file.
-      inString = true;
-      out += ' ';
-      index += 1;
+      out += blank(index, cursor + 1);
+      index = cursor + 1;
       continue;
     }
     out += character;
@@ -578,49 +654,66 @@ function withoutCommentsOrStrings(text: string): string {
   return out;
 }
 
-/**
- * Whether the text closes a bracket it never opened — which is how a line
- * inside a multi-line attribute is told apart from a line of code.
- */
-function closesWhatItDidNotOpen(text: string): boolean {
-  let depth = 0;
-  for (const character of withoutCommentsOrStrings(text)) {
-    if (character === '(' || character === '[') depth += 1;
-    else if (character === ')' || character === ']') {
-      if (depth === 0) return true;
-      depth -= 1;
+/** Index of the bracket opening the one at `at`, in blanked text, or `-1`. */
+function openingBracket(text: string, at: number): number {
+  const openers: Readonly<Record<string, string>> = { ')': '(', ']': '[', '}': '{' };
+  const stack: string[] = [];
+  for (let index = at; index >= 0; index -= 1) {
+    const character = text[index] as string;
+    const opener = openers[character];
+    if (opener !== undefined) {
+      stack.push(opener);
+      continue;
+    }
+    if (character === '(' || character === '[' || character === '{') {
+      if (stack.pop() !== character) return -1;
+      if (stack.length === 0) return index;
     }
   }
-  return false;
+  return -1;
 }
 
 /**
- * The whole attribute block attached to the item declared at `at`.
+ * The whole attribute region attached to the item declared at `at` — **bounded
+ * by what precedes the item, not by what this function recognises**.
  *
- * Walks *backwards* by line and keeps the longest run that reads as nothing but
- * attributes, comments and blank lines. The previous version of this sliced
- * from the last `#[derive` before the declaration, which is a literal standing
- * in for a concept: an attribute written above the derive — `#[serde(rename_all
- * = "PascalCase")] #[derive(Serialize)] pub struct …` is legal Rust and serde
- * reads it — was outside the slice and therefore outside the refusal.
+ * Two earlier versions of this got the boundary from the text it was reading.
+ * The first sliced from the last `#[derive` before the declaration, so an
+ * attribute written *above* the derive was outside the slice and outside the
+ * refusal with it. The second walked backwards by line and kept the longest run
+ * that read as attributes, comments and blank lines — and a probe put a
+ * two-line `/* … *\/` block comment between `#[serde(rename_all =
+ * "PascalCase")]` and `#[derive(…, Serialize)]`. The walk broke at the
+ * comment's closing line (`*\/` on its own is neither attribute text nor a
+ * bracket-closer), the serde attribute fell outside the block the refusal
+ * inspects, `renameAll` read as `none`, and the guard compared raw identifiers
+ * and reported agreement serde never produced.
+ *
+ * Both are the same mistake: a *recogniser* deciding where the region ends. An
+ * item's attributes begin where the previous item ended, and Rust says where
+ * that is — the nearest `;`, `{` or `}` outside any bracket group. That is a
+ * position, not a shape, so no comment, attribute or byte sequence written
+ * inside the region can move it. Everything between that position and the
+ * declaration is the region, and {@link accountedSerdeArguments} must account
+ * for all of it or refuse.
  */
-function attributeBlockBefore(source: string, at: number): string {
-  const head = source.slice(0, at);
-  const lines = head.split(/\r?\n/);
-  // The declaration starts a line, so the final element is the empty string
-  // before it; walking starts from the line above.
-  let start = lines.length;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const candidate = lines.slice(index).join('\n');
-    if (readAttributeText(candidate).unaccounted === null) {
-      start = index;
+function attributeRegionBefore(source: string, at: number): string {
+  const blanked = withoutCommentsOrStrings(source.slice(0, at));
+  let index = blanked.length - 1;
+  while (index >= 0) {
+    const character = blanked[index] as string;
+    if (character === ']' || character === ')') {
+      // An attribute's own brackets, or a tuple item's. Step over the whole
+      // group: a `;` or `{` inside one does not end the previous item.
+      const open = openingBracket(blanked, index);
+      if (open < 0) break;
+      index = open - 1;
       continue;
     }
-    // Not attribute text on its own — but a continuation line of a multi-line
-    // attribute is not either, and it always closes a bracket it did not open.
-    if (!closesWhatItDidNotOpen(candidate)) break;
+    if (character === '{' || character === '}' || character === ';') break;
+    index -= 1;
   }
-  return lines.slice(start).join('\n');
+  return source.slice(index + 1, at);
 }
 
 /** What follows the name in a `pub enum` / `pub struct` declaration. */
@@ -660,28 +753,169 @@ function literal(name: string): string {
   return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * How an item declaration is spelled — **every way Rust lets it be spelled**,
+ * not the one way the crates happen to spell it today.
+ *
+ * The visibility is optional and may be qualified (`pub(crate)`,
+ * `pub(in crate::ipc)`), and the line may be indented, because an item declared
+ * inside a `mod` is indented by rustfmt. A probe used exactly that: a
+ * `pub(crate) struct` deriving `Serialize` was invisible to a scan anchored on
+ * `^pub `, which is a spelling standing in for the question *"is this a
+ * declaration?"*. A private item is included too — privacy is a Rust rule about
+ * paths, not a statement about the wire, and a private struct is serialised
+ * whenever a public type holds one.
+ */
+const DECLARATION = '^[ \\t]*(?:pub(?:\\s*\\([^)]*\\))?[ \\t]+)?';
+
+/**
+ * A trait implementation of `Serialize`, whatever path it is written under.
+ *
+ * `Serialize` is a **trait**, and `#[derive(Serialize)]` is one way to satisfy
+ * it, not the definition of satisfying it. A scan that looks only for the
+ * derive answers *"did someone write the word `derive` here?"* when the
+ * question is *"can this type put keys on the wire?"*, and a hand-written
+ * `impl serde::Serialize for X` with a `serialize_struct` body answers the
+ * second yes and the first no. The trait path is matched immediately before
+ * `for` so that `impl Serializer`, `impl Deserialize` and a `Serialize` bound
+ * in a generic parameter list are not it.
+ */
+const IMPL_SERIALIZE =
+  /\bimpl\b(?:\s*<[^>]*>)?\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*Serialize\b(?:\s*<[^>]*>)?\s+for\s+([A-Za-z_][A-Za-z0-9_]*)/g;
+
+interface Declaration {
+  readonly name: string;
+  readonly keyword: 'enum' | 'struct';
+  /** Index of the start of the declaration's line, in the source. */
+  readonly at: number;
+  /** Index just past the item's name, where {@link itemForm} reads on from. */
+  readonly after: number;
+}
+
+/**
+ * Every `enum` / `struct` declaration in a file, whatever its visibility.
+ *
+ * Matched against the source with comments and string literals blanked, and
+ * the indices are indices into the source because the blanking is
+ * length-preserving. Widening the pattern to any indentation without blanking
+ * first would let `/// pub struct Example {` in a doc comment, or the same text
+ * inside a string, join the inventory as a type that does not exist.
+ */
+function declarationsIn(source: string): readonly Declaration[] {
+  const found: Declaration[] = [];
+  const pattern = new RegExp(`${DECLARATION}(enum|struct)[ \\t]+([A-Za-z][A-Za-z0-9_]*)`, 'gm');
+  for (const match of withoutCommentsOrStrings(source).matchAll(pattern)) {
+    if (match.index === undefined) continue;
+    found.push({
+      name: match[2] as string,
+      keyword: match[1] as 'enum' | 'struct',
+      at: match.index,
+      after: match.index + (match[0] as string).length,
+    });
+  }
+  return found;
+}
+
 /* -------------------------------------------------------------------------- */
 /* reading the item                                                           */
 /* -------------------------------------------------------------------------- */
 
 interface BodyLine {
   readonly text: string;
+  /**
+   * The same line with comments and string literals blanked. Empty once
+   * trimmed exactly when the line carries no code — which is how a line inside
+   * a multi-line block comment is told from a line of members, without the
+   * reader needing to recognise the comment's shape.
+   */
+  readonly code: string;
   /** Brace depth at the start of the line, relative to the item's own body. */
   readonly depth: number;
+  /**
+   * Whether the line starts inside an unclosed `(` or `[` — a tuple variant or
+   * an attribute broken across lines. Such a line is a continuation, never a
+   * member of its own, and reading it as one invents members: `Foo(\n
+   * Bar,\n),` would otherwise contribute `Bar` to an enum that has no such
+   * variant. Angle brackets are deliberately *not* tracked, because `<` and `>`
+   * are also comparison operators and a type-position-only reading of them is a
+   * second parser; a generic argument list broken across lines therefore
+   * reaches the refusal below rather than being silently skipped, which is the
+   * safe direction.
+   */
+  readonly continuation: boolean;
 }
 
-/** The item body split into lines, each tagged with the depth it starts at. */
+/** The item body split into lines, each tagged with where it sits. */
 function bodyLines(body: string): readonly BodyLine[] {
+  const blanked = withoutCommentsOrStrings(body);
+  const raw = body.split(/\r?\n/);
+  const code = blanked.split(/\r?\n/);
   const lines: BodyLine[] = [];
   let depth = 0;
-  for (const raw of body.split(/\r?\n/)) {
-    lines.push({ text: raw.trim(), depth });
-    for (const character of withoutCommentsOrStrings(raw)) {
+  let group = 0;
+  for (let index = 0; index < raw.length; index += 1) {
+    const source = code[index] ?? '';
+    lines.push({
+      text: (raw[index] ?? '').trim(),
+      code: source.trim(),
+      depth,
+      continuation: group > 0,
+    });
+    for (const character of source) {
       if (character === '{') depth += 1;
       else if (character === '}') depth -= 1;
+      else if (character === '(' || character === '[') group += 1;
+      else if (character === ')' || character === ']') group = Math.max(0, group - 1);
     }
   }
   return lines;
+}
+
+/**
+ * A line that carries nothing but the punctuation closing a member — `}`,
+ * `},`, `)`, `),`, `};`. Legal at any position a member could be and never a
+ * member itself, so the reader must be told about it explicitly rather than
+ * silently walking past it with everything else it cannot spell.
+ */
+const CLOSING_PUNCTUATION = /^[)\]},;]*$/;
+
+/**
+ * A field declaration — `pub name: String`, `name: String`, `pub r#type: T`.
+ *
+ * The `r#` prefix is not an exotic spelling. It is the **only** legal way to
+ * name a field whose wire key is `type`, `match`, `move` or any other Rust
+ * keyword, which is exactly the situation a serde-facing struct runs into; serde
+ * puts `type` on the wire for `r#type`, with no rename attribute in sight. An
+ * alphabet of `[a-z_][a-z0-9_]*` captures `r`, then demands a `:` where the `#`
+ * stands, and the line falls through — so the field leaves the read with no
+ * error and an assertion named *"…, and no other"* passes over a live extra
+ * key. The prefix is stripped, because it is not part of the identifier.
+ */
+const FIELD_DECLARATION = /^(?:pub(?:\s*\([^)]*\))?\s+)?(?:r#)?([a-z_][a-z0-9_]*)\s*:/;
+
+/** A variant declaration — `Named`, `Named {`, `Named(`, `r#Type,`. */
+const VARIANT_DECLARATION = /^(?:r#)?([A-Z][A-Za-z0-9]*)\s*(?:[,{(]|$)/;
+
+/**
+ * A line in an item body that is none of the shapes above — **an error, not a
+ * skip**.
+ *
+ * This is the same posture {@link accountedSerdeArguments} takes over attribute
+ * text, moved one layer in, and for the same reason. A `continue` here answers
+ * *"I did not recognise that, so there was nothing there"*, and those are two
+ * different answers: `pub r#type: String,` is a live field whose wire key is
+ * `type`, and under a silent `continue` it left the read with no error while
+ * the assertion named *"…, and no other"* went on passing. The member reader's
+ * alphabet is now written down in one place and everything outside it is
+ * named out loud.
+ */
+function refuseUnreadable(name: string, file: string, line: string, expected: string): Error {
+  const shown = line.length > 60 ? `${line.slice(0, 57)}...` : line;
+  return new Error(
+    `serde-wire: in ${name} in ${file}, \`${shown}\` is where ${expected} should be and this ` +
+      `parser cannot read it as one. Skipping it would drop a key that is on the wire and ` +
+      `report the remaining ones as the whole set.`,
+  );
 }
 
 /**
@@ -697,8 +931,8 @@ export function parseRustItem(
   name: string,
   file = '<fixture>',
 ): RustItem {
-  const declaration = new RegExp(`^pub ${keyword} ${literal(name)}\\b`, 'm');
-  const found = declaration.exec(source);
+  const declaration = new RegExp(`${DECLARATION}${keyword}[ \\t]+${literal(name)}\\b`, 'm');
+  const found = declaration.exec(withoutCommentsOrStrings(source));
   if (found === null || found.index === undefined) {
     throw new Error(`serde-wire: no \`pub ${keyword} ${name}\` in ${file}`);
   }
@@ -719,7 +953,7 @@ export function parseRustItem(
         `against wire keys it cannot predict — teach this parser what that does to the wire, ` +
         `or exclude the type.`,
     );
-  const container = accountedSerdeArguments(attributeBlockBefore(source, at), refuseContainer);
+  const container = accountedSerdeArguments(attributeRegionBefore(source, at), refuseContainer);
   for (const [key] of container) {
     if (!CONTAINER_KEYS.has(key)) {
       throw refuseContainer(`\`#[serde(${key})]\`, which this parser does not model`);
@@ -762,7 +996,15 @@ export function parseRustItem(
   const lines = bodyLines(source.slice(openBrace + 1, close));
 
   const members: string[] = [];
-  const payload = new Set<string>();
+  // Keyed by the variant the fields belong to, **not** pooled. A single
+  // deduplicated set across every struct-bodied variant is what a probe walked
+  // through: `#[serde(skip)]` on `SkillListing::Invalid::directory`, where the
+  // sibling `Skill` variant also declares `directory`, left the pooled union
+  // unchanged and the equality green while a key the renderer reads stopped
+  // crossing on one arm. The attribute was read perfectly — the loss was
+  // entirely in pooling the answer before comparing it.
+  const payload = new Map<string, Set<string>>();
+  let current: Set<string> | null = null;
   let pending = '';
   let skipNextMember = false;
   let skipNextPayload = false;
@@ -797,7 +1039,11 @@ export function parseRustItem(
       }
       continue;
     }
-    if (text === '' || text.startsWith('//')) continue;
+    // Blank, or nothing but a comment: `line.code` is what is left after
+    // comments and string literals are blanked, so a line in the middle of a
+    // `/* … */` block is empty here without the reader having to recognise it.
+    if (line.code === '') continue;
+    if (line.continuation) continue;
     if (text.startsWith('#')) {
       const open = text.indexOf('[');
       if (open < 0 || matchingBracket(text, open) < 0) {
@@ -807,30 +1053,42 @@ export function parseRustItem(
       readFieldAttribute(text, onto);
       continue;
     }
+    if (CLOSING_PUNCTUATION.test(line.code)) continue;
     if (line.depth === 1) {
       // A field inside a struct-bodied variant. Its key is on the wire under
       // `rename_all_fields`, and it is a member of nothing.
-      const field = /^(?:pub(?:\([a-z]+\))?\s+)?([a-z_][a-z0-9_]*)\s*:/.exec(text);
-      if (field === null) continue;
+      const field = FIELD_DECLARATION.exec(text);
+      if (field === null) {
+        throw refuseUnreadable(name, file, text, 'a field of a struct-bodied variant');
+      }
       if (skipNextPayload) {
         skipNextPayload = false;
         continue;
       }
-      payload.add(field[1] as string);
+      current?.add(field[1] as string);
       continue;
     }
     const member =
-      keyword === 'enum'
-        ? /^([A-Z][A-Za-z0-9]*)\s*(?:[,{(]|$)/.exec(text)
-        : /^(?:pub(?:\([a-z]+\))?\s+)?([a-z_][a-z0-9_]*)\s*:/.exec(text);
+      keyword === 'enum' ? VARIANT_DECLARATION.exec(text) : FIELD_DECLARATION.exec(text);
     const captured = member?.[1];
-    if (captured === undefined) continue;
+    if (captured === undefined) {
+      throw refuseUnreadable(name, file, text, keyword === 'enum' ? 'a variant' : 'a field');
+    }
     if (skipNextMember) {
       skipNextMember = false;
+      current = null;
       continue;
     }
     members.push(captured);
     if (keyword !== 'enum') continue;
+    // Struct-bodied variants only. A unit or tuple variant contributes no key
+    // of its own, so an entry for it would be an empty list in every record
+    // this is compared against; a variant that *gains* or *loses* a struct body
+    // moves an entry into or out of the map, which is the change worth seeing.
+    current = null;
+    if (!text.includes('{')) continue;
+    current = new Set<string>();
+    payload.set(captured, current);
     // A struct-bodied variant that rustfmt kept on one line —
     // `Image { mime_type: String, data: Vec<u8> },`. Its fields never appear on
     // a line of their own, so the depth-1 branch above never sees them. Reading
@@ -844,8 +1102,11 @@ export function parseRustItem(
       if (part.includes('#[')) {
         throw refuseField('an attribute inside a one-line struct variant');
       }
-      const field = /^(?:pub(?:\([a-z]+\))?\s+)?([a-z_][a-z0-9_]*)\s*:/.exec(part);
-      if (field !== null) payload.add(field[1] as string);
+      const field = FIELD_DECLARATION.exec(part);
+      if (field === null) {
+        throw refuseUnreadable(name, file, part, 'a field of a one-line struct variant');
+      }
+      current.add(field[1] as string);
     }
   }
   if (pending !== '') {
@@ -856,7 +1117,7 @@ export function parseRustItem(
     renameAll,
     kind,
     tag,
-    payloadFields: [...payload].sort(),
+    payloadFields: new Map([...payload].map(([variant, fields]) => [variant, [...fields].sort()])),
     renameAllFields,
   };
 }
@@ -942,17 +1203,28 @@ export function wireNames(item: RustItem): readonly string[] {
 }
 
 /**
- * The keys the fields inside struct-bodied variants cross under, sorted.
+ * The keys the fields inside each struct-bodied variant cross under — **the
+ * variant's own wire name to its own sorted keys**, one entry per
+ * struct-bodied variant.
  *
- * Always a *field* rename, whatever the item's own kind: `rename_all_fields`
- * addresses fields, and serde's field rule is the one that folds underscores.
- * Reading it with the variant rule would answer `mime_type` for `mime_type`
- * and report agreement where there is none.
+ * Two different rename rules meet here and neither may be used for the other's
+ * job. The *variant* name is renamed by the item's `rename_all` under the
+ * variant rule; the fields inside it are renamed by `rename_all_fields` under
+ * the *field* rule, which is the one that folds underscores. Reading the fields
+ * with the variant rule would answer `mime_type` for `mime_type` and report
+ * agreement where there is none.
+ *
+ * A plain object rather than a `Map` because callers compare it with
+ * `toEqual`, and a diff that names the arm is the whole value of keying it.
  */
-export function payloadWireNames(item: RustItem): readonly string[] {
-  return item.payloadFields
-    .map((field) => wireName(field, item.renameAllFields, 'field'))
-    .sort();
+export function payloadWireKeys(item: RustItem): Readonly<Record<string, readonly string[]>> {
+  const keys: Record<string, readonly string[]> = {};
+  for (const [variant, fields] of item.payloadFields) {
+    keys[wireName(variant, item.renameAll, item.kind)] = fields
+      .map((field) => wireName(field, item.renameAllFields, 'field'))
+      .sort();
+  }
+  return keys;
 }
 
 export interface SerialisableItem {
@@ -966,8 +1238,29 @@ export function qualified(item: { readonly file: string; readonly rust: string }
 }
 
 /**
- * Every braced `pub enum` / `pub struct` in one file that derives `Serialize`
- * — that is, everything in it that can put keys on the wire.
+ * Every `.rs` path named in a piece of prose.
+ *
+ * Each parity guard carries a register of serialisable types it deliberately
+ * does not pair, and each entry carries a sentence saying why. A probe read
+ * one of those sentences and used it: the skills register discharged
+ * `SkillHeader` with *"`src-tauri/src/ipc/skills.rs` takes it apart and builds
+ * `SkillsReadRes`, whose fields are what the renderer reads"* — and no
+ * inventory in the repository read that file. Changing `tag = "kind"` to
+ * `tag = "type"` there is the exact edit `Pairing.tag`'s own documentation
+ * cites as its founding motivation, and it was green across the whole suite.
+ *
+ * RULE T: prose neither creates nor proves an edge. So a register entry that
+ * hands a type to another file must hand it somewhere the same guard reads,
+ * and this is what lets each guard assert that rather than assume it. It is
+ * deliberately literal — it finds the path, and the guard checks the path
+ * against the files it actually opened; it does not try to judge the sentence.
+ */
+export function rustPathsNamedIn(prose: string): readonly string[] {
+  return [...prose.matchAll(/[A-Za-z0-9_./-]+\.rs\b/g)].map((match) => match[0] as string);
+}
+
+/**
+ * Every braced `enum` / `struct` in one file that can put keys on the wire.
  *
  * Tuple and unit structs are out of scope on purpose: they have no member
  * names for {@link parseRustItem} to read, so they cannot be paired at all.
@@ -975,25 +1268,54 @@ export function qualified(item: { readonly file: string; readonly rust: string }
  * `HarmCategories(u8)` are all of that shape here.
  *
  * **Over-inclusion costs an entry on a register; under-inclusion costs a miss,
- * and a miss is what this scan exists to prevent.** So the form of each
- * declaration is decided by reading forward to the first `{`, `(` or `;`
- * rather than by matching a declaration that ends in a brace, and the derive is
- * looked for in the whole attribute block rather than in a slice back to
- * `#[derive`.
+ * and a miss is what this scan exists to prevent.** Three earlier versions each
+ * substituted a spelling for the question and each lost a live type to it:
+ *
+ * - `pub struct X … {` at the end of one line missed a `where` clause, whose
+ *   opening brace is on a line of its own. The form is now decided by reading
+ *   forward to the first `{`, `(` or `;` ({@link itemForm}).
+ * - `^pub ` missed `pub(crate)` and anything indented inside a `mod`.
+ *   {@link DECLARATION} now spells every visibility Rust allows, and no
+ *   visibility at all.
+ * - a `derive` naming `Serialize` missed a hand-written
+ *   `impl serde::Serialize for X`, which satisfies the same trait and puts
+ *   whatever keys its body writes on the wire. {@link IMPL_SERIALIZE} finds
+ *   those, and a manual impl for a type this file does not declare is an
+ *   **error** rather than a shrug, because the alternative is a serialisable
+ *   type that no inventory in the repository can name.
  */
 export function scanSerialisable(source: string, file: string): readonly SerialisableItem[] {
+  const declarations = declarationsIn(source);
+  const blanked = withoutCommentsOrStrings(source);
+  const manual = new Set<string>();
+  for (const match of blanked.matchAll(IMPL_SERIALIZE)) manual.add(match[1] as string);
   const found: SerialisableItem[] = [];
-  for (const match of source.matchAll(/^pub (enum|struct) ([A-Za-z][A-Za-z0-9_]*)\b/gm)) {
-    const at = match.index;
-    if (at === undefined) continue;
-    if (itemForm(source, at + (match[0] as string).length).form !== 'braced') continue;
-    const block = attributeBlockBefore(source, at);
-    const read = readAttributeText(block);
+  const declared = new Set(declarations.map((declaration) => declaration.name));
+  for (const target of manual) {
+    if (declared.has(target)) continue;
+    throw new Error(
+      `serde-wire: ${file} implements \`Serialize\` for \`${target}\`, which it does not ` +
+        `declare. This scan can only put a type on an inventory it can also read; move the ` +
+        `impl next to the declaration, or the type is serialisable and unaccounted.`,
+    );
+  }
+  for (const { name, keyword, at, after } of declarations) {
+    if (itemForm(source, after).form !== 'braced') continue;
+    const region = attributeRegionBefore(source, at);
+    const read = readAttributeText(region);
+    if (read.unaccounted !== null) {
+      throw new Error(
+        `serde-wire: the attribute region above \`${keyword} ${name}\` in ${file} holds text ` +
+          `this parser cannot account for: \`${firstLine(read.unaccounted)}\`. A derive hidden ` +
+          `in it would make the type invisible to this inventory.`,
+      );
+    }
     const derives = withoutCfgAttr(read.attributes).attributes.filter(
       (attribute) => attribute.path === 'derive',
     );
-    if (!derives.some((attribute) => /\bSerialize\b/.test(attribute.body ?? ''))) continue;
-    found.push({ file, keyword: match[1] as 'enum' | 'struct', rust: match[2] as string });
+    const derived = derives.some((attribute) => /\bSerialize\b/.test(attribute.body ?? ''));
+    if (!derived && !manual.has(name)) continue;
+    found.push({ file, keyword, rust: name });
   }
   return found;
 }

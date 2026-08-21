@@ -56,7 +56,14 @@
  * that sentence sat in this header describing it as a stated limitation. It was
  * a hole, not a limitation: `rename_all_fields` is a second rename rule under a
  * second attribute name, and flipping it changed every payload key on the wire
- * with every assertion here still green. {@link Pairing.payload} closes it.
+ * with every assertion here still green. {@link Pairing.payload} closes it — and
+ * closes it **arm by arm**, which is the second half of the same lesson. The
+ * first version of that field was one flat list of every key of every arm, and
+ * a probe put `#[serde(skip)]` on `ContentPart::Reasoning`'s `text`: `Text`
+ * declares `text` too, so the pooled union did not move, and
+ * `src/features/conversation/stored-entries.ts` went on building
+ * `{ kind: 'reasoning', text: … }` out of a key that had stopped crossing. A
+ * perfectly read attribute fed into a comparison that discarded the reading.
  *
  * One surface remains outside, stated rather than implied: nothing in
  * TypeScript observes actual bytes. Only the Rust side does, in `model.rs`'s
@@ -70,8 +77,23 @@
  * both sides, not that both encode the bytes the same way. Where the shapes
  * deliberately differ — `ContentPartInput.image.data` is base64 where the
  * provider model is a byte array, `CapabilityFinding` drops the adapter's
- * free-text `note` — the difference lives in `src-tauri/src/ipc/`, which is a
- * different boundary with its own tests, and those types are not listed here.
+ * free-text `note` — the difference lives in `src-tauri/src/ipc/`, and those
+ * types are not listed here.
+ *
+ * That used to end *"which is a different boundary with its own tests"*, and a
+ * probe measured the sentence rather than believing it. For the two conversions
+ * this header names, it holds: `src-tauri/src/ipc/content.rs` asserts
+ * `json["kind"] == "image"`, `json["mimeType"]`, `json["kind"] == "toolResult"`,
+ * `json["callId"]` and `json["isError"]` on serialised bytes, and
+ * `src-tauri/src/ipc/models.rs` asserts `json["contextWindowTokens"]`,
+ * `json["capabilities"]["toolCalls"]` and `json["findings"][1]["capability"]`.
+ * For `src-tauri/src/ipc/skills.rs` it did **not** hold — that file contains no
+ * `serde_json` at all and nothing anywhere pinned its tag key, so the sentence
+ * was covering a gap it had not checked. That file is now read by
+ * `src/platform/skill-store-parity.test.ts`, which pairs `SkillsListRes` and
+ * `SkillsReadRes` against `contract.ts`. The lesson is narrower than the fix: a
+ * header saying another boundary is covered is prose, and prose is not the
+ * cover.
  */
 
 import { readFileSync } from 'node:fs';
@@ -107,9 +129,10 @@ import type {
 } from './contract';
 import {
   parseRustItem,
-  payloadWireNames,
+  payloadWireKeys,
   qualified,
   RENAME_RULES,
+  rustPathsNamedIn,
   scanSerialisable,
   wireName,
   wireNames,
@@ -407,71 +430,153 @@ const FILTER_VERDICT_FIELDS = everyVariantOf<keyof FilterVerdict & string>()([
  * of every arm, minus the tag — and compared against what the crate really
  * spells, so a field added on one side alone fails one of the two.
  */
-type KeysOfUnionOf<T> = T extends unknown ? keyof T : never;
-
-const CONTENT_PART_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<ContentPart> & string, typeof CONTENT_PART_TAG>
->()([
-  'text',
-  'signature',
-  'redacted',
-  'mimeType',
-  'data',
-  'callId',
-  'name',
-  'arguments',
-  'content',
-  'isError',
-]);
-
-const TOOL_CALL_OUTCOME_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<ToolCallOutcome> & string, typeof TOOL_CALL_OUTCOME_TAG>
->()(['callId', 'name', 'arguments', 'emulated', 'index', 'rawArguments', 'reason']);
-
-const DEGRADATION_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<Degradation> & string, typeof DEGRADATION_TAG>
->()([
-  'toolCount',
-  'droppedMessages',
-  'approxDroppedTokens',
-  'strategy',
-  'detail',
-  'count',
-  'recoveredAnswerChars',
-  'attempts',
-]);
-
-const TOOL_CHOICE_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<ToolChoiceInput> & string, typeof TOOL_CHOICE_TAG>
->()(['name']);
-
-const STREAM_EVENT_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<ChatStreamEvent> & string, typeof STREAM_EVENT_TAG>
->()(['text', 'delta', 'usage', 'response', 'error']);
-
-const PROVIDER_ERROR_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnionOf<ChatError> & string, typeof PROVIDER_ERROR_TAG>
->()([
-  'limitTokens',
-  'requestedTokens',
-  'diagnosis',
-  'retryAfterMs',
-  'modelId',
-  'capability',
-  'failure',
-]);
+/** The keys of one arm of an internally tagged union, without the tag itself. */
+type ArmFieldsOf<U, T extends PropertyKey, V> = Exclude<
+  keyof Extract<U, Record<T, V>> & string,
+  T
+>;
 
 /**
- * `TransportFailure` is externally tagged, so its payload arms cross as
- * single-key objects and the payload field sits one level *inside* the arm —
- * `{ server: { status } }`. `ValuesOfUnion` steps through that key to reach it,
- * which is why this one list is built differently from the five above.
+ * Accepts a record only when it names every arm of `U` and, for each, every
+ * field of that arm exactly once.
+ *
+ * A flat list of *every key of every arm* is not a weaker version of this; it
+ * is a different question, and a probe walked through the difference.
+ * `ContentPart::Text` and `::Reasoning` both declare `text`, so `#[serde(skip)]`
+ * on `Reasoning`'s left the pooled union unchanged — the parser read the
+ * attribute perfectly, the field really did leave the read, and the comparison
+ * could not see it because the comparison was over a union.
+ * `src/features/conversation/stored-entries.ts` goes on building
+ * `{ kind: 'reasoning', text: … }` out of a key that has stopped crossing.
+ * Keyed by arm, the diff names the arm that lost it.
+ *
+ * Same device as {@link everyVariantOf}, restated for the same reason: a
+ * type-level check with an identity function under it is the same check in
+ * every copy of it.
  */
-type ValuesOfUnion<T> = T extends unknown ? T[keyof T] : never;
+function everyFieldOfEveryArm<U, T extends PropertyKey>() {
+  return <R extends { readonly [V in TagsOf<U, T> & string]: readonly ArmFieldsOf<U, T, V>[] }>(
+    record: R & {
+      readonly [V in TagsOf<U, T> & string]: [
+        Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>,
+      ] extends [never]
+        ? unknown
+        : ['this arm is missing a field', Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>];
+    },
+  ): Readonly<Record<string, readonly string[]>> =>
+    // Every arm must be *written*, so a new one cannot be forgotten; only the
+    // ones that carry fields are *compared*, because a unit arm puts no key on
+    // the wire and the Rust side has no entry for it.
+    Object.fromEntries(
+      Object.entries(record as Record<string, readonly string[]>)
+        .filter(([, fields]) => fields.length > 0)
+        // Sets, not sequences, the same as every other comparison here: the
+        // arms are written in the order the Rust declares them, and the order
+        // is not part of the wire contract.
+        .map(([arm, fields]) => [arm, [...fields].sort()]),
+    );
+}
 
-const TRANSPORT_FAILURE_PAYLOAD = everyVariantOf<
-  KeysOfUnionOf<ValuesOfUnion<Exclude<TransportFailure, string>>> & string
->()(['status']);
+const CONTENT_PART_PAYLOAD = everyFieldOfEveryArm<ContentPart, typeof CONTENT_PART_TAG>()({
+  text: ['text'],
+  reasoning: ['text', 'signature', 'redacted'],
+  image: ['mimeType', 'data'],
+  toolCall: ['callId', 'name', 'arguments'],
+  toolResult: ['callId', 'content', 'isError'],
+});
+
+const TOOL_CALL_OUTCOME_PAYLOAD = everyFieldOfEveryArm<
+  ToolCallOutcome,
+  typeof TOOL_CALL_OUTCOME_TAG
+>()({
+  ok: ['callId', 'name', 'arguments', 'emulated'],
+  malformed: ['index', 'callId', 'name', 'rawArguments', 'reason'],
+});
+
+const DEGRADATION_PAYLOAD = everyFieldOfEveryArm<Degradation, typeof DEGRADATION_TAG>()({
+  toolCallingEmulated: ['toolCount'],
+  toolCatalogueWithheld: [],
+  contextReduced: ['droppedMessages', 'approxDroppedTokens', 'strategy'],
+  structuredOutputUnsupported: [],
+  structuredOutputMismatch: ['detail'],
+  malformedFramesSkipped: ['count'],
+  unterminatedReasoning: ['recoveredAnswerChars'],
+  noTerminationSentinel: [],
+  usageNotReported: [],
+  malformedToolCalls: ['count'],
+  failedOver: ['attempts'],
+});
+
+const TOOL_CHOICE_PAYLOAD = everyFieldOfEveryArm<ToolChoiceInput, typeof TOOL_CHOICE_TAG>()({
+  auto: [],
+  none: [],
+  required: [],
+  named: ['name'],
+});
+
+const STREAM_EVENT_PAYLOAD = everyFieldOfEveryArm<ChatStreamEvent, typeof STREAM_EVENT_TAG>()({
+  textDelta: ['text'],
+  reasoningDelta: ['text'],
+  toolCallDelta: ['delta'],
+  usage: ['usage'],
+  done: ['response'],
+  error: ['error'],
+});
+
+const PROVIDER_ERROR_PAYLOAD = everyFieldOfEveryArm<ChatError, typeof PROVIDER_ERROR_TAG>()({
+  contextLengthExceeded: ['limitTokens', 'requestedTokens', 'diagnosis'],
+  authFailed: ['diagnosis'],
+  rateLimited: ['retryAfterMs', 'diagnosis'],
+  modelNotFound: ['modelId', 'diagnosis'],
+  capabilityUnsupported: ['capability', 'diagnosis'],
+  transport: ['failure', 'diagnosis'],
+  malformedResponse: ['diagnosis'],
+  cancelled: [],
+});
+
+/**
+ * `TransportFailure` is externally tagged, so there is no tag key to exclude
+ * and its struct arms cross as single-key objects with the fields one level
+ * *inside* — `{ server: { status } }` — while its unit arms are bare strings.
+ * Both shapes differ from every union above, so the arm reader does too.
+ */
+type ExternalArmOf<U, V extends PropertyKey> = Extract<U, Record<V, unknown>>;
+type ExternalArmFieldsOf<U, V extends PropertyKey> = [ExternalArmOf<U, V>] extends [never]
+  ? never
+  : keyof ExternalArmOf<U, V>[V & keyof ExternalArmOf<U, V>] & string;
+type ExternalArmsOf<U> = U extends string ? U : keyof U & string;
+
+function everyFieldOfEveryExternalArm<U>() {
+  return <R extends { readonly [V in ExternalArmsOf<U>]: readonly ExternalArmFieldsOf<U, V>[] }>(
+    record: R & {
+      readonly [V in ExternalArmsOf<U>]: [
+        Exclude<ExternalArmFieldsOf<U, V>, R[V & keyof R][number]>,
+      ] extends [never]
+        ? unknown
+        : [
+            'this arm is missing a field',
+            Exclude<ExternalArmFieldsOf<U, V>, R[V & keyof R][number]>,
+          ];
+    },
+  ): Readonly<Record<string, readonly string[]>> =>
+    Object.fromEntries(
+      Object.entries(record as Record<string, readonly string[]>)
+        .filter(([, fields]) => fields.length > 0)
+        // Sets, not sequences, the same as every other comparison here: the
+        // arms are written in the order the Rust declares them, and the order
+        // is not part of the wire contract.
+        .map(([arm, fields]) => [arm, [...fields].sort()]),
+    );
+}
+
+const TRANSPORT_FAILURE_PAYLOAD = everyFieldOfEveryExternalArm<TransportFailure>()({
+  connect: [],
+  timeout: [],
+  stalled: [],
+  reset: [],
+  server: ['status'],
+  request: ['status'],
+});
 
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
@@ -479,11 +584,26 @@ const TRANSPORT_FAILURE_PAYLOAD = everyVariantOf<
 
 const CRATE = join(process.cwd(), 'src-tauri', 'crates', 'vela-providers', 'src');
 
+/**
+ * The five files of the crate this boundary is about, named once.
+ *
+ * A literal, and deliberately so: the renderer's chat vocabulary lives in these
+ * five, and the rest of `vela-providers/src` is adapter machinery that speaks
+ * to endpoints rather than to this contract. `covers every Rust file the
+ * contract says it reads` pins the list against the sentence in `contract.ts`
+ * that names them, so the two cannot drift apart in silence, and the inventory
+ * equality below is scoped to these files in its own name.
+ */
+const FILES: readonly string[] = [
+  'capability.rs',
+  'diagnostic.rs',
+  'error.rs',
+  'event.rs',
+  'model.rs',
+];
+
 const SOURCES: Readonly<Record<string, string>> = Object.fromEntries(
-  ['model.rs', 'event.rs', 'error.rs', 'capability.rs', 'diagnostic.rs'].map((file) => [
-    file,
-    readFileSync(join(CRATE, file), 'utf8'),
-  ]),
+  FILES.map((file) => [file, readFileSync(join(CRATE, file), 'utf8')]),
 );
 
 /**
@@ -526,15 +646,22 @@ interface Pairing {
    */
   readonly tag: string | null;
   /**
-   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
-   * item that has none.
+   * The wire keys of the fields inside each struct-bodied variant, keyed by
+   * that variant's own wire name — `{}` for an item that has none.
    *
    * Required for the same reason {@link tag} is, and against the same class of
    * failure. These keys are members of nothing, so a comparison over members
    * cannot reach them; an enum that grows a struct-bodied variant, or whose
    * `rename_all_fields` changes, fails here instead of passing silently.
+   *
+   * Keyed rather than pooled, and that is a probe's doing rather than a
+   * preference. `ContentPart::Text` and `::Reasoning` both declare `text`, so
+   * `#[serde(skip)]` on `Reasoning`'s left the pooled union of every arm's
+   * fields exactly as it was — while `src/features/conversation/stored-entries.ts`
+   * went on building `{ kind: 'reasoning', text: … }` out of a key that had
+   * stopped crossing.
    */
-  readonly payload: readonly string[];
+  readonly payload: Readonly<Record<string, readonly string[]>>;
 }
 
 const ENUMS: readonly Pairing[] = [
@@ -543,7 +670,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'MessageRole',
-    payload: [],
+    payload: {},
     tag: null,
     listed: MESSAGE_ROLE,
   },
@@ -552,7 +679,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'StopReason',
-    payload: [],
+    payload: {},
     tag: null,
     listed: STOP_REASON,
   },
@@ -570,7 +697,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'MalformedToolCallReason',
-    payload: [],
+    payload: {},
     tag: null,
     listed: MALFORMED_TOOL_CALL,
   },
@@ -597,7 +724,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'ContextStrategy',
-    payload: [],
+    payload: {},
     tag: null,
     listed: CONTEXT_STRATEGY,
   },
@@ -624,7 +751,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'error.rs',
     keyword: 'enum',
     ts: 'CapabilityName',
-    payload: [],
+    payload: {},
     tag: null,
     listed: CAPABILITY,
   },
@@ -651,7 +778,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'capability.rs',
     keyword: 'enum',
     ts: 'CapabilitySupport',
-    payload: [],
+    payload: {},
     tag: null,
     listed: SUPPORT,
   },
@@ -660,7 +787,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'capability.rs',
     keyword: 'enum',
     ts: 'CapabilityEvidence',
-    payload: [],
+    payload: {},
     tag: null,
     listed: EVIDENCE,
   },
@@ -669,7 +796,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'KnownCause',
-    payload: [],
+    payload: {},
     tag: null,
     listed: CAUSE,
   },
@@ -678,7 +805,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'FilterStage',
-    payload: [],
+    payload: {},
     tag: null,
     listed: FILTER_STAGE,
   },
@@ -687,7 +814,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'FilterKind',
-    payload: [],
+    payload: {},
     tag: null,
     listed: FILTER_KIND,
   },
@@ -699,7 +826,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'TokenUsage',
-    payload: [],
+    payload: {},
     tag: null,
     listed: TOKEN_USAGE_FIELDS,
   },
@@ -708,7 +835,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'ChatResponseBody',
-    payload: [],
+    payload: {},
     tag: null,
     listed: CHAT_RESPONSE_FIELDS,
   },
@@ -717,7 +844,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'AnswerProvenance',
-    payload: [],
+    payload: {},
     tag: null,
     listed: ANSWER_PROVENANCE_FIELDS,
   },
@@ -726,7 +853,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'SchemaMismatch',
-    payload: [],
+    payload: {},
     tag: null,
     listed: SCHEMA_MISMATCH_FIELDS,
   },
@@ -735,7 +862,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'event.rs',
     keyword: 'struct',
     ts: 'ToolCallDelta',
-    payload: [],
+    payload: {},
     tag: null,
     listed: TOOL_CALL_DELTA_FIELDS,
   },
@@ -744,7 +871,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'EndpointIdentity',
-    payload: [],
+    payload: {},
     tag: null,
     listed: ENDPOINT_IDENTITY_FIELDS,
   },
@@ -753,7 +880,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'Diagnosis',
-    payload: [],
+    payload: {},
     tag: null,
     listed: DIAGNOSIS_FIELDS,
   },
@@ -762,7 +889,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'FilterVerdict',
-    payload: [],
+    payload: {},
     tag: null,
     listed: FILTER_VERDICT_FIELDS,
   },
@@ -795,29 +922,93 @@ function serialisableItems(file: string): readonly SerialisableItem[] {
  * *unaccounted* types exactly zero, so that the assertion below can be an
  * equality rather than a threshold.
  */
-const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: string })[] = [
+interface Registered extends SerialisableItem {
+  readonly because: string;
+  /**
+   * The type this one's contract is discharged by, qualified as
+   * `file.rs::Type`, or `null` when nothing here takes it over.
+   *
+   * **Not one entry below can fill this in, and that is the honest answer**
+   * rather than a decorative one. Every entry here is discharged by a type in
+   * `src-tauri/src/ipc/`, which this guard does not read — so `null`, and the
+   * reasons stay what they are: statements about the direction these types
+   * travel, not hand-offs this file can prove. The field exists because the
+   * sibling guard's register wrote a hand-off in prose, pointed it at a Rust
+   * file no inventory read, and a probe changed the tag key at the far end with
+   * the whole suite green. `every hand-off on the register lands on a type this
+   * guard pairs` is what makes the difference between a hand-off and a
+   * statement checkable instead of a matter of reading.
+   */
+  readonly handedTo: string | null;
+}
+
+const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   // The request direction. The renderer never sends these shapes; it sends the
   // DTOs in `src-tauri/src/ipc/`, which convert. The header of this file says
   // so, and this is that sentence made checkable.
-  { file: 'model.rs', keyword: 'struct', rust: 'ChatRequest', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'struct', rust: 'ChatMessage', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'struct', rust: 'ToolDefinition', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'enum', rust: 'ResponseFormat', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'enum', rust: 'ReasoningRequest', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'struct', rust: 'CacheHints', because: 'request DTO boundary' },
-  { file: 'model.rs', keyword: 'struct', rust: 'Sampling', because: 'request DTO boundary' },
+  {
+    file: 'model.rs',
+    keyword: 'struct',
+    rust: 'ChatRequest',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'struct',
+    rust: 'ChatMessage',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'struct',
+    rust: 'ToolDefinition',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'enum',
+    rust: 'ResponseFormat',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'enum',
+    rust: 'ReasoningRequest',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'struct',
+    rust: 'CacheHints',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
+  {
+    file: 'model.rs',
+    keyword: 'struct',
+    rust: 'Sampling',
+    handedTo: null,
+    because: 'request DTO boundary',
+  },
   // Capability reporting crosses as an ipc DTO that drops the adapter's
   // free-text `note`; the header names that difference too.
   {
     file: 'capability.rs',
     keyword: 'struct',
     rust: 'CapabilityFinding',
+    handedTo: null,
     because: 'capability DTO boundary',
   },
   {
     file: 'capability.rs',
     keyword: 'struct',
     rust: 'ModelCapabilities',
+    handedTo: null,
     because: 'capability DTO boundary',
   },
   // Never reaches the renderer by name. `FilterVerdict::categories` is
@@ -828,6 +1019,7 @@ const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: str
     file: 'diagnostic.rs',
     keyword: 'enum',
     rust: 'HarmCategory',
+    handedTo: null,
     because: 'crosses as a bitset, not as names',
   },
 ];
@@ -836,7 +1028,6 @@ const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: str
 function expectMembers(pairing: Pairing): void {
   const item = readRustItem(pairing.file, pairing.keyword, pairing.rust);
   const rust = wireNames(item);
-  expect(rust.length, `parser read nothing out of ${pairing.rust}`).toBeGreaterThan(1);
   expect([...rust].sort(), `${pairing.file}::${pairing.rust} vs ${pairing.ts}`).toEqual(
     [...pairing.listed].sort(),
   );
@@ -845,15 +1036,17 @@ function expectMembers(pairing: Pairing): void {
   // typeof X_TAG>`, which stops compiling if the union does not carry that
   // key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
-  // The fields inside struct-bodied variants. Members of nothing, so the
-  // comparison above cannot reach them, and serde renames them under
+  // The fields inside struct-bodied variants, arm by arm. Members of nothing,
+  // so the comparison above cannot reach them; serde renames them under
   // `rename_all_fields` — a different attribute from the one that renames the
-  // variants, and one that was recorded as tolerated here until a probe
-  // flipped it and nothing went red.
+  // variants, and one that was recorded as tolerated here until a probe flipped
+  // it and nothing went red; and pooling them across arms hides a key that
+  // leaves one arm while a sibling still declares it, which is the probe after
+  // that one.
   expect(
-    [...payloadWireNames(item)],
-    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
-  ).toEqual([...pairing.payload].sort());
+    payloadWireKeys(item),
+    `${pairing.file}::${pairing.rust} struct-variant payload keys, by variant`,
+  ).toEqual(pairing.payload);
 }
 
 describe('chat contract parity with vela-providers', () => {
@@ -873,13 +1066,7 @@ describe('chat contract parity with vela-providers', () => {
     // The doc comment on contract.ts's chat block names these files. If one is
     // dropped from the pairings the claim goes stale silently, so it is asserted.
     const covered = new Set([...ENUMS, ...STRUCTS].map((pairing) => pairing.file));
-    expect([...covered].sort()).toEqual([
-      'capability.rs',
-      'diagnostic.rs',
-      'error.rs',
-      'event.rs',
-      'model.rs',
-    ]);
+    expect([...covered].sort()).toEqual([...FILES].sort());
   });
 
   /**
@@ -906,8 +1093,7 @@ describe('chat contract parity with vela-providers', () => {
    * file.
    */
   it('accounts for every serialisable type in the files it reads', () => {
-    const scanned = ['capability.rs', 'diagnostic.rs', 'error.rs', 'event.rs', 'model.rs']
-      .flatMap((file) => serialisableItems(file))
+    const scanned = FILES.flatMap((file) => serialisableItems(file))
       .map(qualified)
       .sort();
     const accounted = [
@@ -919,10 +1105,57 @@ describe('chat contract parity with vela-providers', () => {
     );
   });
 
-  it('pairs each type at most once', () => {
+  /**
+   * **RULE T, made checkable: the register may not discharge a type into prose.**
+   *
+   * Either an entry hands the type to another type this guard pairs — and then
+   * the hand-off is an edge, because the target carries its own assertions — or
+   * it names no `.rs` file at all and is a statement about this type alone.
+   * What it may not do is name a Rust file this guard does not open, because a
+   * sentence about a file nobody reads is a sentence and nothing else. Every
+   * entry here takes the second form, and the assertion is what keeps it that
+   * way when the next one is written.
+   */
+  it('every hand-off on the register lands on a type this guard pairs', () => {
+    const paired = new Set([...ENUMS, ...STRUCTS].map(qualified));
+    const SCAN = (): readonly SerialisableItem[] => FILES.flatMap((file) => serialisableItems(file));
+    for (const entry of NOT_ON_THIS_BOUNDARY) {
+      const name = qualified(entry);
+      // Reads the entry's own `keyword`, which nothing else does: a register
+      // row that says `struct` for what the crate declares as an `enum` is a
+      // row that was written about a different type from the one it now names.
+      const scanned = SCAN().find((item) => qualified(item) === name);
+      expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      if (entry.handedTo !== null) {
+        expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired`).toContain(
+          entry.handedTo,
+        );
+      }
+      for (const path of rustPathsNamedIn(entry.because)) {
+        expect(FILES, `${name}'s reason names ${path}, which this guard does not read`).toContain(
+          path,
+        );
+      }
+    }
+    // The control: the loop is able to fail, on both counts.
+    expect(paired.has('model.rs::ContentPart')).toBe(true);
+    expect(paired.has('ipc/content.rs::ContentPartInput')).toBe(false);
+    expect(rustPathsNamedIn('converted by `src-tauri/src/ipc/content.rs`')).toEqual([
+      'src-tauri/src/ipc/content.rs',
+    ]);
+    expect(FILES).not.toContain('src-tauri/src/ipc/content.rs');
+    expect(rustPathsNamedIn('request DTO boundary')).toEqual([]);
+  });
+
+  it('pairs each type at most once, and none vacuously', () => {
     const pairings = [...ENUMS, ...STRUCTS];
     expect(new Set(pairings.map((p) => `${p.file}::${p.rust}`)).size).toBe(pairings.length);
     expect(new Set(pairings.map((p) => p.ts)).size).toBe(pairings.length);
+    // The anti-vacuity floor, at the table rather than per read. A pairing with
+    // an empty list would compare nothing against nothing however good the
+    // parser is; with a non-empty list, an empty read fails the equality inside
+    // `expectMembers` on its own.
+    expect(pairings.filter((pairing) => pairing.listed.length === 0)).toEqual([]);
   });
 });
 
@@ -1183,8 +1416,9 @@ describe('the parity parser itself', () => {
   });
 
   it('reads the discriminant key, including out of a multi-line attribute block', () => {
-    // rustfmt breaks `ContentPart`'s serde attribute across four lines, so a
-    // line-oriented read sees `#[serde(` and no arguments at all.
+    // rustfmt breaks `ContentPart`'s serde attribute across five lines
+    // (`#[serde(`, three arguments, `)]`), so a line-oriented read sees
+    // `#[serde(` and no arguments at all.
     expect(readRustItem('model.rs', 'enum', 'ContentPart').tag).toBe('kind');
     expect(readRustItem('model.rs', 'enum', 'ToolCallOutcome').tag).toBe('status');
     expect(readRustItem('event.rs', 'enum', 'StreamEvent').tag).toBe('type');
@@ -1303,13 +1537,47 @@ describe('the parity parser itself', () => {
     // measurement of how long a variant happened to be.
     const part = readRustItem('model.rs', 'enum', 'ContentPart');
     expect(part.renameAllFields).toBe('camelCase');
-    expect(part.payloadFields).toContain('mime_type');
-    expect(part.payloadFields).toContain('signature');
-    expect(payloadWireNames(part)).toContain('mimeType');
-    expect(payloadWireNames(part)).toContain('isError');
+    expect(part.payloadFields.get('Image')).toEqual(['data', 'mime_type']);
+    expect(part.payloadFields.get('Reasoning')).toEqual(['redacted', 'signature', 'text']);
+    expect(payloadWireKeys(part).image).toEqual(['data', 'mimeType']);
+    expect(payloadWireKeys(part).toolResult).toEqual(['callId', 'content', 'isError']);
     // A struct has no variants, so it has no payload at all — not an empty
     // read of something that was there.
-    expect(readRustItem('model.rs', 'struct', 'TokenUsage').payloadFields).toEqual([]);
+    expect(readRustItem('model.rs', 'struct', 'TokenUsage').payloadFields.size).toBe(0);
+  });
+
+  it('keeps each variant’s payload keys apart from its siblings’', () => {
+    // The flat-union hole, as a fixture. `Text` and `Reasoning` both declare
+    // `text`, so `#[serde(skip)]` on one of them leaves the *union* of every
+    // arm's fields exactly as it was — a probe used that against this file and
+    // every assertion stayed green. Keyed by arm, the arm that lost the key is
+    // the one the diff names.
+    const fixture = (skip: string): string =>
+      [
+        '#[derive(Serialize)]',
+        '#[serde(tag = "kind", rename_all = "camelCase")]',
+        'pub enum FixtureEnum {',
+        '    Text { text: String },',
+        '    Reasoning {',
+        `${skip}`,
+        '        text: String,',
+        '        signature: Option<String>,',
+        '    },',
+        '}',
+        '',
+      ].join('\n');
+    const whole = parseRustItem(fixture('        // nothing skipped'), 'enum', 'FixtureEnum');
+    const skipped = parseRustItem(fixture('        #[serde(skip)]'), 'enum', 'FixtureEnum');
+    // The union across arms is `text`+`signature` either way: it cannot see it.
+    const union = (item: RustItem): readonly string[] =>
+      [...new Set([...item.payloadFields.values()].flat())].sort();
+    expect(union(whole)).toEqual(union(skipped));
+    // Keyed by arm, it is the whole difference.
+    expect(payloadWireKeys(whole)).toEqual({
+      text: ['text'],
+      reasoning: ['signature', 'text'],
+    });
+    expect(payloadWireKeys(skipped)).toEqual({ text: ['text'], reasoning: ['signature'] });
   });
 
   it('sees rename_all_fields change every payload key while changing no identifier', () => {
@@ -1330,8 +1598,14 @@ describe('the parity parser itself', () => {
     const pascal = parseRustItem(fixture('PascalCase'), 'enum', 'FixtureEnum');
     expect(camel.members).toEqual(pascal.members);
     expect(wireNames(camel)).toEqual(wireNames(pascal));
-    expect(payloadWireNames(camel)).toEqual(['callId', 'data', 'isError', 'mimeType']);
-    expect(payloadWireNames(pascal)).toEqual(['CallId', 'Data', 'IsError', 'MimeType']);
+    expect(payloadWireKeys(camel)).toEqual({
+      image: ['data', 'mimeType'],
+      toolResult: ['callId', 'isError'],
+    });
+    expect(payloadWireKeys(pascal)).toEqual({
+      image: ['Data', 'MimeType'],
+      toolResult: ['CallId', 'IsError'],
+    });
   });
 
   it('scans an item whose declaration does not end in a brace', () => {
@@ -1429,6 +1703,259 @@ describe('the parity parser itself', () => {
     ].join('\n');
     expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
       'fixture.rs::OnTheWire',
+    ]);
+  });
+
+  /* -- the attribute region, bounded by the item ------------------------- */
+
+  it('reads an attribute above the derive with a comment between them', () => {
+    // The probe that got past the previous version. The backward walk kept the
+    // longest run of lines that read as attribute text and stopped at `*\/`,
+    // which is neither attribute text nor a bracket-closer — so the serde
+    // attribute above the comment was outside the block the refusal inspects,
+    // `renameAll` read as `none`, and raw identifiers were compared against the
+    // TypeScript list as though serde had renamed nothing.
+    const commented = [
+      '#[serde(rename_all = "PascalCase")]',
+      '/* the store answers in the spec\'s own',
+      '   spelling for these three */',
+      '#[derive(Debug, Serialize)]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(parseRustItem(commented, 'struct', 'FixtureStruct').renameAll).toBe('PascalCase');
+    expect(scanSerialisable(commented, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::FixtureStruct',
+    ]);
+  });
+
+  it('stops the attribute region at the item before it, not at what it recognises', () => {
+    // The boundary is a position — the nearest `;`, `{` or `}` outside a
+    // bracket group — so nothing written inside the region can move it, and
+    // nothing outside it can be mistaken for part of it. Both halves matter:
+    // the derive above `HasOne` must not be credited to `HasNone`, and the
+    // refusal must fire on text in the region rather than silently ending it.
+    const fixture = [
+      'pub const SOMETHING: u8 = 1;',
+      '',
+      '#[derive(Serialize)]',
+      'pub struct HasOne {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+      'pub struct HasNone {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::HasOne']);
+
+    const smuggled = [
+      'pub const SOMETHING: u8 = 1;',
+      '#[serde_as]',
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(smuggled, 'struct', 'FixtureStruct')).toThrow(/does not model/);
+  });
+
+  /* -- what counts as a declaration -------------------------------------- */
+
+  it('scans a declaration whatever its visibility and indentation', () => {
+    // `^pub ` is a spelling standing in for the question. A `pub(crate)` type
+    // deriving `Serialize` was invisible to it, and so was anything indented
+    // inside a `mod` — both of which put keys on the wire exactly as a `pub`
+    // one does the moment a public type holds them.
+    const fixture = [
+      '#[derive(Serialize)]',
+      'pub(crate) struct RestrictedButOnTheWire {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+      'pub mod inner {',
+      '    #[derive(Serialize)]',
+      '    pub struct IndentedButOnTheWire {',
+      '        pub answered_by: String,',
+      '    }',
+      '}',
+      '',
+      '#[derive(Serialize)]',
+      'struct PrivateButOnTheWire {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::RestrictedButOnTheWire',
+      'fixture.rs::IndentedButOnTheWire',
+      'fixture.rs::PrivateButOnTheWire',
+    ]);
+    expect(
+      wireNames(parseRustItem(fixture, 'struct', 'RestrictedButOnTheWire')),
+    ).toEqual(['answered_by']);
+  });
+
+  it('does not read a declaration written inside a comment or a string', () => {
+    // The other half of widening the pattern to any indentation: the scan runs
+    // on the source with comments and string literals blanked, or a `pub struct`
+    // in a doc example would join the inventory as a type that does not exist.
+    const fixture = [
+      '/// ```',
+      '/// #[derive(Serialize)]',
+      '/// pub struct FromADocExample { pub x: String }',
+      '/// ```',
+      '#[derive(Serialize)]',
+      'pub struct Real {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+      'pub const SNIPPET: &str = "#[derive(Serialize)]\\npub struct FromAString { }";',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Real']);
+  });
+
+  it('finds a type whose Serialize is hand-written rather than derived', () => {
+    // `Serialize` is a trait; `#[derive(Serialize)]` is one way to satisfy it.
+    // A scan that looks for the derive answers "did someone write the word
+    // `derive` here?" when the question is "can this put keys on the wire?" —
+    // and a `serialize_struct` body answers the second yes and the first no.
+    const fixture = [
+      'pub struct StoreAuditRow {',
+      '    pub directory: String,',
+      '}',
+      '',
+      'impl serde::Serialize for StoreAuditRow {',
+      '    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>',
+      '    where',
+      '        S: serde::Serializer,',
+      '    {',
+      '        let mut row = serializer.serialize_struct("StoreAuditRow", 1)?;',
+      '        row.serialize_field("Directory", &self.directory)?;',
+      '        row.end()',
+      '    }',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::StoreAuditRow',
+    ]);
+  });
+
+  it('does not mistake a neighbouring trait or a bound for an impl of Serialize', () => {
+    // The trait path is matched immediately before `for`, so `Deserialize`,
+    // `Serializer` and a `Serialize` bound in a generic parameter list are not
+    // it. Over-inclusion here would cost a register entry for a type that puts
+    // nothing on the wire, which is a register that churns and gets weakened.
+    const fixture = [
+      'pub struct NotOnTheWire {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+      "impl<'de> serde::Deserialize<'de> for NotOnTheWire {",
+      '    fn deserialize<D>(_: D) -> Result<Self, D::Error> {',
+      '        todo!()',
+      '    }',
+      '}',
+      '',
+      'impl NotSerialize for NotOnTheWire {}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs')).toEqual([]);
+  });
+
+  it('refuses an impl of Serialize for a type it cannot find', () => {
+    const fixture = ['impl serde::Serialize for SomewhereElse {', '    // …', '}', ''].join('\n');
+    expect(() => scanSerialisable(fixture, 'fixture.rs')).toThrow(/which it does not declare/);
+  });
+
+  /* -- what counts as a member ------------------------------------------- */
+
+  it('reads a raw identifier under the key serde really emits for it', () => {
+    // `r#type` is not an exotic spelling. It is the only legal way to name a
+    // field whose wire key is `type`, which is exactly the situation a
+    // serde-facing struct runs into — and an alphabet of `[a-z_][a-z0-9_]*`
+    // captures `r`, then wants a `:` where the `#` is, and drops the field with
+    // no error at all while the assertion named `…, and no other` goes on
+    // passing over a live extra key.
+    const fixture = [
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct FixtureStruct {',
+      '    pub r#type: String,',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    const item = parseRustItem(fixture, 'struct', 'FixtureStruct');
+    expect(item.members).toEqual(['type', 'answered_by']);
+    expect(wireNames(item)).toEqual(['type', 'answeredBy']);
+  });
+
+  it('refuses a body line where a member should be and it cannot read one', () => {
+    // A `continue` answers "I did not recognise that, so there was nothing
+    // there", and those are two different answers. Every shape the reader does
+    // know is listed above this refusal; anything else is named out loud
+    // instead of quietly shrinking the set it reports.
+    const fixture = [
+      '#[derive(Serialize)]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '    pub unreadable_by_this_parser!(),',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(fixture, 'struct', 'FixtureStruct')).toThrow(
+      /is where a field should be and this parser cannot read it/,
+    );
+  });
+
+  it('does not invent a variant out of a tuple variant spread over lines', () => {
+    // Parenthesised continuation lines are continuations, not members. Read as
+    // members they add variants the contract has never heard of, and the
+    // comparison then fails for a reason that has nothing to do with drift.
+    const fixture = [
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "snake_case")]',
+      'pub enum FixtureEnum {',
+      '    OneThing,',
+      '    Wrapped(',
+      '        SomeLongTypeName,',
+      '    ),',
+      '}',
+      '',
+    ].join('\n');
+    expect(parseRustItem(fixture, 'enum', 'FixtureEnum').members).toEqual(['OneThing', 'Wrapped']);
+  });
+
+  it('blanks a raw string whose contents end in a backslash', () => {
+    // `r"\\?\"` is real in this tree — `vela-projects/src/workdir.rs` holds four
+    // such literals and `link.rs` two. A raw string has no escapes, so that
+    // trailing backslash is content; read with escape rules the `\"` is taken
+    // as an escaped quote, the literal never closes, and every brace after it
+    // is invisible to the reader.
+    const fixture = [
+      'pub fn strip(path: &str) -> Option<&str> {',
+      '    path.strip_prefix(r"\\\\?\\")',
+      '}',
+      '',
+      '#[derive(Serialize)]',
+      'pub struct AfterTheRawString {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::AfterTheRawString',
+    ]);
+    expect(wireNames(parseRustItem(fixture, 'struct', 'AfterTheRawString'))).toEqual([
+      'answered_by',
     ]);
   });
 

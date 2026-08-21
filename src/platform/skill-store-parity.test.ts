@@ -12,6 +12,17 @@
  * shown the wrong sentence — or none — about a skill they installed. This file
  * is the only thing in the tree that compares the two lists.
  *
+ * It also reads `src-tauri/src/ipc/skills.rs`, which is the crate's other half
+ * of the same sentence: `SkillsListRes` and `SkillsReadRes` are the shapes the
+ * two commands actually answer with, and `SkillsReadRes` is what the register
+ * below hands `SkillHeader`'s contract to. That hand-off used to be a sentence
+ * pointing at a file no inventory in this repository read, and a probe used it:
+ * `tag = "kind"` → `tag = "type"` there made every arm of
+ * `src/features/skills/SkillsPanel.tsx`'s `read.kind === 'invalid'` test false,
+ * with the whole suite green. It is red here now, and
+ * `every hand-off on the register lands on a type this guard pairs` is what
+ * stops the next such sentence being written.
+ *
  * ## What this file used to be, and why it is not that any more
  *
  * It was called skill-mount-parity.test.ts — spelled without backticks here
@@ -38,14 +49,20 @@
  * ## What is pinned, and in which direction each way fails
  *
  * A **Rust** variant added without its TypeScript twin fails here, at
- * `pnpm test`: this file reads the crate's sources off disk, applies each item's
- * own `#[serde(rename_all = …)]`, and compares the resulting wire names against
- * the lists below.
+ * `pnpm test`: this file reads the sources off disk, applies each item's own
+ * `#[serde(rename_all = …)]`, and compares the resulting wire names against the
+ * lists below.
  *
  * A **TypeScript** variant added without its Rust twin fails at
- * `pnpm typecheck`: every list is passed through {@link everyVariantOf}, which
- * is only assignable when the list covers its union exactly. There is no order
- * in which a one-sided change is green.
+ * `pnpm typecheck`: every list is passed through {@link everyVariantOf} and
+ * every payload record through {@link everyFieldOfEveryArm}, each of which is
+ * only assignable when it covers its union exactly — the second arm by arm.
+ * There is no order in which a one-sided change is green.
+ *
+ * The **fields inside** a struct-bodied variant are compared per arm rather
+ * than pooled, and that is not a presentation choice: both arms of
+ * `SkillListing` declare `directory`, so a `#[serde(skip)]` on one of them
+ * leaves a pooled union of every arm's fields exactly as it was.
  *
  * **Name parity, not semantic parity.** That both sides have an `invalid` arm,
  * not that both decide invalidity the same way. What the crate does with these
@@ -56,11 +73,18 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import type { SkillListing, SkillProblem, SkillResources } from './contract';
+import type {
+  SkillListing,
+  SkillProblem,
+  SkillResources,
+  SkillsListRes,
+  SkillsReadRes,
+} from './contract';
 import {
   parseRustItem,
-  payloadWireNames,
+  payloadWireKeys,
   qualified,
+  rustPathsNamedIn,
   scanSerialisable,
   wireName,
   wireNames,
@@ -91,6 +115,54 @@ function everyVariantOf<U extends string>() {
 /** The discriminant values of a tagged union, as the wire spells them. */
 type TagsOf<U, T extends PropertyKey> =
   U extends Record<T, infer V> ? (V extends string ? V : never) : never;
+
+/** The keys of one arm of an internally tagged union, without the tag itself. */
+type ArmFieldsOf<U, T extends PropertyKey, V> = Exclude<
+  keyof Extract<U, Record<T, V>> & string,
+  T
+>;
+
+/**
+ * Accepts a record only when it names every arm of `U` and, for each, every
+ * field of that arm exactly once.
+ *
+ * The per-arm shape is the enforcement, and a flat list is not a weaker version
+ * of it — it is a different question. A probe put `#[serde(skip)]` on
+ * `SkillListing::Invalid`'s `directory`, which the sibling `Skill` arm also
+ * declares: the deduplicated union of every arm's fields did not move, so a
+ * comparison over that union reported agreement while the key stopped crossing
+ * on the arm `src/features/skills/SkillsPanel.tsx` uses for its row label, its
+ * list key and the argument to `skills.select(...)`. Keyed by arm, the same
+ * edit has nowhere to hide.
+ *
+ * Same device as {@link everyVariantOf} and restated for the same reason: it is
+ * a type-level check with an identity function under it, so a second copy is
+ * the same check by construction.
+ */
+function everyFieldOfEveryArm<U, T extends PropertyKey>() {
+  return <R extends { readonly [V in TagsOf<U, T> & string]: readonly ArmFieldsOf<U, T, V>[] }>(
+    record: R & {
+      readonly [V in TagsOf<U, T> & string]: [
+        Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>,
+      ] extends [never]
+        ? unknown
+        : ['this arm is missing a field', Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>];
+    },
+  ): Readonly<Record<string, readonly string[]>> =>
+    // Every arm must be *written*, so a new one cannot be forgotten; only the
+    // ones that carry fields are *compared*, because a unit arm has no keys and
+    // the Rust side has no entry for it. An arm that gains or loses its fields
+    // therefore moves an entry into or out of this record, and the diff names
+    // the arm.
+    Object.fromEntries(
+      Object.entries(record as Record<string, readonly string[]>)
+        .filter(([, fields]) => fields.length > 0)
+        // Sets, not sequences, the same as every other comparison here: the
+        // arms are written in the order the Rust declares them, and the order
+        // is not part of the wire contract.
+        .map(([arm, fields]) => [arm, [...fields].sort()]),
+    );
+}
 
 const SKILL_PROBLEM = everyVariantOf<SkillProblem>()([
   'noSkillFile',
@@ -124,28 +196,26 @@ const SKILL_LISTING = everyVariantOf<TagsOf<SkillListing, typeof SKILL_LISTING_T
   'invalid',
 ]);
 
-/** Every key of any arm of a union: the payload fields, plus the tag. */
-type KeysOfUnion<T> = T extends unknown ? keyof T : never;
-
 /**
  * The keys the fields *inside* `SkillListing`'s struct-bodied variants cross
- * under.
+ * under, **arm by arm**.
  *
  * `directory`, `name`, `description` and `problem` are not members of the enum
- * — they are fields of two of its arms — so the variant comparison above walks
+ * — they are fields of its two arms — so the variant comparison above walks
  * straight past them, exactly as it used to walk past the tag key. They are
  * also every field of every skill row the user sees:
  * `src/features/skills/SkillsPanel.tsx` reads `entry.directory`, `entry.name`,
  * `entry.description` and `entry.problem`, and each of those four is one of
  * these keys.
  *
- * Closed by the compiler on this side (`KeysOfUnion` minus the tag) and read
- * off the crate on the other, so a field added or renamed on either side alone
- * fails one of the two.
+ * Both arms declare `directory`, and that is exactly why this is a record and
+ * not a list: pooled into one set, a `directory` that stops crossing on the
+ * `invalid` arm is a set that has not changed.
  */
-const SKILL_LISTING_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnion<SkillListing> & string, typeof SKILL_LISTING_TAG>
->()(['directory', 'name', 'description', 'problem']);
+const SKILL_LISTING_PAYLOAD = everyFieldOfEveryArm<SkillListing, typeof SKILL_LISTING_TAG>()({
+  skill: ['directory', 'name', 'description'],
+  invalid: ['directory', 'problem'],
+});
 
 const SKILL_RESOURCE_FIELDS = everyVariantOf<keyof SkillResources & string>()([
   'scripts',
@@ -153,11 +223,53 @@ const SKILL_RESOURCE_FIELDS = everyVariantOf<keyof SkillResources & string>()([
   'assets',
 ]);
 
+/* -- the ipc boundary the register used to hand a type to in prose -------- */
+
+const SKILLS_LIST_RES_FIELDS = everyVariantOf<keyof SkillsListRes & string>()(['skills']);
+
+const SKILLS_READ_RES_TAG = 'kind';
+
+const SKILLS_READ_RES = everyVariantOf<TagsOf<SkillsReadRes, typeof SKILLS_READ_RES_TAG>>()([
+  'skill',
+  'invalid',
+]);
+
+const SKILLS_READ_RES_PAYLOAD = everyFieldOfEveryArm<
+  SkillsReadRes,
+  typeof SKILLS_READ_RES_TAG
+>()({
+  skill: ['name', 'description', 'body', 'resources'],
+  invalid: ['problem'],
+});
+
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
 /* -------------------------------------------------------------------------- */
 
 const CRATE = join(process.cwd(), 'src-tauri', 'crates', 'vela-skills', 'src');
+
+/**
+ * The command layer that turns the crate's types into what the renderer reads.
+ *
+ * Read here, and not left to "a different boundary with its own tests", because
+ * that sentence was measured and it was false for this file. The register below
+ * discharged `SkillHeader` by handing its contract to `SkillsReadRes` in
+ * `src-tauri/src/ipc/skills.rs`, and no inventory in this repository read that
+ * file: `tag = "kind"` → `tag = "type"` there — the exact edit
+ * {@link Pairing.tag}'s own documentation cites as its founding motivation —
+ * made every arm of `SkillsPanel.tsx`'s `read.kind === 'invalid'` test false
+ * with nothing anywhere going red. Measured on the committed tree while closing
+ * it: `grep -c serde_json src-tauri/src/ipc/skills.rs` is 0, so nothing on the
+ * Rust side pins those keys either, and the same byte edit is red here twice
+ * now — `ipc/skills.rs::SkillsReadRes discriminant key: expected 'type' to be
+ * 'kind'`.
+ *
+ * One file, named, rather than the whole of `src-tauri/src/ipc/`: this guard
+ * owns the skills vocabulary and this is where the skills vocabulary crosses.
+ * The other ipc modules belong to other boundaries, and claiming them here
+ * would be the same unbacked reach in the opposite direction.
+ */
+const IPC_SKILLS = join(process.cwd(), 'src-tauri', 'src', 'ipc', 'skills.rs');
 
 /**
  * Every `.rs` file in the crate, **found on disk rather than listed here**.
@@ -178,11 +290,18 @@ function rustFilesUnder(directory: string, prefix: string, found: string[]): str
   return found;
 }
 
+/** The name this file knows the ipc module by, in every message and register. */
+const IPC_SKILLS_KEY = 'ipc/skills.rs';
+
 const CRATE_FILES: readonly string[] = rustFilesUnder(CRATE, '', []).sort();
 
-const SOURCES: Readonly<Record<string, string>> = Object.fromEntries(
-  CRATE_FILES.map((file) => [file, readFileSync(join(CRATE, ...file.split('/')), 'utf8')]),
-);
+/** Every Rust file this guard opens: the crate as walked, plus the ipc module. */
+const SCANNED_FILES: readonly string[] = [...CRATE_FILES, IPC_SKILLS_KEY];
+
+const SOURCES: Readonly<Record<string, string>> = Object.fromEntries([
+  ...CRATE_FILES.map((file) => [file, readFileSync(join(CRATE, ...file.split('/')), 'utf8')]),
+  [IPC_SKILLS_KEY, readFileSync(IPC_SKILLS, 'utf8')],
+]);
 
 function readRustItem(file: string, keyword: 'enum' | 'struct', name: string): RustItem {
   const source = SOURCES[file];
@@ -210,15 +329,20 @@ interface Pairing {
    */
   readonly tag: string | null;
   /**
-   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
-   * item that has none.
+   * The wire keys of the fields inside each struct-bodied variant, keyed by the
+   * variant's own wire name — `{}` for a struct, which has no variants.
    *
    * Required for the same reason {@link tag} is, and against the same class of
    * failure: these keys are members of nothing, so a comparison over members
    * cannot see them. An enum that grows a struct-bodied variant, or one whose
    * `rename_all_fields` changes, fails here rather than passing silently.
+   *
+   * Keyed rather than pooled, and the difference is a probe: `#[serde(skip)]`
+   * on `SkillListing::Invalid`'s `directory` left a flat union unchanged,
+   * because `Skill` declares `directory` too. Under a per-arm comparison the
+   * arm that lost the key is named in the diff.
    */
-  readonly payload: readonly string[];
+  readonly payload: Readonly<Record<string, readonly string[]>>;
 }
 
 const PAIRINGS: readonly Pairing[] = [
@@ -228,7 +352,7 @@ const PAIRINGS: readonly Pairing[] = [
     keyword: 'enum',
     ts: 'SkillProblem',
     tag: null,
-    payload: [],
+    payload: {},
     listed: SKILL_PROBLEM,
   },
   {
@@ -246,8 +370,26 @@ const PAIRINGS: readonly Pairing[] = [
     keyword: 'struct',
     ts: 'SkillResources',
     tag: null,
-    payload: [],
+    payload: {},
     listed: SKILL_RESOURCE_FIELDS,
+  },
+  {
+    rust: 'SkillsListRes',
+    file: IPC_SKILLS_KEY,
+    keyword: 'struct',
+    ts: 'SkillsListRes',
+    tag: null,
+    payload: {},
+    listed: SKILLS_LIST_RES_FIELDS,
+  },
+  {
+    rust: 'SkillsReadRes',
+    file: IPC_SKILLS_KEY,
+    keyword: 'enum',
+    ts: 'SkillsReadRes',
+    tag: SKILLS_READ_RES_TAG,
+    payload: SKILLS_READ_RES_PAYLOAD,
+    listed: SKILLS_READ_RES,
   },
 ];
 
@@ -260,15 +402,34 @@ const PAIRINGS: readonly Pairing[] = [
  * rather than a threshold. A threshold is a measurement wearing a bound — it
  * passes for any list long enough and cannot name which pairing vanished.
  */
-const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: string })[] = [
+interface Registered extends SerialisableItem {
+  readonly because: string;
+  /**
+   * The type this one's contract is discharged by, qualified as
+   * `file.rs::Type`, or `null` when nothing takes it over.
+   *
+   * **The field exists because the sentence was not enough.** This register's
+   * one entry used to say, in prose, that `src-tauri/src/ipc/skills.rs` takes
+   * `SkillHeader` apart and builds `SkillsReadRes` — and nothing in this
+   * repository read that file, so the hand-off was a claim rather than an edge.
+   * A probe changed `tag = "kind"` to `tag = "type"` there and the whole suite
+   * stayed green. Now the target has to be a type this guard really pairs, and
+   * `every hand-off on the register lands on a type this guard pairs` is the
+   * assertion that says so.
+   */
+  readonly handedTo: string | null;
+}
+
+const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'document.rs',
     keyword: 'struct',
     rust: 'SkillHeader',
+    handedTo: `${IPC_SKILLS_KEY}::SkillsReadRes`,
     because:
-      'never crosses under its own name. `src-tauri/src/ipc/skills.rs` takes it apart and ' +
-      'builds `SkillsReadRes`, whose fields are what the renderer reads; there is no ' +
-      '`SkillHeader` in `src/platform/contract.ts` to pair it with',
+      'never crosses under its own name. `ipc/skills.rs` takes its two fields apart in ' +
+      '`read_skill` and builds `SkillsReadRes::Skill`, whose keys are what the renderer ' +
+      'reads; there is no `SkillHeader` in `src/platform/contract.ts` to pair it with',
   },
 ];
 
@@ -276,7 +437,6 @@ const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: str
 function expectMembers(pairing: Pairing): void {
   const item = readRustItem(pairing.file, pairing.keyword, pairing.rust);
   const rust = wireNames(item);
-  expect(rust.length, `parser read nothing out of ${pairing.rust}`).toBeGreaterThan(1);
   expect([...rust].sort(), `${pairing.file}::${pairing.rust} vs ${pairing.ts}`).toEqual(
     [...pairing.listed].sort(),
   );
@@ -285,13 +445,14 @@ function expectMembers(pairing: Pairing): void {
   // `TagsOf<…, typeof SKILL_LISTING_TAG>`, which stops compiling if the union
   // does not carry that key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
-  // The fields inside struct-bodied variants. Members of nothing, so the
-  // comparison above cannot reach them, and `rename_all_fields` renames them
-  // under a rule of its own.
+  // The fields inside struct-bodied variants, arm by arm. Members of nothing,
+  // so the comparison above cannot reach them; `rename_all_fields` renames them
+  // under a rule of its own; and pooling them into one set hides a key that
+  // leaves one arm while a sibling still declares it.
   expect(
-    [...payloadWireNames(item)],
-    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
-  ).toEqual([...pairing.payload].sort());
+    payloadWireKeys(item),
+    `${pairing.file}::${pairing.rust} struct-variant payload keys, by variant`,
+  ).toEqual(pairing.payload);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -323,10 +484,8 @@ describe('the skills crate and the skills contract spell the same vocabulary', (
    * really in the crate fails on a deleted pairing *and* on a serialisable type
    * nobody remembered to list, and its diff names both.
    */
-  it('accounts for every serialisable type in the crate', () => {
-    const scanned = CRATE_FILES.flatMap((file) =>
-      scanSerialisable(SOURCES[file] ?? '', file),
-    )
+  it('accounts for every serialisable type in the files it reads', () => {
+    const scanned = SCANNED_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file))
       .map(qualified)
       .sort();
     const accounted = [
@@ -338,9 +497,63 @@ describe('the skills crate and the skills contract spell the same vocabulary', (
     );
   });
 
-  it('pairs each type at most once', () => {
+  /**
+   * The reach of the equality above, said out loud.
+   *
+   * `SCANNED_FILES` is a directory walk plus one named file, and the named file
+   * is the part worth asserting: it was added because the register's own
+   * hand-off pointed at it and nothing read it. A refactor that drops it would
+   * otherwise reopen exactly that hole with the inventory equality still green.
+   */
+  it('reads the whole crate and the ipc module the register hands types to', () => {
+    expect(SCANNED_FILES).toEqual([...CRATE_FILES, IPC_SKILLS_KEY]);
+    expect(CRATE_FILES).toContain('store.rs');
+    expect(CRATE_FILES).toContain('document.rs');
+    for (const file of SCANNED_FILES) {
+      expect((SOURCES[file] ?? '').length, `${file} was not loaded`).not.toBe(0);
+    }
+  });
+
+  /**
+   * **RULE T, made checkable: the register may not discharge a type into prose.**
+   *
+   * Two ways an entry can be honest. Either it hands the type to another type
+   * this guard pairs — and then the hand-off is an edge, because the target has
+   * its own assertions — or it names no `.rs` file at all, and is a statement
+   * about this type alone. What it may not do is point at a file nobody reads,
+   * which is what the single entry here used to do.
+   */
+  it('every hand-off on the register lands on a type this guard pairs', () => {
+    const paired = new Set(PAIRINGS.map(qualified));
+    const SCAN = (): readonly SerialisableItem[] => SCANNED_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file));
+    for (const entry of NOT_ON_THIS_BOUNDARY) {
+      const name = qualified(entry);
+      // Reads the entry's own `keyword`, which nothing else does: a register
+      // row that says `struct` for what the crate declares as an `enum` is a
+      // row that was written about a different type from the one it now names.
+      const scanned = SCAN().find((item) => qualified(item) === name);
+      expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      if (entry.handedTo !== null) {
+        expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired here`).toContain(
+          entry.handedTo,
+        );
+      }
+      for (const path of rustPathsNamedIn(entry.because)) {
+        expect(SCANNED_FILES, `${name}'s reason names ${path}, which this guard does not read`).toContain(
+          path,
+        );
+      }
+    }
+  });
+
+  it('pairs each type at most once, and none vacuously', () => {
     expect(new Set(PAIRINGS.map(qualified)).size).toBe(PAIRINGS.length);
     expect(new Set(PAIRINGS.map((pairing) => pairing.ts)).size).toBe(PAIRINGS.length);
+    // The anti-vacuity floor, at the table rather than per read. A pairing with
+    // an empty list would compare nothing against nothing however good the
+    // parser is; with a non-empty list, an empty read fails the equality in
+    // `expectMembers` on its own, so no threshold is needed there.
+    expect(PAIRINGS.filter((pairing) => pairing.listed.length === 0)).toEqual([]);
   });
 });
 

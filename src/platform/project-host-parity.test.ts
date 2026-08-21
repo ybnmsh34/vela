@@ -88,8 +88,9 @@ import {
 import { declaredCommandsIn } from './declared-commands';
 import {
   parseRustItem,
-  payloadWireNames,
+  payloadWireKeys,
   qualified,
+  rustPathsNamedIn,
   scanSerialisable,
   wireName,
   wireNames,
@@ -230,23 +231,80 @@ const WORKING_DIRECTORY_BINDING = everyVariantOf<
  * Each list is closed by the compiler against the TypeScript union — every key
  * of every arm, minus the tag — and compared against what the crate spells.
  */
-type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+/** The keys of one arm of an internally tagged union, without the tag itself. */
+type ArmFieldsOf<U, T extends PropertyKey, V> = Exclude<
+  keyof Extract<U, Record<T, V>> & string,
+  T
+>;
 
-const LINK_STRATEGY_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnion<LinkStrategy> & string, typeof LINK_STRATEGY_TAG>
->()(['reason']);
+/**
+ * Accepts a record only when it names every arm of `U` and, for each, every
+ * field of that arm exactly once.
+ *
+ * A flat list of *every key of every arm* is not a weaker version of this; it
+ * is a different question, and one a probe walked through. Both
+ * `SkillMountStatus::Linked` and `::Copied` declare `path`, so a `path` that
+ * stops crossing on one of them leaves the pooled union exactly as it was.
+ * Keyed by arm, the diff names the arm that lost it.
+ *
+ * Same device as {@link everyVariantOf} and restated for the same reason: a
+ * type-level check with an identity function under it is the same check in
+ * every copy of it.
+ */
+function everyFieldOfEveryArm<U, T extends PropertyKey>() {
+  return <R extends { readonly [V in TagsOf<U, T> & string]: readonly ArmFieldsOf<U, T, V>[] }>(
+    record: R & {
+      readonly [V in TagsOf<U, T> & string]: [
+        Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>,
+      ] extends [never]
+        ? unknown
+        : ['this arm is missing a field', Exclude<ArmFieldsOf<U, T, V>, R[V & keyof R][number]>];
+    },
+  ): Readonly<Record<string, readonly string[]>> =>
+    // Every arm must be *written*, so a new one cannot be forgotten; only the
+    // ones that carry fields are *compared*, because a unit arm puts no key on
+    // the wire and the Rust side has no entry for it.
+    Object.fromEntries(
+      Object.entries(record as Record<string, readonly string[]>)
+        .filter(([, fields]) => fields.length > 0)
+        // Sets, not sequences, the same as every other comparison here: the
+        // arms are written in the order the Rust declares them, and the order
+        // is not part of the wire contract.
+        .map(([arm, fields]) => [arm, [...fields].sort()]),
+    );
+}
 
-const SKILL_MOUNT_STATUS_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnion<SkillMountStatus> & string, typeof SKILL_MOUNT_STATUS_TAG>
->()(['link', 'path', 'copiedAtMs', 'stale', 'problem']);
+const LINK_STRATEGY_PAYLOAD = everyFieldOfEveryArm<LinkStrategy, typeof LINK_STRATEGY_TAG>()({
+  symlink: [],
+  junction: [],
+  copy: ['reason'],
+});
 
-const WORKING_DIRECTORY_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnion<WorkingDirectory> & string, typeof WORKING_DIRECTORY_TAG>
->()(['path', 'writable', 'problem']);
+const SKILL_MOUNT_STATUS_PAYLOAD = everyFieldOfEveryArm<
+  SkillMountStatus,
+  typeof SKILL_MOUNT_STATUS_TAG
+>()({
+  linked: ['link', 'path'],
+  copied: ['path', 'copiedAtMs', 'stale'],
+  unavailable: ['problem'],
+});
 
-const WORKING_DIRECTORY_BINDING_PAYLOAD = everyVariantOf<
-  Exclude<KeysOfUnion<WorkingDirectoryBinding> & string, typeof WORKING_DIRECTORY_BINDING_TAG>
->()(['path']);
+const WORKING_DIRECTORY_PAYLOAD = everyFieldOfEveryArm<
+  WorkingDirectory,
+  typeof WORKING_DIRECTORY_TAG
+>()({
+  none: [],
+  bound: ['path', 'writable'],
+  unavailable: ['path', 'problem'],
+});
+
+const WORKING_DIRECTORY_BINDING_PAYLOAD = everyFieldOfEveryArm<
+  WorkingDirectoryBinding,
+  typeof WORKING_DIRECTORY_BINDING_TAG
+>()({
+  none: [],
+  path: ['path'],
+});
 
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
@@ -315,15 +373,21 @@ interface Pairing {
    */
   readonly tag: string | null;
   /**
-   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
-   * item that has none.
+   * The wire keys of the fields inside each struct-bodied variant, keyed by
+   * that variant's own wire name — `{}` for an item that has none.
    *
    * Required for the same reason {@link tag} is, and against the same class of
    * failure. These keys are members of nothing, so a comparison over members
    * cannot reach them; an enum that grows a struct-bodied variant, or whose
    * `rename_all_fields` changes, fails here instead of passing silently.
+   *
+   * Keyed rather than pooled. A flat union over every arm is blind to a key
+   * moving between arms and to a key leaving one arm while a sibling still
+   * declares it — `SkillMountStatus::Linked` and `::Copied` both declare
+   * `path`, so under a pooled set `Copied` could stop sending it and the set
+   * would not move.
    */
-  readonly payload: readonly string[];
+  readonly payload: Readonly<Record<string, readonly string[]>>;
 }
 
 const PAIRINGS: readonly Pairing[] = [
@@ -332,7 +396,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'link.rs',
     keyword: 'enum',
     ts: 'SkillLinkKind',
-    payload: [],
+    payload: {},
     tag: null,
     listed: SKILL_LINK_KIND,
   },
@@ -341,7 +405,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'link.rs',
     keyword: 'enum',
     ts: 'LinkFallbackReason',
-    payload: [],
+    payload: {},
     tag: null,
     listed: LINK_FALLBACK_REASON,
   },
@@ -359,7 +423,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'mount.rs',
     keyword: 'enum',
     ts: 'SkillMountProblem',
-    payload: [],
+    payload: {},
     tag: null,
     listed: SKILL_MOUNT_PROBLEM,
   },
@@ -377,7 +441,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'mount.rs',
     keyword: 'struct',
     ts: 'SkillMount',
-    payload: [],
+    payload: {},
     tag: null,
     listed: SKILL_MOUNT_FIELDS,
   },
@@ -386,7 +450,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'enum',
     ts: 'ProjectDirectory',
-    payload: [],
+    payload: {},
     tag: null,
     listed: PROJECT_DIRECTORY,
   },
@@ -395,7 +459,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'struct',
     ts: 'ProjectPaths',
-    payload: [],
+    payload: {},
     tag: null,
     listed: PROJECT_PATHS_FIELDS,
   },
@@ -404,7 +468,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'struct',
     ts: 'ProjectLayout',
-    payload: [],
+    payload: {},
     tag: null,
     listed: PROJECT_LAYOUT_FIELDS,
   },
@@ -413,7 +477,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'workdir.rs',
     keyword: 'enum',
     ts: 'WorkingDirectoryProblem',
-    payload: [],
+    payload: {},
     tag: null,
     listed: WORKING_DIRECTORY_PROBLEM,
   },
@@ -450,13 +514,28 @@ const PAIRINGS: readonly Pairing[] = [
  * *unaccounted* types exactly zero, so the assertion below can be an equality
  * rather than a threshold.
  */
-const NOT_ON_THIS_BOUNDARY: readonly (SerialisableItem & { readonly because: string })[] = [];
+interface Registered extends SerialisableItem {
+  readonly because: string;
+  /**
+   * The type this one's contract is discharged by, qualified as
+   * `file.rs::Type`, or `null` when nothing takes it over.
+   *
+   * Empty register or not, the field is here because the sibling guard's
+   * register was caught doing the thing it forbids: discharging a type with a
+   * sentence that pointed at a Rust file no inventory read, so the hand-off was
+   * a claim and not an edge. `every hand-off on the register lands on a type
+   * this guard pairs` is what turns the sentence into something checkable, and
+   * it has to exist before the first entry does, not after.
+   */
+  readonly handedTo: string | null;
+}
+
+const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [];
 
 /** Sets, not sequences: declaration order is not part of the wire contract. */
 function expectMembers(pairing: Pairing): void {
   const item = readRustItem(pairing.file, pairing.keyword, pairing.rust);
   const rust = wireNames(item);
-  expect(rust.length, `parser read nothing out of ${pairing.rust}`).toBeGreaterThan(1);
   expect([...rust].sort(), `${pairing.file}::${pairing.rust} vs ${pairing.ts}`).toEqual(
     [...pairing.listed].sort(),
   );
@@ -465,13 +544,15 @@ function expectMembers(pairing: Pairing): void {
   // `TagsOf<…, typeof X_TAG>`, which stops compiling if the union does not
   // carry that key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
-  // The fields inside struct-bodied variants. Members of nothing, so the
-  // comparison above cannot reach them, and serde renames them under
-  // `rename_all_fields`, which is not the attribute that renames the variants.
+  // The fields inside struct-bodied variants, arm by arm. Members of nothing,
+  // so the comparison above cannot reach them; serde renames them under
+  // `rename_all_fields`, which is not the attribute that renames the variants;
+  // and pooling them into one set hides a key that leaves one arm while a
+  // sibling still declares it.
   expect(
-    [...payloadWireNames(item)],
-    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
-  ).toEqual([...pairing.payload].sort());
+    payloadWireKeys(item),
+    `${pairing.file}::${pairing.rust} struct-variant payload keys, by variant`,
+  ).toEqual(pairing.payload);
 }
 
 /**
@@ -629,9 +710,60 @@ describe('the project crate and the project contract spell the same vocabulary',
     expect(scanned, 'a serialisable type is neither paired nor on the register').toEqual(accounted);
   });
 
-  it('pairs each type at most once', () => {
+  /**
+   * **RULE T, made checkable: the register may not discharge a type into prose.**
+   *
+   * Either an entry hands the type to another type this guard pairs — and then
+   * the hand-off is an edge, because the target carries its own assertions — or
+   * it names no `.rs` file at all and is a statement about this type alone.
+   * What it may not do is point at a file nobody reads. The register here is
+   * empty, so this loop runs zero times today; it is the shape of the next
+   * entry that is being fixed, and `the register check can fail` below shows the
+   * loop is able to.
+   */
+  it('every hand-off on the register lands on a type this guard pairs', () => {
+    const paired = new Set(PAIRINGS.map(qualified));
+    const SCAN = (): readonly SerialisableItem[] => CRATE_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file));
+    for (const entry of NOT_ON_THIS_BOUNDARY) {
+      const name = qualified(entry);
+      // Reads the entry's own `keyword`, which nothing else does: a register
+      // row that says `struct` for what the crate declares as an `enum` is a
+      // row that was written about a different type from the one it now names.
+      const scanned = SCAN().find((item) => qualified(item) === name);
+      expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      if (entry.handedTo !== null) {
+        expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired`).toContain(
+          entry.handedTo,
+        );
+      }
+      for (const path of rustPathsNamedIn(entry.because)) {
+        expect(CRATE_FILES, `${name}'s reason names ${path}, unread here`).toContain(path);
+      }
+    }
+  });
+
+  it('the register check can fail', () => {
+    // The control the empty register would otherwise leave missing. Both
+    // failure modes, on fabricated entries: a hand-off to a type that is not
+    // paired, and a reason naming a file this guard does not open.
+    const paired = new Set(PAIRINGS.map(qualified));
+    expect(paired.has('layout.rs::ProjectLayout')).toBe(true);
+    expect(paired.has('ipc/project.rs::ProjectLayoutRes')).toBe(false);
+    expect(rustPathsNamedIn('handed to `src-tauri/src/ipc/project.rs`, which converts')).toEqual([
+      'src-tauri/src/ipc/project.rs',
+    ]);
+    expect(CRATE_FILES).not.toContain('src-tauri/src/ipc/project.rs');
+    expect(rustPathsNamedIn('crosses as a bitset, not as names')).toEqual([]);
+  });
+
+  it('pairs each type at most once, and none vacuously', () => {
     expect(new Set(PAIRINGS.map(qualified)).size).toBe(PAIRINGS.length);
     expect(new Set(PAIRINGS.map((pairing) => pairing.ts)).size).toBe(PAIRINGS.length);
+    // The anti-vacuity floor, at the table rather than per read. A pairing
+    // with an empty list would compare nothing against nothing however good the
+    // parser is; with a non-empty list, an empty read fails the equality inside
+    // `expectMembers` on its own.
+    expect(PAIRINGS.filter((pairing) => pairing.listed.length === 0)).toEqual([]);
   });
 });
 

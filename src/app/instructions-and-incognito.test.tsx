@@ -437,6 +437,45 @@ describe('incognito refuses without looking broken', () => {
   });
 });
 
+describe('the other three chords the collision fix touched', () => {
+  /**
+   * Round 1 changed `use-navigation-shortcuts.ts` from switching on
+   * `event.key.toLowerCase()` to switching on a chord string, so that every case
+   * has to state its answer to Shift. That was written to stop `Ctrl+Shift+N`
+   * also creating a conversation, and it silently changed `Ctrl+Shift+K`,
+   * `Ctrl+Shift+P` and `Ctrl+Shift+F` too: each used to fall into its unshifted
+   * case and now falls through. The change was disclosed and untested — this is
+   * the test.
+   *
+   * It pins the behaviour rather than arguing for it. The palette answering to
+   * `Ctrl+Shift+K` as well would also be defensible; what is not defensible is
+   * three bindings whose behaviour nobody wrote down.
+   */
+  function press(key: string, shift: boolean): void {
+    fireEvent.keyDown(window, { key, ctrlKey: true, shiftKey: shift });
+  }
+
+  it.each(['K', 'P', 'F'])('leaves Ctrl+Shift+%s alone', async (key) => {
+    render(<App adapter={await host()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    press(key, true);
+    expect(screen.queryByRole('combobox', { name: /Go to conversation|Search conversations/ })).toBeNull();
+    // And it did not reach the mode either: `shift+n` is the only shifted case.
+    expect(screen.queryByTestId('incognito-banner')).toBeNull();
+  });
+
+  it('still opens the palette without Shift — the control for the three above', async () => {
+    render(<App adapter={await host()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    press('k', false);
+    expect(
+      await screen.findByRole('combobox', { name: 'Go to conversation' }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('a speech-input user can address the pane’s controls by what they read', () => {
   it('contains every visible field label in the control’s accessible name', async () => {
     // WCAG 2.5.3 Label in Name. Someone driving this window by voice says the

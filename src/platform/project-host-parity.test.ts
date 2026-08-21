@@ -92,7 +92,7 @@ import {
   payloadRecord,
   payloadWireKeys,
   qualified,
-  rustPathsNamedIn,
+  filePathsNamedIn,
   scanSerialisable,
   wireName,
   wireNames,
@@ -309,10 +309,33 @@ const WORKING_DIRECTORY_BINDING_PAYLOAD = everyFieldOfEveryArm<
 /**
  * The keys of `T` the renderer's own type says may be absent — the ones
  * spelled with a `?`.
+ *
+ * **It distributes over a union, and the version that did not was a check with
+ * no reach.** The mapped type is indexed by `[keyof T]`, and for a union
+ * `keyof T` is only the keys *common to every arm* — for a discriminated
+ * contract union, the discriminant alone. An optional key on any single arm
+ * was therefore never looked at, and `HasNoOptionalKey<U>` was `true` for
+ * every union, unconditionally, for any edit. Four of the seven entries this
+ * guard used to list named unions — `LinkStrategy`, `SkillMountStatus`,
+ * `WorkingDirectory` and `WorkingDirectoryBinding` — so more than half of the
+ * device was inert while three sentences in the repository said it was
+ * load-bearing.
+ *
+ * `T extends object ? … : never` makes the mapped type run once per arm, so
+ * the answer is the union of every arm's optional keys. `object` rather than
+ * `unknown` because a distributed `keyof` over an arm that is a *string
+ * literal* asks about `String`'s own members, several of which the TypeScript
+ * lib declares optional — measured, not supposed. Arms that are not objects
+ * have no contract keys at all, so they contribute none.
+ * {@link OPTIONAL_KEY_ON_ONE_ARM_OF_A_UNION} is the control that says the
+ * distribution is really there. It is checked by `pnpm typecheck` and not by
+ * vitest, because a type-level property has no runtime in which to assert it.
  */
-type OptionalKeysOf<T> = {
-  [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? K : never;
-}[keyof T];
+type OptionalKeysOf<T> = T extends object
+  ? {
+      [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? K : never;
+    }[keyof T]
+  : never;
 
 /**
  * `true` only for a type with no optional key at all.
@@ -333,25 +356,94 @@ type OptionalKeysOf<T> = {
  * Rust side turns the assertion red — either way somebody has to decide what
  * the pair means rather than inherit an answer.
  *
- * Only the *object* types on this boundary are listed. A union of string
- * literals has no keys to spell optional, and `OptionalKeysOf` over one is a
- * question about `String`'s own members rather than about the contract; those
- * unions are closed by `everyVariantOf` against the pairing's `listed` array
- * instead, which is the assertion that fits them.
+ * **Every paired type is listed, not only the object ones.** The previous
+ * version carved out the string-literal unions on the grounds that they have
+ * no keys to spell optional — true, and it made the list a hand-maintained
+ * subset whose membership nothing could check. {@link OptionalKeysOf} answers
+ * `never` for them now, so the carve-out costs nothing and the list can be an
+ * equality against the pairing table.
  */
 type HasNoOptionalKey<T> = [OptionalKeysOf<T>] extends [never]
   ? true
   : ['this contract type now spells a key optional', OptionalKeysOf<T>];
 
-const NO_OPTIONAL_KEYS: readonly [
-  HasNoOptionalKey<LinkStrategy>,
-  HasNoOptionalKey<SkillMountStatus>,
-  HasNoOptionalKey<SkillMount>,
-  HasNoOptionalKey<ProjectPaths>,
-  HasNoOptionalKey<ProjectLayout>,
-  HasNoOptionalKey<WorkingDirectory>,
-  HasNoOptionalKey<WorkingDirectoryBinding>,
-] = [true, true, true, true, true, true, true];
+/**
+ * The control for {@link OptionalKeysOf}, and the only thing standing between
+ * that detector and vacuity.
+ *
+ * A two-arm union with an optional key on one arm — the shape a contract type
+ * takes the day a backend field becomes nullable, and the shape the
+ * non-distributing detector could not see. If the distribution is ever
+ * removed, `HasNoOptionalKey` of this becomes `true`, `true` is not assignable
+ * to the annotation, and `pnpm typecheck` fails naming this constant. Read by
+ * `the optional-key detector sees one arm of a union` below, which pins the
+ * value; the annotation is what pins the type.
+ */
+type OneArmSpellsAKeyOptional =
+  | { readonly kind: 'present'; readonly body: string }
+  | { readonly kind: 'absent'; readonly body?: string };
+
+const OPTIONAL_KEY_ON_ONE_ARM_OF_A_UNION: HasNoOptionalKey<OneArmSpellsAKeyOptional> = [
+  'this contract type now spells a key optional',
+  'body',
+];
+
+/**
+ * One value per paired contract type, carrying the type under the name the
+ * pairing uses for it.
+ *
+ * **This exists because the list it replaces was pinned by its length.** The
+ * old `NO_OPTIONAL_KEYS` was a seven-element tuple of `HasNoOptionalKey<…>`
+ * written out by hand, and the only runtime statement about it was
+ * `toHaveLength(7)`. Replacing one element with a duplicate of another kept
+ * the length, kept `tsc` at exit 0, kept every test green — and silently
+ * stopped covering a contract type on this boundary. That is round 5's *three
+ * fields and no fourth* one level up: a docblock naming a key set where the
+ * test checks a number.
+ *
+ * So the type is not restated beside the name; it is stored under the name
+ * once, and {@link NO_OPTIONAL_KEYS} is a **mapped type** over these keys, so
+ * the check under each key is over the type filed under that key by
+ * construction rather than by a second spelling. The key set is then compared
+ * against `PAIRINGS` at runtime, which is what makes a pairing added without a
+ * witness — or a witness left behind by a deleted pairing — a failure with a
+ * name in its diff.
+ *
+ * What that leaves unpinned, said rather than implied: the association between
+ * the string key and the type stored under it is written once and asserted by
+ * nothing.
+ */
+const CONTRACT_TYPES = {
+  SkillLinkKind: undefined as unknown as SkillLinkKind,
+  LinkFallbackReason: undefined as unknown as LinkFallbackReason,
+  LinkStrategy: undefined as unknown as LinkStrategy,
+  SkillMountProblem: undefined as unknown as SkillMountProblem,
+  SkillMountStatus: undefined as unknown as SkillMountStatus,
+  SkillMount: undefined as unknown as SkillMount,
+  ProjectDirectory: undefined as unknown as ProjectDirectory,
+  ProjectPaths: undefined as unknown as ProjectPaths,
+  ProjectLayout: undefined as unknown as ProjectLayout,
+  WorkingDirectoryProblem: undefined as unknown as WorkingDirectoryProblem,
+  WorkingDirectory: undefined as unknown as WorkingDirectory,
+  WorkingDirectoryBinding: undefined as unknown as WorkingDirectoryBinding,
+};
+
+const NO_OPTIONAL_KEYS: {
+  readonly [K in keyof typeof CONTRACT_TYPES]: HasNoOptionalKey<(typeof CONTRACT_TYPES)[K]>;
+} = {
+  SkillLinkKind: true,
+  LinkFallbackReason: true,
+  LinkStrategy: true,
+  SkillMountProblem: true,
+  SkillMountStatus: true,
+  SkillMount: true,
+  ProjectDirectory: true,
+  ProjectPaths: true,
+  ProjectLayout: true,
+  WorkingDirectoryProblem: true,
+  WorkingDirectory: true,
+  WorkingDirectoryBinding: true,
+};
 
 const CRATE = join(process.cwd(), 'src-tauri', 'crates', 'vela-projects', 'src');
 
@@ -718,7 +810,26 @@ describe('the project crate and the project contract spell the same vocabulary',
     // The runtime half of `NO_OPTIONAL_KEYS`. Nothing on this boundary is
     // conditional today and nothing on it is spelled `?`; the pair is what
     // keeps those two facts the same fact.
-    expect(NO_OPTIONAL_KEYS).toHaveLength(7);
+    //
+    // Membership, not length. `toHaveLength(7)` was the whole of what this
+    // used to say about the list, and a list checked by its size is a list an
+    // entry can be quietly unpointed inside.
+    expect(Object.keys(NO_OPTIONAL_KEYS).sort()).toEqual(
+      [...PAIRINGS.map((pairing) => pairing.ts)].sort(),
+    );
+    // And the carrier table the mapped type is built over, read at runtime as
+    // well as by the compiler: the two have to name the same set, or the
+    // witnesses are being taken over types nobody paired.
+    expect(Object.keys(CONTRACT_TYPES).sort()).toEqual(Object.keys(NO_OPTIONAL_KEYS).sort());
+    // The control for the detector itself. Its named check is `pnpm
+    // typecheck`: without the distribution in `OptionalKeysOf`,
+    // `HasNoOptionalKey` of a union is `true` and this constant stops
+    // compiling.
+    expect(OPTIONAL_KEY_ON_ONE_ARM_OF_A_UNION).toEqual([
+      'this contract type now spells a key optional',
+      'body',
+    ]);
+    expect(NO_OPTIONAL_KEYS.WorkingDirectory).toBe(true);
     for (const pairing of PAIRINGS) {
       expect(
         conditionalWireKeys(readRustItem(pairing.file, pairing.keyword, pairing.rust)),
@@ -786,14 +897,23 @@ describe('the project crate and the project contract spell the same vocabulary',
   /**
    * **RULE T, made checkable: the register may not discharge a type into prose.**
    *
-   * Either an entry hands the type to another type this guard pairs — and then
-   * the hand-off is an edge, because the target carries its own assertions — or
-   * it names no `.rs` file at all and is a statement about this type alone.
-   * What it may not do is point at a file nobody reads. The register here is
-   * empty, so this loop runs zero times today; it is the shape of the next
-   * entry that is being fixed, and `the register check can fail` below shows the
-   * loop is able to.
+   * An entry may point at exactly one thing, and only through a field a reader
+   * checks: `handedTo`, whose target has to be a type this guard really pairs
+   * and therefore carries its own assertions. Everything else on the row is a
+   * statement about this type alone, and `because` is prose — read by people,
+   * asserted by nothing, and forbidden from naming a file so that it cannot
+   * look like the edge it is not.
+   *
+   * That prohibition replaces a check that was a spelling test and failed in
+   * both directions: it collected `\S+\.rs` out of the sentence and demanded
+   * each hit be a file this guard opened, so writing the path the way the
+   * repository writes it turned the guard **red**, while writing "the
+   * ipc/skills module" made the check vanish entirely and let a row discharge
+   * a type into a module nothing here opens.
    */
+  // The register here is empty, so the loop runs zero times today; it is the
+  // shape of the next entry that is being fixed, and `the register check can
+  // fail` below shows the loop is able to.
   it('every hand-off on the register lands on a type this guard pairs', () => {
     const paired = new Set(PAIRINGS.map(qualified));
     const SCAN = (): readonly SerialisableItem[] => CRATE_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file));
@@ -813,9 +933,20 @@ describe('the project crate and the project contract spell the same vocabulary',
           entry.handedTo,
         );
       }
-      for (const path of rustPathsNamedIn(entry.because)) {
-        expect(CRATE_FILES, `${name}'s reason names ${path}, unread here`).toContain(path);
-      }
+      // RULE T, and the whole of it: a register row may point at something
+      // only through a field a reader checks. Prose that names a file is
+      // prose that looks like an edge and is not one, and the previous
+      // version of this check — collect the `.rs` paths out of the sentence
+      // and require each to be a file this guard opened — was wrong in both
+      // directions at once. Spelling the path the way the repository spells
+      // it turned this red; writing "the ipc/skills module" made the check
+      // disappear and left a row that could discharge a type into a file
+      // nobody opens. So the sentence explains, `handedTo` points, and this
+      // asserts the division.
+      expect(
+        filePathsNamedIn(entry.because),
+        `${name}'s reason names a file; a register row points through \`handedTo\`, not prose`,
+      ).toEqual([]);
     }
   });
 
@@ -826,11 +957,16 @@ describe('the project crate and the project contract spell the same vocabulary',
     const paired = new Set(PAIRINGS.map(qualified));
     expect(paired.has('layout.rs::ProjectLayout')).toBe(true);
     expect(paired.has('ipc/project.rs::ProjectLayoutRes')).toBe(false);
-    expect(rustPathsNamedIn('handed to `src-tauri/src/ipc/project.rs`, which converts')).toEqual([
+    expect(filePathsNamedIn('handed to `src-tauri/src/ipc/project.rs`, which converts')).toEqual([
+      'project.rs',
       'src-tauri/src/ipc/project.rs',
     ]);
-    expect(CRATE_FILES).not.toContain('src-tauri/src/ipc/project.rs');
-    expect(rustPathsNamedIn('crosses as a bitset, not as names')).toEqual([]);
+    // The spelling that used to slip through: a module named without its
+    // extension. Both are refused now, because neither is an edge.
+    expect(filePathsNamedIn('handed to the ipc/project module, which converts')).toEqual([
+      'ipc/project',
+    ]);
+    expect(filePathsNamedIn('crosses as a bitset, not as names')).toEqual([]);
   });
 
   it('pairs each type at most once, and none vacuously', () => {

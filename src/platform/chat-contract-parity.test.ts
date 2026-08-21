@@ -155,10 +155,11 @@ import {
   payloadWireKeys,
   qualified,
   RENAME_RULES,
-  rustPathsNamedIn,
+  filePathsNamedIn,
   scanSerialisable,
   wireName,
   wireNames,
+  withoutCommentsOrStrings,
 } from './serde-wire';
 import type { RenameRule, RustItem, SerialisableItem } from './serde-wire';
 
@@ -427,10 +428,23 @@ const DIAGNOSIS_FIELDS = everyVariantOf<keyof Diagnosis & string>()([
  * Derived from the interface rather than listed, so the list below is closed by
  * the compiler in the same way every other list in this file is: making a field
  * required in `contract.ts` and leaving the list alone does not compile.
+ *
+ * **It distributes**, and the version that did not could not see an optional
+ * key on a single arm of a union: the mapped type is indexed by `[keyof T]`,
+ * and for a union `keyof T` is only the keys common to every arm. This file
+ * points it at one object type today, so the defect was latent here and live
+ * in the two sibling guards, where six of eleven entries named unions and
+ * could not fail for any edit. Fixed in the same shape in all three, because
+ * the next type this is pointed at is as likely to be a union as not.
+ * `object` rather than `unknown` because a distributed `keyof` over a *string
+ * literal* arm asks about `String`'s own members, several of which the
+ * TypeScript lib declares optional.
  */
-type OptionalKeysOf<T> = {
-  [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? K : never;
-}[keyof T];
+type OptionalKeysOf<T> = T extends object
+  ? {
+      [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? K : never;
+    }[keyof T]
+  : never;
 
 /**
  * The `Diagnosis` keys serde is allowed to omit.
@@ -1215,8 +1229,19 @@ describe('chat contract parity with vela-providers', () => {
    * files fails on a deleted pairing *and* on a type nobody remembered to
    * list, and its diff names both. It also needs no anti-vacuity floor of its
    * own: a scanner that read nothing would produce an empty left-hand side
-   * against thirty-five accounted names, which is the loudest failure in the
-   * file.
+   * against every accounted name in the file, which is the loudest failure in
+   * it.
+   *
+   * The count that used to stand where "every accounted name" now does was
+   * thirty-five, and it was **false when it was measured**: `accounted` is
+   * `ENUMS` + `STRUCTS` + `NOT_ON_THIS_BOUNDARY`, which is thirty-eight, and
+   * the assertion itself proves it by comparing that list for equality against
+   * a scan that returns thirty-eight. Thirty-five was right on the commit that
+   * wrote the sentence and wrong on the very next one, which added three names
+   * to the register and did not move the number — the same commit whose
+   * subject is that non-braced items must join the inventory. A number in
+   * prose describing a list the code already counts is a second copy of the
+   * list, and it is the copy that goes stale, so there is one copy now.
    */
   it('accounts for every serialisable type in the files it reads', () => {
     const scanned = FILES.flatMap((file) => serialisableItems(file))
@@ -1234,13 +1259,19 @@ describe('chat contract parity with vela-providers', () => {
   /**
    * **RULE T, made checkable: the register may not discharge a type into prose.**
    *
-   * Either an entry hands the type to another type this guard pairs — and then
-   * the hand-off is an edge, because the target carries its own assertions — or
-   * it names no `.rs` file at all and is a statement about this type alone.
-   * What it may not do is name a Rust file this guard does not open, because a
-   * sentence about a file nobody reads is a sentence and nothing else. Every
-   * entry here takes the second form, and the assertion is what keeps it that
-   * way when the next one is written.
+   * An entry may point at exactly one thing, and only through a field a reader
+   * checks: `handedTo`, whose target has to be a type this guard really pairs
+   * and therefore carries its own assertions. Everything else on the row is a
+   * statement about this type alone, and `because` is prose — read by people,
+   * asserted by nothing, and forbidden from naming a file so that it cannot
+   * look like the edge it is not.
+   *
+   * That prohibition replaces a check that was a spelling test and failed in
+   * both directions: it collected `\S+\.rs` out of the sentence and demanded
+   * each hit be a file this guard opened, so writing the path the way the
+   * repository writes it turned the guard **red**, while writing "the
+   * ipc/skills module" made the check vanish entirely and let a row discharge
+   * a type into a module nothing here opens.
    */
   it('every hand-off on the register lands on a type this guard pairs', () => {
     const paired = new Set([...ENUMS, ...STRUCTS].map(qualified));
@@ -1262,20 +1293,32 @@ describe('chat contract parity with vela-providers', () => {
           entry.handedTo,
         );
       }
-      for (const path of rustPathsNamedIn(entry.because)) {
-        expect(FILES, `${name}'s reason names ${path}, which this guard does not read`).toContain(
-          path,
-        );
-      }
+      // RULE T, and the whole of it: a register row may point at something
+      // only through a field a reader checks. Prose that names a file is
+      // prose that looks like an edge and is not one, and the previous
+      // version of this check — collect the `.rs` paths out of the sentence
+      // and require each to be a file this guard opened — was wrong in both
+      // directions at once. Spelling the path the way the repository spells
+      // it turned this red; writing "the ipc/skills module" made the check
+      // disappear and left a row that could discharge a type into a file
+      // nobody opens. So the sentence explains, `handedTo` points, and this
+      // asserts the division.
+      expect(
+        filePathsNamedIn(entry.because),
+        `${name}'s reason names a file; a register row points through \`handedTo\`, not prose`,
+      ).toEqual([]);
     }
     // The control: the loop is able to fail, on both counts.
     expect(paired.has('model.rs::ContentPart')).toBe(true);
     expect(paired.has('ipc/content.rs::ContentPartInput')).toBe(false);
-    expect(rustPathsNamedIn('converted by `src-tauri/src/ipc/content.rs`')).toEqual([
+    expect(filePathsNamedIn('converted by `src-tauri/src/ipc/content.rs`')).toEqual([
+      'content.rs',
       'src-tauri/src/ipc/content.rs',
     ]);
-    expect(FILES).not.toContain('src-tauri/src/ipc/content.rs');
-    expect(rustPathsNamedIn('request DTO boundary')).toEqual([]);
+    // The spelling that used to slip through: a module named without its
+    // extension. Both are refused now, because neither is an edge.
+    expect(filePathsNamedIn('taken apart by the ipc/content module')).toEqual(['ipc/content']);
+    expect(filePathsNamedIn('request DTO boundary')).toEqual([]);
   });
 
   it('pairs each type at most once, and none vacuously', () => {
@@ -2309,6 +2352,369 @@ describe('the parity parser itself', () => {
     expect(payloadWireKeys(parseRustItem(control, 'enum', 'OneLineVariant'))).toEqual({
       image: ['data', 'mimeType', 'secretPath'],
     });
+  });
+
+  it('spells every name Rust spells, in all three readers that read one', () => {
+    // The layer under five rounds of spelling fixes: not how a declaration is
+    // written, but which sequences of characters this reader agrees to call a
+    // name. Three refusals were written across three rounds and each brought
+    // its own character class. `declarationsIn`'s was `[A-Za-z][A-Za-z0-9_]*`,
+    // so a leading underscore produced no declaration at all — the type was on
+    // no inventory in the repository, and one character was the whole
+    // difference between caught and blind. The impl reader's class *did* admit
+    // the underscore, so `impl Serialize for _Row` was a loud refusal while
+    // `#[derive(Serialize)] pub struct _Row` was silence: one name, two doors,
+    // two answers. There is one alphabet now, and this is the assertion that
+    // says all three doors use it.
+    for (const name of ['_StoreAuditRow', 'Café', 'Ω_row']) {
+      const derived = `#[derive(Debug, Clone, Serialize)]\npub struct ${name} {\n    pub a: String,\n}\n`;
+      expect(scanSerialisable(derived, 'fixture.rs').map(qualified), name).toEqual([
+        `fixture.rs::${name}`,
+      ]);
+      // The second door: a hand-written impl for the same name, which used to
+      // be the one that answered differently.
+      const manual = `pub struct ${name} {\n    pub a: String,\n}\n\nimpl Serialize for ${name} {\n    fn serialize() {}\n}\n`;
+      expect(scanSerialisable(manual, 'fixture.rs').map(qualified), name).toEqual([
+        `fixture.rs::${name}`,
+      ]);
+    }
+    // A raw identifier is a name whose spelling carries a prefix that is not
+    // part of it. Under the old class the `r` matched and the `#` did not, so
+    // this joined the inventory under the name `r` — an entry for a type that
+    // does not exist, next to a missing entry for one that does.
+    const raw = '#[derive(Serialize)]\npub struct r#Row {\n    pub a: String,\n}\n';
+    expect(scanSerialisable(raw, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Row']);
+  });
+
+  it('finds a hand-written Serialize impl whose bounds carry generics of their own', () => {
+    // `IMPL_SERIALIZE`'s generic parameter list was `<[^>]*>`, and a character
+    // class cannot cross a nested `>`. `impl<T: AsRef<[u8]>> Serialize for Row`
+    // stopped at the `>` closing `AsRef<[u8]`, matched nothing, and the type
+    // was neither derived nor manual — dropped off every inventory in the
+    // repository, in silence, by the one function written because a
+    // hand-written impl puts whatever keys its body writes on the wire. Six
+    // characters were the whole difference. The tree already spells this bound
+    // shape one nesting level short in `impl<'a, S: SettingsRepository + ?Sized>`
+    // and in `pub fn recognise<S: AsRef<str>>`.
+    const declaration = 'pub struct Row {\n    pub a: String,\n}\n';
+    const found = [
+      'impl<T: Clone> serde::Serialize for Row',
+      'impl<T: AsRef<[u8]>> serde::Serialize for Row',
+      'impl<T: IntoIterator<Item = u8>> Serialize for Row',
+      'impl<F: Fn() -> u8> Serialize for Row',
+      "impl<'a, T: Into<Cow<'a, str>>> Serialize for Row",
+      'impl ::serde::Serialize for Row',
+      "impl<'a> Serialize for &'a Row",
+      'impl<T> serde::ser::Serialize for Row\nwhere\n    T: Clone,',
+    ];
+    for (const header of found) {
+      const fixture = `${declaration}\n${header} {\n    fn serialize() {}\n}\n`;
+      expect(scanSerialisable(fixture, 'fixture.rs').map(qualified), header).toEqual([
+        'fixture.rs::Row',
+      ]);
+    }
+    // And the other half, or the widening would cost a register entry for
+    // every type in the crate: the segment compared is the one immediately
+    // before `for`, so a bound, a neighbouring trait and a trait whose name
+    // merely ends in `Serialize` are all still not it.
+    const ignored = [
+      "impl<'de> serde::Deserialize<'de> for Row",
+      'impl serde::Serializer for Row',
+      'impl<T: Serialize> Debug for Row',
+      'impl NotSerialize for Row',
+      'impl my::MySerialize for Row',
+      'impl Row',
+    ];
+    for (const header of ignored) {
+      const fixture = `${declaration}\n${header} {\n    fn serialize() {}\n}\n`;
+      expect(scanSerialisable(fixture, 'fixture.rs'), header).toEqual([]);
+    }
+  });
+
+  it('refuses a macro at item position however its path is written', () => {
+    // Round 5 decided item position structurally and then read the structure
+    // from the character before the macro's **last** path segment. For
+    // `crate::id_newtype!(Foo);` that character is `:`, which is none of `;`
+    // `{` `}` or the start of the file, so the refusal returned null and the
+    // file was accepted — seven characters between caught and blind, on a
+    // spelling this repository already writes sixty-four times. Both
+    // adversaries landed exactly this, in two different files.
+    const known = '\n#[derive(Debug, Clone, Serialize)]\npub struct Known {\n    pub a: String,\n}\n';
+    const refused = [
+      'id_newtype!(Row);',
+      'crate::id_newtype!(Row);',
+      'self::id_newtype!(Row);',
+      'super::id_newtype!(Row);',
+      '::vela_store::id_newtype!(Row);',
+      'bitflags::bitflags! { pub struct F: u8 { const A = 1; } }',
+      'std::include!("wire.rs");',
+      // Legal Rust that rustfmt would reflow, and a second door through the
+      // same refusal: the previous version decided the macro's identity by
+      // whether the `!` was adjacent to the word, so a space flushed the word
+      // and the `!` arrived with nothing to attach to.
+      'id_newtype !(Row);',
+      'crate::id_newtype !(Row);',
+      // An invocation under its own attributes. This is the case the walk back
+      // over `[…]` and `(…)` groups inside `atItemStart` exists for, and it had
+      // no fixture: with that branch deleted the line below scans clean.
+      '#[cfg(feature = "audit")]\ncrate::id_newtype!(Row);',
+    ];
+    for (const line of refused) {
+      expect(() => scanSerialisable(line + known, 'fixture.rs'), line).toThrow(
+        /where an item can be declared/,
+      );
+    }
+    // The negative control, which is what keeps the refusal from being a
+    // refusal of every file: an invocation in expression position is not one at
+    // item position, and all four of these are live in the scanned files.
+    const expressions = [
+      'let mut v = vec![1, 2];',
+      'if matches!(x, Some(_)) { }',
+      'if cfg!(windows) { }',
+      'let j = serde_json::json!({ "a": 1 });',
+      'if a != b { }',
+      'let _ = !(A && B);',
+    ];
+    for (const body of expressions) {
+      const fixture = `pub fn f() {\n    ${body}\n}\n${known}`;
+      expect(scanSerialisable(fixture, 'fixture.rs').map(qualified), body).toEqual([
+        'fixture.rs::Known',
+      ]);
+    }
+    // And a negation at item position, where there is no `mod` frame to hide
+    // behind: still not a macro, because nothing but a `::`-joined path may
+    // precede the `!`.
+    const negated = `pub const X: bool = !(true && false);\n${known}`;
+    expect(scanSerialisable(negated, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Known']);
+  });
+
+  it('refuses a body line whose angle brackets pair up without being brackets', () => {
+    // The mirror image of the unpaired case, and the one the arithmetic could
+    // not see: two comparisons on one line **cancel**. `topLevelParts` set
+    // `angleBalanced` false only when the counts failed to cancel, so
+    // `data: [u8; A < B as usize], secret_path: String, tail: [u8; C > D as
+    // usize]` balanced its counts while the commas between them sat at a depth
+    // that never returned to zero — the fields between them dropped without a
+    // word, on the live paired `ContentPart`. An angle group may not straddle a
+    // bracket group, and that is what is checked now.
+    const member = [
+      '#[derive(Serialize)]',
+      'pub struct CancellingComparisons {',
+      '    pub a: [u8; A < B as usize], pub secret: String, pub c: [u8; C > D as usize],',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(member, 'struct', 'CancellingComparisons')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+    // The same shape with the operators written tight against their operands,
+    // which is the fixture the **straddle** test alone catches: `N<M` puts the
+    // `<` against an identifier, so the type-position test below is satisfied
+    // and only the bracket boundary can say the `<` was not a bracket.
+    // Measured rather than assumed — with the straddle test removed and the
+    // other two left in place, the fixture above stays red and this one goes
+    // green, which is how a second test in one place turns out to be guarding
+    // nothing.
+    const tight = member.replace(
+      '    pub a: [u8; A < B as usize], pub secret: String, pub c: [u8; C > D as usize],',
+      '    pub a: [u8; N<M as usize], pub secret: String, pub c: [u8; P>Q as usize],',
+    );
+    expect(() => parseRustItem(tight, 'struct', 'CancellingComparisons')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+    const variant = [
+      '#[derive(Serialize)]',
+      '#[serde(tag = "kind", rename_all = "camelCase")]',
+      '#[serde(rename_all_fields = "camelCase")]',
+      'pub enum CancellingVariant {',
+      '    Image { mime_type: String, data: [u8; A < B as usize], secret_path: String, tail: [u8; C > D as usize] },',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(variant, 'enum', 'CancellingVariant')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+    // The control, and it is the part that decides whether this refusal is
+    // usable: real type syntax nests brackets inside angle groups and angle
+    // groups inside brackets all the time, and none of it may be refused.
+    const ordinary = [
+      '#[derive(Serialize)]',
+      'pub struct OrdinaryNesting {',
+      '    pub a: [Vec<u8>; 4],',
+      '    pub b: Vec<[u8; 4]>,',
+      '    pub c: HashMap<String, Vec<Option<u8>>>,',
+      '    pub d: fn(&str) -> bool,',
+      '}',
+      '',
+    ].join('\n');
+    expect(parseRustItem(ordinary, 'struct', 'OrdinaryNesting').members).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+    // The shape the straddle test alone still missed, because it only inspects
+    // brackets: no bracket at all, counts that cancel, and both separator
+    // commas sitting at a depth that never returns to zero. A `<` that opens a
+    // generic list is written against what it qualifies; one that is not is a
+    // comparison or a qualified path, and this reader can place neither.
+    const bare = [
+      '#[derive(Serialize)]',
+      'pub struct NoBracketAtAll {',
+      '    pub a: A < B, pub secret: String, pub c: D > E,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(bare, 'struct', 'NoBracketAtAll')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+    // What that costs, asserted rather than left to be discovered: a qualified
+    // path type is refused too. It is legal Rust, it is in none of the fifteen
+    // files these guards read, and a refusal is the direction that cannot
+    // report a key as absent.
+    const qualifiedPath = [
+      '#[derive(Serialize)]',
+      'pub struct QualifiedPath {',
+      '    pub a: <T as Trait>::Output,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(qualifiedPath, 'struct', 'QualifiedPath')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+  });
+
+  it('reads a one-line struct variant through its comments, not around them', () => {
+    // The single structural read in the parser that ran on the raw line rather
+    // than the blanked one, which made the sentence the file states about
+    // itself — *every structural read runs on the output, so that a brace
+    // inside a doc comment cannot move it* — false about exactly the reader
+    // the round before this one was about. A seven-character block comment
+    // closed the variant early and dropped a live field in silence.
+    const hidden = [
+      '#[derive(Serialize)]',
+      '#[serde(tag = "kind", rename_all = "camelCase")]',
+      '#[serde(rename_all_fields = "camelCase")]',
+      'pub enum CommentedVariant {',
+      '    Image { mime_type: String, data: Vec<u8> /* } */, secret_path: String },',
+      '}',
+      '',
+    ].join('\n');
+    expect(payloadWireKeys(parseRustItem(hidden, 'enum', 'CommentedVariant'))).toEqual({
+      image: ['data', 'mimeType', 'secretPath'],
+    });
+    // The other direction, which is the reachable half: an ordinary trailing
+    // comment that happens to mention a shape in braces used to be read as
+    // code, and invented a payload key on a variant with no body at all — or,
+    // one word different, raised a refusal out of nothing but prose.
+    const commented = hidden.replace(
+      '    Image { mime_type: String, data: Vec<u8> /* } */, secret_path: String },',
+      ['    Text, // { ghost: String }', '    Blob, // shaped like { blob }'].join('\n'),
+    );
+    const item = parseRustItem(commented, 'enum', 'CommentedVariant');
+    expect(item.members).toEqual(['Text', 'Blob']);
+    expect(payloadWireKeys(item)).toEqual({});
+  });
+
+  it('blanks the longest char literal Rust can spell', () => {
+    // `CHAR_LITERAL_WINDOW` is the length of `'\u{10FFFF}'` and the lexer only
+    // tries the char-literal case inside it, falling through to treating `'` as
+    // a lifetime. That bound was the number 12 with a comment saying where 12
+    // came from, and nothing else: narrowing it to 11 — one byte short of the
+    // literal the comment names — moved no assertion in the repository, and
+    // neither did 4, and neither did 3, at which point every escaped form stops
+    // being lexed as a literal at all. `document.rs`, which the skills guard
+    // scans, carries six distinct escaped char literals, and at a window of 3
+    // none of the six is lexed as one.
+    //
+    // The bound is derived from the literal now, and this is what holds the
+    // pair together. It asserts the blanking directly because the value is not
+    // observable through the rest of the module: the only twelve-byte literal
+    // is `'\u{HHHHHH}'`, whose bytes are brace-balanced and quote-free, so
+    // leaving it unblanked shifts no index any caller reads. Said plainly
+    // rather than left as a bound with a comment for a guard.
+    const longest = "pub const MAX: char = '\\u{10FFFF}';";
+    expect(withoutCommentsOrStrings(longest)).toBe('pub const MAX: char =             ;');
+    // Every shorter escaped form, and the bare one, blanked to spaces of the
+    // same width; and a lifetime left alone, which is the other thing a quote
+    // can be.
+    for (const literal of ["'a'", "'\\t'", "'\\\\'", "'\\x22'", "'\\u{7B}'", "'\\u{feff}'"]) {
+      const line = `pub const C: char = ${literal};`;
+      expect(withoutCommentsOrStrings(line), literal).toBe(
+        `pub const C: char = ${' '.repeat(literal.length)};`,
+      );
+    }
+    expect(withoutCommentsOrStrings("pub fn f<'a>(x: &'a str) {}")).toBe(
+      "pub fn f<'a>(x: &'a str) {}",
+    );
+  });
+
+  it('keeps the keys its deserialisation-only classifications say it keeps', () => {
+    // `FIELD_KEYS` and `CONTAINER_KEYS` are classifications, and the docblock
+    // over `FIELD_KEYS` says in as many words that "a classification with no
+    // reader is a classification that can be wrong without anything failing,
+    // which is how this one stayed wrong". Three of the five field entries and
+    // one of the five container entries had no reader when that sentence was
+    // written: `alias`, `borrow` and `deny_unknown_fields` appear nowhere in
+    // the three crates these guards read, so mis-valuing any of them —
+    // `['alias', 'drops-the-key']` — failed nothing anywhere. Here they have
+    // one.
+    const field = (attribute: string): string =>
+      [
+        '#[derive(Serialize)]',
+        '#[serde(rename_all = "camelCase")]',
+        'pub struct FixtureStruct {',
+        `    #[serde(${attribute})]`,
+        '    pub answered_by: String,',
+        '    pub other_one: String,',
+        '}',
+        '',
+      ].join('\n');
+    for (const attribute of ['alias = "answeredby"', 'borrow', 'default']) {
+      const item = parseRustItem(field(attribute), 'struct', 'FixtureStruct');
+      expect(wireNames(item), attribute).toEqual(['answeredBy', 'otherOne']);
+      expect(item.conditionalFields, attribute).toEqual([]);
+    }
+    // The two that are not deserialisation-only, as the controls: one removes
+    // the member and one makes it conditional, so the three above are asserted
+    // against something rather than against nothing.
+    expect(
+      parseRustItem(field('skip'), 'struct', 'FixtureStruct').members,
+    ).toEqual(['other_one']);
+    expect(
+      parseRustItem(field('skip_serializing_if = "String::is_empty"'), 'struct', 'FixtureStruct')
+        .conditionalFields,
+    ).toEqual(['answered_by']);
+    // The container half. Both of these emit no key, and neither had a fixture.
+    const container = (attribute: string): string =>
+      [
+        '#[derive(Serialize)]',
+        `#[serde(rename_all = "camelCase", ${attribute})]`,
+        'pub struct FixtureStruct {',
+        '    pub answered_by: String,',
+        '}',
+        '',
+      ].join('\n');
+    for (const attribute of ['deny_unknown_fields', 'default']) {
+      expect(wireNames(parseRustItem(container(attribute), 'struct', 'FixtureStruct')), attribute)
+        .toEqual(['answeredBy']);
+    }
+    // And one inert non-serde attribute per shape, including `must_use`, which
+    // is on `INERT_ATTRIBUTES` and was likewise pinned by nothing.
+    for (const attribute of ['must_use', 'deprecated', 'repr(u8)', 'inline']) {
+      const fixture = [
+        `#[${attribute}]`,
+        '#[derive(Serialize)]',
+        '#[serde(rename_all = "camelCase")]',
+        'pub struct FixtureStruct {',
+        '    pub answered_by: String,',
+        '}',
+        '',
+      ].join('\n');
+      expect(wireNames(parseRustItem(fixture, 'struct', 'FixtureStruct')), attribute).toEqual([
+        'answeredBy',
+      ]);
+    }
   });
 
   it('finds a declaration that shares its line with its own attributes', () => {

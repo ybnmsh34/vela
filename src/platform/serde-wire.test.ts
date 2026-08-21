@@ -247,19 +247,69 @@ const RUST_READERS: ReadonlyMap<string, Reader> = new Map<string, Reader>([
   ],
 ]);
 
+/** The one reader, whose definitions are the ones a guard may not restate. */
+const SHARED_READER = 'src/platform/serde-wire.ts';
+
+/**
+ * Every function the shared reader defines, **read out of it** rather than
+ * listed here.
+ *
+ * The list this replaces was six names written by hand, and its membership was
+ * stated by the list and asserted by nothing. Measured on the committed tree:
+ * deleting `/function\s+payloadRecord\b/` — the entry the round before this
+ * one added, in the commit whose message says the point is that a shared
+ * definition must be one definition — left this file at 12 passed, exit 0.
+ * The only control over it fabricates a source matching two patterns and
+ * asserts the count is two, so it cannot see any other entry leaving. That is
+ * this repository's recurring shape one more time: a list whose job is to name
+ * things, checked by a number.
+ *
+ * A list read off the definition site cannot be short by an entry somebody
+ * forgot, and a definition added to the shared reader joins on the commit that
+ * adds it. Comments are already stripped from {@link CODE}, so a `function` in
+ * a doc comment is not one.
+ */
+const SHARED_DEFINITIONS: readonly string[] = [
+  ...new Set(
+    [...(CODE.get(SHARED_READER) ?? '').matchAll(/\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)/g)].map(
+      (match) => match[1] as string,
+    ),
+  ),
+].sort();
+
+/**
+ * Definitions in the shared reader a guard **may** restate, each with why.
+ *
+ * The default is forbidden and this is the exemption, so a definition added to
+ * the shared reader is forbidden from the commit that adds it and stays that
+ * way until somebody writes a sentence here. The one entry is the distinction
+ * the shared reader's own header draws: *"a type-level helper has no
+ * behaviour, so a second copy is the same helper by construction. That is the
+ * exact opposite of the parse below, which is why this file exists and this
+ * eight-line helper does not need to."*
+ */
+const RESTATABLE: ReadonlyMap<string, string> = new Map([
+  [
+    'everyVariantOf',
+    'a type-level helper. It has no behaviour, so a second copy cannot be a refactor behind ' +
+      'a first one; and exporting it would make one file type-level surface of another. All ' +
+      'three guards restate it deliberately, and the shared reader says so in its header',
+  ],
+]);
+
+const FORBIDDEN_DEFINITIONS: readonly string[] = SHARED_DEFINITIONS.filter(
+  (name) => !RESTATABLE.has(name),
+);
+
 /**
  * Definitions that would mean a file had grown its own parse again.
  *
  * The last is the exact regex the two copies carried — `rename_all\s*=` — whose
- * two-literal alternation read every other serde rule as "no rule at all".
+ * two-literal alternation read every other serde rule as "no rule at all". It
+ * is not a definition name, so it is written here rather than derived.
  */
 const OWN_PARSE = [
-  /function\s+parseRustItem\b/,
-  /function\s+wireName\b/,
-  /function\s+payloadWireKeys\b/,
-  /function\s+payloadRecord\b/,
-  /function\s+readAttributeText\b/,
-  /function\s+scanSerialisable\b/,
+  ...FORBIDDEN_DEFINITIONS.map((name) => new RegExp(`function\\s+${name}\\b`)),
   /rename_all\\s\*=/,
 ];
 
@@ -379,6 +429,45 @@ describe('the detectors can fail', () => {
     ].join('\n');
     expect(fabricated).not.toContain("from './serde-wire'");
     expect(OWN_PARSE.filter((pattern) => pattern.test(fabricated))).toHaveLength(2);
+  });
+
+  it('forbids every definition the shared reader has, and can see each one restated', () => {
+    // What the hand-written list could not say. A count of matches against one
+    // fabricated source says nothing about the entries that source does not
+    // match, so an entry could be deleted — and one was, in the probe that
+    // produced this test — with everything green. Here each forbidden name is
+    // fabricated in turn and the list has to fire on it, so an entry that
+    // stopped matching anything is a named failure.
+    for (const name of FORBIDDEN_DEFINITIONS) {
+      const restated = `function ${name}(source: string) { return source; }`;
+      expect(
+        OWN_PARSE.some((pattern) => pattern.test(restated)),
+        `${name} is defined in the shared reader and nothing here forbids restating it`,
+      ).toBe(true);
+    }
+    // The floor, named rather than counted: these are the definitions the two
+    // stale copies actually carried, so a refactor that moved one *out* of the
+    // shared reader — which is how a name leaves a derived list without
+    // anybody deciding to let it — fails here.
+    expect(SHARED_DEFINITIONS).toEqual(
+      expect.arrayContaining([
+        'parseRustItem',
+        'payloadRecord',
+        'payloadWireKeys',
+        'readAttributeText',
+        'scanSerialisable',
+        'wireName',
+      ]),
+    );
+    // And the exemption is real, current, and small: every name excused has to
+    // be a definition that is really there, or it is a hole with a reason
+    // attached to nothing.
+    for (const [name, because] of RESTATABLE) {
+      expect(SHARED_DEFINITIONS, `${name} is excused and the shared reader does not define it`)
+        .toContain(name);
+      expect(because.length, `${name} has no reason`).toBeGreaterThan(40);
+      expect(FORBIDDEN_DEFINITIONS).not.toContain(name);
+    }
   });
 
   it('reports a real guard as clean under the same patterns', () => {

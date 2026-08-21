@@ -265,6 +265,16 @@
   border-left-color: var(--vela-warning);
 }
 
+/* The `role="tabpanel"` container. Its own class rather than a borrowed one:
+   this held `.commentForm` for a round, which was harmless to paint and wrong to
+   read — the next person to change the comment box's layout would have moved the
+   panel with it. */
+.panelBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
 .commentForm {
   display: flex;
   flex-direction: column;
@@ -418,9 +428,19 @@
  * colour disappears — the selected tab, the current step and the three badges
  * would all flatten into their neighbours. The system keywords below are not
  * colour literals in the sense conventions §7 forbids; they are the names of
- * whatever the user chose, which is the whole point of the mode. `forced-color-
- * adjust: none` is deliberately NOT used: overriding the user's palette is the
- * one thing this mode exists to prevent. */
+ * whatever the user chose, which is the whole point of the mode.
+ *
+ * `forced-color-adjust: none` IS used, once, and only on the pair of rules
+ * immediately below: the selected tab and the current task row. Without it the
+ * UA re-forces that pair back to the ordinary Canvas/CanvasText pairing and the
+ * selection stops being visible at all. What it pins is Highlight on
+ * HighlightText — still two of the user's own colours, so nothing of ours
+ * reaches the screen. It is not used anywhere it would substitute a colour of
+ * ours for one of theirs, which is every other rule in this block.
+ *
+ * Behaviour on a real Windows High Contrast desktop is UNVERIFIED: this track
+ * may not launch Vela. What holds without launching is the shape — the block
+ * exists, and every colour in it is a system keyword. */
 @media (forced-colors: active) {
   .tab[aria-selected='true'],
   .taskRow[aria-current='page'] {

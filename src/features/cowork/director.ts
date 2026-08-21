@@ -1,11 +1,15 @@
 /**
  * THE SEAM A MID-FLIGHT REDIRECT NEEDS, AND DOES NOT HAVE.
  *
- * This file is a **frozen interface with no host behind it**, declared here so
- * that the panel above it can be built and so that whoever adds the capability
- * has something to implement rather than a design to re-invent. Nothing in this
- * repo implements {@link TaskDirector} against a real run. Read that sentence
- * before writing anything that depends on this.
+ * An interface with **no host behind it**, and a stub that says so out loud.
+ * Nothing in this repo implements {@link TaskDirector} against a real run. Read
+ * that sentence before writing anything that depends on this.
+ *
+ * The stub is not dead code: `use-cowork.ts` calls it on every directive the
+ * plan releases, and `ProgressPanel.tsx` renders the answer it gives. That is
+ * the point of it. The comment the user wrote goes somewhere, something answers
+ * about it, and the answer the user is shown is the true one — `noLiveRun`,
+ * "nothing took it" — instead of a green label over a hop that does not exist.
  *
  * ## What is missing, verified against the contract rather than assumed
  *
@@ -19,19 +23,23 @@
  *
  * So there is **no path from the renderer into a run that has already started**
  * other than ending it. A comment on an upcoming step can therefore be stored,
- * ordered, guarded and shown; it cannot presently be put in front of the model
- * without cancelling the run and starting another, which is the "stopping" the
- * feature exists to avoid.
+ * ordered, guarded, released and shown; it cannot presently be put in front of
+ * the model without cancelling the run and starting another, which is the
+ * "stopping" the feature exists to avoid.
  *
  * ## What is built anyway, and why that is not decoration
  *
- * Everything except the last hop. `src/lib/task-plan.ts` owns when a directive
+ * Everything except the last hop, plus the sentence that names the last hop as
+ * missing to the person using it. `src/lib/task-plan.ts` owns when a directive
  * becomes deliverable and refuses the comments nothing would read;
- * `src/state/cowork-store.ts` holds one plan per conversation;
- * `ProgressPanel.tsx` shows each comment's state — pending, delivered, or
- * **never read**. The last of those is the point: a directive the run never took
- * is rendered as such rather than sitting in the list looking like the ones that
- * landed.
+ * `src/state/cowork-store.ts` holds one plan per conversation; `use-cowork.ts`
+ * hands every released directive to this seam and writes the answer back onto
+ * the plan; `ProgressPanel.tsx` shows each comment's state — will redirect,
+ * handing over, redirected, or **never read, and why**. The last of those is the
+ * point: with this stub in place, every comment the plan *releases* is answered
+ * `noLiveRun` and lands in the "never read" report, which is exactly what is
+ * true of this build. A comment on a step the run has not got to yet still
+ * reads "will redirect", because that is true too.
  *
  * The alternative was to fold directives into the *next* turn's input, beside
  * the memory preamble in `src/features/conversation/use-conversation.ts`. It was
@@ -50,26 +58,20 @@
  *     addendum, or a tool result are three different things to a model and three
  *     different transcripts to a user. `ChatMessageInput` can spell the first;
  *     the other two need the host.
- *  2. **What happens to a directive accepted while the turn it targets is
+ *  2. **What happens to a directive released while the turn it targets is
  *     already on the wire.** {@link TaskDirector.deliver} answers with
  *     {@link DirectiveDelivery} rather than `void` precisely so that this cannot
  *     be silent — `tooLate` is a real answer and the panel renders it.
  */
 
-/** What became of one directive handed to a run. */
-export type DirectiveDelivery =
-  /** The run took it and the model will see it on the step it was written for. */
-  | { readonly kind: 'delivered' }
-  /**
-   * The run had already moved past the step. Not an error and not a success: the
-   * user's words exist and the model did not get them, and a caller that treated
-   * this as either would be wrong in a way the user cannot see.
-   */
-  | { readonly kind: 'tooLate' }
-  /** No run is live for that conversation. The directive stays pending. */
-  | { readonly kind: 'noLiveRun' }
-  /** The run refused it. `reason` is the host's, rendered verbatim. */
-  | { readonly kind: 'refused'; readonly reason: string };
+import type { DirectiveDelivery } from '@/lib/task-plan';
+
+/**
+ * Re-exported, not redeclared. The union lives in `src/lib/task-plan.ts`
+ * because `PlanStep` has to carry it and that file imports nothing; two
+ * declarations of the same four answers would be two things to keep in step.
+ */
+export type { DirectiveDelivery };
 
 /**
  * Put a comment in front of a run that has already started.
@@ -91,7 +93,7 @@ export interface TaskDirector {
  * It answers `noLiveRun` unconditionally — not `delivered`, which would be a
  * lie, and not a throw, which would make the panel unusable. A caller that shows
  * the user what came back therefore shows the truth: the comment is held and no
- * run has taken it.
+ * run has taken it. `use-cowork.ts` is that caller.
  *
  * `src/features/cowork/director.test.ts` pins that answer, so a future
  * implementation cannot land here by accident without the test that says what it

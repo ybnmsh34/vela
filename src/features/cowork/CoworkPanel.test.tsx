@@ -116,7 +116,7 @@ describe('a comment on an upcoming step redirects the task', () => {
     mount();
 
     const step3 = screen.getByTestId('cowork-step-3');
-    await user.click(within(step3).getByRole('button', { name: 'Comment on this step' }));
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
     await user.type(
       screen.getByRole('textbox', { name: /Comment on step 3/ }),
       'use the staging database instead',
@@ -125,35 +125,98 @@ describe('a comment on an upcoming step redirects the task', () => {
 
     const directive = await screen.findByTestId('cowork-directive-3');
     expect(directive).toHaveTextContent('use the staging database instead');
-    // Not yet delivered — the plan has not arrived at step 3.
-    expect(directive).toHaveAttribute('data-delivered', 'no');
+    // Written and waiting. The plan has not arrived at step 3, so nothing has
+    // been handed anywhere and nothing may claim it has.
+    expect(directive).toHaveAttribute('data-directive-state', 'pending');
     expect(directive).toHaveTextContent('Will redirect');
   });
 
-  it('reports the comment as delivered once the plan reaches that step', async () => {
+  /**
+   * ARRIVAL IS NOT DELIVERY, AND THE PANEL MAY NOT SAY IT IS.
+   *
+   * `advance` here is the store's, called directly, which is the plan arriving
+   * with nobody having been asked to take the comment — the shape a late replay
+   * or a test fixture produces. The row must say the comment is on its way and
+   * nothing more. An earlier build printed "Redirected" at this point, over a
+   * hop that had not been attempted and, in this build, does not exist.
+   * `use-cowork.test.tsx` drives the other half: the hop being attempted, and
+   * the answer coming back.
+   */
+  it('says the comment is being handed over, not that it was delivered', async () => {
     const user = userEvent.setup({ delay: null });
     givePlan(PLAN, 2);
     mount();
 
     const step3 = screen.getByTestId('cowork-step-3');
-    await user.click(within(step3).getByRole('button', { name: 'Comment on this step' }));
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
     await user.type(screen.getByRole('textbox', { name: /Comment on step 3/ }), 'mind the index');
     await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
 
-    // The run gets there. This is the read: `advanceTo` hands the directive out
-    // and marks it delivered.
     useCoworkStore.getState().advance(CONVERSATION, 3);
 
     await waitFor(() => {
-      expect(screen.getByTestId('cowork-directive-3')).toHaveAttribute('data-delivered', 'yes');
+      expect(screen.getByTestId('cowork-directive-3')).toHaveAttribute(
+        'data-directive-state',
+        'handingOver',
+      );
     });
-    expect(screen.getByTestId('cowork-directive-3')).toHaveTextContent('Redirected');
+    const directive = screen.getByTestId('cowork-directive-3');
+    expect(directive).toHaveTextContent('Handing over');
+    expect(directive).not.toHaveTextContent('Redirected');
+  });
+
+  it('reports delivery only once something answers that a run took it', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    const step3 = screen.getByTestId('cowork-step-3');
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
+    await user.type(screen.getByRole('textbox', { name: /Comment on step 3/ }), 'mind the index');
+    await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
+
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    // The answer, which in this build only a substituted director can give.
+    useCoworkStore.getState().recordDelivery(CONVERSATION, 3, { kind: 'delivered' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cowork-directive-3')).toHaveTextContent('Redirected');
+    });
+    expect(screen.getByTestId('cowork-directive-3')).toHaveAttribute(
+      'data-directive-state',
+      'delivered',
+    );
+    // And a delivered comment is not in the never-read report.
+    expect(screen.queryByTestId('cowork-lost-directives')).toBeNull();
+  });
+
+  it('names a comment nothing took, even though the task is still running', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    const step3 = screen.getByTestId('cowork-step-3');
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
+    await user.type(screen.getByRole('textbox', { name: /Comment on step 3/ }), 'mind the index');
+    await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
+
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    useCoworkStore.getState().recordDelivery(CONVERSATION, 3, { kind: 'noLiveRun' });
+
+    // The stopped-task report would have kept quiet here; this is the case a
+    // plan that treats arrival as delivery cannot report at all.
+    expect(await screen.findByTestId('cowork-lost-directives')).toHaveTextContent(
+      /One comment was never read/,
+    );
+    expect(screen.getByTestId('cowork-directive-3')).toHaveTextContent(
+      'Never read — no run took it',
+    );
   });
 
   /**
    * THE BOUNDARY. `n >= currentStep` would offer this control on step 2, store
    * the comment, render it — and nothing would ever read it, because the plan
-   * delivers on arrival and never arrives at the step it is on.
+   * releases on arrival and never arrives at the step it is on.
    */
   it('offers no comment control on the step that is running, or behind it', async () => {
     givePlan(PLAN, 2);
@@ -161,12 +224,60 @@ describe('a comment on an upcoming step redirects the task', () => {
 
     for (const n of [1, 2]) {
       const row = screen.getByTestId(`cowork-step-${n}`);
-      expect(within(row).queryByRole('button', { name: 'Comment on this step' })).toBeNull();
+      expect(within(row).queryByRole('button', { name: /^Comment on this step/ })).toBeNull();
     }
     for (const n of [3, 4]) {
       const row = screen.getByTestId(`cowork-step-${n}`);
-      expect(within(row).getByRole('button', { name: 'Comment on this step' })).toBeVisible();
+      expect(within(row).getByRole('button', { name: /^Comment on this step/ })).toBeVisible();
     }
+  });
+
+  /**
+   * THE RACE THE REFUSAL PATH EXISTS FOR, with the sentence it must not say.
+   *
+   * The comment box is open on step 3 and the run dies while it is open. The
+   * control is gone from every other row, but this form is still on screen, so
+   * the submit has to be answered — and answered with something true. For a
+   * round the answer was "The run has already reached this step" about a step
+   * the run never reached, which is a false claim about the user's own task at
+   * the moment they are trying to work out what happened to it.
+   */
+  it('tells a user whose task died that it died, not that the run passed the step', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    const step3 = screen.getByTestId('cowork-step-3');
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
+    await user.type(screen.getByRole('textbox', { name: /Comment on step 3/ }), 'use staging');
+
+    useCoworkStore.getState().stopTask(CONVERSATION);
+    await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/This task has stopped/);
+    expect(alert).not.toHaveTextContent(/already reached/);
+  });
+
+  /**
+   * THE PATTERN THE BRIEF SINGLES OUT: duplicate accessible names on controls
+   * with different consequences. With the run on step 1 of 4 there are three
+   * comment buttons on screen, and for a round they were all called "Comment on
+   * this step" — one name, three different steps. The visible text is unchanged
+   * and the step travels with it, so the accessible name still *contains* the
+   * label a speech-control user would say.
+   */
+  it('gives each comment button a name that says which step it acts on', async () => {
+    givePlan(PLAN, 1);
+    mount();
+
+    const buttons = screen.getAllByRole('button', { name: /^Comment on this step/ });
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Comment on this step — step 2: Draft the migration',
+      'Comment on this step — step 3: Run the suite',
+      'Comment on this step — step 4: Write it up',
+    ]);
+    expect(new Set(buttons.map((button) => button.textContent)).size).toBe(buttons.length);
   });
 
   it('refuses a blank comment in words rather than storing nothing', async () => {
@@ -175,7 +286,7 @@ describe('a comment on an upcoming step redirects the task', () => {
     mount();
 
     const step3 = screen.getByTestId('cowork-step-3');
-    await user.click(within(step3).getByRole('button', { name: 'Comment on this step' }));
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
     await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Write something first/);
@@ -188,7 +299,7 @@ describe('a comment on an upcoming step redirects the task', () => {
     mount();
 
     const step4 = screen.getByTestId('cowork-step-4');
-    await user.click(within(step4).getByRole('button', { name: 'Comment on this step' }));
+    await user.click(within(step4).getByRole('button', { name: /^Comment on this step/ }));
     await user.type(screen.getByRole('textbox', { name: /Comment on step 4/ }), 'and the caveat');
     await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
 
@@ -198,7 +309,9 @@ describe('a comment on an upcoming step redirects the task', () => {
     expect(await screen.findByTestId('cowork-lost-directives')).toHaveTextContent(
       /One comment was never read/,
     );
-    expect(screen.getByTestId('cowork-directive-4')).toHaveTextContent('Never read');
+    expect(screen.getByTestId('cowork-directive-4')).toHaveTextContent(
+      'Never read — the task stopped before this step',
+    );
   });
 });
 

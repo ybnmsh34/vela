@@ -12,17 +12,36 @@
  * `step` rather than `page`, because WAI-ARIA has a token for exactly this and
  * the sidebar's conversation rows already own `page` for the other meaning.
  *
+ * ## What a comment's label is allowed to say
+ *
+ * Four states, and only one of them claims a model saw anything. `Will redirect`
+ * is written and waiting. `Handing over` is released by `advanceTo` with no
+ * answer back yet. `Redirected` requires a {@link DirectiveDelivery} of kind
+ * `delivered` — nothing else earns that word. Everything else is `Never read`,
+ * with the reason on the same line.
+ *
+ * An earlier draft printed `Redirected` the instant the plan arrived at the
+ * step, which is before anything has been asked to take the comment and, in this
+ * build, before a hop exists that could. `src/features/cowork/director.ts` sets
+ * out why. With the stub director this build ships, every comment the plan
+ * releases reaches `Never read — no run took it`, and that is the true report.
+ *
  * ## Why the comment control is absent rather than disabled on a passed step
  *
  * A disabled control says "not now"; an absent one says "not here". A step the
  * run is on or has passed can never take a comment again — `advanceTo` in
- * `src/lib/task-plan.ts` delivers on arrival, and the plan does not arrive
+ * `src/lib/task-plan.ts` releases on arrival, and the plan does not arrive
  * twice — so "not now" would be a promise nothing can keep. The refusal path is
  * still built and still rendered, because a plan can advance between the render
  * that drew the button and the click that presses it.
  */
 
-import type { PlanStep, RedirectRefusal } from '@/lib/task-plan';
+import type {
+  DirectiveDelivery,
+  PlanStep,
+  RedirectRefusal,
+  TaskState,
+} from '@/lib/task-plan';
 
 import styles from './CoworkPanel.module.css';
 import { useCommentDraft, type CoworkController } from './use-cowork';
@@ -34,6 +53,8 @@ function refusalText(refusal: RedirectRefusal): string {
       return 'Write something first — a blank comment would not redirect anything.';
     case 'noSuchStep':
       return 'That step is no longer in the plan.';
+    case 'taskHasStopped':
+      return 'This task has stopped, so nothing will arrive at this step to read a comment.';
     case 'stepIsNotAhead':
       return 'The run has already reached this step, so a comment here would never be read.';
     default: {
@@ -43,6 +64,44 @@ function refusalText(refusal: RedirectRefusal): string {
       return exhaustive;
     }
   }
+}
+
+/**
+ * How far a comment got, in four words the panel is allowed to print.
+ *
+ * `notRead` is one state and several reasons, which is why the reason travels
+ * with it: "never read" on its own would leave a user to guess between a run
+ * that stopped early and a hop that refused, and those call for different next
+ * actions.
+ */
+type DirectiveProgress = 'pending' | 'handingOver' | 'delivered' | 'notRead';
+
+function directiveView(
+  step: PlanStep,
+  taskState: TaskState,
+): { readonly progress: DirectiveProgress; readonly label: string } {
+  const outcome: DirectiveDelivery | null = step.directiveOutcome;
+  if (outcome !== null) {
+    switch (outcome.kind) {
+      case 'delivered':
+        return { progress: 'delivered', label: 'Redirected' };
+      case 'tooLate':
+        return { progress: 'notRead', label: 'Never read — the run had passed this step' };
+      case 'noLiveRun':
+        return { progress: 'notRead', label: 'Never read — no run took it' };
+      case 'refused':
+        return { progress: 'notRead', label: `Never read — ${outcome.reason}` };
+      default: {
+        const exhaustive: never = outcome;
+        return exhaustive;
+      }
+    }
+  }
+  if (step.directiveReleased) return { progress: 'handingOver', label: 'Handing over' };
+  if (taskState === 'stopped') {
+    return { progress: 'notRead', label: 'Never read — the task stopped before this step' };
+  }
+  return { progress: 'pending', label: 'Will redirect' };
 }
 
 interface ProgressPanelProps {
@@ -84,9 +143,11 @@ export function ProgressPanel({ cowork }: ProgressPanelProps) {
 
       {lost.length > 0 && (
         <p className={styles.error} role="status" data-testid="cowork-lost-directives">
+          {/* No cause is named here, because there is more than one and they are
+              not interchangeable. Each step's own label carries its reason. */}
           {lost.length === 1
-            ? 'One comment was never read: the task stopped before reaching its step.'
-            : `${lost.length} comments were never read: the task stopped before reaching their steps.`}
+            ? 'One comment was never read by the run.'
+            : `${lost.length} comments were never read by the run.`}
         </p>
       )}
     </>
@@ -110,6 +171,12 @@ function StepRow({
   // marker glyph alone.
   const stateWord = state === 'done' ? 'done' : state === 'current' ? 'current' : 'upcoming';
 
+  // Appended to each control's visible text rather than replacing it with an
+  // `aria-label`, so the accessible name still *contains* what is painted on the
+  // button — and so that three "Comment on this step" buttons in one panel are
+  // three different names rather than one repeated three times.
+  const which = ` — step ${step.n}: ${step.title}`;
+
   const rowClass = [
     styles.step,
     state === 'current' ? styles.stepCurrent : '',
@@ -125,6 +192,8 @@ function StepRow({
   ]
     .filter((name) => name !== '')
     .join(' ');
+
+  const directive = step.directive === null ? null : directiveView(step, cowork.plan.state);
 
   return (
     <li
@@ -145,21 +214,15 @@ function StepRow({
       </span>
 
       <div className={styles.stepBody}>
-        {step.directive !== null && (
+        {step.directive !== null && directive !== null && (
           <p
             className={`${styles.directive} ${
-              !step.directiveDelivered && cowork.plan.state === 'stopped' ? styles.directiveLost : ''
+              directive.progress === 'notRead' ? styles.directiveLost : ''
             }`}
             data-testid={`cowork-directive-${step.n}`}
-            data-delivered={step.directiveDelivered ? 'yes' : 'no'}
+            data-directive-state={directive.progress}
           >
-            <span className={styles.directiveLabel}>
-              {step.directiveDelivered
-                ? 'Redirected'
-                : cowork.plan.state === 'stopped'
-                  ? 'Never read'
-                  : 'Will redirect'}
-            </span>
+            <span className={styles.directiveLabel}>{directive.label}</span>
             {step.directive}
           </p>
         )}
@@ -174,6 +237,7 @@ function StepRow({
               }}
             >
               {step.directive === null ? 'Comment on this step' : 'Replace comment'}
+              <span className={styles.srOnly}>{which}</span>
             </button>
             {step.directive !== null && (
               <button
@@ -184,6 +248,7 @@ function StepRow({
                 }}
               >
                 Remove comment
+                <span className={styles.srOnly}>{which}</span>
               </button>
             )}
           </span>
@@ -259,4 +324,3 @@ function CheckIcon() {
     </svg>
   );
 }
-

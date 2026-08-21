@@ -108,7 +108,14 @@ export function CoworkDock({ onClose, runtime, projectId }: CoworkPanelProps) {
                   select(task.conversationId);
                 }}
               >
+                {/* The id is what this row can name a task by: the dock is
+                    handed no `ConversationSummary`, and reading one to get the
+                    title would be a host read on every open. The separator is
+                    here because without it the two spans compute as one word —
+                    "conversation-alphastep 1 of 4". */}
+                <span className={styles.srOnly}>Task </span>
                 <span>{task.conversationId}</span>
+                <span className={styles.srOnly}>, </span>
                 <span className={styles.taskCount}>
                   {task.plan.state === 'running'
                     ? `step ${task.plan.currentStep} of ${task.plan.steps.length}`
@@ -170,7 +177,7 @@ export function CoworkDock({ onClose, runtime, projectId }: CoworkPanelProps) {
         // Focusable but not tabbable, so a panel with no controls in it — the
         // empty progress panel — is still somewhere the keyboard can land.
         tabIndex={-1}
-        className={styles.commentForm}
+        className={styles.panelBody}
       >
         {panel === 'progress' && <ProgressPanel cowork={cowork} />}
         {panel === 'project' && <ProjectFilesPanel layout={layout} />}

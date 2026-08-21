@@ -10,9 +10,11 @@ import { planFor, resetCoworkStore, tasksIn, useCoworkStore } from './cowork-sto
  * conversation with no plan answers, and the order the switcher shows them in.
  *
  * That last one is here because it was **not** covered and the gap was measured
- * rather than guessed: replacing the whole ranking function with `() => 0` left
- * `src/features/cowork` and `src/lib/task-plan.test.ts` green, 38/38, twice. An
- * ordering nothing asserts is an ordering the next edit is free to lose.
+ * rather than guessed. Re-measured against the tree this commit ships: replacing
+ * the whole ranking function with `() => 0` leaves `src/features/cowork` and
+ * `src/lib/task-plan.test.ts` green — 59 passed, twice — and fails exactly one
+ * test, here. An ordering nothing asserts is an ordering the next edit is free
+ * to lose.
  */
 beforeEach(() => {
   resetCoworkStore();
@@ -52,9 +54,33 @@ describe('tasks are keyed by conversation', () => {
     const accepted = store.comment('a', 2, 'change of plan');
     expect(accepted.ok).toBe(true);
 
-    // Returned, not stored. A directive sitting in a store with nothing reading
-    // it back is the unread write this whole feature is built to avoid.
-    expect(useCoworkStore.getState().advance('a', 2)).toEqual(['change of plan']);
+    // Returned, not stored, and with the step number on it so the caller can say
+    // what became of it. A directive sitting in a store with nothing reading it
+    // back is the unread write this whole feature is built to avoid — and so is
+    // one handed to a caller that drops it, which is why
+    // `src/features/cowork/use-cowork.test.tsx` drives the caller as well.
+    expect(useCoworkStore.getState().advance('a', 2)).toEqual([{ n: 2, text: 'change of plan' }]);
+  });
+
+  it('takes the answer back and does not invent one', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two']);
+    expect(store.comment('a', 2, 'change of plan').ok).toBe(true);
+    useCoworkStore.getState().advance('a', 2);
+
+    // Released and unanswered is not delivered. Only `recordDelivery` may put an
+    // outcome on a step, and until it does the plan says nothing.
+    expect(useCoworkStore.getState().plans['a']?.steps[1]?.directiveOutcome).toBeNull();
+
+    useCoworkStore.getState().recordDelivery('a', 2, { kind: 'noLiveRun' });
+    expect(useCoworkStore.getState().plans['a']?.steps[1]?.directiveOutcome).toEqual({
+      kind: 'noLiveRun',
+    });
+  });
+
+  it('ignores an answer for a conversation it holds no plan for', () => {
+    useCoworkStore.getState().recordDelivery('ghost', 1, { kind: 'delivered' });
+    expect(useCoworkStore.getState().plans['ghost']).toBeUndefined();
   });
 
   it('refuses a comment for a conversation with no plan instead of inventing one', () => {

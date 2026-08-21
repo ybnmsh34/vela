@@ -16,11 +16,25 @@
  * — and a second numbering scheme here would be a second answer to which step
  * is running.
  *
+ * ## Arrival releases a directive. It does not deliver it.
+ *
+ * These are two events, and an earlier draft of this file collapsed them into
+ * one boolean — which made the panel print "Redirected" over a comment no model
+ * had seen. {@link advanceTo} *releases*: it hands the arriving step's comment
+ * to its caller and records that it will not hand that one out again. What
+ * became of it afterwards is a separate fact, written back by
+ * {@link recordDelivery} and carried by {@link PlanStep.directiveOutcome}. Only
+ * a {@link DirectiveDelivery} of kind `delivered` means a run took it.
+ *
+ * The distinction is the whole honesty of the surface. `directiveOutcome` is
+ * `null` between the release and the answer, and a plan in that state says
+ * "handing over", never "redirected".
+ *
  * ## The guard, and the narrower question it is deliberately not asking
  *
  * A comment on an upcoming step redirects the task. The obvious guard is "is
  * this step still in the future", spelled `n >= currentStep`, and it is wrong by
- * exactly one. A directive is delivered by {@link advanceTo}, which fires when
+ * exactly one. A directive is released by {@link advanceTo}, which fires when
  * the plan *arrives at* a step. The plan never arrives at the step it is already
  * on. So a comment attached to `currentStep` passes an `n >= currentStep` guard,
  * is stored, is rendered, and is **never read by anything** — an unread write,
@@ -32,14 +46,15 @@
  *
  * ## The second reader, and why {@link undelivered} exists
  *
- * Refusing the un-deliverable at write time is not enough. A directive on step 6
- * of a plan whose run fails at step 3 was accepted correctly and is still never
- * read. Nothing can prevent that — the run's failure is not knowable when the
- * comment is written — so the answer is to make it **visible** rather than
- * silent: {@link undelivered} names every directive still pending on a task that
- * has stopped, and `ProgressPanel.tsx` renders them. A comment the run never got
- * is a thing the user must be told about, not a row that quietly looks like the
- * others.
+ * Refusing the un-deliverable at write time is not enough. Two more ways exist
+ * to end up with a comment nothing read, and neither is knowable when the
+ * comment is written: the run can stop before reaching the step, and the hop
+ * that puts a released directive in front of a model can answer that it did not
+ * take it. So the answer is to make both **visible** rather than silent:
+ * {@link undelivered} names every directive the run demonstrably did not read,
+ * whichever of the two it was, and `ProgressPanel.tsx` renders each with its
+ * reason. A comment the run never got is a thing the user must be told about,
+ * not a row that quietly looks like the ones that landed.
  */
 
 /** Where a step sits relative to the run. */
@@ -50,12 +65,42 @@ export type RedirectRefusal =
   /** No step carries that number. */
   | 'noSuchStep'
   /**
-   * The step is the one running, or is behind it. Nothing will arrive at it
-   * again, so nothing would ever read the comment. See the header.
+   * The run is on this step or has passed it. Nothing will arrive at it again,
+   * so nothing would ever read the comment. See the header.
+   *
+   * Only ever answered about a task that is still going. A stopped task answers
+   * `taskHasStopped` instead — including for a step strictly ahead of
+   * where the run got to, because telling a user the run "already reached" step
+   * 4 of a task that died on step 2 is a false sentence about their own task.
    */
   | 'stepIsNotAhead'
+  /** The task is over. No step will arrive, ahead of the run or not. */
+  | 'taskHasStopped'
   /** The comment was blank once trimmed. A blank redirect is not a redirect. */
   | 'emptyComment';
+
+/**
+ * What became of one directive that was put in front of a run.
+ *
+ * Defined here rather than beside `TaskDirector` in
+ * `src/features/cowork/director.ts` because {@link PlanStep} has to carry it and
+ * this file imports nothing — a plan that had to reach into a feature to say
+ * what happened to a comment would invert the layering. `director.ts`
+ * re-exports this name, so there is one definition and not two that can drift.
+ */
+export type DirectiveDelivery =
+  /** The run took it and the model will see it on the step it was written for. */
+  | { readonly kind: 'delivered' }
+  /**
+   * The run had already moved past the step. Not an error and not a success: the
+   * user's words exist and the model did not get them, and a caller that treated
+   * this as either would be wrong in a way the user cannot see.
+   */
+  | { readonly kind: 'tooLate' }
+  /** No run is live for that conversation, so nothing took it. */
+  | { readonly kind: 'noLiveRun' }
+  /** The run refused it. `reason` is the host's, rendered verbatim. */
+  | { readonly kind: 'refused'; readonly reason: string };
 
 export interface PlanStep {
   /** 1-based, and the same number `turnStarted.step` carries. */
@@ -69,12 +114,24 @@ export interface PlanStep {
    */
   readonly directive: string | null;
   /**
-   * `true` once {@link advanceTo} has handed this step's directive to the run.
-   * Kept rather than clearing {@link directive}, because the panel shows the
+   * `true` once {@link advanceTo} has handed this step's directive to its
+   * caller. It says the plan let go of it and **nothing more** — not that a
+   * model saw it. It exists so that the same comment is not handed out twice
+   * when a harness re-emits `turnStarted` for a step.
+   *
+   * {@link directive} is kept rather than cleared, because the panel shows the
    * user what they said after it has been acted on — a comment that vanishes at
    * the moment it takes effect looks exactly like a comment that was dropped.
    */
-  readonly directiveDelivered: boolean;
+  readonly directiveReleased: boolean;
+  /**
+   * What the hop past this plan answered, or `null` for "no answer yet" — which
+   * covers every unreleased directive, and a released one in the window between
+   * the release and the answer.
+   *
+   * A `null` here is never rendered as a success. See {@link undelivered}.
+   */
+  readonly directiveOutcome: DirectiveDelivery | null;
 }
 
 /** Whether the task is still going. Mirrors `RunStatus` without importing it. */
@@ -93,7 +150,8 @@ export function planOf(titles: readonly string[]): Plan {
       n: index + 1,
       title,
       directive: null,
-      directiveDelivered: false,
+      directiveReleased: false,
+      directiveOutcome: null,
     })),
     currentStep: 0,
     state: 'idle',
@@ -141,18 +199,26 @@ export type RedirectResult =
  * Refuses rather than silently no-ops, and the refusal is a value the caller
  * renders: conventions §9 rule 6 — silently wrong is the one forbidden outcome,
  * and a comment box that accepts text nothing will read is precisely that.
+ *
+ * The checks run in the order the sentences should be told, and the stopped
+ * check sits ahead of the ahead-of-the-run check on purpose: with one refusal
+ * for both, a comment written on step 4 of a task that died on step 2 came back
+ * saying the run had already reached step 4, which it never did.
  */
 export function redirect(plan: Plan, n: number, comment: string): RedirectResult {
   const trimmed = comment.trim();
   if (trimmed === '') return { ok: false, refusal: 'emptyComment' };
   if (stepAt(plan, n) === null) return { ok: false, refusal: 'noSuchStep' };
+  if (plan.state === 'stopped') return { ok: false, refusal: 'taskHasStopped' };
   if (!isRedirectable(plan, n)) return { ok: false, refusal: 'stepIsNotAhead' };
   return {
     ok: true,
     plan: {
       ...plan,
       steps: plan.steps.map((step) =>
-        step.n === n ? { ...step, directive: trimmed, directiveDelivered: false } : step,
+        step.n === n
+          ? { ...step, directive: trimmed, directiveReleased: false, directiveOutcome: null }
+          : step,
       ),
     },
   };
@@ -164,23 +230,35 @@ export function clearRedirect(plan: Plan, n: number): Plan {
   return {
     ...plan,
     steps: plan.steps.map((step) =>
-      step.n === n ? { ...step, directive: null, directiveDelivered: false } : step,
+      step.n === n
+        ? { ...step, directive: null, directiveReleased: false, directiveOutcome: null }
+        : step,
     ),
   };
+}
+
+/** One comment let go of by {@link advanceTo}, with the step it was written against. */
+export interface ReleasedDirective {
+  /** The step the user attached it to, so an answer can be recorded against it. */
+  readonly n: number;
+  readonly text: string;
 }
 
 export interface Advance {
   readonly plan: Plan;
   /**
-   * The comments the arriving step carried, in step order. **This is the read**
-   * that makes a redirect a redirect; `use-cowork.ts` hands it to the run.
-   * Empty on every ordinary step.
+   * The comments this arrival let go of, in step order. **This is the read**
+   * that makes a redirect a redirect: a caller that discards this array has
+   * dropped the user's words on the floor. Empty on every ordinary step.
+   *
+   * It carries `n` and not only the text because the caller owes an answer back
+   * through {@link recordDelivery}, and an answer needs a step to land on.
    */
-  readonly directives: readonly string[];
+  readonly directives: readonly ReleasedDirective[];
 }
 
 /**
- * Move the plan to `step` and take whatever directives that arrival delivers.
+ * Move the plan to `step` and release whatever directives that arrival lets go.
  *
  * ## Why it collects a range rather than one step
  *
@@ -189,11 +267,11 @@ export interface Advance {
  * whose steps do not map one-to-one onto turns, which is every plan a user
  * writes — jumps. Taking only `stepAt(step).directive` would drop the comment on
  * every skipped step silently. So everything from just after the old position up
- * to and including the new one is delivered.
+ * to and including the new one is released.
  *
- * Undelivered comments on steps that were jumped are therefore delivered late
- * rather than lost, which is the only one of the three available behaviours
- * (drop, late, refuse) that never loses a user's words.
+ * Comments on steps that were jumped are therefore released late rather than
+ * lost, which is the only one of the three available behaviours (drop, late,
+ * refuse) that never loses a user's words.
  */
 export function advanceTo(plan: Plan, step: number): Advance {
   if (step <= plan.currentStep) {
@@ -204,7 +282,7 @@ export function advanceTo(plan: Plan, step: number): Advance {
       candidate.n > plan.currentStep &&
       candidate.n <= step &&
       candidate.directive !== null &&
-      !candidate.directiveDelivered,
+      !candidate.directiveReleased,
   );
   return {
     plan: {
@@ -213,14 +291,37 @@ export function advanceTo(plan: Plan, step: number): Advance {
       state: 'running',
       steps: plan.steps.map((candidate) =>
         arriving.some((hit) => hit.n === candidate.n)
-          ? { ...candidate, directiveDelivered: true }
+          ? { ...candidate, directiveReleased: true }
           : candidate,
       ),
     },
     // `directive` is non-null on every member of `arriving` — the filter above
     // is what makes that true — but the compiler cannot see it, and a `!` here
     // would be an assertion where a filter will do.
-    directives: arriving.flatMap((step_) => (step_.directive === null ? [] : [step_.directive])),
+    directives: arriving.flatMap((step_) =>
+      step_.directive === null ? [] : [{ n: step_.n, text: step_.directive }],
+    ),
+  };
+}
+
+/**
+ * Write back what became of a directive this plan released.
+ *
+ * Ignores a step that released nothing, and ignores a second answer for one that
+ * already carries an answer: the first is what the user was shown, and letting a
+ * late duplicate overwrite it would change the panel's account of what happened
+ * without anything new having happened.
+ */
+export function recordDelivery(plan: Plan, n: number, outcome: DirectiveDelivery): Plan {
+  const step = stepAt(plan, n);
+  if (step === null) return plan;
+  if (step.directive === null || !step.directiveReleased) return plan;
+  if (step.directiveOutcome !== null) return plan;
+  return {
+    ...plan,
+    steps: plan.steps.map((candidate) =>
+      candidate.n === n ? { ...candidate, directiveOutcome: outcome } : candidate,
+    ),
   };
 }
 
@@ -230,15 +331,29 @@ export function stop(plan: Plan): Plan {
 }
 
 /**
- * Comments the run will never read.
+ * Comments the run did not read, and why not.
  *
- * Only meaningful once the task has stopped: while it is running, a pending
- * directive ahead of the cursor is waiting, not lost. Rendered by
- * `ProgressPanel.tsx` — see the header for why this must not be silent.
+ * Two ways to get here, and both are reported the moment they are known:
+ *
+ *  1. **Released, and answered with anything but `delivered`.** Known as soon as
+ *     the answer arrives, running task or not. An earlier draft of this file
+ *     missed this case entirely, because it treated arrival as delivery and so
+ *     had nothing left to report.
+ *  2. **Never released, on a task that has stopped.** The run died before
+ *     reaching the step. While the task is still going, a pending directive
+ *     ahead of the cursor is waiting rather than lost, so it is not named here.
+ *
+ * A released directive still waiting for its answer is in neither: it is in
+ * flight, and calling it lost would be as wrong as calling it delivered.
+ * Rendered by `ProgressPanel.tsx` — see the header for why this must not be
+ * silent.
  */
 export function undelivered(plan: Plan): readonly PlanStep[] {
-  if (plan.state !== 'stopped') return [];
-  return plan.steps.filter((step) => step.directive !== null && !step.directiveDelivered);
+  return plan.steps.filter((step) => {
+    if (step.directive === null) return false;
+    if (step.directiveOutcome !== null) return step.directiveOutcome.kind !== 'delivered';
+    return !step.directiveReleased && plan.state === 'stopped';
+  });
 }
 
 /** How many steps have been completed, for the panel's "3 of 7". */

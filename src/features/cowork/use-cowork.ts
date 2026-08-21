@@ -1,22 +1,35 @@
 /**
  * The cowork surface's state: one task's plan, moved by the run that is working
- * on it.
+ * on it, and the one place a released directive is read.
  *
- * ## The plan follows the run; the run is never told what the plan says
+ * ## The plan follows the run; the directive goes the other way, as far as it can
  *
  * This hook subscribes to the live run for the selected conversation and folds
- * its events into the plan: `turnStarted` advances, `runFinished` stops. It is a
- * one-way read, and that is deliberate — `src/features/cowork/director.ts`
- * records why the other direction does not exist yet.
+ * its events into the plan: `turnStarted` advances, `runFinished` stops.
  *
- * The subscription is `LiveRuns.forConversation`, which
- * `src/platform/contract-harness.ts` describes as "the in-flight check a
- * conversation view makes on mount, before subscribing". Replay is why this
- * works at all: a panel opened halfway through a run receives every event from
- * the retained floor before a single live one, so the plan lands on the step the
- * run is actually on rather than on whatever happened next.
+ * Advancing is not only a fold. `advanceTo` hands back the comments that arrival
+ * released, and **this hook is what reads them**: every one is passed to a
+ * {@link TaskDirector} and whatever comes back is written onto the plan through
+ * `recordDelivery`, where `ProgressPanel.tsx` renders it. An earlier draft
+ * called `advance` for its side effect and dropped the returned array, which
+ * made the user's comment an unread write with a label over it saying it had
+ * been acted on.
  *
- * ## Why it subscribes from the retained floor and not from 0
+ * The director this build ships is `createUnwiredDirector`, and it answers
+ * `noLiveRun` to everything — `src/features/cowork/director.ts` sets out why
+ * there is no path from the renderer into a run already in flight. So in this
+ * build the loop below is real, its answer is real, and the answer is that
+ * nothing took the comment. That is what the panel says.
+ *
+ * It is a parameter with a default rather than a value constructed inside, so
+ * that `use-cowork.test.tsx` can put a director in that answers something else
+ * and watch what the plan does with it. Note what that does *not* buy: nothing
+ * threads a director down from the composition root — `CoworkDock` calls this
+ * hook with two arguments — so wiring a real one is still an edit to
+ * `CoworkPanel.tsx` and `App.tsx` as well as a new implementation. The seam is
+ * here; the plumbing to it is not.
+ *
+ * ## Why the subscription starts at the retained floor and not at 0
  *
  * `subscribe` with no `fromSeq` replays from whatever the buffer still holds,
  * and `RUN_BUFFER_MIN_EVENTS` is a floor rather than a size — a long run drops
@@ -29,6 +42,13 @@
  * That last clause is the load-bearing one and it is why `advanceTo` ignores a
  * step at or below the current one rather than resetting: a dropped prefix must
  * not read as a run that went backwards.
+ *
+ * Replay is also why the read above is safe to run from a late join: a panel
+ * opened halfway through a run receives every retained event before a single
+ * live one, so a comment on a step the buffer still remembers is released and
+ * answered once, not once per mount — `advanceTo` releases a directive only
+ * while `directiveReleased` is false, and the store holds the plan across
+ * mounts.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -46,11 +66,23 @@ import {
   type StepState,
 } from '@/lib/task-plan';
 
+import { createUnwiredDirector, type TaskDirector } from './director';
+
+/**
+ * The default director: one instance, at module scope.
+ *
+ * Not `createUnwiredDirector()` inline in the parameter list, because that would
+ * mint a new object on every render and put a value with a fresh identity into
+ * the subscription effect's dependency list — a resubscribe per render, which is
+ * a tail opened and dropped on every keystroke.
+ */
+const UNWIRED_DIRECTOR: TaskDirector = createUnwiredDirector();
+
 export interface CoworkController {
   readonly plan: Plan;
   readonly completed: number;
   readonly total: number;
-  /** Comments the run never read. Empty unless the task has stopped. */
+  /** Comments the run did not read, delivered-and-refused ones included. */
   readonly lost: readonly PlanStep[];
   stateOfStep: (n: number) => StepState;
   canRedirect: (n: number) => boolean;
@@ -60,7 +92,8 @@ export interface CoworkController {
 }
 
 /**
- * Read one conversation's plan and keep it in step with the run.
+ * Read one conversation's plan, keep it in step with the run, and hand every
+ * directive the run's arrival releases to `director`.
  *
  * `runtime` is nullable so the panel can be rendered — and tested — without one.
  * A plan with no runtime is a plan nothing advances, which is exactly what a
@@ -70,9 +103,11 @@ export interface CoworkController {
 export function useCowork(
   runtime: HarnessRuntime | null,
   conversationId: string | null,
+  director: TaskDirector = UNWIRED_DIRECTOR,
 ): CoworkController {
   const plans = useCoworkStore((store) => store.plans);
   const advance = useCoworkStore((store) => store.advance);
+  const recordDelivery = useCoworkStore((store) => store.recordDelivery);
   const stopTask = useCoworkStore((store) => store.stopTask);
   const setComment = useCoworkStore((store) => store.comment);
   const uncommentAt = useCoworkStore((store) => store.uncomment);
@@ -88,12 +123,34 @@ export function useCowork(
     const subscription = handle.subscribe((envelope) => {
       const event = envelope.event;
       if (event.type === 'turnStarted') {
-        // The directives this arrival delivers come back here. Nothing in this
-        // build can put them in front of the model — see `director.ts` — so they
-        // are not silently dropped either: `advanceTo` has already marked them
-        // delivered on the plan, which is what `ProgressPanel` renders. When a
-        // `TaskDirector` exists, this is its one call site.
-        advance(conversationId, event.step);
+        // The read. `advance` releases the comments this arrival lets go of, and
+        // each one goes to the director; the answer is written back onto the
+        // plan, where the panel renders it. Discarding this array is what an
+        // earlier draft did, and it is the whole defect this file was rewritten
+        // to remove.
+        for (const released of advance(conversationId, event.step)) {
+          void director
+            .deliver(conversationId, released.n, released.text)
+            .then((outcome) => {
+              // Deliberately not guarded by an unmount flag. The plan lives in
+              // the store, not in this component, so an answer that arrives
+              // after the dock closes is still an answer the user is owed the
+              // next time they open it. Dropping it would put the row back to
+              // "handing over" for ever.
+              recordDelivery(conversationId, released.n, outcome);
+            })
+            .catch((error: unknown) => {
+              // A director that rejects is out of contract — `deliver` answers
+              // with a `DirectiveDelivery`. Recorded rather than swallowed,
+              // because the alternative is a row that says "handing over" and
+              // never changes, which is the silent failure this feature exists
+              // to not have.
+              recordDelivery(conversationId, released.n, {
+                kind: 'refused',
+                reason: error instanceof Error ? error.message : String(error),
+              });
+            });
+        }
         return;
       }
       if (event.type === 'runFinished') stopTask(conversationId);
@@ -102,7 +159,7 @@ export function useCowork(
     return () => {
       subscription.unsubscribe();
     };
-  }, [runtime, conversationId, hasPlan, advance, stopTask]);
+  }, [runtime, conversationId, hasPlan, advance, recordDelivery, stopTask, director]);
 
   const comment = useCallback(
     (n: number, text: string): RedirectRefusal | null => {

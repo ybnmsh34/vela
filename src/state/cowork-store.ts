@@ -43,10 +43,13 @@ import {
   advanceTo,
   clearRedirect,
   planOf,
+  recordDelivery,
   redirect,
   stop,
+  type DirectiveDelivery,
   type Plan,
   type RedirectResult,
+  type ReleasedDirective,
 } from '@/lib/task-plan';
 
 /** Which of the three panels the dock is showing. */
@@ -68,14 +71,24 @@ interface CoworkState {
   /** Forget a conversation's plan — it was deleted, or the task was discarded. */
   clearPlan: (conversationId: string) => void;
   /**
-   * Move a task to a step and hand back what that arrival delivers.
+   * Move a task to a step and hand back the comments that arrival released.
    *
-   * The directives are **returned rather than stored**, because the caller is
-   * the only thing that can act on them: `use-cowork.ts` folds them into the
-   * next run's input. A directive parked in this store would be the unread write
-   * the whole feature is built to avoid.
+   * The directives are **returned rather than stored**, because acting on one is
+   * not something a store may do — it is an await across a seam, and conventions
+   * §5 keeps IPC out of here. The caller reads them: `use-cowork.ts` passes each
+   * to a `TaskDirector` and writes the answer back through
+   * {@link CoworkState.recordDelivery}. A directive parked here with nothing
+   * taking it out again would be the unread write the whole feature is built to
+   * avoid — so would one handed back to a caller that ignored it, which is what
+   * an earlier draft of that hook did.
    */
-  advance: (conversationId: string, step: number) => readonly string[];
+  advance: (conversationId: string, step: number) => readonly ReleasedDirective[];
+  /**
+   * Record what became of a directive this store released. See
+   * {@link CoworkState.advance} for who calls this and why it is a second trip
+   * rather than a return value.
+   */
+  recordDelivery: (conversationId: string, step: number, outcome: DirectiveDelivery) => void;
   stopTask: (conversationId: string) => void;
   /** Attach a comment to an upcoming step. The refusal is the caller's to render. */
   comment: (conversationId: string, step: number, text: string) => RedirectResult;
@@ -108,6 +121,12 @@ export const useCoworkStore = create<CoworkState>((set, get) => ({
     const moved = advanceTo(plan, step);
     set({ plans: { ...get().plans, [conversationId]: moved.plan } });
     return moved.directives;
+  },
+
+  recordDelivery: (conversationId, step, outcome) => {
+    const plan = get().plans[conversationId];
+    if (plan === undefined) return;
+    set({ plans: { ...get().plans, [conversationId]: recordDelivery(plan, step, outcome) } });
   },
 
   stopTask: (conversationId) => {

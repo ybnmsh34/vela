@@ -397,7 +397,28 @@ export function contrastRatio(a: Rgba, b: Rgba): number {
 
 export type Theme = 'light' | 'dark';
 
-const TOKEN_SHEET = 'src/styles/tokens.css';
+export const TOKEN_SHEET = 'src/styles/tokens.css';
+
+/**
+ * The rules {@link paletteFor} reads — **the** definition, exported so that
+ * nothing has to restate it.
+ *
+ * It is exported because a *second* spelling of this boundary was an escape.
+ * `painted-contrast.test.tsx` forbids custom properties outside the token sheet
+ * so that no ancestor can re-point a role under the audit's feet, and it used to
+ * draw that line by **file name** (`sheet.name === 'src/styles/tokens.css'`)
+ * while this function draws it by **selector** (`:root`). The two lines do not
+ * coincide, and the gap between them is a rule inside `tokens.css` whose
+ * selector is not `:root` — `pre { --vela-code-bg: var(--vela-bg); }` — which is
+ * exempt from the prohibition because of the file it is in and invisible to the
+ * palette because of the selector it uses. Custom properties inherit, so that
+ * one rule re-points every `var(--vela-code-bg)` on or inside a `<pre>` while
+ * this file goes on answering with the `:root` value.
+ *
+ * A boundary drawn twice is a boundary in two places. This is the one place.
+ */
+export const isPaletteRule = (rule: Rule): boolean =>
+  rule.file === TOKEN_SHEET && rule.selector.startsWith(':root');
 
 const isDarkRule = (rule: Rule): boolean =>
   rule.conditions.some((condition) => condition.includes('prefers-color-scheme: dark')) ||
@@ -421,7 +442,7 @@ export function paletteFor(theme: Theme, sheets: readonly Sheet[]): Map<string, 
       if (property.startsWith('--')) palette.set(property, value);
     }
   };
-  const roots = tokens.rules.filter((rule) => rule.selector.startsWith(':root'));
+  const roots = tokens.rules.filter(isPaletteRule);
   const light = roots.filter((rule) => !isDarkRule(rule));
   const dark = roots.filter(isDarkRule);
   if (light.length === 0) throw new Error('the token sheet declares no light :root block');

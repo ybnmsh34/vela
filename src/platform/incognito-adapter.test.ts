@@ -19,6 +19,9 @@
  * and fails by name.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PlatformAdapter } from './adapter';
@@ -232,8 +235,9 @@ const WITHDRAWN_REFUSAL =
  * The second one, and the reason the first pin was not enough.
  *
  * `This window is in incognito, and that command would write to this machine`
- * makes no blanket promise — none of the first four shapes below matches it —
- * and it is still false for two of the commands this file sweeps it over.
+ * makes no blanket promise — none of the four {@link MACHINE_PROMISES} shapes
+ * matches it — and it is still false for two of the commands this file sweeps
+ * it over.
  * `sandbox_report_document` is `writes` with an empty host body
  * (`pub fn report_document(&self, _request: SandboxReportDocumentReq) {}`), and
  * `sandbox_approve` is `writes` because an approval releases a command that
@@ -242,6 +246,28 @@ const WITHDRAWN_REFUSAL =
  */
 const WITHDRAWN_COUNTERFACTUAL =
   'This window is in incognito, and that command would write to this machine, so it was refused.';
+
+/**
+ * The third one, which was never on screen — it documented the code.
+ *
+ * `errors.ts`'s docblock on `INCOGNITO_REFUSED` said this until the round that
+ * added the pin below, in the very file `incognito-adapter.ts` cites as the
+ * source of the rule the shipped message had broken. It is the same
+ * counterfactual, one level down: it names the code that is raised for
+ * `sandbox_report_document` and `sandbox_approve` and asserts of both that a
+ * durable write was going to happen.
+ *
+ * It is quoted **wrapped as it stood** — byte-identical to what
+ * `git show 483875d:src/platform/errors.ts` holds, newline and comment marker
+ * included — because the wrap is why it survived a sweep. The sentence breaks
+ * between `would have` and `written`, so `grep -c 'would have written'` over
+ * that file answers 0. {@link normalise} is what closes that, and
+ * `is why the shapes are matched against normalised text` is the test that says
+ * so.
+ */
+const WITHDRAWN_DOCBLOCK =
+  'Renderer-only: the window is in incognito and this command would have\n' +
+  '   * written something durable derived from the session.';
 
 /**
  * Shapes that make a refusal claim something about the machine.
@@ -254,31 +280,124 @@ const WITHDRAWN_COUNTERFACTUAL =
  * `'failed'`, in which the host's provider debug log is still writing raw
  * prompts and answers to a file; and `project_delete`, which is `erases`, is
  * forwarded, and whose host body runs an `UPDATE` beside its `DELETE`.
- *
- * The last shape bans the other direction — the counterfactual. A refusal that
- * says what the command *would* have done is claiming an effect the wrapper
- * never observed and that two `writes` rows do not have.
- *
- * So the message may say what was refused and why it was refused. It may not say
- * what is, is not, or would have been written.
  */
-const BLANKET_PROMISES: readonly RegExp[] = [
+const MACHINE_PROMISES: readonly RegExp[] = [
   /nothing/i,
   /never/i,
   /no trace/i,
   /not (?:written|saved|kept|stored|recorded)/i,
+];
+
+/**
+ * The other direction: saying what the refused command *would* have done.
+ *
+ * Claiming an effect the wrapper never observed, and that two `writes` rows do
+ * not have. **These are the shapes that are not about copy.** A blanket promise
+ * is wrong because a user reads it; a counterfactual is wrong because it is not
+ * true of the rows the refusal fires on, and that is as wrong in a docblock as
+ * in a sentence on screen. So {@link MACHINE_PROMISES} is swept over the
+ * message only, and this list is swept over the message *and* over the
+ * `INCOGNITO_REFUSED` docblock in `errors.ts`.
+ */
+const COUNTERFACTUALS: readonly RegExp[] = [
   /would (?:write|record|save|store|keep)/i,
+  /would have (?:written|recorded|saved|stored|kept)/i,
+];
+
+/** What the shipped message may not say: either list. */
+const BLANKET_PROMISES: readonly RegExp[] = [...MACHINE_PROMISES, ...COUNTERFACTUALS];
+
+/**
+ * Comment markers off, whitespace flattened.
+ *
+ * A sentence that wraps across two comment lines is one sentence to a reader and
+ * two to a regular expression, and the withdrawn docblock escaped a sweep on
+ * exactly that seam. Every match below is made against this, never against the
+ * raw bytes.
+ */
+function normalise(text: string): string {
+  return text
+    .replace(/^[ \t]*\/?\*+\/?/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * One sentence per shape: the anchor, and what stops a shape going dead.
+ *
+ * Three of the six were really in this tree — two were the shipped refusal, and
+ * the third documented the error code. **The other three have never been in this
+ * repository** — `git log --all -S` on a distinctive phrase from each returns no
+ * commit; they are written here, one per shape, only so that every shape has
+ * something it alone catches. A list that matched nothing would pass over any
+ * message at all, which is the vacuous-oracle shape `refusedCommands()` was
+ * already caught in once, and until this list existed three of the shapes had no
+ * specimen: deleting `/never/i` left this file green.
+ */
+const SPECIMENS: readonly (readonly [string, string])[] = [
+  ['the first sentence the refusal replaced', WITHDRAWN_REFUSAL],
+  ['the second one', WITHDRAWN_COUNTERFACTUAL],
+  ['the docblock that documented this error code, wrapped as it stood', WITHDRAWN_DOCBLOCK],
+  [
+    'a sentence never shipped, for `/never/i`',
+    'This window never keeps a record of what you type here.',
+  ],
+  ['a sentence never shipped, for `/no trace/i`', 'Your turns leave no trace on this machine.'],
+  [
+    'a sentence never shipped, for `/not (?:written|…)/i`',
+    'Anything you send from this window is not saved on this machine.',
+  ],
 ];
 
 describe('the refusal is copy, and it promises only what this wrapper can keep', () => {
-  it.each([
-    ['the first sentence it replaced', WITHDRAWN_REFUSAL],
-    ['the second one', WITHDRAWN_COUNTERFACTUAL],
-  ])('would have caught %s', (_name, withdrawn) => {
-    // The anchor, one case per withdrawn sentence. Without it an empty or
-    // misspelt list below passes anything; without the *second* case, the shape
-    // added for the counterfactual could be deleted and nothing would notice.
-    expect(BLANKET_PROMISES.filter((shape) => shape.test(withdrawn)).length).toBeGreaterThan(0);
+  it.each(SPECIMENS)('would have caught %s', (_name, specimen) => {
+    // The anchor. Delete or misspell any shape and its specimen is left matched
+    // by nothing, which reddens here by name.
+    const caught = BLANKET_PROMISES.filter((shape) => shape.test(normalise(specimen))).map(String);
+    expect(caught).toHaveLength(1);
+  });
+
+  it('leaves no shape without a specimen, and no specimen to two shapes', () => {
+    // The other direction, so the list cannot grow a decorative shape nothing
+    // exercises, and so "one per shape" above is a checked property rather than
+    // a description of how the list happened to be written.
+    expect(BLANKET_PROMISES).toHaveLength(SPECIMENS.length);
+    const caught = BLANKET_PROMISES.map((shape) =>
+      SPECIMENS.filter(([, specimen]) => shape.test(normalise(specimen))).map(([name]) => name),
+    );
+    expect(caught.map((names) => names.length)).toEqual(SPECIMENS.map(() => 1));
+    expect(new Set(caught.flat()).size).toBe(SPECIMENS.length);
+  });
+
+  it('is why the shapes are matched against normalised text', () => {
+    // The withdrawn docblock is the measurement: raw, it matches nothing,
+    // because the phrase it is caught by breaks across two comment lines.
+    expect(BLANKET_PROMISES.filter((shape) => shape.test(WITHDRAWN_DOCBLOCK))).toEqual([]);
+    expect(
+      BLANKET_PROMISES.filter((shape) => shape.test(normalise(WITHDRAWN_DOCBLOCK))).map(String),
+    ).toEqual([String(/would have (?:written|recorded|saved|stored|kept)/i)]);
+  });
+
+  it('holds the docblock on the error code to the counterfactual shapes too', () => {
+    // The rule is about what this wrapper is in a position to say, so the file
+    // that documents the code obeys it as well. Found by symbol, not by line.
+    const source = readFileSync(join(process.cwd(), 'src', 'platform', 'errors.ts'), 'utf8');
+    const member = source.indexOf("  'INCOGNITO_REFUSED',");
+    expect(member, 'errors.ts no longer declares the code where this pin looks').toBeGreaterThan(0);
+    const preceding = source.slice(0, member);
+    const opened = preceding.lastIndexOf('/**');
+    expect(opened, 'the code is no longer preceded by a docblock').toBeGreaterThan(0);
+
+    const docblock = normalise(preceding.slice(opened));
+    // Not vacuous: an empty or truncated slice would pass any shape list.
+    expect(docblock.length).toBeGreaterThan(400);
+    expect(docblock).toMatch(/incognito/i);
+    expect(docblock).toContain('COMMAND_DURABILITY');
+
+    expect(
+      COUNTERFACTUALS.filter((shape) => shape.test(docblock)).map(String),
+      'the docblock may say the row was refused; it may not say what the call was going to do',
+    ).toEqual([]);
   });
 
   it('makes no claim about what this machine is writing', async () => {

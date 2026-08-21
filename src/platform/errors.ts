@@ -19,9 +19,27 @@ export const IPC_ERROR_CODES = [
   /** Renderer-only: host and renderer disagree on the contract version. */
   'CONTRACT_MISMATCH',
   /**
-   * Renderer-only: the window is in incognito and this command would have
-   * written something durable derived from the session. Never reaches the host,
-   * which is the entire point — see `src/platform/incognito-adapter.ts`.
+   * Renderer-only: the window is in incognito and this command's row in
+   * `COMMAND_DURABILITY` is `writes`, so the wrapper refused it instead of
+   * forwarding it. Never reaches the host, which is the entire point — see
+   * `src/platform/incognito-adapter.ts`.
+   *
+   * **That is a statement about the call, and this code carries no second one
+   * about the machine.** The refusal fires on the row, and two `writes` rows
+   * hold that classification by decision rather than by an observed effect:
+   * `sandbox_report_document`'s host body is
+   * `pub fn report_document(&self, _request: SandboxReportDocumentReq) {}` —
+   * empty, in `src-tauri/crates/vela-sandbox/src/host.rs` — and
+   * `sandbox_approve` is `writes` because an approval is what releases an
+   * already-submitted command to run — not because approving is itself durable.
+   * This code is raised for both, so reading it as "something durable was about
+   * to happen" is reading it as something the wrapper never observed. The rule
+   * is stated once, in `src/platform/incognito-adapter.ts`, and it is a rule
+   * about what the wrapper is in a position to say rather than a rule about
+   * which strings a user happens to read — so `incognito-adapter.test.ts` holds
+   * this docblock to the same counterfactual shapes it holds the shipped
+   * refusal to, and the sentence that stood here until it did is one of that
+   * file's specimens.
    *
    * A distinct code rather than `UNSUPPORTED` because a caller has to be able to
    * tell "this build cannot do that" from "this window is refusing to do that

@@ -42,7 +42,9 @@ interface NavigationState {
    * conversation on screen. This counter is the id's stand-in.
    *
    * RULE U — its reader is `src/app/App.tsx`, which puts it in the
-   * `ConversationSurface` `key` alongside the conversation id, and
+   * `ConversationSurface` `key` as the right operand of the `??` — the
+   * conversation id's fallback when there is no id, never present beside one —
+   * and
    * `src/app/instructions-and-incognito.test.tsx` is what observes that the
    * remount happens. It is deliberately not a boolean: two presses in a row
    * have to differ, or the second is a no-op.

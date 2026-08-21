@@ -326,10 +326,29 @@ export async function disarmDebugLogForIncognito(
  * is in a position to make: it knows the command's row and it knows it did not
  * forward it, and it knows nothing about the debug log, about what an allowed
  * command is doing, or about what the refused one would have done had it gone
- * through. `incognito-adapter.test.ts` pins it — the oracle is anchored on both
- * withdrawn sentences, so an empty word list cannot pass — and
- * `instructions-and-incognito.test.tsx` provokes the refusal with the band in
- * its `failed` state and fails if the two contradict each other.
+ * through. `incognito-adapter.test.ts` pins it — the oracle is anchored one
+ * sentence per shape, so a shape cannot go dead and an empty word list cannot
+ * pass — and `instructions-and-incognito.test.tsx` provokes the refusal with the
+ * band in its `failed` state and fails if the two contradict each other.
+ *
+ * ## The counterfactual is banned as a claim, not as a string in copy
+ *
+ * Withdrawing it from the message twice and leaving it standing elsewhere is the
+ * fix carrying its own defect one level down, and that is what happened:
+ * `errors.ts`'s docblock on `INCOGNITO_REFUSED` — the same file this section
+ * quotes for the rule about `PlatformError.command` — went on saying the command
+ * "would have written something durable derived from the session" after both
+ * withdrawals. It survived because a sweep for the phrase reads one line at a
+ * time and that sentence wraps between `would have` and `written`.
+ *
+ * So the rule is stated here once and it is about the claim: **nothing in this
+ * feature may say what a refused command would have done**, because the refusal
+ * fires on the row and two `writes` rows are `writes` by decision. The two
+ * counterfactual shapes in `incognito-adapter.test.ts` are swept over the
+ * shipped message *and* over that docblock, matched against text with its
+ * comment markers stripped and its whitespace flattened, and the wrapped
+ * sentence that stood there is one of the specimens those shapes are anchored
+ * on.
  */
 export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapter {
   return {

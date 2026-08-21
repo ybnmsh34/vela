@@ -11,9 +11,10 @@
  *
  * Measured against the tree this commit ships, by putting that mistake back:
  * with the released array discarded, `src/lib/task-plan.test.ts` stays green at
- * 26 and `CoworkPanel.test.tsx` stays green at 21, and 6 of the 9 tests below go
- * red. Reproduced twice. Two whole files of assertions cannot see the defect
- * this one file is for.
+ * 31, `CoworkPanel.test.tsx` stays green at 26 and `cowork-store.test.ts` stays
+ * green at 15, and 9 of the 12 tests below go red — EXIT=1,
+ * `Tests  9 failed | 78 passed (87)`, reproduced twice. Three whole files of
+ * assertions cannot see the defect this one file is for.
  *
  * So this file drives the read end to end: a real `LiveRuns` directory over a
  * hand-driven harness, `turnStarted` emitted into it, and a `TaskDirector`
@@ -101,6 +102,17 @@ function watchedDirector(answer: DirectiveDelivery): {
       },
     },
   };
+}
+
+/**
+ * A director that breaks the contract by rejecting instead of answering.
+ *
+ * `reason` is deliberately `unknown`: `use-cowork.ts` narrows with
+ * `error instanceof Error`, and the arm that does not is the one a host bridge
+ * rejecting with a bare string lands in.
+ */
+function rejectingDirector(reason: unknown): TaskDirector {
+  return { deliver: () => Promise.reject(reason) };
 }
 
 /** A plan on the selected conversation with a comment waiting on `step`. */
@@ -216,6 +228,98 @@ describe('a released directive is read, not dropped', () => {
     // Handing the model the same instruction twice is worse than not handing it
     // over at all: the user wrote it once.
     expect(asked).toHaveLength(1);
+  });
+
+  /**
+   * THE CALLER THAT CONSTRUCTS ITS DIRECTOR INLINE, WHICH IS A CRASH IF THE
+   * STORE WRITES ON A NO-OP.
+   *
+   * `director` is in the subscription effect's dependency list, so a director
+   * minted in the render call has a new identity every render: render →
+   * resubscribe → replay of the retained `turnStarted` → `advance` → store
+   * write → render. The loop only closes if that `advance` writes when nothing
+   * changed, and it used to: `advanceTo` returned `{ ...plan, state: 'running' }`
+   * for an arrival at a step the plan was already on. Measured against the tree
+   * this commit ships, with that one clause put back: this file gives EXIT=1,
+   * `Tests  1 failed | 11 passed (12)`, the single red is this test, and its
+   * message is React's `Maximum update depth exceeded`.
+   *
+   * `use-cowork.ts` tells the reader to keep the default director at module
+   * scope for the resubscribe cost. This is the same hazard one level up, where
+   * the cost is not a cost but a hang, and the fix is in the plan algebra
+   * rather than in a sentence asking callers to be careful.
+   */
+  it('does not loop when the caller builds a director inline on every render', async () => {
+    planWithCommentOn(2, 'use staging, not prod');
+    const { runtime, arriveAt } = fixture();
+
+    renderHook(() =>
+      useCowork(runtime, CONVERSATION, {
+        deliver: () => Promise.resolve<DirectiveDelivery>({ kind: 'delivered' }),
+      }),
+    );
+    arriveAt(2);
+    // The second arrival at the same step is the one a replay produces, and is
+    // the write that used to feed the loop.
+    arriveAt(2);
+
+    await waitFor(() => {
+      expect(stepInStore(2)?.directiveOutcome).toEqual({ kind: 'delivered' });
+    });
+  });
+});
+
+/**
+ * THE DIRECTOR THAT BREAKS ITS OWN CONTRACT.
+ *
+ * `TaskDirector.deliver` answers with a `DirectiveDelivery`; a real one over a
+ * real host will one day throw instead — a dead IPC channel, a window closed
+ * mid-await. That path is a `.catch` in `use-cowork.ts` whose own comment says
+ * it exists so there is no "silent failure this feature exists to not have",
+ * and for a round the comment was the only thing saying so: the handler could
+ * be changed to record `{ kind: 'delivered' }` for a director that REJECTS and
+ * nothing anywhere went red. Both halves of its ternary are driven here, so the
+ * word over a hop that threw is a tested word.
+ */
+describe('a director that rejects', () => {
+  it('is recorded as refused, carrying the error message, not as delivered', async () => {
+    planWithCommentOn(2, 'use staging, not prod');
+    const { runtime, arriveAt } = fixture();
+
+    const director = rejectingDirector(new Error('the host went away'));
+
+    const { result } = renderHook(() => useCowork(runtime, CONVERSATION, director));
+    arriveAt(2);
+
+    await waitFor(() => {
+      expect(stepInStore(2)?.directiveOutcome).toEqual({
+        kind: 'refused',
+        reason: 'the host went away',
+      });
+    });
+    // And it is reported to the user rather than sitting at "handing over" for
+    // ever, which is the whole reason the rejection is recorded at all.
+    expect(result.current.lost.map((step) => step.directive)).toEqual(['use staging, not prod']);
+  });
+
+  it('carries a rejection that is not an Error through as its own text', async () => {
+    planWithCommentOn(2, 'use staging, not prod');
+    const { runtime, arriveAt } = fixture();
+
+    // A rejected promise carrying a string is what a `postMessage` bridge and a
+    // good deal of host code actually throw. `String(error)` is the other half
+    // of the handler's ternary and it prints in the panel verbatim.
+    const director = rejectingDirector('the socket closed');
+
+    renderHook(() => useCowork(runtime, CONVERSATION, director));
+    arriveAt(2);
+
+    await waitFor(() => {
+      expect(stepInStore(2)?.directiveOutcome).toEqual({
+        kind: 'refused',
+        reason: 'the socket closed',
+      });
+    });
   });
 });
 

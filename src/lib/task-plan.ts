@@ -275,6 +275,22 @@ export interface Advance {
  */
 export function advanceTo(plan: Plan, step: number): Advance {
   if (step <= plan.currentStep) {
+    // The same object back when this arrival changes nothing, which is what a
+    // harness re-emitting `turnStarted` for a step the plan is already on
+    // produces.
+    //
+    // A fresh object for a no-op is not free, and the store cannot make up for
+    // it: `advance` in `src/state/cowork-store.ts` writes when what comes back
+    // is not the plan it already holds, and a fresh copy is not that plan. So
+    // the check has to be here as well as there, or every repeated event is a
+    // new `plans` map and a re-render of the dock.
+    //
+    // For a caller that passes `useCowork` a director constructed inline, that
+    // re-render is also a fresh director identity, which is a resubscribe,
+    // which replays the same event again. The loop is not theoretical: writing
+    // this clause the other way is a `Maximum update depth exceeded` crash, and
+    // `use-cowork.test.tsx` drives the inline-director case that hits it.
+    if (plan.state === 'running') return { plan, directives: [] };
     return { plan: { ...plan, state: 'running' }, directives: [] };
   }
   const arriving = plan.steps.filter(
@@ -327,6 +343,9 @@ export function recordDelivery(plan: Plan, n: number, outcome: DirectiveDelivery
 
 /** The run ended, whatever the outcome. There is no current step any more. */
 export function stop(plan: Plan): Plan {
+  // Same object when it is already stopped, for the reason {@link advanceTo}
+  // gives: a run that reports finishing twice must not be two store writes.
+  if (plan.state === 'stopped') return plan;
   return { ...plan, state: 'stopped' };
 }
 

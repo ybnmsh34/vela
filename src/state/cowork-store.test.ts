@@ -12,7 +12,7 @@ import { planFor, resetCoworkStore, tasksIn, useCoworkStore } from './cowork-sto
  * That last one is here because it was **not** covered and the gap was measured
  * rather than guessed. Re-measured against the tree this commit ships: replacing
  * the whole ranking function with `() => 0` leaves `src/features/cowork` and
- * `src/lib/task-plan.test.ts` green — 59 passed, twice — and fails exactly one
+ * `src/lib/task-plan.test.ts` green — 72 passed, twice — and fails exactly one
  * test, here. An ordering nothing asserts is an ordering the next edit is free
  * to lose.
  */
@@ -134,5 +134,95 @@ describe('the task switcher’s order', () => {
       'first',
       'second',
     ]);
+  });
+});
+
+/**
+ * AN ACTION THAT CHANGES NOTHING WRITES NOTHING.
+ *
+ * The identity asserted here is the `plans` **map**, not the plan inside it,
+ * and the difference is the whole test. `set({ plans: { ...get().plans, [id]:
+ * unchanged } })` leaves the plan object alone and still hands every selector
+ * reading `plans` a value it has not seen before, which is a re-render of the
+ * dock — so an assertion on the plan object cannot see the write at all, and
+ * the first draft of these tests made exactly that mistake. Measured
+ * against the tree this commit ships: dropping the `next !== plan` guard from
+ * `recordDelivery` gives EXIT=1, `Tests  1 failed | 86 passed (87)`, and the
+ * single red is `writes nothing for a second answer about a directive that
+ * already has one`. Reproduced twice.
+ *
+ * It is not only a render. In `useCowork` a re-render is a fresh `director`
+ * identity for any caller that builds one inline, a fresh identity is a
+ * resubscribe, and a resubscribe replays the event that caused the write.
+ * `use-cowork.test.tsx` drives that caller.
+ */
+describe('a no-op action leaves the plan alone', () => {
+  it('writes nothing when the run re-reports a step it is on', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two', 'three']);
+    store.advance('a', 2);
+    const plans = useCoworkStore.getState().plans;
+
+    const released = useCoworkStore.getState().advance('a', 2);
+
+    expect(released).toEqual([]);
+    expect(useCoworkStore.getState().plans).toBe(plans);
+  });
+
+  it('writes nothing when a finished run reports finishing again', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two']);
+    store.advance('a', 1);
+    store.stopTask('a');
+    const plans = useCoworkStore.getState().plans;
+
+    useCoworkStore.getState().stopTask('a');
+
+    expect(useCoworkStore.getState().plans).toBe(plans);
+  });
+
+  it('writes nothing for a second answer about a directive that already has one', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two']);
+    const accepted = store.comment('a', 2, 'use staging');
+    expect(accepted.ok).toBe(true);
+    useCoworkStore.getState().advance('a', 2);
+    useCoworkStore.getState().recordDelivery('a', 2, { kind: 'noLiveRun' });
+    const plans = useCoworkStore.getState().plans;
+
+    // A late duplicate must not restate what the user was already shown, and it
+    // must not cost a render to decline to.
+    useCoworkStore.getState().recordDelivery('a', 2, { kind: 'delivered' });
+
+    expect(useCoworkStore.getState().plans).toBe(plans);
+    expect(useCoworkStore.getState().plans['a']?.steps[1]?.directiveOutcome).toEqual({
+      kind: 'noLiveRun',
+    });
+  });
+
+  it('writes nothing when a comment is removed from a step the run has passed', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two', 'three']);
+    store.comment('a', 3, 'use staging');
+    useCoworkStore.getState().advance('a', 3);
+    const plans = useCoworkStore.getState().plans;
+
+    useCoworkStore.getState().uncomment('a', 3);
+
+    expect(useCoworkStore.getState().plans).toBe(plans);
+    // The comment is still there, because it was already released — removing it
+    // afterwards would erase what the user said about a step that read it.
+    expect(useCoworkStore.getState().plans['a']?.steps[2]?.directive).toBe('use staging');
+  });
+
+  it('writes nothing when a refused comment is not taken', () => {
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two']);
+    const plans = useCoworkStore.getState().plans;
+
+    const refused = store.comment('a', 2, '   ');
+
+    expect(refused.ok).toBe(false);
+    expect(useCoworkStore.getState().plans).toBe(plans);
   });
 });

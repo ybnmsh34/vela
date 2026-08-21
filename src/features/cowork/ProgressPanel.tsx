@@ -4,6 +4,11 @@
  * Checks behind completed steps, the current step marked, steps ahead plain, and
  * a comment box on every step the run has not reached.
  *
+ * **Read `src/state/cowork-store.ts`'s header before this one.** Nothing in
+ * this build calls `setPlan`, so the panel a user actually reaches is the empty
+ * state below and every other paragraph here is conditional on a plan that only
+ * a test creates.
+ *
  * ## Three things carry each step's state, not one
  *
  * Colour, a glyph, and a word. A user who cannot separate two hues still sees a
@@ -46,8 +51,19 @@ import type {
 import styles from './CoworkPanel.module.css';
 import { useCommentDraft, type CoworkController } from './use-cowork';
 
-/** Vela's words for each refusal. The vocabulary is closed; the wording is ours. */
-function refusalText(refusal: RedirectRefusal): string {
+/**
+ * Vela's words for each refusal. The vocabulary is closed; the wording is ours.
+ *
+ * Exported for the test that pins all four sentences at once. Three of the four
+ * are reachable by pressing the button: `emptyComment`, and — in the race the
+ * header describes, where the plan moves between the render that drew the form
+ * and the click that submits it — `taskHasStopped` and `stepIsNotAhead`.
+ * `noSuchStep` needs a plan that loses a step while its comment box is open,
+ * which nothing in this build does. An arm no test names is a comment rather
+ * than a guard, and the defect this whole file exists to prevent is a
+ * true-sounding sentence over a thing that did not happen.
+ */
+export function refusalText(refusal: RedirectRefusal): string {
   switch (refusal) {
     case 'emptyComment':
       return 'Write something first — a blank comment would not redirect anything.';
@@ -73,6 +89,30 @@ function refusalText(refusal: RedirectRefusal): string {
  * with it: "never read" on its own would leave a user to guess between a run
  * that stopped early and a hop that refused, and those call for different next
  * actions.
+ *
+ * ## Every arm below is pinned, including the three this build cannot reach
+ *
+ * The director this build ships answers `noLiveRun` and nothing else, so
+ * `delivered`, `tooLate` and `refused` are labels that exist to guard the
+ * implementation that replaces it. `CoworkPanel.test.tsx` asserts all four
+ * `DirectiveDelivery` kinds and all three of the outcome-less states — pending,
+ * handing over, and the stopped-before-release one — by the sentence each
+ * prints, so putting "Redirected" back over a hop that failed is a red rather
+ * than a diff. That is exactly how the round-1 version of this function shipped
+ * its lie.
+ *
+ * ## Why released is checked before stopped, and not the other way
+ *
+ * A directive that is `directiveReleased` is one the plan **arrived at**: the
+ * run reached its step and let the comment go. Printing "the task stopped
+ * before this step" over it would be a false sentence about a step the run
+ * demonstrably reached. So a released directive still waiting for its answer
+ * reads "Handing over" whether the task is running or stopped, and `undelivered`
+ * in `src/lib/task-plan.ts` leaves it out of the never-read report on the same
+ * grounds — waiting for an answer is neither delivered nor lost. The
+ * outcome-less `stopped` arm below therefore speaks only for a directive that
+ * was never released, which is the one case in which the run really did stop
+ * short of the step.
  */
 type DirectiveProgress = 'pending' | 'handingOver' | 'delivered' | 'notRead';
 
@@ -195,11 +235,17 @@ function StepRow({
 
   const directive = step.directive === null ? null : directiveView(step, cowork.plan.state);
 
+  // No `data-state` attribute on the row below. An earlier draft wrote one and
+  // nothing anywhere read it — no stylesheet rule, no test, no selector — which
+  // is the unread write this feature exists to stop shipping. The row's state
+  // reaches readers three other ways and all three are read: `rowClass` and
+  // `markerClass` by the stylesheet, `aria-current` by the accessibility tree
+  // and by `CoworkPanel.test.tsx`, and `stateWord` by the same test's
+  // "Step 1, done" assertion.
   return (
     <li
       className={rowClass}
       data-testid={`cowork-step-${step.n}`}
-      data-state={state}
       {...(state === 'current' ? { 'aria-current': 'step' as const } : {})}
     >
       <span className={markerClass} aria-hidden="true">

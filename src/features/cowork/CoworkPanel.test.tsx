@@ -32,11 +32,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import { PlatformProvider } from '@/platform/PlatformProvider';
 import type { CommandName, CommandReq, CommandRes } from '@/platform/contract';
+import type { RedirectRefusal } from '@/lib/task-plan';
 import { resetCoworkStore, useCoworkStore } from '@/state/cowork-store';
 import { resetNavigationStore, useNavigationStore } from '@/state/navigation-store';
 import { resetFocusStore } from '@/state/focus-store';
 
 import { CoworkDock } from './CoworkPanel';
+import { refusalText } from './ProgressPanel';
 
 /** Records every command that crossed the seam, in order. */
 class WatchedHost extends BrowserAdapter {
@@ -53,6 +55,21 @@ class WatchedHost extends BrowserAdapter {
 
 const CONVERSATION = 'conversation-alpha';
 
+/**
+ * Every member of the closed refusal union, named once.
+ *
+ * A `Record` keyed by the union rather than an array of strings, so that adding
+ * a fifth refusal fails the build here instead of quietly leaving the new arm
+ * of `refusalText` with no test and whatever sentence someone typed.
+ */
+const EVERY_REFUSAL: Readonly<Record<RedirectRefusal, true>> = {
+  emptyComment: true,
+  noSuchStep: true,
+  taskHasStopped: true,
+  stepIsNotAhead: true,
+};
+const REFUSALS = Object.keys(EVERY_REFUSAL) as readonly RedirectRefusal[];
+
 function mount(adapter: BrowserAdapter = new BrowserAdapter()) {
   return render(
     <PlatformProvider adapter={adapter}>
@@ -66,6 +83,25 @@ function givePlan(titles: readonly string[], step?: number): void {
   useNavigationStore.getState().select(CONVERSATION);
   useCoworkStore.getState().setPlan(CONVERSATION, titles);
   if (step !== undefined) useCoworkStore.getState().advance(CONVERSATION, step);
+}
+
+/**
+ * Write a comment on `step` the way a user does — the control, the box, the
+ * submit — rather than by calling the store, so the tests that follow are about
+ * a comment that actually went through the surface.
+ */
+async function commentOn(
+  user: ReturnType<typeof userEvent.setup>,
+  step: number,
+  text: string,
+): Promise<void> {
+  const row = screen.getByTestId(`cowork-step-${step}`);
+  await user.click(within(row).getByRole('button', { name: /^Comment on this step/ }));
+  await user.type(
+    screen.getByRole('textbox', { name: new RegExp(`Comment on step ${step}`) }),
+    text,
+  );
+  await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
 }
 
 const PLAN = ['Read the brief', 'Draft the migration', 'Run the suite', 'Write it up'];
@@ -312,6 +348,161 @@ describe('a comment on an upcoming step redirects the task', () => {
     expect(screen.getByTestId('cowork-directive-4')).toHaveTextContent(
       'Never read — the task stopped before this step',
     );
+  });
+
+  /**
+   * THE THREE LABELS THIS BUILD CANNOT REACH, PINNED ANYWAY.
+   *
+   * The director this build ships answers `noLiveRun` and only that, so
+   * `delivered`, `tooLate` and `refused` are arms of `directiveView` that exist
+   * to guard the implementation that replaces the stub, and for a round two of
+   * them were guarded by a comment rather than by an assertion. Measured against
+   * the tree this commit ships: changing the `tooLate` arm to
+   * `{ progress: 'delivered', label: 'Redirected' }` gives EXIT=1 with exactly
+   * one red, this test, and nothing else in the cowork scope moves; the same
+   * change to the `refused` arm fails exactly the test below it. Both
+   * reproduced twice. `recordDelivery` is the store's, called directly,
+   * because a substituted director is the only other way to reach these and the
+   * question here is what the panel PRINTS, not who said it.
+   */
+  it('says the run had passed the step when that is the answer, not that it was redirected', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    await commentOn(user, 3, 'mind the index');
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    useCoworkStore.getState().recordDelivery(CONVERSATION, 3, { kind: 'tooLate' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cowork-directive-3')).toHaveTextContent(
+        'Never read — the run had passed this step',
+      );
+    });
+    const directive = screen.getByTestId('cowork-directive-3');
+    expect(directive).toHaveAttribute('data-directive-state', 'notRead');
+    expect(directive).not.toHaveTextContent('Redirected');
+    // Too late is not delivered, so it is in the never-read report as well as
+    // on the row. A label that said otherwise would also have to empty this.
+    expect(await screen.findByTestId('cowork-lost-directives')).toHaveTextContent(
+      /One comment was never read/,
+    );
+  });
+
+  it('prints the host’s own words when a run refused the comment', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    await commentOn(user, 3, 'mind the index');
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    useCoworkStore.getState().recordDelivery(CONVERSATION, 3, {
+      kind: 'refused',
+      reason: 'the turn was already on the wire',
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cowork-directive-3')).toHaveTextContent(
+        'Never read — the turn was already on the wire',
+      );
+    });
+    const directive = screen.getByTestId('cowork-directive-3');
+    // Verbatim, because `src/lib/task-plan.ts` says the reason is the host's and
+    // is rendered as given; a paraphrase here would be Vela inventing a cause.
+    expect(directive).toHaveAttribute('data-directive-state', 'notRead');
+    expect(directive).not.toHaveTextContent('Redirected');
+  });
+
+  /**
+   * THE CASE THAT LOOKS LIKE IT SHOULD SAY "NEVER READ" AND MUST NOT.
+   *
+   * The run arrived at step 3, which released the comment, and then the task
+   * stopped before anything answered. `Never read — the task stopped before
+   * this step` is the sentence a stopped task usually earns, and here it would
+   * be false twice over: the run reached this step, and nothing has yet said
+   * what became of the comment. So the row keeps saying "Handing over" and the
+   * never-read report keeps quiet, which is what `undelivered` in
+   * `src/lib/task-plan.ts` also does with a released-and-unanswered directive.
+   * Reordering the two checks in `directiveView` is what this pins.
+   */
+  it('keeps saying handing over on a stopped task, because waiting is not lost', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    await commentOn(user, 3, 'mind the index');
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    useCoworkStore.getState().stopTask(CONVERSATION);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cowork-directive-3')).toHaveAttribute(
+        'data-directive-state',
+        'handingOver',
+      );
+    });
+    const directive = screen.getByTestId('cowork-directive-3');
+    expect(directive).toHaveTextContent('Handing over');
+    expect(directive).not.toHaveTextContent('stopped before this step');
+    expect(directive).not.toHaveTextContent('Redirected');
+    expect(screen.queryByTestId('cowork-lost-directives')).toBeNull();
+  });
+
+  /**
+   * THE OTHER HALF OF THE RACE. The stopped-task test above covers the run
+   * dying under an open comment box; this is the run *arriving* under one. Here
+   * "the run has already reached this step" is the true sentence — it is the
+   * one case in which it is — and the task has not stopped, so the other
+   * refusal would be the false one.
+   */
+  it('tells a user whose run reached the step while the box was open exactly that', async () => {
+    const user = userEvent.setup({ delay: null });
+    givePlan(PLAN, 2);
+    mount();
+
+    const step3 = screen.getByTestId('cowork-step-3');
+    await user.click(within(step3).getByRole('button', { name: /^Comment on this step/ }));
+    await user.type(screen.getByRole('textbox', { name: /Comment on step 3/ }), 'use staging');
+
+    useCoworkStore.getState().advance(CONVERSATION, 3);
+    await user.click(screen.getByRole('button', { name: 'Redirect from here' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/The run has already reached this step/);
+    expect(alert).not.toHaveTextContent(/stopped/);
+    expect(screen.queryByTestId('cowork-directive-3')).toBeNull();
+  });
+});
+
+/**
+ * THE REFUSAL VOCABULARY, ALL FOUR OF IT.
+ *
+ * `refusalText` is the only thing that turns a `RedirectRefusal` into a
+ * sentence a user reads. Three of its four arms are reachable only through a
+ * race and the fourth is not reachable at all in this build, so three of the
+ * four sentences could be swapped for each other and nothing went red. The
+ * tests above drive two of them through the button, which is what proves the
+ * wiring; this one pins the words themselves, `noSuchStep` included.
+ */
+describe('what each refusal is allowed to say', () => {
+  it('gives every refusal its own sentence, and neither of the two confusable ones borrows the other’s reason', () => {
+    expect(refusalText('emptyComment')).toBe(
+      'Write something first — a blank comment would not redirect anything.',
+    );
+    expect(refusalText('noSuchStep')).toBe('That step is no longer in the plan.');
+    expect(refusalText('taskHasStopped')).toBe(
+      'This task has stopped, so nothing will arrive at this step to read a comment.',
+    );
+    expect(refusalText('stepIsNotAhead')).toBe(
+      'The run has already reached this step, so a comment here would never be read.',
+    );
+
+    const all = REFUSALS.map((refusal) => refusalText(refusal));
+    expect(new Set(all).size).toBe(all.length);
+    // The two that are easiest to confuse are the two a user is likeliest to
+    // meet, and telling someone the run "already reached" a step of a task that
+    // died before it is a false sentence about their own task.
+    expect(refusalText('taskHasStopped')).not.toMatch(/already reached/);
+    expect(refusalText('stepIsNotAhead')).not.toMatch(/stopped/);
   });
 });
 

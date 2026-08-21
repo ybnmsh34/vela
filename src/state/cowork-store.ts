@@ -8,6 +8,25 @@
  * `src/state/memory-store.ts` gives: a cached copy in a store is a cache with no
  * invalidation story and two readers who disagree.
  *
+ * ## An action that changes nothing writes nothing
+ *
+ * Every action that moves a plan — `advance`, `recordDelivery`, `stopTask`,
+ * `uncomment` — compares what `src/lib/task-plan.ts` hands back against what it
+ * was given and calls `set` only when they differ. `comment` has it already: a
+ * refusal is not a plan, so there is nothing to write. Zustand notifies on
+ * every `set`, and a new `plans` map is a new value for every selector reading
+ * it, so a no-op write is a re-render of the whole dock.
+ *
+ * That is not only a cost. `useCowork` resubscribes when its `director`
+ * argument changes identity, so for a caller that constructs one inline a
+ * re-render is a resubscribe, a resubscribe is a replay, and a replay is the
+ * same event again — a loop that ends in React's `Maximum update depth
+ * exceeded` rather than in a slow panel. `use-cowork.test.tsx` drives exactly
+ * that caller, and `cowork-store.test.ts` pins the identity of the `plans` map
+ * — not of the plan inside it, which survives a no-op write either way — across
+ * a repeated arrival, a repeated finish, a duplicate answer and a refused
+ * comment.
+ *
  * ## Why the tasks are keyed by conversation id
  *
  * Because that is already the key everything else in this app uses for the same
@@ -35,6 +54,24 @@
  * inventing one is a host change this track may not make. Said plainly here
  * because a panel that looks persistent and is not is worse than one that
  * admits it.
+ *
+ * ## AND NOTHING IN THIS BUILD PUTS A PLAN IN, EITHER
+ *
+ * `setPlan` is the only way a plan is created and **it has no caller outside
+ * the tests**. Measured, not assumed: grepping the whole of `src/` for call
+ * sites of that name finds 24, every one of them in a `.test.` file, and
+ * nothing left over once those are filtered out. So in the shipping app every
+ * conversation answers `NO_PLAN`, `ProgressPanel.tsx` draws its "no plan yet"
+ * empty state, and the redirect chain below it — release, deliver, record,
+ * report — is exercised by tests and by nothing a user can press.
+ *
+ * That is the same kind of gap as the missing hop in
+ * `src/features/cowork/director.ts` and it is written down for the same reason.
+ * The two ways to close it are a model that writes a plan and a host command
+ * that stores one; `COMMAND_ALLOWLIST` has neither, and the third way — a box
+ * in the panel where the user types their own steps — is a surface this track
+ * has not built and must not claim. Read every "the user sees" in this feature
+ * as conditional on a plan existing, because today one only exists in a test.
  */
 
 import { create } from 'zustand';
@@ -119,20 +156,22 @@ export const useCoworkStore = create<CoworkState>((set, get) => ({
     const plan = get().plans[conversationId];
     if (plan === undefined) return [];
     const moved = advanceTo(plan, step);
-    set({ plans: { ...get().plans, [conversationId]: moved.plan } });
+    if (moved.plan !== plan) set({ plans: { ...get().plans, [conversationId]: moved.plan } });
     return moved.directives;
   },
 
   recordDelivery: (conversationId, step, outcome) => {
     const plan = get().plans[conversationId];
     if (plan === undefined) return;
-    set({ plans: { ...get().plans, [conversationId]: recordDelivery(plan, step, outcome) } });
+    const next = recordDelivery(plan, step, outcome);
+    if (next !== plan) set({ plans: { ...get().plans, [conversationId]: next } });
   },
 
   stopTask: (conversationId) => {
     const plan = get().plans[conversationId];
     if (plan === undefined) return;
-    set({ plans: { ...get().plans, [conversationId]: stop(plan) } });
+    const next = stop(plan);
+    if (next !== plan) set({ plans: { ...get().plans, [conversationId]: next } });
   },
 
   comment: (conversationId, step, text) => {
@@ -146,7 +185,8 @@ export const useCoworkStore = create<CoworkState>((set, get) => ({
   uncomment: (conversationId, step) => {
     const plan = get().plans[conversationId];
     if (plan === undefined) return;
-    set({ plans: { ...get().plans, [conversationId]: clearRedirect(plan, step) } });
+    const next = clearRedirect(plan, step);
+    if (next !== plan) set({ plans: { ...get().plans, [conversationId]: next } });
   },
 }));
 

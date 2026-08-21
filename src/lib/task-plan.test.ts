@@ -307,3 +307,60 @@ describe('a comment can be withdrawn while it is still ahead', () => {
     expect(cleared.steps.find((step) => step.n === 2)?.directive).toBe('mind the index');
   });
 });
+
+/**
+ * IDENTITY, WHICH IS PART OF THE ALGEBRA AND NOT AN OPTIMISATION.
+ *
+ * These functions are values in, values out, and the caller is a zustand store
+ * whose only way of telling "nothing happened" from "something happened" is
+ * `===`. `src/state/cowork-store.ts` writes only when the object it gets back
+ * is a different one, so returning a fresh copy for a no-op is not a wasted
+ * allocation — it is a state change announced to every subscriber, and in
+ * `use-cowork.ts` a state change can come back round as the same event again.
+ */
+describe('a call that changes nothing hands back what it was given', () => {
+  it('returns the same plan for an arrival at a step the run is already on', () => {
+    const running = advanceTo(planOf(TITLES), 2).plan;
+
+    const again = advanceTo(running, 2);
+
+    expect(again.plan).toBe(running);
+    expect(again.directives).toEqual([]);
+  });
+
+  it('returns the same plan for an arrival behind the run', () => {
+    const running = advanceTo(planOf(TITLES), 3).plan;
+
+    // A replayed prefix. It must not read as a run that went backwards, and it
+    // must not read as a change at all.
+    expect(advanceTo(running, 1).plan).toBe(running);
+  });
+
+  it('still moves an idle plan to running when the step does not move', () => {
+    // The one case in the same branch that is not a no-op: step 0 on a plan
+    // that has not started. `state` changes, so the object must.
+    const idle = planOf(TITLES);
+    expect(idle.state).toBe('idle');
+
+    const started = advanceTo(idle, 0).plan;
+
+    expect(started).not.toBe(idle);
+    expect(started.state).toBe('running');
+    expect(started.currentStep).toBe(0);
+  });
+
+  it('returns the same plan when a stopped task is stopped again', () => {
+    const stopped = stop(advanceTo(planOf(TITLES), 2).plan);
+
+    expect(stop(stopped)).toBe(stopped);
+  });
+
+  it('returns the same plan for an answer about a step that already has one', () => {
+    const planned = redirect(planOf(TITLES), 2, 'mind the index');
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const answered = recordDelivery(advanceTo(planned.plan, 2).plan, 2, { kind: 'noLiveRun' });
+
+    expect(recordDelivery(answered, 2, { kind: 'delivered' })).toBe(answered);
+  });
+});

@@ -22,12 +22,16 @@
  * nothing took the comment. That is what the panel says.
  *
  * It is a parameter with a default rather than a value constructed inside, so
- * that `use-cowork.test.tsx` can put a director in that answers something else
- * and watch what the plan does with it. Note what that does *not* buy: nothing
- * threads a director down from the composition root — `CoworkDock` calls this
- * hook with two arguments — so wiring a real one is still an edit to
- * `CoworkPanel.tsx` and `App.tsx` as well as a new implementation. The seam is
- * here; the plumbing to it is not.
+ * that `use-cowork.test.tsx` can put a director in that answers something else,
+ * or one that rejects, and watch what the plan does with each. Note what that
+ * does *not* buy: nothing threads a director down from the composition root —
+ * `CoworkDock` calls this hook with two arguments — so wiring a real one is a
+ * new implementation plus an edit to **three** files, not two. `App.tsx` builds
+ * it; `CoworkSurface.tsx` passes it on, and is the file already prop-drilling
+ * `runtime` and `projectId` down this same path; `CoworkPanel.tsx` hands it to
+ * this hook. An enumeration that stops at the first and last of those leaves
+ * the next person's wiring broken one file short of working. The seam is here;
+ * the plumbing to it is not.
  *
  * ## Why the subscription starts at the retained floor and not at 0
  *
@@ -144,7 +148,10 @@ export function useCowork(
               // with a `DirectiveDelivery`. Recorded rather than swallowed,
               // because the alternative is a row that says "handing over" and
               // never changes, which is the silent failure this feature exists
-              // to not have.
+              // to not have. `refused`, never `delivered`: a hop that threw did
+              // not take the comment, and `use-cowork.test.tsx` drives a
+              // rejecting director through both halves of the ternary below so
+              // this branch is a guard rather than a paragraph.
               recordDelivery(conversationId, released.n, {
                 kind: 'refused',
                 reason: error instanceof Error ? error.message : String(error),

@@ -1140,12 +1140,13 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
  * shapes that produce the same defect one level down, both of them reachable
  * through the product's own paths rather than invented for a test:
  *
- *  1. **Several replies under one question.** `AgentLoopHarness`'s step loop
- *     calls `runTurn` once per step and `runTurn` opens with a single
- *     `transcript.append({ role: 'assistant', … })`, so a run writes one
- *     assistant row per step. `entriesFromStored` pushes one entry per
- *     assistant row. Reopening a three-step run therefore yields three
- *     consecutive assistant turns under one user message.
+ *  1. **Several replies under one question.** `AgentRun`'s `loop` in
+ *     `agent-loop-harness.ts` calls its `runTurn` once per step, and `runTurn`
+ *     opens each step with the file's only `transcript.append` carrying
+ *     `role: 'assistant'`. So a run writes one assistant row per step, and
+ *     `entriesFromStored` pushes one entry per assistant row. Reopening a
+ *     three-step run therefore yields three consecutive assistant turns under
+ *     one user message.
  *  2. **Two questions that agree for sixty characters.** The quote in the name
  *     is cut so a screen reader is not made to read a paragraph before the
  *     verb, and the cut re-merges two long questions with a shared opening.
@@ -1155,8 +1156,6 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
  * retry control in the transcript has a name of its own.
  */
 describe('the conversation surface: no two retry controls share a name', () => {
-  const NO_USAGE_STORED: TokenUsage = NO_USAGE;
-
   function storedMessage(id: string, role: 'user' | 'assistant', text: string): StoredMessage {
     return {
       id,
@@ -1169,7 +1168,7 @@ describe('the conversation surface: no two retry controls share a name', () => {
       modelId: 'local-model',
       answeredByProviderId: null,
       answeredByModelId: null,
-      usage: NO_USAGE_STORED,
+      usage: NO_USAGE,
       stopReason: null,
       // A failed row that kept its reason reaches `failedRecorded`, which is an
       // ending that offers the retry control. That is what puts a button on

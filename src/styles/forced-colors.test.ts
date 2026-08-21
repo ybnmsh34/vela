@@ -201,8 +201,13 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // `border-left-width` alone, which a `border-left: 3px solid …` shorthand
     // walks straight past — it would give `.error` the same 3px edge as
     // `.ending`, collapse the two families back into two boxes under forced
-    // colours, and redden nothing. `border-left` is the prefix of every
-    // spelling that can do it.
+    // colours, and redden nothing. Measured against a sheet with that shorthand
+    // added to `.error`: the old pattern returns false, this one returns true.
+    //
+    // It covers the `border-left` shorthand and the `border-left-*` longhands,
+    // which is what it claims and no more. A four-value `border-width:
+    // 1px 1px 1px 3px` sets the same edge without the substring and would still
+    // slip past — an open hole, narrower than the one it replaces.
     expect(text).not.toMatch(/\.error\s*\{[^}]*border-left/u);
     expect(block).toMatch(/\.ending\s*\{\s*border-style:\s*solid/u);
     expect(block).toMatch(/\.ending\[data-tone='warning'\]\s*\{\s*border-style:\s*dashed/u);

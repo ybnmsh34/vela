@@ -96,13 +96,15 @@ interface AssistantTurnProps {
  * The first version of this named a turn by the question it answers and nothing
  * else, which merges two names into one in two shapes that are both reachable:
  *
- *  - **Several replies under one question.** `AgentLoopHarness`'s step loop
- *    calls its `runTurn` once per step and `runTurn` opens the step with one
- *    `transcript.append({ role: 'assistant', … })`, so an agent run writes one
- *    assistant row per step; `entriesFromStored` pushes one entry per assistant
- *    row. Reopen a three-step run and the transcript holds three consecutive
- *    assistant turns under a single user message — three buttons discarding
- *    three different tails, named by the one question all three answer.
+ *  - **Several replies under one question.** `AgentRun`'s `loop` in
+ *    `agent-loop-harness.ts` calls its `runTurn` once per step, and `runTurn`
+ *    opens each step with the file's only `transcript.append` carrying
+ *    `role: 'assistant'` — the other one is `role: 'tool'`, in `runTools`. So a
+ *    run writes one assistant row per step, and `entriesFromStored` pushes one
+ *    entry per assistant row. Reopen a three-step run and the transcript holds
+ *    three consecutive assistant turns under a single user message — three
+ *    buttons discarding three different tails, named by the one question all
+ *    three answer.
  *  - **Two questions that agree for {@link QUESTION_IN_NAME} characters.** The
  *    quote is cut so a screen reader does not read a paragraph before the verb,
  *    and the cut is exactly what re-merges two long questions with a shared
@@ -142,10 +144,12 @@ const QUESTION_IN_NAME = 60;
  * label so voice control keeps matching what the user can read (WCAG 2.5.3).
  *
  * The position is stated only when there is more than one reply to be among:
- * a transcript with a single assistant turn has a single retry control, so
- * "reply 1 of 1" would be noise attached to a name nothing can collide with.
- * With the position present the names are distinct by construction — see
- * {@link RetryTarget} — so the truncated quote is free to stay short.
+ * a transcript with one assistant turn has only that turn to draw a control
+ * on, so "reply 1 of 1" would be noise. With the position present the names
+ * are distinct **per turn** by construction — see {@link RetryTarget} — so the
+ * truncated quote is free to stay short. Per turn is not per control; the note
+ * beside `retryAccessibleName` in {@link AssistantTurn} says what is still open
+ * about a turn that could draw two.
  */
 function retryName(label: string, target: RetryTarget | undefined): string {
   if (target === undefined) return label;
@@ -184,11 +188,13 @@ export function AssistantTurn({
   // does not prevent it. I did not find a path that produces one — all six
   // `refuseTurn` call sites in `use-conversation.ts` run before or instead of a
   // stream (an attachment that would not load, `streamTurn` rejecting, no
-  // project, no harness, a rejected run), `settleRun`'s failed branch returns
-  // early on `isSettled` and a turn carrying an `error` is `failed` and so
-  // settled, and `turnFromStored` restores neither field — but "I did not find
-  // one" is not "there is none", and the ordering inside `streamTurn`'s catch
-  // is not something this file can see.
+  // project, no harness, a rejected run); `settleRun`'s failed branch returns
+  // early on `isSettled`, and a turn carrying an `error` is settled either way
+  // — `reduceTurn`'s `error` arm sets phase `stopped` for a `cancelled` error
+  // and `failed` for every other, and `isSettled` is true of both; and
+  // `turnFromStored` overrides neither field, so a restored turn has both
+  // `null`. But "I did not find one" is not "there is none", and the ordering
+  // inside `streamTurn`'s catch is not something this file can see.
   const retryAccessibleName = retryName(retryLabel, retryTarget);
 
   /**

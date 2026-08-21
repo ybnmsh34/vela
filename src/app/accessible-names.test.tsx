@@ -265,9 +265,11 @@ const ACTIONABLE: ReadonlySet<string> = new Set([
  * That is the same defect one level down a second time: a guard that checks the
  * family it was written for and calls the question answered. Playwright's
  * `getByRole(…, { name })` is a **case-insensitive substring** match unless
- * `exact: true` is passed, and Windows Voice Access matches on prefix too, so
- * every nesting anywhere in the product is a query that can land on the wrong
- * control — not only the ones with `Close` in them.
+ * `exact: true` is passed. Measured against the built bundle in Chromium, not
+ * assumed: `{ name: 'close' }` matches two controls, `{ name: 'CLOSE THE
+ * ENDPOINTS PANEL' }` matches one, and `{ name: 'close', exact: true }` matches
+ * none. So every nesting anywhere in the product is a query that can land on
+ * the wrong control — not only the ones with `Close` in them.
  *
  * ## The rule for admitting one
  *

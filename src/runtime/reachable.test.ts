@@ -16,7 +16,7 @@
  * from what `index.html` loads and insists every shipping file **under `src/`**
  * is in it.
  *
- * ## Eight times this asked a narrower question than the product's
+ * ## Fourteen times this asked a narrower question than the product's
  *
  * Each entry below was executed against the guard as it then stood, not argued
  * from reading it, and every one after the first was found in the fix for an
@@ -24,7 +24,11 @@
  * one that moved the extractor onto a parser and made stylesheets and the html
  * entry first-class in the same breath. 8 *is* 2, carried forward untouched
  * through both rebuilds that cited it, two assertions below the extractor they
- * rewrote. So the list is kept rather than tidied away.
+ * rewrote. 9 is 2 again inside the fix for 7; 12 is 5's own diagnosis applied to
+ * uses instead of imports; 13 is 6's sentence in the consumer of the function
+ * written to close 6; and 14 is 8's finding — a name is not a binding — in a
+ * config reader. So the list is kept rather than tidied away: the recurrence is
+ * the finding.
  *
  * 1. **It walked one directory.** It walked `src/runtime/` and named exactly one
  *    module in `src/data/`. That limit was recorded *in prose*, and prose is not
@@ -173,15 +177,17 @@
  *    bundle with the plant (221 modules transformed) and absent from the control
  *    build of the unmodified tree (219 modules transformed).
  *
- *    So `htmlLoads` replaces `htmlEntries` and inverts the question. Any
- *    `src=`/`href=` into this tree is an edge whatever tag carries it and
- *    however it is quoted; an inline module body is walked as the module it is;
- *    and anything else that can execute or fetch — a classic `<script>`, an
- *    import map, a module script with both a `src` and a body, an unterminated
- *    tag — goes in `unreadHtml` and **reddens** rather than being skipped for
- *    not matching the shape the reader knew. `build.rollupOptions.input` and
- *    `build.lib` can move the entry out of `index.html` altogether, so the keys
- *    of `build` are pinned against `vite.config.ts` as well.
+ *    So `htmlLoads` replaces `htmlEntries` and inverts the question: an inline
+ *    module body is walked as the module it is, and a `<script>` whose body this
+ *    file does not parse — a classic one, an import map, one carrying both a
+ *    `src` and a body, an unterminated tag — goes in `unreadHtml` and
+ *    **reddens**. The sentence that stood here as well, that *any* `src=`/`href=`
+ *    into this tree is an edge whatever tag carries it, was false about the
+ *    product in both directions and 10 and the `HTML_ASSET_SOURCES` table are
+ *    what replaced it; `unreadHtml` is a named list of shapes, not a promise
+ *    about everything. `build.rollupOptions.input` and `build.lib` can move the
+ *    entry out of `index.html` altogether, so the keys of `build` are pinned
+ *    against `vite.config.ts` as well.
  *
  * 8. **It fixed prose-makes-a-fact in the extractor and left it in the two
  *    assertions underneath.** `builds the sandbox door once` and `reaches the
@@ -206,7 +212,112 @@
  *    `document-host-double.ts` twice — and the regex missed all three sentences
  *    only because none of them happens to be followed by `(`.
  *
- * ## What it still cannot see, stated rather than discovered later
+ * 9. **It decided what was prose before it knew what was a script body.**
+ *    `htmlLoads` stripped `<!-- … -->` with a regex and *then* pulled `<script>`
+ *    elements out of what was left. Inside a raw-text element there is no comment
+ *    syntax, so a `<!--` typed in one module script's body and a `-->` typed in a
+ *    later one deleted the tag between them from the reader's view while Vite
+ *    compiled and bundled it. Executed: guard green twice, `tsc -b --force` exit
+ *    0, `vite build` exit 0 at 223 modules against a 219-module control, and `no
+ *    turn has been sent` — a string in exactly one file under `src/` — inside
+ *    `dist/assets/index-*.js` and absent from the control. That is defect 2's
+ *    shape (a reader confusing code and prose) inside the function written to
+ *    close defect 7, and the fix is not a better order between two passes: it is
+ *    `scanHtml`, one left-to-right tokenizer where the question of which layer
+ *    runs first cannot be asked.
+ *
+ * 10. **It gave an HTML attribute a module specifier's rules.**
+ *    `pointsIntoThisTree` demands `.`, `/` or an alias prefix, which is right for
+ *    an ESM specifier and wrong for a `src=` attribute, where a bare path is
+ *    relative to the document. `<script type="module" src="src/runtime/run-doubles.ts">`
+ *    is resolved by Vite — 220 modules transformed against a 219-module control,
+ *    build exit 0 — and was classified as neither a `file` nor an `unread`:
+ *    invisible in both directions at once, guard green twice. `resolveHtmlReference`
+ *    is the separate rule, and `externalReference` is what draws the line, by
+ *    scheme rather than by prefix.
+ *
+ * 11. **It made a module's identity a string the specifier spelled.**
+ *    `existsSync` was replaced by `readdirSync` because `existsSync` is
+ *    case-blind on NTFS. The replacement respelled only the **basename** — its
+ *    own doc said as much — and `walk` keys `REACHABLE` on what it returns, while
+ *    `NOT_SHIPPED` looks a module up under `join(REPO_ROOT, 'src/runtime/…')`. So
+ *    `import('../Runtime/run-doubles.ts?raw')`, one capital letter from an
+ *    ordinary edge, went onto the graph under a key spelled `Runtime` and the
+ *    exemption asked for `runtime`, got `false`, and the double this file exists
+ *    to exclude shipped in `dist/assets/run-doubles-*.js` with every assertion
+ *    green, `tsc` exit 0 (`?raw` matches an ambient wildcard, so `tsc` never
+ *    resolves the path) and `vite build` at 220 modules against 219. The
+ *    case-blindness had moved out of the filesystem call and into the `Set` key.
+ *    `canonical` now walks every segment from `REPO_ROOT` down, and the casing
+ *    fault is `requested !== file` over the whole path rather than a second
+ *    function re-deriving it from a basename.
+ *
+ * 12. **It enumerated *use* syntax and called that every use.** Defect 5's
+ *    diagnosis was that the extractor enumerated import syntax; `factoryUsesIn`
+ *    resolved bindings through renames, namespaces and a re-export fixpoint and
+ *    then asked *which syntax node* a use was, matching `Identifier` and
+ *    `PropertyAccessExpression`. `appRuntime['createAgentRuntime'](adapter)` is
+ *    an `ElementAccessExpression`, and the namespace identifier is in
+ *    `namespaces` rather than `locals`, so the call was neither counted in
+ *    `calls` nor pushed into `escapes` — neither an entry nor loud, which is the
+ *    failure §7 names. The plant is a real second construction site:
+ *    `export function buildShellRuntime(adapter: PlatformAdapter): HarnessRuntime
+ *    { return appRuntime['createAgentRuntime'](adapter); }` appended to
+ *    `AppShell.tsx` compiles at `npx tsc -b --force` exit 0 under this repo's
+ *    `strict`, `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, and
+ *    against this file it now reddens twice naming
+ *    `[ 'src/app/App.tsx', …(1) ]`. The whole difference was `.` against `['…']`.
+ *    Now a reference to a namespace object is closed over rather than
+ *    enumerated: a member read this file can name, a member read it cannot, or
+ *    the object going somewhere — and the last two are `escapes`.
+ *
+ * 13. **It gated a CSS rule by position and never by file kind.** `cssSpecifiers`
+ *    correctly puts `@import` at the root and `composes` inside a block, and then
+ *    applied both to every stylesheet. Vite runs the CSS-modules transform on
+ *    `*.module.css` and nothing else, so `composes` in a plain stylesheet is an
+ *    unknown declaration copied through and honoured by nobody — prose to the
+ *    bundler, an edge to the reader, which is defect 6's sentence verbatim inside
+ *    the consumer of the function written to close defect 6. One line appended to
+ *    `src/styles/typeface.css` laundered a planted orphan `.module.css` onto the
+ *    graph: `vite build` at 219 modules, identical to the control, the orphan's
+ *    marker in no file under `dist/`, and the laundering line itself shipped as
+ *    inert text in `dist/assets/*.css`. The first spelling of that attack, through
+ *    `base.css`, was blocked — by the hand-written specifier list in
+ *    `base.css is the only stylesheet main.tsx imports`, which `typeface.css` and
+ *    `tokens.css` do not have. A pin protects one value somebody wrote down.
+ *    `isCssModule` is the rule, and `cssInert` keeps the other direction loud.
+ *
+ * 14. **It identified a config property by its name.** `configProperty` returned
+ *    the initializer of the first `PropertyAssignment` named `alias` anywhere in
+ *    `vite.config.ts`, with no path and no parent check. Moving the `test:` block
+ *    above `resolve:` — an inert reordering of an object literal — and giving it
+ *    a decoy `test.alias` let `resolve.alias` grow a second prefix while
+ *    `holds its claims about vite.config.ts to vite.config.ts` went green, and
+ *    `'~/runtime/run-doubles.ts?raw'` then failed `pointsIntoThisTree`, was not
+ *    lost, and was dropped in the silent `continue` defect 5 abolished: `vite
+ *    build` at 220 modules against 219, `run-doubles-*.js` emitted. §8 of this
+ *    list is that a name is not a binding; that is what a config reader keyed on
+ *    a bare name is. The path is walked from the object the module exports, and
+ *    the alias prefixes are read out of it rather than listed in this file.
+ *
+ *    The four above were found in one sitting by a fifth agent, and they share a
+ *    shape worth naming rather than tidying away: each fix replaced an
+ *    enumeration with a **narrower** enumeration and then wrote a comment
+ *    claiming a property. Where this file genuinely held that round it held by
+ *    hand-written pins — `GRAPH.entries`, `base.css`'s specifier list — and a pin
+ *    is not a property either. So each of 9–14 is closed by a rule with its own
+ *    control, and the two places a pin was the only defence now have one:
+ *    `HTML_ASSET_SOURCES` is compared against the installed bundler's own table,
+ *    and `composes` is gated by file kind everywhere rather than enumerated in
+ *    one stylesheet's expected list.
+ *
+ * ## What it still cannot see
+ *
+ * This list is not a proof of completeness and the version of it that read like
+ * one was wrong twice over: it was framed as "stated rather than discovered
+ * later" while two live holes in the reader above it were in neither the list
+ * nor the code. What follows is what is known today, and the pattern of this
+ * file is that the next entry arrives by somebody executing something.
  *
  * - A specifier that is not a literal — `import(someVariable)`, a template with
  *   a substitution in it, `import.meta.glob`, `require` — is a real edge to
@@ -224,30 +335,61 @@
  *   drop a value-imported module whose exports are all unused and whose top
  *   level is side-effect free. Proving emission needs `vite build` and a read of
  *   `dist/`: a different, slower instrument than this one.
- * - In `index.html`, only `src` and `href` are read as references into this
- *   tree. `srcset`, an inline `style` with a `url(...)` in it, or a framework
- *   attribute would each be one this reader does not look at — and unlike a
- *   `<script>` it cannot classify, an attribute it does not know about is not
- *   in `unreadHtml` either. There are none in the file today.
+ * - In `index.html`, an attribute is followed only when `HTML_ASSET_SOURCES`
+ *   says the bundler rewrites it. Three kinds are read and deliberately **not**
+ *   followed, each loud instead: a `srcset`/`imagesrcset` candidate list, which
+ *   this file does not parse; `<meta content>`, which vite gates behind two
+ *   name/property allow-lists this file does not implement; and any other
+ *   attribute whose value resolves to a real file here. An attribute whose value
+ *   resolves to nothing and is not in the table is neither followed nor loud —
+ *   there is nothing in this tree for it to hide. An inline `style="…url(…)…"`
+ *   is in that last case and would be silent.
+ * - A module `src` pointing off this tree — a scheme, `//`, a `#` — is not an
+ *   edge and not lost. It can still execute; what it cannot do is name a file in
+ *   `src/`, which is what every assertion here is about.
+ * - `scanHtml` ends a raw-text element at the first `</script`. A parser that
+ *   honours the script-data-escaped states can keep one open past that point, so
+ *   this reader can end an element **earlier** than the browser and never later.
+ *   Earlier means more of the document is read as markup, which produces more
+ *   tags, more `unread` and a longer entry list — the loud direction, and
+ *   `reads a script body as text` drives exactly that case.
+ * - `HTML_ASSET_SOURCES` is checked against `DEFAULT_HTML_ASSET_SOURCES` in the
+ *   installed `vite` package's built output. That is a private name in a bundled
+ *   file: an upgrade that renames or reshapes it makes `viteHtmlAssetSources`
+ *   return `null`, which reddens rather than passes, and the honest fix then is
+ *   to find where the table moved.
  * - An inline module body is parsed, not type-checked: nothing runs `tsc` over
  *   `index.html`. A body that neither the TS nor the TSX grammar accepts yields
  *   whatever partial tree the parser recovers from it, and edges inside the part
  *   it could not read are lost without a word.
- * - The entry configuration is pinned at the keys of `build` in `vite.config.ts`.
- *   A **plugin** can add an entry without any of those keys changing; `react()`
- *   is the only one here, and a second one is a lockfile change and a reviewer.
+ * - In CSS, `composes` is the only rule gated by file kind, because it is the
+ *   only one this file reads that a plain stylesheet does not honour. Other
+ *   CSS-modules-only syntax — `@value`, `:global` — is not read at all, and
+ *   `@value x from './a.css'` would be a dropped edge rather than a loud one.
+ * - The entry configuration is pinned at the keys of `build` in `vite.config.ts`,
+ *   read from the object the module exports. A config that exports a function,
+ *   or spreads another object into its literal, is one `configRootOf` cannot
+ *   read: it answers `null` and the assertion reddens rather than passing.
+ *   `resolve.alias` is read in its object form; vite also accepts an array of
+ *   `{ find, replacement }`, which `objectKeys` reports as empty — every aliased
+ *   specifier then resolves to nothing and lands in `unresolved`, loudly. A
+ *   **plugin** can add an entry without any of those keys changing; `react()` is
+ *   the only one here, and a second one is a lockfile change and a reviewer.
  * - A factory binding used as a value is reported, not followed. `escapes` says
  *   where the analysis stopped; it does not say where the thing is finally built.
+ *   A namespace object read with a computed member name is in the same list, for
+ *   the same reason.
  * - `src-tauri/` is not walked. This is the renderer's graph.
- * - `readdirSync` is the authority on a filename's case, not `existsSync`, which
- *   is case-blind on NTFS. `resolveSpecifier` returns the on-disk spelling, and
- *   the mismatches are reported, because `forceConsistentCasingInFileNames`
- *   covers what `tsc` resolves and `tsc` never resolves a `.css` path — those
- *   come from an ambient wildcard module in `vite/client`.
+ * - `readdirSync` is the authority on a path's case, every segment of it, not
+ *   `existsSync`, which is case-blind on NTFS. `resolveInTree` carries out both
+ *   the disk's spelling and the specifier's, `walk` keys the graph on the
+ *   former and reports the difference, because `forceConsistentCasingInFileNames`
+ *   covers what `tsc` resolves and `tsc` resolves neither a `.css` path nor a
+ *   `?raw` one — those match ambient wildcard modules in `vite/client`.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -268,7 +410,12 @@ const SRC_ROOT = join(REPO_ROOT, 'src');
  * as written: a second module script, with a body instead of a `src`, is also
  * an entry, and both this file and the one assertion pinning the entry list
  * stayed green while what it imported went into `dist/`. `htmlLoads` is what
- * reads it now, and it reports what it cannot read instead of skipping it.
+ * reads it now. What it reports rather than skips is named in its own doc and
+ * bounded there — a `<script>` whose body this file does not parse, a
+ * `<style>` body, a broken tag, and any attribute outside `HTML_ASSET_SOURCES`
+ * whose value resolves to a real file here. The sentence this replaces said it
+ * reported everything it could not read, and two shapes it reported nothing
+ * about were live at the time.
  */
 const HTML_ENTRY = join(REPO_ROOT, 'index.html');
 
@@ -645,6 +792,8 @@ type CssText = {
  * literal, never a substring found inside one. And `@import` is a top-level rule:
  * a browser ignores one that appears after any other rule, so `atRoot` is where
  * it may be honoured, while `composes` is a declaration and lives in `inRules`.
+ * Position is half of it; `cssSpecifiers` asks the other half, which is which
+ * file kind honours the rule at all.
  *
  * `postcss` is present under `node_modules/.pnpm` as a transitive dependency of
  * Vite but is not resolvable from this package and is not a declared dependency
@@ -704,23 +853,13 @@ function readCss(source: string): CssText {
   return { atRoot, inRules, literals };
 }
 
-/**
- * Every module specifier a stylesheet pulls in.
- *
- * Two forms, both real in this tree's shape: `@import` (quoted or `url(...)`,
- * which is how `src/styles/base.css` holds `tokens.css` and `typeface.css`) and
- * CSS Modules' `composes: name from './other.module.css'`. A form not listed
- * here drops an edge, and a dropped edge reddens the walk naming the file it
- * lost — the loud direction, since the file it lost is itself enumerated. It
- * does not go quiet.
- *
- * Each pattern runs over the half of the stylesheet where its rule is legal, and
- * matches a **whole** string literal by marker rather than "text between two
- * quotes". That is what stops `content: "@import '…'"` from manufacturing an
- * edge, which it did, measured, with this file green twice.
- */
-function cssSpecifiers(source: string): string[] {
-  const css = readCss(source);
+/** True for the file kinds Vite runs the CSS-modules transform over. */
+function isCssModule(file: string): boolean {
+  return /\.module\.css$/i.test(basename(file));
+}
+
+/** Every `@import` target at the root of a stylesheet, quoted or `url(...)`. */
+function importTargets(css: CssText): string[] {
   const found: string[] = [];
   const literalAt = (index: string | undefined): void => {
     const value = index === undefined ? undefined : css.literals[Number(index)];
@@ -735,62 +874,169 @@ function cssSpecifiers(source: string): string[] {
     const specifier = match[1];
     if (specifier !== undefined) found.push(specifier);
   }
+  return found;
+}
+
+/** Every `composes: … from '…'` target inside a rule. */
+function composesTargets(css: CssText): string[] {
+  const found: string[] = [];
   for (const match of css.inRules.matchAll(
     new RegExp(`\\bcomposes\\s*:[^;]*?\\bfrom\\s+${CSS_STRING.source}`, 'g'),
   )) {
-    literalAt(match[1]);
+    const index = match[1];
+    const value = index === undefined ? undefined : css.literals[Number(index)];
+    if (value !== undefined) found.push(value);
   }
   return found;
 }
 
+/**
+ * Every module specifier a stylesheet pulls in — in the file kind that honours it.
+ *
+ * Two forms, both real in this tree's shape: `@import` (quoted or `url(...)`,
+ * which is how `src/styles/base.css` holds `tokens.css` and `typeface.css`) and
+ * CSS Modules' `composes: name from './other.module.css'`. A form not listed
+ * here drops an edge, and a dropped edge reddens the walk naming the file it
+ * lost — the loud direction, since the file it lost is itself enumerated.
+ *
+ * Each pattern runs over the half of the stylesheet where its rule is legal, and
+ * matches a **whole** string literal by marker rather than "text between two
+ * quotes". That is what stops `content: "@import '…'"` from manufacturing an
+ * edge, which it did, measured, with this file green twice.
+ *
+ * And `composes` is gated by **file kind** as well as by position, which is the
+ * half the version before this one did not have. Position in the grammar was
+ * checked; which file kind honours the rule was not. Vite runs the CSS-modules
+ * transform on `*.module.css` and on nothing else, so in a plain stylesheet
+ * `composes` is an unknown declaration that is copied through and ignored — prose
+ * to the bundler, an edge to the reader. Executed against that version: a
+ * `composes … from '../features/canvas/T05Ghost3.module.css'` line appended to
+ * `src/styles/typeface.css`, a plain stylesheet already on the graph, laundered a
+ * planted orphan onto the graph and `reaches every shipping module under src/`
+ * went green over dead shipped CSS — with `vite build` at **219 modules
+ * transformed**, identical to the control, and the laundering text itself
+ * shipped verbatim into `dist/assets/*.css`. Defect 6's own sentence, one level
+ * down, in the consumer of the function written to close defect 6.
+ *
+ * Reading it as nothing would only trade an invented edge for a silent one, so
+ * `cssInert` reports it instead: the rule is there, it does nothing, and the
+ * walk says so.
+ */
+function cssSpecifiers(source: string, file: string): string[] {
+  const css = readCss(source);
+  return [...importTargets(css), ...(isCssModule(file) ? composesTargets(css) : [])];
+}
+
+/**
+ * Every rule in a stylesheet that this file kind does not honour.
+ *
+ * The loud half of the gate above. A `composes` in a plain `.css` file is dead
+ * text — it neither loads what it names nor does anything at runtime — and the
+ * only reason to write one is to be read as an edge by something that is not the
+ * bundler. `no stylesheet carries a rule its own file kind ignores` reddens on it.
+ */
+function cssInert(source: string, file: string): string[] {
+  if (isCssModule(file)) return [];
+  return composesTargets(readCss(source)).map(
+    (specifier) =>
+      `composes … from '${specifier}' — only *.module.css honours composes, so this loads nothing`,
+  );
+}
+
 /** Whichever extractor the file's kind calls for. */
 function edgesOf(file: string, source: string): string[] {
-  return extname(file).toLowerCase() === '.css' ? cssSpecifiers(source) : specifiers(source, file);
+  return extname(file).toLowerCase() === '.css'
+    ? cssSpecifiers(source, file)
+    : specifiers(source, file);
+}
+
+/** Whichever rules the file's kind writes down and does not honour. */
+function inertRulesOf(file: string, source: string): string[] {
+  return extname(file).toLowerCase() === '.css' ? cssInert(source, file) : [];
 }
 
 /** One specifier out of a file, and what became of it. */
 type Edge = {
   /** As written, query suffix and all. */
   readonly specifier: string;
-  /** The file it names, or `null` for a package or for nothing at all. */
+  /** The file it names as the disk spells it, or `null` for a package or nothing. */
   readonly resolved: string | null;
+  /** The same file as the specifier spelled it — the other half of the casing test. */
+  readonly requested: string | null;
   /** It names a path in this repository and no file is there. */
   readonly lost: boolean;
 };
 
-const FILES_IN_DIRECTORY = new Map<string, string[]>();
+type DirectoryEntry = { readonly name: string; readonly isFile: boolean };
 
-/** The names of the plain files in `directory`, as the filesystem spells them. */
-function filesIn(directory: string): string[] {
-  const cached = FILES_IN_DIRECTORY.get(directory);
+const DIRECTORY_ENTRIES = new Map<string, DirectoryEntry[]>();
+
+/** What `directory` holds, as the filesystem spells it, files and directories alike. */
+function entriesIn(directory: string): DirectoryEntry[] {
+  const cached = DIRECTORY_ENTRIES.get(directory);
   if (cached !== undefined) return cached;
-  let names: string[] = [];
+  let entries: DirectoryEntry[] = [];
   try {
-    names = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name);
+    entries = readdirSync(directory, { withFileTypes: true }).map((entry) => ({
+      name: entry.name,
+      isFile: entry.isFile(),
+    }));
   } catch {
-    names = [];
+    entries = [];
   }
-  FILES_IN_DIRECTORY.set(directory, names);
-  return names;
+  DIRECTORY_ENTRIES.set(directory, entries);
+  return entries;
 }
 
 /**
- * `path` respelled the way the filesystem spells it, or `null` if no file is there.
+ * `path` respelled the way the filesystem spells it, **every segment**, or `null`.
  *
- * `existsSync` is the wrong instrument twice over on this box: it is case-blind
- * on NTFS, so `'./Run-Doubles'` "exists", and it answers `true` for a directory,
- * so a specifier naming a folder used to have to be filtered out by extension.
- * `readdirSync` answers both questions at once, which is why the walk's keys and
- * the enumerator's keys are guaranteed to be the same strings.
+ * `existsSync` was the wrong instrument twice over on this box: case-blind on
+ * NTFS, so `'./Run-Doubles'` "exists", and `true` for a directory, so a specifier
+ * naming a folder had to be filtered out by extension. `readdirSync` answers both
+ * at once. The version that replaced it respelled **only the basename**, and that
+ * left the same case-blindness one segment to the left, where it mattered more:
+ * `walk` keys `REACHABLE` on the string this function returns, and `NOT_SHIPPED`
+ * looks a module up by `join(REPO_ROOT, 'src/runtime/run-doubles.ts')`. Executed
+ * against that version — `import('../Runtime/run-doubles.ts?raw')` at module scope
+ * in a file already on the graph, one capital letter different from an ordinary
+ * edge. NTFS lists `src/runtime`'s entries through the mis-cased directory path,
+ * so respelling the basename succeeded and the walk stored a key spelled
+ * `Runtime`; the exemption asked for the key spelled `runtime`, got `false`, and
+ * the first `NOT_SHIPPED` entry shipped in `dist/assets/` with every assertion
+ * here green. Identity had become a string built by `join` out of segments
+ * nothing had checked.
+ *
+ * So the whole path is walked from `REPO_ROOT` down, one `readdirSync` per
+ * segment, each intermediate segment required to be a directory and the last
+ * required to be a file. Two spellings of one file now produce one key, because
+ * the key comes from the disk rather than from the specifier.
+ *
+ * A path outside `REPO_ROOT` — `resolveSpecifier` can build one out of enough
+ * `../` — has no anchor to walk down from, so only its last segment is respelled.
+ * It cannot be a shipping module either way: `shippingModules` enumerates `src/`.
  */
 function canonical(path: string): string | null {
-  const wanted = basename(path).toLowerCase();
-  for (const real of filesIn(dirname(path))) {
-    if (real.toLowerCase() === wanted) return join(dirname(path), real);
+  const inside = relative(REPO_ROOT, path);
+  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+    const wanted = basename(path).toLowerCase();
+    const real = entriesIn(dirname(path)).find(
+      (entry) => entry.isFile && entry.name.toLowerCase() === wanted,
+    );
+    return real === undefined ? null : join(dirname(path), real.name);
   }
-  return null;
+  const segments = inside.split(/[\\/]/).filter((segment) => segment !== '');
+  let at = REPO_ROOT;
+  for (let index = 0; index < segments.length; index += 1) {
+    const wanted = segments[index]?.toLowerCase();
+    const isLast = index === segments.length - 1;
+    const real = entriesIn(at).find(
+      (entry) => entry.isFile === isLast && entry.name.toLowerCase() === wanted,
+    );
+    if (real === undefined) return null;
+    at = join(at, real.name);
+  }
+  return at;
 }
 
 /**
@@ -815,12 +1061,55 @@ function withoutQuery(specifier: string): string {
  * `null` means "not our file, correctly ignored"; `'./x?raw'` resolving to
  * `null` means "this walk just lost an edge into its own tree", and the two used
  * to be the same `continue`.
+ *
+ * The alias prefixes are **read out of `vite.config.ts`**, not listed here. The
+ * version that listed them said `.`, `/` and `@/`, and a fourth agent walked
+ * through the gap: adding `'~': fileURLToPath(new URL('./src', import.meta.url))`
+ * to `resolve.alias` and importing `'~/runtime/run-doubles.ts?raw'` produced a
+ * specifier that was neither relative, nor root-absolute, nor `@/` — so it was
+ * not in this tree, so it was not lost, so it was dropped in the same silent
+ * `continue` defect 5 was written to abolish, and the module shipped. A prefix
+ * list is a config fact; writing one here is prose about a config, which is the
+ * instrument failure this file already names twice.
+ *
+ * Vite matches a string alias key the way `@rollup/plugin-alias` does — the
+ * whole id, or the id up to the next `/` — which is why `@tauri-apps/api/core`
+ * is not the `@` alias and is still correctly a package.
  */
 function pointsIntoThisTree(specifier: string): boolean {
-  return (
-    specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('@/')
-  );
+  const path = withoutQuery(specifier);
+  if (path.startsWith('.') || path.startsWith('/')) return true;
+  return [...ALIASES.keys()].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
+
+/** A specifier's alias prefix rewritten to a path, when this file can translate it. */
+function aliasBase(path: string, aliases: ReadonlyMap<string, string | null> = ALIASES): string | null {
+  for (const [prefix, target] of aliases) {
+    if (target === null) continue;
+    if (path === prefix) return target;
+    if (path.startsWith(`${prefix}/`)) return join(target, path.slice(prefix.length + 1));
+  }
+  return null;
+}
+
+/**
+ * A specifier resolved to a file in this tree: the disk's spelling, and the
+ * spelling the specifier asked for.
+ *
+ * Both halves are kept because the difference between them **is** the casing
+ * fault. The version this replaced returned one string and had a second function
+ * re-derive the fault from the specifier's basename, which is how a mis-cased
+ * *directory* segment stayed invisible in both directions at once. Here the
+ * candidate that matched is carried out alongside what the disk calls it, so
+ * `requested !== file` is the whole test, over every segment, including the
+ * `.ts` or `/index.ts` this resolver appended itself.
+ */
+type Resolution = {
+  /** The file, spelled the way the filesystem spells it. This is the graph's key. */
+  readonly file: string;
+  /** The same path as the specifier asked for it, extension resolution included. */
+  readonly requested: string;
+};
 
 /**
  * A specifier resolved to a file in this tree, or `null` for anything else.
@@ -829,7 +1118,8 @@ function pointsIntoThisTree(specifier: string): boolean {
  * resolve; the old order could not reach a CSS file at all because every
  * candidate was gated on `/\.tsx?$/` before `existsSync` ran. A root-absolute
  * specifier (`/src/main.tsx`) resolves against the project root, which is how
- * Vite reads the one in `index.html`.
+ * Vite reads the one in `index.html`, and an aliased one against whatever
+ * `resolve.alias` says.
  *
  * The query suffix is cut before any of that happens. `import('./x?raw')` is an
  * edge to the file `./x` names: Vite reads it and inlines its **source text**
@@ -839,33 +1129,50 @@ function pointsIntoThisTree(specifier: string): boolean {
  * green twice and `tsc --build --force` exit 0, because `?raw` matches an
  * ambient wildcard module in `vite/client` and `tsc` therefore never resolves
  * the path at all.
+ *
+ * `bareIsRelative` is for `index.html` only, and it is not a convenience. In a
+ * module specifier `run-doubles.ts` is a **package**; in an HTML attribute it is
+ * a path relative to the document, which Vite resolves and bundles. The reader
+ * that used one rule for both classified `<script type="module"
+ * src="src/runtime/run-doubles.ts">` as neither an edge nor a loud one.
  */
-function resolveSpecifier(fromFile: string, specifier: string): string | null {
+function resolveInTree(
+  fromFile: string,
+  specifier: string,
+  bareIsRelative = false,
+): Resolution | null {
   const path = withoutQuery(specifier);
-  const base = path.startsWith('@/')
-    ? join(SRC_ROOT, path.slice(2))
-    : path.startsWith('/')
-      ? join(REPO_ROOT, path.slice(1))
-      : path.startsWith('.')
-        ? resolve(dirname(fromFile), path)
-        : null;
+  const aliased = aliasBase(path);
+  const base =
+    aliased !== null
+      ? aliased
+      : path.startsWith('/')
+        ? join(REPO_ROOT, path.slice(1))
+        : path.startsWith('.') || bareIsRelative
+          ? resolve(dirname(fromFile), path)
+          : null;
   if (base === null) return null;
-  for (const candidate of [
+  for (const requested of [
     base,
     `${base}.ts`,
     `${base}.tsx`,
     join(base, 'index.ts'),
     join(base, 'index.tsx'),
   ]) {
-    const real = canonical(candidate);
-    if (real !== null) return real;
+    const file = canonical(requested);
+    if (file !== null) return { file, requested };
   }
   return null;
 }
 
+/** The same resolution, for the callers that only need the file. */
+function resolveSpecifier(fromFile: string, specifier: string): string | null {
+  return resolveInTree(fromFile, specifier)?.file ?? null;
+}
+
 /** One thing `index.html` hands the bundler. */
 type HtmlLoad =
-  /** A path in this tree named by an attribute — `src=`, `href=`. */
+  /** A path in this tree named by an attribute Vite rewrites. */
   | { readonly kind: 'file'; readonly specifier: string }
   /** The body of an inline `<script type="module">`, which is source. */
   | { readonly kind: 'inline'; readonly source: string }
@@ -879,20 +1186,252 @@ function collapse(text: string, limit = 120): string {
 }
 
 /**
- * The value of `attribute` in a tag's attribute text, or `undefined`.
+ * A tag's attributes, lowercased names to values, quoted or not.
  *
  * Unquoted is a real spelling — `<script type=module src=/src/main.tsx>` is what
  * HTML5 says it is — and a reader that only matched quotes returned `undefined`
  * for both halves of that tag, which made it neither an entry nor loud. That is
- * the same hole as the one this whole reader was rewritten for, one attribute
- * syntax over, so both spellings are read.
+ * the same hole this whole reader was rewritten for, one attribute syntax over,
+ * so both spellings are read; and the map is read whole rather than probed for
+ * two names, because the classification below has to say something about every
+ * attribute rather than about the two it was looking for.
  */
-function attributeValue(attributes: string, attribute: string): string | undefined {
-  const match = new RegExp(`\\b${attribute}\\s*=\\s*(?:["']([^"']*)["']|([^\\s"'>]+))`, 'i').exec(
-    attributes,
+function attributesOf(text: string): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const match of text.matchAll(
+    /([^\s=/>"']+)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g,
+  )) {
+    const name = match[1];
+    if (name === undefined) continue;
+    found.set(name.toLowerCase(), match[2] ?? match[3] ?? match[4] ?? '');
+  }
+  return found;
+}
+
+/** An attribute value that does not name a path in this document's tree. */
+function externalReference(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed === '' || trimmed.startsWith('#') || /^(?:[a-zA-Z][a-zA-Z\d+\-.]*:|\/\/)/.test(trimmed)
   );
-  if (match === null) return undefined;
-  return match[1] ?? match[2];
+}
+
+/** An `index.html` attribute value resolved against the document, or `null`. */
+function resolveHtmlReference(value: string): Resolution | null {
+  return externalReference(value) ? null : resolveInTree(HTML_ENTRY, value.trim(), true);
+}
+
+/** Tag to the attributes Vite reads as an asset reference on it. */
+type HtmlAssetAttributes = {
+  /** Attributes holding exactly one URL. */
+  readonly url: readonly string[];
+  /** Attributes holding a comma-separated candidate list this reader does not parse. */
+  readonly srcset: readonly string[];
+};
+
+/**
+ * The tags and attributes Vite rewrites in `index.html`, and where they came from.
+ *
+ * This table is not this file's opinion about HTML. It is a transcription of
+ * `DEFAULT_HTML_ASSET_SOURCES` in the installed `vite` package, and
+ * `matches vite's own table of asset-bearing attributes` reads that object back
+ * out of `node_modules/vite/dist/` and compares it — so an upgrade that adds a
+ * tag reddens this file instead of quietly leaving an edge unfollowed.
+ *
+ * It exists because the reader it replaces took `src=`/`href=` off **every** tag
+ * and called each one an edge, on the stated grounds that "Vite rewrites in-tree
+ * asset references from any element". That is broader than Vite, and broader is
+ * not the safe direction here: an edge the reader invents where the bundler has
+ * none launders an orphan onto the graph, which is exactly how a `composes` line
+ * in a plain stylesheet laundered one. `<a href="/src/…">` was the attack; it
+ * failed against a **pin** on `GRAPH.entries` rather than against a rule, and a
+ * pin protects one value somebody wrote down.
+ *
+ * Narrowing alone would trade an invented edge for a dropped one, so both
+ * directions are closed: an attribute in this table is followed, and an
+ * attribute **not** in it whose value resolves to a real file in this tree is
+ * `unread` and reddens. Being wrong about Vite in either direction is loud.
+ *
+ * `meta` is in vite's table and deliberately not followed here: its `content` is
+ * an asset reference only when `name`/`property` is in one of two allow-lists
+ * vite carries, and `<meta name="viewport" content="width=device-width, …">` is
+ * not a path. It falls through to the loud branch, which is where an actual
+ * `<meta property="og:image" content="/src/…">` would land.
+ */
+const HTML_ASSET_SOURCES = new Map<string, HtmlAssetAttributes>([
+  ['audio', { url: ['src'], srcset: [] }],
+  ['embed', { url: ['src'], srcset: [] }],
+  ['img', { url: ['src'], srcset: ['srcset'] }],
+  ['image', { url: ['href', 'xlink:href'], srcset: [] }],
+  ['input', { url: ['src'], srcset: [] }],
+  ['link', { url: ['href'], srcset: ['imagesrcset'] }],
+  ['meta', { url: ['content'], srcset: [] }],
+  ['object', { url: ['data'], srcset: [] }],
+  ['source', { url: ['src'], srcset: ['srcset'] }],
+  ['track', { url: ['src'], srcset: [] }],
+  ['use', { url: ['href', 'xlink:href'], srcset: [] }],
+  ['video', { url: ['src', 'poster'], srcset: [] }],
+]);
+
+/** The one tag whose `url` attributes this file reads but does not follow. */
+const HTML_ASSET_TAGS_NOT_FOLLOWED = new Set(['meta']);
+
+/** `{ … }` starting at or after `from`, brace-matched. */
+function braceBlock(text: string, from: number): string | null {
+  const open = text.indexOf('{', from);
+  if (open === -1) return null;
+  let depth = 0;
+  for (let index = open; index < text.length; index += 1) {
+    const character = text.charAt(index);
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(open, index + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Vite's own `DEFAULT_HTML_ASSET_SOURCES`, read out of the installed package.
+ *
+ * `null` when it cannot be found, which reddens rather than passing: the whole
+ * point is that the table above stops being a claim and becomes a comparison.
+ */
+function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
+  const directories = [
+    join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node'),
+    join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node', 'chunks'),
+  ];
+  for (const directory of directories) {
+    for (const entry of entriesIn(directory)) {
+      if (!entry.isFile || !entry.name.endsWith('.js')) continue;
+      const text = readFileSync(join(directory, entry.name), 'utf8');
+      const at = text.indexOf('DEFAULT_HTML_ASSET_SOURCES');
+      if (at === -1) continue;
+      const block = braceBlock(text, at);
+      if (block === null) continue;
+      const found = new Map<string, HtmlAssetAttributes>();
+      const body = block.slice(1, -1);
+      for (const match of body.matchAll(/([A-Za-z][\w-]*)\s*:\s*\{/g)) {
+        const tag = match[1];
+        if (tag === undefined) continue;
+        const inner = braceBlock(body, match.index);
+        if (inner === null) continue;
+        const list = (name: string): string[] => {
+          const array = new RegExp(`${name}\\s*:\\s*\\[([^\\]]*)\\]`).exec(inner);
+          return array === null || array[1] === undefined
+            ? []
+            : [...array[1].matchAll(/["']([^"']+)["']/g)].flatMap((one) =>
+                one[1] === undefined ? [] : [one[1]],
+              );
+        };
+        found.set(tag, { url: list('srcAttributes'), srcset: list('srcsetAttributes') });
+      }
+      if (found.size > 0) return found;
+    }
+  }
+  return null;
+}
+
+/** One thing the tokenizer found in the markup. */
+type HtmlToken =
+  /** An ordinary tag: its name and the text of its attributes. */
+  | { readonly kind: 'tag'; readonly name: string; readonly attributes: string }
+  /** A raw-text element — `<script>`, `<style>` — with its body. */
+  | { readonly kind: 'raw'; readonly name: string; readonly attributes: string; readonly body: string }
+  /** A tag that never ends: an unclosed quote, no `>`, no closing tag. */
+  | { readonly kind: 'broken'; readonly text: string };
+
+/** The elements whose content is text rather than markup. */
+const RAW_TEXT_ELEMENTS = new Set(['script', 'style']);
+
+/** The index of the `>` that ends a tag starting at `from`, quotes respected, or `-1`. */
+function tagEnd(html: string, from: number): number {
+  let index = from;
+  while (index < html.length) {
+    const character = html.charAt(index);
+    if (character === '"' || character === "'") {
+      const close = html.indexOf(character, index + 1);
+      if (close === -1) return -1;
+      index = close + 1;
+      continue;
+    }
+    if (character === '>') return index;
+    index += 1;
+  }
+  return -1;
+}
+
+/**
+ * The markup, tokenized in one left-to-right pass.
+ *
+ * The reader this replaces did two independent passes and the order between them
+ * was a guess: it stripped `<!-- … -->` with a regex **first**, then extracted
+ * `<script>` elements from what was left. A parser does not work that way and
+ * neither does the browser — inside a raw-text element there is no comment
+ * syntax, so `<!--` in one module script's body and `-->` in a later one deleted
+ * the script tag between them from the reader's view while Vite compiled and
+ * bundled it. Measured against that reader: guard green twice, `tsc -b --force`
+ * exit 0, `vite build` exit 0 at 223 modules against a 219-module control, and
+ * `run-doubles.ts` in `dist/assets/`. The layer that decided what was prose ran
+ * before the layer that knew what was a script body.
+ *
+ * One pass removes the ordering question rather than reversing it. In data, `<!--`
+ * begins a comment and everything to `-->` is skipped — a commented-out `<script>`
+ * is still prose. In a raw-text element, only the closing tag ends it.
+ *
+ * Where this is still not a spec parser it is wrong in the loud direction, and
+ * that is asserted rather than asserted-in-prose: it ends a raw-text element at
+ * the first `</script`, so it can only ever end one **earlier** than a parser
+ * that honours script-data-escaped states, never later. Ending earlier makes
+ * more of the document look like markup, which produces more tags, more `unread`
+ * and a longer entry list — never a hidden one. `sees more, not less, when a
+ * script body confuses it` drives exactly that case.
+ */
+function scanHtml(html: string): HtmlToken[] {
+  const found: HtmlToken[] = [];
+  let index = 0;
+  while (index < html.length) {
+    const next = html.indexOf('<', index);
+    if (next === -1) break;
+    if (html.startsWith('<!--', next)) {
+      const end = html.indexOf('-->', next + 4);
+      index = end === -1 ? html.length : end + 3;
+      continue;
+    }
+    const opening = /^<([a-zA-Z][\w:-]*)/.exec(html.slice(next, next + 64));
+    const name = opening?.[1];
+    if (name === undefined) {
+      index = next + 1;
+      continue;
+    }
+    const close = tagEnd(html, next + 1 + name.length);
+    if (close === -1) {
+      found.push({ kind: 'broken', text: html.slice(next) });
+      break;
+    }
+    const attributes = html.slice(next + 1 + name.length, close);
+    const tag = name.toLowerCase();
+    if (!RAW_TEXT_ELEMENTS.has(tag)) {
+      found.push({ kind: 'tag', name: tag, attributes });
+      index = close + 1;
+      continue;
+    }
+    const closing = new RegExp(`</${tag}\\s*>`, 'i').exec(html.slice(close + 1));
+    if (closing === null) {
+      found.push({ kind: 'broken', text: html.slice(next) });
+      break;
+    }
+    found.push({
+      kind: 'raw',
+      name: tag,
+      attributes,
+      body: html.slice(close + 1, close + 1 + closing.index),
+    });
+    index = close + 1 + closing.index + closing[0].length;
+  }
+  return found;
 }
 
 /**
@@ -913,23 +1452,24 @@ function attributeValue(attributes: string, attribute: string): string | undefin
  *
  * So the reader is built the other way round, and the classes are these:
  *
- * - **Any** `src=`/`href=` naming a path in this tree is a `file`, whatever tag
- *   carries it. Vite rewrites in-tree asset references from any element, so
- *   enumerating the tags that may carry one is the same losing game as
- *   enumerating extensions was in defect 3.
+ * - An attribute **in `HTML_ASSET_SOURCES`** naming a path in this tree is a
+ *   `file`. Any *other* attribute whose value resolves to a real file here is
+ *   `unread` and reddens, so being wrong about which tags Vite rewrites is loud
+ *   in both directions rather than silently inventing or dropping an edge.
  * - An inline `type="module"` body is `inline`: source, read by the same
  *   extractor every `.ts` file is read by, with its edges resolved against the
- *   repo root exactly as the tag's own `src` would be.
+ *   repo root exactly as the tag's own `src` would be. A `src` on any script,
+ *   unlike a module specifier, is a **document-relative path** when it is bare:
+ *   `src="src/runtime/run-doubles.ts"` is a file Vite resolves and bundles, and
+ *   the reader that applied ESM's bare-means-package rule to it classified that
+ *   tag as neither an edge nor a loud one.
  * - Everything else that can execute or fetch is `unread` and **reddens** this
  *   file: a classic `<script>` (whose body this file does not parse and whose
  *   `document.write` or `import()` it cannot see), an import map (which can
  *   repoint a bare specifier at a file in this tree), a module script carrying
- *   both a `src` and a body, an unterminated `<script>`. None exist here today;
- *   the next one stops the build instead of silently widening the entry set.
- *
- * HTML comments are stripped first, for the reason the whole rest of this file
- * exists: a commented-out `<script>` tag is not an entry, and a guard that reads
- * one as an entry is reading prose as code.
+ *   both a `src` and a body, a `<style>` body (whose `@import` this reader does
+ *   not follow), an unterminated tag. None exist here today; the next one stops
+ *   the build instead of silently widening the entry set.
  *
  * One thing to know before adding a favicon: Vite serves a static directory at
  * the URL root as well as the project root, so `/vela.svg` would mean
@@ -941,46 +1481,62 @@ function attributeValue(attributes: string, attribute: string): string | undefin
  */
 function htmlLoads(html: string): HtmlLoad[] {
   const found: HtmlLoad[] = [];
-  const scripts: Array<{ attributes: string; body: string }> = [];
-  // Script elements come out first, so that the attribute sweep below reads
-  // markup only and never the inside of a script body: `'<img src="/src/x">'`
-  // written in JavaScript is a string, not a tag, and inventing an edge out of
-  // it would let a body mask an orphan.
-  const markup = html
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (_whole, attributes, body) => {
-      scripts.push({ attributes: String(attributes), body: String(body) });
-      return ' ';
-    });
-  for (const { attributes, body } of scripts) {
-    const type = attributeValue(attributes, 'type');
-    const source = attributeValue(attributes, 'src');
-    const hasBody = body.trim() !== '';
-    if (type !== undefined && type.trim().toLowerCase() === 'module') {
-      if (source !== undefined && hasBody) {
-        found.push({ kind: 'unread', text: collapse(`<script${attributes}> with a src and a body`) });
-        continue;
-      }
-      if (source !== undefined && pointsIntoThisTree(source)) {
-        found.push({ kind: 'file', specifier: source });
-        continue;
-      }
-      if (hasBody) found.push({ kind: 'inline', source: body });
+  for (const token of scanHtml(html)) {
+    if (token.kind === 'broken') {
+      found.push({ kind: 'unread', text: collapse(token.text) });
       continue;
     }
-    if (source !== undefined || hasBody) {
-      found.push({ kind: 'unread', text: collapse(`<script${attributes}>${body}`) });
+    if (token.kind === 'raw') {
+      const attributes = attributesOf(token.attributes);
+      const hasBody = token.body.trim() !== '';
+      if (token.name === 'style') {
+        if (hasBody) found.push({ kind: 'unread', text: collapse(`<style>${token.body}`) });
+        continue;
+      }
+      const type = attributes.get('type');
+      const source = attributes.get('src');
+      if (type !== undefined && type.trim().toLowerCase() === 'module') {
+        if (source !== undefined && hasBody) {
+          found.push({
+            kind: 'unread',
+            text: collapse(`<script ${token.attributes}> with a src and a body`),
+          });
+          continue;
+        }
+        if (source !== undefined && !externalReference(source)) {
+          found.push({ kind: 'file', specifier: source });
+          continue;
+        }
+        if (hasBody) found.push({ kind: 'inline', source: token.body });
+        continue;
+      }
+      if (source !== undefined || hasBody) {
+        found.push({ kind: 'unread', text: collapse(`<script ${token.attributes}>${token.body}`) });
+      }
+      continue;
     }
-  }
-  if (/<script\b/i.test(markup)) {
-    found.push({ kind: 'unread', text: collapse('a <script> tag with no closing tag') });
-  }
-  for (const match of markup.matchAll(/<([a-zA-Z][\w-]*)\b([^>]*)>/g)) {
-    const attributes = match[2] ?? '';
-    for (const attribute of ['src', 'href']) {
-      const value = attributeValue(attributes, attribute);
-      if (value !== undefined && pointsIntoThisTree(value)) {
+    const table = HTML_ASSET_SOURCES.get(token.name);
+    for (const [name, value] of attributesOf(token.attributes)) {
+      if (externalReference(value)) continue;
+      const followed =
+        table !== undefined &&
+        table.url.includes(name) &&
+        !HTML_ASSET_TAGS_NOT_FOLLOWED.has(token.name);
+      if (followed) {
         found.push({ kind: 'file', specifier: value });
+        continue;
+      }
+      const candidates =
+        table !== undefined && table.srcset.includes(name)
+          ? value.split(',').map((one) => one.trim().split(/\s+/)[0] ?? '')
+          : [value];
+      if (candidates.some((one) => resolveHtmlReference(one) !== null)) {
+        found.push({
+          kind: 'unread',
+          text: collapse(
+            `<${token.name} ${name}="${value}"> names a file this reader does not follow`,
+          ),
+        });
       }
     }
   }
@@ -1011,46 +1567,97 @@ function inlineUnfollowable(source: string): string[] {
 }
 
 /**
- * True when the disk spells this specifier's own last segment differently.
+ * True when the disk spells this path differently from the way it was asked for.
  *
- * Only the segment the specifier actually wrote is compared. An extensionless
- * specifier resolving to the same stem plus `.ts`, or a directory specifier
- * resolving to its index, is extension and index resolution doing its job and
- * not a casing fault. What this catches is a specifier written in all-lowercase
- * finding `AppShell.module.css`, which `existsSync` calls a hit on NTFS and a
- * case-sensitive filesystem calls a blank screen.
+ * There is nothing to re-derive here: `resolveInTree` already carries out both
+ * the candidate it matched and what the filesystem calls it, so the comparison
+ * is the whole string, every segment, extension and index resolution included.
+ *
+ * The version this replaces compared **basenames**. Its own doc said so — "only
+ * the segment the specifier actually wrote is compared" — without noticing that
+ * a specifier writes its directory segments too. A specifier that spells the
+ * directory segment of `src/runtime/run-doubles.ts` with a capital R therefore
+ * returned `false`: the basename it wrote and the basename on disk are the same
+ * string. That is the same blank screen on a case-sensitive filesystem as an
+ * all-lowercase spelling of `src/app/shell/AppShell.module.css`, which it did
+ * catch — a difference of one segment, and no difference at all in what a
+ * case-sensitive checkout would do with it. It was also, on this box, a
+ * different key in `REACHABLE` from the one `NOT_SHIPPED` looks up — which is
+ * how the double this guard exists to exclude reached `dist/assets/` with the
+ * round-2 guard green in two consecutive runs at 24 assertions passed.
  */
-function miscasedAgainst(specifier: string, resolved: string): boolean {
-  const written = basename(withoutQuery(specifier));
-  if (written === '' || written === '.' || written === '..') return false;
-  const found = basename(resolved);
-  return found.toLowerCase().startsWith(written.toLowerCase()) && !found.startsWith(written);
+function miscasedRequest(resolution: Resolution): boolean {
+  return resolution.requested !== resolution.file;
 }
 
 /**
  * Facts this file would otherwise have hard-coded from `vite.config.ts`.
  *
- * Three of the rules above are really claims about that config: `resolveSpecifier`
- * knows one alias prefix, `TEST_FILE` claims to match `test.include`, and
- * `NOT_SHIPPED` exempts `src/test/setup.ts` on the grounds that it is a
- * `setupFiles` entry. Each was written here as prose, and prose about a config
- * is the same instrument failure as prose about an import: it can stop being
- * true without anything noticing. Since the parser is already loaded, they are
- * read out of the config and asserted instead.
+ * Four of the rules above are really claims about that config: `resolveInTree`
+ * translates the alias prefixes, `pointsIntoThisTree` recognises them,
+ * `TEST_FILE` claims to match `test.include`, and `NOT_SHIPPED` exempts
+ * `src/test/setup.ts` on the grounds that it is a `setupFiles` entry. Each was
+ * written here as prose, and prose about a config is the same instrument failure
+ * as prose about an import: it can stop being true without anything noticing.
+ * Since the parser is already loaded, they are read out of the config instead.
  */
 const VITE_CONFIG = parse(
   readFileSync(join(REPO_ROOT, 'vite.config.ts'), 'utf8'),
   'vite.config.ts',
 );
 
-/** The first `name:` property assignment anywhere in `vite.config.ts`. */
-function configProperty(name: string): ts.Expression | null {
-  let found: ts.Expression | null = null;
-  eachNode(VITE_CONFIG, (node) => {
-    if (found !== null || !ts.isPropertyAssignment(node)) return;
-    if (propertyName(node.name) === name) found = node.initializer;
+/**
+ * The object literal a config module exports, through `defineConfig(…)` or not.
+ *
+ * This is where the path in `configProperty` starts, and having a start is the
+ * fix. The reader it replaces took the initializer of the **first**
+ * `PropertyAssignment` named `alias` **anywhere in the file**, with no path and
+ * no parent — so moving the `test:` block above `resolve:` (an inert reordering
+ * of an object literal) and giving it a decoy `test.alias` of `{ '@': … }` let
+ * the real `resolve.alias` grow a second prefix while
+ * `holds its claims about vite.config.ts to vite.config.ts` — the assertion
+ * whose entire job is to catch that — went green. Executed, twice, with the
+ * second prefix carrying `run-doubles.ts` into `dist/assets/`.
+ *
+ * §8 of this file's header is that a name is not a binding. A config reader that
+ * identifies a property by bare name is that mistake one file kind over.
+ */
+function configRootOf(source: ts.SourceFile): ts.ObjectLiteralExpression | null {
+  let found: ts.ObjectLiteralExpression | null = null;
+  eachNode(source, (node) => {
+    if (found !== null || !ts.isExportAssignment(node) || node.isExportEquals === true) return;
+    let expression: ts.Expression = node.expression;
+    const wrapped = ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
+    if (wrapped !== undefined) expression = wrapped;
+    if (ts.isObjectLiteralExpression(expression)) found = expression;
   });
   return found;
+}
+
+const VITE_CONFIG_ROOT = configRootOf(VITE_CONFIG);
+
+/**
+ * The initializer at `path` in a config's exported object, or `null`.
+ *
+ * Each step is looked up **in one object literal**, and the last property of that
+ * name wins, because that is the one JavaScript keeps when a literal repeats a
+ * key. A name matched anywhere in the file is not a property of the config.
+ */
+function configProperty(
+  path: readonly string[],
+  root: ts.ObjectLiteralExpression | null = VITE_CONFIG_ROOT,
+): ts.Expression | null {
+  let at: ts.Expression | null = root;
+  for (const name of path) {
+    if (at === null || !ts.isObjectLiteralExpression(at)) return null;
+    let next: ts.Expression | null = null;
+    for (const property of at.properties) {
+      if (!ts.isPropertyAssignment(property)) continue;
+      if (propertyName(property.name) === name) next = property.initializer;
+    }
+    at = next;
+  }
+  return at;
 }
 
 function propertyName(name: ts.PropertyName): string | null {
@@ -1074,6 +1681,44 @@ function objectKeys(node: ts.Expression | null): string[] {
     return name === null ? [] : [name];
   });
 }
+
+/**
+ * An alias target this file can turn into a path, or `null` for one it cannot.
+ *
+ * `null` is not a shrug. A prefix that is declared and untranslatable still makes
+ * `pointsIntoThisTree` true, so every specifier using it resolves to nothing,
+ * lands in `GRAPH.unresolved` and reddens by name. The unsafe answer would be to
+ * not know the prefix at all, which is what dropped `'~/runtime/run-doubles.ts'`
+ * in silence.
+ */
+function aliasTarget(node: ts.Expression): string | null {
+  if (ts.isStringLiteralLike(node)) return resolve(REPO_ROOT, node.text);
+  // `fileURLToPath(new URL('./src', import.meta.url))` — the spelling this
+  // config uses, and the one Vite's own documentation gives.
+  const inner = ts.isCallExpression(node) ? node.arguments[0] : undefined;
+  if (inner !== undefined && isAssetUrl(inner)) {
+    const relativeTo = inner.arguments?.[0];
+    const text = relativeTo === undefined ? null : staticSpecifier(relativeTo);
+    if (text !== null) return resolve(REPO_ROOT, text);
+  }
+  return null;
+}
+
+/** Every `resolve.alias` prefix the config declares, to a path or to `null`. */
+function aliasesIn(root: ts.ObjectLiteralExpression | null): Map<string, string | null> {
+  const found = new Map<string, string | null>();
+  const node = configProperty(['resolve', 'alias'], root);
+  if (node === null || !ts.isObjectLiteralExpression(node)) return found;
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = propertyName(property.name);
+    if (name === null) continue;
+    found.set(name, aliasTarget(property.initializer));
+  }
+  return found;
+}
+
+const ALIASES = aliasesIn(VITE_CONFIG_ROOT);
 
 /** Every shipping module, parsed once and kept, since several passes read them. */
 const PARSED_MODULES = new Map<string, ts.SourceFile>();
@@ -1159,34 +1804,66 @@ function factoryUsesIn(
 
   let calls = 0;
   const escapes: string[] = [];
-  eachNode(parsed, (node) => {
-    let reference: ts.Node | null = null;
-    if (ts.isPropertyAccessExpression(node)) {
-      const target = node.expression;
-      const specifier = ts.isIdentifier(target) ? namespaces.get(target.text) : undefined;
-      if (specifier !== undefined && isFactory(specifier, node.name.text)) reference = node;
-    } else if (ts.isIdentifier(node) && locals.has(node.text)) {
-      const parent = node.parent;
-      // The import clause that created the binding is not a use of it, and
-      // `something.createAgentRuntime` is a different identifier that happens to
-      // be spelled the same.
-      const declares =
-        parent !== undefined &&
-        (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent));
-      const names =
-        parent !== undefined &&
-        ((ts.isPropertyAccessExpression(parent) && parent.name === node) ||
-          (ts.isPropertyAssignment(parent) && parent.name === node) ||
-          (ts.isQualifiedName(parent) && parent.right === node));
-      if (!declares && !names) reference = node;
-    }
-    if (reference === null) return;
+  // Called, or loud. Every reference below reaches exactly one of these two.
+  const classify = (reference: ts.Node): void => {
     const parent = reference.parent;
     if (parent !== undefined && ts.isCallExpression(parent) && parent.expression === reference) {
       calls += 1;
       return;
     }
     escapes.push(collapse((parent ?? reference).getText(parsed), 80));
+  };
+  eachNode(parsed, (node) => {
+    if (!ts.isIdentifier(node)) return;
+    const parent = node.parent;
+    if (parent === undefined) return;
+    // The import clause that created the binding is not a use of it.
+    if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent)) {
+      return;
+    }
+    // `something.createAgentRuntime`, `{ createAgentRuntime: x }` and a
+    // qualified type name are different identifiers that happen to be spelled
+    // the same.
+    const names =
+      (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+      (ts.isPropertyAssignment(parent) && parent.name === node) ||
+      (ts.isQualifiedName(parent) && parent.right === node);
+    if (names) return;
+    const namespace = namespaces.get(node.text);
+    if (namespace !== undefined) {
+      // Every reference to a namespace object is one of exactly three things:
+      // a member read with a name this file can see, a member read with a name
+      // it cannot, or the object itself going somewhere. The version this
+      // replaces enumerated one of the three — `ts.isPropertyAccessExpression`
+      // — so `appRuntime['createAgentRuntime'](adapter)` was neither counted in
+      // `calls` nor pushed into `escapes`, invisible in both directions at once,
+      // which is the failure mode §7 of the header names. The plant compiles:
+      // appended to `AppShell.tsx` it is `npx tsc -b --force` exit 0 under this
+      // repo's `strict`, `noUncheckedIndexedAccess` and
+      // `exactOptionalPropertyTypes`, and it reddens this file twice now.
+      // Both this branch and the catch-all below it are load-bearing, and
+      // separately: `reads a construction site as a binding` pins each.
+      if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+        if (isFactory(namespace, parent.name.text)) classify(parent);
+        return;
+      }
+      if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+        const key = staticSpecifier(parent.argumentExpression);
+        if (key === null) {
+          // A computed member name could be the factory's. Absence is what the
+          // two assertions below read as proof, so it is not assumed.
+          escapes.push(collapse(parent.getText(parsed), 80));
+          return;
+        }
+        if (isFactory(namespace, key)) classify(parent);
+        return;
+      }
+      // The namespace object is passed, assigned, spread or re-exported: every
+      // export it carries leaves with it, this one included.
+      escapes.push(collapse(parent.getText(parsed), 80));
+      return;
+    }
+    if (locals.has(node.text)) classify(node);
   });
   return { calls, escapes };
 }
@@ -1310,7 +1987,7 @@ function constructionSites(factory: string, definingModule: string): Constructio
 }
 
 type Graph = {
-  /** Every file the entry reaches, transitively, as an absolute path. */
+  /** Every file the entry reaches, transitively, spelled the way the disk spells it. */
   readonly reachable: ReadonlySet<string>;
   /** The files `index.html` names in an attribute, resolved. */
   readonly entries: readonly string[];
@@ -1332,11 +2009,22 @@ type Graph = {
  * `'./x?raw'`. Naming it is what makes it assertable — the tree has no lost edge
  * today, so an assertion over `GRAPH.unresolved` alone would pass just as well
  * with the classification deleted.
+ *
+ * `requested` is the fourth field and it is not decoration: it is the spelling
+ * the specifier asked for, and `resolved` is what the filesystem calls the same
+ * file. `walk` compares the two, which is the only place the difference between
+ * `src/Runtime/…` and `src/runtime/…` can be seen at all now that the graph is
+ * keyed on the disk's answer.
  */
 function edgesFrom(file: string, source: string): Edge[] {
   return edgesOf(file, source).map((specifier) => {
-    const resolved = resolveSpecifier(file, specifier);
-    return { specifier, resolved, lost: resolved === null && pointsIntoThisTree(specifier) };
+    const resolution = resolveInTree(file, specifier);
+    return {
+      specifier,
+      resolved: resolution?.file ?? null,
+      requested: resolution?.requested ?? null,
+      lost: resolution === null && pointsIntoThisTree(specifier),
+    };
   });
 }
 
@@ -1353,18 +2041,36 @@ function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
   // whatever came back `null`, which put the html on a shorter leash than any
   // module: a mistyped entry read as a clean, and smaller, graph.
   const record = (label: string, edges: readonly Edge[]): void => {
-    for (const { specifier, resolved, lost } of edges) {
+    for (const { specifier, resolved, requested, lost } of edges) {
       if (lost) unresolved.push(`${label}: ${specifier}`);
-      if (resolved === null) continue;
-      if (miscasedAgainst(specifier, resolved)) {
-        miscased.push(`${label}: ${specifier} is on disk as ${basename(resolved)}`);
+      if (resolved === null || requested === null) continue;
+      if (miscasedRequest({ file: resolved, requested })) {
+        miscased.push(`${label}: ${specifier} is on disk as ${asRepoPath(resolved)}`);
       }
       if (!reachable.has(resolved)) queue.push(resolved);
     }
   };
+  // An attribute value is a document-relative URL, not a module specifier: bare
+  // means "next to index.html", not "a package". An inline body's specifiers are
+  // module specifiers and keep ESM's rule. One resolver for both is what made
+  // `src="src/runtime/run-doubles.ts"` neither an edge nor a loud one.
   const htmlEdge = (specifier: string): Edge => {
-    const resolved = resolveSpecifier(HTML_ENTRY, specifier);
-    return { specifier, resolved, lost: resolved === null && pointsIntoThisTree(specifier) };
+    const resolution = resolveHtmlReference(specifier);
+    return {
+      specifier,
+      resolved: resolution?.file ?? null,
+      requested: resolution?.requested ?? null,
+      lost: resolution === null && !externalReference(specifier),
+    };
+  };
+  const moduleEdge = (specifier: string): Edge => {
+    const resolution = resolveInTree(HTML_ENTRY, specifier);
+    return {
+      specifier,
+      resolved: resolution?.file ?? null,
+      requested: resolution?.requested ?? null,
+      lost: resolution === null && pointsIntoThisTree(specifier),
+    };
   };
   const entryEdges = loads.flatMap((load) => (load.kind === 'file' ? [htmlEdge(load.specifier)] : []));
   const entries = entryEdges.flatMap((edge) => (edge.resolved === null ? [] : [edge.resolved]));
@@ -1377,7 +2083,7 @@ function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
   for (const source of inlineScripts) {
     const label = 'index.html <script type="module">';
     for (const text of inlineUnfollowable(source)) unfollowable.push(`${label}: ${text}`);
-    record(label, inlineSpecifiers(source).map(htmlEdge));
+    record(label, inlineSpecifiers(source).map(moduleEdge));
   }
   const unreadHtml = loads.flatMap((load) => (load.kind === 'unread' ? [load.text] : []));
   while (queue.length > 0) {
@@ -1411,6 +2117,29 @@ function asRepoPath(file: string): string {
 const GRAPH = walk();
 const REACHABLE = GRAPH.reachable;
 
+/**
+ * Every rule in the tree's stylesheets that the file kind carrying it ignores.
+ *
+ * Enumerated rather than walked, deliberately: an orphan stylesheet is exactly
+ * the thing a laundered `composes` is trying to hide, and an orphan is not on
+ * the graph to be walked. `shippingModules` sees it either way.
+ *
+ * It is a map from every stylesheet to what that stylesheet writes down and does
+ * not honour, rather than a flat list of the offenders, and that is not a
+ * presentation choice. The offenders are empty on a clean tree, so a list of
+ * them is empty whether the sweep ran or not — `const INERT_RULES = []` passes
+ * every assertion an empty list can carry. The keys say which files were opened,
+ * so `no stylesheet carries a rule its own file kind ignores` can check that the
+ * sweep looked at the tree before it reports the tree clean.
+ */
+const STYLESHEETS = shippingModules(SRC_ROOT).filter(
+  (file) => extname(file).toLowerCase() === '.css',
+);
+
+const INERT_RULES = new Map<string, readonly string[]>(
+  STYLESHEETS.map((file) => [asRepoPath(file), inertRulesOf(file, readFileSync(file, 'utf8'))]),
+);
+
 describe('the renderer is wired into the product', () => {
   it('walks a graph big enough to be worth walking', () => {
     // The guard's own control. A resolver that silently stopped resolving would
@@ -1430,9 +2159,12 @@ describe('the renderer is wired into the product', () => {
     // a licence to stop reading it. The reader that produced it used to see only
     // `src=` attributes, so an inline `<script type="module">` — a real Vite
     // entry whose body is bundled — was in neither this list nor the graph, and
-    // this assertion passed while `run-doubles.ts` sat in `dist/`. What makes
-    // the pin safe is not the pin: it is that an inline body is now walked as a
-    // module and that anything else in the file reddens `unreadHtml`.
+    // this assertion passed while `run-doubles.ts` sat in `dist/`. The pin is a
+    // pin: it protects this one value, and on its own it protected nothing when
+    // the reader below it could be made to see two scripts where the file had
+    // four. What carries the weight is in `reads a script body as text`, `reads
+    // a bare src in html as a path` and `follows the attributes vite rewrites` —
+    // the pin is the cheap second signal, not the argument.
     expect(
       GRAPH.entries.map(asRepoPath),
       'index.html declares no module entry this walk can resolve; the graph below is vacuous',
@@ -1555,30 +2287,287 @@ describe('the renderer is wired into the product', () => {
   });
 
   /**
-   * The three claims this file makes about `vite.config.ts`, held to the config.
+   * Markup is tokenized once, left to right, because the order between "strip
+   * the comments" and "find the script bodies" is not a preference.
    *
-   * `resolveSpecifier` translates exactly one alias prefix. That is not a
-   * property of the resolver, it is a property of `resolve.alias`, and a second
-   * alias added there would make every specifier using it resolve to `null` —
-   * an undercount, which is the direction that reads as a *smaller* graph and
-   * lets a `NOT_SHIPPED` entry stay green. Same for `TEST_FILE`, whose safety
-   * argument is that it matches `test.include` exactly, and for the
-   * `src/test/setup.ts` exemption, whose stated reason is that `setupFiles`
-   * names it.
+   * The reader this replaces stripped `<!-- … -->` with a regex first and pulled
+   * `<script>` elements out of the result. Inside a raw-text element there is no
+   * comment syntax, so a `<!--` typed in one module script's body and a `-->` in
+   * a later one deleted the script tag between them from the reader's view while
+   * Vite compiled and bundled it. Measured against that reader: guard green
+   * twice, `tsc -b --force` exit 0, `vite build` exit 0 at 223 modules against a
+   * 219-module control, and `no turn has
+   * been sent` — a sentence in exactly one file under `src/`, which is why this
+   * comment writes it across a line break — inside `dist/assets/index-*.js` and
+   * absent from the control build.
    */
-  it('holds its three claims about vite.config.ts to vite.config.ts', () => {
+  it('reads a script body as text, not as a place comments can start', () => {
+    const specifiersOfLoad = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+    const unreadOf = (html: string): number =>
+      htmlLoads(html).filter((load) => load.kind === 'unread').length;
+
+    // The evasion, in the spelling it was executed in.
+    const hidden =
+      '<script type="module">const a = "<!--";</script>' +
+      '<script type="module" src="/src/main.tsx"></script>' +
+      '<script type="module">const b = "-->";</script>';
     expect(
-      objectKeys(configProperty('alias')),
-      'resolveSpecifier translates one alias prefix and this is where the list lives',
+      specifiersOfLoad(hidden),
+      'a `<!--` in one script body must not erase the tag after it',
+    ).toEqual(['/src/main.tsx']);
+    expect(walk(hidden).entries.map(asRepoPath)).toEqual(['src/main.tsx']);
+
+    // And the same shape hiding an import rather than a tag.
+    const hiddenInline =
+      '<script type="module">const a = "<!--";</script>' +
+      '<script type="module">import "/src/runtime/run-doubles.ts";</script>' +
+      '<script type="module">const b = "-->";</script>';
+    expect([...walk(hiddenInline).reachable].map(asRepoPath)).toContain(
+      'src/runtime/run-doubles.ts',
+    );
+
+    // A comment in *data* is still prose: that is the direction the strip
+    // existed for, and it is kept.
+    expect(specifiersOfLoad('<!-- <script type="module" src="/src/ghost.tsx"></script> -->')).toEqual(
+      [],
+    );
+    expect(unreadOf('<!-- <script>alert(1)</script> -->')).toBe(0);
+
+    // A `>` inside a quoted attribute value does not end the tag. Reading it as
+    // the end would hide the `src` after it while Vite still loaded it, which is
+    // the same hiding trick one attribute over.
+    expect(
+      specifiersOfLoad('<script type="module" title="a>b" src="/src/main.tsx"></script>'),
+    ).toEqual(['/src/main.tsx']);
+    expect(unreadOf('<script type="module" title="a>b" src="/src/main.tsx">')).toBe(1);
+
+    // Where this is not a spec parser it is wrong in the loud direction. A
+    // parser that honours script-data-escaped states keeps the first element
+    // open past the `</script>` below; this reader ends it there and therefore
+    // sees the tag after it, so the entry list grows rather than shrinks — and a
+    // longer entry list reddens the pin instead of hiding a module.
+    expect(
+      specifiersOfLoad(
+        '<script type="module">const s = "<!--<script>";</script>' +
+          '<script type="module" src="/src/main.tsx"></script>',
+      ),
+      'sees more, not less, when a script body confuses it',
+    ).toEqual(['/src/main.tsx']);
+
+    // A `<style>` body is raw text too, and its `@import` is a real edge this
+    // reader does not follow — so it is loud rather than skipped.
+    expect(unreadOf('<style>@import "/src/styles/tokens.css";</style>')).toBe(1);
+    expect(unreadOf('<style></style>')).toBe(0);
+    expect(unreadOf('<style>')).toBe(1);
+  });
+
+  /**
+   * An attribute is an edge because Vite rewrites it, not because it is spelled
+   * `src` or `href`.
+   *
+   * The reader this replaces took `src=`/`href=` off **every** tag and called
+   * each one a `file`, on the stated grounds that Vite rewrites in-tree asset
+   * references from any element. It does not: it has a table, `<a href>` is not
+   * in it, and an edge invented where the bundler has none launders an orphan
+   * onto the graph exactly the way a `composes` in a plain stylesheet does. That
+   * attack was tried and failed — but against the `GRAPH.entries` pin, which
+   * protects one value somebody wrote down, not against a rule.
+   *
+   * Narrowing alone would trade an invented edge for a dropped one, so the other
+   * direction is closed in the same breath: an attribute **not** in the table
+   * whose value resolves to a real file here is `unread` and reddens. Being
+   * wrong about Vite is loud either way.
+   */
+  it('follows the attributes vite rewrites, and is loud about the ones it does not', () => {
+    const specifiersOfLoad = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+    const unreadOf = (html: string): number =>
+      htmlLoads(html).filter((load) => load.kind === 'unread').length;
+
+    expect(specifiersOfLoad('<link rel="stylesheet" href="/src/styles/base.css">')).toEqual([
+      '/src/styles/base.css',
+    ]);
+    expect(specifiersOfLoad('<img src="/src/assets/logo.svg">')).toEqual(['/src/assets/logo.svg']);
+    expect(specifiersOfLoad('<video poster="/src/assets/p.png"></video>')).toEqual([
+      '/src/assets/p.png',
+    ]);
+    expect(specifiersOfLoad('<object data="/src/assets/x.svg"></object>')).toEqual([
+      '/src/assets/x.svg',
+    ]);
+
+    // `<a href>` is the one that was tried. It names a real file and Vite leaves
+    // it alone, so it is neither an edge nor silence.
+    expect(specifiersOfLoad('<a href="/src/main.tsx">source</a>')).toEqual([]);
+    expect(unreadOf('<a href="/src/main.tsx">source</a>')).toBe(1);
+    // …and an `<a href>` that names nothing in this tree is just a link.
+    expect(unreadOf('<a href="/docs/readme">docs</a>')).toBe(0);
+    expect(unreadOf('<a href="https://example.com/">out</a>')).toBe(0);
+    expect(unreadOf('<a href="#anchor">here</a>')).toBe(0);
+
+    // `<meta content>` is in vite's table behind a name/property allow-list this
+    // reader does not implement, so a `content` that names a real file is loud
+    // rather than followed — and the three metas in the real index.html, whose
+    // content is not a path, stay silent.
+    expect(specifiersOfLoad('<meta property="og:image" content="/src/main.tsx">')).toEqual([]);
+    expect(unreadOf('<meta property="og:image" content="/src/main.tsx">')).toBe(1);
+    expect(unreadOf('<meta name="viewport" content="width=device-width, initial-scale=1.0">')).toBe(
+      0,
+    );
+    expect(unreadOf('<meta charset="UTF-8">')).toBe(0);
+    expect([...HTML_ASSET_TAGS_NOT_FOLLOWED]).toEqual(['meta']);
+
+    // A `srcset` is a candidate list, not a URL. Parsing it is not implemented,
+    // so one that names a real file is loud rather than half-read.
+    expect(unreadOf('<img srcset="/src/main.tsx 1x, /src/nothing.png 2x">')).toBe(1);
+    expect(unreadOf('<img srcset="https://cdn.example/a.png 1x">')).toBe(0);
+
+    // An ordinary attribute whose value happens to be a word is not a reference.
+    expect(unreadOf('<div id="root"></div>')).toBe(0);
+    expect(unreadOf('<html lang="en">')).toBe(0);
+  });
+
+  /**
+   * `matches vite's own table` is the point of the table: it stops being this
+   * file's opinion about HTML and becomes a comparison against the installed
+   * bundler.
+   */
+  it("matches vite's own table of asset-bearing attributes", () => {
+    const vite = viteHtmlAssetSources();
+    expect(
+      vite,
+      'vite\'s DEFAULT_HTML_ASSET_SOURCES could not be found in node_modules/vite/dist. ' +
+        'HTML_ASSET_SOURCES is then a claim nothing checks: find it, or say here ' +
+        'why it cannot be read',
+    ).not.toBeNull();
+    const flatten = (table: ReadonlyMap<string, HtmlAssetAttributes>): string[] =>
+      [...table.entries()]
+        .map(([tag, { url, srcset }]) => `${tag}: ${[...url].sort().join(',')} | ${[...srcset].sort().join(',')}`)
+        .sort();
+    expect(
+      flatten(vite ?? new Map()),
+      'vite rewrites a tag or attribute this file has not been told about, or no ' +
+        'longer rewrites one it follows. Either way an edge is being invented or ' +
+        'dropped in index.html',
+    ).toEqual(flatten(HTML_ASSET_SOURCES));
+  });
+
+  /**
+   * In an HTML attribute a bare path is relative to the document. In a module
+   * specifier it is a package. One rule for both is a tag that is neither an
+   * edge nor loud.
+   *
+   * Measured against the reader that had one rule: `<script type="module"
+   * src="src/runtime/run-doubles.ts">` is resolved by Vite — 220 modules
+   * transformed against a 219-module control, build exit 0 — and was classified
+   * as neither `file` nor `unread`, with the guard green twice.
+   */
+  it('reads a bare src in html as a path, not as a package', () => {
+    const specifiersOfLoad = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+
+    expect(specifiersOfLoad('<script type="module" src="src/main.tsx"></script>')).toEqual([
+      'src/main.tsx',
+    ]);
+    expect(
+      [...walk('<script type="module" src="src/runtime/run-doubles.ts"></script>').reachable].map(
+        asRepoPath,
+      ),
+      'a document-relative src is a file the bundler loads',
+    ).toContain('src/runtime/run-doubles.ts');
+    expect(
+      walk('<script type="module" src="src/nothing-here.tsx"></script>').unresolved,
+    ).toEqual(['index.html: src/nothing-here.tsx']);
+    // A module *specifier* keeps ESM's rule: bare is a package, and a package is
+    // not a lost edge.
+    expect(pointsIntoThisTree('src/runtime/run-doubles.ts')).toBe(false);
+    expect(
+      walk('<script type="module">import "src/runtime/run-doubles.ts";</script>').unresolved,
+    ).toEqual([]);
+    // An external src is not this tree's file and is not lost either.
+    expect(specifiersOfLoad('<script type="module" src="https://cdn.example/x.js"></script>')).toEqual(
+      [],
+    );
+    expect(walk('<script type="module" src="https://cdn.example/x.js"></script>').unresolved).toEqual(
+      [],
+    );
+  });
+
+  /**
+   * The claims this file makes about `vite.config.ts`, held to the config — at
+   * the **path** they live at, not at their name.
+   *
+   * `resolveInTree` translates the alias prefixes and `pointsIntoThisTree`
+   * recognises them. That is not a property of the resolver, it is a property of
+   * `resolve.alias`: a second prefix there is a whole class of specifier the walk
+   * has to know about, and a prefix it does not know is an edge dropped in
+   * silence — the direction that reads as a *smaller* graph and lets a
+   * `NOT_SHIPPED` entry stay green. Same for `TEST_FILE`, whose safety argument is
+   * that it matches `test.include` exactly, and for the `src/test/setup.ts`
+   * exemption, whose stated reason is that `setupFiles` names it.
+   *
+   * The reader this drives took the first property assignment named `alias`
+   * **anywhere in the file**. A fourth agent moved `test:` above `resolve:`,
+   * planted a decoy `test.alias` of `{ '@': … }`, added a second real prefix to
+   * `resolve.alias` and imported `run-doubles.ts` through it: this assertion
+   * passed, `vite build` shipped the double, and the assertion whose entire job
+   * is to catch a second alias was reading a different object.
+   */
+  it('holds its claims about vite.config.ts to vite.config.ts', () => {
+    expect(
+      VITE_CONFIG_ROOT,
+      'vite.config.ts no longer exports an object literal this file can read; ' +
+        'every claim below is then vacuous',
+    ).not.toBeNull();
+    expect(
+      objectKeys(configProperty(['resolve', 'alias'])),
+      'every alias prefix here is one resolveInTree has to translate or lose',
     ).toEqual(['@']);
     expect(
-      stringElements(configProperty('include')),
+      [...ALIASES.entries()].map(([prefix, target]) => `${prefix} -> ${asRepoPath(target ?? '')}`),
+      'the prefixes the walk actually resolves, read out of the config it claims to follow',
+    ).toEqual(['@ -> src']);
+    expect(
+      stringElements(configProperty(['test', 'include'])),
       'TEST_FILE is only safe while it is the same set of files vitest runs',
     ).toEqual(['src/**/*.test.{ts,tsx}']);
     expect(
-      stringElements(configProperty('setupFiles')),
+      stringElements(configProperty(['test', 'setupFiles'])),
       'the src/test/setup.ts exemption says setupFiles names it',
     ).toEqual(['./src/test/setup.ts']);
+
+    // The decoy, driven through the same reader over a substitute config,
+    // because this repo's own config has one `alias` in it and a reader that
+    // matched the name anywhere would pass every assertion above just the same.
+    const decoy = configRootOf(
+      parse(
+        'export default defineConfig({\n' +
+          "  test: { alias: { '@': 'decoy' }, include: ['src/**/*.test.ts'] },\n" +
+          "  resolve: { alias: { '@': 'a', '~': 'b' } },\n" +
+          '});\n',
+        'vite.config.ts',
+      ),
+    );
+    expect(
+      objectKeys(configProperty(['resolve', 'alias'], decoy)),
+      'a property named alias somewhere else in the file is not resolve.alias',
+    ).toEqual(['@', '~']);
+    expect(objectKeys(configProperty(['test', 'alias'], decoy))).toEqual(['@']);
+    expect(configProperty(['resolve', 'nothing'], decoy)).toBeNull();
+    expect(configProperty(['nothing', 'alias'], decoy)).toBeNull();
+    // A repeated key in one literal is the last one, which is the value the
+    // module actually has.
+    const repeated = configRootOf(
+      parse("export default { resolve: { alias: { '@': 'a' }, alias: { '~': 'b' } } };\n", 'c.ts'),
+    );
+    expect(objectKeys(configProperty(['resolve', 'alias'], repeated))).toEqual(['~']);
+
+    // And a declared prefix this file cannot translate is still a prefix it
+    // knows about, so a specifier using it is lost and loud rather than dropped.
+    const untranslatable = aliasesIn(
+      configRootOf(parse('export default { resolve: { alias: { "~": someValue } } };\n', 'c.ts')),
+    );
+    expect([...untranslatable.entries()]).toEqual([['~', null]]);
 
     // And the regex is held to that glob spelling by spelling, not only by the
     // sentence above it. `TEST_FILE` was `/\.test\.[a-z]+$/`, which also skipped
@@ -1597,18 +2586,61 @@ describe('the renderer is wired into the product', () => {
       'TEST_FILE skips a file vitest does not run: it is out of both walks at once',
     ).toEqual([]);
 
-    // A fourth claim, and it is the one the whole walk stands on: that
+    // A further claim, and it is the one the whole walk stands on: that
     // `index.html` is where the entries are. It is a default, not a law —
     // `build.rollupOptions.input` and `build.lib` both replace it, and an entry
     // this file never reads is a subgraph it never walks, in the direction
     // `NOT_SHIPPED` reads as proof. So the keys of `build` are pinned: a new one
     // reddens here until somebody says whether it moves the entry.
     expect(
-      objectKeys(configProperty('build')).sort(),
+      objectKeys(configProperty(['build'])).sort(),
       'a build option this guard has not been told about. If it can name an ' +
         'entry — rollupOptions.input, lib — then index.html is no longer the ' +
         'whole question and this file has to read it too',
     ).toEqual(['emptyOutDir', 'outDir', 'sourcemap', 'target']);
+  });
+
+  /**
+   * An alias prefix the config declares is one the walk follows, or one it loses
+   * out loud. It is never one it has not heard of.
+   *
+   * `pointsIntoThisTree` used to list `.`, `/` and `@/`. The list was right about
+   * today's config and that is all a list can ever be: adding
+   * `'~': fileURLToPath(new URL('./src', import.meta.url))` to `resolve.alias`
+   * made `'~/runtime/run-doubles.ts?raw'` a specifier that pointed at nothing as
+   * far as this file was concerned, so it was not an edge, not lost, and not
+   * reported — `vite build` at 220 modules against a 219-module control, with
+   * `run-doubles-*.js` in `dist/assets/`, and the guard as it then stood green in
+   * two consecutive runs at 24 assertions passed.
+   */
+  it('knows an alias prefix because the config declares it, not because it is listed here', () => {
+    expect(pointsIntoThisTree('@/runtime/run-doubles.ts')).toBe(true);
+    expect(pointsIntoThisTree('./run-doubles.ts')).toBe(true);
+    expect(pointsIntoThisTree('/src/runtime/run-doubles.ts')).toBe(true);
+    // A package that merely starts with the alias character is not the alias:
+    // vite matches a string alias on the whole id or up to the next `/`.
+    expect(pointsIntoThisTree('@tauri-apps/api/core')).toBe(false);
+    expect(pointsIntoThisTree('react')).toBe(false);
+
+    // The evasion, driven through the same functions with a substitute config.
+    const twoPrefixes = aliasesIn(
+      configRootOf(
+        parse(
+          'export default defineConfig({ resolve: { alias: {\n' +
+            "  '@': fileURLToPath(new URL('./src', import.meta.url)),\n" +
+            "  '~': fileURLToPath(new URL('./src', import.meta.url)),\n" +
+            '} } });\n',
+          'vite.config.ts',
+        ),
+      ),
+    );
+    expect([...twoPrefixes.keys()]).toEqual(['@', '~']);
+    expect(asRepoPath(twoPrefixes.get('~') ?? '')).toBe('src');
+    expect(asRepoPath(aliasBase('~/runtime/run-doubles.ts', twoPrefixes) ?? '')).toBe(
+      'src/runtime/run-doubles.ts',
+    );
+    expect(aliasBase('~', twoPrefixes)).toBe(SRC_ROOT);
+    expect(aliasBase('~tilde/x', twoPrefixes)).toBeNull();
   });
 
   /**
@@ -1833,6 +2865,7 @@ describe('the renderer is wired into the product', () => {
       {
         specifier: './AppShell.module.css?inline',
         resolved: join(SRC_ROOT, 'app', 'shell', 'AppShell.module.css'),
+        requested: join(SRC_ROOT, 'app', 'shell', 'AppShell.module.css'),
         lost: false,
       },
     ]);
@@ -1844,19 +2877,19 @@ describe('the renderer is wired into the product', () => {
 
     // A package is not a lost edge; a path in this repo naming no file is.
     expect(edgesFrom(shell, "import 'react';\n")).toEqual([
-      { specifier: 'react', resolved: null, lost: false },
+      { specifier: 'react', resolved: null, requested: null, lost: false },
     ]);
     expect(edgesFrom(shell, "import '@tauri-apps/api/core';\n")).toEqual([
-      { specifier: '@tauri-apps/api/core', resolved: null, lost: false },
+      { specifier: '@tauri-apps/api/core', resolved: null, requested: null, lost: false },
     ]);
     expect(edgesFrom(shell, "import './nothing-here.ts?raw';\n")).toEqual([
-      { specifier: './nothing-here.ts?raw', resolved: null, lost: true },
+      { specifier: './nothing-here.ts?raw', resolved: null, requested: null, lost: true },
     ]);
     expect(edgesFrom(shell, "import '@/nothing-here';\n")).toEqual([
-      { specifier: '@/nothing-here', resolved: null, lost: true },
+      { specifier: '@/nothing-here', resolved: null, requested: null, lost: true },
     ]);
     expect(edgesFrom(shell, "import '/src/nothing-here';\n")).toEqual([
-      { specifier: '/src/nothing-here', resolved: null, lost: true },
+      { specifier: '/src/nothing-here', resolved: null, requested: null, lost: true },
     ]);
   });
 
@@ -1869,16 +2902,18 @@ describe('the renderer is wired into the product', () => {
    * dead shipped source in a directory the walk claimed to govern.
    */
   it('reads a stylesheet as a module, and a CSS comment as prose', () => {
-    expect(cssSpecifiers("@import './tokens.css';\n")).toEqual(['./tokens.css']);
-    expect(cssSpecifiers('@import url("./tokens.css");\n')).toEqual(['./tokens.css']);
-    expect(cssSpecifiers('@import url(./tokens.css);\n')).toEqual(['./tokens.css']);
-    expect(cssSpecifiers(".a { composes: b from './other.module.css'; }\n")).toEqual([
+    const plain = 'probe.css';
+    const cssModule = 'probe.module.css';
+    expect(cssSpecifiers("@import './tokens.css';\n", plain)).toEqual(['./tokens.css']);
+    expect(cssSpecifiers('@import url("./tokens.css");\n', plain)).toEqual(['./tokens.css']);
+    expect(cssSpecifiers('@import url(./tokens.css);\n', plain)).toEqual(['./tokens.css']);
+    expect(cssSpecifiers(".a { composes: b from './other.module.css'; }\n", cssModule)).toEqual([
       './other.module.css',
     ]);
 
-    expect(cssSpecifiers("/* @import './ghost.css'; */\n")).toEqual([]);
-    expect(cssSpecifiers("/*\n@import './ghost.css';\n*/\n.a { color: red }\n")).toEqual([]);
-    expect(cssSpecifiers('.a { content: "/*"; }\n@import \'./kept.css\';\n')).toEqual([
+    expect(cssSpecifiers("/* @import './ghost.css'; */\n", plain)).toEqual([]);
+    expect(cssSpecifiers("/*\n@import './ghost.css';\n*/\n.a { color: red }\n", plain)).toEqual([]);
+    expect(cssSpecifiers('.a { content: "/*"; }\n@import \'./kept.css\';\n', plain)).toEqual([
       './kept.css',
     ]);
 
@@ -1886,33 +2921,107 @@ describe('the renderer is wired into the product', () => {
     // argued: appending the first of these to `src/app/shell/AppShell.module.css`
     // put a planted orphan stylesheet on the graph and every assertion in this
     // file passed, twice over, with dead shipped CSS in `src/features/canvas/`.
-    expect(cssSpecifiers('.a { content: "@import \'./ghost.css\'"; }\n')).toEqual([]);
+    expect(cssSpecifiers('.a { content: "@import \'./ghost.css\'"; }\n', plain)).toEqual([]);
     expect(
-      cssSpecifiers('.a { content: "composes: b from \'./ghost.module.css\'"; }\n'),
+      cssSpecifiers('.a { content: "composes: b from \'./ghost.module.css\'"; }\n', cssModule),
     ).toEqual([]);
 
     // `@import` is a top-level rule: a browser ignores one that sits inside a
     // block, so reading one there would be inventing an edge the product has not
     // got. `composes` is the mirror image — a declaration, never at the root.
-    expect(cssSpecifiers(".a { @import './ghost.css'; }\n")).toEqual([]);
-    expect(cssSpecifiers("composes: b from './ghost.module.css';\n")).toEqual([]);
+    expect(cssSpecifiers(".a { @import './ghost.css'; }\n", plain)).toEqual([]);
+    expect(cssSpecifiers("composes: b from './ghost.module.css';\n", cssModule)).toEqual([]);
 
     // A bare number is not a marker, which is the reason the marker is NUL.
-    expect(cssSpecifiers('.a { margin: 0 12 0; }\n')).toEqual([]);
+    expect(cssSpecifiers('.a { margin: 0 12 0; }\n', plain)).toEqual([]);
 
     // A declaration missing its own semicolon does not reach into the next rule
     // for a `from` that belongs to somebody else.
     expect(
-      cssSpecifiers(".a { composes: b }\n.c { color: red; from: './ghost.css' }\n"),
+      cssSpecifiers(".a { composes: b }\n.c { color: red; from: './ghost.css' }\n", cssModule),
     ).toEqual([]);
 
     const base = join(SRC_ROOT, 'styles', 'base.css');
     expect(
-      cssSpecifiers(readFileSync(base, 'utf8')).map((specifier) =>
+      cssSpecifiers(readFileSync(base, 'utf8'), base).map((specifier) =>
         asRepoPath(resolveSpecifier(base, specifier) ?? '<unresolved>'),
       ),
       'base.css is the only stylesheet main.tsx imports; the rest hang off it',
     ).toEqual(['src/styles/typeface.css', 'src/styles/tokens.css']);
+  });
+
+  /**
+   * Position in the grammar is not the whole of a rule. **Which file kind
+   * honours it** is the other half.
+   *
+   * `cssSpecifiers` gated `composes` to inside a block and `@import` to the root,
+   * correctly, and then applied both to every stylesheet. Vite runs the
+   * CSS-modules transform on `*.module.css` and on nothing else, so a `composes`
+   * in a plain stylesheet is an unknown declaration: copied through, honoured by
+   * nobody. A fourth agent planted an orphan `.module.css` and appended one line
+   * to `src/styles/typeface.css` — a plain stylesheet already on the graph — and
+   * `reaches every shipping module under src/ from index.html` went green over
+   * dead shipped CSS. Measured: `vite build` at 219 modules transformed, byte for
+   * byte the same count as the control, `grep -rl` of the orphan's marker in
+   * `dist/` matching nothing, and the laundering line itself in
+   * `dist/assets/*.css` as inert text. Prose to the bundler, an edge to the
+   * reader — defect 6's sentence, one level down, in the consumer of the function
+   * written to close defect 6.
+   *
+   * The first spelling of that attack, through `src/styles/base.css`, was caught
+   * — but by the hand-written specifier list in the assertion above, which
+   * `typeface.css` and `tokens.css` do not have. A pin protects one value
+   * somebody wrote down. This is the rule.
+   */
+  it('honours a CSS rule only in the file kind that honours it', () => {
+    expect(isCssModule('src/app/shell/AppShell.module.css')).toBe(true);
+    expect(isCssModule('src/styles/typeface.css')).toBe(false);
+    expect(isCssModule('src/styles/base.module.css.ts')).toBe(false);
+
+    const laundering = ".t05Launder { composes: ghost from '../features/canvas/Ghost.module.css'; }\n";
+    expect(
+      cssSpecifiers(laundering, 'src/styles/typeface.css'),
+      'a composes in a plain stylesheet is not an edge: nothing transforms it',
+    ).toEqual([]);
+    expect(cssSpecifiers(laundering, 'src/features/canvas/Real.module.css')).toEqual([
+      '../features/canvas/Ghost.module.css',
+    ]);
+
+    // And it is not silently nothing either, because a rule that loads nothing
+    // and does nothing is only ever written to be read by something that is not
+    // the bundler.
+    expect(cssInert(laundering, 'src/styles/typeface.css')).toEqual([
+      "composes … from '../features/canvas/Ghost.module.css' — only *.module.css " +
+        'honours composes, so this loads nothing',
+    ]);
+    expect(cssInert(laundering, 'src/features/canvas/Real.module.css')).toEqual([]);
+    expect(cssInert("@import './tokens.css';\n", 'src/styles/base.css')).toEqual([]);
+
+    // …and through the dispatcher the sweep actually calls, which is where the
+    // file kind is decided for a real path rather than for a probe name.
+    expect(inertRulesOf('src/styles/typeface.css', laundering)).toEqual([
+      "composes … from '../features/canvas/Ghost.module.css' — only *.module.css " +
+        'honours composes, so this loads nothing',
+    ]);
+    expect(inertRulesOf('src/app/shell/AppShell.module.css', laundering)).toEqual([]);
+    expect(inertRulesOf('src/app/App.tsx', laundering)).toEqual([]);
+
+    expect(
+      [...INERT_RULES.values()].flat(),
+      'a stylesheet declares a rule its own file kind ignores. It loads nothing ' +
+        'and it does nothing; either the rule belongs in a *.module.css or it ' +
+        'belongs deleted',
+    ).toEqual([]);
+    // An empty result is only worth anything if the sweep opened the tree. The
+    // keys are which files it opened, and they are every stylesheet the
+    // enumerator finds — 40 `*.module.css` and the three plain ones.
+    expect(
+      [...INERT_RULES.keys()].sort(),
+      'the inert-rule sweep did not look at the stylesheets it reports clean',
+    ).toEqual(STYLESHEETS.map(asRepoPath).sort());
+    expect([...INERT_RULES.keys()]).toContain('src/styles/typeface.css');
+    expect([...INERT_RULES.keys()]).toContain('src/app/shell/AppShell.module.css');
+    expect(INERT_RULES.size).toBeGreaterThan(40);
   });
 
   it('resolves a stylesheet specifier to the stylesheet', () => {
@@ -1995,24 +3104,72 @@ describe('the renderer is wired into the product', () => {
     ).toEqual([]);
   });
 
+  /**
+   * A module's identity is what the filesystem calls it, not what a specifier
+   * called it.
+   *
+   * `existsSync` is case-blind on NTFS, and `forceConsistentCasingInFileNames`
+   * only covers paths `tsc` resolves — which excludes every `.css` specifier and
+   * every `?raw` one, since those match ambient wildcard modules in `vite/client`
+   * and are never looked up on disk. On a case-sensitive filesystem, or in a
+   * Docker build, a mis-cased import is a blank screen.
+   *
+   * The version this replaces respelled only the **basename**, and `REACHABLE` is
+   * keyed on what it returned. So `import('../Runtime/run-doubles.ts?raw')` — one
+   * capital letter — went into the graph under a key spelled `Runtime` while
+   * `NOT_SHIPPED` looked up the key spelled `runtime`, and the double this file
+   * exists to exclude was in `dist/assets/run-doubles-*.js` with the guard as it
+   * then stood green in two consecutive runs at 24 assertions passed, `tsc -b
+   * --force` exit 0 and `vite build` exit 0 at 220
+   * modules against a 219-module control. The case-blindness had moved out of the
+   * filesystem call and into the `Set` key.
+   */
   it('resolves every specifier to the name the filesystem actually uses', () => {
-    // `existsSync` is case-blind on NTFS, and `forceConsistentCasingInFileNames`
-    // only covers paths `tsc` resolves — which excludes every `.css` specifier,
-    // since those match an ambient wildcard module in `vite/client` and are
-    // never looked up on disk. On a case-sensitive filesystem, or in a Docker
-    // build, a mis-cased stylesheet import is a blank screen.
     expect(GRAPH.miscased, 'a specifier whose case does not match the file on disk').toEqual([]);
 
-    // The control, against a real file, because the tree has no mis-cased
+    // The control, against real files, because the tree has no mis-cased
     // specifier today and an assertion over an empty list proves nothing about
     // the instrument that produced it. `readdirSync` answers with the disk's
     // spelling where `existsSync` would just have said "yes".
     const shell = join(SRC_ROOT, 'app', 'shell', 'AppShell.tsx');
-    const wrongCase = resolveSpecifier(shell, './appshell.module.css');
-    expect(asRepoPath(wrongCase ?? '')).toBe('src/app/shell/AppShell.module.css');
-    expect(miscasedAgainst('./appshell.module.css', wrongCase ?? '')).toBe(true);
-    expect(miscasedAgainst('./AppShell.module.css', wrongCase ?? '')).toBe(false);
-    expect(miscasedAgainst('.', join(SRC_ROOT, 'index.ts'))).toBe(false);
+    const wrongName = resolveInTree(shell, './appshell.module.css');
+    expect(asRepoPath(wrongName?.file ?? '')).toBe('src/app/shell/AppShell.module.css');
+    expect(miscasedRequest(wrongName ?? { file: '', requested: '' })).toBe(true);
+    const rightName = resolveInTree(shell, './AppShell.module.css');
+    expect(miscasedRequest(rightName ?? { file: '', requested: 'x' })).toBe(false);
+
+    // The directory segment, which is the one that got past the basename
+    // comparison. Same file, same last segment, different key.
+    const wrongDirectory = resolveInTree(shell, '../../Runtime/run-doubles.ts?raw');
+    expect(
+      asRepoPath(wrongDirectory?.file ?? ''),
+      'a mis-cased directory segment must resolve to the one file that is there',
+    ).toBe('src/runtime/run-doubles.ts');
+    expect(
+      wrongDirectory?.file,
+      'the graph key is the disk spelling, so NOT_SHIPPED can find it',
+    ).toBe(join(SRC_ROOT, 'runtime', 'run-doubles.ts'));
+    expect(miscasedRequest(wrongDirectory ?? { file: '', requested: '' })).toBe(true);
+
+    // Extension and index resolution are this resolver appending segments, not a
+    // casing fault, and both spellings are compared whole.
+    const extensionless = resolveInTree(shell, '../../runtime/run-doubles');
+    expect(asRepoPath(extensionless?.file ?? '')).toBe('src/runtime/run-doubles.ts');
+    expect(miscasedRequest(extensionless ?? { file: '', requested: 'x' })).toBe(false);
+
+    // And the whole walk, driven from a substitute entry, because the assertion
+    // above is over an empty list on a clean tree.
+    const miscased = walk(
+      '<script type="module">import "/src/Runtime/run-doubles.ts?raw";</script>',
+    );
+    expect(
+      [...miscased.reachable].map(asRepoPath),
+      'a mis-cased specifier reaches the same file, under the disk\'s key',
+    ).toContain('src/runtime/run-doubles.ts');
+    expect(miscased.miscased).toEqual([
+      'index.html <script type="module">: /src/Runtime/run-doubles.ts?raw is on disk as ' +
+        'src/runtime/run-doubles.ts',
+    ]);
   });
 
   /**
@@ -2107,6 +3264,48 @@ describe('the renderer is wired into the product', () => {
     expect(
       uses("import * as rt from '@/runtime/app-runtime';\nrt.createAgentRuntime(a);\n"),
     ).toEqual({ calls: 1, escapes: [] });
+    // A member read with brackets is the same construction site as a member read
+    // with a dot, and the version this replaces matched `PropertyAccessExpression`
+    // only — so this one was neither counted in `calls` nor pushed into
+    // `escapes`, invisible in both directions at once. It compiles, it runs, and
+    // the whole difference between green and red was `.` against `['…']`.
+    expect(
+      uses("import * as rt from '@/runtime/app-runtime';\nrt['createAgentRuntime'](a);\n"),
+    ).toEqual({ calls: 1, escapes: [] });
+    expect(
+      uses("import * as rt from '@/runtime/app-runtime';\nrt[`createAgentRuntime`](a);\n"),
+    ).toEqual({ calls: 1, escapes: [] });
+    expect(
+      uses("import * as rt from '@/runtime/app-runtime';\nrt['other'](a);\n"),
+    ).toEqual({ calls: 0, escapes: [] });
+    expect(uses("import * as rt from '@/runtime/app-runtime';\nrt.other(a);\n")).toEqual({
+      calls: 0,
+      escapes: [],
+    });
+    // A computed member name could be the factory's, and the namespace object
+    // itself carries every export it has. Both are loud rather than absent,
+    // because absence is what the two assertions below read as proof.
+    expect(uses("import * as rt from '@/runtime/app-runtime';\nrt[name](a);\n")).toEqual({
+      calls: 0,
+      escapes: ['rt[name]'],
+    });
+    expect(uses("import * as rt from '@/runtime/app-runtime';\nuse(rt);\n")).toEqual({
+      calls: 0,
+      escapes: ['use(rt)'],
+    });
+    expect(uses("import * as rt from '@/runtime/app-runtime';\nconst all = { ...rt };\n")).toEqual({
+      calls: 0,
+      escapes: ['...rt'],
+    });
+    expect(uses("import * as rt from '@/runtime/app-runtime';\nexport { rt };\n")).toEqual({
+      calls: 0,
+      escapes: ['rt'],
+    });
+    // A namespace over a different module is a different object.
+    expect(uses("import * as rt from './elsewhere';\nrt['createAgentRuntime'](a);\n")).toEqual({
+      calls: 0,
+      escapes: [],
+    });
 
     // The inverse: prose cannot make a construction site, which is the direction
     // that reddens an innocent file and gets fixed by weakening the assertion.

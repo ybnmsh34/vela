@@ -2,10 +2,10 @@
   "run": "2026-08-17",
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
-  "state": "RUNNING - PAUSING AFTER ROUND 7",
+  "state": "PAUSED after round 7, at the operator's request",
   "round": 7,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-21 - round 6 complete, round 7 running",
+  "updated": "2026-08-22 - round 7 complete, run paused",
   "tracks": [
     {
       "id": "t01",
@@ -45,7 +45,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, MUTATION, PROBE, DOC-HONESTY"
+      "blocker": "LADDER, MUTATION, PROBE, DOC-HONESTY, ACCESSIBILITY"
     },
     {
       "id": "t05",
@@ -55,7 +55,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, PROBE, FUNCTIONALITY, MUTATION, DOC-HONESTY"
+      "blocker": "LADDER, MUTATION"
     },
     {
       "id": "t06",
@@ -65,7 +65,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, DOC-HONESTY"
+      "blocker": "LADDER, MUTATION, DOC-HONESTY, PROBE"
     },
     {
       "id": "t07",
@@ -75,7 +75,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, MUTATION, DOC-HONESTY, PROBE"
+      "blocker": "LADDER, MUTATION, PROBE"
     },
     {
       "id": "t08",
@@ -145,7 +145,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, MUTATION, ACCESSIBILITY"
+      "blocker": "LADDER, MUTATION, DOC-HONESTY"
     },
     {
       "id": "t15",
@@ -175,7 +175,7 @@
       "tier": "test-bites",
       "verdict": "FAIL",
       "round": 7,
-      "blocker": "LADDER, MUTATION, ACCESSIBILITY"
+      "blocker": "LADDER, MUTATION"
     },
     {
       "id": "t18",
@@ -209,5 +209,5 @@
     "RULE V an invariant in a comment is not guarded",
     "RULE W (new, round 7): mutate the READER, not only the data - any branch whose deletion reds nothing is an unguarded structural position"
   ],
-  "pause": "Operator asked the run to stop when round 7 finishes. Round 7 is in flight and will be graded and recorded; no round 8 will be launched. Twelve of eighteen tracks are CAPPED-PASS. The ladder blocker (docs/run/BLOCKER-ladder.md) is still open and is the only thing needing an operator decision."
+  "pause": "Paused as asked. Round 7 was graded and recorded; no round 8 launched. Twelve of eighteen tracks are CAPPED-PASS. Two things wait on the operator: the ladder blocker (docs/run/BLOCKER-ladder.md), which is the only reason those twelve are not full passes; and whether to continue the remaining six, which are converging but have not cleared."
 }

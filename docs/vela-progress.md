@@ -740,6 +740,72 @@ assigned to the three tracks that render, with the note that `forced-colors` is 
 where the frozen palette does not apply — because the system replaces it.
 
 
+### Round 7 — RULE W finds 176 unguarded branches, and six critics independently name the seventh form
+
+26 agents. No track cleared; the run is **paused here at the operator's request**.
+
+| track | claims / false | RULE V | **RULE W** | reachable evasions | failing |
+|---|---|---|---|---|---|
+| T4 contrast | 93 / 5 | 10 | **24** | 13 | LADDER, MUTATION, PROBE, DOC-HONESTY, ACCESSIBILITY |
+| T5 reachability | 84 / 6 | 9 | **22** | 7 | LADDER, MUTATION |
+| T6 CI coverage | 133 / 10 | 8 | **27** | 18 | LADDER, MUTATION, DOC-HONESTY, PROBE |
+| T7 remaining guards | 75 / 2 | 10 | **48** | 12 | LADDER, MUTATION, PROBE |
+| T14 code workspace | 96 / 5 | 10 | **48** | — | LADDER, MUTATION, DOC-HONESTY |
+| T17 shell & edge | 37 / 1 | 2 | **7** | — | LADDER, MUTATION |
+
+**176 unguarded reader branches**, plus 49 unguarded invariants. MUTATION now fails on all six — not
+because the work got worse, but because two new sweeps are looking where nothing looked before.
+
+#### The seventh form — six critics, six tracks, one shape
+
+The question was put to each critic independently. They converge:
+
+- **T4** — *"the pin's universe is a second hand-written list, checked only against a copy of itself."*
+  Round 6 pinned the data list and left the reader's branch list unpinned. Round 7 pinned the reader's
+  branch list — with `READER_POSITIONS`, 37 names, asserted against `READER_CASES`, the same 37
+  names, both written by the same hand in the same commit. **Nothing derives a position from the
+  reader itself.** Six branches still delete with `tsc` at 0 and 119 files green.
+- **T5** — *"pins one axis of the reader's branch list, and the axis its author was not thinking
+  about has no row at all."*
+- **T6** — *"the reader's branch list is pinned — for every reader a previous critic had already
+  enumerated — and the readers the same diff wrote underneath them have no branch list at all."*
+- **T7** — *"it pins only the sub-list the author annotated, and the annotation is a comment. The
+  universe moved from code to metadata about code."*
+- **T14** — *"one level further out again — from the reader to the reader's admission predicate."*
+- **T17** — *"the sixth form applied to itself."*
+
+Round six's law had a universe it never asserted. **Round seven's law asserts its universe against a
+mirror.**
+
+The remedy every critic converges on is the same, and it is the one the code already demonstrates
+elsewhere: **derive the universe from the artefact instead of enumerating it.** T4's guard already
+derives `HTML_SINKS` from the tree rather than listing them; the same file then hand-wrote
+`READER_POSITIONS` beside it. The technique was present in the diff and was not applied to the diff's
+own reader.
+
+#### The class, seven rounds
+
+1. a comment stated a false fact
+2. the comment **correcting it** carried a wrong number, propagated to four files
+3. the number was fixed everywhere — a **test was named for a property it did not check**
+4. the unread fields got readers, and **two more sat one line above**
+5. the property keeping each fix from regressing was **stated in a comment**, asserted by nothing
+6. the data list was pinned; **the reader's branch list was not**
+7. the reader's branch list was pinned — **against a hand-written copy of itself**
+
+Seven rounds, seven forms, each a level down and a different kind. Nothing in this run has yet
+produced a fix that did not carry it.
+
+#### `forced-colors`, owned at last — and it does not reach
+
+T4 claimed it after four rounds unowned, declared no colour in it, and shipped
+`button, input, textarea, select { border: 1px solid }` at specificity 0,0,1. **Twenty-two module
+rules declare `border: 0` at 0,1,0 and outrank it** — so `Sidebar .newButton` has no edge in High
+Contrast, which its critic notes is *verbatim the case the block was written for*. Nothing asserts
+reach. The class again, in a product-facing change: **the fix does not reach what its own comment
+says it reaches.**
+
+
 ---
 
 # Previous runs

@@ -7806,3 +7806,441 @@ describe('an admitted key is pinned, interpreted, or neither — and neither is 
     expect(needsCycle(jobs)).toBe(cycle ?? undefined);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* what a gate's invocation does not say: the script body, the config, the     */
+/* wrapper                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every script in `package.json`, name and body, in the order the manifest
+ * writes them.
+ *
+ * ### Twelve gate rows pin an invocation exactly, and three channels emptied the same gates
+ *
+ * {@link invokes} argues at length that there is no way to tell a flag that
+ * strengthens a gate from one that empties it, so a gate row pins the argument
+ * list exactly — and `cargo test --workspace --locked --no-run` is refused by
+ * name on the strength of that argument. The same reasoning was not applied to
+ * the script BODY behind an invocation, and the body is where the gate actually
+ * is. Each of these was green twice, and each satisfies every rule this file
+ * had, because `runsPnpm(command, 'test')` is unchanged and
+ * {@link acceptsInvocation} admits `vitest run [flags or paths in this
+ * repository]`:
+ *
+ * - `"test:harness": "vitest run --config vite.config.ts"` — GATE M Part 1
+ *   disappears from `test-ts`, from `test-windows`, from the crash-retry wrapper
+ *   and from `pnpm verify`, replaced by a second run of the ordinary unit suite.
+ * - `"test": "vitest run src/features"` — seven of the eight source directories
+ *   leave the `pnpm test` gate, this guard included.
+ * - `"test": "vitest run --exclude=src/platform/**"` — the same, in the spelling
+ *   `everyArgumentIsFlagOrPath` accepts because `isFlag` is `startsWith('-')`.
+ *   Its space-separated twin `--exclude src/platform/**` is refused. One
+ *   referent, two spellings, opposite verdicts — this file's own defect-twenty-
+ *   eight formula, at the argument level.
+ *
+ * {@link SCRIPT_NAMES} pins the manifest's script NAMES, which closed round
+ * five's escape; this pins what those names run. **What it costs:** editing any
+ * script body reddens this file. That is the same price {@link CI_SETTINGS}
+ * pays and it is paid for the same reason — this reader cannot tell a refactor
+ * from a gate being emptied, and the three constructions above are what a list
+ * of exceptions would be worth.
+ *
+ * Read by *every script body a gate runs is one somebody read*, and by nothing
+ * else.
+ */
+const MANIFEST_SCRIPTS: readonly string[] = [
+  'dev: vite',
+  'build: tsc --build --force && vite build',
+  'preview: vite preview',
+  'typecheck: tsc --build --force',
+  'test: vitest run',
+  'test:harness: vitest run --config tests/harness/mock-provider/vitest.config.ts',
+  'test:click-harness: vitest run --config tests/harness/desktop-click/vitest.config.mjs',
+  'test:secrets: node scripts/run-bash.mjs scripts/secret-scan.test.sh && node scripts/run-bash.mjs scripts/secret-scan.sh',
+  'test:transcripts: node scripts/run-bash.mjs scripts/check-transcripts.sh',
+  'mock-provider: node tests/harness/mock-provider/src/cli.ts',
+  'test:watch: vitest',
+  'test:coverage: vitest run --coverage',
+  'tauri: tauri',
+  'lint:rust: cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings',
+  'verify: pnpm typecheck && pnpm lint:rust && pnpm test && pnpm test:harness && pnpm test:click-harness && pnpm build && pnpm test:transcripts && pnpm test:secrets && cd src-tauri && cargo build --workspace --locked && cargo test --workspace --locked',
+];
+
+/**
+ * The keys in a root config file that decide **which inputs a gate covers**.
+ *
+ * Read by {@link configSelectionsIn}, and by nothing else.
+ */
+const CONFIG_SELECTION_KEYS: readonly string[] = [
+  'include', 'exclude', 'files', 'references', 'projects', 'dir', 'root', 'workspace',
+];
+
+/**
+ * The root files whose bytes decide which tests or which sources a CI gate
+ * really runs over.
+ *
+ * ### The undisclosed boundary, named and closed
+ *
+ * {@link ROOT_FILES} pins thirteen names, and three of them get content
+ * readers: `package.json` ({@link MANIFEST_KEYS}, {@link SCRIPT_NAMES},
+ * {@link ONLY_BUILT_DEPENDENCIES}), `.npmrc` ({@link NPMRC_KEYS},
+ * {@link refuseScriptInterpretation}) and `.gitignore` (cross-checked against
+ * {@link ROOT_IGNORED_PATTERNS}). Those are the three previous rounds were
+ * burned by. The five tsconfigs and `vite.config.ts` were pinned by NAME only —
+ * and `vite.config.ts` is the file that decides which tests two of the twelve
+ * {@link CI_GATES} rows execute.
+ *
+ * The argument this file already makes for reading `.npmrc` applies to them word
+ * for word: "the root is where a package manager finds work nobody wrote in a
+ * command". `vitest run` loads `vite.config.ts` without anybody naming it;
+ * `tsc --build --force` loads `tsconfig.json` and every project it references.
+ * Narrowing `test.include` to a glob under `src/platform` alone, or adding
+ * `"exclude": ["src/platform", "src/state", "src/runtime"]` to
+ * `tsconfig.app.json`, each removed most of a gate's input and was green twice —
+ * while the guard, collected by path, went on reporting itself green. That was
+ * an undisclosed boundary rather than a stated one, which is this file's own
+ * definition of the defect.
+ *
+ * Every name here must also be in {@link ROOT_FILES}: a config file this reader
+ * opens that the root pin does not know about would be a second enumeration
+ * nobody keeps true.
+ *
+ * Read by *every input selection a CI gate loads is one somebody read*, and by
+ * nothing else.
+ */
+const SELECTION_CONFIG_FILES: readonly string[] = [
+  'tsconfig.json',
+  'tsconfig.app.json',
+  'tsconfig.harness.json',
+  'tsconfig.node.json',
+  'tsconfig.uibridge.json',
+  'vite.config.ts',
+];
+
+/**
+ * Every input-selecting key written in one config file, as `<file> <key>:
+ * <value>`.
+ *
+ * A named function taking the text as an argument, for the reason
+ * {@link unaccounted} is one. Values written across more than one line are read
+ * whole by matching brackets; a value whose brackets never close is refused
+ * rather than truncated, because a truncated selection is a selection this
+ * reader would report as smaller than it is.
+ *
+ * Read by *every input selection a CI gate loads is one somebody read* and by
+ * *reads $situation — configSelectionsIn on text this tree does not contain*,
+ * and by nothing else.
+ */
+function configSelectionsIn(relative: string, text: string): string[] {
+  const stripped = withoutComments(text);
+  const out: string[] = [];
+  const keyLine = /^[ \t]*"?([A-Za-z]+)"?[ \t]*:[ \t]*/gmu;
+  let found: RegExpExecArray | null = keyLine.exec(stripped);
+  for (; found !== null; found = keyLine.exec(stripped)) {
+    const key = found[1] ?? '';
+    if (!CONFIG_SELECTION_KEYS.includes(key)) continue;
+    const from = found.index + found[0].length;
+    const opens = stripped[from];
+    let value: string;
+    if (opens === '[' || opens === '{') {
+      // Brackets are matched by KIND, not counted. `["src"` followed by the
+      // object's own `}` balances a counter and does not close the array, and a
+      // reader that took the count for an answer would report a selection
+      // narrower than the one written.
+      const wants: string[] = [];
+      let at = from;
+      for (; at < stripped.length; at += 1) {
+        const character = stripped[at];
+        if (character === '[') wants.push(']');
+        else if (character === '{') wants.push('}');
+        else if (character === ']' || character === '}') {
+          if (wants.pop() !== character) {
+            wants.push('mismatched');
+            break;
+          }
+          if (wants.length === 0) {
+            at += 1;
+            break;
+          }
+        }
+      }
+      if (wants.length !== 0) {
+        throw new Error(
+          `${relative} writes "${key}:" as a value whose brackets never close, so ` +
+            'this reader cannot say what that gate covers.',
+        );
+      }
+      value = stripped.slice(from, at);
+    } else {
+      const end = stripped.indexOf('\n', from);
+      value = end === -1 ? stripped.slice(from) : stripped.slice(from, end);
+    }
+    out.push(`${relative} ${key}: ${value.replace(/\s+/gu, ' ').replace(/,$/u, '').trim()}`);
+  }
+  return out;
+}
+
+/**
+ * Every input-selecting key in every file of {@link SELECTION_CONFIG_FILES},
+ * compared with what a human read.
+ */
+const CONFIG_SELECTIONS: readonly string[] = [
+  'tsconfig.json files: []',
+  'tsconfig.json references: [ { "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }, { "path": "./tsconfig.harness.json" }, { "path": "./tsconfig.uibridge.json" } ]',
+  'tsconfig.app.json include: ["src"]',
+  'tsconfig.harness.json include: ["tests/harness"]',
+  'tsconfig.harness.json exclude: ["tests/harness/ui-bridge"]',
+  'tsconfig.node.json include: ["vite.config.ts"]',
+  'tsconfig.uibridge.json include: ["tests/harness/ui-bridge", "src"]',
+  'vite.config.ts include: [\'src/**/*.test.{ts,tsx}\']',
+];
+
+/** The gate wrapper `ci.yml` runs, which this guard has a case about and read no byte of. */
+const RETRY_WRAPPER = 'scripts/ci-retry-vitest-crash.mjs';
+
+/**
+ * The decisions {@link RETRY_WRAPPER} makes, as text.
+ *
+ * ### A gate this guard describes and had never opened
+ *
+ * *the crash-retry wrapper is confined to the one job that needs it* asserts the
+ * wrapper's job and its wrapped command, and {@link CI_GATES} carries the
+ * wrapped string as a row. Every one of those claims is about what this script
+ * DOES — and the guard opened `.github/workflows/`, `package.json`, `.npmrc` and
+ * the repository root, and never this file. Two edits to it were green twice:
+ *
+ * - `const MAX_ATTEMPTS = 2;` → `= 4;`, against a header that says three
+ *   separate times not to raise the attempt count.
+ * - `reachedAVerdict` returning `false` for every transcript — which is the
+ *   state the header records this function having SHIPPED in ("THE FIRST
+ *   VERSION OF THIS FUNCTION LOOKED ONLY AT THE END-OF-RUN FLUSH"). With it
+ *   blind, a real red on `pnpm test:harness` that also crashed the pool is
+ *   retried and can exit 0, so the harness gate on `test-windows` stops being
+ *   able to fail the job — which is what {@link refuseSuppression} refuses when
+ *   a YAML key says it.
+ *
+ * What this pins is the attempt count and the two predicates' code with comments
+ * removed and whitespace flattened, which is the same trade
+ * {@link refuseScriptInterpretation} makes over `.npmrc`: this reader cannot
+ * execute the wrapper, and the alternative to comparing what it says is not
+ * comparing anything. Reformatting either predicate reddens; so does emptying
+ * it.
+ *
+ * Read by *the wrapper a CI gate runs is one somebody read* and by *reads
+ * $situation — wrapperDecisionsIn on text this tree does not contain*, and by
+ * nothing else.
+ */
+const WRAPPER_DECISIONS: readonly string[] = [
+  'scripts/ci-retry-vitest-crash.mjs MAX_ATTEMPTS: 2',
+  'scripts/ci-retry-vitest-crash.mjs isRunnerCrash: return ( transcript.includes(\'ERR_IPC_CHANNEL_CLOSED\') && /tinypool.*ProcessWorker\\.send|ProcessWorker\\.send.*tinypool/su.test(transcript) );',
+  'scripts/ci-retry-vitest-crash.mjs reachedAVerdict: return ( /^\\s*\\u00D7\\s/mu.test(transcript) || /\\(\\d+ tests?[^)]*\\|\\s*\\d+ failed\\)/u.test(transcript) || /^\\s*\\u276F\\s.*\\.test\\.tsx?/mu.test(transcript) || /^\\s*Tests\\s+\\d+/mu.test(transcript) || /Failed Tests\\s+\\d+/u.test(transcript) || /^\\s*FAIL\\s/mu.test(transcript) );',
+];
+
+/**
+ * The same text with its comments replaced by whitespace, without touching what
+ * is inside a string.
+ *
+ * A regex over `/*` … `*` `/` is not good enough here and the difference is a
+ * real one: `include: ['src/` + `**` + `/*.test.{ts,tsx}']` — the line in
+ * `vite.config.ts` that decides which tests `pnpm test` runs — contains the
+ * closing sequence inside a string literal, so a regex stripper eats the middle
+ * of the value and this reader reports a selection nobody wrote.
+ *
+ * Read by {@link configSelectionsIn} and {@link wrapperDecisionsIn}, and by
+ * nothing else.
+ */
+function withoutComments(text: string): string {
+  let out = '';
+  let quote: '"' | "'" | '`' | null = null;
+  for (let at = 0; at < text.length; at += 1) {
+    const character = text[at] ?? '';
+    const next = text[at + 1] ?? '';
+    if (quote !== null) {
+      out += character;
+      if (character === '\\') {
+        out += next;
+        at += 1;
+        continue;
+      }
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      quote = character;
+      out += character;
+      continue;
+    }
+    if (character === '/' && next === '*') {
+      const end = text.indexOf('*/', at + 2);
+      const skipped = text.slice(at, end === -1 ? text.length : end + 2);
+      // Newlines are kept so that a line-anchored read of the result still sees
+      // the lines the file really has.
+      out += skipped.replace(/[^\n]/gu, ' ');
+      at = end === -1 ? text.length : end + 1;
+      continue;
+    }
+    if (character === '/' && next === '/') {
+      const end = text.indexOf('\n', at);
+      at = end === -1 ? text.length : end - 1;
+      continue;
+    }
+    out += character;
+  }
+  return out;
+}
+
+/** The body of a top-level `function <name>(…) { … }`, braces matched. */
+function functionBodyIn(relative: string, text: string, name: string): string {
+  const opens = text.indexOf(`function ${name}(`);
+  if (opens === -1) {
+    throw new Error(
+      `${relative} has no function "${name}". This guard pins what that function ` +
+        'decides, and a gate wrapper whose decisions are gone is a gate nobody here is checking.',
+    );
+  }
+  const brace = text.indexOf('{', opens);
+  let depth = 0;
+  for (let at = brace; at < text.length; at += 1) {
+    const character = text[at];
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(brace + 1, at);
+    }
+  }
+  throw new Error(`${relative} has a function "${name}" whose body never closes`);
+}
+
+/** What the wrapper decides, read out of its own bytes. */
+function wrapperDecisionsIn(relative: string, text: string): string[] {
+  const attempts = /^const MAX_ATTEMPTS = (\d+);$/mu.exec(text);
+  if (attempts === null) {
+    throw new Error(
+      `${relative} has no "const MAX_ATTEMPTS = <n>;" line, so this reader cannot ` +
+        'say how many times a crashed gate is re-run before its verdict is trusted.',
+    );
+  }
+  const out = [`${relative} MAX_ATTEMPTS: ${attempts[1] ?? ''}`];
+  for (const name of ['isRunnerCrash', 'reachedAVerdict']) {
+    const body = withoutComments(functionBodyIn(relative, text, name))
+      .replace(/\s+/gu, ' ')
+      .trim();
+    out.push(`${relative} ${name}: ${body}`);
+  }
+  return out;
+}
+
+describe('a gate is its invocation, its body, its config and its wrapper', () => {
+  it('every script body a gate runs is one somebody read', () => {
+    expect(
+      Object.entries(PACKAGE.scripts).map(([name, body]) => `${name}: ${body}`),
+      'a script body in package.json changed. Twelve CI_GATES rows pin an ' +
+        'invocation exactly, on the argument that there is no way to tell a flag ' +
+        'that strengthens a gate from one that empties it — and the body behind ' +
+        'the invocation is where the gate actually is. Read the change, then ' +
+        'write it into MANIFEST_SCRIPTS.',
+    ).toEqual([...MANIFEST_SCRIPTS]);
+  });
+
+  it('every input selection a CI gate loads is one somebody read', () => {
+    for (const file of SELECTION_CONFIG_FILES) {
+      expect(
+        ROOT_FILES as readonly string[],
+        `SELECTION_CONFIG_FILES names "${file}", which the root pin does not know about`,
+      ).toContain(file);
+    }
+    const read = SELECTION_CONFIG_FILES.flatMap((file) =>
+      configSelectionsIn(file, readFileSync(join(REPO_ROOT, file), 'utf8')),
+    );
+    expect(
+      read,
+      'a config file at the repository root changed which inputs it selects. ' +
+        'These files are loaded by "vitest run" and "tsc --build" without anybody ' +
+        'naming them in a command — the class ROOT_FILES exists for — and they ' +
+        'decide which tests and which sources the gates in CI_GATES really cover. ' +
+        'Read the change, then write it into CONFIG_SELECTIONS.',
+    ).toEqual([...CONFIG_SELECTIONS]);
+  });
+
+  it.each([
+    {
+      situation: 'a one-line array value',
+      text: '{\n  "include": ["src"]\n}\n',
+      expected: ['probe.json include: ["src"]'],
+    },
+    {
+      situation: 'an array written across several lines',
+      text: '{\n  "references": [\n    { "path": "./a.json" },\n    { "path": "./b.json" }\n  ]\n}\n',
+      expected: ['probe.json references: [ { "path": "./a.json" }, { "path": "./b.json" } ]'],
+    },
+    {
+      situation: 'a key nested inside another object',
+      text: 'export default {\n  test: {\n    include: [\'src/**/*.test.ts\'],\n  },\n};\n',
+      expected: ["probe.json include: ['src/**/*.test.ts']"],
+    },
+    {
+      situation: 'a selection hidden behind a block comment',
+      text: '{\n  /* "include": ["everything"] */\n  "include": ["src"]\n}\n',
+      expected: ['probe.json include: ["src"]'],
+    },
+    {
+      situation: 'a key that selects nothing this reader tracks',
+      text: '{\n  "outDir": "dist"\n}\n',
+      expected: [],
+    },
+  ])('reads $situation — configSelectionsIn on text this tree does not contain', ({ text, expected }) => {
+    expect(configSelectionsIn('probe.json', text)).toEqual(expected);
+  });
+
+  it('refuses a selection whose brackets never close', () => {
+    expect(() => configSelectionsIn('probe.json', '{\n  "include": ["src"\n}\n')).toThrow(
+      'a value whose brackets never close',
+    );
+  });
+
+  it('the wrapper a CI gate runs is one somebody read', () => {
+    expect(
+      wrapperDecisionsIn(RETRY_WRAPPER, readFileSync(join(REPO_ROOT, RETRY_WRAPPER), 'utf8')),
+      'the crash-retry wrapper changed what it decides. This guard has a case ' +
+        'about that script and a CI_GATES row carrying its command, and both are ' +
+        'claims about what it DOES: how many attempts it makes, what it calls a ' +
+        'runner crash, and what it calls a verdict. Raising MAX_ATTEMPTS, or ' +
+        'blinding reachedAVerdict to the inline failure markers, each turns a red ' +
+        'gate into a green one. Read the change, then write it into ' +
+        'WRAPPER_DECISIONS.',
+    ).toEqual([...WRAPPER_DECISIONS]);
+  });
+
+  it.each([
+    {
+      situation: 'an attempt count and two predicates',
+      text: 'const MAX_ATTEMPTS = 3;\nfunction isRunnerCrash(t) {\n  return t.includes(\'X\');\n}\nfunction reachedAVerdict(t) {\n  // a comment\n  return /a/u.test(t);\n}\n',
+      expected: [
+        'probe.mjs MAX_ATTEMPTS: 3',
+        "probe.mjs isRunnerCrash: return t.includes('X');",
+        'probe.mjs reachedAVerdict: return /a/u.test(t);',
+      ],
+    },
+    {
+      situation: 'a predicate emptied to a constant',
+      text: 'const MAX_ATTEMPTS = 2;\nfunction isRunnerCrash(t) {\n  return t.includes(\'X\');\n}\nfunction reachedAVerdict() {\n  return false;\n}\n',
+      expected: [
+        'probe.mjs MAX_ATTEMPTS: 2',
+        "probe.mjs isRunnerCrash: return t.includes('X');",
+        'probe.mjs reachedAVerdict: return false;',
+      ],
+    },
+  ])('reads $situation — wrapperDecisionsIn on text this tree does not contain', ({ text, expected }) => {
+    expect(wrapperDecisionsIn('probe.mjs', text)).toEqual(expected);
+  });
+
+  it('refuses a wrapper with no attempt count and one with no predicate', () => {
+    expect(() => wrapperDecisionsIn('probe.mjs', 'const OTHER = 2;\n')).toThrow(
+      'has no "const MAX_ATTEMPTS = <n>;" line',
+    );
+    expect(() =>
+      wrapperDecisionsIn('probe.mjs', 'const MAX_ATTEMPTS = 2;\nfunction isRunnerCrash(t) {\n  return true;\n}\n'),
+    ).toThrow('has no function "reachedAVerdict"');
+  });
+});

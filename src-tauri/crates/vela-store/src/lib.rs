@@ -82,13 +82,13 @@ pub use error::{StoreError, StoreResult};
 pub use location::{DatabaseLocation, DATABASE_FILE_NAME};
 pub use migrations::{AppliedMigration, Migration, MIGRATIONS, SCHEMA_VERSION};
 pub use model::{
-    Advance, Cadence, ContentPart, Conversation, ConversationId, ConversationPatch, MemoryCategory,
-    MemoryEntry, MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId, MessagePatch,
-    MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage, NewProject,
-    NewSchedule, Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId, SchedulePatch,
-    ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus, SecretRefName, Setting,
-    SettingEntry, StopReason, Timestamp, TokenUsage, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME,
-    MEMORY_CONTENT_MAX_CHARS,
+    Advance, AnsweredBy, Cadence, ContentPart, Conversation, ConversationId, ConversationPatch,
+    MemoryCategory, MemoryEntry, MemoryEntryId, MemoryPatch, MemoryScope, Message, MessageId,
+    MessagePatch, MessageRole, MessageStatus, NewConversation, NewMemoryEntry, NewMessage,
+    NewProject, NewSchedule, Project, ProjectId, ProjectPatch, RunTrigger, Schedule, ScheduleId,
+    SchedulePatch, ScheduleRun, ScheduleRunId, ScheduleRunOutcome, ScheduleRunStatus,
+    SecretRefName, Setting, SettingEntry, StopReason, Timestamp, TokenUsage, DEFAULT_PROJECT_ID,
+    DEFAULT_PROJECT_NAME, MEMORY_CONTENT_MAX_CHARS,
 };
 pub use repository::{
     ConversationQuery, ConversationRepository, HasLocation, MemoryRepository, MessageQuery,

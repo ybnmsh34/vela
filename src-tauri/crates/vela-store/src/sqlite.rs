@@ -1041,13 +1041,17 @@ impl MessageRepository for SqliteStore {
             // has no arm that means "clear the attribution". A `None` here is
             // "the caller did not learn who answered", which must leave whatever
             // the append recorded exactly as it stands.
-            if let Some(provider_id) = patch.answered_by_provider_id {
+            //
+            // One `if`, two assignments. The columns are written together or
+            // not at all, because an UPDATE that touched one of them would
+            // merge a fresh half into a recorded half and store a pairing no
+            // endpoint returned. [`AnsweredBy`] is what makes the one-column
+            // UPDATE unspellable here rather than merely unwritten.
+            if let Some(answered_by) = patch.answered_by {
                 assignments.push(format!("answered_by_provider_id = ?{}", values.len() + 1));
-                values.push(Value::Text(provider_id));
-            }
-            if let Some(model_id) = patch.answered_by_model_id {
+                values.push(Value::Text(answered_by.provider_id));
                 assignments.push(format!("answered_by_model_id = ?{}", values.len() + 1));
-                values.push(Value::Text(model_id));
+                values.push(Value::Text(answered_by.model_id));
             }
 
             if !assignments.is_empty() {
@@ -1809,7 +1813,7 @@ impl HasLocation for SqliteStore {
 mod tests {
     use super::*;
     use crate::migrations::SCHEMA_VERSION;
-    use crate::model::{DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME};
+    use crate::model::{AnsweredBy, DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME};
     use crate::repository::VelaStore;
 
     fn store() -> SqliteStore {
@@ -2071,7 +2075,7 @@ mod tests {
     /// in hand. A run that opens its row when the turn opens — which is what the
     /// durability rule asks a harness to do — has nothing to attribute yet, so
     /// the closing `update_message` is its only chance. Before `MessagePatch`
-    /// carried these two fields there was no way to take it: the row stayed
+    /// carried an `answered_by` there was no way to take it: the row stayed
     /// unattributed for the life of the conversation.
     ///
     /// The fixture makes the two endpoints disagree for the same reason the
@@ -2098,8 +2102,7 @@ mod tests {
                 MessagePatch {
                     parts: Some(vec![ContentPart::text("Canopus is in Carina.")]),
                     status: Some(MessageStatus::Complete),
-                    answered_by_provider_id: Some("hosted-openai".into()),
-                    answered_by_model_id: Some("gpt-4o-mini".into()),
+                    answered_by: Some(AnsweredBy::new("hosted-openai", "gpt-4o-mini")),
                     ..MessagePatch::default()
                 },
             )
@@ -2123,7 +2126,7 @@ mod tests {
 
     /// An update that does not mention the attribution leaves it alone.
     ///
-    /// `MessagePatch` is set-only for these two — there is deliberately no arm
+    /// `MessagePatch::answered_by` is set-only — there is deliberately no arm
     /// that means "forget who answered" — so the risk is not a clear the caller
     /// asked for but a clear the writer performs by binding `NULL` for the
     /// `None` case, as the `stop_reason` and `error_message` assignments
@@ -2165,12 +2168,13 @@ mod tests {
         assert_eq!(loaded.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
     }
 
-    /// A blank attribution is refused on the update path as on the append path.
+    /// A blank half is refused on the update path as on the append path.
     ///
     /// `''` reaching the column would be an attribution to an endpoint with no
     /// name — a row that reads as attributed and names nobody, which every
     /// reader downstream would render as a substitution disclosure with an empty
-    /// endpoint in it.
+    /// endpoint in it. Half of a pair carries the same falsehood as a whole
+    /// blank one, so both halves are checked and either one refuses the write.
     #[test]
     fn an_update_refuses_a_blank_attribution() {
         let store = store();
@@ -2187,7 +2191,7 @@ mod tests {
             .update_message(
                 &written.id,
                 MessagePatch {
-                    answered_by_provider_id: Some("   ".into()),
+                    answered_by: Some(AnsweredBy::new("   ", "gpt-4o-mini")),
                     ..MessagePatch::default()
                 },
             )
@@ -2201,7 +2205,7 @@ mod tests {
             .update_message(
                 &written.id,
                 MessagePatch {
-                    answered_by_model_id: Some(String::new()),
+                    answered_by: Some(AnsweredBy::new("hosted-openai", "")),
                     ..MessagePatch::default()
                 },
             )
@@ -2215,6 +2219,64 @@ mod tests {
         let loaded = store.get_message(&written.id).unwrap();
         assert_eq!(loaded.answered_by_provider_id, None);
         assert_eq!(loaded.answered_by_model_id, None);
+    }
+
+    /// **An update cannot pair a fresh provider with a recorded model.**
+    ///
+    /// This is the failure the first version of this change carried one level
+    /// down, and it is worth stating as the concrete row it produced. The patch
+    /// held the two halves independently, so a caller could send the provider
+    /// alone; the UPDATE wrote that column and left the other; and the row came
+    /// back naming `anthropic` for a model `gpt-4o-mini` that `hosted-openai`
+    /// had served. `answeredByOf` in
+    /// `src/features/conversation/stored-entries.ts` accepts any row with both
+    /// columns non-null, so that invention read as a genuine record and the
+    /// transcript disclosed it as a substitution.
+    ///
+    /// [`AnsweredBy`] removes the shape, so what remains testable here is the
+    /// nearest thing a caller can still spell — a pair with one half blank —
+    /// and that it changes nothing about the row. The name of the type is not
+    /// the guarantee; this is.
+    #[test]
+    fn an_update_cannot_replace_one_half_of_a_recorded_attribution() {
+        let store = store();
+        let chat = conversation(&store);
+
+        let written = store
+            .append_message(
+                NewMessage::assistant(chat.clone(), vec![ContentPart::text("hi")])
+                    .with_status(MessageStatus::Streaming)
+                    .answered_by("hosted-openai", "gpt-4o-mini"),
+            )
+            .unwrap();
+
+        let refused = store
+            .update_message(
+                &written.id,
+                MessagePatch {
+                    status: Some(MessageStatus::Complete),
+                    answered_by: Some(AnsweredBy::new("anthropic", "   ")),
+                    ..MessagePatch::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&refused, StoreError::Invalid { field, .. } if field == "answeredByModelId"),
+            "unexpected error: {refused:?}"
+        );
+
+        let loaded = store.get_message(&written.id).unwrap();
+        assert_eq!(
+            loaded.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "the recorded provider stands; a refused patch writes nothing"
+        );
+        assert_eq!(loaded.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(
+            loaded.status,
+            MessageStatus::Streaming,
+            "the whole statement is refused, not the attribution half of it"
+        );
     }
 
     #[test]
@@ -2488,8 +2550,7 @@ mod tests {
                     // Left exhaustive on purpose: this literal is what turns a
                     // new `MessagePatch` field into a compile error here rather
                     // than a field the update path quietly never exercises.
-                    answered_by_provider_id: None,
-                    answered_by_model_id: None,
+                    answered_by: None,
                 },
             )
             .unwrap();

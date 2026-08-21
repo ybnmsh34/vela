@@ -231,8 +231,7 @@ describe('the fake host: the transcript', () => {
       messageId: opened.id,
       parts: [{ kind: 'text', text: 'the whole answer' }],
       status: 'complete',
-      answeredByProviderId: 'hosted-openai',
-      answeredByModelId: 'gpt-4o-mini',
+      answeredBy: { providerId: 'hosted-openai', modelId: 'gpt-4o-mini' },
     });
 
     const { messages } = await host.invoke('store_list_messages', { conversationId: id });
@@ -248,7 +247,7 @@ describe('the fake host: the transcript', () => {
    * The fake's twin of
    * `sqlite::tests::a_later_update_that_says_nothing_about_the_attribution_does_not_erase_it`.
    *
-   * `MessagePatch` is set-only for these two, so an omission must leave the
+   * `MessagePatch::answered_by` is set-only, so an omission must leave the
    * recorded value standing. The mistake this catches is not a caller asking to
    * clear — it is a writer that assigns unconditionally and lands `undefined`
    * on the row. It is invisible on the happy path, where the closing update
@@ -279,9 +278,10 @@ describe('the fake host: the transcript', () => {
   });
 
   /**
-   * Blank folds to "not learned" on both commands, as
-   * `ipc::transcript.rs` folds it — `.filter(|id| !id.trim().is_empty())` on
-   * `append_message` and on `update_message` alike.
+   * Blank folds to "not learned" on both commands, as `ipc::transcript.rs`
+   * folds it — `.filter(|id| !id.trim().is_empty())` per id on
+   * `append_message`, `learned_attribution` over the whole pair on
+   * `update_message`.
    *
    * The append half of this was a real divergence: the fake used to store `''`
    * verbatim, which every reader downstream treats as an attribution to an
@@ -301,19 +301,56 @@ describe('the fake host: the transcript', () => {
 
     await host.invoke('store_update_message', {
       messageId: written.id,
-      answeredByProviderId: 'hosted-openai',
-      answeredByModelId: 'gpt-4o-mini',
+      answeredBy: { providerId: 'hosted-openai', modelId: 'gpt-4o-mini' },
     });
     await host.invoke('store_update_message', {
       messageId: written.id,
       status: 'complete',
-      answeredByProviderId: ' ',
-      answeredByModelId: '',
+      answeredBy: { providerId: ' ', modelId: '' },
     });
 
     const { messages } = await host.invoke('store_list_messages', { conversationId: id });
     expect(messages[0]?.answeredByProviderId).toBe('hosted-openai');
     expect(messages[0]?.answeredByModelId).toBe('gpt-4o-mini');
+  });
+
+  /**
+   * **A half-blank pair is refused, and the row is left as it was.**
+   *
+   * The fake's twin of
+   * `sqlite::tests::an_update_cannot_replace_one_half_of_a_recorded_attribution`,
+   * and the reason `answeredBy` is one object rather than two ids: an update
+   * merges. A patch that could carry `providerId` alone would pair a fresh
+   * provider with the model already recorded and produce an attribution no
+   * endpoint returned — which `answeredByOf` in
+   * `src/features/conversation/stored-entries.ts` cannot distinguish from a
+   * real one, because both columns are non-null. The type removes the shape;
+   * what a caller can still spell is a blank half, and the host answers that
+   * with an invalid payload rather than a partial write.
+   */
+  it('refuses an attribution with one blank half instead of merging it', async () => {
+    const id = await conversation();
+    const { message: written } = await host.invoke('store_append_message', {
+      conversationId: id,
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'hi' }],
+      status: 'streaming',
+      answeredByProviderId: 'hosted-openai',
+      answeredByModelId: 'gpt-4o-mini',
+    });
+
+    await expect(
+      host.invoke('store_update_message', {
+        messageId: written.id,
+        status: 'complete',
+        answeredBy: { providerId: 'anthropic', modelId: '   ' },
+      }),
+    ).rejects.toThrow(/answeredBy/);
+
+    const { messages } = await host.invoke('store_list_messages', { conversationId: id });
+    expect(messages[0]?.answeredByProviderId).toBe('hosted-openai');
+    expect(messages[0]?.answeredByModelId).toBe('gpt-4o-mini');
+    expect(messages[0]?.status, 'a refused statement writes none of itself').not.toBe('complete');
   });
 
   it('appending a message moves the conversation up the sidebar', async () => {

@@ -729,10 +729,18 @@ describe('durability and cancellation', () => {
     ).toBeNull();
 
     const closed = bench.transcript.updated[0];
-    expect(closed?.answeredByProviderId).toBe('hosted-openai');
-    expect(closed?.answeredByModelId).toBe('gpt-4o-mini');
-    expect(closed?.answeredByProviderId).not.toBe(opened?.providerId);
-    expect(closed?.answeredByModelId).not.toBe(opened?.modelId);
+    expect(closed?.answeredBy?.providerId).toBe('hosted-openai');
+    expect(closed?.answeredBy?.modelId).toBe('gpt-4o-mini');
+    expect(closed?.answeredBy?.providerId).not.toBe(opened?.providerId);
+    expect(closed?.answeredBy?.modelId).not.toBe(opened?.modelId);
+    // The pair travels as one value, which is the shape the store demands: a
+    // patch carrying one half merges with the other half already on the row and
+    // records a pairing that never happened. `contract.ts` makes the half
+    // unspellable; this asserts the payload actually built here is the pair.
+    expect(closed?.answeredBy).toEqual({
+      providerId: 'hosted-openai',
+      modelId: 'gpt-4o-mini',
+    });
   });
 
   it('leaves an unattributed turn unattributed rather than back-filling the target', async () => {
@@ -743,7 +751,7 @@ describe('durability and cancellation', () => {
     // you picked answered" the same row, which is the falsehood migration 6
     // exists to end.
     //
-    // Both keys are asserted absent rather than null, because
+    // The key is asserted absent rather than null, because
     // `StoreUpdateMessageReq` spells "leave it alone" as an omission and a
     // present `undefined` would serialise to a key the host must then decide
     // about.
@@ -754,8 +762,7 @@ describe('durability and cancellation', () => {
 
     const closed = bench.transcript.updated[0];
     expect(closed?.status).toBe('complete');
-    expect(closed === undefined ? [] : Object.keys(closed)).not.toContain('answeredByProviderId');
-    expect(closed === undefined ? [] : Object.keys(closed)).not.toContain('answeredByModelId');
+    expect(closed === undefined ? [] : Object.keys(closed)).not.toContain('answeredBy');
   });
 
   it('does not attribute a turn that was cancelled or ran out of wall clock', async () => {

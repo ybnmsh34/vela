@@ -51,6 +51,7 @@ import {
   MEMORY_CONTENT_MAX_CHARS,
   NO_CAPABILITIES,
   type Ack,
+  type AnswerProvenance,
   type AppInfo,
   type AuthMode,
   type ChatCancelReq,
@@ -714,14 +715,19 @@ const NO_USAGE: TokenUsage = {
 };
 
 /**
- * One half of an attribution as the store would record it, or `null` for "not
- * recorded".
+ * One half of an attribution **on the append path**, as the store would record
+ * it, or `null` for "not recorded".
  *
- * `ipc::transcript.rs` runs `.filter(|id| !id.trim().is_empty())` over both
- * halves on both commands, so a blank string is not stored and is not an error;
- * it means the same thing as an omission. Written once here rather than four
- * times inline, because four inline copies is how the append path and the
- * update path come to disagree about what `''` means.
+ * `ipc::transcript::append_message` runs `.filter(|id| !id.trim().is_empty())`
+ * over each half, so a blank string is not stored and is not an error there; it
+ * means the same thing as an omission. Written once here rather than twice
+ * inline, because two inline copies is how the two halves come to disagree
+ * about what `''` means.
+ *
+ * The update path does **not** share this function — see
+ * {@link learnedAttribution}. Append takes the halves separately because a row
+ * that ends with one of them reads as no record; an update merges, so its
+ * halves cannot be allowed to travel apart at all.
  *
  * The value returned is the caller's own string, **not** a trimmed copy: the
  * host's filter decides on `trim()` and stores the original, so trimming here
@@ -730,6 +736,39 @@ const NO_USAGE: TokenUsage = {
 function recordedEndpointId(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   return raw.trim() === '' ? null : raw;
+}
+
+/**
+ * What an `answeredBy` on an update means, mirroring
+ * `ipc::transcript::learned_attribution` case for case.
+ *
+ * Omitted is "not learned" and leaves the row alone. A wholly blank pair folds
+ * to the same thing, because `''` is how some callers spell absent and the two
+ * commands must not disagree about it. A pair with **one** blank half is
+ * refused rather than folded or repaired: folding drops an attribution the
+ * caller believed it had sent, and repairing writes a named endpoint beside a
+ * nameless model. The host answers that case with a `StoreError::Invalid`
+ * naming whichever half was blank — `answeredByProviderId` or
+ * `answeredByModelId` — and `ipc::error` maps that onto `InvalidPayload`, so an
+ * invalid payload is what this throws.
+ *
+ * Ids are returned untrimmed, as the host stores them: its filter decides on
+ * `trim()` and writes the original, and a fake that trimmed would hold
+ * different bytes than SQLite for the same request.
+ */
+function learnedAttribution(raw: AnswerProvenance | undefined): AnswerProvenance | null {
+  if (raw === undefined) return null;
+  const providerBlank = raw.providerId.trim() === '';
+  const modelBlank = raw.modelId.trim() === '';
+  if (providerBlank && modelBlank) return null;
+  if (providerBlank || modelBlank) {
+    throw new PlatformError(
+      'INVALID_PAYLOAD',
+      'invalid answeredBy: an attribution needs both a provider and a model',
+      'store_update_message',
+    );
+  }
+  return { providerId: raw.providerId, modelId: raw.modelId };
 }
 
 function toStoredMessage(message: FakeMessage): StoredMessage {
@@ -2609,8 +2648,10 @@ export class BrowserAdapter implements PlatformAdapter {
       // Mirrors the host: an omitted attribution stays absent. Defaulting these
       // to `providerId` would make the fake disagree with SQLite about the one
       // thing they exist to record. `''` folds to absent for the same reason
-      // `ipc::transcript::append_message` folds it — a nameless endpoint is not
-      // an attribution — and `#storeUpdateMessage` folds it identically.
+      // `ipc::transcript::append_message` folds it: a nameless endpoint is not
+      // an attribution. The update path folds a `''` too, but only when the
+      // whole pair is blank — see {@link learnedAttribution} for why a single
+      // blank half is refused there instead.
       answeredByProviderId: recordedEndpointId(request.answeredByProviderId),
       answeredByModelId: recordedEndpointId(request.answeredByModelId),
       usage: request.usage ?? NO_USAGE,
@@ -2636,22 +2677,36 @@ export class BrowserAdapter implements PlatformAdapter {
       validateContentParts(request.parts, 'parts', 'store_update_message');
     }
     const found = this.#findMessage(request.messageId, 'store_update_message');
+    // Read and check the whole statement **before** any of it lands.
+    // `SqliteStore::update_message` runs `patch.validate()?` on its first line,
+    // before it opens its transaction, so a refused patch never reaches an
+    // UPDATE and the row stands as it was; a fake that assigned as it went
+    // would leave a half-applied row behind on the same call and disagree with
+    // the host about what a rejection costs — which is what
+    // `refuses an attribution with one blank half instead of merging it` in
+    // `browser-adapter-transcript.test.ts` measures, on the status rather than
+    // on the attribution.
+    const answeredBy = learnedAttribution(request.answeredBy);
+
     // An omitted field leaves the value alone. There is no way to clear one.
     if (request.parts !== undefined) found.parts = [...request.parts];
     if (request.status !== undefined) found.status = request.status;
     if (request.usage !== undefined) found.usage = request.usage;
     if (request.stopReason !== undefined) found.stopReason = request.stopReason;
     if (request.errorMessage !== undefined) found.errorMessage = request.errorMessage;
-    // Blank folds to "not learned", exactly as `ipc::transcript::update_message`
-    // folds it, so `pnpm dev` and the packaged app agree about what `''` means.
+    // Both columns move together or neither does — the fake's copy of the one
+    // `if` in `SqliteStore::update_message`. A merge of one half into a row
+    // that already holds the other invents a pairing, and the browser must not
+    // be the place that is possible.
+    //
     // Omitted leaves the recorded attribution standing: `vela_store::MessagePatch`
     // has no arm that clears it, and a fake that cleared it here would make a
     // second update — a cancel, a retry marking the row failed — erase
     // provenance in the browser and keep it in SQLite.
-    const answeredByProviderId = recordedEndpointId(request.answeredByProviderId);
-    const answeredByModelId = recordedEndpointId(request.answeredByModelId);
-    if (answeredByProviderId !== null) found.answeredByProviderId = answeredByProviderId;
-    if (answeredByModelId !== null) found.answeredByModelId = answeredByModelId;
+    if (answeredBy !== null) {
+      found.answeredByProviderId = answeredBy.providerId;
+      found.answeredByModelId = answeredBy.modelId;
+    }
     found.updatedAtMs = this.#now();
     return { message: toStoredMessage(found) };
   }

@@ -51,6 +51,7 @@
  */
 
 import type {
+  AnswerProvenance,
   ChatError,
   ChatMessageInput,
   ChatResponseBody,
@@ -129,22 +130,33 @@ function storedStopReason(response: ChatResponseBody): StoredStopReason {
 }
 
 /**
- * The attribution as `store_update_message` takes it: both halves, or nothing.
+ * The attribution as `store_update_message` takes it: the whole
+ * {@link AnswerProvenance}, or nothing at all.
  *
- * A partial spread is the failure mode worth naming. `AnswerProvenance` has no
- * shape for "an endpoint whose model is unknown", and a row carrying one half is
- * read as *no record at all* by `stored-entries.ts` — so a caller that spread
- * only the provider would write something the transcript surface silently
- * discards, which is the original defect with a different spelling. Returning
- * one object makes the pair inseparable at the type level rather than by
- * convention at the call site.
+ * One field, because an update is a **merge**. A half sent on its own would not
+ * be discarded downstream — it would join whatever the row already recorded and
+ * produce a provider/model pair no endpoint ever returned, which `answeredByOf`
+ * in `stored-entries.ts` accepts as a genuine record — its whole test is that
+ * both columns are non-null — and which the transcript then discloses as a
+ * substitution whenever the invented provider differs from the one the user
+ * picked. That is worse than the silence this change exists to end, so the halves
+ * do not travel separately anywhere on this path:
+ * `StoreUpdateMessageReq.answeredBy` is one object, `AnsweredByDto` has no
+ * optional half for `serde` to default, `vela_store::AnsweredBy` has no
+ * one-field constructor, and `MessagePatch::validate` refuses a pair with a
+ * blank half. This function is the near end of that chain, not its guarantee.
+ *
+ * Spread-or-nothing rather than `answeredBy: … ?? undefined`: this file compiles
+ * under `tsconfig.app.json`, which sets `exactOptionalPropertyTypes`, and an
+ * explicit `undefined` is not the same as an absent key on a payload that
+ * crosses a serde boundary.
  */
 function answeredByFields(
   response: ChatResponseBody,
-): { readonly answeredByProviderId: string; readonly answeredByModelId: string } | Record<string, never> {
+): { readonly answeredBy: AnswerProvenance } | Record<string, never> {
   const answeredBy = response.answeredBy;
   if (answeredBy === null) return {};
-  return { answeredByProviderId: answeredBy.providerId, answeredByModelId: answeredBy.modelId };
+  return { answeredBy };
 }
 
 /* -------------------------------------------------------------------------- */

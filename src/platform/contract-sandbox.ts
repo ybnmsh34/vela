@@ -1898,10 +1898,12 @@ export interface SandboxEventEnvelope {
 /**
  * The host event this stream is delivered on.
  *
- * Not yet a key in `EventContract` in `src/platform/adapter.ts`. That interface carries an
- * index signature, so subscribing to this name would compile today and would hand the
- * handler an `unknown` — adding the typed entry is part of wiring this contract up, not a
- * separate nicety.
+ * `EventContract` in `src/platform/adapter.ts` carries this name as a typed key, mapped to
+ * {@link SandboxEventEnvelope}. It did not when this constant was written, and the wording
+ * here said so for longer than it was true: that interface has an index signature, so a
+ * subscriber compiles either way and the only thing that changes is whether the handler
+ * receives an envelope or an `unknown`. A comment is not evidence of which — the entry in
+ * `EventContract` is.
  */
 export const SANDBOX_EVENT_NAME = 'sandbox:event';
 

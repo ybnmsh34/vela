@@ -594,6 +594,33 @@ impl NewMessage {
     }
 }
 
+/// Who actually answered, as an **update** carries it: the pair, or nothing.
+///
+/// [`Message`] keeps the two halves in two nullable columns because a row
+/// written before migration 6 has neither and the schema has to be able to say
+/// so. A patch is a different animal. Its fields merge with what the row
+/// already holds, so a patch able to carry one half could pair the provider of
+/// this answer with the model of an earlier one and produce an attribution no
+/// endpoint ever returned — and a reader cannot tell that pairing from a real
+/// one, because both columns are non-null and that is the whole test
+/// `answeredByOf` in `src/features/conversation/stored-entries.ts` applies. The
+/// half-written *row* the transcript surface discards; the half-written *patch*
+/// it cannot see. This struct is why one cannot be written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnsweredBy {
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+impl AnsweredBy {
+    pub fn new(provider_id: impl Into<String>, model_id: impl Into<String>) -> Self {
+        Self {
+            provider_id: provider_id.into(),
+            model_id: model_id.into(),
+        }
+    }
+}
+
 /// Partial update of a message. `None` means "leave alone".
 ///
 /// This is what turns a streamed turn into a finished one: the parts are
@@ -609,7 +636,8 @@ pub struct MessagePatch {
     /// `Some(None)` clears the error; `None` leaves it untouched.
     pub error_message: Option<Option<String>>,
     /// Who actually answered, learned only when the turn came back. See
-    /// [`Message::answered_by_provider_id`].
+    /// [`Message::answered_by_provider_id`] for what it means and
+    /// [`AnsweredBy`] for why it is one field rather than two.
     ///
     /// **Set-only: there is no `Some(None)` arm and there must not be one.**
     /// `stop_reason` and `error_message` above can be cleared because a wrong
@@ -618,8 +646,7 @@ pub struct MessagePatch {
     /// afterwards as though the host never said — indistinguishable from a row
     /// written before migration 6. Nothing needs that, and a shape that can
     /// express it is a shape a later caller will reach for.
-    pub answered_by_provider_id: Option<String>,
-    pub answered_by_model_id: Option<String>,
+    pub answered_by: Option<AnsweredBy>,
 }
 
 impl MessagePatch {
@@ -643,16 +670,19 @@ impl MessagePatch {
         // string is a claim that an endpoint with no name answered. "Not
         // recorded" is spelled `None`, and an update must not be the one door
         // through which a nameless attribution reaches the column.
-        if let Some(provider_id) = &self.answered_by_provider_id {
-            if provider_id.trim().is_empty() {
+        //
+        // The pair is refused **whole**. [`AnsweredBy`] already makes "provider
+        // only" unspellable; a blank half is the same shape wearing a string,
+        // and letting it through would write the named half beside a blank one
+        // — a row that reads as attributed and names nobody.
+        if let Some(answered_by) = &self.answered_by {
+            if answered_by.provider_id.trim().is_empty() {
                 return Err(StoreError::invalid(
                     "answeredByProviderId",
                     "must not be blank",
                 ));
             }
-        }
-        if let Some(model_id) = &self.answered_by_model_id {
-            if model_id.trim().is_empty() {
+            if answered_by.model_id.trim().is_empty() {
                 return Err(StoreError::invalid(
                     "answeredByModelId",
                     "must not be blank",

@@ -41,8 +41,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use vela_store::{
-    ConversationId, Message, MessageId, MessagePatch, MessageQuery, MessageRole, MessageStatus,
-    NewMessage, StopReason, TokenUsage, VelaStore,
+    AnsweredBy, ConversationId, Message, MessageId, MessagePatch, MessageQuery, MessageRole,
+    MessageStatus, NewMessage, StopReason, TokenUsage, VelaStore,
 };
 
 use super::content::{to_store_parts, ContentPartDto};
@@ -164,21 +164,38 @@ pub struct StoreUpdateMessageReq {
     pub error_message: Option<String>,
     /// Who actually answered, which is only known once the turn came back.
     ///
-    /// [`append_message`] takes the same pair, and an ordinary send uses it:
+    /// [`append_message`] takes the same fact, and an ordinary send uses it:
     /// that path has the whole answer in hand before it writes anything. An
     /// **agent run** does not — it opens the row when the turn opens, before a
     /// single token has arrived, and the endpoint that answered is a fact of
-    /// the `done` frame. Without these two fields the run's only remaining
-    /// write cannot carry it, so every row an agent run left behind came back
-    /// from the store unattributed however loudly the host had said who
-    /// answered.
+    /// the `done` frame. Without this field the run's only remaining write
+    /// cannot carry it, so every row an agent run left behind came back from
+    /// the store unattributed however loudly the host had said who answered.
     ///
     /// Omitted means "not learned"; the recorded value is left alone. There is
     /// no spelling for "forget who answered" — see `vela_store::MessagePatch`.
+    ///
+    /// **One object, not two keys.** Both halves are required inside it, and
+    /// `serde` enforces that here at the wire: `{"answeredBy":{"providerId":…}}`
+    /// with no `modelId` is a deserialization error, not a half-filled struct.
+    /// The reason is [`update_message`]'s merge semantics — see
+    /// `vela_store::AnsweredBy` — and this is the level where a hand-written
+    /// JSON payload would otherwise slip a half through.
     #[serde(default)]
-    pub answered_by_provider_id: Option<String>,
-    #[serde(default)]
-    pub answered_by_model_id: Option<String>,
+    pub answered_by: Option<AnsweredByDto>,
+}
+
+/// The wire form of `vela_store::AnsweredBy`: both halves, spelled as the
+/// renderer's `AnswerProvenance` spells them.
+///
+/// Mirrors `src/platform/contract.ts`'s `AnswerProvenance`, which is what the
+/// renderer already holds when it closes a turn out — so the payload is that
+/// value verbatim rather than a pair of fields the call site reassembles.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnsweredByDto {
+    pub provider_id: String,
+    pub model_id: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -262,6 +279,27 @@ pub fn append_message(store: &dyn VelaStore, req: StoreAppendMessageReq) -> IpcR
     })
 }
 
+/// What an `answeredBy` object on an update means, in the two cases a renderer
+/// can produce and the one it cannot.
+///
+/// Wholly blank folds to `None` — "not learned" — for the reason the append
+/// path folds a blank id: `''` is how some callers spell absent, and a
+/// difference with no meaning behind it between two commands is a trap. A
+/// *partially* blank object is not folded and not repaired: it goes on to
+/// `MessagePatch::validate`, which refuses it, because the alternative is
+/// storing a pair that names one endpoint and nobody. Neither half can be
+/// missing outright — `AnsweredByDto` has no `Option` for `serde` to leave at
+/// its default.
+fn learned_attribution(dto: AnsweredByDto) -> Option<AnsweredBy> {
+    if dto.provider_id.trim().is_empty() && dto.model_id.trim().is_empty() {
+        return None;
+    }
+    Some(AnsweredBy {
+        provider_id: dto.provider_id,
+        model_id: dto.model_id,
+    })
+}
+
 /// Amends a message already written — the call that closes out a streaming
 /// turn. See the module docs for why nothing here can *clear* a field.
 pub fn update_message(store: &dyn VelaStore, req: StoreUpdateMessageReq) -> IpcResult<MessageRes> {
@@ -282,13 +320,7 @@ pub fn update_message(store: &dyn VelaStore, req: StoreUpdateMessageReq) -> IpcR
         usage: req.usage,
         stop_reason: req.stop_reason.map(Some),
         error_message: req.error_message.map(Some),
-        // Blank folds to "not learned", exactly as it does on the append path,
-        // so a renderer's `''` means the same thing as its omission rather than
-        // becoming a 400 out of `MessagePatch::validate`.
-        answered_by_provider_id: req
-            .answered_by_provider_id
-            .filter(|id| !id.trim().is_empty()),
-        answered_by_model_id: req.answered_by_model_id.filter(|id| !id.trim().is_empty()),
+        answered_by: req.answered_by.and_then(learned_attribution),
     };
     if patch.is_empty() {
         // Nothing to do is not a failure, but it must not read as a write:
@@ -573,8 +605,7 @@ mod tests {
                 }),
                 stop_reason: Some(StopReason::EndTurn),
                 error_message: None,
-                answered_by_provider_id: None,
-                answered_by_model_id: None,
+                answered_by: None,
             },
         )
         .unwrap()
@@ -590,7 +621,7 @@ mod tests {
     ///
     /// The append above cannot: the row is opened before the first token, when
     /// the only endpoint anyone knows about is the one the turn was addressed
-    /// to. `run_turn` in `src/runtime/agent-loop-harness.ts` opens exactly such
+    /// to. `AgentRun::runTurn` in `src/runtime/agent-loop-harness.ts` opens such
     /// a row and used to close it out with parts, status, usage and stop reason
     /// — the attribution was in its hand at that line and had nowhere to go.
     ///
@@ -630,8 +661,10 @@ mod tests {
                 usage: None,
                 stop_reason: Some(StopReason::EndTurn),
                 error_message: None,
-                answered_by_provider_id: Some("hosted-openai".into()),
-                answered_by_model_id: Some("gpt-4o-mini".into()),
+                answered_by: Some(AnsweredByDto {
+                    provider_id: "hosted-openai".into(),
+                    model_id: "gpt-4o-mini".into(),
+                }),
             },
         )
         .unwrap()
@@ -663,12 +696,18 @@ mod tests {
         );
     }
 
-    /// A blank attribution folds to "not learned" rather than to a 400.
+    /// A **wholly** blank attribution folds to "not learned", not to a 400.
     ///
     /// `append_message` already treats `''` this way, and the renderer's
     /// `answeredBy` is `AnswerProvenance | null` — a caller that spells the
-    /// absent case as an empty string on one command and gets a rejection on
-    /// the other has found a difference with no meaning behind it.
+    /// absent case as empty strings on one command and gets a rejection on the
+    /// other has found a difference with no meaning behind it.
+    ///
+    /// Only wholly. A pair with one blank half is refused rather than folded or
+    /// repaired: folding drops an attribution the caller believed it had sent,
+    /// and repairing writes a named endpoint beside a nameless model. That case
+    /// is `sqlite::tests::an_update_cannot_replace_one_half_of_a_recorded_attribution`,
+    /// and `learned_attribution` is where the two part company.
     #[test]
     fn a_blank_attribution_on_an_update_means_not_learned() {
         let store = store();
@@ -696,8 +735,10 @@ mod tests {
                 usage: None,
                 stop_reason: None,
                 error_message: None,
-                answered_by_provider_id: Some("   ".into()),
-                answered_by_model_id: Some(String::new()),
+                answered_by: Some(AnsweredByDto {
+                    provider_id: "   ".into(),
+                    model_id: String::new(),
+                }),
             },
         )
         .unwrap()
@@ -710,6 +751,73 @@ mod tests {
             "blank is `not learned`, which leaves the recorded fact standing"
         );
         assert_eq!(closed.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+    }
+
+    /// **A half-blank pair is an invalid payload, and the row is untouched.**
+    ///
+    /// The seam this covers is `learned_attribution`'s `&&`. With an `||` there
+    /// the same request would fold to "not learned" and the rest of the update
+    /// would go through — a status change recorded, an attribution the caller
+    /// believed it sent silently dropped, and no error anywhere. Silence is the
+    /// defect this command exists to end, so the half is refused instead, and
+    /// the refusal costs the whole statement rather than half of it.
+    #[test]
+    fn a_half_blank_attribution_on_an_update_is_refused_whole() {
+        let store = store();
+        let chat = conversation(&store);
+        let opened = append_message(
+            &store,
+            StoreAppendMessageReq {
+                status: MessageStatus::Streaming,
+                role: MessageRole::Assistant,
+                parts: vec![ContentPartDto::text("")],
+                answered_by_provider_id: Some("hosted-openai".into()),
+                answered_by_model_id: Some("gpt-4o-mini".into()),
+                ..user_turn(&chat, "")
+            },
+        )
+        .unwrap()
+        .message;
+
+        let error = update_message(
+            &store,
+            StoreUpdateMessageReq {
+                message_id: opened.id.clone(),
+                parts: None,
+                status: Some(MessageStatus::Complete),
+                usage: None,
+                stop_reason: None,
+                error_message: None,
+                answered_by: Some(AnsweredByDto {
+                    provider_id: "anthropic".into(),
+                    model_id: "   ".into(),
+                }),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, IpcErrorCode::InvalidPayload);
+
+        let reloaded = list_messages(
+            &store,
+            StoreListMessagesReq {
+                conversation_id: chat,
+                include_reasoning: true,
+                after_seq: None,
+                limit: None,
+            },
+        )
+        .unwrap();
+        let standing = &reloaded.messages[0];
+        assert_eq!(standing.status, MessageStatus::Streaming);
+        assert_eq!(
+            standing.answered_by_provider_id.as_deref(),
+            Some("hosted-openai"),
+            "the recorded attribution stands; a refused patch writes nothing"
+        );
+        assert_eq!(
+            standing.answered_by_model_id.as_deref(),
+            Some("gpt-4o-mini")
+        );
     }
 
     #[test]
@@ -737,8 +845,7 @@ mod tests {
                 usage: None,
                 stop_reason: Some(StopReason::Cancelled),
                 error_message: None,
-                answered_by_provider_id: None,
-                answered_by_model_id: None,
+                answered_by: None,
             },
         )
         .unwrap()
@@ -863,8 +970,7 @@ mod tests {
                 usage: None,
                 stop_reason: None,
                 error_message: None,
-                answered_by_provider_id: None,
-                answered_by_model_id: None,
+                answered_by: None,
             },
         )
         .unwrap_err();
@@ -950,20 +1056,38 @@ mod tests {
     fn the_renderers_spelling_of_the_attribution_binds_on_an_update() {
         let req: StoreUpdateMessageReq = serde_json::from_str(
             r#"{"messageId":"msg_1","status":"complete",
-                "answeredByProviderId":"hosted-openai",
-                "answeredByModelId":"gpt-4o-mini"}"#,
+                "answeredBy":{"providerId":"hosted-openai","modelId":"gpt-4o-mini"}}"#,
         )
         .unwrap();
-        assert_eq!(
-            req.answered_by_provider_id.as_deref(),
-            Some("hosted-openai")
-        );
-        assert_eq!(req.answered_by_model_id.as_deref(), Some("gpt-4o-mini"));
+        let answered_by = req.answered_by.expect("the object binds");
+        assert_eq!(answered_by.provider_id, "hosted-openai");
+        assert_eq!(answered_by.model_id, "gpt-4o-mini");
 
         // And the omission the same call site produces for an unattributed turn.
         let silent: StoreUpdateMessageReq =
             serde_json::from_str(r#"{"messageId":"msg_1","status":"complete"}"#).unwrap();
-        assert_eq!(silent.answered_by_provider_id, None);
-        assert_eq!(silent.answered_by_model_id, None);
+        assert!(silent.answered_by.is_none());
+
+        // A half is not a payload. `providerId` alone does not deserialize into
+        // an `AnsweredByDto` holding an empty model — it does not deserialize
+        // at all, which is the difference between a rejected call and a
+        // fabricated pairing recorded against the row.
+        let half = serde_json::from_str::<StoreUpdateMessageReq>(
+            r#"{"messageId":"msg_1","answeredBy":{"providerId":"anthropic"}}"#,
+        );
+        assert!(half.is_err(), "a half-written attribution must not bind");
+
+        // The snake_case spelling is *not* what the wire carries. This is the
+        // assertion that reddens if `rename_all` is ever dropped from the
+        // struct: serde would then take `answered_by` and ignore `answeredBy`,
+        // and every attribution the renderer sends would become silence.
+        let snake: StoreUpdateMessageReq = serde_json::from_str(
+            r#"{"messageId":"msg_1","answered_by":{"providerId":"a","modelId":"b"}}"#,
+        )
+        .unwrap();
+        assert!(
+            snake.answered_by.is_none(),
+            "camelCase is the wire spelling"
+        );
     }
 }

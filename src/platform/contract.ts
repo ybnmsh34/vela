@@ -1380,14 +1380,23 @@ export interface StoreUpdateMessageReq {
    * arrives with `done`. This is the field that lets its closing update carry
    * what it learned.
    *
-   * `string | null` is deliberately **not** the type. Every other field here is
-   * "omit to leave alone", and a `null` that also meant "leave alone" would read
-   * at every call site as "clear it" — see this interface's own header for why
-   * clearing is not on offer. A caller holding `AnswerProvenance | null` spreads
-   * the pair or spreads nothing.
+   * **The whole {@link AnswerProvenance}, not two ids.** The append path takes
+   * the halves separately and can afford to: a row that ends up with one of
+   * them reads as *no record* to the transcript surface, because
+   * `answeredByOf` in `stored-entries.ts` requires both. An update is not a row
+   * — it merges with one — so a half sent here would join whatever the row
+   * already held and produce a provider/model pair no endpoint ever returned,
+   * which passes that same check and renders as a substitution notice naming an
+   * endpoint and model that never served a turn together.
+   * The host refuses a half (`vela_store::AnsweredBy` and
+   * `MessagePatch::validate`); this type is why a caller cannot spell one.
+   *
+   * `AnswerProvenance | null` is deliberately not the type either. Every other
+   * field here is "omit to leave alone", and a `null` that also meant "leave
+   * alone" would read at every call site as "clear it" — see this interface's
+   * own header for why clearing is not on offer.
    */
-  readonly answeredByProviderId?: string;
-  readonly answeredByModelId?: string;
+  readonly answeredBy?: AnswerProvenance;
 }
 
 export interface StoreListMessagesReq {

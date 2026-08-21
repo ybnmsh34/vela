@@ -50,6 +50,10 @@ const SESSION = 'fix-a';
  * `delay: null` (three runs, the first cold) against 82.64s and 49.56s with a
  * plain `userEvent.setup()` (two runs), same machine, same session.
  *
+ * These are one session's numbers and should be read the way the range in
+ * `does not call the fallback a whole-file replacement, because it is not one`
+ * is read: re-measuring that comparison later moved every absolute figure and
+ * left the direction alone, and there is no reason to think these are steadier.
  * What that costs any *other* file is not measured. Every test in this repo has
  * a five-second per-test budget and a contended full run does cross it — one
  * run here went `4 failed | 2518 passed (2522)`, all four `Test timed out in
@@ -245,10 +249,21 @@ describe('what the diff pane shows', () => {
       // with the role "button" and name `/shared header/`` both times. And it
       // is expensive, because this diff renders 2004 row buttons (1 prefix +
       // 2001 removed + 1 added + 1 suffix) and the query computes a name for
-      // every one: `tests` time went 4.75s and 2.83s as written against 28.06s
-      // and 32.97s that way. Only the left side is over the cap — that is
-      // enough to refuse the alignment, and it halves the rows against a
-      // version where both sides were.
+      // every one.
+      //
+      // The penalty is an OBSERVED RANGE, not a figure: the same comparison,
+      // this test alone, twice a side, has now been run three times on this
+      // machine and the absolute numbers move every time while the direction
+      // does not. `tests` time as written against `tests` time with the role
+      // query: 4.75s / 2.83s against 28.06s / 32.97s when this comment was
+      // first written; 859ms against 9.21s / 9.29s when a measurer re-ran it;
+      // 1.98s / 1.75s against 19.31s / 8.53s this round. Four to eleven times,
+      // never once cheaper. Read it as "a name-computing query over two
+      // thousand buttons costs an order of magnitude", and never as a budget.
+      //
+      // Only the left side is over the cap — that is enough to refuse the
+      // alignment, and it halves the rows against a version where both sides
+      // were.
       const group = within(screen.getByRole('group', { name: /^Changes in/ }));
       expect(group.getAllByText(shared)).toHaveLength(2);
     });

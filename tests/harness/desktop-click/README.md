@@ -156,10 +156,14 @@ than presence questions:
   splash screen, and E3 is what that costs.
 
 `up` returns `readiness: { exitedBy, readyStateAtExit, polls, waitedMs,
-gradeHistory, summary }`. `exitedBy` is `"condition"` or `"deadline"` — the old
-loop's exit condition was a local variable that never reached the return value,
-so "it gave up" and "it succeeded instantly" printed identically. `--settle-timeout ms`
-sets the budget.
+timeoutMs, pollMs, gradeHistory, summary }` — eight fields, in that order.
+`exitedBy` is `"condition"` or `"deadline"` — the old loop's exit condition was
+a local variable that never reached the return value, so "it gave up" and "it
+succeeded instantly" printed identically. `timeoutMs` is the budget that
+`--settle-timeout ms` sets, and it is not decoration: `describeWait` in
+`mount-grade.mjs` interpolates it into the give-up sentence — `GAVE UP WAITING
+after N poll(s) over Xms of a {timeoutMs}ms budget` — so the poll count is
+readable as a fraction of a budget rather than as a bare number.
 
 **What a passing grade does not entail.** It says a React renderer ran in a
 Tauri main frame and owns `#root`. It does **not** say the intended screen
@@ -391,8 +395,12 @@ inside the session file, and the grade is composed over the whole session:
   harness issues, on a run whose earlier commands were entirely unrecorded. The
   guard was unreachable from the CLI and the sentence describing it was quoted
   anyway. `openEntry` now stamps `priorUnknownBecause` into the ledger it has to
-  create, nothing ever clears it, and `run-ledger.mjs` states the rule the three
-  members of that class are closed under.
+  create, nothing ever clears it, and `run-ledger.mjs` states the rule, and is
+  the only place in the tree that enumerates the members of the class it
+  closes. Do not copy the count here. Last round this sentence said "three"
+  while `run-ledger.mjs` said "Four" and listed four, and that contradiction
+  was the whole of that round's documentation failure — a number written and
+  not re-measured when the list beside it grew.
 - `eval` is now graded, at the maximum an arbitrary expression could be: an act
   that moved focus. It used to be a CDP channel that entered no grade at all.
 - `status` prints the run so far, including `focusOrigin`.
@@ -637,7 +645,7 @@ script: it fails on *both* directions of drift, not only on absence.
 | `page.mjs` | everything that runs *inside* the window, as source strings |
 | `os-input.ps1` | Win32: raise, the `SendInput` self-test, and the two delivery modes |
 | `final-path.ps1` | `GetFinalPathNameByHandle` — where a path really is |
-| `keys.mjs` | the US layout as a table: character → `{key, code, keyCode, shiftKey}` |
+| `keys.mjs` | the US layout as a table: character → `{key, code, keyCode, text, shiftKey}` |
 | `verdicts.test.mjs` | the regression cases for the three ways this reported a click that never happened |
 | `keys.test.mjs` | the regression cases for the harness typing something other than what it was given |
 | `vitest.config.mjs` | their project; `pnpm test:click-harness`, and inside `pnpm verify` |

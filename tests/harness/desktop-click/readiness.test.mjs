@@ -8,7 +8,11 @@
  * the first sample, so the guard's wait iterated zero times and its give-up
  * branch was unreachable. The three `mountFields` objects below are the
  * probe's, transcribed field for field, so these tests fail against the exact
- * observations that were recorded and not against a paraphrase of them.
+ * observations that were recorded and not against a paraphrase of them. One
+ * subtraction, no substitutions: the probe's reports also carried `title`,
+ * which `mountReport()` no longer returns and no criterion ever read, so it is
+ * gone from here too rather than sitting in four fixtures as the only key with
+ * no counterpart in the shipping shape.
  *
  * Each case carries a control showing the detector is not vacuous.
  *
@@ -36,7 +40,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  */
 const E1_ABOUT_BLANK = {
   href: 'about:blank',
-  title: '',
   readyState: 'complete',
   rootPresent: false,
   rootChildElements: 0,
@@ -58,7 +61,6 @@ const E1_ABOUT_BLANK = {
  */
 const E2_BROKEN_BUNDLE = {
   href: 'http://127.0.0.1:60579/broken.html',
-  title: 'Vela',
   readyState: 'complete',
   rootPresent: true,
   rootChildElements: 0,
@@ -78,7 +80,6 @@ const E2_BROKEN_BUNDLE = {
  */
 const E3_STATIC_SPLASH = {
   href: 'http://127.0.0.1:65205/skeleton.html',
-  title: 'Vela',
   readyState: 'complete',
   rootPresent: true,
   rootChildElements: 1,
@@ -93,7 +94,6 @@ const E3_STATIC_SPLASH = {
 /** What a real mount looks like: every criterion satisfied. */
 const MOUNTED = {
   href: 'http://tauri.localhost/index.html',
-  title: 'Vela',
   readyState: 'complete',
   rootPresent: true,
   rootChildElements: 1,
@@ -511,6 +511,44 @@ describe('mountReport() itself, run as the shipping source in jsdom', () => {
     const grade = gradeMount(report, { acceptedBecause: 'navigated', targetUrl: report.href });
     expect(grade.failed).toEqual([]);
     expect(grade.mounted).toBe(true);
+  });
+
+  it('THE HEADER, EXECUTED: every field mountReport returns is read by name in mount-grade.mjs', () => {
+    // The docblock over `mountReport` claims exactly this, and twice now that
+    // claim has been written directly above a field that had none:
+    // reactContainerKeyOnRoot and hasTauriInternals, which became criteria,
+    // and then title and landmarks, which were deleted. A sentence cannot
+    // enforce itself. This can, and it fails on the write rather than on the
+    // review after it.
+    document.body.innerHTML = '<div id="root"><p>x</p></div>';
+    const keys = Object.keys(install().mountReport());
+    expect(keys).toEqual([
+      'href',
+      'readyState',
+      'rootPresent',
+      'rootChildElements',
+      'rootDescendants',
+      'bodyTextChars',
+      'bodyTextHead',
+      'reactContainerKeyOnRoot',
+      'hasTauriInternals',
+      'isTauri',
+      'firstRootChild',
+      'scriptSources',
+    ]);
+
+    const grader = readFileSync(join(HERE, 'mount-grade.mjs'), 'utf8');
+    for (const key of keys) {
+      expect(grader, `mountReport() writes ${key} and mount-grade.mjs never reads it`).toMatch(
+        new RegExp(String.raw`report\??\.${key}\b`),
+      );
+    }
+
+    // CONTROL: the loop above is a real test and not a tautology — a field
+    // name mount-grade.mjs does not mention does not match it. `landmarks` is
+    // the name that failed this check when it was still in the object.
+    expect(grader).not.toMatch(/report\??\.landmarks\b/);
+    expect(grader).not.toMatch(/report\??\.title\b/);
   });
 
   it('E2 from the DOM up: #root present and empty, with a bundle that never ran', () => {

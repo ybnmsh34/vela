@@ -313,12 +313,27 @@ export const BOOTSTRAP = String.raw`(() => {
     /**
      * What the renderer actually put in the root, and whether React is live.
      *
-     * **Every field here has a reader.** reactContainerKeyOnRoot and
-     * hasTauriInternals were computed at the tag and read by nothing — grep
-     * for either name found only this definition — while the verdict beside
-     * them asked only whether #root had descendants. They are now criteria in
-     * mount-grade.mjs; see MOUNT_CRITERIA there for which criterion reads
-     * which field, and read that file before adding a field to this object.
+     * **Every field this object returns is read by name in mount-grade.mjs**
+     * — twelve fields, twelve readers. That is no longer left as prose: the
+     * test named THE HEADER, EXECUTED in readiness.test.mjs runs this very
+     * function, takes its key list, and requires mount-grade.mjs to name
+     * every key in it. Adding a field here without a reader reddens it.
+     *
+     * It has failed twice, and the second time is the instructive one.
+     * reactContainerKeyOnRoot and hasTauriInternals were computed at the tag
+     * and read by nothing, while the verdict beside them asked only whether
+     * #root had descendants; they are criteria in mount-grade.mjs now. The
+     * commit that made them criteria is the commit that wrote the sentence
+     * above — and wrote it over title and landmarks, two fields it had
+     * INHERITED from the tag and never checked, which were read by nothing
+     * before it and by nothing after. A claim of total coverage written while
+     * auditing only the fields you touched is not an audit. Both are deleted
+     * rather than given a reader, because a field a report carries and no code
+     * consults is the defect, and a reader added to retire the grep is the same
+     * defect with a witness.
+     *
+     * See MOUNT_CRITERIA in mount-grade.mjs for which criterion reads which
+     * field, and read that file before adding a field to this object.
      *
      * NOTE: this whole object literal lives inside the BOOTSTRAP template
      * string. A backtick anywhere in here, comments included, ends the
@@ -330,7 +345,6 @@ export const BOOTSTRAP = String.raw`(() => {
       const firstChild = root ? root.firstElementChild : null;
       return {
         href: location.href,
-        title: document.title,
         readyState: document.readyState,
         rootPresent: Boolean(root),
         rootChildElements: root ? root.children.length : 0,
@@ -356,9 +370,6 @@ export const BOOTSTRAP = String.raw`(() => {
             }
           : null,
         scriptSources: Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src')),
-        landmarks: Array.from(document.querySelectorAll('header,main,nav,footer,[role]'))
-          .slice(0, 40)
-          .map((el) => ({ tag: el.tagName, role: roleOf(el), name: nameOf(el).slice(0, 80) })),
       };
     },
 

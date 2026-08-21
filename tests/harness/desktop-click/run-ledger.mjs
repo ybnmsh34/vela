@@ -92,10 +92,27 @@
  *   the ATTEMPT and carry `movesFocus: false`, because an attempt may have
  *   moved nothing; `os.sendInputMouse.delivered` and
  *   `os.sendInputKeyboard.delivered` are pushed only after the harness holds
- *   confirmation, and they are the only steps `lastFocusMove` will accept.
+ *   evidence that the attempt landed, and they are the only steps
+ *   `lastFocusMove` will accept.
+ *
+ *   THE TWO EVIDENCES ARE NOT EQUALLY STRONG, and an earlier draft's word
+ *   "confirmation" for both was hiding it. The MOUSE's is the page-side
+ *   pointer recorder: the document itself reports the event, which is
+ *   independent of the injector and is what os-input.ps1's own `caveat`
+ *   field names as the real evidence, saying in terms that SendInput
+ *   returning 2 is not. The KEYBOARD's is weaker: os-input.ps1 reporting
+ *   the keystrokes accepted and not blocked, plus `Invoke-KeyboardSelfTest`
+ *   observing its OWN injected keystroke before the send. That proves
+ *   injection works in this environment at this moment; it does not prove
+ *   THESE keystrokes reached the page, and os-input.ps1's `caveat` says
+ *   exactly that too — only the application reading the keystroke would.
+ *   Each step's `why` in KNOWN_STEPS states which of the two it holds, and
+ *   neither is written as the other. Closing it needs a page-side keystroke
+ *   recorder to match the pointer one, which is not built.
+ *
  *   Both halves stay `userEquivalent: true`, because an OS attempt is not a
  *   substitution whether or not it landed — the ceiling reading was never the
- *   broken one. Losing the confirmation step is fail-closed: `lastFocusMove`
+ *   broken one. Losing the `.delivered` step is fail-closed: `lastFocusMove`
  *   walks back to whatever moved focus before it, and that refuses.
  * - Two vela-drive processes running against one session read-modify-write the
  *   same file and can lose an entry. There is no lock. What there IS: the run
@@ -110,9 +127,16 @@
  * - Sequence numbers are consecutive by construction, so an entry CUT OUT OF
  *   THE MIDDLE of the ledger is detectable and is reported as an unreadable
  *   ledger. An entry cut off the END is not detectable and is not claimed to be.
- *   Nothing here defends against editing the session file generally; the
- *   numbering catches the one edit that would turn a capped run into a clean one
- *   without changing anything else.
+ *   Nothing here defends against editing the session file generally. What each
+ *   check covers, and nothing more: the numbering catches a middle-cut;
+ *   `notMyLedger` catches a substituted or transplanted ledger; the two
+ *   `Array.isArray` refusals in `priorTo` catch a deleted `entries` list and a
+ *   deleted `steps` list. A tail-cut, and any hand edit that leaves all four
+ *   intact, is open. An earlier draft of this bullet called the numbering "the
+ *   one edit" that launders a capped run. That was false twice over: this same
+ *   bullet already admits a tail-cut is undetectable, and deleting one
+ *   `steps` key launders a run too — which is now member five of the class
+ *   below, and refused.
  *
  * ## The rule, after the second time
  *
@@ -130,8 +154,12 @@
  *   part of the grade. Nothing may substitute a fresh object, a default, or an
  *   older snapshot for evidence it failed to read.**
  *
- * Four members of that class existed. Three were handed to me and the fourth I
- * found by attacking the fix. All four are closed:
+ * Five members of that class existed. Three were handed to me, the fourth I
+ * found by attacking the fix, and the fifth a critic found by attacking that.
+ * All five are closed. Whoever edits this list: it is the only enumeration of
+ * them in the tree, on purpose. The one time a count was copied into README.md
+ * it went stale inside a round — it said three while this list said four — so
+ * README.md now points here and states no number.
  *
  * 1. `openEntry` resetting an absent or wrong-version ledger. It now stamps
  *    `priorUnknownBecause` into the ledger it creates and never clears one, so
@@ -147,6 +175,11 @@
  * 4. Nothing asked whether the ledger being graded was the one this command
  *    wrote into. A lost write or a transplanted session file leaves a ledger
  *    that passes every check above and is somebody else's. `notMyLedger`.
+ * 5. `priorTo` itself: `ledger.entries ?? []` and `entry.steps ?? []`. The
+ *    second is the sharp one — deleting one `declared` entry's `steps` key
+ *    made that command read as having done nothing, and the run graded
+ *    `os-input-unsubstituted` with the gate passing. Two `Array.isArray`
+ *    refusals now, and the rule holds in the function that states it.
  *
  * `startRun` is the only thing in this harness allowed to assert that a run has
  * no history. `up` calls it, nothing else does, and a test pins that.
@@ -355,7 +388,37 @@ export function priorTo(session, seq) {
           'ledger that will not say is not a ledger that said no. Run `down` then `up`.',
     );
   }
-  const all = ledger.entries ?? [];
+  // THE FIFTH MEMBER, found by the critic attacking the fix for the other
+  // four: `ledger.entries ?? []` and `entry.steps ?? []` were defaults
+  // standing in for evidence this function had failed to read — the rule
+  // above, broken in the file that states it. A ledger with no `entries` key
+  // was read as a run that ran nothing; a `declared` entry with its `steps`
+  // key deleted was read as a command that DID nothing, which is the one edit
+  // that turned a capped run clean while every other check passed. Both are
+  // now refusals. Neither is reachable from the CLI — `startRun` always writes
+  // an array and `declareEntry` always writes an array, so a command that dies
+  // before its first push declares `[]`, which is accurate — so this is a
+  // guard against a hand-edited file and nothing else, which is exactly the
+  // attack the rest of this function is about.
+  if (!Array.isArray(ledger.entries)) {
+    return unknown(
+      ledger.version,
+      'the run ledger carries no readable list of entries, so what the earlier commands of this ' +
+        'run did is not recoverable from it. Run `down` then `up`.',
+    );
+  }
+  const all = ledger.entries;
+  for (const entry of all) {
+    if (entry.state === 'declared' && !Array.isArray(entry.steps)) {
+      return unknown(
+        ledger.version,
+        `the run ledger's entry #${entry.seq} is recorded as having declared what it did, and ` +
+          'carries no list of steps. A command that declared an empty list and a command whose ' +
+          'declaration was removed are not the same thing, and the difference is the whole ' +
+          'grade. Run `down` then `up`.',
+      );
+    }
+  }
   // Entries are appended with consecutive sequence numbers, so a gap is not a
   // state this code can produce — it is a ledger that has been edited. Cutting
   // an entry out of the middle is exactly how a run with a CDP act in it would
@@ -378,7 +441,9 @@ export function priorTo(session, seq) {
     unknownBecause: null,
     entries: before
       .filter((entry) => entry.state === 'declared')
-      .map((entry) => ({ seq: entry.seq, command: entry.command, steps: entry.steps ?? [] })),
+      // No `?? []`: the loop above already refused every `declared` entry that
+      // has no array here, so this reads evidence rather than a default.
+      .map((entry) => ({ seq: entry.seq, command: entry.command, steps: entry.steps })),
     // Two different holes, reported as one because the grade does the same
     // thing with both: an earlier command that never said what it did, and a
     // command that ran DURING this one, from another vela-drive process. From
@@ -442,36 +507,6 @@ export function lastFocusMove(prior) {
 }
 
 /**
- * Whether `--focus require` may proceed, decided over the RUN. Returns the
- * refusal — a machine-readable `clause` and the sentence the operator sees — or
- * `null` when there is nothing to refuse.
- *
- * This lives here, and not inline in `commands.type` where it used to, because
- * of what a mutation found: the entire `--focus require` gate — the refusal the
- * README devotes its longest paragraph to — could be disabled and all 117 tests
- * stayed green, twice. Nothing covered it, not even a byte-presence assertion.
- * It could not be covered where it was: `vela-drive.mjs` is a CLI, and reaching
- * that branch means a live window, a CDP socket and a real SendInput.
- *
- * Pulled out into a pure function of (run, focus origin), every clause is
- * executable and every clause has a test that reddens when it alone is
- * disabled. WHAT IS STILL NOT COVERED, stated rather than implied: that
- * `commands.type` calls this at all, and throws on what it returns. That is one
- * `if`, and it is pinned by a source-text assertion in run-ledger.test.mjs,
- * which proves a byte is present and not that it runs.
- *
- * The DOM half of the gate — `focusStateOf(index).storedIsActive`, "is the
- * target focused at all" — stays in `commands.type`: it is a live read of a
- * page, there is nothing pure about it, and it was never the half that was
- * wrong. This is the half that answers WHO PUT FOCUS THERE.
- *
- * @param {{known:boolean, unknownBecause:string|null, unaccounted:Array<{seq:number,
- *   command:string, state:string}>}} prior  from `priorTo`, via `runContext`.
- * @param {{name:string, command:string, seq:number, userEquivalent:boolean,
- *   why:string}|null} focusOrigin  from `lastFocusMove(prior)`.
- * @returns {{clause:string, message:string}|null}
- */
-/**
  * Whether the ledger being graded is still the one this command wrote into.
  *
  * Found by attacking my own fix rather than by being shown it. Everything above
@@ -531,6 +566,36 @@ export const FOCUS_REFUSALS = {
   FOCUS_NOT_USER_EQUIVALENT: 'focus-not-user-equivalent',
 };
 
+/**
+ * Whether `--focus require` may proceed, decided over the RUN. Returns the
+ * refusal — a machine-readable `clause` and the sentence the operator sees — or
+ * `null` when there is nothing to refuse.
+ *
+ * This lives here, and not inline in `commands.type` where it used to, because
+ * of what a mutation found: the entire `--focus require` gate — the refusal the
+ * README devotes its longest paragraph to — could be disabled and the whole
+ * suite as it then stood, 117 tests, stayed green, twice. Nothing covered it, not even a byte-presence assertion.
+ * It could not be covered where it was: `vela-drive.mjs` is a CLI, and reaching
+ * that branch means a live window, a CDP socket and a real SendInput.
+ *
+ * Pulled out into a pure function of (run, focus origin), every clause is
+ * executable and every clause has a test that reddens when it alone is
+ * disabled. WHAT IS STILL NOT COVERED, stated rather than implied: that
+ * `commands.type` calls this at all, and throws on what it returns. That is one
+ * `if`, and it is pinned by a source-text assertion in run-ledger.test.mjs,
+ * which proves a byte is present and not that it runs.
+ *
+ * The DOM half of the gate — `focusStateOf(index).storedIsActive`, "is the
+ * target focused at all" — stays in `commands.type`: it is a live read of a
+ * page, there is nothing pure about it, and it was never the half that was
+ * wrong. This is the half that answers WHO PUT FOCUS THERE.
+ *
+ * @param {{known:boolean, unknownBecause:string|null, unaccounted:Array<{seq:number,
+ *   command:string, state:string}>}} prior  from `priorTo`, via `runContext`.
+ * @param {{name:string, command:string, seq:number, userEquivalent:boolean,
+ *   why:string}|null} focusOrigin  from `lastFocusMove(prior)`.
+ * @returns {{clause:string, message:string}|null}
+ */
 export function focusRequireRefusal(prior, focusOrigin) {
   if (prior.known !== true) {
     return {

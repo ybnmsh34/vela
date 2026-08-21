@@ -14,7 +14,8 @@
  * token` — vite's transform does not strip a shebang from a module it loads —
  * so no test could execute a single line of this file, and everything the suite
  * said about the CLI was a regex over its own source. A mutation used that: it
- * deleted the whole `--focus require` gate and all 117 tests stayed green,
+ * deleted the whole `--focus require` gate and the whole suite as it then
+ * stood, 117 tests, stayed green,
  * twice. Nothing in this repo invokes the file as `./vela-drive.mjs`: the
  * README names it 12 times, 11 of them are invocations and every one of the 11
  * says `node`, and the 12th is a row in the file table. `git ls-files -s` gives
@@ -1320,7 +1321,8 @@ commands.type = async (flags) => {
     focusOrigin = lastFocusMove(prior);
     // Every clause of the decision lives in `focusRequireRefusal` in
     // run-ledger.mjs, where a test can execute it. A mutation deleted this
-    // whole gate when it was inline here and all 117 tests stayed green, twice,
+    // whole gate when it was inline here and the whole suite as it then stood,
+    // 117 tests, stayed green, twice,
     // because a CLI branch needing a live window and a real SendInput is
     // reachable by no test in this suite. This `if` is the part that is still
     // proven only by a source-text assertion.
@@ -1869,7 +1871,8 @@ function finish(code) {
  * What a test may reach into. Nothing else in this file is exported.
  *
  * The reason this exists: a mutation deleted the whole `--focus require` gate
- * and all 117 tests stayed green, twice, because this file ran `main()` at
+ * and the whole suite as it then stood, 117 tests, stayed green, twice, because
+ * this file ran `main()` at
  * import and so no test could load it at all — every assertion about the CLI
  * was a `readFileSync` and a regex over its own source. Grep proves a byte is
  * present. It cannot prove a branch is taken.

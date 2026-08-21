@@ -21,11 +21,17 @@
  * scrolled), an act channel that used to be graded by nothing at all (`eval`),
  * and the two ways the run can be unknown rather than clean.
  *
- * What is exercised for real here: the graders, the ledger, and — through
- * jsdom and page.mjs's real BOOTSTRAP — the two focus functions the evasion
- * turns on. What is NOT: the CLI wiring, because vela-drive.mjs runs `main()`
- * at import. The handful of assertions about its source text are labelled where
- * they appear and they prove a byte is present, not that it runs.
+ * What is exercised for real here: the graders; the ledger; the two focus
+ * functions the evasion turns on, through jsdom and page.mjs's real BOOTSTRAP;
+ * and `vela-drive.mjs`'s own `runContext`, against real files on disk, which
+ * became possible when that file stopped running `main()` at import and got
+ * an entry-point guard instead.
+ *
+ * What is still NOT exercised: anything inside `commands.*`. Those need a live
+ * window, a CDP socket and a real `SendInput`, and this suite has none of the
+ * three — the reason is the socket, not the import, which now works. The
+ * handful of assertions about that file's source text are labelled where they
+ * appear and they prove a byte is present, not that it runs.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -461,6 +467,85 @@ describe('the class, not the instance', () => {
     expect(priorTo(truncated, 3).known).toBe(true);
   });
 
+  it('THE FIFTH MEMBER: a declared entry with its steps key gone is unknown, not silent', () => {
+    // The critic's construction, executed. `priorTo` used to read `steps` with
+    // `?? []`, so deleting one key from one `declared` entry made the command
+    // that took a CDP act read as a command that did nothing — every other
+    // check in the function passed, and the run graded clean. That is the
+    // file's own rule ("nothing may substitute a default for evidence it
+    // failed to read") broken in the function that states it.
+    const session = sessionWith(
+      ['type', TYPE_CDP_DEFAULTS],
+      ['read', [{ name: 'cdp.bootstrap' }, { name: 'cdp.visibleText' }]],
+    );
+    // The run is capped BEFORE the edit, because entry #1 took a CDP act.
+    const before = priorForNext(session);
+    expect(before.known).toBe(true);
+    expect(
+      gradeInputProvenance({ delivery: 'os', steps: TYPE_OS_DEFAULTS, prior: before })
+        .ladderCeiling,
+    ).toBe(CEILINGS.DEV_CLICKED);
+
+    // One key deleted, nothing else touched: state stays `declared`, the
+    // sequence stays consecutive, the version and `priorUnknownBecause` are
+    // untouched, and `notMyLedger` has no quarrel with it.
+    delete session[LEDGER_KEY].entries[0].steps;
+    expect(session[LEDGER_KEY].entries[0].state).toBe('declared');
+    expect(session[LEDGER_KEY].entries.map((e) => e.seq)).toEqual([1, 2]);
+
+    const after = priorTo(session, 3);
+    expect(after.known).toBe(false);
+    expect(after.unknownBecause).toContain('carries no list of steps');
+    expect(after.unknownBecause).toContain('#1');
+    expect(
+      gradeInputProvenance({ delivery: 'os', steps: TYPE_OS_DEFAULTS, prior: after })
+        .ladderCeiling,
+    ).toBe(CEILINGS.DEV_CLICKED);
+
+    // `null` is the same edit written the other way, and must land the same.
+    const nulled = sessionWith(['type', TYPE_CDP_DEFAULTS], ['read', [{ name: 'cdp.bootstrap' }]]);
+    nulled[LEDGER_KEY].entries[0].steps = null;
+    expect(priorTo(nulled, 3).unknownBecause).toContain('carries no list of steps');
+
+    // CONTROL, and the reason this is a refusal rather than a coercion: an
+    // entry that genuinely declared NOTHING carries `[]`, which is evidence
+    // and reads as evidence. A command killed before its first push declares
+    // exactly this, so the refusal must not fire on it.
+    const emptyDeclared = sessionWith(['type', TYPE_CDP_DEFAULTS], ['status', []]);
+    expect(emptyDeclared[LEDGER_KEY].entries[1].steps).toEqual([]);
+    const still = priorTo(emptyDeclared, 3);
+    expect(still.known).toBe(true);
+    expect(still.entries).toContainEqual({ seq: 2, command: 'status', steps: [] });
+  });
+
+  it('THE FIFTH MEMBER, other half: a ledger with no entries list is unknown, not empty', () => {
+    // `ledger.entries ?? []` was the same default one level up: a
+    // current-version ledger with the key deleted read as a run that had run
+    // nothing at all, which is the strongest possible reading of the least
+    // evidence.
+    const session = sessionWith(['type', TYPE_CDP_DEFAULTS]);
+    delete session[LEDGER_KEY].entries;
+    const graded = priorTo(session, 2);
+    expect(graded.known).toBe(false);
+    expect(graded.unknownBecause).toContain('no readable list of entries');
+    expect(
+      gradeInputProvenance({ delivery: 'os', steps: TYPE_OS_DEFAULTS, prior: graded })
+        .ladderCeiling,
+    ).toBe(CEILINGS.DEV_CLICKED);
+
+    // CONTROL: a genuinely empty run — `up` and nothing since — is `[]`, is
+    // known, and still grades clean. The refusal is about the key being
+    // absent, not about the list being short.
+    const fresh = { pid: 4321, port: 9222 };
+    startRun(fresh);
+    expect(fresh[LEDGER_KEY].entries).toEqual([]);
+    const clean = priorTo(fresh, 1);
+    expect(clean.known).toBe(true);
+    expect(
+      gradeInputProvenance({ delivery: 'os', steps: TYPE_OS_DEFAULTS, prior: clean }).ladderCeiling,
+    ).toBe(CEILINGS.UNSUBSTITUTED);
+  });
+
   it('a command from another process that ran DURING this one is a hole too', () => {
     // `attach` snapshots nothing: the run is re-read from disk at the moment it
     // is used, so an entry with a higher sequence number than mine is visible —
@@ -653,7 +738,8 @@ describe('page.mjs is why the ledger is needed: the DOM cannot answer the questi
 describe('the --focus require gate, every clause of it, executed', () => {
   // WHY THIS EXISTS. A mutation disabled the whole gate — the refusal the
   // README devotes its longest paragraph to — by prefixing its condition with
-  // `false &&`, and all 117 tests stayed green, twice. Nothing covered it, not
+  // `false &&`, and the whole suite as it then stood — 117 tests — stayed green,
+  // twice. Nothing covered it, not
   // even a byte-presence assertion, because the gate was inline in
   // `commands.type` and reaching it needs a live window, a CDP socket and a
   // real SendInput.
@@ -1037,10 +1123,18 @@ describe('the CLI wiring — source text only, which proves a byte and not a run
   });
 
   it('attach opens the entry before it touches the page, and nothing else reads the ledger raw', () => {
-    // FOUND BY MUTATION, and the reason this weak test exists at all: deleting
-    // `openEntry` from `attach` left the whole suite green, because
-    // vela-drive.mjs runs `main()` at import and cannot be loaded by a test. So
-    // this is a byte-presence assertion and nothing more. What it pins:
+    // FOUND BY MUTATION: deleting `openEntry` from `attach` left the whole
+    // suite green.
+    //
+    // Why this replacement is a byte-presence assertion and not an execution:
+    // `attach` connects a CDP socket to a live window and re-picks a target
+    // from it, so there is no way to enter its body without a running Vela,
+    // which this suite does not have. It is NOT because the module cannot be
+    // loaded — it can, and this file does it, in the describe block named
+    // "runContext: the second member of the class, executed against real
+    // files", which is why vela-drive.mjs's entry-point guard exists. Any
+    // function reachable without a socket belongs in that block instead of
+    // here. What this one pins:
     const attachBody = text.slice(
       text.indexOf('async function attach('),
       text.indexOf('function runContext('),

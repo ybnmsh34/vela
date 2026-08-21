@@ -4909,9 +4909,11 @@ describe('the renderer is wired into the product', () => {
     // re-parsed every reachable file. `fileAnalysis` is the fix and it is
     // structural rather than a larger number. Measured on this box after the
     // build assertions landed: consecutive runs of the whole file on a clean
-    // tree, exit 0 every time, 11.16-14.51s for all sixty-five assertions
-    // together, and a measurer on another box reports 19847ms - an observed
-    // range on machines doing other things, open at both ends, not a bound. The explicit budget is belt as well as braces, because a false
+    // tree, exit 0 every time, 11.16s to 53.89s for all sixty-five assertions
+    // together on this box alone - the spread is the machine and not the file,
+    // the slowest run being one where something else was compiling - and a
+    // measurer on another box reports 19847ms. An observed range on machines
+    // doing other things, open at both ends, not a bound. The explicit budget is belt as well as braces, because a false
     // red on somebody else's clean tree costs this guard its life; and an idle
     // box is exactly the measurement that cannot see such a red, which is why
     // BOUNDARY_BUDGET is now on every assertion that walks the graph rather than

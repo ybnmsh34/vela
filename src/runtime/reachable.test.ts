@@ -16,7 +16,7 @@
  * from what `index.html` loads and insists every shipping file **under `src/`**
  * is in it.
  *
- * ## Twenty-two times this asked a narrower question than the product's
+ * ## Twenty-eight times this asked a narrower question than the product's
  *
  * Each entry below was executed against the guard as it then stood, not argued
  * from reading it, and every one after the first was found in the fix for an
@@ -29,8 +29,16 @@
  * written to close 6; and 14 is 8's finding — a name is not a binding — in a
  * config reader. 15 is inside the tokenizer written to close 9; 16 and 17 are
  * both inside the CSS reader rebuilt to close 13; 18 is inside the config reader
- * written to close 14. So the list is kept rather than tidied away: the
- * recurrence is the finding, and four rounds have not broken it.
+ * written to close 14. 23 through 28 are the sixth round's, and they are all in
+ * the *traversal* around tables the fifth round had copied correctly: which
+ * nodes the table is applied to, where the regexes are run, which attribute
+ * spellings count, which attributes are CSS at all, which channel is a channel,
+ * and which node kind creates a binding. So the list is kept rather than tidied
+ * away: the recurrence is the finding, and five rounds did not break it. What
+ * round six does about it is not another entry in the same shape — it is
+ * `reads what the build reads, and reaches nothing the build did not`, which
+ * runs `vite build` and compares its module set against this walk's, so that a
+ * twenty-ninth divergence is a failing assertion rather than the next finding.
  *
  * 1. **It walked one directory.** It walked `src/runtime/` and named exactly one
  *    module in `src/data/`. That limit was recorded *in prose*, and prose is not
@@ -482,7 +490,9 @@
  *    kind beside the named ones. The structural fix this list has now named three
  *    times is to read the entry and module set `vite build` itself reports and
  *    compare it against `shippingModules(SRC_ROOT)`; that would have closed all
- *    four in one move, and it is still not what this file does.
+ *    four in one move. Round six is where that got done — see 23 through 28 for
+ *    what it took to stop putting it off, and `BUILD_PROGRAM` for the
+ *    instrument.
  *
  *    15 through 18 were found in one sitting by a sixth agent, and the shape is
  *    the one this list keeps recording rather than escaping: each of them sits in
@@ -493,6 +503,125 @@
  *    comment beside them claiming the property they lacked, which is why the
  *    round that fixed them also deleted every sentence in this file that could
  *    not be measured, rather than softening it.
+ *
+ * 23. **It copied vite's table and none of the function that reads it.**
+ *    `HTML_ASSET_SOURCES` was made a transcription of `DEFAULT_HTML_ASSET_SOURCES`
+ *    in round 5, and the transcription is correct. `getNodeAssetAttributes`
+ *    checks `"vite-ignore" in attributes` and returns a lone `remove` action
+ *    before it looks at the table at all, and the build-time script branch is
+ *    `if (isIgnored) removeViteIgnoreAttr(…) else { … }`. `vite-ignore` is
+ *    documented, first-class API whose whole purpose is "leave this tag alone",
+ *    and it appeared **zero times** in this file. Two adversaries landed it
+ *    independently in one round, in both directions with the same attribute: on
+ *    the one script tag in this document, `<script type="module"
+ *    src="/src/main.tsx" vite-ignore>` left `vite build` exit 0 at **1 module
+ *    transformed against a 219-module control** — `dist/assets/` holding a lone
+ *    sourcemap, `dist/`'s own `index.html` pointing at a path absent from the output —
+ *    with this file green twice at 33/33 and `GRAPH.entries` still the pinned
+ *    `['src/main.tsx']`. That is defect 15's fourth bullet, "the guard green over
+ *    a bundle containing none of the renderer", reproduced in the reader built to
+ *    close it, at a strictly worse module count. On a `<link>` it went the other
+ *    way and laundered a planted orphan, caught only by that same pin.
+ *
+ * 24. **It ran vite's regexes over text vite never runs them over.** Round 5
+ *    stopped listing CSS forms and transcribed `cssUrlRE` and `cssImageSetRE` out
+ *    of the installed package, which was the right move. It then ran them over
+ *    `css.atRoot` and `css.inRules` — the whole stylesheet — while
+ *    `UrlRewritePostcssPlugin` is `Once(root) { root.walkDecls(…) }` and tests
+ *    **declaration values only**. A superset is the laundering direction: a
+ *    `@supports (background-image: url("…/T05Orphan.module.css"))` block appended
+ *    to a stylesheet already on the graph turned a planted orphan from a clean
+ *    red into green twice at 33/33, `vite build` exit 0 at **219 modules, the
+ *    control's own count**, the orphan's marker in no file under `dist/`, and the
+ *    laundering line shipped verbatim as inert CSS. Two adversaries built it
+ *    independently in two different stylesheets. Defect 13's shape — prose to the
+ *    bundler, an edge to the reader — one CSS construct over.
+ *
+ * 25. **It asked whether a whole attribute value was a path.** Vite's
+ *    `findNeedTransformStyleAttribute` matches any `style` attribute whose value
+ *    merely *contains* `url(` or `image-set(` and routes the value through the
+ *    CSS pipeline. `htmlLoads` classified a non-table attribute by asking whether
+ *    the **entire value** resolved to a file, and `background-image: url('…')`
+ *    does not, so it was neither an edge nor loud. `<div id="root"
+ *    style="background-image: url('/src/runtime/run-doubles.ts')">` — one
+ *    attribute on the tag already in this document — gave `vite build` exit 0 at
+ *    **220 modules against 219** and `dist/assets/run-doubles-*.ts`
+ *    holding **10636 bytes, `wc -c` identical to the source**, with this file
+ *    green twice at 33/33. Landed by two adversaries in two consecutive rounds,
+ *    on the same emitted filename hash, while this file's own limits list said of
+ *    that exact case "there is nothing in this tree for it to hide".
+ *
+ * 26. **It read a wider `type` than the bundler, and could not spell half its own
+ *    entry set.** `getScriptInfo` is `p.name === "type" && p.value === "module"`,
+ *    byte for byte; this reader trimmed and lower-cased. `<script type="Module">`
+ *    was therefore a module body here and a data block there, and because `walk`
+ *    built `entries` from `kind === 'file'` loads only, an inline body's edges
+ *    went into `reachable` **without ever touching the pin** that had caught the
+ *    `<link>` half of 23. The second half of that is its own defect and older:
+ *    `HTML_ENTRY`'s docblock says in plain words that "a second module script,
+ *    with a body instead of a `src`, is also an entry", and adding a real second
+ *    inline entry — `vite build` exit 0 at 220 modules against 219 — left
+ *    `GRAPH.entries` at `['src/main.tsx']`, green at 33/33. A docblock naming a
+ *    key set while the pin checks one branch of it.
+ *
+ * 27. **It walked `src/` and called that the repo's shipping channel.**
+ *    `publicDir` defaults to `public` and needs no config key, so
+ *    `objectKeys(VITE_CONFIG_ROOT)` cannot see it: there is nothing in the config
+ *    to see. `mkdir public` and one file copied into it — no edit to
+ *    `index.html`, `vite.config.ts`, `package.json` or anything under `src/` —
+ *    put a `run-doubles.ts` at the top of `dist/` at **10636 bytes, byte-identical to the first
+ *    `NOT_SHIPPED` entry**, with `vite build` at 219 modules, the control's own
+ *    count, and this file green at 33/33. The directory does not exist here, and
+ *    this file mentioned it once, about resolution, and never as a second way out
+ *    of the repo.
+ *
+ * 28. **It enumerated one node kind and called that a binding.** `factoryUsesIn`
+ *    was written to close defect 12 and builds `locals` and `namespaces` inside
+ *    `if (!ts.isImportDeclaration(node)) return`. A dynamic import binds through
+ *    a `VariableDeclaration`, so
+ *    `const { createAgentRuntime } = await import('@/runtime/app-runtime')`
+ *    followed by `createAgentRuntime(adapter)` — appended to a file already on
+ *    the graph, `tsc -b --force` exit 0 under this repo's strict settings — was a
+ *    real second construction site that produced neither a builder nor an escape.
+ *    Invisible in both directions, which is the failure §7 of this list names and
+ *    the one that function exists to end. The control is that the identical
+ *    function with a *static* import reddens on the first run, so what the reader
+ *    was blind to was the syntax and not the semantics; and the lazy spelling is
+ *    the ordinary one, being what a contributor writes when told to keep a heavy
+ *    dependency out of the initial chunk.
+ *
+ *    23 through 28 were found by two adversaries working independently, and three
+ *    of the six were landed by both of them. Their shape is one level down from
+ *    19–22's: that round's finding was that this file reads the sources it has
+ *    been told about while the bundler reads whatever is on disk, and round 5
+ *    answered it by copying the bundler's **data** — its asset table, its CSS
+ *    regexes — out of the installed package. The data is right. What was still
+ *    hand-written is the bundler's **control flow** around that data, and every
+ *    one of these six is in it. There is no version of a second implementation of
+ *    vite's front end that stops diverging from vite's front end, which is why
+ *    the fix this round is not a seventh transcription: `BUILD_PROGRAM` runs the
+ *    real build with `write: false` and reads back `this.getModuleIds()` and
+ *    `this.getWatchFiles()`, and the walk is compared against it in both
+ *    directions. The reader is still fixed — all six — because the walk is what
+ *    produces every classification below; what changed is that a seventh
+ *    divergence is now a failing assertion instead of a finding.
+ *
+ *    Two findings the same round went the other way, and they belong here because
+ *    the direction that kills a guard is not always the quiet one. `<noscript>`
+ *    content is markup to jsdom (scripting disabled) and a raw-text node to
+ *    vite's parse5 (scripting enabled), so an ordinary `<noscript><link
+ *    rel="stylesheet" …></noscript>` reddened this file against a build that
+ *    stayed at the control's own module count, with a message that asserted
+ *    something false about that build. And `extname('vite-env.d.ts')` is `.ts`,
+ *    so creating the file `npm create vite@latest` writes for every TypeScript
+ *    template reddened the orphan assertion with a message saying a file that has
+ *    no runtime "is called by nothing". Round 4's timeout regression was the
+ *    same class: the fix put an explicit budget on the one assertion that had
+ *    timed out and left the two slowest in the file at vitest's 5000ms default,
+ *    where an adversary running the *committed* guard on a loaded machine got
+ *    three timeouts on a tree nobody had touched. A guard that reddens on routine
+ *    work is a guard somebody deletes, which is a slower way of losing than being
+ *    evaded.
  *
  * ## What it still cannot see
  *
@@ -519,14 +648,24 @@
  *   level is side-effect free. Proving emission needs `vite build` and a read of
  *   `dist/`: a different, slower instrument than this one.
  * - In `index.html`, an attribute is followed only when `HTML_ASSET_SOURCES`
- *   says the bundler rewrites it. Three kinds are read and deliberately **not**
- *   followed, each loud instead: a `srcset`/`imagesrcset` candidate list, which
- *   this file does not parse; `<meta content>`, which vite gates behind two
- *   name/property allow-lists this file does not implement; and any other
- *   attribute whose value resolves to a real file here. An attribute whose value
- *   resolves to nothing and is not in the table is neither followed nor loud —
- *   there is nothing in this tree for it to hide. An inline `style="…url(…)…"`
- *   is in that last case and would be silent.
+ *   says the bundler rewrites it **and** vite's own row-level `filter` says so,
+ *   which is now transcribed rather than stood in for by skipping `<meta>` by
+ *   name. Two kinds are read and deliberately **not** followed, each loud
+ *   instead: a `srcset`/`imagesrcset` candidate list, which this file does not
+ *   parse; and any other attribute whose value resolves to a real file here. A
+ *   tag carrying `vite-ignore` is read and reported rather than followed, because
+ *   that is what the bundler does with it. An inline `style` attribute is a
+ *   declaration list, not a path, and is read by the CSS reader: the sentence
+ *   that stood here said an attribute whose value resolves to nothing has
+ *   "nothing in this tree to hide" and that an inline `style="…url(…)…"` "would
+ *   be silent", and the second sentence was the measurement that disproved the
+ *   first — 10636 bytes of the first `NOT_SHIPPED` entry shipped into
+ *   `dist/assets/` in exactly that case, twice, by two people. What remains
+ *   genuinely silent is an attribute outside the table whose value neither
+ *   resolves here nor parses as CSS; that is stated as an observation about the
+ *   readers named above, and it is the direction
+ *   `reads what the build reads, and reaches nothing the build did not` exists to
+ *   catch when it is wrong.
  * - A module `src` pointing off this tree — a scheme, `//`, a `#` — is not an
  *   edge and not lost. It can still execute; what it cannot do is name a file in
  *   `src/`, which is what every assertion here is about.
@@ -543,12 +682,42 @@
  *   through a version difference but through this file reading the document tree
  *   instead of the parse (defect 19). `htmlElements` now descends into every
  *   `content` fragment, so what is left really is the version difference, and it
- *   is stated as a difference rather than as a bound. What the DOM also costs is
- *   that a tag
+ *   is stated as a difference rather than as a bound. It is not the only way two
+ *   parse5 calls disagree: jsdom parses with **scripting disabled** and vite's
+ *   parse5 with it enabled, so a `<noscript>` body is an element subtree here and
+ *   one raw-text node there. That was a live false red — an ordinary
+ *   `<noscript><link rel="stylesheet" …></noscript>` reddened this file against a
+ *   build that stayed at the control's own module count — and `htmlElements` now
+ *   stops at a `noscript` element, which is where the bundler's parser stops.
+ *   What the DOM also costs is that a tag
  *   the parser drops is not reported: an unterminated tag at end of input yields
  *   no element, so it leaves `unreadHtml` empty where the hand-written reader
  *   emitted a `broken` token. The bundler drops it too, and a dropped *entry*
  *   still reddens `GRAPH.entries`.
+ * - `public/` is a second, ungoverned path from this repo into `dist/`: vite
+ *   copies `publicDir` verbatim, with no module graph and no config key to see it
+ *   through. There is no such directory here today, and the contents are pinned
+ *   rather than assumed absent, because the first favicon anybody adds creates
+ *   one. What the pin does not do is *read* what is in there: a file named in
+ *   `PUBLIC_FILES` ships, and nothing here asks what it is.
+ * - Every "read vite's own X back out of the installed package" comparison here
+ *   — the asset table and its `filter` key, the two meta allow-lists, the three
+ *   CSS regexes and which of them the declaration walker tests — has one failure
+ *   mode no assertion over it can catch: a reader rewritten to answer out of this
+ *   file's own expectation instead of out of the package. Measured, so it is not
+ *   a worry but a result: replacing the `filter`-presence scan with a lookup of
+ *   this file's own table is green twice at 48/48, while making it always-true or
+ *   always-false reds `matches vite's own table of asset-bearing attributes`
+ *   twice. What the comparison buys is that the *values* cannot drift; what it
+ *   cannot buy is that the reader still reads. A reviewer, and this sentence, are
+ *   what stand there.
+ * - The build comparison is a second opinion and not a second guard. It answers
+ *   "which files under `src/` did the bundler read", which is the question every
+ *   reachability assertion here asks, and it says nothing about `node_modules`,
+ *   about virtual modules, or about whether rollup then tree-shook what it read.
+ *   It also runs one configuration — the production build — so a file reached
+ *   only in `pnpm dev` is outside it. And it is a `vite build`: if the build
+ *   fails, this file fails with it, which is loud and is the point.
  * - `url()` is followed as an edge, and a bare one is read as relative to the
  *   stylesheet. Vite will also resolve a bare `url()` through node resolution,
  *   which this reader does not; that direction produces a specifier pointing into
@@ -630,6 +799,7 @@
  *   `?raw` one — those match ambient wildcard modules in `vite/client`.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import * as ts from 'typescript';
@@ -660,6 +830,131 @@ const SRC_ROOT = join(REPO_ROOT, 'src');
  * about were live at the time.
  */
 const HTML_ENTRY = join(REPO_ROOT, 'index.html');
+
+/**
+ * The time a slow assertion is allowed, and why it is not vitest's default.
+ *
+ * Round 4's clean-tree false red was `Test timed out in 5000ms` on assertions
+ * that walk the module graph several times, and the fix was structural — the
+ * memos above — plus one explicit budget. The budget went on the assertion that
+ * had timed out, and on no other, which left the two `constructionSites`
+ * assertions at the 5000ms default; measured here on an unloaded box they are
+ * the slowest in the file after the build, 397–862ms and 287–489ms against
+ * single-digit milliseconds for most of the rest. An adversary reports running
+ * the committed guard on a **loaded** machine, with no plant at all, and getting
+ * three timeouts on an unmodified tree — 9755ms, 9373ms and 5379ms, all on
+ * `builds the sandbox door once, at the composition root`. That is their
+ * measurement rather than one reproduced here, and it does not need reproducing
+ * to be acted on: a red on somebody else's untouched tree is the delete-me
+ * direction, and an idle box is exactly the instrument that cannot see it. So
+ * every assertion that walks the graph carries the budget now, not only the one
+ * that was caught.
+ *
+ * `pnpm test` runs 118 files and `vite.config.ts` gives vitest no `testTimeout`
+ * override and no pool isolation, so this is the only place the number can be
+ * said.
+ */
+const BOUNDARY_BUDGET = 20_000;
+
+/**
+ * The same, for the assertions that run a real `vite build`.
+ *
+ * The build is memoised, so exactly one of them pays for it. Measured inside the
+ * suite on this box: 3308ms at its quickest and 11268ms at its slowest across
+ * the runs of this round, against a whole-file cost of well under a second
+ * before it existed. That spread on one idle-ish machine is the argument for the
+ * number: what is being bounded is a bundler on a box that may be doing
+ * something else, and the cost of this budget being too small is a red on a tree
+ * nobody touched. It is a range observed here, not a bound.
+ */
+const BUILD_BUDGET = 120_000;
+
+/**
+ * Everything in `public/`, which the build copies into `dist/` without a graph.
+ *
+ * Empty, and the directory does not exist. It is a list rather than an
+ * assertion that the directory is absent because the first favicon anybody adds
+ * creates it, and the entries have to become visible then rather than the
+ * assertion becoming false.
+ */
+const PUBLIC_FILES: readonly string[] = [];
+
+/**
+ * The plugin list vite resolved, in order, as of the installed vite and
+ * `@vitejs/plugin-react`.
+ *
+ * A pin, and it is the same kind of pin as `GRAPH.entries`: it protects one
+ * value somebody wrote down, and it is the cheap second signal rather than the
+ * argument. The argument against a plugin injecting an edge is
+ * `reads what the build reads, and reaches nothing the build did not`. What this
+ * adds is the case where a wrapper plugin does something that is *not* an edge —
+ * and the reason it is worth its upkeep is that three rounds of adversaries have
+ * pointed `vite.config.ts`'s `react` import at a local module and shipped a
+ * double through the plugin it returned, against a file that pins the callee's
+ * *name*.
+ */
+const RESOLVED_PLUGINS = [
+  'vite:build-metadata',
+  'vite:watch-package-data',
+  'alias',
+  'vite:react-babel',
+  'vite:react-refresh',
+  'vite:modulepreload-polyfill',
+  'vite:resolve',
+  'vite:html-inline-proxy',
+  'vite:css',
+  'vite:esbuild',
+  'vite:json',
+  'vite:wasm-helper',
+  'vite:worker',
+  'vite:asset',
+  'vite:react-virtual-preamble',
+  'vite:wasm-fallback',
+  'vite:define',
+  'vite:css-post',
+  'vite:build-html',
+  'vite:worker-import-meta-url',
+  'vite:asset-import-meta-url',
+  'vite:force-amd-wrap-require',
+  'vite:force-systemjs-wrap-complete',
+  'vite:prepare-out-dir',
+  'commonjs',
+  'vite:data-uri',
+  'vite:rollup-options-plugins',
+  'vite:dynamic-import-vars',
+  'vite:import-glob',
+  'vite:build-import-analysis',
+  'vite:esbuild-transpile',
+  'vite:terser',
+  'vite:license',
+  'vite:manifest',
+  'vite:ssr-manifest',
+  'vite:reporter',
+  'vite:load-fallback',
+];
+
+/** How the entry list spells an entry that has a body instead of a file. */
+const INLINE_ENTRY = 'index.html <script type="module"> (inline)';
+
+/**
+ * The two things the entry pin can be saying, named so they can be told apart.
+ *
+ * Round 5 split one assertion into two because the single one misdescribed half
+ * of what it caught, and named nothing: the property — *a routine new reference
+ * in `index.html` reddens saying the entry set moved, not that the graph is
+ * vacuous* — lived in a twelve-line comment and in no assertion. Collapsing the
+ * split back into the one assertion it replaced left the suite at
+ * `33 passed (33)`, exit 0. As constants they are readable by a test, and
+ * `the entry pin says the entry set moved, not that the graph is vacuous` reads
+ * them.
+ */
+const ENTRY_SET_VACUOUS =
+  'index.html declares no module entry this walk can resolve; the graph below is vacuous';
+
+const ENTRY_SET_MOVED =
+  'index.html names a file this guard has not been told about. That is ordinary ' +
+  '— a favicon, a preload, a second stylesheet — and it is still the entry set ' +
+  'moving: say what the new one is and add it here';
 
 /**
  * Modules that **must** be off the graph, each with the reason.
@@ -777,6 +1072,34 @@ const NOT_LOADED_EXTENSIONS = new Map<string, string>([
  */
 const TEST_FILE = /\.test\.tsx?$/;
 
+/**
+ * A TypeScript **declaration** file, which has no runtime and cannot be loaded.
+ *
+ * `extname('vite-env.d.ts')` is `.ts`, so the enumerator counted one as a
+ * shipping module and then demanded the walk reach it. a `vite-env` declaration file under `src/` is
+ * the file `npm create vite@latest` scaffolds for every TypeScript template, and
+ * it is the standard place to declare the `?raw`/`?url` ambient wildcards this
+ * guard's own prose leans on. Creating it — or any module augmentation, or any
+ * global type — turned this file **red** with a message asserting that a
+ * declaration file "is called by nothing", and the only ways to green it were to
+ * put a declaration file in `NOT_SHIPPED` (whose docblock says every entry "would be a
+ * defect if the application could reach it", which is untrue of a file that has
+ * no runtime) or in the debt list (which is worse). a declaration file occurred zero times
+ * in this file. That is the delete-me direction: a false red on boilerplate
+ * nobody asked this guard about.
+ *
+ * It is a spelling rule rather than an extension entry because the extension is
+ * `.ts` either way, and `declares every file kind under src/` still holds:
+ * a declaration file's kind is declared, it is just not a module.
+ */
+const DECLARATION_FILE = /\.d\.tsx?$/;
+
+/** True for a file under `src/` the bundler can load — not a test, not a declaration. */
+function bundlerLoads(name: string): boolean {
+  if (!SHIPPING_EXTENSIONS.has(extname(name).toLowerCase())) return false;
+  return !TEST_FILE.test(name) && !DECLARATION_FILE.test(name);
+}
+
 /** Every file under `directory` the bundler could load, recursively, tests excluded. */
 function shippingModules(directory: string): string[] {
   const found: string[] = [];
@@ -786,8 +1109,7 @@ function shippingModules(directory: string): string[] {
       found.push(...shippingModules(path));
       continue;
     }
-    if (!SHIPPING_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
-    if (TEST_FILE.test(entry.name)) continue;
+    if (!bundlerLoads(entry.name)) continue;
     found.push(path);
   }
   return found;
@@ -896,6 +1218,36 @@ function isAssetUrl(node: ts.Node): node is ts.NewExpression {
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'URL') return false;
   const base = node.arguments?.[1];
   return base !== undefined && isImportMetaUrl(base);
+}
+
+/**
+ * The specifier of an `import('…')` an initializer awaits or returns directly, or `null`.
+ *
+ * `await import(x)`, `import(x)` and a parenthesised spelling of either are the
+ * three ways a `VariableDeclaration`'s initializer is the module object. `.then`
+ * is deliberately not one of them: `import(x).then(m => …)` binds nothing at the
+ * declaration, and the callback parameter it binds instead is a shape this
+ * reader does not follow — `unanalysableImports` is where an edge it cannot read
+ * gets said out loud.
+ */
+function awaitedImportSpecifier(node: ts.Expression | undefined): string | null {
+  let current = node;
+  while (current !== undefined) {
+    if (ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+      continue;
+    }
+    if (ts.isAwaitExpression(current)) {
+      current = current.expression;
+      continue;
+    }
+    if (isDynamicImportCall(current)) {
+      const argument = current.arguments[0];
+      return argument === undefined ? null : staticSpecifier(argument);
+    }
+    return null;
+  }
+  return null;
 }
 
 /** A `require(...)` call, which has no business in this ESM renderer. */
@@ -1129,6 +1481,58 @@ function readCss(text: string): CssText {
   return { atRoot, inRules, literals };
 }
 
+/**
+ * A stylesheet split into the text postcss's declaration walk sees, and the rest.
+ *
+ * Vite's url replacer is `root.walkDecls(...)`: it tests `declaration.value` and
+ * nothing else. A selector, an at-rule prelude and an `@import` statement are all
+ * text postcss visits as something other than a declaration, so a `url()` in one
+ * of them is dead text to the bundler. The reader that ran vite's regexes over
+ * `atRoot` and `inRules` whole was therefore correct about the pattern and wrong
+ * about the input, which is the same shape as being correct about the tag table
+ * and wrong about `getNodeAssetAttributes`.
+ *
+ * `readCss` has already put a `;` on both sides of every brace, so splitting on
+ * `;` gives statements that never span one. Inside a block, a piece beginning
+ * `@` is a nested at-rule's prelude and a piece with no `:` is a nested
+ * selector; everything else is a declaration, and its value is what follows the
+ * first `:`. Outside every block, nothing is a declaration.
+ *
+ * `elsewhere` is not a leftovers bin: it is what `cssUnfollowable` scans so that
+ * narrowing `urlTargets` cannot be a silent narrowing. An `@import` statement is
+ * excluded from it because `importRules` owns that form and reports on it under
+ * the preamble rule; counting it here would redden `base.css`, which is a false
+ * red on the only stylesheet this repo `@import`s from.
+ */
+type CssParts = {
+  /** Every declaration value in the stylesheet — what `walkDecls` hands the replacer. */
+  readonly declarationValues: readonly string[];
+  /** Every other statement, `@import` and `@charset` aside. */
+  readonly elsewhere: readonly string[];
+};
+
+function cssParts(css: CssText): CssParts {
+  const declarationValues: string[] = [];
+  const elsewhere: string[] = [];
+  for (const piece of css.atRoot.split(';')) {
+    const statement = piece.trim();
+    if (statement === '' || statement === '{' || statement === '}') continue;
+    if (/^@(?:import|charset)\b/i.test(statement)) continue;
+    elsewhere.push(statement);
+  }
+  for (const piece of css.inRules.split(';')) {
+    const statement = piece.trim();
+    if (statement === '') continue;
+    const colon = statement.indexOf(':');
+    if (statement.startsWith('@') || colon === -1) {
+      elsewhere.push(statement);
+      continue;
+    }
+    declarationValues.push(statement.slice(colon + 1));
+  }
+  return { declarationValues, elsewhere };
+}
+
 /** True for the file kinds Vite runs the CSS-modules transform over. */
 function isCssModule(file: string): boolean {
   return /\.module\.css$/i.test(basename(file));
@@ -1260,6 +1664,28 @@ function viteSkipsUrl(unquoted: string): boolean {
  * rule, so it is skipped here rather than counted a second time — by vite's own
  * `(?<!@import\s+)` lookbehind now, rather than by a second hand-written rule.
  *
+ * Where the patterns are run is as much of vite's behaviour as the patterns
+ * themselves, and the version this replaces got the first half right and the
+ * second half wrong. `UrlRewritePostcssPlugin` is `Once(root) {
+ * root.walkDecls(declaration => … cssUrlRE.test(declaration.value) …) }` —
+ * **declaration values only**. This ran the identical regexes over the whole
+ * stylesheet text, selectors and at-rule preludes included, which is a strict
+ * superset, and a superset is the laundering direction. Two adversaries landed
+ * the same construction independently, in two different stylesheets: a block
+ * appended to one already on the graph,
+ *
+ *     @supports (background-image: url("../features/canvas/T05Orphan.module.css")) {
+ *       :root { --typeface-backdrop: 1; }
+ *     }
+ *
+ * turned a planted orphan from a clean red into **green twice at 33/33**, with
+ * `vite build` exit 0 at **219 modules — the control's own count** — the
+ * orphan's marker in no file under `dist/`, and the laundering line itself
+ * shipped verbatim as inert text inside `dist/assets/index-*.css`. So `cssParts`
+ * splits the stylesheet the way postcss's own walk splits it, this reader takes
+ * the declaration values, and a `url()` anywhere else is reported by
+ * `cssUnfollowable` rather than followed or dropped in silence.
+ *
  * `url()` is not the only form. Vite's CSS url replacer is one postcss plugin
  * that tests each declaration value with two regexes and rewrites whichever
  * matched, so `image-set()` is rewritten through the *same* resolver, and
@@ -1284,7 +1710,7 @@ function urlTargets(css: CssText): string[] {
     if (target === '' || viteSkipsUrl(target)) return;
     found.push(pointsIntoThisTree(target) ? target : `./${target}`);
   };
-  for (const half of [css.atRoot, css.inRules]) {
+  for (const half of cssParts(css).declarationValues) {
     for (const match of half.matchAll(new RegExp(VITE_CSS_URL_RE.source, 'g'))) {
       const inside = match[1];
       if (inside !== undefined) take(inside);
@@ -1336,8 +1762,28 @@ function srcSetCandidates(text: string): string[] {
   });
 }
 
-/** The CSS function forms `urlTargets` follows, which is vite's set and not a longer one. */
-const CSS_FUNCTIONS_FOLLOWED = new Set(['url', 'image-set', '-webkit-image-set']);
+/**
+ * Whether `urlTargets` follows a CSS function of this name — asked of the
+ * patterns, not of a list.
+ *
+ * This was a `Set` of three names, with a docblock calling it "vite's set and
+ * not a longer one". It was neither checked nor complete. Deleting
+ * `-webkit-image-set` from it left the suite at `33 passed (33)`, exit 0, and
+ * still does against a loop written over the set's own members — a set that
+ * enumerates itself cannot be short. And it *was* short: `cssImageSetRE`'s
+ * lookbehind is `(?<=image-set\()`, which matches the tail of any vendor
+ * prefixing, so vite rewrites `-ms-image-set(…)` as readily as
+ * `-webkit-image-set(…)` and this file would have reported that one as
+ * unfollowable while following it.
+ *
+ * So the question is put to the transcribed patterns instead: a call of this
+ * name, would either regex match it? That is exactly what `urlTargets` then
+ * does with it, and there is no second list to drift.
+ */
+function cssFunctionFollowed(name: string): boolean {
+  const call = `${name}("t05")`;
+  return VITE_CSS_URL_RE.test(call) || VITE_CSS_IMAGE_SET_RE.test(call);
+}
 
 /**
  * Every other CSS function in a stylesheet whose argument names a path in this tree.
@@ -1350,6 +1796,16 @@ const CSS_FUNCTIONS_FOLLOWED = new Set(['url', 'image-set', '-webkit-image-set']
  * direction. A function form this file does not follow is now reported by name
  * and reddens `follows every edge it finds`, so the next one is a failing
  * assertion rather than a fifth round of the same finding.
+ *
+ * It has two halves, because vite's replacer has two halves. Inside a
+ * declaration value — the only text `root.walkDecls` hands it — a function form
+ * `cssFunctionFollowed` says no to is reported. *Outside* a declaration value,
+ * **every** function form is reported, `url()` and `image-set()` included,
+ * because there the bundler rewrites nothing at all. That second half is what
+ * keeps narrowing `urlTargets` to declarations from being a silent narrowing:
+ * the `@supports (background-image: url(…))` two adversaries laundered an orphan
+ * through is now a named red rather than an invented edge, and it would have been
+ * a named red rather than a silent drop had it been narrowed without this.
  *
  * The gate is that the argument **resolves to a file that exists here** — a
  * narrower gate than `htmlLoads`' `unread` branch uses, and narrower on purpose.
@@ -1368,22 +1824,30 @@ const CSS_FUNCTIONS_FOLLOWED = new Set(['url', 'image-set', '-webkit-image-set']
  */
 function cssUnfollowable(source: string, file: string): string[] {
   const css = readCss(source);
+  const parts = cssParts(css);
   const found: string[] = [];
-  for (const half of [css.atRoot, css.inRules]) {
-    for (const match of half.matchAll(/(?<![\w-])([\w-]{1,256})\(\s*([^()]*?)\s*\)/g)) {
+  const scan = (text: string, inDeclaration: boolean): void => {
+    for (const match of text.matchAll(/(?<![\w-])([\w-]{1,256})\(\s*([^()]*?)\s*\)/g)) {
       const name = (match[1] ?? '').toLowerCase();
-      if (CSS_FUNCTIONS_FOLLOWED.has(name)) continue;
+      if (inDeclaration && cssFunctionFollowed(name)) continue;
       const inside = match[2] ?? '';
       const target = (literalOf(inside, css) ?? inside).trim();
       if (target === '' || viteSkipsUrl(target)) continue;
       const asPath = pointsIntoThisTree(target) ? target : `./${target}`;
       if (resolveInTree(file, asPath) === null) continue;
       found.push(
-        `${name}(${target}) names a path in this tree, and this reader follows only the ` +
-          'CSS function forms vite rewrites: url() and image-set()',
+        inDeclaration
+          ? `${name}(${target}) names a path in this tree, and this reader follows only the ` +
+            'CSS function forms vite rewrites: url() and image-set()'
+          : `${name}(${target}) names a path in this tree and is not in a declaration value. ` +
+            "vite's url replacer is `root.walkDecls`, so the bundler never rewrites this one: " +
+            'following it would invent an edge, and dropping it in silence is how an orphan ' +
+            'stays hidden behind one',
       );
     }
-  }
+  };
+  for (const value of parts.declarationValues) scan(value, true);
+  for (const statement of parts.elsewhere) scan(statement, false);
   return found;
 }
 
@@ -1770,6 +2234,22 @@ type HtmlAssetAttributes = {
   readonly url: readonly string[];
   /** Attributes holding a comma-separated candidate list this reader does not parse. */
   readonly srcset: readonly string[];
+  /**
+   * Whether vite's own row carries a `filter`, and this file's copy of it.
+   *
+   * The third of vite's three per-row keys, and the one the comparison used to
+   * drop. `matches vite's own table of asset-bearing attributes` read
+   * `srcAttributes` and `srcsetAttributes` back out of the installed package and
+   * never `filter`, so a row that gained one — or an upgrade that moved a row
+   * *behind* one — reddened nothing, while the promise directly above said an
+   * upgrade that changed the table reddens this file. `meta` carries the only
+   * one today, and this file's stand-in for it was a second set naming the
+   * `meta` tag: a whole row dropped because one of its attribute values is
+   * usually not a path. That is the laundering direction — `<meta property="og:image"
+   * content="/src/…">` is an edge vite follows and this file did not — so the
+   * predicate is transcribed instead of the tag being skipped.
+   */
+  readonly filter: ((attributes: ReadonlyMap<string, string>) => boolean) | null;
 };
 
 /**
@@ -1793,7 +2273,24 @@ type HtmlAssetAttributes = {
  * Narrowing alone would trade an invented edge for a dropped one, so both
  * directions are closed: an attribute in this table is followed, and an
  * attribute **not** in it whose value resolves to a real file in this tree is
- * `unread` and reddens. Being wrong about Vite in either direction is loud.
+ * `unread` and reddens.
+ *
+ * The sentence that stood there — "being wrong about Vite in either direction is
+ * loud" — was an absolute and two adversaries disproved it in one round, in both
+ * directions, using the *same* documented attribute. `getNodeAssetAttributes`
+ * short-circuits on `"vite-ignore" in attributes` before it reads this table at
+ * all, so `<link rel="stylesheet" href="/src/…" vite-ignore />` was an edge here
+ * and none in the bundle (the laundering direction: a planted orphan went green,
+ * caught only by the `GRAPH.entries` pin), and `<script type="module"
+ * src="/src/main.tsx" vite-ignore>` left `vite build` at **1 module transformed
+ * against a 219-module control** — `dist/assets/` holding a lone sourcemap and
+ * `dist/`'s own `index.html` pointing at a path that does not exist in the output — with
+ * this guard green at 33/33. The table was a correct copy of vite's data and
+ * none of the function that consumes it. `htmlLoads` now honours `vite-ignore`
+ * and this table carries vite's third per-row key; what makes either claim
+ * checkable rather than another sentence is `the build reads what this walk
+ * reaches, and nothing else`, which compares this reconstruction against the
+ * module set `vite build` itself reports.
  *
  * Two rows are transcribed because vite carries them and cannot fire in an HTML
  * document: the parser turns an `<image>` start tag into `img`, and `use` and
@@ -1801,29 +2298,72 @@ type HtmlAssetAttributes = {
  * stay in the table because the table's job is to equal vite's, not to be the
  * shorter list of the two.
  *
- * `meta` is in vite's table and deliberately not followed here: its `content` is
- * an asset reference only when `name`/`property` is in one of two allow-lists
- * vite carries, and `<meta name="viewport" content="width=device-width, …">` is
- * not a path. It falls through to the loud branch, which is where an actual
- * `<meta property="og:image" content="/src/…">` would land.
+ * `meta` used to be listed and then dropped by name, on the grounds that
+ * `<meta name="viewport" content="width=device-width, …">` is not a path. Vite
+ * expresses that as a `filter` on the row, over two allow-lists it carries, so
+ * the predicate is transcribed and the row is followed when the predicate says
+ * so — which makes `<meta property="og:image" content="/src/…">` the edge it is.
  */
+const ALLOWED_META_NAME = [
+  'msapplication-tileimage',
+  'msapplication-square70x70logo',
+  'msapplication-square150x150logo',
+  'msapplication-wide310x150logo',
+  'msapplication-square310x310logo',
+  'msapplication-config',
+  'twitter:image',
+];
+
+const ALLOWED_META_PROPERTY = [
+  'og:image',
+  'og:image:url',
+  'og:image:secure_url',
+  'og:audio',
+  'og:audio:secure_url',
+  'og:video',
+  'og:video:secure_url',
+];
+
+/** vite's `filter` on the `meta` row, transcribed. */
+function metaCarriesAnAsset(attributes: ReadonlyMap<string, string>): boolean {
+  const name = attributes.get('name');
+  const property = attributes.get('property');
+  if (name !== undefined && ALLOWED_META_NAME.includes(name.trim().toLowerCase())) return true;
+  return property !== undefined && ALLOWED_META_PROPERTY.includes(property.trim().toLowerCase());
+}
+
 const HTML_ASSET_SOURCES = new Map<string, HtmlAssetAttributes>([
-  ['audio', { url: ['src'], srcset: [] }],
-  ['embed', { url: ['src'], srcset: [] }],
-  ['img', { url: ['src'], srcset: ['srcset'] }],
-  ['image', { url: ['href', 'xlink:href'], srcset: [] }],
-  ['input', { url: ['src'], srcset: [] }],
-  ['link', { url: ['href'], srcset: ['imagesrcset'] }],
-  ['meta', { url: ['content'], srcset: [] }],
-  ['object', { url: ['data'], srcset: [] }],
-  ['source', { url: ['src'], srcset: ['srcset'] }],
-  ['track', { url: ['src'], srcset: [] }],
-  ['use', { url: ['href', 'xlink:href'], srcset: [] }],
-  ['video', { url: ['src', 'poster'], srcset: [] }],
+  ['audio', { url: ['src'], srcset: [], filter: null }],
+  ['embed', { url: ['src'], srcset: [], filter: null }],
+  ['img', { url: ['src'], srcset: ['srcset'], filter: null }],
+  ['image', { url: ['href', 'xlink:href'], srcset: [], filter: null }],
+  ['input', { url: ['src'], srcset: [], filter: null }],
+  ['link', { url: ['href'], srcset: ['imagesrcset'], filter: null }],
+  ['meta', { url: ['content'], srcset: [], filter: metaCarriesAnAsset }],
+  ['object', { url: ['data'], srcset: [], filter: null }],
+  ['source', { url: ['src'], srcset: ['srcset'], filter: null }],
+  ['track', { url: ['src'], srcset: [], filter: null }],
+  ['use', { url: ['href', 'xlink:href'], srcset: [], filter: null }],
+  ['video', { url: ['src', 'poster'], srcset: [], filter: null }],
 ]);
 
-/** The one tag whose `url` attributes this file reads but does not follow. */
-const HTML_ASSET_TAGS_NOT_FOLLOWED = new Set(['meta']);
+/**
+ * The attribute that takes a tag out of vite's hands entirely.
+ *
+ * Documented, first-class vite API, and its presence is checked **before** the
+ * asset table and before `getScriptInfo` decides anything: `getNodeAssetAttributes`
+ * returns a lone `remove` action, and the build-time script branch is
+ * `if (isIgnored) removeViteIgnoreAttr(…) else { … }`. So a tag carrying it is a
+ * tag the bundler reads and then declines to act on, which is neither an edge
+ * nor — since the maintainer said so on purpose — a surprise worth reddening on
+ * its own. It is `unread` rather than silent all the same, because what it takes
+ * out of the graph is real: on the one script tag in this document it takes the
+ * whole product out.
+ */
+const VITE_IGNORE = 'vite-ignore';
+
+/** Tags whose children the bundler's parser never builds elements for. */
+const RAW_TEXT_WHEN_SCRIPTING = new Set(['noscript']);
 
 /** `{ … }` starting at or after `from`, brace-matched. */
 function braceBlock(text: string, from: number): string | null {
@@ -1898,13 +2438,31 @@ function viteCssRewriter(): ViteCssRewriter | null {
   return null;
 }
 
+/** One row of vite's own table, as the installed package spells it. */
+type ViteAssetRow = {
+  /** `srcAttributes`. */
+  readonly url: readonly string[];
+  /** `srcsetAttributes`. */
+  readonly srcset: readonly string[];
+  /**
+   * Whether the row carries a `filter`.
+   *
+   * Vite's row has three keys and the comparison used to read two. A predicate
+   * cannot be compared as text across an upgrade, but its **presence** can, and
+   * presence is the half that matters: a row that grows a filter is a row this
+   * file would otherwise keep following unconditionally, and a row that loses one
+   * is an edge this file would keep declining.
+   */
+  readonly hasFilter: boolean;
+};
+
 /**
  * Vite's own `DEFAULT_HTML_ASSET_SOURCES`, read out of the installed package.
  *
  * `null` when it cannot be found, which reddens rather than passing: the whole
  * point is that the table above stops being a claim and becomes a comparison.
  */
-function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
+function viteHtmlAssetSources(): Map<string, ViteAssetRow> | null {
   const directories = [
     join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node'),
     join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node', 'chunks'),
@@ -1917,7 +2475,7 @@ function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
       if (at === -1) continue;
       const block = braceBlock(text, at);
       if (block === null) continue;
-      const found = new Map<string, HtmlAssetAttributes>();
+      const found = new Map<string, ViteAssetRow>();
       const body = block.slice(1, -1);
       for (const match of body.matchAll(/([A-Za-z][\w-]*)\s*:\s*\{/g)) {
         const tag = match[1];
@@ -1932,9 +2490,41 @@ function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
                 one[1] === undefined ? [] : [one[1]],
               );
         };
-        found.set(tag, { url: list('srcAttributes'), srcset: list('srcsetAttributes') });
+        found.set(tag, {
+          url: list('srcAttributes'),
+          srcset: list('srcsetAttributes'),
+          hasFilter: /(?:^|[\s,{])filter\s*[({]/.test(inner),
+        });
       }
       if (found.size > 0) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * A `const NAME = [ … ]` array of strings out of the installed vite package.
+ *
+ * `ALLOWED_META_NAME` and `ALLOWED_META_PROPERTY` are the data behind the one
+ * `filter` in vite's table, and transcribing data without comparing it back is
+ * the mistake `HTML_ASSET_SOURCES`' own header spent two rounds on.
+ */
+function viteStringArray(name: string): string[] | null {
+  const directories = [
+    join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node'),
+    join(REPO_ROOT, 'node_modules', 'vite', 'dist', 'node', 'chunks'),
+  ];
+  for (const directory of directories) {
+    for (const entry of entriesIn(directory)) {
+      if (!entry.isFile || !entry.name.endsWith('.js')) continue;
+      const text = readFileSync(join(directory, entry.name), 'utf8');
+      const at = text.indexOf(`${name} = [`);
+      if (at === -1) continue;
+      const end = text.indexOf(']', at);
+      if (end === -1) continue;
+      return [...text.slice(at, end).matchAll(/["']([^"']+)["']/g)].flatMap((one) =>
+        one[1] === undefined ? [] : [one[1]],
+      );
     }
   }
   return null;
@@ -1982,8 +2572,28 @@ function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
  * disagree somewhere", which is one surface a reviewer can watch, against three
  * hand-written termination rules and an attribute rule that were each wrong.
  *
- * What that buys, and it is the whole point: this reader can no longer disagree
- * with the bundler about **what is markup**. Duplicate attributes resolve to the
+ * What that buys, and it is bounded rather than total: this reader and the
+ * bundler build the same element tree out of the same bytes wherever the two
+ * parse5 majors agree *and the two callers configure the parser the same way*.
+ * The sentence that stood here claimed the absolute — that this reader "can no
+ * longer disagree with the bundler about **what is markup**" — and it was false
+ * on both halves of that qualifier, measured rather than argued.
+ *
+ * jsdom parses with scripting **disabled** and vite's parse5 runs with it
+ * enabled, so a `<noscript>`'s content is an element subtree here and a single
+ * raw-text node there. `<noscript><link rel="stylesheet" href="…"></noscript>`
+ * left `vite build` at **219 modules, the control's own count**, with the `link`
+ * never resolved, and turned this guard **red** with a message that asserted
+ * something false about that build. That is the delete-me direction — a red on
+ * ordinary boilerplate — so the walk below stops at a `noscript` element, which
+ * is where the bundler's parser stops. `a noscript body is text to the bundler,
+ * so it is text here` drives it.
+ *
+ * And agreement about the element tree was never agreement about what vite does
+ * with the elements in it. `vite-ignore` and an inline `style="…url(…)…"` are
+ * both nodes both parsers build identically, and vite acts on exactly one of
+ * them; that half is `htmlLoads`', and it is stated there rather than claimed
+ * away here. Duplicate attributes resolve to the
  * first occurrence here because they do in the parser (the hand-written map kept
  * the last, and one repeated `src=` on the existing entry tag left
  * `GRAPH.entries` pinned to `['src/main.tsx']` while `vite build` compiled five
@@ -2001,9 +2611,8 @@ function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
  * into it. `<template><script type="module">import { FakeTurnDriver } from
  * '/src/runtime/run-doubles.ts'; …</script></template>` in `index.html` was
  * therefore a tag the bundler saw and this file did not — 221 modules against a
- * 219-module control, `no turn has
- * been sent` in the shipped entry chunk, with the guard as it then stood green
- * green at 30/30 as it then stood. That is defect 19, and the loop below closes it by
+ * 219-module control, `no turn has been sent` in the shipped entry chunk, with
+ * the guard as it then stood green at 30/30. That is defect 19, and the loop below closes it by
  * descending into any element that carries a parsed subtree of its own, keyed on
  * the property rather than on the tag name, so the next element the DOM gives a
  * `content` fragment to is walked without this file being edited.
@@ -2015,15 +2624,29 @@ function viteHtmlAssetSources(): Map<string, HtmlAssetAttributes> | null {
  * unterminated one at end of file — is a tag the bundler drops too, so it is no
  * longer reported as `unread`: there is no token to report. That is a real
  * narrowing of the loud list and it is stated rather than discovered, with the
- * consequence asserted in `a tag the parser drops is a tag the bundler drops`.
+ * consequence asserted inside `reads a script body as text, not as a place
+ * comments can start`, under the message `the parser drops it`. The citation
+ * that stood here named an `it()` that exists nowhere in this file — the round-4
+ * measurer's own finding, "the citation of an assertion name that exists
+ * nowhere", recurring one paragraph away one round later.
+ *
+ * Where the walk **stops** is a third thing parse5 does not settle, and it is
+ * settled here rather than left to whichever parser is nearer: a `noscript`
+ * element's children are markup to jsdom (scripting disabled) and a raw-text
+ * node to vite's parse5 (scripting enabled), so the walk does not descend into
+ * one. Descending is a red on markup the bundler compiles unchanged.
  */
 function htmlElements(html: string): readonly Element[] {
   const found: Element[] = [];
   const visit = (root: ParentNode): void => {
-    for (const element of root.querySelectorAll('*')) {
+    for (const element of root.children) {
       found.push(element);
+      // Where the bundler's parser stops. Not a skip of the element — the tag
+      // itself is still classified — a skip of its contents.
+      if (RAW_TEXT_WHEN_SCRIPTING.has(element.tagName.toLowerCase())) continue;
+      visit(element);
       const content = (element as { readonly content?: DocumentFragment }).content;
-      if (content !== undefined && typeof content.querySelectorAll === 'function') visit(content);
+      if (content !== undefined && typeof content.children === 'object') visit(content);
     }
   };
   visit(new DOMParser().parseFromString(html, 'text/html'));
@@ -2048,13 +2671,34 @@ function htmlElements(html: string): readonly Element[] {
  *
  * So the reader is built the other way round, and the classes are these:
  *
- * - An attribute **in `HTML_ASSET_SOURCES`** naming a path in this tree is a
- *   `file`. Any *other* attribute whose value resolves to a real file here is
- *   `unread` and reddens, so being wrong about which tags Vite rewrites is loud
- *   in both directions rather than silently inventing or dropping an edge.
+ * - A tag carrying **`vite-ignore`** is `unread`, and nothing on it is followed.
+ *   The attribute is checked before the table and before the script branch,
+ *   which is where `getNodeAssetAttributes` and `buildHtmlPlugin` check it. On
+ *   the one script tag in this document it takes the entire product out of the
+ *   bundle — `vite build` at 1 module against a 219-module control — so it is
+ *   reported rather than passed over in silence.
+ * - An attribute **in `HTML_ASSET_SOURCES`**, whose row-level `filter` (vite's,
+ *   transcribed) admits it, naming a path in this tree is a `file`. Any *other*
+ *   attribute whose value resolves to a real file here is `unread` and reddens,
+ *   so being wrong about which tags Vite rewrites is loud in both directions
+ *   rather than silently inventing or dropping an edge.
+ * - A `style` attribute is a **declaration list**, and vite hands any whose value
+ *   contains `url(` or `image-set(` to the same postcss url replacer a stylesheet
+ *   goes through (`findNeedTransformStyleAttribute`, then the
+ *   `?html-proxy&inline-css&style-attr` id). So it is read by this file's CSS
+ *   reader rather than by asking whether the whole attribute value happens to
+ *   name a file — which is what it did, and why
+ *   `style="background-image: url('/src/runtime/run-doubles.ts')"` on the tag
+ *   already in this document was neither an edge nor loud while all 10636 bytes
+ *   of the first `NOT_SHIPPED` entry went into `dist/assets/`.
  * - An inline `type="module"` body is `inline`: source, read by the same
  *   extractor every `.ts` file is read by, with its edges resolved against the
- *   repo root exactly as the tag's own `src` would be. A `src` on any script,
+ *   repo root exactly as the tag's own `src` would be. `type` is compared to
+ *   `module` **byte for byte**, because `getScriptInfo` does; the version that
+ *   trimmed and lower-cased first had a strictly wider set than the bundler, so
+ *   `<script type="Module">import '…'</script>` was a module body here and a
+ *   data block there, and its edges reached `reachable` without ever touching
+ *   the entry pin. A `src` on any script,
  *   unlike a module specifier, is a **document-relative path** when it is bare:
  *   `src="src/runtime/run-doubles.ts"` is a file Vite resolves and bundles, and
  *   the reader that applied ESM's bare-means-package rule to it classified that
@@ -2077,6 +2721,16 @@ function htmlElements(html: string): readonly Element[] {
  * and the first root-absolute reference to a static asset will land in
  * `unresolved` rather than go quiet. Teach the resolver that directory then,
  * with a file in it to prove the branch runs.
+ *
+ * And know the other half of that, which this paragraph used to leave unsaid:
+ * `public/` is not only a place `resolveSpecifier` does not look, it is a second
+ * shipping channel. Vite copies every file in it into `dist/` verbatim, with no
+ * module graph, no entry and no config key — `publicDir` defaults to `public`
+ * — so nothing in this file governed it. An adversary made the directory and
+ * copied the first `NOT_SHIPPED` entry into it: a `run-doubles.ts` at the top of `dist/`, 10636
+ * bytes, byte-identical to the source, at 219 modules, the control's own count,
+ * with this file green. `names everything public/ ships` reads the resolved
+ * `publicDir` and pins what is in it.
  */
 function htmlLoads(html: string): HtmlLoad[] {
   const found: HtmlLoad[] = [];
@@ -2084,54 +2738,103 @@ function htmlLoads(html: string): HtmlLoad[] {
     const tag = element.tagName.toLowerCase();
     const body = element.textContent ?? '';
     const hasBody = body.trim() !== '';
+    const attributes = new Map<string, string>();
+    for (const attribute of element.attributes) {
+      if (!attributes.has(attribute.name.toLowerCase())) {
+        attributes.set(attribute.name.toLowerCase(), attribute.value);
+      }
+    }
+    // Before the table and before the script branch, exactly as
+    // `getNodeAssetAttributes` and `buildHtmlPlugin` test it. It is reported
+    // rather than dropped: on this document's one script tag it removes the
+    // whole product from the bundle, and a guard that goes quiet about that is
+    // the guard two adversaries walked through in one round.
+    if (attributes.has(VITE_IGNORE)) {
+      found.push({
+        kind: 'unread',
+        text: collapse(
+          `<${tag} ${VITE_IGNORE}> — the bundler is told to leave this tag alone, so ` +
+            'everything it names is out of the build. Deliberate on a vendor snippet, ' +
+            'and the whole bundle on the entry script',
+        ),
+      });
+      continue;
+    }
     if (tag === 'style') {
       if (hasBody) found.push({ kind: 'unread', text: collapse(element.outerHTML) });
-      continue;
-    }
-    if (tag === 'script') {
-      const type = element.getAttribute('type');
-      const source = element.getAttribute('src');
-      if (type !== null && type.trim().toLowerCase() === 'module') {
+    } else if (tag === 'script') {
+      // `getScriptInfo` is `p.name === "type" && p.value === "module"` — byte
+      // exact, no trim and no case fold. The reader that lower-cased first had a
+      // strictly wider set than the bundler, so `<script type="Module">import
+      // '…'</script>` was a module body here, a plain data block there, and its
+      // specifiers went into `reachable` without ever reaching `GRAPH.entries` —
+      // an orphan laundered onto the graph by a script the build never compiled.
+      const type = attributes.get('type') ?? null;
+      const source = attributes.get('src') ?? null;
+      if (type === 'module') {
         if (source !== null && hasBody) {
           found.push({ kind: 'unread', text: collapse(element.outerHTML) });
-          continue;
-        }
-        if (source !== null && !externalReference(source)) {
+        } else if (source !== null && !externalReference(source)) {
           found.push({ kind: 'file', specifier: source });
-          continue;
+        } else if (hasBody) {
+          found.push({ kind: 'inline', source: body });
         }
-        if (hasBody) found.push({ kind: 'inline', source: body });
-        continue;
-      }
-      if (source !== null || hasBody) {
+      } else if (source !== null || hasBody) {
         found.push({ kind: 'unread', text: collapse(element.outerHTML) });
       }
-      continue;
-    }
-    const table = HTML_ASSET_SOURCES.get(tag);
-    for (const attribute of element.attributes) {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value;
-      if (externalReference(value)) continue;
-      const followed =
-        table !== undefined && table.url.includes(name) && !HTML_ASSET_TAGS_NOT_FOLLOWED.has(tag);
-      if (followed) {
-        found.push({ kind: 'file', specifier: value });
-        continue;
+    } else {
+      const table = HTML_ASSET_SOURCES.get(tag);
+      for (const [name, value] of attributes) {
+        if (externalReference(value)) continue;
+        const row = table !== undefined && table.url.includes(name) ? table : undefined;
+        if (row !== undefined && (row.filter === null || row.filter(attributes))) {
+          found.push({ kind: 'file', specifier: value });
+          continue;
+        }
+        const candidates =
+          table !== undefined && table.srcset.includes(name)
+            ? value.split(',').map((one) => one.trim().split(/\s+/)[0] ?? '')
+            : [value];
+        if (candidates.some((one) => resolveHtmlReference(one) !== null)) {
+          found.push({
+            kind: 'unread',
+            text: collapse(`<${tag} ${name}="${value}"> names a file this reader does not follow`),
+          });
+        }
       }
-      const candidates =
-        table !== undefined && table.srcset.includes(name)
-          ? value.split(',').map((one) => one.trim().split(/\s+/)[0] ?? '')
-          : [value];
-      if (candidates.some((one) => resolveHtmlReference(one) !== null)) {
-        found.push({
-          kind: 'unread',
-          text: collapse(`<${tag} ${name}="${value}"> names a file this reader does not follow`),
-        });
+    }
+    // Vite's `findNeedTransformStyleAttribute` matches any `style` attribute
+    // whose value merely *contains* `url(` or `image-set(` and routes the value
+    // through the CSS pipeline as `?html-proxy&inline-css&style-attr`. This
+    // reader classified a non-table attribute by asking whether the **whole
+    // value** resolved to a file, and `background-image: url('…')` does not, so
+    // `<div id="root" style="background-image: url('/src/runtime/run-doubles.ts')">`
+    // — one attribute on the tag already in this document — was neither an edge
+    // nor a loud one, while `vite build` went to 220 modules against 219 and put
+    // all 10636 bytes of the first NOT_SHIPPED entry in `dist/assets/`. Two
+    // adversaries landed it independently, two rounds running.
+    const style = attributes.get('style');
+    if (style !== undefined && (style.includes('url(') || style.includes('image-set('))) {
+      for (const specifier of styleAttributeTargets(style)) {
+        found.push({ kind: 'file', specifier });
       }
     }
   }
   return found;
+}
+
+/**
+ * The in-tree targets of an inline `style` attribute, read the way vite reads
+ * a declaration value.
+ *
+ * The attribute's value *is* a declaration list, which is why vite can hand it
+ * to the same postcss url replacer a stylesheet's declarations go through. So it
+ * is wrapped in a rule and read by the same reader, rather than by a second
+ * hand-written pattern beside it — the mistake this file has now made in CSS
+ * three times.
+ */
+function styleAttributeTargets(value: string): string[] {
+  return urlTargets(readCss(`.style-attribute { ${value} }`));
 }
 
 /**
@@ -2477,9 +3180,13 @@ function packageJsonKeys(manifest: unknown): string[] {
 /** Every shipping module, parsed once and kept, since several passes read them. */
 const PARSED_MODULES = new Map<string, ts.SourceFile>();
 
+/** The same count for the parser memo, asserted by the same test. */
+let MODULES_PARSED = 0;
+
 function parsedModule(file: string): ts.SourceFile {
   const cached = PARSED_MODULES.get(file);
   if (cached !== undefined) return cached;
+  MODULES_PARSED += 1;
   const parsed = parse(readFileSync(file, 'utf8'), file);
   PARSED_MODULES.set(file, parsed);
   return parsed;
@@ -2528,6 +3235,21 @@ type FactoryUse = {
  * analysis cannot follow to its call, so it is reported instead of counted as
  * absent. `NOT_SHIPPED` and these two assertions all read absence as proof, and
  * absence is the direction that goes quiet.
+ *
+ * Which is what happened next, one node kind over. The version that closed
+ * defect 12 built `locals` and `namespaces` inside
+ * `if (!ts.isImportDeclaration(node)) return`, and a dynamic import binds through
+ * a `VariableDeclaration` — so
+ * `const { createAgentRuntime } = await import('@/runtime/app-runtime')` and a
+ * call on the next line was neither a builder nor an escape, invisible in both
+ * directions, which is the sentence above being false about the very reader it
+ * describes. The control is that the identical function written with a static
+ * import reddens on the first run, so the blindness was to the syntax and not to
+ * the meaning; and the lazy spelling is the ordinary one, being what a
+ * contributor writes when told to keep a heavy dependency out of the initial
+ * chunk. `awaitedImportSpecifier` reads the three initializer shapes that are the
+ * module object, and `reads a lazily imported factory as a construction site`
+ * drives all four ways of getting the export back out of it.
  */
 function factoryUsesIn(
   parsed: ts.SourceFile,
@@ -2535,7 +3257,53 @@ function factoryUsesIn(
 ): FactoryUse {
   const locals = new Set<string>();
   const namespaces = new Map<string, string>();
+  let calls = 0;
+  const escapes: string[] = [];
   eachNode(parsed, (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      // `const { createAgentRuntime } = await import('@/runtime/app-runtime')`
+      // binds the same export the `import` statement above binds, and this
+      // function could not see it: `locals` and `namespaces` were built inside
+      // `if (!ts.isImportDeclaration(node)) return`, and a dynamic import's
+      // binding is a `VariableDeclaration`, never an `ImportDeclaration`. So the
+      // call was in neither `calls` nor `escapes` — invisible in both
+      // directions at once, which is the failure §7 of the header names, and
+      // which this function's own docblock says it was written to end. The
+      // lazy spelling is the one a contributor reaches for when told to keep a
+      // heavy dependency out of the initial chunk; it is shorter than the static
+      // one and it compiles under this repo's strict settings. Measured: the
+      // static spelling of the identical function reddens `builds the sandbox
+      // door once, at the composition root` on the first run, and the lazy one
+      // was green twice at 33/33.
+      const specifier = awaitedImportSpecifier(node.initializer);
+      if (specifier === null) return;
+      const name = node.name;
+      if (ts.isIdentifier(name)) {
+        namespaces.set(name.text, specifier);
+        return;
+      }
+      if (!ts.isObjectBindingPattern(name)) return;
+      for (const element of name.elements) {
+        if (!ts.isIdentifier(element.name)) {
+          // A nested or renamed-into-a-pattern binding is a shape this reader
+          // does not follow, and absence is what the two assertions below read
+          // as proof, so it is loud instead.
+          escapes.push(collapse(node.getText(parsed), 80));
+          continue;
+        }
+        const exported = element.propertyName;
+        if (exported === undefined) {
+          if (isFactory(specifier, element.name.text)) locals.add(element.name.text);
+          continue;
+        }
+        if (ts.isIdentifier(exported) || ts.isStringLiteralLike(exported)) {
+          if (isFactory(specifier, exported.text)) locals.add(element.name.text);
+          continue;
+        }
+        escapes.push(collapse(node.getText(parsed), 80));
+      }
+      return;
+    }
     if (!ts.isImportDeclaration(node)) return;
     const clause = node.importClause;
     if (clause === undefined || clause.isTypeOnly) return;
@@ -2556,8 +3324,6 @@ function factoryUsesIn(
     }
   });
 
-  let calls = 0;
-  const escapes: string[] = [];
   // Called, or loud. Every reference below reaches exactly one of these two.
   const classify = (reference: ts.Node): void => {
     const parent = reference.parent;
@@ -2717,6 +3483,33 @@ function exportsReaching(
 }
 
 /** Where a factory is built, and every use of it this analysis cannot follow. */
+/**
+ * What the one assertion that fires on a shipped double says.
+ *
+ * A named function rather than a template inside the loop, because the reason is
+ * only ever *rendered* when the assertion fails, and nothing in a green run
+ * reads a failure message. Commit 3697252 exists to put the exemption's reason
+ * in this string — "the half that says whether the import or the exemption is
+ * the mistake" — and reverting that commit exactly left the suite at
+ * `33 passed (33)`, exit 0. A property established by a commit and described by
+ * a comment is not a guarded property; `an exemption that fires says why it was
+ * exempt` drives both of these and reads what comes back.
+ */
+function shippedDoubleMessage(path: string, reason: string): string {
+  return (
+    `${path} is exempt because nothing ships it. It is now on the graph: ` +
+    `either that is the bug, or the exemption should go. It is exempt as — ${reason}`
+  );
+}
+
+/** The same, for the debt list, whose second column had no reader either. */
+function debtLandedMessage(path: string, waitingFor: string): string {
+  return (
+    `${path} is on the graph now. That is the fix landing, not a failure: ` +
+    `delete its AWAITING_A_SURFACE entry. It was waiting for — ${waitingFor}`
+  );
+}
+
 type ConstructionSites = {
   /** Files containing a call to it, by repo path. */
   readonly builders: readonly string[];
@@ -2743,7 +3536,21 @@ function constructionSites(factory: string, definingModule: string): Constructio
 type Graph = {
   /** Every file the entry reaches, transitively, spelled the way the disk spells it. */
   readonly reachable: ReadonlySet<string>;
-  /** The files `index.html` names in an attribute, resolved. */
+  /**
+   * Every entry `index.html` declares, in document order, as a repo path — or as
+   * `INLINE_ENTRY` for one that has a body instead of a file.
+   *
+   * The version this replaces was built from `kind === 'file'` loads only, and
+   * `HTML_ENTRY`'s docblock two hundred lines above it says in plain words that
+   * "a second module script, with a body instead of a `src`, is also an entry".
+   * Both sentences were true of their own halves and the pin over this list could
+   * not express the second one: adding `<script type="module">import
+   * '/src/app/App.tsx';</script>` beside the real entry is a real second vite
+   * entry — `vite build` exit 0 at **220 modules against 219** — and left this
+   * list at `['src/main.tsx']` with the guard green at 33/33. An inline entry has
+   * no file to name, so it is named as what it is; a pin that cannot spell half
+   * of what it pins is a pin protecting the wrong half.
+   */
   readonly entries: readonly string[];
   /** Every tag in `index.html` that loads or runs something this file cannot read. */
   readonly unreadHtml: readonly string[];
@@ -2802,9 +3609,25 @@ type FileAnalysis = {
 
 const FILE_ANALYSIS = new Map<string, FileAnalysis>();
 
+/**
+ * How many times a file has actually been read and classified this run.
+ *
+ * The memo above is commit f925355's "structural fix for the clean-tree timeout
+ * the round-4 critic measured", and removing the cache lookup — restoring the
+ * exact pre-fix behaviour, every walk re-reading and re-parsing every reachable
+ * file — left the suite at `33 passed (33)`, exit 0, because a cache that is
+ * only faster is a cache nothing observes. A duration is the wrong thing to
+ * assert: it is the property the round-4 false red was made of. A **count** is
+ * not, and it is the property the commit message actually claims — "computed
+ * once per run instead of once per walk". `reads and parses each reachable file
+ * once per run, not once per walk` reads these two counters.
+ */
+let FILE_ANALYSES_COMPUTED = 0;
+
 function fileAnalysis(file: string): FileAnalysis {
   const cached = FILE_ANALYSIS.get(file);
   if (cached !== undefined) return cached;
+  FILE_ANALYSES_COMPUTED += 1;
   const source = readFileSync(file, 'utf8');
   const label = asRepoPath(file);
   const reported =
@@ -2864,7 +3687,14 @@ function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
     };
   };
   const entryEdges = loads.flatMap((load) => (load.kind === 'file' ? [htmlEdge(load.specifier)] : []));
-  const entries = entryEdges.flatMap((edge) => (edge.resolved === null ? [] : [edge.resolved]));
+  // Document order, both kinds. An inline body is an entry with no file to name,
+  // so it is spelled as itself rather than dropped for not having one.
+  const entries = loads.flatMap((load) => {
+    if (load.kind === 'inline') return [INLINE_ENTRY];
+    if (load.kind !== 'file') return [];
+    const resolved = htmlEdge(load.specifier).resolved;
+    return resolved === null ? [] : [asRepoPath(resolved)];
+  });
   record('index.html', entryEdges);
   const inlineScripts = loads.flatMap((load) => (load.kind === 'inline' ? [load.source] : []));
   // An inline module body is a module. Its imports are edges Rollup follows and
@@ -2895,6 +3725,214 @@ function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
     record(asRepoPath(file), analysis.edges);
   }
   return { reachable, entries, unreadHtml, unfollowable, unresolved, miscased };
+}
+
+/**
+ * What `vite build` itself loaded, asked of `vite build` rather than reconstructed.
+ *
+ * Six rounds of this file have asked a reconstruction question — *"is every
+ * shipping file under `src/` present in the module graph **this file** rebuilds
+ * from a parse of `index.html`, a hand-written resolver, a transcription of
+ * vite's html table and CSS regexes, and an AST reading of `vite.config.ts`?"* —
+ * and every round the answer diverged from the bundler's somewhere new. The
+ * divergences were never in the tables, which are copied correctly; they were in
+ * the traversal around the tables: *which* nodes the table is applied to
+ * (`vite-ignore`), *where* the regexes are run (`walkDecls`), *which* attribute
+ * spellings count (`p.value === "module"`), *which* attributes are CSS at all
+ * (the inline `style`), and *which file the config object came from* (an import
+ * specifier in `vite.config.ts` pointing at a local wrapper).
+ *
+ * There is no version of a second implementation of vite's front end that stops
+ * diverging, so this stops being the only instrument. Vite's programmatic
+ * `build()` runs the real pipeline with the real config over the real
+ * `index.html`, with `write: false` so nothing lands on disk, and a recording
+ * plugin reads back `this.getModuleIds()` and `this.getWatchFiles()`. The union
+ * of those two, restricted to this repo, is the bundler's own answer to "what
+ * did you read" — module ids alone would miss a stylesheet reached through
+ * `@import`, which postcss inlines rather than handing to rollup, so both are
+ * taken.
+ *
+ * This does not replace the walk and it is not meant to. The walk is what
+ * produces the `unfollowable`/`unresolved`/`miscased` classifications and what
+ * every reader-level assertion in this file drives. What the build adds is the
+ * one thing a reconstruction cannot have: a second, independent answer to
+ * compare against, so that a disagreement between this file and the bundler is a
+ * failing assertion instead of a finding.
+ */
+type BuildFacts = {
+  /** Every file under this repo the build read, as repo paths, sorted. */
+  readonly read: readonly string[];
+  /** Rollup's input set, as repo paths. */
+  readonly inputs: readonly string[];
+  /** `publicDir` as the resolved config gives it. */
+  readonly publicDir: string;
+  /** Every plugin in the resolved config, in order, this file's recorder aside. */
+  readonly plugins: readonly string[];
+  /** Every string alias prefix the resolved config carries. */
+  readonly aliases: readonly string[];
+};
+
+const BUILD_RECORDER = 't05-reachability-recorder';
+
+/** The fence the child prints its result between, so a stray log line is not the result. */
+const BUILD_FENCE = '<<t05-reachability>>';
+
+/**
+ * The program the child runs, as source, because it does not run here.
+ *
+ * Vitest gives this file a **jsdom** environment, which it needs: `htmlElements`
+ * asks jsdom for the parse5 parse vite parses `index.html` with. Vite's build
+ * loads esbuild, and esbuild refuses to start unless
+ * `new TextEncoder().encode('') instanceof Uint8Array`, which is false in a
+ * jsdom realm whatever this file swaps into `globalThis` — the array and the
+ * constructor come from different realms and only one of them can be replaced
+ * without replacing the environment the rest of the assertions need. So the
+ * build runs in its own node process, which is also the honest arrangement: the
+ * point of this instrument is a second opinion, and a second opinion computed
+ * inside the first opinion's globals is a weaker one.
+ *
+ * `write: false` is why this cannot create, empty or race a `dist/` — the guard
+ * stays as read-only as every other assertion in this file.
+ */
+const BUILD_PROGRAM = `
+const { build } = await import('vite');
+const read = new Set();
+let inputs = [];
+let publicDir = '';
+let plugins = [];
+let aliases = [];
+await build({
+  root: process.cwd(),
+  configFile: 'vite.config.ts',
+  logLevel: 'silent',
+  build: { write: false, sourcemap: false, minify: false },
+  plugins: [
+    {
+      name: '${BUILD_RECORDER}',
+      enforce: 'post',
+      configResolved(resolved) {
+        publicDir = resolved.publicDir;
+        plugins = resolved.plugins
+          .map((plugin) => plugin.name)
+          .filter((name) => name !== '${BUILD_RECORDER}');
+        aliases = resolved.resolve.alias.flatMap((entry) =>
+          typeof entry.find === 'string' ? [entry.find] : [],
+        );
+      },
+      buildStart(options) {
+        const input = options.input;
+        inputs =
+          typeof input === 'string' ? [input] : Array.isArray(input) ? input : Object.values(input);
+      },
+      generateBundle() {
+        for (const id of this.getModuleIds()) read.add(id);
+        for (const file of this.getWatchFiles()) read.add(file);
+      },
+    },
+  ],
+});
+process.stdout.write(
+  '${BUILD_FENCE}' + JSON.stringify({ read: [...read], inputs, publicDir, plugins, aliases }) + '${BUILD_FENCE}',
+);
+`;
+
+let BUILD_FACTS: BuildFacts | null = null;
+
+/** The build, run at most once per run however many assertions ask for it. */
+function buildFacts(): BuildFacts {
+  BUILD_FACTS ??= recordBuild();
+  return BUILD_FACTS;
+}
+
+type RecordedBuild = {
+  readonly read: readonly string[];
+  readonly inputs: readonly string[];
+  readonly publicDir: string;
+  readonly plugins: readonly string[];
+  readonly aliases: readonly string[];
+};
+
+function recordBuild(): BuildFacts {
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', BUILD_PROGRAM], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  // Fenced rather than parsed whole, because a plugin or a dependency is free to
+  // write to stdout and a build that prints a warning is not a build that failed.
+  const fenced = output.split(BUILD_FENCE)[1];
+  if (fenced === undefined) {
+    throw new Error(`the recorded build printed no result. Its output was: ${collapse(output, 400)}`);
+  }
+  const recorded = JSON.parse(fenced) as RecordedBuild;
+  const inside = recorded.read.flatMap((id) => {
+    const path = relative(REPO_ROOT, id).split('\\').join('/');
+    return path === '' || path.startsWith('..') || isAbsolute(path) ? [] : [path];
+  });
+  return {
+    read: [...new Set(inside)].sort(),
+    inputs: recorded.inputs.map(asRepoPath),
+    publicDir: recorded.publicDir,
+    plugins: recorded.plugins,
+    aliases: recorded.aliases,
+  };
+}
+
+/** The files under `src/` the build read — the bundler's own answer to the walk's question. */
+function readBySourceKind(facts: BuildFacts): string[] {
+  return facts.read.filter((path) => path.startsWith('src/') && bundlerLoads(basename(path)));
+}
+
+/** The files under `src/` this walk reaches, on the same terms. */
+function reachedBySourceKind(): string[] {
+  return [...REACHABLE]
+    .map(asRepoPath)
+    .filter((path) => path.startsWith('src/') && bundlerLoads(basename(path)))
+    .sort();
+}
+
+/** Everything inside `publicDir`, recursively, as paths relative to it. */
+function publicFiles(directory: string, prefix = ''): string[] {
+  const found: string[] = [];
+  for (const entry of entriesIn(directory)) {
+    if (entry.isFile) found.push(`${prefix}${entry.name}`);
+    else found.push(...publicFiles(join(directory, entry.name), `${prefix}${entry.name}/`));
+  }
+  return found;
+}
+
+/**
+ * The message a failing expectation carries, or `null` when it passed.
+ *
+ * A failure message is only ever produced by a failure, so nothing in a green
+ * run reads one — which is how three separate properties of this file came to be
+ * carried by strings no assertion had ever seen. This is what lets a test read
+ * one on purpose.
+ */
+function whyItFailed(assertion: () => void): string | null {
+  try {
+    assertion();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/**
+ * The entry pin, as one function, so that collapsing it is an edit to the thing
+ * its guard drives.
+ *
+ * Two assertions rather than one, and that is the property: a document that
+ * grows an ordinary second reference must redden saying **the entry set moved**,
+ * and only a document with no resolvable entry at all gets the vacuity message.
+ * Written inline, the split was a comment; written here, `the entry pin says the
+ * entry set moved, not that the graph is vacuous` reads which message comes back.
+ */
+function entryPinFailure(entries: readonly string[]): string | null {
+  return whyItFailed(() => {
+    expect(entries, ENTRY_SET_VACUOUS).toContain('src/main.tsx');
+    expect(entries, ENTRY_SET_MOVED).toEqual(['src/main.tsx']);
+  });
 }
 
 function asRepoPath(file: string): string {
@@ -2953,24 +3991,29 @@ describe('the renderer is wired into the product', () => {
     // a bare src in html as a path` and `follows the attributes vite rewrites` —
     // the pin is the cheap second signal, not the argument.
     // Two assertions, because one was making a false statement about half of what
-    // it caught. Adding a favicon — `<link rel="icon" href="/src/assets/vela.svg">`,
-    // the most ordinary edit anybody will ever make to this file — reddened the
-    // single pin that stood here with the message "index.html declares no module
-    // entry this walk can resolve; the graph below is vacuous", printing an array
-    // with `src/main.tsx` in it. The graph was not vacuous and the entry was
-    // right there. A guard that reddens on routine work with a message that
-    // misdescribes what it found is a guard somebody deletes, which is a slower
-    // way of losing than being evaded.
-    expect(
-      GRAPH.entries.map(asRepoPath),
-      'index.html declares no module entry this walk can resolve; the graph below is vacuous',
-    ).toContain('src/main.tsx');
-    expect(
-      GRAPH.entries.map(asRepoPath),
-      'index.html names a file this guard has not been told about. That is ordinary ' +
-        '— a favicon, a preload, a second stylesheet — and it is still the entry set ' +
-        'moving: say what the new one is and add it here',
-    ).toEqual(['src/main.tsx']);
+    // it caught. Adding a second resolvable asset reference to this document —
+    // `<link rel="icon" href="/src/styles/tokens.css" />`, standing in for the
+    // favicon a real repo would name — reddened the single pin that stood here
+    // with `expected [ 'src/styles/tokens.css', …(1) ] to deeply equal
+    // [ 'src/main.tsx' ]` under the message "index.html declares no module entry
+    // this walk can resolve; the graph below is vacuous". The graph was not
+    // vacuous and the entry was right there in the array being printed. A guard
+    // that reddens on routine work with a message that misdescribes what it
+    // found is a guard somebody deletes, which is a slower way of losing than
+    // being evaded.
+    //
+    // The version of this paragraph that stood here cited
+    // `<link rel="icon" href="/src/assets/vela.svg">` instead, and a measurer
+    // executed it: there is no `src/assets/` in this repo and no `.svg` under
+    // `src/` at all, so that edit resolves to nothing and reddens a different
+    // named test — `says so when a specifier into this tree resolves to nothing`
+    // — in both the old guard and this one. The behaviour described was real; the
+    // input given for it was not, which made the paragraph unfalsifiable as
+    // written. The href above is a file that exists, and
+    // `the entry pin says the entry set moved, not that the graph is vacuous`
+    // drives it and reads which of the two messages comes back.
+    const failure = entryPinFailure(GRAPH.entries);
+    if (failure !== null) throw new Error(failure);
 
     const specifiersOf = (html: string): string[] =>
       htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
@@ -3067,7 +4110,11 @@ describe('the renderer is wired into the product', () => {
       [...inline.reachable].map(asRepoPath),
       'an inline module body reached the reader but not the graph',
     ).toContain('src/runtime/run-doubles.ts');
-    expect(inline.entries).toEqual([]);
+    // The entry list spells this one, and did not use to. An inline module body
+    // is an entry with no file to name; the version built from `kind === 'file'`
+    // loads alone returned `[]` here, which said "index.html declares no entry"
+    // about a document whose only entry is the one being walked.
+    expect(inline.entries).toEqual([INLINE_ENTRY]);
     expect(walk('<script type="module" src="/src/nothing-here.tsx"></script>').unresolved).toEqual([
       'index.html: /src/nothing-here.tsx',
     ]);
@@ -3107,7 +4154,7 @@ describe('the renderer is wired into the product', () => {
     expect(
       walk(
         '<script type="module" src="/src/runtime/run-doubles.ts" src="/src/main.tsx"></script>',
-      ).entries.map(asRepoPath),
+      ).entries,
     ).toEqual(['src/runtime/run-doubles.ts']);
   });
 
@@ -3152,7 +4199,7 @@ describe('the renderer is wired into the product', () => {
       specifiersOfLoad(hidden),
       'a `<!--` in one script body must not erase the tag after it',
     ).toEqual(['/src/main.tsx']);
-    expect(walk(hidden).entries.map(asRepoPath)).toEqual(['src/main.tsx']);
+    expect(walk(hidden).entries).toEqual([INLINE_ENTRY, 'src/main.tsx', INLINE_ENTRY]);
 
     // And the same shape hiding an import rather than a tag.
     const hiddenInline =
@@ -3224,12 +4271,13 @@ describe('the renderer is wired into the product', () => {
     // invisible to this reader because it is invisible to the bundler: not a
     // direction this file is wrong in, an agreement. What it costs is stated —
     // the entry it hides is hidden from the build too, so the pin goes red on an
-    // empty entry list rather than green on a bundle nobody read.
+    // entry list holding only the swallowing script rather than green on a
+    // bundle nobody read.
     const escaped =
       '<script type="module">const s = "<!--<script>";</script>' +
       '<script type="module" src="/src/main.tsx"></script>';
     expect(specifiersOfLoad(escaped), 'agrees with the parser the bundler uses').toEqual([]);
-    expect(walk(escaped).entries).toEqual([]);
+    expect(walk(escaped).entries).toEqual([INLINE_ENTRY]);
 
     // A tag the parser drops is a tag the bundler drops. An unterminated one at
     // end of input is dropped outright — no element, so nothing to classify and
@@ -3256,12 +4304,16 @@ describe('the renderer is wired into the product', () => {
     // untouched tree — vitest's default 5000ms, twice in ten consecutive runs —
     // because it walks the module graph six times and each walk re-read and
     // re-parsed every reachable file. `fileAnalysis` is the fix and it is
-    // structural rather than a larger number: ten consecutive runs of this whole
-    // file on a clean tree now cost 649–1526ms for all thirty-three assertions
-    // together, exit 0 ten times out of ten. The explicit budget is belt as well as
-    // braces, because a false red on somebody else's clean tree costs this guard
-    // its life.
-  }, 20_000);
+    // structural rather than a larger number. Measured on this box after the
+    // build assertions landed: ten consecutive runs of the whole file on a clean
+    // tree, exit 0 ten times out of ten, 3541-16834ms for all forty-eight
+    // assertions together - an observed range on one machine doing other things,
+    // not a bound. The explicit budget is belt as well as braces, because a false
+    // red on somebody else's clean tree costs this guard its life; and an idle
+    // box is exactly the measurement that cannot see such a red, which is why
+    // BOUNDARY_BUDGET is now on every assertion that walks the graph rather than
+    // on the one that was caught.
+  }, BOUNDARY_BUDGET);
 
   /**
    * A `<template>`'s children are parsed, and they are not in the document tree.
@@ -3390,13 +4442,16 @@ describe('the renderer is wired into the product', () => {
     // reader does not implement, so a `content` that names a real file is loud
     // rather than followed — and the three metas in the real index.html, whose
     // content is not a path, stay silent.
-    expect(specifiersOfLoad('<meta property="og:image" content="/src/main.tsx">')).toEqual([]);
-    expect(unreadOf('<meta property="og:image" content="/src/main.tsx">')).toBe(1);
+    expect(specifiersOfLoad('<meta property="og:image" content="/src/main.tsx">')).toEqual([
+      '/src/main.tsx',
+    ]);
+    expect(unreadOf('<meta property="og:image" content="/src/main.tsx">')).toBe(0);
+    expect(specifiersOfLoad('<meta name="viewport" content="/src/main.tsx">')).toEqual([]);
+    expect(unreadOf('<meta name="viewport" content="/src/main.tsx">')).toBe(1);
     expect(unreadOf('<meta name="viewport" content="width=device-width, initial-scale=1.0">')).toBe(
       0,
     );
     expect(unreadOf('<meta charset="UTF-8">')).toBe(0);
-    expect([...HTML_ASSET_TAGS_NOT_FOLLOWED]).toEqual(['meta']);
 
     // A `srcset` is a candidate list, not a URL. Parsing it is not implemented,
     // so one that names a real file is loud rather than half-read.
@@ -3421,17 +4476,50 @@ describe('the renderer is wired into the product', () => {
         'HTML_ASSET_SOURCES is then a claim nothing checks: find it, or say here ' +
         'why it cannot be read',
     ).not.toBeNull();
-    const flatten = (table: ReadonlyMap<string, HtmlAssetAttributes>): string[] =>
+    // Vite's rows have three keys, and the comparison that stood here read two.
+    // `filter` is the third, and it is not decoration: it is the whole of what
+    // makes `meta` different from `img`, and the reason this file used to skip
+    // `meta` by name instead. A row that grows one, or loses one, moves an edge
+    // in or out of the graph; both are silent unless the key is compared.
+    const rows = (table: ReadonlyMap<string, ViteAssetRow>): string[] =>
       [...table.entries()]
-        .map(([tag, { url, srcset }]) => `${tag}: ${[...url].sort().join(',')} | ${[...srcset].sort().join(',')}`)
+        .map(
+          ([tag, { url, srcset, hasFilter }]) =>
+            `${tag}: ${[...url].sort().join(',')} | ${[...srcset].sort().join(',')} | ` +
+            `${hasFilter ? 'filter' : 'no filter'}`,
+        )
         .sort();
+    const mine = new Map(
+      [...HTML_ASSET_SOURCES].map(([tag, row]) => [
+        tag,
+        { url: row.url, srcset: row.srcset, hasFilter: row.filter !== null },
+      ]),
+    );
     expect(
-      flatten(vite ?? new Map()),
+      rows(vite ?? new Map()),
       'vite rewrites a tag or attribute this file has not been told about, or no ' +
-        'longer rewrites one it follows. Either way an edge is being invented or ' +
-        'dropped in index.html',
-    ).toEqual(flatten(HTML_ASSET_SOURCES));
-  });
+        'longer rewrites one it follows, or gates one behind a predicate this ' +
+        'file does not carry. Each of those invents or drops an edge in index.html',
+    ).toEqual(rows(mine));
+    // The predicate is data as well as a function, and transcribed data that is
+    // never compared back is the mistake this docblock spent two rounds on.
+    expect(
+      viteStringArray('ALLOWED_META_NAME'),
+      "vite's ALLOWED_META_NAME could not be read, so the meta filter is a claim " +
+        'nothing checks',
+    ).toEqual(ALLOWED_META_NAME);
+    expect(
+      viteStringArray('ALLOWED_META_PROPERTY'),
+      "vite's ALLOWED_META_PROPERTY could not be read, so the meta filter is a " +
+        'claim nothing checks',
+    ).toEqual(ALLOWED_META_PROPERTY);
+    // And the filter is exercised in both directions, because a predicate that
+    // is never false is a predicate the row does not need.
+    expect(metaCarriesAnAsset(new Map([['property', 'og:image']]))).toBe(true);
+    expect(metaCarriesAnAsset(new Map([['name', 'twitter:image']]))).toBe(true);
+    expect(metaCarriesAnAsset(new Map([['name', 'viewport']]))).toBe(false);
+    expect(metaCarriesAnAsset(new Map())).toBe(false);
+  }, BOUNDARY_BUDGET);
 
   /**
    * In an HTML attribute a bare path is relative to the document. In a module
@@ -4450,7 +5538,7 @@ describe('the renderer is wired into the product', () => {
         'reason; if it is waiting for a surface it goes in AWAITING_A_SURFACE ' +
         'with what it is waiting for. It does not get to be neither',
     ).toEqual([]);
-  });
+  }, BOUNDARY_BUDGET);
 
   /**
    * A module's identity is what the filesystem calls it, not what a specifier
@@ -4545,7 +5633,7 @@ describe('the renderer is wired into the product', () => {
         'on the import graph reaches it, which means whatever surface used to ' +
         'submit through it is deciding for itself again.',
     ).toBe(true);
-  });
+  }, BOUNDARY_BUDGET);
 
   /**
    * And the walk is **weaker than it looks even now**, which was measured rather
@@ -4580,7 +5668,7 @@ describe('the renderer is wired into the product', () => {
         'composition root, and handed down — a surface that builds its own host ' +
         'is how the boundary ended up inside the process it constrains',
     ).toEqual(['src/app/App.tsx']);
-  });
+  }, BOUNDARY_BUDGET);
 
   /**
    * The two assertions above and below are only worth their names if the thing
@@ -4695,7 +5783,7 @@ describe('the renderer is wired into the product', () => {
     expect(
       uses("import { createAgentRuntime } from '@/runtime/app-runtime';\nuse(createAgentRuntime);\n"),
     ).toEqual({ calls: 0, escapes: ['use(createAgentRuntime)'] });
-  });
+  }, BOUNDARY_BUDGET);
 
   /**
    * A re-export is a rename with a file boundary in it.
@@ -4749,7 +5837,7 @@ describe('the renderer is wired into the product', () => {
     expect(names("export { other } from '@/runtime/app-runtime';\n")).toEqual([]);
     expect(names("export { createAgentRuntime } from './AppShell.module.css';\n")).toEqual([]);
     expect(names("// export { createAgentRuntime } from '@/runtime/app-runtime';\n")).toEqual([]);
-  });
+  }, BOUNDARY_BUDGET);
 
   it('names every exemption, and every exemption is still off the graph', () => {
     // An exemption that has stopped applying reads exactly like a clean tree, so
@@ -4764,24 +5852,16 @@ describe('the renderer is wired into the product', () => {
     // the import or the exemption is the mistake.
     for (const [path, reason] of NOT_SHIPPED) {
       expect(canonical(join(REPO_ROOT, path)), `${path} moved; fix NOT_SHIPPED`).not.toBeNull();
-      expect(
-        REACHABLE.has(join(REPO_ROOT, path)),
-        `${path} is exempt because nothing ships it. It is now on the graph: ` +
-          `either that is the bug, or the exemption should go. It is exempt as — ${reason}`,
-      ).toBe(false);
+      expect(REACHABLE.has(join(REPO_ROOT, path)), shippedDoubleMessage(path, reason)).toBe(false);
     }
     for (const [path, waitingFor] of AWAITING_A_SURFACE) {
       expect(
         canonical(join(REPO_ROOT, path)),
         `${path} moved; fix AWAITING_A_SURFACE`,
       ).not.toBeNull();
-      expect(
-        REACHABLE.has(join(REPO_ROOT, path)),
-        `${path} is on the graph now. That is the fix landing, not a failure: ` +
-          `delete its AWAITING_A_SURFACE entry. It was waiting for — ${waitingFor}`,
-      ).toBe(false);
+      expect(REACHABLE.has(join(REPO_ROOT, path)), debtLandedMessage(path, waitingFor)).toBe(false);
     }
-  });
+  }, BOUNDARY_BUDGET);
 
   it('reaches the runtime through the composition root, not through a back door', () => {
     // The join is meant to be one, visible, at the place this repo puts joins.
@@ -4803,5 +5883,597 @@ describe('the renderer is wired into the product', () => {
     expect(sites.builders, 'the runtime is built once, at the composition root').toEqual([
       'src/app/App.tsx',
     ]);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Where the bundler's traversal stops, starts and looks sideways.
+   *
+   * Round 5 stopped listing forms and started transcribing vite's own data, and
+   * that was the right move: the tables are correct. What it did not transcribe
+   * is the control flow around the tables, and every construction that landed in
+   * round 6 is in that control flow rather than in the data. Four of them, each
+   * measured against the committed guard before it was changed:
+   *
+   * - `vite-ignore` on the one script tag in this document. `vite build` exit 0
+   *   at **1 module transformed against a 219-module control**; `dist/assets/`
+   *   holding nothing but a sourcemap; `dist/`'s own `index.html` still pointing at
+   *   `/src/main.tsx`, which does not exist in the output; guard green twice at
+   *   33/33 with `GRAPH.entries` still `['src/main.tsx']`. The same attribute on
+   *   a `<link>` laundered a planted orphan, and was caught only by that pin.
+   * - `<script type="Module">`. `getScriptInfo` compares `p.value === "module"`
+   *   byte for byte; this reader trimmed and lower-cased, a strict superset, so
+   *   it read a body the bundler treats as data \u2014 and an inline body's edges
+   *   went into `reachable` without touching the entry pin at all.
+   * - `<div id="root" style="background-image: url('\u2026')">`, landed independently
+   *   by two adversaries in two rounds: 220 modules against 219, and all 10636
+   *   bytes of the first `NOT_SHIPPED` entry in
+   *   `dist/assets/run-doubles-*.ts`.
+   * - `<noscript>`, in the other direction: markup to jsdom, raw text to vite's
+   *   parse5, so a `<link>` inside one reddened this guard against a build that
+   *   stayed at the control's own module count.
+   */
+  it("stops where the bundler's traversal stops, and reads what it reads", () => {
+    const specifiersOfLoad = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+    const unreadOf = (html: string): number =>
+      htmlLoads(html).filter((load) => load.kind === 'unread').length;
+
+    // Checked before the asset table and before `getScriptInfo` reads anything,
+    // exactly where `getNodeAssetAttributes` checks it. Loud rather than silent,
+    // because on this document's one script tag it removes the whole product.
+    const ignoredEntry = '<script type="module" src="/src/main.tsx" vite-ignore></script>';
+    expect(specifiersOfLoad(ignoredEntry), 'vite is told to leave this tag alone').toEqual([]);
+    expect(unreadOf(ignoredEntry)).toBe(1);
+    expect(walk(ignoredEntry).entries, 'a bundle containing none of the product').toEqual([]);
+    const ignoredLink = '<link rel="stylesheet" href="/src/styles/base.css" vite-ignore />';
+    expect(specifiersOfLoad(ignoredLink)).toEqual([]);
+    expect(unreadOf(ignoredLink)).toBe(1);
+    expect(specifiersOfLoad('<link rel="stylesheet" href="/src/styles/base.css" />')).toEqual([
+      '/src/styles/base.css',
+    ]);
+
+    // `p.name === "type" && p.value === "module"`, byte for byte.
+    expect(specifiersOfLoad('<script type="Module" src="/src/main.tsx"></script>')).toEqual([]);
+    expect(unreadOf('<script type="Module" src="/src/main.tsx"></script>')).toBe(1);
+    expect(specifiersOfLoad('<script type=" module" src="/src/main.tsx"></script>')).toEqual([]);
+    const casedInline = '<script type="Module">import "/src/runtime/run-doubles.ts";</script>';
+    expect(
+      [...walk(casedInline).reachable],
+      'a body the bundler reads as data must not put edges on this graph',
+    ).toEqual([]);
+    expect(unreadOf(casedInline)).toBe(1);
+
+    // `findNeedTransformStyleAttribute` matches any `style` whose value merely
+    // contains `url(` or `image-set(` and hands the value to the CSS pipeline.
+    const styled =
+      '<div id="root" style="background-image: url(\'/src/runtime/run-doubles.ts\')"></div>';
+    expect(specifiersOfLoad(styled), 'an inline style is a declaration list').toEqual([
+      '/src/runtime/run-doubles.ts',
+    ]);
+    expect([...walk(styled).reachable].map(asRepoPath)).toContain('src/runtime/run-doubles.ts');
+    expect(specifiersOfLoad('<div id="root" style="color: inherit"></div>')).toEqual([]);
+    expect(
+      specifiersOfLoad('<div style="background-image: image-set(\'/src/main.tsx\' 1x)"></div>'),
+      'vite tests for image-set( in the attribute value as well as url(',
+    ).toEqual(['/src/main.tsx']);
+
+    // Scripting is enabled in the parser vite uses and disabled in jsdom's, so a
+    // `noscript` body is one raw-text node there and an element subtree here.
+    const noscript = '<noscript><link rel="stylesheet" href="/src/styles/base.css"></noscript>';
+    expect(specifiersOfLoad(noscript), 'the bundler never builds these elements').toEqual([]);
+    expect(unreadOf(noscript), 'and there is no tag to be loud about either').toBe(0);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * A `url()` outside a declaration value is dead text, and is said so.
+   *
+   * Narrowing `urlTargets` to `walkDecls` closes the laundering direction and
+   * would open the silent one: a form that is neither followed nor reported is
+   * exactly the shape this file has been evaded through four times. So the
+   * narrowing and the loud branch are asserted together, and the same `url()`
+   * is driven in both positions.
+   */
+  it('reads a url() the declaration walk never sees, and refuses to follow it', () => {
+    const stylesheet = join(SRC_ROOT, 'styles', 'base.css');
+    const prelude = '@supports (background-image: url("./typeface.css")) { :root { --p: 1; } }';
+    expect(
+      cssSpecifiers(prelude, stylesheet),
+      'a url() in an at-rule prelude is an edge this reader invents; postcss ' +
+        'never hands the prelude to the replacer',
+    ).toEqual([]);
+    expect(
+      cssUnfollowable(prelude, stylesheet).join(' | '),
+      'and refusing to follow it silently is how the orphan behind it stays hidden',
+    ).toContain('is not in a declaration value');
+    expect(
+      cssSpecifiers('.a { background-image: url("./typeface.css"); }', stylesheet),
+      'the same url() in a declaration value is the edge it always was',
+    ).toEqual(['./typeface.css']);
+    expect(cssUnfollowable('.a { background-image: url("./typeface.css"); }', stylesheet)).toEqual(
+      [],
+    );
+    // A nested at-rule prelude is inside a block and still not a declaration.
+    expect(
+      cssSpecifiers('.a { @supports (background-image: url("./typeface.css")) { color: inherit; } }', stylesheet),
+    ).toEqual([]);
+    // And `@import url(...)` is `importRules`' form, not this one, in both halves.
+    expect(cssUnfollowable('@import url("./typeface.css");', stylesheet)).toEqual([]);
+    expect(cssSpecifiers('@import url("./typeface.css");', stylesheet)).toEqual(['./typeface.css']);
   });
+
+  /**
+   * What this reader follows and what it calls unfollowable are the same
+   * question, asked once.
+   *
+   * The predecessor was a hand-written `Set` of three names whose docblock
+   * claimed it was "vite's set and not a longer one". Deleting a member left the
+   * suite green twice — and a loop written over that set's own members cannot
+   * catch that, because a set that enumerates itself is never short. So the
+   * probe list below is written here, in the test, and every name on it is
+   * driven through **both** readers: whatever `cssSpecifiers` follows must be
+   * exactly what `cssUnfollowable` stays quiet about. A form that is followed
+   * and reported is a double count; a form that is neither is a silent drop, and
+   * a silent drop is what four separate agents have shipped a double through.
+   */
+  it('follows and reports the same set of CSS function forms', () => {
+    const stylesheet = join(SRC_ROOT, 'styles', 'base.css');
+    const forms = [
+      'url',
+      'image-set',
+      '-webkit-image-set',
+      '-ms-image-set',
+      'local',
+      'format',
+      'data-uri',
+      'attr',
+      'src',
+    ];
+    const followed: string[] = [];
+    const reported: string[] = [];
+    for (const form of forms) {
+      const rule = `.a { background-image: ${form}("./typeface.css"); }`;
+      if (cssSpecifiers(rule, stylesheet).includes('./typeface.css')) followed.push(form);
+      if (cssUnfollowable(rule, stylesheet).length > 0) reported.push(form);
+    }
+    expect(
+      followed,
+      'the forms vite rewrites, read out of the patterns transcribed from it',
+    ).toEqual(['url', 'image-set', '-webkit-image-set', '-ms-image-set']);
+    expect(
+      reported,
+      'and every other form naming a real file is loud rather than dropped',
+    ).toEqual(['local', 'format', 'data-uri', 'attr', 'src']);
+    for (const form of forms) {
+      expect(
+        followed.includes(form),
+        `${form}() is both followed and reported, or neither`,
+      ).toBe(!reported.includes(form));
+      expect(
+        cssFunctionFollowed(form),
+        `cssFunctionFollowed disagrees with what urlTargets does with ${form}()`,
+      ).toBe(followed.includes(form));
+    }
+  });
+
+  /**
+   * `viteSkipsUrl` is four branches, and one of them used to be asserted.
+   *
+   * Its whole justification is that it is a transcription of vite's
+   * `skipUrlReplacer`: a url vite matched and declines to resolve. Following one
+   * of those invents an edge. Deleting the `VITE_FUNCTION_CALL_RE` half, and
+   * separately the two `__VITE_*__` halves, each left the suite green twice at
+   * 33/33 \u2014 three of four branches uncontrolled in a function that exists to
+   * copy somebody else's.
+   */
+  it("declines exactly the urls vite's own replacer declines", () => {
+    expect(viteSkipsUrl('https://cdn.example/a.png'), 'an external reference').toBe(true);
+    expect(viteSkipsUrl('#fragment'), 'a fragment').toBe(true);
+    expect(viteSkipsUrl('var(--surface)'), 'a css function call, not a path').toBe(true);
+    expect(viteSkipsUrl('__VITE_ASSET__abc__'), "vite's own asset placeholder").toBe(true);
+    expect(viteSkipsUrl('__VITE_PUBLIC_ASSET__abc__'), "vite's own public placeholder").toBe(true);
+    expect(viteSkipsUrl('./typeface.css'), 'and a real relative path is not skipped').toBe(false);
+    const stylesheet = join(SRC_ROOT, 'styles', 'base.css');
+    expect(
+      cssSpecifiers('.a { background-image: url(var(--surface)); }', stylesheet),
+      'a declaration whose url() wraps a css function is not an edge',
+    ).toEqual([]);
+  });
+
+  /**
+   * An inline module body is parsed under both grammars, and both readings matter.
+   *
+   * `inlineSpecifiers`' docblock calls the union load-bearing \u2014 "reading it
+   * under one grammar only would drop every edge in a body the other grammar is
+   * needed for, and a dropped edge is the direction `NOT_SHIPPED` reads as
+   * proof" \u2014 and deleting the TSX half left the suite green twice at 33/33.
+   * The two bodies below are each invisible to exactly one grammar.
+   */
+  it('reads an inline body under both grammars, because the tag declares neither', () => {
+    const tsxOnly = "const view = <><span>{import('/src/app/App.tsx')}</span></>;";
+    const tsOnly = "const identity = <T>(value: T) => import('/src/main.tsx');";
+    expect(specifiers(tsxOnly, 'inline.ts'), 'the TypeScript grammar loses this one').toEqual([]);
+    expect(specifiers(tsxOnly, 'inline.tsx')).toEqual(['/src/app/App.tsx']);
+    expect(specifiers(tsOnly, 'inline.tsx'), 'and the TSX grammar loses this one').toEqual([]);
+    expect(specifiers(tsOnly, 'inline.ts')).toEqual(['/src/main.tsx']);
+    expect(inlineSpecifiers(tsxOnly), 'the union must carry the TSX reading').toEqual([
+      '/src/app/App.tsx',
+    ]);
+    expect(inlineSpecifiers(tsOnly), 'and the TypeScript reading').toEqual(['/src/main.tsx']);
+  });
+
+  /**
+   * A declaration file is not a module, and demanding the walk reach one is a
+   * false red on boilerplate.
+   *
+   * `extname('vite-env.d.ts')` is `.ts`, so the enumerator listed one and the
+   * orphan assertion then failed with a message asserting that a file with no
+   * runtime "is called by nothing". a `vite-env` declaration file under `src/` is what
+   * `npm create vite@latest` writes for every TypeScript template.
+   */
+  it('does not ask the walk to reach a file the bundler cannot load', () => {
+    expect(bundlerLoads('vite-env.d.ts'), 'a declaration file has no runtime').toBe(false);
+    expect(bundlerLoads('adapter.d.tsx')).toBe(false);
+    expect(bundlerLoads('adapter.ts'), 'and an ordinary module still is one').toBe(true);
+    expect(bundlerLoads('App.tsx')).toBe(true);
+    expect(bundlerLoads('AppShell.module.css')).toBe(true);
+    expect(bundlerLoads('reachable.test.ts')).toBe(false);
+    expect(bundlerLoads('README.md')).toBe(false);
+    expect(
+      shippingModules(SRC_ROOT).filter((file) => DECLARATION_FILE.test(basename(file))),
+      'a declaration file reached the enumerator anyway',
+    ).toEqual([]);
+  });
+
+  /**
+   * The entry pin's two messages, told apart by driving them.
+   *
+   * Round 5 split one assertion into two because the single one misdescribed
+   * half of what it caught, and left the property in a twelve-line comment:
+   * collapsing the split back into the one assertion it replaced left the suite
+   * at `33 passed (33)`, exit 0. `entryPinFailure` is the pin itself, so the
+   * collapse is an edit to the thing this assertion drives.
+   */
+  it('the entry pin says the entry set moved, not that the graph is vacuous', () => {
+    expect(entryPinFailure(GRAPH.entries), "today's entry set is the pinned one").toBeNull();
+    const moved = walk(
+      '<link rel="icon" href="/src/styles/tokens.css" />' +
+        '<script type="module" src="/src/main.tsx"></script>',
+    ).entries;
+    expect(moved, 'the substitute document does not carry the edge this drives').toEqual([
+      'src/styles/tokens.css',
+      'src/main.tsx',
+    ]);
+    const message = entryPinFailure(moved) ?? '';
+    expect(
+      message,
+      'a routine second reference in index.html must redden saying the entry set ' +
+        'moved. The message that stood here said the graph was vacuous while ' +
+        'printing an array with the entry in it',
+    ).toContain('index.html names a file this guard has not been told about');
+    expect(message, 'and it must not be the vacuity message').not.toContain(
+      'the graph below is vacuous',
+    );
+    const vacuous = entryPinFailure([]) ?? '';
+    expect(vacuous, 'an entry set that really is empty gets the other message').toContain(
+      'the graph below is vacuous',
+    );
+  });
+
+  /**
+   * The one assertion that fires on a shipped double says why it was exempt.
+   *
+   * That is the whole subject of commit 3697252, and reverting it exactly \u2014 the
+   * loop back to `for (const [path] of NOT_SHIPPED)` and the message string
+   * without the reason \u2014 left the suite at `33 passed (33)`, exit 0. A reason is
+   * only ever rendered when the assertion fails, and nothing in a green run
+   * reads a failure message, so the property had no reader at all. RULE U applies
+   * to both maps' second columns as written.
+   */
+  it('an exemption that fires says why it was exempt', () => {
+    for (const [path, reason] of NOT_SHIPPED) {
+      const message = shippedDoubleMessage(path, reason);
+      expect(reason, `${path} has no stated reason`).not.toBe('');
+      expect(message, 'the module is named').toContain(path);
+      expect(message, 'and so is the reason it was ever exempt').toContain(reason);
+    }
+    for (const [path, waitingFor] of AWAITING_A_SURFACE) {
+      const message = debtLandedMessage(path, waitingFor);
+      expect(waitingFor, `${path} has no stated debt`).not.toBe('');
+      expect(message).toContain(path);
+      expect(message, 'the debt list interpolates its own second column too').toContain(waitingFor);
+    }
+    // And what a failing assertion actually carries, rather than what a call to
+    // the builder returns: the two are the same string only while the loops
+    // above use these functions.
+    const fired =
+      whyItFailed(() => {
+        expect(true, shippedDoubleMessage('src/probe.ts', 'a stated reason')).toBe(false);
+      }) ?? '';
+    expect(fired).toContain('a stated reason');
+    expect(fired).toContain('src/probe.ts');
+  });
+
+  /**
+   * A factory reached through `await import(...)` is a construction site.
+   *
+   * `factoryUsesIn` built its bindings inside `if (!ts.isImportDeclaration(node))
+   * return`, and a dynamic import binds through a `VariableDeclaration`. So
+   *
+   *     const { createAgentRuntime } = await import('@/runtime/app-runtime');
+   *     return createAgentRuntime(adapter);
+   *
+   * appended to a file already on the graph was a real, compiling second
+   * construction site that produced neither a builder nor an escape \u2014 invisible
+   * in both directions, which is the failure \u00a77 of this file's header names and
+   * the one `factoryUsesIn` was written to end. The control is that the identical
+   * function written with a static import reddens on the first run, so what the
+   * reader was blind to is the syntax and not the semantics. It is also the
+   * ordinary spelling: it is what a contributor writes when told to keep a heavy
+   * dependency out of the initial chunk.
+   */
+  it('reads a lazily imported factory as a construction site', () => {
+    const fromRuntime = (specifier: string, exported: string): boolean =>
+      specifier === '@/runtime/app-runtime' && exported === 'createAgentRuntime';
+    const uses = (body: string): FactoryUse =>
+      factoryUses(`export async function build(adapter: unknown) {\n${body}\n}\n`, 'probe.tsx', fromRuntime);
+
+    expect(
+      uses(
+        "  const { createAgentRuntime } = await import('@/runtime/app-runtime');\n" +
+          '  return createAgentRuntime(adapter);',
+      ).calls,
+      'the ordinary lazy spelling of a second construction site',
+    ).toBe(1);
+    expect(
+      uses(
+        "  const { createAgentRuntime: make } = await import('@/runtime/app-runtime');\n" +
+          '  return make(adapter);',
+      ).calls,
+      'renamed in the binding pattern',
+    ).toBe(1);
+    expect(
+      uses(
+        "  const runtime = await import('@/runtime/app-runtime');\n" +
+          '  return runtime.createAgentRuntime(adapter);',
+      ).calls,
+      'the namespace spelling of the same thing',
+    ).toBe(1);
+    expect(
+      uses(
+        "  const runtime = await import('@/runtime/app-runtime');\n" +
+          "  return runtime['createAgentRuntime'](adapter);",
+      ).calls,
+      'and its element-access spelling',
+    ).toBe(1);
+    expect(
+      uses(
+        "  const runtime = await import('@/runtime/app-runtime');\n" + '  return register(runtime);',
+      ).escapes,
+      'a lazily imported namespace that leaves is loud, exactly as a static one is',
+    ).not.toEqual([]);
+    // A lazy import of something else is not a construction site. The three in
+    // this tree today are all of that shape, in `src/platform/tauri-adapter.ts`.
+    expect(
+      uses("  const { invoke } = await import('zustand');\n  return invoke('x');"),
+      'a lazy import of another package is neither a builder nor an escape',
+    ).toEqual({ calls: 0, escapes: [] });
+    expect(
+      uses("  const { createAgentRuntime } = await import(name);\n  return createAgentRuntime(adapter);")
+        .calls,
+      'a computed specifier names no module this reader can resolve',
+    ).toBe(0);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The bundler's own answer, beside this file's reconstruction of it.
+   *
+   * Every landed evasion of the last three rounds is one place where a second
+   * implementation of vite's front end diverged from vite's front end, and each
+   * fix closed the instance. This closes the class the only way it can be
+   * closed: `vite build` is run for real, with `write: false`, and asked which
+   * files it read. A disagreement in **either** direction is a named failure.
+   *
+   * - The bundler read a file this walk does not reach. Something ships that this
+   *   file's `NOT_SHIPPED` assertion, which reads absence as proof, would call
+   *   absent. That is the hiding direction, and it is how an inline `style`
+   *   attribute put 10636 bytes of a test double into `dist/assets/` with the
+   *   guard green.
+   * - This walk reaches a file the bundler did not read. The walk invented an
+   *   edge, and an invented edge launders an orphan onto the graph. That is how
+   *   a `url()` in an `@supports` prelude turned a planted orphan green.
+   *
+   * It is deliberately not a whole-repo comparison. The build reads
+   * `node_modules` and vite's own virtual modules, which this walk has never
+   * claimed to enumerate; the question both instruments answer is about `src/`,
+   * on the file kinds `bundlerLoads` names.
+   */
+  it('reads what the build reads, and reaches nothing the build did not', () => {
+    const facts = buildFacts();
+    const built = readBySourceKind(facts);
+    const walked = reachedBySourceKind();
+    expect(
+      built.length,
+      'the build reported almost nothing; this comparison is vacuous',
+    ).toBeGreaterThan(40);
+    expect(
+      built.filter((path) => !walked.includes(path)),
+      'the bundler loaded a file under src/ that this walk does not reach. Whatever ' +
+        'is here ships while every assertion in this file that reads absence as ' +
+        'proof — NOT_SHIPPED first among them — reads it as absent',
+    ).toEqual([]);
+    expect(
+      walked.filter((path) => !built.includes(path)),
+      'this walk follows an edge into src/ that the bundler does not have. An edge ' +
+        'this file invents launders an orphan onto the graph: the module below is ' +
+        'reachable here and dead there',
+    ).toEqual([]);
+  }, BUILD_BUDGET);
+
+  /**
+   * The renderer is in the bundle, asked of the bundle.
+   *
+   * `<script type="module" src="/src/main.tsx" vite-ignore>` — one documented
+   * attribute on the one script tag this document has — left `vite build` exit 0
+   * at **1 module transformed against a 219-module control**, `dist/assets/`
+   * holding nothing but a sourcemap and `dist/`'s own `index.html` pointing at a source
+   * path that does not exist in the output, with the assertion named *the
+   * renderer is wired into the product* green twice at 33/33. Two adversaries
+   * landed it independently in the same round. `htmlLoads` now reads the
+   * attribute, and this asks the build directly, because no amount of reading
+   * `index.html` tells you that vite declined to read it.
+   */
+  it('the build reaches the renderer, and every shipping module under src/', () => {
+    const facts = buildFacts();
+    const built = new Set(readBySourceKind(facts));
+    expect(facts.inputs, "rollup's input is not this repo's index.html").toEqual(['index.html']);
+    expect(
+      [...built],
+      'the build did not read src/main.tsx. The product in dist/ contains none of ' +
+        'the renderer, whatever this file reconstructs from index.html',
+    ).toContain('src/main.tsx');
+    expect(
+      shippingModules(SRC_ROOT)
+        .map(asRepoPath)
+        .filter((path) => !NOT_SHIPPED.has(path))
+        .filter((path) => !AWAITING_A_SURFACE.has(path))
+        .filter((path) => !built.has(path)),
+      'a module under src/ that the bundler did not load. The same finding as ' +
+        '`reaches every shipping module under src/ from index.html`, asked of the ' +
+        'build instead of the walk, so it survives being wrong about the walk',
+    ).toEqual([]);
+  }, BUILD_BUDGET);
+
+  /**
+   * Every exemption, checked against the build rather than against the walk.
+   *
+   * `NOT_SHIPPED` reads absence from `REACHABLE` as proof that nothing ships a
+   * module, and `REACHABLE` is this file's reconstruction. Three separate
+   * constructions have made a `NOT_SHIPPED` entry ship while that set stayed
+   * clean. This one reads the bundler's own set, so a double in the bundle is a
+   * red no matter what the reconstruction believes.
+   */
+  it('no exemption is in the build', () => {
+    const facts = buildFacts();
+    const built = new Set(readBySourceKind(facts));
+    for (const [path, reason] of NOT_SHIPPED) {
+      expect(built.has(path), shippedDoubleMessage(path, reason)).toBe(false);
+    }
+    for (const [path, waitingFor] of AWAITING_A_SURFACE) {
+      expect(built.has(path), debtLandedMessage(path, waitingFor)).toBe(false);
+    }
+  }, BUILD_BUDGET);
+
+  /**
+   * `public/` is a second path from this repo into `dist/`, and it is not walked.
+   *
+   * `publicDir` defaults to `public` and needs no config key, so
+   * `objectKeys(VITE_CONFIG_ROOT)` cannot see it — there is nothing in the config
+   * to see — and `shippingModules` walks `SRC_ROOT` and nothing else. An
+   * adversary made the directory and copied one file into it: `vite build` exit 0
+   * at **219 modules, the control's own count**, and a `run-doubles.ts` at the top of `dist/` holding
+   * **10636 bytes, byte-identical to `src/runtime/run-doubles.ts`** — the whole
+   * of the first `NOT_SHIPPED` entry in the product, guard green at 33/33 and the
+   * module count untouched, because a copied file is not a module.
+   *
+   * The directory does not exist today and the honest thing is not to claim it
+   * never will: creating one is the most ordinary edit imaginable, and
+   * `htmlLoads`' own docblock opens by telling the reader to do it for a favicon.
+   * So the contents are pinned. When somebody adds `public/vela.svg` this reddens
+   * once, they name it here, and the channel stops being invisible.
+   */
+  it('names everything public/ ships, because the build copies it unasked', () => {
+    const facts = buildFacts();
+    expect(
+      asRepoPath(facts.publicDir),
+      'the resolved publicDir is not where this assertion is looking',
+    ).toBe('public');
+    expect(
+      publicFiles(facts.publicDir),
+      'everything in public/ is copied into dist/ verbatim: no module graph, no ' +
+        'walk, and no assertion in this file governed it. Name each file here, or ' +
+        'delete it',
+    ).toEqual(PUBLIC_FILES);
+    // The control. `public/` does not exist, so the assertion above compares an
+    // empty list with an empty list and would pass just as well with the
+    // enumerator returning nothing at all — which is precisely the shape this
+    // file calls a trap. So the enumerator is driven over a directory that does
+    // exist, and asked for something only a real recursive read can produce.
+    const underSrc = publicFiles(SRC_ROOT);
+    expect(underSrc.length, 'the directory reader enumerates nothing').toBeGreaterThan(100);
+    expect(underSrc, 'and it descends rather than reading one level').toContain(
+      'runtime/reachable.test.ts',
+    );
+  }, BUILD_BUDGET);
+
+  /**
+   * The config vite resolved, against the config this file read off the page.
+   *
+   * `calleeNames` pins the *name* `react`, `objectKeys` pins the five top-level
+   * keys, and `unreadableProperties` sweeps for spreads and shorthands — and
+   * nothing pinned `vite.config.ts`'s **import specifiers**, so the name resolved
+   * to whatever module a maintainer pointed it at. Three rounds of adversaries
+   * landed the same construction: `import react from './vite.extra'`, that file
+   * default-exporting a `react()` returning `[realReact(), { transformIndexHtml:
+   * { order: 'pre' } }]`, guard green twice at 33/33, `vite build` exit 0 at 221
+   * modules against 219, and the double's bytes in the shipped entry chunk.
+   * Splitting a growing config into a helper and keeping the local binding name
+   * is routine refactoring; there is no reading of the object literal that can
+   * tell the two apart.
+   *
+   * The comparison above catches what such a plugin *does* — an injected import
+   * makes the build read a file the walk does not. This catches the plugin
+   * itself, and the aliases, which are the other thing this file reads off the
+   * page and the bundler reads out of the module it actually loaded.
+   */
+  it('holds vite.config.ts to the config the bundler resolved', () => {
+    const facts = buildFacts();
+    expect(
+      facts.plugins,
+      'the resolved plugin list moved. Either vite was upgraded — say so and ' +
+        'update this — or vite.config.ts is loading a plugin that is not written ' +
+        'in vite.config.ts, which is the one thing every AST assertion in this ' +
+        'file is structurally unable to see',
+    ).toEqual(RESOLVED_PLUGINS);
+    expect(
+      facts.aliases,
+      'the alias prefixes vite resolved are not the ones this file read out of ' +
+        'the config object literal. Every specifier this walk translates goes ' +
+        'through the list on the left',
+    ).toEqual([...ALIASES.keys()]);
+  }, BUILD_BUDGET);
+
+  /**
+   * The two memos, asserted as counts rather than as durations.
+   *
+   * Removing either cache lookup restores the exact pre-fix behaviour — every
+   * walk re-reading and re-parsing every reachable file — and left the suite at
+   * `33 passed (33)`, exit 0 both times. The `20_000` budget is a real partial
+   * guard against the 5000ms default that bit round 4, but it clears by roughly
+   * eight times either way, so it cannot see this; and asserting a duration is
+   * asserting the thing the round-4 false red was made of. A second walk that
+   * reads nothing new is the property the commit claims, and it is timing-free.
+   */
+  it('reads and parses each reachable file once per run, not once per walk', () => {
+    expect(
+      FILE_ANALYSIS.size,
+      'the analysis memo is empty; this assertion is vacuous',
+    ).toBeGreaterThan(40);
+    expect(PARSED_MODULES.size, 'the parse memo is empty; this assertion is vacuous').toBeGreaterThan(
+      40,
+    );
+    const reads = FILE_ANALYSES_COMPUTED;
+    const parses = MODULES_PARSED;
+    walk();
+    constructionSites('createAgentRuntime', join(SRC_ROOT, 'runtime', 'app-runtime.ts'));
+    expect(
+      FILE_ANALYSES_COMPUTED - reads,
+      'a second walk re-read and re-classified files the first walk had already ' +
+        'read. That is once per walk rather than once per run, which is the shape ' +
+        'that timed out on a clean tree at vitest’s 5000ms default',
+    ).toBe(0);
+    expect(
+      MODULES_PARSED - parses,
+      'a second pass over the module graph re-parsed modules already parsed',
+    ).toBe(0);
+  }, BOUNDARY_BUDGET);
 });

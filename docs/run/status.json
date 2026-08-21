@@ -2,7 +2,7 @@
   "run": "2026-08-17",
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
-  "state": "RUNNING",
+  "state": "RUNNING - PAUSING AFTER ROUND 7",
   "round": 7,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
   "updated": "2026-08-21 - round 6 complete, round 7 running",
@@ -208,5 +208,6 @@
     "RULE U name the reader",
     "RULE V an invariant in a comment is not guarded",
     "RULE W (new, round 7): mutate the READER, not only the data - any branch whose deletion reds nothing is an unguarded structural position"
-  ]
+  ],
+  "pause": "Operator asked the run to stop when round 7 finishes. Round 7 is in flight and will be graded and recorded; no round 8 will be launched. Twelve of eighteen tracks are CAPPED-PASS. The ladder blocker (docs/run/BLOCKER-ladder.md) is still open and is the only thing needing an operator decision."
 }

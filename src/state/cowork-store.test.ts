@@ -147,7 +147,7 @@ describe('the task switcher’s order', () => {
  * dock — so an assertion on the plan object cannot see the write at all, and
  * the first draft of these tests made exactly that mistake. Measured
  * against the tree this commit ships: dropping the `next !== plan` guard from
- * `recordDelivery` gives EXIT=1, `Tests  1 failed | 86 passed (87)`, and the
+ * `recordDelivery` gives EXIT=1, `Tests  1 failed | 90 passed (91)`, and the
  * single red is `writes nothing for a second answer about a directive that
  * already has one`. Reproduced twice.
  *
@@ -167,6 +167,25 @@ describe('a no-op action leaves the plan alone', () => {
 
     expect(released).toEqual([]);
     expect(useCoworkStore.getState().plans).toBe(plans);
+  });
+
+  it('writes nothing when a finished run replays the turn it stopped on', () => {
+    // The replay a resubscribe produces is `turnStarted` *after* `runFinished`,
+    // so this arrival lands on a stopped plan. It moves no step, and it must
+    // not move `state` either: a write here and the `runFinished` behind it in
+    // the same replay alternate for ever. `use-cowork.test.tsx` is where that
+    // alternation is a crash rather than a cost.
+    const store = useCoworkStore.getState();
+    store.setPlan('a', ['one', 'two', 'three']);
+    store.advance('a', 2);
+    store.stopTask('a');
+    const plans = useCoworkStore.getState().plans;
+
+    const released = useCoworkStore.getState().advance('a', 2);
+
+    expect(released).toEqual([]);
+    expect(useCoworkStore.getState().plans).toBe(plans);
+    expect(useCoworkStore.getState().plans['a']?.state).toBe('stopped');
   });
 
   it('writes nothing when a finished run reports finishing again', () => {

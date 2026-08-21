@@ -15,14 +15,28 @@
  *
  * ## `delay: null`, and why it is not a shortcut
  *
- * `userEvent.setup()` puts a real delay between keystrokes, so typing a
- * sentence into the comment box costs seconds. Measured here: the redirect
- * tests ran 2.8s and 1.5s in isolation, and under a full-suite run on a loaded
- * box one of them crossed vitest's 5s default and failed as a timeout — a red
- * that says nothing about the code. `delay: null` removes the wait and keeps
- * everything that matters: the events are the same events, dispatched in the
- * same order, through the same `user-event` machinery. Nothing here depends on
- * elapsed time, so there is nothing for the delay to be testing.
+ * `userEvent.setup()` puts a real delay between keystrokes, so most of what
+ * this file spends its time on is waiting between characters. Measured on this
+ * machine, three runs of this file alone, nothing changed but the setting:
+ *
+ *  - default delay: `tests 4.95s / 4.98s / 4.85s`, slowest test
+ *    `takes the comment and shows that it will redirect` at 768 / 717 / 738 ms;
+ *  - `delay: null` as committed: `tests 2.03s / 2.40s / 2.15s`, that same test
+ *    at 375 / 296 / 311 ms.
+ *
+ * CORRECTION, because the wrong numbers are in this project's record. An
+ * earlier version of this paragraph — and the message of the commit that made
+ * the change, 87d6b25 — said the redirect tests "ran 2.8s and 1.5s in
+ * isolation" and that one of them had crossed vitest's 5s default under load
+ * and failed as a timeout. Neither is a number this track can produce. The
+ * measurement above is the whole of what is true: the setting roughly halves
+ * the file, and no test in it has been measured anywhere near the 5s default,
+ * with the delay or without it. The timeout is withdrawn rather than softened.
+ *
+ * The setting is still right, on the grounds that do hold: the events are the
+ * same events, dispatched in the same order, through the same `user-event`
+ * machinery. Nothing here depends on elapsed time, so there is nothing for the
+ * delay to be testing.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -477,11 +491,31 @@ describe('a comment on an upcoming step redirects the task', () => {
  * THE REFUSAL VOCABULARY, ALL FOUR OF IT.
  *
  * `refusalText` is the only thing that turns a `RedirectRefusal` into a
- * sentence a user reads. Three of its four arms are reachable only through a
- * race and the fourth is not reachable at all in this build, so three of the
- * four sentences could be swapped for each other and nothing went red. The
- * tests above drive two of them through the button, which is what proves the
- * wiring; this one pins the words themselves, `noSuchStep` included.
+ * sentence a user reads. THREE of its four arms are already driven through the
+ * button by the tests above, which is what proves the wiring — `emptyComment`
+ * by opening the box and submitting it empty, needing no race at all, and
+ * `taskHasStopped` and `stepIsNotAhead` through the race this file's own
+ * header describes. `refusalText`'s docblock in `ProgressPanel.tsx` says the
+ * same three; an earlier version of this paragraph said two, and disagreed
+ * with the function it is about.
+ *
+ * `noSuchStep` is the one arm no press reaches in this build: it needs a plan
+ * that loses a step while its comment box is open, and nothing here does that.
+ * Measured, all four arms, by giving one of them another arm's sentence and
+ * running this whole file:
+ *
+ *  - `emptyComment` swapped: `Tests  2 failed | 24 passed (26)` — the
+ *    blank-comment test that presses the button, and the one below;
+ *  - `taskHasStopped` and `stepIsNotAhead` swapped for each other:
+ *    `Tests  3 failed | 23 passed (26)` — both of their tests, and the one
+ *    below;
+ *  - `noSuchStep` swapped: `Tests  1 failed | 25 passed (26)` — the one below,
+ *    and nothing else in the file. With this file excluded the same mutation is
+ *    SILENT across the rest of the suite: `122 passed (122)` files,
+ *    `2478 passed (2478)` tests, EXIT=0.
+ *
+ * That last line is what this block is for, and `noSuchStep` is the only
+ * sentence of the four that needs it.
  */
 describe('what each refusal is allowed to say', () => {
   it('gives every refusal its own sentence, and neither of the two confusable ones borrows the other’s reason', () => {

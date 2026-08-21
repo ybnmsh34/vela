@@ -11,10 +11,10 @@
  *
  * Measured against the tree this commit ships, by putting that mistake back:
  * with the released array discarded, `src/lib/task-plan.test.ts` stays green at
- * 31, `CoworkPanel.test.tsx` stays green at 26 and `cowork-store.test.ts` stays
- * green at 15, and 9 of the 12 tests below go red — EXIT=1,
- * `Tests  9 failed | 78 passed (87)`, reproduced twice. Three whole files of
- * assertions cannot see the defect this one file is for.
+ * 33, `CoworkPanel.test.tsx` stays green at 26, `cowork-store.test.ts` stays
+ * green at 16 and `director.test.ts` at 3, and 9 of the 13 tests below go red —
+ * EXIT=1, `Tests  9 failed | 82 passed (91)`, reproduced twice. Four whole
+ * files of assertions cannot see the defect this one file is for.
  *
  * So this file drives the read end to end: a real `LiveRuns` directory over a
  * hand-driven harness, `turnStarted` emitted into it, and a `TaskDirector`
@@ -238,11 +238,13 @@ describe('a released directive is read, not dropped', () => {
    * minted in the render call has a new identity every render: render →
    * resubscribe → replay of the retained `turnStarted` → `advance` → store
    * write → render. The loop only closes if that `advance` writes when nothing
-   * changed, and it used to: `advanceTo` returned `{ ...plan, state: 'running' }`
-   * for an arrival at a step the plan was already on. Measured against the tree
-   * this commit ships, with that one clause put back: this file gives EXIT=1,
-   * `Tests  1 failed | 11 passed (12)`, the single red is this test, and its
-   * message is React's `Maximum update depth exceeded`.
+   * changed, and it used to: `advanceTo` returned a fresh object for an arrival
+   * at a step the plan was already on. Measured against the tree this commit
+   * ships, with that spelling put back — `return { plan: { ...plan },
+   * directives: [] }` — this file gives EXIT=1, `Tests  2 failed | 11 passed
+   * (13)`, and both reds are `Maximum update depth exceeded`: this test, and
+   * the lifecycle one further down that the round after it was written to
+   * catch.
    *
    * `use-cowork.ts` tells the reader to keep the default director at module
    * scope for the resubscribe cost. This is the same hazard one level up, where
@@ -360,6 +362,42 @@ describe('the plan follows the run', () => {
     await waitFor(() => {
       expect(useCoworkStore.getState().plans[CONVERSATION]?.state).toBe('stopped');
     });
+  });
+
+  /**
+   * THE SAME HAZARD ON THE LIFECYCLE EVERY REAL RUN HAS.
+   *
+   * The test above drives a repeated arrival, which is one way a replay hands
+   * `advanceTo` a step behind the cursor. This is the other, and it is the
+   * ordinary one: a run starts a turn, the run finishes, and every resubscribe
+   * replays `turnStarted` *after* `runFinished`. If that replayed arrival
+   * promotes the stopped plan back to `running`, the `runFinished` behind it
+   * stops it again, and the two writes alternate — with an inline director each
+   * write is a resubscribe and the alternation never ends.
+   *
+   * Measured against the tree this commit ships, with the promotion put back —
+   * `advanceTo`'s no-op branch spelled `if (plan.state === 'running') return
+   * { plan, directives: [] }; return { plan: { ...plan, state: 'running' },
+   * directives: [] };` — this file gives EXIT=1, `Tests  1 failed | 12 passed
+   * (13)`, the single red is this test, and the message is React's
+   * `Maximum update depth exceeded`. Reproduced twice.
+   */
+  it('leaves a finished task stopped when the run replays its last turn', async () => {
+    useCoworkStore.getState().setPlan(CONVERSATION, PLAN);
+    const { runtime, emit, arriveAt } = fixture();
+
+    renderHook(() =>
+      useCowork(runtime, CONVERSATION, {
+        deliver: () => Promise.resolve<DirectiveDelivery>({ kind: 'delivered' }),
+      }),
+    );
+    arriveAt(2);
+    emit({ type: 'runFinished', outcome: { type: 'cancelled' } });
+
+    await waitFor(() => {
+      expect(useCoworkStore.getState().plans[CONVERSATION]?.state).toBe('stopped');
+    });
+    expect(useCoworkStore.getState().plans[CONVERSATION]?.currentStep).toBe(2);
   });
 
   it('reports a comment the run stopped short of, once it has stopped', async () => {

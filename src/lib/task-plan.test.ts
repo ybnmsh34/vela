@@ -141,6 +141,21 @@ describe('what became of a released directive is written back, not assumed', () 
     expect(answered.steps.find((step) => step.n === 3)?.directiveOutcome).toBeNull();
   });
 
+  it('ignores an answer about a comment that has not been released yet', () => {
+    const planned = redirect(planOf(TITLES), 3, 'use staging');
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+
+    // Step 3 carries a comment and the run has not reached it, so nothing has
+    // been put in front of anything. An outcome landing here would print
+    // "Redirected" over a comment still waiting its turn — the exact lie the
+    // release/deliver split in the header exists to make impossible.
+    const answered = recordDelivery(planned.plan, 3, { kind: 'delivered' });
+
+    expect(answered).toBe(planned.plan);
+    expect(answered.steps.find((step) => step.n === 3)?.directiveOutcome).toBeNull();
+  });
+
   it('keeps the first answer when a second arrives', () => {
     const first = recordDelivery(released(), 2, { kind: 'noLiveRun' });
     const second = recordDelivery(first, 2, { kind: 'delivered' });
@@ -336,17 +351,34 @@ describe('a call that changes nothing hands back what it was given', () => {
     expect(advanceTo(running, 1).plan).toBe(running);
   });
 
-  it('still moves an idle plan to running when the step does not move', () => {
-    // The one case in the same branch that is not a no-op: step 0 on a plan
-    // that has not started. `state` changes, so the object must.
+  it('leaves a stopped task stopped when a turn it has already had is replayed', () => {
+    // THE CLAUSE THIS DESCRIBE BLOCK EXISTS FOR, and for a round it was the one
+    // case the block did not cover. A subscriber replays the retained events on
+    // every resubscribe, so `turnStarted` for a step the run finished on
+    // arrives again *after* `runFinished`. Promoting `state` back to `running`
+    // here is a change, a change is a store write, and the `runFinished` behind
+    // it in the same replay is a second one — the two alternate for ever. See
+    // `use-cowork.test.tsx`, where that alternation is a crash.
+    const stopped = stop(advanceTo(planOf(TITLES), 2).plan);
+
+    const replayed = advanceTo(stopped, 2);
+
+    expect(replayed.plan).toBe(stopped);
+    expect(replayed.plan.state).toBe('stopped');
+    expect(replayed.directives).toEqual([]);
+  });
+
+  it('does not start an idle plan on an arrival that moves nothing', () => {
+    // The same rule from the other side. `turnStarted.step` is 1-based, so an
+    // arrival at 0 is not something a run emits; whatever reaches this branch,
+    // the answer is the object it was given.
     const idle = planOf(TITLES);
     expect(idle.state).toBe('idle');
 
-    const started = advanceTo(idle, 0).plan;
+    const unmoved = advanceTo(idle, 0).plan;
 
-    expect(started).not.toBe(idle);
-    expect(started.state).toBe('running');
-    expect(started.currentStep).toBe(0);
+    expect(unmoved).toBe(idle);
+    expect(unmoved.state).toBe('idle');
   });
 
   it('returns the same plan when a stopped task is stopped again', () => {

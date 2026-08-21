@@ -24,8 +24,8 @@
  * exceeded` rather than in a slow panel. `use-cowork.test.tsx` drives exactly
  * that caller, and `cowork-store.test.ts` pins the identity of the `plans` map
  * — not of the plan inside it, which survives a no-op write either way — across
- * a repeated arrival, a repeated finish, a duplicate answer and a refused
- * comment.
+ * a repeated arrival, a replayed arrival on a plan that has already stopped, a
+ * repeated finish, a duplicate answer and a refused comment.
  *
  * ## Why the tasks are keyed by conversation id
  *

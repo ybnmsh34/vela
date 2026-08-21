@@ -275,9 +275,10 @@ export interface Advance {
  */
 export function advanceTo(plan: Plan, step: number): Advance {
   if (step <= plan.currentStep) {
-    // The same object back when this arrival changes nothing, which is what a
-    // harness re-emitting `turnStarted` for a step the plan is already on
-    // produces.
+    // Nothing arrived, so nothing changes: **the same object back, in every
+    // state the plan can be in**. Not a fresh copy, and not a fresh copy with
+    // `state` promoted to `running`, which is what this clause said until the
+    // test named below was written.
     //
     // A fresh object for a no-op is not free, and the store cannot make up for
     // it: `advance` in `src/state/cowork-store.ts` writes when what comes back
@@ -287,11 +288,28 @@ export function advanceTo(plan: Plan, step: number): Advance {
     //
     // For a caller that passes `useCowork` a director constructed inline, that
     // re-render is also a fresh director identity, which is a resubscribe,
-    // which replays the same event again. The loop is not theoretical: writing
-    // this clause the other way is a `Maximum update depth exceeded` crash, and
-    // `use-cowork.test.tsx` drives the inline-director case that hits it.
-    if (plan.state === 'running') return { plan, directives: [] };
-    return { plan: { ...plan, state: 'running' }, directives: [] };
+    // which replays the retained events again. That is a loop, and promoting
+    // `state` here is enough to close it even though `currentStep` never moves:
+    // a replayed `turnStarted` resurrected a stopped plan to `running`, the
+    // `runFinished` behind it in the same replay stopped it again, and the two
+    // writes alternated for ever. `use-cowork.test.tsx` drives both replays
+    // behind an inline director — a repeated arrival, and the ordinary
+    // `turnStarted` -> `runFinished` lifecycle — and each spelling this clause
+    // has had is a `Maximum update depth exceeded` crash in one of them.
+    // Measured on that file: a fresh copy for every no-op reds both,
+    // `Tests  2 failed | 11 passed (13)`; a fresh copy with `state` promoted
+    // reds the lifecycle one alone, `Tests  1 failed | 12 passed (13)`; the
+    // line below reds neither.
+    //
+    // WHAT THIS GIVES UP, said plainly. A second run on the same conversation
+    // is not modelled: its `turnStarted` for step 1 lands here as an arrival
+    // behind the cursor and leaves the plan exactly where the first run ended.
+    // Nothing in a step number tells a replayed turn from a re-run one — the
+    // thing that does is `RunEventEnvelope.runId`, which lives a layer up in
+    // `contract-harness.ts` and is not threaded into a plan. The alternative
+    // spelling did not model a restart either; it only made one look like a
+    // running task frozen on the step the last run died on.
+    return { plan, directives: [] };
   }
   const arriving = plan.steps.filter(
     (candidate) =>
@@ -331,7 +349,13 @@ export function advanceTo(plan: Plan, step: number): Advance {
 export function recordDelivery(plan: Plan, n: number, outcome: DirectiveDelivery): Plan {
   const step = stepAt(plan, n);
   if (step === null) return plan;
-  if (step.directive === null || !step.directiveReleased) return plan;
+  // "Released nothing" is `!directiveReleased` and nothing else. A step with no
+  // directive is already covered by it, because the only writer of that flag is
+  // {@link advanceTo}, whose filter requires `directive !== null` — so
+  // `directive === null && directiveReleased` is a state no function here can
+  // produce. A second clause for it would be a branch no input reaches, which
+  // is a rule no test can pin.
+  if (!step.directiveReleased) return plan;
   if (step.directiveOutcome !== null) return plan;
   return {
     ...plan,

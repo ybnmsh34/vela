@@ -6,13 +6,20 @@
  *
  * That command has been allowlisted, declared in `IpcContract`, implemented in
  * `src-tauri/src/ipc/project.rs` and faked in `src/platform/browser-adapter.ts`
- * since AMENDMENT 5, with **no caller under `src/`** — verified by grep at
- * `c997c89`, where the only hits outside the contract were the adapter's own
- * `case` arm and `browser-adapter-projects.test.ts`. `projects-repository.ts`
- * said so in prose and declined to open the door, which is a defensible choice
- * and is also why nothing counted the debt: `src/runtime/reachable.test.ts`
- * measures unreachable *modules*, and a command whose door was never built has
- * no module to be missing from the graph.
+ * since AMENDMENT 5, with **no caller under `src/`**. Measured at `c997c89`,
+ * the commit this track branches from: `git grep -c project_layout -- src/`
+ * finds 15 hits across 8 files, and `git grep "invoke('project_layout'" -- src/`
+ * finds exactly three, all in `browser-adapter-projects.test.ts`. The other
+ * twelve are declarations and assertions — four in `contract-project.ts`, two
+ * in `contract.ts`, one in `contract-sandbox.ts`, two in `browser-adapter.ts`
+ * (its `case` arm and a `#requireProject` string), one each in
+ * `project-host-parity.test.ts` and `project-run-scope.test.ts`, and one in
+ * `src/data/projects-repository.ts`, which is prose and not a call: the
+ * "Four methods, not eight" paragraph declining to write the method, quoted in
+ * full by `src/runtime/reachable.test.ts`. That is a defensible choice and is
+ * also why nothing counted the debt: that guard measures unreachable
+ * *modules*, and a command whose door was never built has no module to be
+ * missing from the graph.
  *
  * `src/runtime/reachable.test.ts` is the guard that asks the wider question, in
  * `every allowlisted command is reachable from something a user can press`. This

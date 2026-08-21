@@ -14,13 +14,15 @@
  * ## One call, both projections — not two calls
  *
  * `McpRepository` offers `toolCatalogue()` and `unavailableServers()`, and each
- * of them calls `mcp_list_tools` again. The contract's own header says a server
- * "connects on first use", so calling both would connect, list, and connect
- * again for one panel — and, worse, could draw a catalogue from one moment
- * beside a failure list from another, so the panel could show a server as both
- * connected and unavailable. `listServers()` once and the two exported pure
- * projections over that single response is the only reading that cannot
- * disagree with itself.
+ * of them calls `mcp_list_tools` again. Cost is not the argument against that:
+ * `McpListToolsRes` in `src/platform/contract.ts` says the host "reuses the
+ * process afterwards" and that the command "can also answer instantly from
+ * cache, which is what the second call does". The argument is that two calls
+ * are two *moments*. The panel would be drawing a catalogue from one and a
+ * failure list from another, and a server that connected between them appears
+ * in both — connected and unavailable at once. `listServers()` once, with the
+ * two exported pure projections taken over that single response, is the only
+ * reading that cannot disagree with itself.
  *
  * That is why `toolCatalogueOf` and `unavailableServersOf` are exported from the
  * repository as functions over a response, and this hook uses those rather than

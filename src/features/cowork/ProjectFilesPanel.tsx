@@ -11,13 +11,25 @@
  * file manager … do not assume a 'reveal' button exists to be wired up".
  *
  * So this panel shows what the host can actually answer, which is
- * `ProjectLayout`: the three directories a project owns, the user's working
- * directory **resolved against the disk**, and one row per enabled skill with
- * its real mount state. That is a real answer to "where are my files and can
- * Vela see them" and it is not a file tree. The panel says so in its own words
- * rather than drawing an empty tree and letting the user conclude their folder
- * is empty — which is exactly what a `notFound` working directory would have
- * looked like.
+ * `ProjectLayout`: the three directories this contract says a project has — the
+ * user's **working directory**, resolved against the disk rather than quoted
+ * back from the binding; Vela's **agent workspace**; and the **skills mount** —
+ * and one row per enabled skill with its real mount state. An earlier version
+ * of this paragraph named the working directory twice, once inside "the three
+ * directories a project owns" and once beside them, and so described four rows
+ * over a panel that draws three.
+ *
+ * Counted the other way, from `ProjectPaths` rather than from the contract's
+ * header: that interface carries four members and this file reads exactly two,
+ * `paths.workspace` and `paths.skillsMount`. `root` is the common prefix of
+ * both and a row for it would repeat them. `skillStore` is not this project's —
+ * `<app data dir>/skills`, one per machine, shared by every project — and every
+ * mount row already prints `SkillMount.source`, which is `<skillStore>/<name>`.
+ *
+ * That is a real answer to "where are my files and can Vela see them" and it is
+ * not a file tree. The panel says so in its own words rather than drawing an
+ * empty tree and letting the user conclude their folder is empty — which is
+ * exactly what a `notFound` working directory would have looked like.
  *
  * ## The distinction this panel exists to keep visible
  *

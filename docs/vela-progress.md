@@ -552,6 +552,54 @@ closed: the pre-fix guard certifies `vela.exe` as its own installer (`BUNDLE_OK=
 shipped guard rejects it as `APP-NOT-INSTALLER` twice while still passing both real installers.
 
 
+### Round 3 — five tracks capped-pass, and the adversaries landed 16 of 19
+
+32 agents: 4 freed builders reassigned as adversaries, 14 builders, 14 fresh critics.
+
+Failing members across the 14 active tracks: **43 → 36**. T9 joined the capped-pass group, so
+**T8, T9, T10, T11 and T12 now fail on nothing but the ladder cap** — the one thing nobody in this
+session can lift.
+
+#### The reassignment was the highest-yield decision of the run
+
+Four builders whose own tracks had nothing left to fix were pointed at the four guards still failing
+PROBE. Their results:
+
+| attacker | target | evasions landed |
+|---|---|---|
+| T8 | T4 contrast | **4 / 4** |
+| T10 | T5 reachability | **4 / 5** |
+| T11 | T6 CI coverage | **4 / 4** |
+| T12 | T7 remaining guards | **4 / 6** |
+
+**16 of 19.** Fresh critics attacking the same guards had been landing roughly one apiece. The
+difference is not talent — it is that these four had spent two rounds *building under this panel*
+and knew where fixes of this kind stop looking. That is the run's own thesis turned into a
+measurement: the frame is the thing, and someone who has occupied it can find its edge.
+
+#### DOC-HONESTY will not close by asking
+
+**17 → 12 → 11.** The clearest single instance, one file, three rounds:
+
+1. A comment stated a fact that was false.
+2. **The comment correcting it** put the NSIS signature at offset 52,744 where the guard's own
+   `findBytes` returns **52,740** — the demanded sixteen-byte sequence begins four bytes before
+   `NullsoftInst`. The wrong number propagated into **four files**.
+3. The offset was fixed in all seven sites — and the **new test block** was named *"the --json
+   document has a reader for every field it carries"* while that document carries `rows[].bytes` and
+   `rows[].mtimeMs`, written one line above the field that had just been given a reader, read by
+   nothing. The critic: *"the round-2 defect displaced by one line rather than removed."*
+
+Elsewhere the same round: a doc claimed `Sidebar.test.tsx` alone was `1 passed (1)` "three times out
+of three" — it has **fifteen** tests and measures `15 passed (15)`, three of three. A load-bearing
+timing claim of "4535 ms, 90.7% of its own budget on a quiet machine" measured **946 / 947 / 917 ms,
+18.9%**.
+
+So round 4 stops exhorting and applies the shape that made RULE P work: **a measurer goes through
+each track's own diff and checks every checkable sentence by running commands, before the builder
+commits.** Prose gets the same treatment as guards — someone else, with a probe, first.
+
+
 ---
 
 # Previous runs

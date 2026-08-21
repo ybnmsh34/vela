@@ -3,9 +3,9 @@
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
   "state": "RUNNING",
-  "round": 2,
+  "round": 3,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-21 — round 1 complete, round 2 running",
+  "updated": "2026-08-21 — round 2 complete, round 3 running",
   "tracks": [
     {
       "id": "t01",
@@ -188,5 +188,10 @@
       "blocker": "LADDER, FUNCTIONALITY, ARCHITECTURE, SECURITY, DOC-HONESTY"
     }
   ],
-  "note": "Round 1 complete, all 18 tracks graded, ALL 18 FAIL. DOC-HONESTY failed on 17 of 18 — almost always on a comment the track had just written. PROBE failed on all 5 guards: a fourth evasion got past every fix. LADDER capped everywhere (nothing installed yet). T1 produced real installers: MSI 7,360,512 bytes + NSIS 5,444,437 bytes, both confirmed on disk by a critic, and the first genuine ten-gate green run on the project. Round 2 running: every track back to its builder with its own verdict, then a fresh critic."
+  "note": "Round 2 complete: failing members 73 -> 47. T8/T10/T11/T12 now fail ONLY on the uncapped-able LADDER, so their builders were freed and reassigned as fresh adversaries against the five guard tracks in round 3. DOC-HONESTY still failing 12/18. PROBE still failing 5/5 — but every round-1 evasion is genuinely dead and re-verified; each critic found a NEW one against the NEW frame, which is the class behaving as predicted and the guards measurably narrowing.",
+  "blocker": {
+    "id": "ladder",
+    "doc": "docs/run/BLOCKER-ladder.md",
+    "summary": "LADDER fails on all 18 and cannot be lifted from inside this session: the NSIS setup installs to %LOCALAPPDATA%Vela, which resolves inside the Claude MSIX container (4 container-only paths, control passing). Installing from here would produce a void observation, and a previous attempt removed an unrelated third-party Vela shortcuts. Decision needed from the operator."
+  }
 }

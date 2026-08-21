@@ -493,6 +493,65 @@ It still FAILed, and the reason is the class again, in the release guard itself:
   such a run.
 
 
+### Round 2 complete — 73 failing members down to 47, all 18 still FAIL
+
+36 agents: 18 builders answering their own critics, 18 fresh critics who had not graded that track.
+
+| track | r1 → r2 fails | tier | still failing |
+|---|---|---|---|
+| T1 release path | 5 → 3 | `dev-clicked` | LADDER, DOC-HONESTY, WRITE-READ |
+| T2 close collision | 2 → 2 | `dev-clicked` | LADDER, DOC-HONESTY |
+| T3 instrument | 3 → **5** | `test-bites` | LADDER, MUTATION, DOC-HONESTY, WRITE-READ, PROBE |
+| T4 contrast guard | 5 → 4 | `test-bites` | LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE |
+| T5 reachability guard | 4 → 4 | `test-bites` | LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE |
+| T6 CI-coverage guard | 4 → 4 | `test-bites` | LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE |
+| T7 remaining guards | 5 → 4 | `test-bites` | LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE |
+| **T8 MCP surface** | 3 → **1** | `test-bites` | **LADDER only** |
+| T9 MCP transport | 2 → 2 | `test-bites` | LADDER, DOC-HONESTY |
+| **T10 provenance closure** | 4 → **1** | `test-bites` | **LADDER only** |
+| **T11 file creation** | 3 → **1** | `test-bites` | **LADDER only** |
+| **T12 plugins** | 4 → **1** | `test-bites` | **LADDER only** |
+| T13 cowork surface | 5 → 3 | `test-bites` | LADDER, MUTATION, WRITE-READ |
+| T14 code workspace | 5 → 3 | `test-bites` | LADDER, FUNCTIONALITY, DOC-HONESTY |
+| T15 styles & incognito | 8 → 3 | `test-bites` | LADDER, SECURITY, DOC-HONESTY |
+| T16 subagent fan-out | 2 → 2 | `test-bites` | LADDER, DOC-HONESTY |
+| T17 shell & edge states | 4 → 2 | `test-bites` | LADDER, ACCESSIBILITY |
+| T18 host boundary | 5 → 2 | `test-bites` | LADDER, DOC-HONESTY |
+
+**Four tracks now fail on nothing but the ladder cap**, which nobody in this session can lift. Their
+builders were freed and reassigned in round 3 as fresh adversaries against the five guard tracks —
+attackers who have spent two rounds building under this same panel and know where these fixes stop
+looking.
+
+#### The round-2 exemplar, and it is almost too neat
+
+T1 wrote **a comment correcting a comment** and stated the NSIS signature sits at offset **52,744**.
+The guard's own `findBytes` returns **52,740** — the demanded sixteen-byte sequence begins four bytes
+before `NullsoftInst`. The wrong number then propagated into **four files**, including a test
+constant whose comment claims the fixture and the real artefact are "the same shape".
+
+And the commit that fixed round 1's unread writes **introduced a new one**: `row.signatureAt`,
+written into the `--json` document, read by nothing, and absent from the report's own RULE-U table.
+
+#### PROBE: still 5 of 5, and that is the system working
+
+Every round-1 evasion is genuinely dead — each critic re-planted it and got red twice. Then each
+found a **new** evasion against the **new** frame. The evasions are narrowing: round 1's were
+structural (a comment can forge an edge); round 2's are specific (strip `color` from one CSS rule
+and keep its `background`; spell a path with `../` through the workflows directory).
+
+That is the class doing exactly what this run predicted, five times over, with the guards measurably
+improving each round.
+
+#### T1's genuine result
+
+Both installers exist and a critic reproduced the entire pipeline independently: **all ten gates
+green in one process**, 122 files / 2445 tests, 65 cargo `test result: ok` lines, zero FAILED,
+`RUST_TAIL=CONFIRMED`, `VERIFY_EXIT=0` read from the log body. The round-1 hole is closed and proven
+closed: the pre-fix guard certifies `vela.exe` as its own installer (`BUNDLE_OK=yes`, exit 0); the
+shipped guard rejects it as `APP-NOT-INSTALLER` twice while still passing both real installers.
+
+
 ---
 
 # Previous runs

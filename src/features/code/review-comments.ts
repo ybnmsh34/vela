@@ -72,13 +72,21 @@ function sideWord(side: LineComment['side']): string {
  * that is load-bearing for {@link anchorComments}: `added` and `same` rows carry
  * the right-hand number and `removed` rows the left-hand one, so a (side, line)
  * pair names exactly one row of a diff.
+ *
+ * Two kinds, three row shapes. `added` used to have an arm of its own here and
+ * it was a byte-for-byte copy of the fall-through, so no input could tell it
+ * from the default and no test could ever see it deleted — a measurer deleted
+ * it and the whole suite stayed green. It is gone rather than guarded, because
+ * the thing to assert is the *answer per row kind*, not the number of `if`s
+ * that produce it. `answers on the side each row kind exists in, for every kind
+ * there is` is what enumerates the three shapes, and it is written against the
+ * `DiffRow` union so a fourth kind fails to compile into its table.
  */
 export function anchorOf(row: DiffRow): {
   readonly side: LineComment['side'];
   readonly line: number;
 } {
   if (row.kind === 'removed') return { side: 'left', line: row.leftLine };
-  if (row.kind === 'added') return { side: 'right', line: row.rightLine };
   return { side: 'right', line: row.rightLine };
 }
 

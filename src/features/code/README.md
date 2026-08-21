@@ -24,12 +24,28 @@ the document and nothing is announced — the defect
 with `returnFocusTo`. `DiffPane.tsx` answers it with a ladder of its own rungs — the next
 Remove in the same card stack, then the previous one, then the diff row the card sat under,
 then the row of the file being read, found by its `aria-current` mark — and with a polite
-`role="status"` region that says which comment went and how many are left. Every rung has a
-test of its own in `DiffPane.test.tsx` (`goes to the next comment on the same line`, `goes to
-the one before it when the comment removed was the last on its line`, `goes to the row the
-comment sat under, and leaves the arrow keys there`, `goes to the file on screen when the group
-it was in is gone with it`), and deleting the restoration call reddens all four with
-`document.activeElement` back at `<body>`.
+`role="status"` region that says which comment went and how many are left.
+
+Every rung is bitten, and the count in this paragraph was wrong until this round: a measurer
+deleted the restoration call and found **six** tests red, not the four named here. Rung 1 has
+two of them, because the first rung serves two different stacks. The six are `goes to the next
+comment on the same line`, `goes to the one before it when the comment removed was the last on
+its line`, `goes to the row the comment sat under, and leaves the arrow keys there`, `goes to
+the next card in the drifted group, which is a stack of its own`, `goes to the file on screen
+when the group it was in is gone with it`, and — new this round — `goes to the next card in the
+stack rather than the one before it`, which removes the MIDDLE card of three and is the only
+arrangement in which the order of rung 1's two halves is visible at all. Deleting
+`focusAfterRemoval(removal.ladder)` gives `6 failed | 45 passed (51)` on
+`src/features/code/DiffPane.test.tsx`, twice, every failure reading `expected <body>…</body> to
+be <button …>`.
+
+The region itself was silent in the case it exists for until this round: two removals that
+produce the same sentence wrote the same string, React committed nothing, and a
+`MutationObserver` on the `role="status"` node counted zero. A change to the round that is not
+a removal now empties the region, which both answers that and stops a stale "1 comment pending"
+sitting in the accessibility tree while two are. `speaks the second removal even when it
+produces the same sentence as the first` counts mutations rather than reading the final text,
+because the final text is identical either way.
 
 The `(1 of 2)` suffix on a colliding Remove name is a position in the round, so a removal
 renumbers the siblings it leaves behind: three identical comments are `(1 of 3)`…`(3 of 3)`, and
@@ -116,6 +132,34 @@ un-removable and still submitted with its coordinate; `DiffPane.tsx`'s `drifted`
 either, and each card says which of the two it is. What would remove the heuristic altogether
 is a diff the host computes and identities that survive an edit — neither exists while
 `src/platform/contract.ts` declares no `git_*`.
+
+## High Contrast, and what is still not covered
+
+Vela ships on Windows, where High Contrast does not adjust author colours — it **discards** them
+and repaints from a system palette. Four consecutive critic reports raised that nothing under
+`src/` had an opinion about that: zero `@media (forced-colors: active)` rules and zero
+`prefers-contrast` rules, tree-wide. This round claims it for **one stylesheet**,
+`src/features/code/CodeWorkspace.module.css`, and for nothing else.
+
+What the block does is give a second channel to every signal in this sheet whose only channel
+is a tint: the selected file in the changed-file list, the pane header a drag would drop onto,
+the added/removed bands on a diff row, the pending-comment badge, the refusal box, and the
+context readout's verdict. Borders, an outline and an underline, none of which a forced palette
+takes away. `CodeWorkspace.forced-colors.test.ts` is what holds it, and the universe it checks
+is a **scan of the sheet** rather than a list: every rule whose selector carries a state and
+whose body paints that state with a colour must be answered under `forced-colors` or carry a
+written reason in `NEEDS_NO_ANSWER`. A fifth tinted state added later fails that file by name.
+
+**Not covered, plainly.** The other forty `*.module.css` files under `src/` still have no
+`forced-colors` rule — this is one sheet of forty-one. Nothing here has been seen in an actual
+High Contrast theme: jsdom does not evaluate `@media`, so what these tests prove is that the
+rules exist, name the right selectors and use channels a forced palette keeps, not that the
+result is legible on a real Windows desktop. The `prefers-contrast: more` block only raises
+hairlines from `--vela-border` to `--vela-border-strong`; it does nothing for text contrast,
+which is `src/styles/contrast.test.ts`'s territory and another track's. And the context
+readout's verdict is carried by colour and by nothing else in the ordinary palette too — that
+is a colour-only meaning this round did **not** fix, only stopped from becoming no meaning at
+all under a forced one.
 
 ## The rules this feature is built under
 

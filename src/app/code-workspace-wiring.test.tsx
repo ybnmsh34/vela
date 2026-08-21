@@ -18,9 +18,15 @@
  * rail is not even in the tree they search — and `opens it from the collapsed
  * rail too` is the only thing anywhere in this suite that presses the rail's
  * icon. Remove that icon from `src/features/navigation/Sidebar.tsx` and it is
- * the one test in all 123 files that goes red (`1 failed | 2521 passed (2522)`,
- * measured twice); remove the expanded row and it is the only test here that
- * stays green.
+ * the one test in all 125 files that goes red (`1 failed | 2592 passed (2593)`,
+ * measured twice on this round's tree); remove the expanded row and it is the
+ * only test here that stays green.
+ *
+ * That figure was wrong until this round and the correction is recorded rather
+ * than quietly swapped: it read `1 failed | 2521 passed (2522)` over 123 files,
+ * and a measurer showed no run of this tree could produce a total of 2522. The
+ * qualitative half held — only `opens it from the collapsed rail too` reddens —
+ * and the total did not.
  *
  * `carries a comment written on a diff line through to the chat pane` is the
  * other half of the wiring question, and it is the one the joints in `App.tsx`

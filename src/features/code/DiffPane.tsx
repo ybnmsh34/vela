@@ -144,28 +144,68 @@ interface LabelledComment {
  * once the comment is a copy of another one, and a position in the round is
  * what a reader has instead.
  *
- * The count is over the **round** rather than over what is on screen, and that
- * is not a hole the suffix falls into. Two entries cannot share a name without
- * sharing a path — an empty file clause on both means both paths are the file
- * on screen, a non-empty one means the two paths are equal — and cannot share a
- * name without agreeing on whether their line is `null`. Those are exactly the
- * two things the render conditions read: `drifted` tests the path against
- * `listed` and against the file on screen, and `DiffRows` draws a card when the
- * path is the file on screen and the line is a number. So a set that shares a
- * name is drawn all together or not at all, and no reader meets `(2 of 2)` with
- * nothing else to compare it to. That is derived from those two conditions, not
- * measured: there is no round to seed in which a suffixed name is alone on
- * screen. Counting only the rendered buttons instead would rename a button when
- * the reviewer selects a different file, which is the worse failure — the name
- * a screen reader has just read out would stop matching the control.
+ * ## What the count counts, and the argument that was wrong about it
+ *
+ * A suffix is a position **within the set that shares the name**, so the set
+ * has to be one a reader can see all of. Until this round the set was the whole
+ * round, defended like this:
+ *
+ * > Two entries cannot share a name without sharing a path — an empty file
+ * > clause on both means both paths are the file on screen, a non-empty one
+ * > means the two paths are equal — and cannot share a name without agreeing on
+ * > whether their line is `null`. […] So a set that shares a name is drawn all
+ * > together or not at all […]. That is derived from those two conditions, not
+ * > measured: there is no round to seed in which a suffixed name is alone on
+ * > screen.
+ *
+ * Both sentences are false, and a measurer produced the round that shows it.
+ * The base name is a plain join — `Remove comment on ${file}${where}: ${body}`
+ * with `, ` and `: ` as separators and no escaping — which is the encoding
+ * {@link diffCacheKey}, twelve lines below in this same file, argues at length
+ * is unsound ("a separator alone does not fix it, because a separator can occur
+ * in the text"). Path text comes from the Editor pane's "Open a file" field and
+ * body text from the comment box, so both carry the separators. A comment on
+ * the file on screen at line 3 with body `hello, line 5 after: world`, and a
+ * comment on a file named `line 3 after: hello` at line 5 with body `world`,
+ * both build the base `Remove comment on line 3 after: hello, line 5 after:
+ * world` — two entries, two different paths, one name. The second file is in
+ * the changed list and its line is a number, so it is neither `drifted` nor
+ * `attached` on the file the reviewer is looking at: it draws no button, and
+ * the first was labelled `(1 of 2)` with its sibling nowhere on screen.
+ *
+ * So the set is now **what is drawn**, and that is a partition key rather than
+ * a filter: entries are grouped by `(base, drawn)`, so a name is shared only
+ * between entries that are on screen together or absent together. `drawn` is
+ * one expression — `!listed.has(path) || path === onScreen` — and it is the
+ * disjunction of the two card sites rather than a third opinion about them: the
+ * `!listed` arm of `drifted` is the first clause; every other rendered card,
+ * `drifted`'s `line === null && path === onScreen` arm and `DiffRows`'s
+ * `attached`, needs `path === onScreen`, and one of the two takes every such
+ * entry because `attached` matches whenever the line is a number (a non-null
+ * `line` came from a row of that file's own diff) and `drifted` takes it when
+ * it is null. `every Remove name that is drawn is a position among the ones
+ * drawn beside it` is what asserts the partition, on the measurer's own round.
+ *
+ * The old paragraph rejected a render-scoped count with one sentence — it
+ * "would rename a button when the reviewer selects a different file" — and that
+ * objection is narrower than it looks, which is worth stating precisely rather
+ * than waving away. A card that is drawn under two *different* selections is
+ * exactly a `!listed` card, and a `!listed` card's base name does not depend on
+ * the selection at all: its path is never the file on screen, so the file
+ * clause is always present and always the same. What render scope can move is
+ * the **suffix** on such a card, and only when the sibling it was counting stops
+ * being drawn — the surviving name is then the unsuffixed base, which still
+ * names exactly one control on screen. Round scope's failure is the opposite
+ * shape: a suffix that keeps counting a sibling the reader has no way to reach.
+ * A name that stops carrying a position is a smaller loss than a position that
+ * is false, and `draws the whole of any set that shares a name, or none of it`
+ * asserts the property that replaced the argument.
  *
  * ## The suffix renumbers, and that is chosen rather than overlooked
  *
- * The paragraph above rejects a render-scoped count because it would rename a
- * control the reviewer is not touching. A round-scoped count has a narrower
- * version of the same property and it would be dishonest to argue the one
- * without stating the other: **removing one of a sharing set renumbers the
- * rest.** Three "nit"s are `(1 of 3)`, `(2 of 3)`, `(3 of 3)`; remove the first
+ * The paragraph above weighs one rename against another. Here is the third,
+ * which neither scope avoids and which it would be dishonest to leave out:
+ * **removing one of a sharing set renumbers the rest.** Three "nit"s are `(1 of 3)`, `(2 of 3)`, `(3 of 3)`; remove the first
  * and the button that was `(3 of 3)` is `(2 of 2)`. `renumbers the siblings a
  * removal leaves behind, which is what a position in the round means` is what
  * asserts it — the behaviour is guarded, not merely described.
@@ -196,10 +236,12 @@ interface LabelledComment {
  * Each clause is bitten on its own. Every figure below is this file's own
  * `npx vitest run src/features/code/DiffPane.test.tsx`, one mutation applied at
  * a time and restored from a byte snapshot before the next, run twice with both
- * runs agreeing:
+ * runs agreeing. They are **re-measured this round**: the file went from 38
+ * tests to 51, so every total below moved and none of the old ones could still
+ * be true.
  *
  * - the naming dropped altogether, every entry handed the bare name
- *   `'Remove comment'` → `13 failed | 25 passed (38)`, which is every test in
+ *   `'Remove comment'` → `18 failed | 33 passed (51)`, which is every test in
  *   that file that asserts a Remove button's name, asserts the distinctness of
  *   the round's names, or reaches a Remove button *by* its name. The three that
  *   only ever reach one through the shared `/^Remove comment/` prefix stay green
@@ -208,43 +250,50 @@ interface LabelledComment {
  *   it was in is gone with it`: a query that matches every button in the round
  *   cannot tell that they have stopped being different, which is why the guards
  *   assert names rather than only clicking;
- * - the path clause replaced with `''` → `3 failed | 35 passed (38)`, on
+ * - the path clause replaced with `''` → `5 failed | 46 passed (51)`, on
  *   `keeps a comment removable when its file leaves the changed list with the
  *   quoted line intact`, `tells two Remove buttons apart when the comments are
- *   on different files` and `gives every Remove button in a round a name of its
- *   own, whatever collides`. Note *what* reddens: the names stay distinct,
- *   because the suffix below takes over the moment the path stops separating
- *   them, and it is the assertions on the literal name that fail. The three
+ *   on different files`, `gives every Remove button in a round a name of its
+ *   own, whatever collides`, `every Remove name that is drawn is a position
+ *   among the ones drawn beside it` and `names the drifted comment it removed
+ *   without the position it no longer occupies`. Note *what* reddens: the names
+ *   stay distinct, because the suffix below takes over the moment the path stops
+ *   separating them, and it is the assertions on the literal name that fail. The
  *   messages are one `Unable to find an accessible element with the role
  *   "button" and name "Remove comment on src/a.ts, line 1 after: this line
- *   worries me"` and two array-inclusion failures that are **not** the same
- *   message: `expected [ …(2) ] to include 'Remove comment on src/a.ts, line 1
- *   af…'` from the round with two Remove buttons, and `expected [ …(5) ] to
- *   include` the same elided string from the round with five — the elided
- *   length is the size of that test's round. (Until this round the bullet said
- *   that message occurred "twice". It occurs once; a measurer caught it, and
- *   the correction is re-measured here.) Distinctness alone would not have
- *   caught any of it, which is why the tests assert the name as well as the
- *   property;
+ *   worries me"`; two array-inclusion failures that are **not** the same
+ *   message, `expected [ …(2) ] to include 'Remove comment on src/a.ts, line 1
+ *   af…'` from the round with two Remove buttons and `expected [ …(5) ] to
+ *   include` the same elided string from the round with five, the elided length
+ *   being the size of that test's round; and two from this round's own guards,
+ *   `expected [ Array(1) ] to deeply equal []` and
+ *   `expect(element).toHaveTextContent()`. (Until round 6 the bullet said that
+ *   inclusion message occurred "twice". It occurs once; a measurer caught it,
+ *   and the correction has now been re-measured twice.) Distinctness alone would
+ *   not have caught any of it, which is why the tests assert the name as well as
+ *   the property;
  * - the quoted-line clause dropped, so the `line === null` arm reads only
- *   `a line no longer in the diff` again → `1 failed | 37 passed (38)`, on
+ *   `a line no longer in the diff` again → `2 failed | 49 passed (51)`, on
  *   `tells two Remove buttons apart when both comments have lost the line they
- *   quote`;
+ *   quote` and `names the drifted comment it removed without the position it no
+ *   longer occupies`;
  * - the suffix dropped, so a shared name is handed to every entry that shares
- *   it → `4 failed | 34 passed (38)`, on `tells two identical comments apart by
+ *   it → `6 failed | 45 passed (51)`, on `tells two identical comments apart by
  *   where they sit in the round` (`expected 1 to be 2`), `renumbers the
  *   siblings a removal leaves behind, which is what a position in the round
  *   means` (`expected 1 to be 3`) and `gives every Remove button in a round a
  *   name of its own, whatever collides` (`expected 4 to be 5`) — those three
  *   the distinct-count assertion in `distinctRemoveNames` — plus `names the
- *   comment without the position it no longer occupies`, which can no longer
- *   find the button it clicks.
+ *   comment without the position it no longer occupies` and `names the drifted
+ *   comment it removed without the position it no longer occupies`, which can no
+ *   longer find the button they click, and `every Remove name that is drawn is a
+ *   position among the ones drawn beside it`.
  *
  * The last two together are `687c189`'s naming exactly: with both applied, the
  * three statements that build `where`, `file` and `subject` read the same as
  * that commit's `removeLabel` body, and every entry is then handed its base
  * name unchanged. That is how the collisions this round closes were measured
- * rather than argued. Applied together → `5 failed | 33 passed (38)` twice, and
+ * rather than argued. Applied together → `7 failed | 44 passed (51)` twice, and
  * with a probe that prints the colliding names instead of counting them (a
  * `console.log` in `distinctRemoveNames`: added, run twice, deleted, both files
  * restored from byte snapshots and re-hashed), the collisions come back
@@ -277,6 +326,7 @@ interface LabelledComment {
 function removeLabels(
   entries: readonly AnchoredComment[],
   onScreen: string,
+  listed: ReadonlySet<string>,
 ): readonly LabelledComment[] {
   const bases = entries.map((entry) => {
     const where =
@@ -285,20 +335,32 @@ function removeLabels(
         : `line ${entry.line} ${entry.comment.side === 'left' ? 'before' : 'after'}`;
     const file = entry.comment.path === onScreen ? '' : `${entry.comment.path}, `;
     const subject = `comment on ${file}${where}: ${entry.comment.body}`;
-    return { entry, subject, base: `Remove ${subject}` };
+    // Whether this entry has a card anywhere in the pane — see the docblock.
+    // Not a fourth render condition: the first clause is `drifted`'s `!listed`
+    // arm verbatim, and the second is the requirement both remaining card
+    // sites share.
+    const drawn = !listed.has(entry.comment.path) || entry.comment.path === onScreen;
+    return { entry, subject, base: `Remove ${subject}`, drawn };
   });
 
+  // Keyed on the name **and** on whether it is drawn, so a shared name is a set
+  // a reader can see all of. The two are joined by {@link diffCacheKey} rather
+  // than by a separator, because the base is free user text and this file has
+  // now been bitten once by joining free user text with a separator. That also
+  // gives `diffCacheKey` a second reader inside the module that argues for it.
   const sharing = new Map<string, number[]>();
   bases.forEach((item, index) => {
-    const seen = sharing.get(item.base);
-    if (seen === undefined) sharing.set(item.base, [index]);
+    const key = diffCacheKey(item.base, String(item.drawn));
+    const seen = sharing.get(key);
+    if (seen === undefined) sharing.set(key, [index]);
     else seen.push(index);
   });
 
   const suffixed = new Map<number, string>();
-  for (const [base, indices] of sharing) {
+  for (const indices of sharing.values()) {
     if (indices.length === 1) continue;
     indices.forEach((index, position) => {
+      const base = bases[index]?.base ?? '';
       suffixed.set(index, `${base} (${position + 1} of ${indices.length})`);
     });
   }
@@ -375,15 +437,27 @@ function removalLadder(button: HTMLElement): readonly (Element | null | undefine
  *
  * NOT GUARDED, and said here rather than left to be discovered: replacing
  * `canTakeFocus` with a bare `instanceof HTMLElement` **and** deleting the
- * `document.activeElement === rung` check together reddens nothing — measured,
- * `npx vitest run` twice, `123 passed (123)` / `2540 passed (2540)` both times.
- * Every rung these tests reach is connected and takes focus on the first ask, so
- * jsdom cannot tell a verified `focus()` from a hopeful one. The pair is kept
- * because `returnFocusTo` in `src/state/focus-store.ts` documents four real
- * defects that were exactly this ("`focus()` is a request, not a result"), and
- * because a rung *can* be a corpse in principle — but no round this pane can be
- * put in makes one, since a removal unmounts only its own card. A test that
- * detached a rung by hand would be asserting jsdom's behaviour, not this pane's.
+ * `document.activeElement === rung` check together reddens nothing. Re-measured
+ * on this round's tree, `npx vitest run` twice, `125 passed (125)` /
+ * `2593 passed (2593)` and exit 0 both times. Every rung these tests reach is
+ * connected and takes focus on the first ask, so jsdom cannot tell a verified
+ * `focus()` from a hopeful one. The pair is kept because `returnFocusTo` in
+ * `src/state/focus-store.ts` documents four real defects that were exactly this
+ * ("`focus()` is a request, not a result"), and because a rung *can* be a corpse
+ * in principle — but no round this pane can be put in makes one, since a removal
+ * unmounts only its own card. A test that detached a rung by hand would be
+ * asserting jsdom's behaviour, not this pane's.
+ *
+ * One correction a measurer is owed: the mutation above is written to keep the
+ * `canTakeFocus` import in use. Deleting the check *without* replacing it exits
+ * `npx tsc --build --force` with 2 and TS6133 on the now-unused import, so that
+ * exact edit is not tsc-clean and the figure belongs to the edit as written.
+ *
+ * What IS guarded is the call itself: deleting `focusAfterRemoval(removal.ladder)`
+ * from the removal effect gives `6 failed | 45 passed (51)` on this file, twice,
+ * every one of them `expected <body>…</body> to be <button …>` — the four rung
+ * tests, the drifted-group rung, and `goes to the next card in the stack rather
+ * than the one before it`, which is this round's middle-card test.
  */
 function focusAfterRemoval(ladder: readonly (Element | null | undefined)[]): void {
   for (const rung of ladder) {
@@ -402,6 +476,13 @@ function focusAfterRemoval(ladder: readonly (Element | null | undefined)[]): voi
  * fix it, because a separator can occur in the text — `('a b', 'c')` and
  * `('a', 'b c')` join to the same string. The leading length says where the
  * first string ends, whatever is in it.
+ *
+ * Two readers now. The cache below is the first; {@link removeLabels} is the
+ * second, joining a Remove name to whether that name is drawn — one
+ * unambiguous two-string join in the file rather than one join and a separate
+ * argument about which inputs could slide past a separator. The prefix is not
+ * load-bearing for that second reader (the flag is `'true'` or `'false'`), and
+ * the test says so rather than letting the reuse imply otherwise.
  *
  * Exported for the guard, and the guard is a unit test, because the collision
  * cannot be staged through the pane. The cache holds one entry per path and
@@ -472,11 +553,50 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
     readonly ladder: readonly (Element | null | undefined)[];
     readonly subject: string;
   } | null>(null);
+  /**
+   * What the live region says — and, as of this round, what it says between two
+   * removals.
+   *
+   * A polite region is announced when its contents *change*, and React commits
+   * nothing when a state string is set to the string it already holds. On the
+   * round-6 tree that was silence in the case this region exists for: remove a
+   * comment, write the same body again, remove it again, and `setAnnouncement`
+   * is handed a byte-identical sentence — a `MutationObserver` on the
+   * `role="status"` node counted 0. A critic measured it twice and it was not
+   * on that round's list of what it did not fix.
+   *
+   * The repair is the `removal === null` arm below, and it is one line of
+   * behaviour rather than a nonce: **a change to the round that is not a
+   * removal empties the region.** That answers two things at once. The stale
+   * sentence goes — the region used to keep "1 comment pending" in the
+   * accessibility tree while two were — and the next removal's sentence arrives
+   * as a change from empty rather than as a write of the same string, so it is
+   * announced even when it reads the same as the last one.
+   *
+   * `speaks the second removal even when it produces the same sentence as the
+   * first` counts DOM mutations rather than reading the final text, because the
+   * final text is identical in the working and the broken case; that is exactly
+   * why the sentence-reading test next to it could not see this.
+   *
+   * A keyed child inside the region — a `<span key={seq}>` forcing a `childList`
+   * mutation on every write — was written first and then taken out again,
+   * because with the clear in place nothing could tell it from its absence: two
+   * consecutive removals cannot produce the same sentence without a change in
+   * between (the sentence carries the round's remaining count), and any such
+   * change goes through the arm below. Defence a test cannot reach is the shape
+   * this round is hunting, so it is not left in.
+   */
   const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     const removal = pending.current;
-    if (removal === null) return;
+    if (removal === null) {
+      // Bounded by the `=== ''` check rather than by a second flag: setting
+      // state to the value it already holds is what React declines to commit,
+      // which is the same fact this arm exists because of.
+      setAnnouncement((was) => (was === '' ? was : ''));
+      return;
+    }
     pending.current = null;
     focusAfterRemoval(removal.ladder);
     // The count comes from this render rather than from the click, so it is the
@@ -502,7 +622,14 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
   // the group inside the empty state, which is a second layout for this pane
   // rather than a clause; it predates this track's diff work and is on the
   // lead's list, not disguised as done.
-  if (changed.length === 0 || current === null) {
+  //
+  // `current === null` alone, and not `changed.length === 0 || current === null`.
+  // The second arm was redundant and a measurer proved it by deleting it: with
+  // `changed` empty, `changed.find(…)` and `changed[0]` are both `undefined`,
+  // so `current` is already `null` and no round can tell the two conditions
+  // apart. A clause no input can reach is a clause no test can guard, which is
+  // RULE W's shape, so it is gone rather than described.
+  if (current === null) {
     return (
       <p className={styles.empty}>
         No changes in this session yet. Open a file in the Editor pane and type — the diff is
@@ -541,8 +668,8 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
   // is a property of the set and no per-card call can see the set. Not a hook:
   // it is cheap, and hoisting it above the early return would mean handing it a
   // file-on-screen that does not exist there.
-  const labelled = removeLabels(anchored, current.file.path);
   const listed = new Set(changed.map((entry) => entry.file.path));
+  const labelled = removeLabels(anchored, current.file.path, listed);
   const drifted = labelled.filter(
     ({ entry }) =>
       !listed.has(entry.comment.path) ||

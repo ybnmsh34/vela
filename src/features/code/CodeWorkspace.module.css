@@ -719,3 +719,117 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ---- Windows High Contrast, and any other forced-colours mode ------------- */
+
+/* Vela ships on Windows, where High Contrast does not adjust author colours —
+   it **discards** them and repaints from a four-colour system palette. Every
+   `background`, `color` and `border-color` above stops applying at once. What
+   survives is geometry: borders, outlines and text, repainted by the UA.
+
+   That is not a contrast problem and the palette guard is not the tool for it.
+   `forced-colors` is the one context where the frozen palette does not apply,
+   because the system replaces it; the question here is only whether this
+   workspace stays **operable and legible** once it has. Four kinds of signal in
+   this sheet fail that test, and they are exactly the ones whose only channel
+   is a tint:
+
+     - the selected file in the changed-file list (`--vela-row-selected`),
+     - the pane header a drag would drop onto (`--vela-accent-quiet`),
+     - the added/removed bands on a diff row,
+     - the pending-comment badge and the refusal box, both of which are a
+       coloured ground with no border to leave behind.
+
+   Each gets a border, an outline or an underline below, so the signal is
+   carried by something the system does not take away. The focused-pane ring and
+   the row focus ring already are outlines and need nothing.
+
+   Scope, plainly: this block covers `src/features/code/CodeWorkspace.module.css`
+   and nothing else. The other forty stylesheets under `src/` have no
+   `forced-colors` rule and this round does not give them one. */
+@media (forced-colors: active) {
+  /* Which file's diff is on screen. `aria-current="true"` says it to a screen
+     reader either way; this is what says it to a sighted High Contrast user,
+     who was previously looking at an unmarked list. The padding is taken back
+     off the inline start so the rows do not shift when the mark appears. */
+  .fileRow[aria-current='true'] {
+    border-inline-start: var(--vela-space-1) solid Highlight;
+    padding-inline-start: calc(var(--vela-space-3) - var(--vela-space-1));
+  }
+
+  /* The pane a drop would land on. This is the one signal in the sheet with no
+     second channel at all — no text, no attribute a screen reader reads — so
+     losing the tint loses the whole affordance mid-gesture. */
+  .paneHead[data-drop-target='true'] {
+    outline: var(--vela-focus-ring);
+    outline-offset: var(--vela-focus-offset-inset);
+  }
+
+  /* The diff bands. The `+`/`-` gutter character already carries the meaning in
+     text, which is why the un-forced sheet is willing to tint at all; the bar
+     restores the scannability that the tint was for. Two different widths
+     rather than two colours, because a forced palette has no second colour to
+     spend here. */
+  .diffLine[data-kind='added'] {
+    border-inline-start: var(--vela-space-1) solid CanvasText;
+  }
+
+  .diffLine[data-kind='removed'] {
+    border-inline-start: 1px solid CanvasText;
+  }
+
+  /* A coloured ground with no border is invisible once the ground goes. */
+  .fileComments,
+  .refusal {
+    border: 1px solid CanvasText;
+  }
+
+  /* The context readout's verdict is carried by colour and by nothing else —
+     `tight` and `over` change `color:` and leave the words alone. That is a
+     colour-only meaning in the ordinary palette too and it is not fixed here;
+     what is fixed is that it does not become *no* meaning under a forced one.
+     An underline is the cheapest channel the system cannot take away. */
+  .contextReadout[data-verdict='tight'],
+  .contextReadout[data-verdict='over'] {
+    text-decoration: underline;
+  }
+}
+
+/* ---- a user who asked for more contrast ---------------------------------- */
+
+/* Distinct from the block above: `prefers-contrast: more` keeps the author's
+   palette and asks for more separation inside it. The hairlines are where this
+   sheet spends the least contrast — `--vela-border` is exempted from the text
+   audit in `src/styles/contrast.test.ts` precisely because it is a hairline —
+   so the hairlines are what this raises, to the token the sheet already has for
+   a stronger one. No new value, and no token re-valued. */
+@media (prefers-contrast: more) {
+  .pane,
+  .paneButton,
+  .commentCard,
+  .commentBox,
+  .viewsList,
+  .moveList {
+    border-color: var(--vela-border-strong);
+  }
+
+  .paneHead,
+  .changesLead,
+  .drifted {
+    border-bottom-color: var(--vela-border-strong);
+  }
+
+  .fileList {
+    border-right-color: var(--vela-border-strong);
+  }
+
+  .splitterVertical {
+    border-left-color: var(--vela-border-strong);
+    border-right-color: var(--vela-border-strong);
+  }
+
+  .splitterHorizontal {
+    border-top-color: var(--vela-border-strong);
+    border-bottom-color: var(--vela-border-strong);
+  }
+}

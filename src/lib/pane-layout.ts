@@ -97,9 +97,19 @@ export function floorFor(count: number): number {
  * `1 / (incumbents + 1)` instead, which is the intuitive guess, makes the
  * newcomer arrive at `1 / (incumbents + 2)` — visibly thinner than its
  * neighbours on every open.
+ *
+ * There was an `incumbents <= 0 ? 1 :` arm here and it is gone. Zero incumbents
+ * happens once — {@link openPane} on the empty layout, which is what closing the
+ * last pane leaves — and the arm was unobservable there: `1 / 0` is `Infinity`,
+ * {@link normalise}'s sanitiser reads it as zero, the single member falls to the
+ * floor, and `evenly(1)` hands it the whole width, which is the same `1` the arm
+ * returned. Two answers to one question, one of which no test could reach.
+ * Deleting it makes the sanitiser load-bearing instead of merely defensive, and
+ * `opens the first pane of an empty workspace at the full width` is what asserts
+ * both at once: with the sanitiser gone as well, that weight is `NaN`.
  */
 function newcomerShare(incumbents: number): number {
-  return incumbents <= 0 ? 1 : 1 / incumbents;
+  return 1 / incumbents;
 }
 
 /** Shares, summing to 1, with every sibling equal. */
@@ -266,7 +276,15 @@ export function movePane<Id extends string>(
 
   const target = emptied[shifted];
   if (target === undefined) return layout;
-  const index = Math.max(0, Math.min(slot, target.slots.length));
+  // Lower bound only. `Array.prototype.splice` clamps an index past the end to
+  // the end itself, so an upper clamp here is a second answer to a question
+  // already answered and nothing could ever tell it from the first — a measurer
+  // deleted the whole expression and the suite stayed green. A *negative* slot
+  // is different: `splice(-1, 0, x)` counts from the end and drops the pane one
+  // short of where it was asked for, which is what
+  // `puts a pane asked for before the first slot at the first slot, not one
+  // short of the end` measures.
+  const index = Math.max(0, slot);
   const slots = [...target.slots];
   slots.splice(index, 0, { pane, weight: newcomerShare(target.slots.length) });
 
@@ -432,7 +450,16 @@ function shiftPair(
 
   const floor = floorFor(weights.length);
   const room = delta > 0 ? Math.min(delta, after - floor) : Math.max(delta, floor - before);
-  if (room === 0) return weights;
+  // No `if (room === 0) return weights;` here, and that is deliberate: adding
+  // and subtracting an exact zero returns every weight unchanged, and both
+  // callers rebuild the layout object either way, so nothing in this tree — or
+  // reachable from it — could distinguish the early return from the map. It was
+  // there and a measurer deleted it green. The guard that *is* load-bearing is
+  // `delta === 0` above, which is not the same clause: on a layout whose member
+  // before the edge is under the floor, `Math.max(0, floor - before)` is
+  // positive, so a zero-length drag would move the edge. That is what
+  // `declines a drag of nothing, even where the floor would otherwise pull the
+  // edge` asserts, on a literally-built under-floor pair.
 
   return weights.map((weight, index) => {
     if (index === boundary) return weight + room;

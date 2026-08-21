@@ -55,10 +55,18 @@ const SESSION = 'fix-a';
  * is read: re-measuring that comparison later moved every absolute figure and
  * left the direction alone, and there is no reason to think these are steadier.
  * What that costs any *other* file is not measured. Every test in this repo has
- * a five-second per-test budget and a contended full run does cross it — one
- * run here went `4 failed | 2518 passed (2522)`, all four `Test timed out in
- * 5000ms`, and the next run of the same tree was clean — but no measurement
- * here attributes a specific crossing to this file's delay setting.
+ * a five-second per-test budget and a contended full run does cross it. The run
+ * quoted here until this round — `4 failed | 2518 passed (2522)`, all four
+ * `Test timed out in 5000ms`, with the next run of the same tree clean — was an
+ * observation of the ROUND-5 tree, and a measurer pointed out that no run of
+ * the tree as it now stands can produce a total of 2522 (it holds 125 files and
+ * 2593 tests). It is left here dated rather than re-quoted as current, because
+ * it is a record of a flake that has not reproduced since. This round produced
+ * one of its own and did close it: a six-arrangement table in
+ * `CodeWorkspace.test.tsx` timed out at 5000ms on one run of a mutation sweep,
+ * and it now seeds its sessions through the store instead of driving the form
+ * six times — 1131ms on the run after. No measurement here attributes any
+ * crossing to this file's `delay` setting.
  */
 function driver(): ReturnType<typeof userEvent.setup> {
   return userEvent.setup({ delay: null });
@@ -1085,9 +1093,29 @@ describe('what typing in the editor costs the diff pane', () => {
     // states of one file can collide under today's three store writes. So the
     // clash is unreachable through the product and the key is defence against a
     // fourth writer. Defence with a test on it, rather than a comment.
+    //
+    // THE THIRD CASE IS THE ONE THIS TEST IS NAMED FOR, and it was missing. A
+    // measurer deleted the length prefix — leaving the separator in place — and
+    // this test stayed green with `tsc` at 0 and the whole suite passing, which
+    // is a test named for the length prefix that only ever checked the
+    // separator. That is the shape this module's own prose rejects twelve lines
+    // above `diffCacheKey`: "a separator alone does not fix it, because a
+    // separator can occur in the text". The first two pairs are separated by
+    // the `\u0000` on their own. The third puts the separator *in* the text,
+    // which is the only input the prefix is the answer to.
     expect(diffCacheKey('ab', 'c')).not.toBe(diffCacheKey('a', 'bc'));
     expect(diffCacheKey('a b', 'c')).not.toBe(diffCacheKey('a', 'b c'));
+    expect(diffCacheKey('a\u0000b', 'c')).not.toBe(diffCacheKey('a', 'b\u0000c'));
     expect(diffCacheKey('ab', 'c')).toBe(diffCacheKey('ab', 'c'));
+
+    // This function has a second reader as of this round — `removeLabels` joins
+    // a Remove name to a `drawn` flag with it — and that reader does NOT make
+    // the prefix load-bearing, which is worth saying rather than implying: the
+    // flag is `'true'` or `'false'`, so no pair of (name, flag) can slide past
+    // the separator into another. The prefix is reused there because one
+    // unambiguous join in the file is better than one join plus an argument
+    // about which inputs can reach it, and this test is the only place the
+    // prefix itself is asserted.
   });
 
   it('does not diff again when something else in the session changes', () => {
@@ -1100,5 +1128,559 @@ describe('what typing in the editor costs the diff pane', () => {
     });
 
     expect(diffCalls.count).toBe(0);
+  });
+});
+
+/**
+ * THE POSITIONS THIS PANE READS, AND THE INPUT THAT REACHES EACH ONE.
+ *
+ * A measurer swept the functions this track added and found nine branches in
+ * this file that delete with `npx tsc --build --force` at 0 and the whole suite
+ * green: the `Home` arm of the row keyboard, the roving stop's clamp, the
+ * always-drawn comment badge, the `metaKey` half of Ctrl/Cmd+Enter in two
+ * places, the `shiftKey` half of the comment box's Enter, the drifted group's
+ * singular lead, and two clauses that turned out to be unreachable and are now
+ * gone from the module rather than described in it.
+ *
+ * Round 6 was told to pin the reader's branch list and did it for the removal
+ * ladder; these are the branches that were not on that list. Each block below
+ * is an enumerated table of the positions one reader handles, so deleting a
+ * branch names the position that stopped being read rather than reddening a
+ * test about the pane in general.
+ */
+describe('the keys the diff rows answer to', () => {
+  /** Five rows: four unchanged lines and one added at the end. */
+  const BASELINE = ['L1', 'L2', 'L3', 'L4'].join('\n');
+  const WORKING = ['L1', 'L2', 'L3', 'L4', 'L5'].join('\n');
+
+  /**
+   * Every key `handleKeyDown` has an arm for, and where two presses down from
+   * the top it leaves the stop.
+   *
+   * `from` is 2 for all of them on purpose: it is the only starting index at
+   * which `Home` and `ArrowUp` disagree and at which `End` and `ArrowDown`
+   * disagree, so no arm can pass by standing in for its neighbour. The last row
+   * is not a key the pane handles and is here to say what "and only those"
+   * means — without it, an arm that answered every key would satisfy the rest.
+   */
+  const KEYS: readonly { readonly key: string; readonly lands: number }[] = [
+    { key: 'ArrowDown', lands: 3 },
+    { key: 'ArrowUp', lands: 1 },
+    { key: 'Home', lands: 0 },
+    { key: 'End', lands: 4 },
+    { key: 'PageDown', lands: 2 },
+  ];
+
+  it('moves the roving stop to a different row for each key it handles, and for no other', () => {
+    const wrong: string[] = [];
+    for (const { key, lands } of KEYS) {
+      resetCodeWorkspaceStore();
+      seed([{ path: 'src/a.ts', baseline: BASELINE, working: WORKING }]);
+      const view = render(<DiffPane sessionId={SESSION} />);
+
+      const start = rows()[0] as HTMLElement;
+      start.focus();
+      fireEvent.keyDown(start, { key: 'ArrowDown' });
+      fireEvent.keyDown(rows()[1] as HTMLElement, { key: 'ArrowDown' });
+      expect(rows()[2]).toHaveAttribute('tabindex', '0');
+
+      fireEvent.keyDown(rows()[2] as HTMLElement, { key });
+      const stop = rows().findIndex((row) => row.getAttribute('tabindex') === '0');
+      if (stop !== lands) wrong.push(`${key}: expected ${lands}, landed ${stop}`);
+      view.unmount();
+    }
+    expect(wrong, 'this key is no longer read the way the pane says it is').toEqual([]);
+  });
+
+  it('keeps the stop on a row that still exists when the diff shrinks under it', () => {
+    // `const bounded = Math.min(active, Math.max(rows.length - 1, 0))`. A
+    // measurer replaced it with `active` and nothing reddened, because no
+    // committed test shrinks a diff while the stop is past the end of what is
+    // left. Editing the file back towards its baseline is how a reviewer does
+    // that, and it is one keystroke in the pane beside this one.
+    seed([{ path: 'src/a.ts', baseline: BASELINE, working: WORKING }]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    (rows()[0] as HTMLElement).focus();
+    fireEvent.keyDown(rows()[0] as HTMLElement, { key: 'End' });
+    expect(rows()).toHaveLength(5);
+    expect(rows().at(-1)).toHaveAttribute('tabindex', '0');
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'L1');
+    });
+
+    // Four rows now, and the stop was on index 4. Unclamped there is no row
+    // with `tabindex="0"` at all: the diff has no fifth row to carry it, so the
+    // pane has no Tab stop and Down starts from nowhere.
+    const stops = rows().filter((row) => row.getAttribute('tabindex') === '0');
+    expect(rows().length).toBeLessThan(5);
+    expect(stops, 'the roving stop fell off the end of the diff').toHaveLength(1);
+    expect(stops[0]).toBe(rows().at(-1));
+  });
+});
+
+describe('what a changed file row says about itself', () => {
+  /**
+   * The row's whole text, for a file with a given number of pending comments.
+   *
+   * `{comments > 0 ? <span>{comments}</span> : null}` is one branch and only
+   * one side of it was ever asserted — `counts pending comments on the file
+   * row` checks that a `1` appears and a measurer deleted the badge entirely
+   * with the suite green, because nothing said the badge is **absent** at zero.
+   * A count that is drawn at zero reads as "0 comments" on a row that has none,
+   * and the two states have to be told apart by their whole text rather than by
+   * a substring: `+1 -0` already contains digits.
+   */
+  const ROW_TEXT: readonly { readonly comments: number; readonly text: string }[] = [
+    { comments: 0, text: 'src/a.ts+1 -0' },
+    { comments: 1, text: 'src/a.ts+1 -01' },
+    { comments: 2, text: 'src/a.ts+1 -02' },
+  ];
+
+  it('shows a comment count only once there is one, and shows the count once there is', async () => {
+    const user = driver();
+    seed([{ path: 'src/a.ts', baseline: 'one', working: ['one', 'TWO'].join('\n') }]);
+    render(<DiffPane sessionId={SESSION} />);
+    const list = within(screen.getByRole('list', { name: 'Changed files' }));
+    const row = (): HTMLElement => list.getByRole('button', { name: /src\/a\.ts/ });
+
+    const wrong: string[] = [];
+    for (const { comments, text } of ROW_TEXT) {
+      while ((useCodeWorkspaceStore.getState().work[SESSION]?.comments.length ?? 0) < comments) {
+        await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+        await user.click(screen.getByLabelText('Your comment on line 2'));
+        await user.paste(`nit ${comments}`);
+        await user.keyboard('{Enter}');
+      }
+      if (row().textContent !== text) {
+        wrong.push(`${comments} pending: expected "${text}", read "${row().textContent}"`);
+      }
+    }
+    expect(wrong, 'the file row no longer says this about its pending comments').toEqual([]);
+  });
+});
+
+describe('the modifiers each key handler in this pane reads', () => {
+  beforeEach(() => {
+    seed([{ path: 'src/a.ts', baseline: 'one', working: ['one', 'TWO'].join('\n') }]);
+  });
+
+  async function commentOnTwo(user: ReturnType<typeof driver>, body: string): Promise<void> {
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 2'));
+    await user.paste(body);
+    await user.keyboard('{Enter}');
+  }
+
+  /**
+   * `!(event.metaKey || event.ctrlKey)` on the pane, one row per side of the
+   * `||`, plus the case with neither.
+   *
+   * Every committed submit test presses Control, so the `metaKey` arm — which
+   * is the whole of the macOS binding — was read by nothing and a measurer
+   * deleted it green. The bare-Enter row is what makes this a test of the
+   * condition rather than of one key: without it, a handler that submitted on
+   * every Enter would pass the two rows above.
+   */
+  const SUBMIT_CHORDS: readonly {
+    readonly what: string;
+    readonly init: Record<string, boolean>;
+    readonly submits: boolean;
+  }[] = [
+    { what: 'Ctrl+Enter', init: { ctrlKey: true }, submits: true },
+    { what: 'Cmd+Enter', init: { metaKey: true }, submits: true },
+    { what: 'Enter with neither', init: {}, submits: false },
+  ];
+
+  it('submits the round on either half of Ctrl/Cmd+Enter, and on neither alone', async () => {
+    const wrong: string[] = [];
+    for (const { what, init, submits } of SUBMIT_CHORDS) {
+      resetCodeWorkspaceStore();
+      seed([{ path: 'src/a.ts', baseline: 'one', working: ['one', 'TWO'].join('\n') }]);
+      const user = driver();
+      const view = render(<DiffPane sessionId={SESSION} />);
+      await commentOnTwo(user, 'send this');
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Submit review' }), {
+        key: 'Enter',
+        ...init,
+      });
+      if (queue().length !== (submits ? 1 : 0)) {
+        wrong.push(`${what}: queued ${queue().length}`);
+      }
+      view.unmount();
+    }
+    expect(wrong, 'this chord no longer means what the pane says it means').toEqual([]);
+  });
+
+  it('leaves Shift+Enter in the comment box to the textarea instead of adding a comment', async () => {
+    // Shift+Enter is a newline. jsdom will not insert one, so what is asserted
+    // is the half this pane owns: the comment is not added and the box stays
+    // open with the draft in it. A measurer deleted the `event.shiftKey ||` arm
+    // and nothing noticed, which means a reviewer trying to write a second
+    // paragraph submitted their first one instead.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    const box = screen.getByLabelText('Your comment on line 2');
+    await user.click(box);
+    await user.paste('first paragraph');
+
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+
+    expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(0);
+    expect(screen.getByLabelText('Your comment on line 2')).toHaveValue('first paragraph');
+  });
+
+  it('lets Ctrl+Enter out of the comment box without adding the draft on the way', async () => {
+    // The box's guard says Ctrl/Cmd+Enter "is left alone so it reaches the
+    // pane's submit handler". `submits the round on Ctrl+Enter, from inside the
+    // comment box` cannot see that arm: it presses the chord on an EMPTY draft,
+    // and an empty draft is refused by the store either way.
+    //
+    // Nor can a round that already has a comment in it, which is what this test
+    // tried first and a mutation run showed green: both handlers fire in one
+    // dispatch, so the pane's `submit` closes over the `anchored` of the render
+    // BEFORE the box's `onAdd` ran, and the message that goes out is the same
+    // either way. The arrangement that separates them is a draft in the box and
+    // an otherwise EMPTY round: the submit is then a no-op on both readings —
+    // `composeReviewMessage` of nothing is `null` — so the only thing left on
+    // screen is whether the chord quietly turned the draft into a comment.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    const box = screen.getByLabelText('Your comment on line 2');
+    await user.click(box);
+    await user.paste('half a thought');
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+
+    expect(queue()).toHaveLength(0);
+    expect(
+      useCodeWorkspaceStore.getState().work[SESSION]?.comments,
+      'the chord added the draft on its way to the submit handler',
+    ).toHaveLength(0);
+    expect(screen.getByLabelText('Your comment on line 2')).toHaveValue('half a thought');
+  });
+});
+
+describe('the group for comments with no row', () => {
+  /**
+   * The lead sentence, per size of the group.
+   *
+   * `drifted.length === 1 ? … : …` is a branch and only the plural side was
+   * ever read. Deleted, one stranded comment is announced as "1 comments have
+   * no row" — the sentence a screen reader reads out above the cards.
+   */
+  const LEADS: readonly { readonly stranded: number; readonly lead: string }[] = [
+    {
+      stranded: 1,
+      lead: 'One comment has no row in the diff below to sit under. Submitting sends it anyway.',
+    },
+    {
+      stranded: 2,
+      lead: '2 comments have no row in the diff below to sit under. Submitting sends them anyway.',
+    },
+  ];
+
+  it('counts itself in words for one and in figures for more', async () => {
+    const wrong: string[] = [];
+    for (const { stranded, lead } of LEADS) {
+      resetCodeWorkspaceStore();
+      seed([
+        { path: 'src/a.ts', baseline: 'alpha', working: ['alpha', 'BETA'].join('\n') },
+        { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+      ]);
+      const user = driver();
+      const view = render(<DiffPane sessionId={SESSION} />);
+      for (let index = 0; index < stranded; index += 1) {
+        await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+        await user.click(screen.getByLabelText('Your comment on line 2'));
+        await user.paste(`nit ${index}`);
+        await user.keyboard('{Enter}');
+      }
+      act(() => {
+        useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+      });
+
+      const group = within(
+        screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+      );
+      const said = group.getAllByRole('button', { name: /^Remove comment/ }).length;
+      if (said !== stranded) wrong.push(`${stranded} stranded: ${said} cards drawn`);
+      if (screen.queryByText(lead) === null) {
+        wrong.push(`${stranded} stranded: the lead did not read "${lead}"`);
+      }
+      view.unmount();
+    }
+    expect(wrong, 'the drifted group no longer counts itself the way it says it does').toEqual([]);
+  });
+});
+
+/**
+ * A NAME THAT IS A POSITION AMONG THE BUTTONS ON SCREEN.
+ *
+ * `removeLabels` suffixes a shared name `(1 of n)` … `(n of n)`. Until this
+ * round the set it counted was the whole round, defended by an argument that
+ * two entries "cannot share a name without sharing a path". A measurer built
+ * the round that breaks it: the base name is a plain join on `, ` and `: ` over
+ * two pieces of free user text — a file path from the Editor pane and a body
+ * from the comment box — so two entries on **different** files can build the
+ * same name, and their two cards then have different fates. The probe produced
+ * one on-screen button labelled `(1 of 2)` whose sibling drew nothing anywhere.
+ *
+ * The round below is that round, seeded through the store the way the product
+ * reaches it, and it is run twice — once with the second file still in the
+ * changed list, once with it out of it. Those are the two values of `drawn`,
+ * and they are what the partition key now carries: the same colliding pair is
+ * two unsuffixed names when only one of them is on screen, and `(1 of 2)` /
+ * `(2 of 2)` when both are.
+ */
+describe('two comments whose names collide through the separators', () => {
+  /** The file the reviewer is looking at. */
+  const ON_SCREEN = 'src/a.ts';
+  /** A file whose *name* reads like the middle of another comment's label. */
+  const AMBIGUOUS = 'line 3 after: hello';
+
+  /** Both comments build this base, from different paths, lines and bodies. */
+  const COLLIDING = 'Remove comment on line 3 after: hello, line 5 after: world';
+
+  /**
+   * The colliding round, with the second file either differing or not.
+   *
+   * Differing, it is in the changed list and is not the file on screen, so it
+   * is neither `drifted` nor `attached` and draws nothing. Identical, it leaves
+   * the list, and the `!listed` arm of `drifted` puts its card in front of the
+   * reviewer wherever they are. One store write apart, and the whole question
+   * of what `(n of m)` may count.
+   */
+  function seedCollision(secondFileDiffers: boolean): void {
+    const written = ['M1', 'M2', 'M3', 'M4', 'M5'].join('\n');
+    seed([
+      { path: ON_SCREEN, baseline: 'L1', working: ['L1', 'L2', 'L3'].join('\n') },
+      // Only the baseline moves between the two rounds. `diffText` reports two
+      // identical texts as five `same` rows, so the second comment anchors to a
+      // real line 5 either way and the ONE thing that differs is whether its
+      // file is in the changed list — which is the whole of `drawn`.
+      { path: AMBIGUOUS, baseline: secondFileDiffers ? 'M1' : written, working: written },
+    ]);
+    act(() => {
+      const store = useCodeWorkspaceStore.getState();
+      store.addComment(
+        SESSION,
+        { path: ON_SCREEN, side: 'right', line: 3, text: 'L3' },
+        'hello, line 5 after: world',
+      );
+      store.addComment(SESSION, { path: AMBIGUOUS, side: 'right', line: 5, text: 'M5' }, 'world');
+    });
+  }
+
+  const ROUNDS: readonly {
+    readonly what: string;
+    readonly secondFileDiffers: boolean;
+    readonly names: readonly string[];
+  }[] = [
+    {
+      what: 'only one of the pair is on screen',
+      secondFileDiffers: true,
+      names: [COLLIDING],
+    },
+    {
+      what: 'both of the pair are on screen',
+      secondFileDiffers: false,
+      names: [`${COLLIDING} (1 of 2)`, `${COLLIDING} (2 of 2)`],
+    },
+  ];
+
+  it('every Remove name that is drawn is a position among the ones drawn beside it', () => {
+    const wrong: string[] = [];
+    for (const { what, secondFileDiffers, names } of ROUNDS) {
+      resetCodeWorkspaceStore();
+      seedCollision(secondFileDiffers);
+      const view = render(<DiffPane sessionId={SESSION} />);
+
+      const drawn = screen
+        .getAllByRole('button', { name: /^Remove comment/ })
+        .map((button) => button.getAttribute('aria-label') ?? '')
+        .sort();
+      if (JSON.stringify(drawn) !== JSON.stringify([...names].sort())) {
+        wrong.push(`${what}: ${JSON.stringify(drawn)}`);
+      }
+      view.unmount();
+    }
+    expect(
+      wrong,
+      'a suffix that counts buttons a reader cannot reach, or a collision left unsuffixed',
+    ).toEqual([]);
+  });
+
+  it('draws the whole of any set that shares a name, or none of it', () => {
+    // The property the round-scoped count claimed and did not have. Stated as a
+    // law over the round rather than as two expected strings, so it is the
+    // partition that is asserted and not this particular arrangement: every
+    // name carrying `(n of m)` must have exactly `m` buttons on screen sharing
+    // its base.
+    const wrong: string[] = [];
+    for (const { what, secondFileDiffers } of ROUNDS) {
+      resetCodeWorkspaceStore();
+      seedCollision(secondFileDiffers);
+      const view = render(<DiffPane sessionId={SESSION} />);
+
+      const drawn = screen
+        .getAllByRole('button', { name: /^Remove comment/ })
+        .map((button) => button.getAttribute('aria-label') ?? '');
+      for (const name of drawn) {
+        const suffix = /^(.*) \((\d+) of (\d+)\)$/.exec(name);
+        if (suffix === null) continue;
+        const siblings = drawn.filter((other) => other.startsWith(`${suffix[1]} (`));
+        if (siblings.length !== Number(suffix[3])) {
+          wrong.push(`${what}: "${name}" has ${siblings.length} siblings on screen`);
+        }
+      }
+      view.unmount();
+    }
+    expect(wrong, 'a position in a set the reader can only see part of').toEqual([]);
+  });
+});
+
+/**
+ * THE LIVE REGION, THE SECOND TIME.
+ *
+ * Round 6 added a `role="status"` region and a critic measured it silent in the
+ * case it exists for: remove a comment, write the same body again, remove it
+ * again, and the sentence is byte-identical, so React commits nothing and a
+ * `MutationObserver` on the region counts 0. A polite region announces on
+ * mutation. Zero mutations is zero announcements.
+ *
+ * Two more of that round's invariants were stated in comments and guarded by
+ * nothing, both found by the same critic: the drifted group's Remove speaks
+ * `subject` rather than `name` (the row-attached copy of that line is guarded
+ * and this one was not), and the ladder's documented rung order — "the next
+ * Remove button in the same card stack, then the previous one" — which survives
+ * having its two rungs swapped, because no committed test removes the MIDDLE
+ * card of three, the only arrangement in which the order is visible.
+ */
+describe('what the pane says, and says again', () => {
+  beforeEach(() => {
+    seed([{ path: 'src/a.ts', baseline: 'alpha', working: ['alpha', 'BETA'].join('\n') }]);
+  });
+
+  async function commentOnBeta(user: ReturnType<typeof driver>, body: string): Promise<void> {
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 2'));
+    await user.paste(body);
+    await user.keyboard('{Enter}');
+  }
+
+  it('speaks the second removal even when it produces the same sentence as the first', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    const region = screen.getByRole('status');
+
+    // Counted rather than read. The final text is identical in the working and
+    // the broken case, which is exactly why the test beside this one — which
+    // reads the text — cannot see the defect. `takeRecords` is drained as well
+    // as the callback, so a record delivered either way is counted once.
+    let mutations = 0;
+    const observer = new MutationObserver((records) => {
+      mutations += records.length;
+    });
+    observer.observe(region, { childList: true, characterData: true, subtree: true });
+    const drain = (): number => {
+      mutations += observer.takeRecords().length;
+      return mutations;
+    };
+
+    await commentOnBeta(user, 'aaa');
+    await user.click(screen.getByRole('button', { name: 'Remove comment on line 2 after: aaa' }));
+    const first = drain();
+    const sentence = region.textContent;
+    expect(first).toBeGreaterThan(0);
+    expect(sentence).toBe('Removed comment on line 2 after: aaa. No comments left in this round.');
+
+    await commentOnBeta(user, 'aaa');
+    await user.click(screen.getByRole('button', { name: 'Remove comment on line 2 after: aaa' }));
+    const second = drain();
+    observer.disconnect();
+
+    expect(region.textContent, 'the two sentences are the point').toBe(sentence);
+    expect(second, 'the region never changed, so nothing was announced').toBeGreaterThan(first);
+  });
+
+  it('stops saying how much of the round is left once that has stopped being true', async () => {
+    // The sentence carries a count. After a removal the region kept it, so
+    // adding a comment left "1 comment pending" sitting in the accessibility
+    // tree while two were. It is also the guard on `pending.current = null`:
+    // with that line deleted the stale ladder fires on the next unrelated store
+    // change, the keyboard is pulled out of the comment box, and the old
+    // sentence is spoken again about a removal that already happened.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'second');
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: first' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removed comment on line 2 after: first. 1 comment pending.',
+    );
+
+    await commentOnBeta(user, 'third');
+
+    expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(2);
+    expect(
+      screen.getByRole('status').textContent,
+      'a count that is no longer true is worse than no count',
+    ).toBe('');
+  });
+
+  it('names the drifted comment it removed without the position it no longer occupies', async () => {
+    // The drifted group's own `remove(…, subject)`. The row-attached copy of
+    // that line is guarded by `names the comment without the position it no
+    // longer occupies`; this copy was not, and a critic swapped it for `name`
+    // with the file's 38 tests still green — so the region spoke the positional
+    // suffix the docblock says it must never speak, in the one group where
+    // suffixed names actually arise.
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: ['alpha', 'BETA'].join('\n') },
+      { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'nit');
+    await commentOnBeta(user, 'nit');
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+
+    const group = within(screen.getByRole('group', { name: 'Comments with no row to sit under' }));
+    await user.click(group.getByRole('button', { name: /\(1 of 2\)$/ }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removed comment on src/a.ts, a line no longer in the diff (it read "BETA"): nit. 1 comment pending.',
+    );
+    expect(screen.getByRole('status').textContent).not.toContain('of 2');
+  });
+
+  it('goes to the next card in the stack rather than the one before it', async () => {
+    // The ladder's first two rungs are `siblings[at + 1]` then
+    // `siblings[at - 1]`, and the order between them is only visible when the
+    // card removed has a sibling on BOTH sides. Every committed rung test
+    // removes an end card, so swapping the two rungs left all of them green.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'middle');
+    await commentOnBeta(user, 'last');
+
+    const before = screen.getByRole('button', { name: 'Remove comment on line 2 after: first' });
+    const after = screen.getByRole('button', { name: 'Remove comment on line 2 after: last' });
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: middle' }),
+    );
+
+    expect(document.activeElement, 'the ladder went backwards up the stack').toBe(after);
+    expect(document.activeElement).not.toBe(before);
   });
 });

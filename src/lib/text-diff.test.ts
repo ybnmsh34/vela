@@ -152,5 +152,64 @@ describe('a line diff between two texts', () => {
       );
       expect(diff.rows.some((row) => row.kind === 'same')).toBe(false);
     });
+
+    it('is past the cap when either side is past it, and every fixture here was past it on the left', () => {
+      // The module header says the cap applies "on either side" and the code
+      // says `coreLeft.length <= MAX && coreRight.length <= MAX`. A measurer
+      // dropped the right-hand conjunct and the whole suite stayed green: every
+      // over-cap fixture in this tree is over on the LEFT, so only half of
+      // "either side" was ever read. The enumerated pairs below are the four
+      // corners of that conjunction, so a missing conjunct names the side that
+      // stopped being asked about.
+      const short = numbered('S', 3);
+      const long = numbered('L', MAXIMUM_ALIGNED_LINES + 1);
+      const corners: readonly {
+        readonly over: string;
+        readonly left: string;
+        readonly right: string;
+        readonly aligned: boolean;
+      }[] = [
+        { over: 'neither side', left: short, right: numbered('R', 3), aligned: true },
+        { over: 'the left only', left: long, right: short, aligned: false },
+        { over: 'the right only', left: short, right: long, aligned: false },
+        { over: 'both sides', left: long, right: numbered('R', MAXIMUM_ALIGNED_LINES + 1), aligned: false },
+      ];
+      expect(
+        corners
+          .filter(({ left, right, aligned }) => diffText(left, right).aligned !== aligned)
+          .map(({ over }) => over),
+        'this corner of the cap is answered wrongly',
+      ).toEqual([]);
+    });
+  });
+
+  describe('when the walk runs off one side before the other', () => {
+    // `alignCore` ends with two loops that drain whatever the diagonal walk left
+    // behind — one per side. Deleting the *added* one reddens 39 tests; a
+    // measurer deleted the *removed* one and nothing in the tree noticed, so
+    // half of a symmetric pair was pinned and half was not. These two cases are
+    // the pair, written so neither can stand in for the other.
+
+    it('emits every remaining line of the left text when the right runs out first', () => {
+      // Head trimming takes `a`, leaving a core of `b`, `c` against nothing —
+      // so the diagonal walk never runs and the removed-lines loop emits both.
+      const diff = diffText(['a', 'b', 'c'].join('\n'), 'a');
+      expect(diff.rows).toEqual([
+        { kind: 'same', text: 'a', leftLine: 1, rightLine: 1 },
+        { kind: 'removed', text: 'b', leftLine: 2 },
+        { kind: 'removed', text: 'c', leftLine: 3 },
+      ]);
+      expect([diff.added, diff.removed, diff.aligned]).toEqual([0, 2, true]);
+    });
+
+    it('emits every remaining line of the right text when the left runs out first', () => {
+      const diff = diffText('a', ['a', 'b', 'c'].join('\n'));
+      expect(diff.rows).toEqual([
+        { kind: 'same', text: 'a', leftLine: 1, rightLine: 1 },
+        { kind: 'added', text: 'b', rightLine: 2 },
+        { kind: 'added', text: 'c', rightLine: 3 },
+      ]);
+      expect([diff.added, diff.removed, diff.aligned]).toEqual([2, 0, true]);
+    });
   });
 });

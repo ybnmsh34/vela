@@ -22,10 +22,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { diffText } from '@/lib/text-diff';
+import { diffText, type DiffRow } from '@/lib/text-diff';
 import type { LineComment } from '@/state/code-workspace-store';
 
-import { anchorComments, composeReviewMessage } from './review-comments';
+import { anchorComments, anchorOf, composeReviewMessage } from './review-comments';
 
 function comment(partial: Partial<LineComment> & { readonly id: string }): LineComment {
   return {
@@ -206,5 +206,63 @@ describe('re-finding the line a comment quotes', () => {
     ]);
 
     expect(message?.indexOf('still here')).toBeLessThan(message?.indexOf('orphan') ?? -1);
+  });
+});
+
+/**
+ * The row kinds, all of them, in one table.
+ *
+ * `anchorOf` had three arms for three kinds and two of them returned the same
+ * expression character for character, so no input could tell the `added` arm
+ * from the fall-through and no test could see it deleted — a measurer deleted it
+ * and the whole suite stayed green. The arm is gone from the module; what is
+ * asserted here instead is the *answer per kind*, which is the thing
+ * `anchorComments` actually depends on ("a (side, line) pair names exactly one
+ * row of a diff").
+ *
+ * The table is typed `Record<DiffRow['kind'], …>`, so a fourth row kind added to
+ * the union fails `pnpm typecheck` in this file until it has an answer here.
+ * That is the same total-map discipline `PANE_TITLES` uses over `PaneKind`.
+ */
+describe('the side and the number a row is commented against', () => {
+  const ROWS: Record<
+    DiffRow['kind'],
+    { readonly row: DiffRow; readonly side: 'left' | 'right'; readonly line: number }
+  > = {
+    same: {
+      row: { kind: 'same', text: 'ALPHA', leftLine: 4, rightLine: 7 },
+      // The *after* side, and the right-hand number with it: an unchanged line
+      // exists on both sides and the change is being asked about the new one.
+      side: 'right',
+      line: 7,
+    },
+    added: {
+      row: { kind: 'added', text: 'BETA', rightLine: 8 },
+      side: 'right',
+      line: 8,
+    },
+    removed: {
+      row: { kind: 'removed', text: 'GAMMA', leftLine: 5 },
+      side: 'left',
+      line: 5,
+    },
+  };
+
+  it('answers on the side each row kind exists in, for every kind there is', () => {
+    const wrong = Object.entries(ROWS)
+      .filter(([, { row, side, line }]) => {
+        const anchor = anchorOf(row);
+        return anchor.side !== side || anchor.line !== line;
+      })
+      .map(([kind]) => kind);
+    expect(wrong, 'this row kind is no longer anchored where the module says it is').toEqual([]);
+  });
+
+  it('gives a same row the right-hand number even when the two sides disagree', () => {
+    // The one case where "which number" is a real choice rather than the only
+    // number there is — and the case a table of equal line numbers could not
+    // see. `same` is deliberately seeded 4/7 above for this.
+    expect(anchorOf(ROWS.same.row)).toEqual({ side: 'right', line: 7 });
+    expect(anchorOf(ROWS.same.row).line).not.toBe(4);
   });
 });

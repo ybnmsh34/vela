@@ -335,3 +335,121 @@ describe('how far an edge can actually be dragged', () => {
     expect(range?.max).toBeGreaterThanOrEqual(range?.min ?? 0);
   });
 });
+
+/**
+ * The clauses that decline, and the ones that sanitise.
+ *
+ * Every test above drives this module the way the workspace drives it, and a
+ * workspace never hands it a `NaN` delta, a negative slot, a column index past
+ * the end, or a share of `Infinity`. So a measurer deleted six clauses that
+ * exist for exactly those inputs — `newcomerShare`'s zero-incumbent arm,
+ * `normalise`'s finite/positive sanitiser, `movePane`'s slot clamp, both of
+ * `shiftPair`'s early returns and `slotEdgeRange`'s missing-column guard — and
+ * the whole suite stayed green on each. Two of the six turned out to be
+ * unobservable and are gone from the module rather than guarded here; the four
+ * that are load-bearing are below, each with the input that reaches it.
+ */
+describe('the inputs the workspace never sends', () => {
+  it('opens the first pane of an empty workspace at the full width', () => {
+    // Closing the last pane leaves `emptyLayout()`, and the Views menu can then
+    // open one — so this is a round the product reaches, even though nothing
+    // else in this file was in it. `newcomerShare(0)` is `1 / 0`, and it is
+    // `normalise`'s `Number.isFinite(weight) && weight > 0` sanitiser that turns
+    // that into a share: without it the sole column's weight is `NaN`, and a
+    // `flex-grow: NaN` column has no width at all.
+    const opened = openPane(emptyLayout<string>(), 'a');
+    expect(shape(opened)).toEqual([['a']]);
+    expect(opened.columns[0]?.weight).toBe(1);
+    expect(Number.isFinite(opened.columns[0]?.weight ?? Number.NaN)).toBe(true);
+  });
+
+  it('puts a pane asked for before the first slot at the first slot, not one short of the end', () => {
+    // `Array.prototype.splice` reads a negative index from the end, so
+    // `splice(-1, 0, pane)` drops it *above the last* slot rather than at the
+    // top. `Math.max(0, slot)` in `movePane` is what stops that, and only a
+    // negative slot can see it — `splice` clamps the upper end by itself, which
+    // is why there is no upper clamp there to test.
+    const stacked = movePane(movePane(columnsOf('a', 'b', 'c'), 'b', 0, 1), 'c', 0, 2);
+    expect(shape(stacked)).toEqual([['a', 'b', 'c']]);
+    expect(shape(movePane(stacked, 'c', 0, -1))).toEqual([['c', 'a', 'b']]);
+    expect(shape(movePane(stacked, 'c', 0, 99))).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('declines a drag of nothing, even where the floor would otherwise pull the edge', () => {
+    // `delta === 0` and `room === 0` are not the same clause, and only an
+    // under-floor pair tells them apart: with the member before the edge below
+    // the floor, `Math.max(0, floor - before)` is positive, so a zero-length
+    // drag would *move* the edge if `delta === 0` did not decline first. Built
+    // literally, for the reason its neighbour above is: no builder here hands
+    // out an under-floor pair.
+    const squeezed: PaneLayout<string> = {
+      columns: [
+        { slots: [{ pane: 'a', weight: 0.02 }], weight: 0.02 },
+        { slots: [{ pane: 'b', weight: 0.03 }], weight: 0.03 },
+        { slots: [{ pane: 'c', weight: 0.95 }], weight: 0.95 },
+      ],
+    };
+    expect(columnWeights(resizeColumns(squeezed, 0, 0))).toEqual([0.02, 0.03, 0.95]);
+  });
+
+  it('declines a drag that is not a number rather than writing one into the layout', () => {
+    // `(now - started.at) / started.size` in `Splitter.tsx` is `NaN` for a
+    // zero-width container and `Infinity` for a zero divisor that survived. A
+    // layout that takes it holds `NaN` weights for ever after, and every pane
+    // in the workspace loses its width at once.
+    const three = columnsOf('a', 'b', 'c');
+    for (const delta of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const dragged = resizeColumns(three, 0, delta);
+      expect(columnWeights(dragged), `a drag of ${String(delta)}`).toEqual(columnWeights(three));
+      expect(sum(columnWeights(dragged))).toBeCloseTo(1, 10);
+    }
+  });
+
+  it('declines a horizontal edge in a column that does not exist', () => {
+    // `resizeSlots` has `is identity for a column that does not exist` next
+    // door; `slotEdgeRange` had nothing, and without its guard it reads `.slots`
+    // off `undefined` and throws where its sibling returns `null`.
+    const three = columnsOf('a', 'b', 'c');
+    expect(slotEdgeRange(three, 9, 0)).toBeNull();
+    expect(slotEdgeRange(three, -1, 0)).toBeNull();
+  });
+});
+
+/**
+ * The property `PaneGrid.tsx` reads instead of a fallback.
+ *
+ * `columnName` used to end `|| 'column'`, for a column with no slots. There is
+ * no such column: `withColumnWeights` filters `slots.length > 0` and it builds
+ * every layout this module returns. The fallback was that claim made where
+ * nothing could check it; this is the claim made where something can.
+ */
+describe('the shape every layout comes back in', () => {
+  it('no builder leaves an empty column in a layout', () => {
+    const three = columnsOf('a', 'b', 'c');
+    const stacked = movePane(three, 'b', 0, 1);
+    const built: PaneLayout<string>[] = [
+      emptyLayout(),
+      three,
+      columnsOf('a'),
+      openPane(three, 'd'),
+      openPane(emptyLayout(), 'a'),
+      closePane(three, 'b'),
+      closePane(columnsOf('a'), 'a'),
+      stacked,
+      closePane(stacked, 'a'),
+      movePane(three, 'c', -1, 0),
+      movePane(three, 'a', 9, 0),
+      movePane(stacked, 'b', 1, 0),
+      resizeColumns(three, 0, 0.1),
+      resizeSlots(stacked, 0, 0, 0.1),
+    ];
+    const empties = built
+      .flatMap((layout, index) => layout.columns.map((column) => ({ index, column })))
+      .filter(({ column }) => column.slots.length === 0)
+      .map(({ index }) => index);
+    expect(empties, 'a column with no slots has no name, and PaneGrid asks for one').toEqual([]);
+    // And the list is a list of layouts, not of empties: without this a builder
+    // that returned `{ columns: [] }` for everything would pass.
+    expect(built.filter((layout) => layout.columns.length > 0)).toHaveLength(built.length - 2);
+  });
+});

@@ -10,11 +10,22 @@
  * nowhere.
  *
  * Measured against the tree this commit ships, by putting that mistake back:
- * with the released array discarded, `src/lib/task-plan.test.ts` stays green at
- * 33, `CoworkPanel.test.tsx` stays green at 26, `cowork-store.test.ts` stays
- * green at 16 and `director.test.ts` at 3, and 9 of the 13 tests below go red —
- * EXIT=1, `Tests  9 failed | 82 passed (91)`, reproduced twice. Four whole
- * files of assertions cannot see the defect this one file is for.
+ * with the released array discarded, **every other test file in the cowork
+ * scope stays green** — `src/lib/task-plan.test.ts`, `CoworkPanel.test.tsx`,
+ * `ContextPanel.test.tsx`, `ProjectFilesPanel.test.tsx`, `cowork-store.test.ts`
+ * and `director.test.ts`, not one red among them — and 9 of the 13 tests below
+ * go red, EXIT=1, reproduced twice. Six whole files of assertions cannot see the
+ * defect this one file is for.
+ *
+ * The per-file pass counts this paragraph used to carry are deliberately gone
+ * rather than refreshed. These particular ones were still true at the end of
+ * round 4; two others in this track were not — the call-site count in
+ * `cowork-store.ts` and the pass count in `cowork-store.test.ts`, both correct
+ * when written and both made false by tests the same round added. A total
+ * written inside the suite moves every time anybody adds a test, and two of
+ * these files did not exist a day ago. "Every other file green, nine of the
+ * thirteen here red" is what the mutation shows, and it survives the next test
+ * being written.
  *
  * So this file drives the read end to end: a real `LiveRuns` directory over a
  * hand-driven harness, `turnStarted` emitted into it, and a `TaskDirector`

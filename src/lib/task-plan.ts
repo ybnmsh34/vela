@@ -350,11 +350,15 @@ export function recordDelivery(plan: Plan, n: number, outcome: DirectiveDelivery
   const step = stepAt(plan, n);
   if (step === null) return plan;
   // "Released nothing" is `!directiveReleased` and nothing else. A step with no
-  // directive is already covered by it, because the only writer of that flag is
-  // {@link advanceTo}, whose filter requires `directive !== null` — so
-  // `directive === null && directiveReleased` is a state no function here can
-  // produce. A second clause for it would be a branch no input reaches, which
-  // is a rule no test can pin.
+  // directive is already covered by it, and the reason takes all four writers of
+  // that flag rather than one. {@link advanceTo} is the only writer that sets it
+  // `true`, behind a filter requiring `directive !== null`. The other three write
+  // it `false`: {@link planOf} creates the step with no directive and the flag
+  // down, {@link redirect} puts a directive on and the flag down, and
+  // {@link clearRedirect} — the one that could strand it — takes the directive
+  // off and the flag down in the same object. So `directive === null &&
+  // directiveReleased` is a state no function here can produce. A second clause
+  // for it would be a branch no input reaches, which is a rule no test can pin.
   if (!step.directiveReleased) return plan;
   if (step.directiveOutcome !== null) return plan;
   return {

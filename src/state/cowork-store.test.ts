@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, sep } from 'node:path';
+
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { planFor, resetCoworkStore, tasksIn, useCoworkStore } from './cowork-store';
@@ -10,11 +13,21 @@ import { planFor, resetCoworkStore, tasksIn, useCoworkStore } from './cowork-sto
  * conversation with no plan answers, and the order the switcher shows them in.
  *
  * That last one is here because it was **not** covered and the gap was measured
- * rather than guessed. Re-measured against the tree this commit ships: replacing
- * the whole ranking function with `() => 0` leaves `src/features/cowork` and
- * `src/lib/task-plan.test.ts` green — 72 passed, twice — and fails exactly one
- * test, here. An ordering nothing asserts is an ordering the next edit is free
- * to lose.
+ * rather than guessed: replacing the whole ranking function with `() => 0` reds
+ * exactly one test — `the task switcher’s order > puts running tasks first,
+ * then not-started, then stopped`, below — and reds nothing at all in
+ * `src/features/cowork` or in `src/lib/task-plan.test.ts`. An ordering nothing
+ * asserts is an ordering the next edit is free to lose.
+ *
+ * The pass count that used to be in that sentence — "72 passed, twice" — is
+ * gone rather than refreshed. It was true at `474c9c7`, where it was written;
+ * `70989d5` added three tests inside the scope it counted — two to
+ * `task-plan.test.ts` and one to `use-cowork.test.tsx` — which made it 75; and
+ * it still said 72 at `507c668`, where the round ended. That is the defect
+ * `cowork-store.ts`'s header now describes at length: a suite-wide total,
+ * written inside the suite, is stale as soon as anybody adds a test. "Reds
+ * exactly this one and nothing else in those files" is what the mutation
+ * actually establishes, and it does not move when the suite grows.
  */
 beforeEach(() => {
   resetCoworkStore();
@@ -147,9 +160,9 @@ describe('the task switcher’s order', () => {
  * dock — so an assertion on the plan object cannot see the write at all, and
  * the first draft of these tests made exactly that mistake. Measured
  * against the tree this commit ships: dropping the `next !== plan` guard from
- * `recordDelivery` gives EXIT=1, `Tests  1 failed | 90 passed (91)`, and the
- * single red is `writes nothing for a second answer about a directive that
- * already has one`. Reproduced twice.
+ * `recordDelivery` gives EXIT=1 with exactly one red in the whole cowork scope
+ * — `writes nothing for a second answer about a directive that already has
+ * one`, below — and nothing else in that scope moves. Reproduced twice.
  *
  * It is not only a render. In `useCowork` a re-render is a fresh `director`
  * identity for any caller that builds one inline, a fresh identity is a
@@ -243,5 +256,63 @@ describe('a no-op action leaves the plan alone', () => {
 
     expect(refused.ok).toBe(false);
     expect(useCoworkStore.getState().plans).toBe(plans);
+  });
+});
+
+/**
+ * THE GUARD THAT REPLACED A NUMBER.
+ *
+ * `cowork-store.ts`'s header says `setPlan` has no caller outside the tests —
+ * the largest disclosed gap in this feature, because it is what makes every "the
+ * user sees" in the progress panel conditional on a plan a user cannot create.
+ * That header used to say so by quoting a count of the call sites, and the count
+ * went stale inside the round that wrote it: correct at `474c9c7`, false by
+ * `70989d5`, still false when the round ended.
+ *
+ * A number in a comment cannot notice that. This walk recomputes it on every
+ * run, and on the day somebody wires a plan up it fails here naming their file —
+ * which is the day that paragraph and this test both want rewriting.
+ *
+ * Two positive controls, because a walk that finds no callers passes for two
+ * very different reasons. The first says the walk reached a tree at all; the
+ * second says the pattern still matches a call site that genuinely exists, so a
+ * regex that had quietly stopped matching could not pass itself off as silence.
+ */
+function modulesUnder(directory: string, keep: (name: string) => boolean): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...modulesUnder(path, keep));
+    else if (/\.tsx?$/.test(entry.name) && keep(entry.name)) found.push(path);
+  }
+  return found;
+}
+
+const SRC_ROOT = join(process.cwd(), 'src');
+const CALLS_SET_PLAN = /\bsetPlan\s*\(/;
+const THIS_FILE = join(SRC_ROOT, 'state', 'cowork-store.test.ts');
+
+describe('the gap this store is honest about', () => {
+  it('nothing outside the tests calls setPlan', () => {
+    const shipping = modulesUnder(SRC_ROOT, (name) => !/\.test\.[a-z]+$/.test(name));
+
+    // Control 1: the walk reached a tree. Without it, a working directory that
+    // is not the repo root reports the same empty answer that success does.
+    expect(shipping.length, `no shipping modules found under ${SRC_ROOT}`).toBeGreaterThan(100);
+    expect(shipping).toContain(join(SRC_ROOT, 'state', 'cowork-store.ts'));
+
+    // Control 2: the pattern still matches a call site that is really there.
+    expect(CALLS_SET_PLAN.test(readFileSync(THIS_FILE, 'utf8'))).toBe(true);
+
+    const callers = shipping
+      .filter((file) => CALLS_SET_PLAN.test(readFileSync(file, 'utf8')))
+      .map((file) => file.slice(SRC_ROOT.length + 1).split(sep).join('/'));
+
+    expect(
+      callers,
+      'a shipping module calls setPlan, so a user can reach a plan now. That is ' +
+        'the gap closing rather than a failure: rewrite the AND NOTHING IN THIS ' +
+        'BUILD PUTS A PLAN IN paragraph in cowork-store.ts, and delete this test',
+    ).toEqual([]);
   });
 });

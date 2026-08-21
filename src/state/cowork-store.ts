@@ -58,12 +58,29 @@
  * ## AND NOTHING IN THIS BUILD PUTS A PLAN IN, EITHER
  *
  * `setPlan` is the only way a plan is created and **it has no caller outside
- * the tests**. Measured, not assumed: grepping the whole of `src/` for call
- * sites of that name finds 24, every one of them in a `.test.` file, and
- * nothing left over once those are filtered out. So in the shipping app every
- * conversation answers `NO_PLAN`, `ProgressPanel.tsx` draws its "no plan yet"
- * empty state, and the redirect chain below it — release, deliver, record,
- * report — is exercised by tests and by nothing a user can press.
+ * the tests**. That is asserted rather than described: the test named `nothing
+ * outside the tests calls setPlan`, in `cowork-store.test.ts`, walks every
+ * `.ts`/`.tsx` under `src/` with `.test.` files excluded and fails naming any
+ * module that calls it. This file is inside that walk and passes it: the
+ * declaration and the implementation below are both `setPlan:`, which is not a
+ * call, and this paragraph is careful not to write one — a regex looking for
+ * call sites cannot tell a comment from code, so prose that quoted the call
+ * with its bracket would fail the guard it describes.
+ *
+ * It is a guard rather than a sentence because a sentence was tried and went
+ * stale inside its own round. This paragraph used to give a *number* of call
+ * sites; the number was measured at `474c9c7` and was correct there, `70989d5`
+ * added four tests later the same round — two of which call it, one here and
+ * one in `use-cowork.test.tsx` — and the round ended with the header saying 24
+ * over a tree holding 26. A count of test call sites, written in a file the
+ * tests can move, is false as soon as anybody writes another test — which is
+ * why what stands here now is a walk that recomputes rather than a figure that
+ * remembers.
+ *
+ * So in the shipping app every conversation answers `NO_PLAN`,
+ * `ProgressPanel.tsx` draws its "no plan yet" empty state, and the redirect
+ * chain below it — release, deliver, record, report — is exercised by tests and
+ * by nothing a user can press.
  *
  * That is the same kind of gap as the missing hop in
  * `src/features/cowork/director.ts` and it is written down for the same reason.

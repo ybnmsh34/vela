@@ -23,8 +23,16 @@
  * header: that interface carries four members and this file reads exactly two,
  * `paths.workspace` and `paths.skillsMount`. `root` is the common prefix of
  * both and a row for it would repeat them. `skillStore` is not this project's —
- * `<app data dir>/skills`, one per machine, shared by every project — and every
- * mount row already prints `SkillMount.source`, which is `<skillStore>/<name>`.
+ * `<app data dir>/skills`, one per machine, shared by every project — and a
+ * mount row prints `SkillMount.source`, which is `<skillStore>/<name>`, wherever
+ * it has one.
+ *
+ * Not every row does, and `MountRow` guards the print rather than assuming.
+ * `contract-project.ts` says that field is "`null` in exactly one case, and it
+ * is not an omission" — the `nameIsNotASinglePathSegment` name, whose path must
+ * not be produced even to be reported. Such a row shows the name and the problem
+ * sentence and no path at all, which is what `ProjectFilesPanel.test.tsx`'s
+ * `draws no path for the one mount whose source the contract withholds` pins.
  *
  * That is a real answer to "where are my files and can Vela see them" and it is
  * not a file tree. The panel says so in its own words rather than drawing an

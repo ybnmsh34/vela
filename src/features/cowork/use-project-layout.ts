@@ -15,8 +15,12 @@
  * (its `case` arm and a `#requireProject` string), one each in
  * `project-host-parity.test.ts` and `project-run-scope.test.ts`, and one in
  * `src/data/projects-repository.ts`, which is prose and not a call: the
- * "Four methods, not eight" paragraph declining to write the method, quoted in
- * full by `src/runtime/reachable.test.ts`. That is a defensible choice and is
+ * "Four methods, not eight" paragraph declining to write the method, quoted by
+ * `src/runtime/reachable.test.ts` with its middle elided — the four command
+ * names, and the clause saying nothing in the renderer calls them — rather than
+ * "quoted in full", as an earlier version of this line said. That
+ * paragraph now reads "Five methods, not eight", because this hook's method is
+ * the fifth. That is a defensible choice and is
  * also why nothing counted the debt: that guard measures unreachable
  * *modules*, and a command whose door was never built has no module to be
  * missing from the graph.

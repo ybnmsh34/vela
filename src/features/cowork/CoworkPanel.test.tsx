@@ -127,6 +127,22 @@ beforeEach(() => {
 });
 
 describe('the progress panel', () => {
+  it('draws the empty state every shipping conversation actually gets', () => {
+    // No `givePlan`, which is the state of every conversation in the built app:
+    // `cowork-store.test.ts`'s `nothing outside the tests calls setPlan` is the
+    // guard that keeps that true, and this is what the user sees while it is.
+    // The panel must say what a plan is, not draw an empty list of steps.
+    mount();
+
+    const empty = screen.getByTestId('cowork-no-plan');
+    expect(empty).toHaveTextContent('This task has no plan yet.');
+    expect(empty).toHaveTextContent('a comment on a step it has not reached yet redirects it');
+    expect(screen.queryByTestId('cowork-progress-summary')).toBeNull();
+    // Nothing to switch between either, so the task list is absent rather than
+    // an empty box with a heading.
+    expect(screen.queryByRole('list', { name: 'Tasks' })).toBeNull();
+  });
+
   it('numbers every step and says how many are done', async () => {
     givePlan(PLAN, 2);
     mount();
@@ -504,15 +520,19 @@ describe('a comment on an upcoming step redirects the task', () => {
  * Measured, all four arms, by giving one of them another arm's sentence and
  * running this whole file:
  *
- *  - `emptyComment` swapped: `Tests  2 failed | 24 passed (26)` — the
- *    blank-comment test that presses the button, and the one below;
- *  - `taskHasStopped` and `stepIsNotAhead` swapped for each other:
- *    `Tests  3 failed | 23 passed (26)` — both of their tests, and the one
- *    below;
- *  - `noSuchStep` swapped: `Tests  1 failed | 25 passed (26)` — the one below,
- *    and nothing else in the file. With this file excluded the same mutation is
- *    SILENT across the rest of the suite: `122 passed (122)` files,
- *    `2479 passed (2479)` tests, EXIT=0.
+ *  - `emptyComment` swapped: EXIT=1, `2 failed` — the blank-comment test that
+ *    presses the button, and the one below;
+ *  - `taskHasStopped` and `stepIsNotAhead` swapped for each other: EXIT=1,
+ *    `3 failed` — both of their tests, and the one below;
+ *  - `noSuchStep` swapped: EXIT=1, `1 failed` — the one below, and nothing
+ *    else in the file. With this file excluded the same mutation is SILENT
+ *    across the whole rest of the suite: EXIT=0, not one red anywhere.
+ *
+ * The pass totals that used to sit beside those failure counts are gone. A
+ * failure count and the name of the red is what a mutation establishes; the
+ * total beside it is a fact about how many tests the suite happens to hold
+ * today, and this track has twice committed one that its own new tests had
+ * already made false.
  *
  * That last line is what this block is for, and `noSuchStep` is the only
  * sentence of the four that needs it.

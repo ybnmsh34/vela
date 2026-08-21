@@ -26,10 +26,22 @@
  *
  * ## What the scan is deliberately not
  *
- * **Transient states are out.** `:hover`, `:focus`, `:focus-visible` and
- * `:active` are excluded: the pointer or the focus ring is itself the signal,
- * and demanding a second one on all thirty-odd of them is noise that would bury
- * the states that are genuinely invisible.
+ * **Transient states are out.** `:hover`, `:focus`, `:focus-within`,
+ * `:focus-visible` and `:active` are excluded: the pointer or the focus ring is
+ * itself the signal, and demanding a second one of them would bury the states
+ * that are genuinely invisible.
+ *
+ * That exclusion removes **nothing** from this scan as the tree stands: it is
+ * only consulted after {@link ATTRIBUTE_STATE} has matched, and no rule under
+ * `src/` carries both an attribute state and a transient pseudo-class, so
+ * {@link TRANSIENT} rejects nothing today. An earlier version of this paragraph
+ * said "all thirty-odd of them", which was the size of no set here — the set
+ * it names is empty, and the wider sets it might have meant were 84 (rules with
+ * a transient pseudo-class anywhere) and 43 (those of them declaring nothing
+ * but substituted properties), all three counts measured over `src/` at this
+ * commit and all three free to move. The paragraph states what the scan is for,
+ * and it is written down so that the first rule to combine the two is refused
+ * on purpose rather than by accident.
  *
  * **It only sees states spelled as attributes.** `[data-*]` and `[aria-*]`, not
  * a state carried by a class name. `ConversationRow`'s `.selected` is exactly
@@ -72,15 +84,31 @@ function stylesheets(): readonly string[] {
  * The properties a forced-colours mode substitutes, and therefore the ones a
  * distinction may not rest on alone. `opacity` is here because it is not
  * substituted but is the other way a state is said without saying it.
+ *
+ * The list runs past the six the header names because the forced-colours
+ * property list in CSS Color Adjust is longer than six: `outline-color`,
+ * `caret-color`, `text-decoration-color`, `accent-color`, `column-rule-color`
+ * and `text-emphasis-color` are named there too. Adding them changes nothing
+ * about what this scan finds today — the same rules come back with the six as
+ * with the twelve, 21 of them measured at this commit — and they are here so
+ * that a state first said with one of the other six is found the first time
+ * somebody writes one.
  */
 const SUBSTITUTED =
-  /^(color|background|background-color|[a-z-]*border[a-z-]*-color|fill|stroke|box-shadow|opacity)$/u;
+  /^(color|background|background-color|[a-z-]*border[a-z-]*-color|fill|stroke|box-shadow|opacity|outline-color|caret-color|text-decoration-color|accent-color|column-rule-color|text-emphasis-color)$/u;
 
 /** A state spelled as an attribute. See the header for what this does not see. */
 const ATTRIBUTE_STATE = /\[(data-|aria-)[^\]]*\]/u;
 
 /** The pointer and the focus ring are their own signal. */
 const TRANSIENT = /:(hover|focus|focus-within|focus-visible|active)\b/u;
+
+/**
+ * A CSS length, anywhere in a declaration's value. It is how the guard below
+ * reads a border edge's width off the *value* instead of guessing at which of
+ * the property's several spellings somebody used.
+ */
+const LENGTH = /-?\d*\.?\d+(?:px|rem|em|ch|ex|pt|pc|in|cm|mm|vh|vw|vmin|vmax|%)/gu;
 
 interface ColourAloneRule {
   readonly file: string;
@@ -197,37 +225,64 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // pair (family, style) four distinct values, and both halves are checked
     // here rather than described.
     expect(text).toMatch(/\.ending\s*\{[^}]*border-left-width:\s*3px/u);
-    // ANY LEFT EDGE ON `.error`, NOT ONLY THE LONGHAND. This read
-    // `border-left-width` alone, which a `border-left: 3px solid …` shorthand
-    // walks straight past — it would give `.error` the same 3px edge as
-    // `.ending`, collapse the two families back into two boxes under forced
-    // colours, and redden nothing. Measured against a sheet with that shorthand
-    // added to `.error`: the old pattern returns false, this one returns true.
+    // ANY LEFT EDGE ON `.error`, IN ANY SPELLING — READ AS A WIDTH RATHER THAN
+    // MATCHED AS A SUBSTRING.
     //
-    // It covers the `border-left` shorthand and the `border-left-*` longhands.
-    expect(text).not.toMatch(/\.error\s*\{[^}]*border-left/u);
-
-    // AND THE FOUR-VALUE HOLE THIS COMMENT USED TO LEAVE OPEN. The line above
-    // reads a substring, so a four-value `border-width` — 1px on three sides
-    // and 3px on the fourth — set the same left edge without ever writing
-    // `border-left`, and reddened nothing. Both spellings are refused now, on
-    // every rule in this sheet whose selector mentions `.error` rather than on
-    // the bare `.error {` rule alone. There is no third spelling: the `border`
-    // shorthand takes one width for all four sides, so it cannot single an edge
-    // out. Comments are stripped first, because this file's own prose quotes
-    // the declaration it is banning.
+    // Three versions of this guard banned a spelling, and each one left the
+    // next spelling open. Replaying all three over this sheet with one
+    // declaration injected into `.error`, PASS meaning the guard let it through
+    // and red meaning the guard caught it:
+    //
+    //   spelling                          v1     v2     v3     this
+    //   border-left-width: 3px            red    red    red    red
+    //   border-left: 3px solid …          PASS   red    red    red
+    //   border-width: 1px 1px 1px 3px     PASS   PASS   red    red
+    //   border-inline-start-width: 3px    PASS   PASS   PASS   red
+    //   border-inline-start: 3px solid …  PASS   PASS   PASS   red
+    //   border-inline: 3px                PASS   PASS   PASS   red
+    //   border: 3px solid … (all four)    PASS   PASS   PASS   red
+    //
+    // Each of those gives `.error` the same 3px left edge as `.ending` in this
+    // LTR shell and collapses the two families the test exists to keep apart.
+    // Logical properties are not exotic here either: `TitleBar.module.css`,
+    // `CodeBlock.module.css` and `Markdown.module.css` already write
+    // `margin-inline-*`. The comment on this spot claimed at v3 that there was
+    // no third spelling. There were four.
+    //
+    // So this stops enumerating spellings and reads the **value**: on a rule
+    // whose selector mentions `.error`, no property named `border…` except
+    // `border-radius` may carry a length that is not 1px. Every spelling in the
+    // table above is such a property carrying such a length, and so is every
+    // border-width spelling CSS Backgrounds and Borders and CSS Logical
+    // Properties define — which is the argument for why a spelling nobody has
+    // written yet is refused as well. `.ending`'s own 3px is asserted above, so
+    // the pair cannot be collapsed from the other side either.
+    //
+    // What it does not see, stated rather than left to be found: a declaration
+    // in another sheet, and a rule in this one whose selector does not mention
+    // `.error`. Comments are stripped first, because the prose above quotes the
+    // declarations it is banning.
     const rules = text.replace(/\/\*[\s\S]*?\*\//gu, '');
     let errorRules = 0;
+    let borderLengths = 0;
     for (const rule of rules.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
       const selector = (rule[1] ?? '').trim();
       if (!/\.error\b/u.test(selector)) continue;
       errorRules += 1;
-      expect(rule[2] ?? '', `${selector} gives itself a left edge`).not.toMatch(
-        /border-left|border-width/u,
-      );
+      for (const declaration of (rule[2] ?? '').split(';')) {
+        const property = (declaration.split(':')[0] ?? '').trim();
+        if (!property.startsWith('border') || property.startsWith('border-radius')) continue;
+        for (const length of declaration.slice(property.length).match(LENGTH) ?? []) {
+          borderLengths += 1;
+          expect(length, `${selector} { ${property} } sets a border edge to ${length}`).toBe('1px');
+        }
+      }
     }
-    // A scan that stopped finding the rules would pass the loop above silently.
+    // Two floors, because a scan that stopped matching would pass the loop
+    // above in silence: the rules are still being found, and a width inside
+    // them is still being read.
     expect(errorRules).toBeGreaterThanOrEqual(3);
+    expect(borderLengths).toBeGreaterThanOrEqual(1);
     expect(block).toMatch(/\.ending\s*\{\s*border-style:\s*solid/u);
     expect(block).toMatch(/\.ending\[data-tone='warning'\]\s*\{\s*border-style:\s*dashed/u);
     expect(block).toMatch(/\.error\s*\{\s*border-style:\s*dashed/u);
@@ -299,12 +354,36 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // Every sheet that has such a block, not a list somebody remembered to
     // extend: a new forced-colours block that reaches for a colour is exactly
     // the mistake this catches.
+    //
+    // THE RULE IS ABSOLUTE AND THE CHECK NOW IS TOO. It used to match a
+    // six-name pattern while the sentence above said "a colour". Measured by
+    // replaying that pattern over `Composer.module.css`'s block with one
+    // declaration added to it, all six of `outline-color`, `caret-color`,
+    // `text-decoration-color`, `accent-color`, `column-rule-color` and
+    // `text-emphasis-color` passed. `outline-color` is the one with something
+    // riding on it: that block deliberately leaves it unset so its dashed ring
+    // inherits `currentColor` and is substituted along with the text, and
+    // nothing here was enforcing that. The check now reads each declaration's
+    // property and refuses any that {@link SUBSTITUTED} names — one definition,
+    // two readers — less `opacity`, which a restatement may reach for.
     for (const name of stylesheets().filter((one) => sheet(one).includes('forced-colors'))) {
       const block = forcedColorsBlocks(sheet(name));
       expect(block.length, `${name} has no forced-colors block`).toBeGreaterThan(0);
-      expect(block, `${name} restates a distinction with a colour`).not.toMatch(
-        /(^|[\s;{])(color|background|background-color|[a-z-]*border[a-z-]*-color|fill|stroke|box-shadow)\s*:/u,
-      );
+      let properties = 0;
+      for (const rule of block.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+        for (const declaration of (rule[2] ?? '').split(';')) {
+          const property = (declaration.split(':')[0] ?? '').trim();
+          if (property === '' || property === 'opacity') continue;
+          properties += 1;
+          expect(
+            SUBSTITUTED.test(property),
+            `${name} restates a distinction with ${property}, which forced colours substitutes`,
+          ).toBe(false);
+        }
+      }
+      // The floor: a block whose declarations stopped being found would pass
+      // the loop above without reading anything.
+      expect(properties, `${name}: no declaration was read`).toBeGreaterThan(0);
     }
   });
 });

@@ -10,31 +10,43 @@
  * stated reason a second implementation of a security boundary lived in the
  * renderer, and **every clause of it was false**. The false sentence is not
  * reproduced here, so that a reader grepping this directory for it finds only
- * code that is true. What is true, re-derived at each named line:
+ * code that is true.
  *
- *  - All six are in `COMMAND_ALLOWLIST` in `src/platform/contract.ts` (declared
- *    at 1634, the sandbox rows at 1658-1663), and `isAllowedCommand` is a
- *    membership test on that array, so it answers `true` for each. (There is no
- *    export named `ALLOWED_COMMANDS` in this repo. The plan item that sent this
- *    repair called it that; the array is `COMMAND_ALLOWLIST` on both sides.)
- *  - All six are in the Rust `COMMAND_ALLOWLIST` in `src-tauri/src/ipc/mod.rs`
- *    (123-128). The module's own test reads the TypeScript file and fails if the
- *    two have drifted, so `cargo test` is what pins them together.
- *  - All six are registered handlers in `src-tauri/src/lib.rs` (211-216), defined
- *    in `src-tauri/src/ipc/sandbox.rs` over the `vela-sandbox` crate.
+ * What is true, re-derived at each named **symbol**. This note used to name line
+ * numbers instead, and they had already rotted. Seven of them were in this file;
+ * five pointed at unrelated code when they were next checked — `Cadence` and a
+ * paragraph about `missedRuns` where `COMMAND_ALLOWLIST` was claimed, and the
+ * `project_*` registrations where the `sandbox_*` ones were, twice — one was off
+ * at both ends, and one was still exact. A line number is a claim with a short
+ * half-life, and it is the claim nobody re-reads.
+ *
+ *  - All six are in `COMMAND_ALLOWLIST` in `src/platform/contract.ts`, as its
+ *    six `'sandbox_*'` rows, and `isAllowedCommand` is a membership test on that
+ *    array, so it answers `true` for each. (There is no export named
+ *    `ALLOWED_COMMANDS` in this repo. The plan item that sent this repair called
+ *    it that; the array is `COMMAND_ALLOWLIST` on both sides.)
+ *  - All six are in the Rust `COMMAND_ALLOWLIST` in `src-tauri/src/ipc/mod.rs`.
+ *    That module's own test `rust_and_typescript_allowlists_are_identical` reads
+ *    the TypeScript file and fails if the two have drifted, so `cargo test` is
+ *    what pins them together.
+ *  - All six are registered in the `tauri::generate_handler!` list in
+ *    `src-tauri/src/lib.rs`, as `ipc::sandbox::sandbox_approve`, `_cancel`,
+ *    `_policy`, `_release`, `_report_document` and `_submit`, each defined in
+ *    `src-tauri/src/ipc/sandbox.rs` over the `vela-sandbox` crate.
  *  - `src/data/sandbox-repository.ts` is the renderer's door to all six, and
  *    `src/app/App.tsx` hands it to `CanvasSurface`. **That is the shipping path.
  *    This file is not on it.**
  *
  * What is genuinely unbuilt is the list `src/platform/contract-sandbox.ts` keeps
- * at 73-77, and nothing wider: every document command path, `python`, both
- * copying materialisations, and any surface that renders an approval prompt.
+ * under "Still unbuilt" in its opening note, and nothing wider: every document
+ * command path, `python`, both copying materialisations, and any surface that
+ * renders an approval prompt.
  * Concretely for this feature — the host's `languages` carries no document
  * language and `absent_document_backend` reports the document family at
  * `sameOrigin`, one rank below the `opaqueOriginFrame` every Canvas submit
- * demands, so `admit` refuses every one of them; and `report_document` in
- * `src-tauri/crates/vela-sandbox/src/host.rs` (line 381) is an empty body, so a
- * frame's observations are discarded. **Canvas therefore draws nothing against a
+ * demands, so `admit` refuses every one of them; and `SandboxHost::report_document`
+ * in `src-tauri/crates/vela-sandbox/src/host.rs` is an empty body, so a frame's
+ * observations are discarded. **Canvas therefore draws nothing against a
  * real host today, and shows the host's refusal instead.**
  *
  * ## What this double is for, and what it can never be evidence of
@@ -213,10 +225,10 @@ export interface LocalDocumentHostOptions {
    * The user's setting, as this double pretends to hold it.
    *
    * `sandbox_policy` is not missing and never was: it is on both allowlists,
-   * registered in `src-tauri/src/lib.rs` (line 213), implemented in
-   * `src-tauri/src/ipc/sandbox.rs`, faked by `BrowserAdapter`, and exposed as
-   * the `policy` method of `createSandboxRepository`. In the shipped app it comes
-   * from there. This option exists so a *test* can drive the surface at a level
+   * registered in `src-tauri/src/lib.rs` as `ipc::sandbox::sandbox_policy`,
+   * implemented in `src-tauri/src/ipc/sandbox.rs`, faked by `BrowserAdapter`,
+   * and exposed as the `policy` method of `createSandboxRepository`. In the
+   * shipped app it comes from there. This option exists so a *test* can drive the surface at a level
    * other than the default, which is the only reason a renderer object should
    * ever have one.
    */

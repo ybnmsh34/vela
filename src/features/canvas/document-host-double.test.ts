@@ -13,10 +13,12 @@
  * `src-tauri/src/ipc/sandbox.rs`; the shipping surface goes through
  * `src/data/sandbox-repository.ts`) but because **no host in this tree accepts a
  * document run**, so a real one could never be driven past a refusal into the
- * sequence these tests are about. What is genuinely unbuilt is the list at
- * `src/platform/contract-sandbox.ts` 73-77: every document command path,
- * `python`, both copying materialisations, and any surface rendering an approval
- * prompt.
+ * sequence these tests are about. What is genuinely unbuilt is the list
+ * `src/platform/contract-sandbox.ts` keeps under "Still unbuilt" in its opening
+ * note: every document command path, `python`, both copying materialisations,
+ * and any surface rendering an approval prompt. (A line range stood here until
+ * it was measured and found off at both ends; `document-host-double.ts` says
+ * what happened to the other six.)
  *
  * So these assertions are evidence about lifetime and sequencing and about
  * nothing else — not about a boundary, not about a policy a request cannot

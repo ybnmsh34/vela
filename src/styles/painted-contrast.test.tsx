@@ -44,11 +44,11 @@
  * reading only — as did every other check in this file. Two things got through,
  * both measured by doing them rather than argued: starving the dark walk to one
  * of twenty-three fixtures left the file green at exit 0, and emptying
- * `rootColour` — what a `base.css body` whose colour stopped resolving would do
- * — deleted every *inherited* colour in the app and still left it green, because
- * the minority of elements that declare their own colour cleared the hundred on
- * their own. `measures every element it reaches, in both themes` replaces that
- * threshold with two totality laws; see it for what each one forbids.
+ * `rootColour` — which deletes every *inherited* colour in the app, leaving only
+ * the minority of elements that declare their own — still left it green, because
+ * that minority cleared the hundred on its own.
+ * `measures every element it reaches, in both themes` replaces that threshold
+ * with two totality laws; see it for what each one forbids.
  *
  * Nothing here asks jsdom for a style. It asks jsdom for exactly one thing —
  * **which element is inside which** — and reads every colour itself, from the
@@ -64,21 +64,35 @@
  * state a DOM has, and `[data-kind='removed']` is invisible if the fixture only
  * builds `added`. Two things push back on it:
  *
- * 1. **The class is the unit, not the state.** A rule applies to an element when
- *    its subject compound's classes are on that element; pseudo-classes and
- *    attribute conditions are *ignored*, so `.row:hover`'s ground and
+ * 1. **The shape is the unit, not the state.** A rule applies to an element when
+ *    its subject compound's classes are on that element *and* its element type,
+ *    if it names one, is that element's; pseudo-classes and attribute
+ *    conditions are *ignored*, so `.row:hover`'s ground and
  *    `.diffRow[data-kind='removed']`'s ground are both measured against a plain
  *    rendered `.row` / `.diffRow`. That over-approximates — it measures
  *    compositions this particular render did not paint — which is the safe
  *    direction for a guard, and it is why `:hover`, `:focus-visible`,
  *    `::placeholder` and `data-` variants are covered without a fixture per
  *    state.
- * 2. **Un-rendered rules are named, not skipped.** `every rule that paints text
+ * 2. **Un-reached rules are named, not skipped.** `every rule that paints text
  *    is reached by some fixture` lists every colour-declaring rule that no
- *    fixture ever mounted, and compares that list against `NOT_RENDERED` — an
- *    exact set, not a floor. A colour rule added anywhere in `src/` fails this
- *    file until a fixture reaches it or somebody writes down why it cannot. The
- *    debt is large and it is *enumerated*; before this file it was invisible.
+ *    fixture reached, and compares that list against `NOT_RENDERED` — an exact
+ *    set, not a floor. A colour rule added anywhere in `src/` fails this file
+ *    until a fixture reaches it or somebody writes down why it cannot. The debt
+ *    is large and it is *enumerated*; before this file it was invisible. What
+ *    that list may not be used for is the subject of {@link NOT_RENDERED}'s own
+ *    comment: it enumerates what is unreached, and "unreached" once quietly
+ *    included four rules the matcher could not see rather than four rules no
+ *    fixture mounted.
+ * 3. **A selector this file cannot scope is a failure, not a miss.** Every
+ *    audited part must name a CSS-module class somewhere, because that hashed
+ *    name is the only thing tying a rule to a rendered element;
+ *    {@link SelectorPart.anchored} is the third answer, in the shape
+ *    `css-model.ts` gave the value reader with `unreadable`. And the sheets this
+ *    file does *not* read — the global ones, which no class scopes — are
+ *    enumerated in {@link GLOBAL_PAINT} with the guard that reads each, so the
+ *    edge of this file's universe is held by an assertion rather than by
+ *    `base.css`'s request that nobody put component styles in it.
  *
  * ## Colours are frozen
  *
@@ -133,6 +147,8 @@ import {
   contrastRatio,
   declaredValue,
   loadSheets,
+  paletteFor,
+  parseStylesheet,
   readPaint,
   type Lookup,
   type Paint,
@@ -149,6 +165,48 @@ const SHEETS = loadSheets();
 const MODULE_RULES: readonly Rule[] = SHEETS.flatMap((sheet) =>
   sheet.name.endsWith('.module.css') ? sheet.rules : [],
 );
+
+/**
+ * THE EDGE OF THE UNIVERSE THIS FILE MEASURES, HELD BY A GUARD.
+ *
+ * Everything above is a CSS Module, because a module class is the only thing
+ * that ties a rule to a rendered element. A rule in a *global* sheet is scoped
+ * by nothing — `dl { background: … }` in `base.css` would paint under half the
+ * app — so this file cannot attribute one, and `base.css` saying "Do not add
+ * component styles to this file" is prose, which can neither create nor prove
+ * an edge.
+ *
+ * So the edge is enumerated instead: every global rule that declares a `color`
+ * or a `background`, with **what reads it**. A new one fails
+ * `no global stylesheet paints outside what is already measured` until it is
+ * either moved into a module or added here with its reader named.
+ */
+const GLOBAL_PAINT: ReadonlyMap<string, string> = new Map([
+  [
+    'src/styles/base.css — body',
+    'read by `rootPaint`, which is the ground and the colour every fixture below inherits',
+  ],
+  [
+    'src/styles/base.css — button, input, textarea, select',
+    'declares `color: inherit` and no ground, so it introduces no composition',
+  ],
+  [
+    'src/styles/base.css — ::selection',
+    "co-declares both halves, so contrast.test.ts's `every rule that paints text on a ground it declares itself is a pair in the table` measures it",
+  ],
+  [
+    'src/styles/base.css — ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner',
+    'the scrollbar trough carries no text; --vela-scrollbar-track is exempt with a reason in contrast.test.ts NOT_A_TEXT_GROUND',
+  ],
+  [
+    'src/styles/base.css — ::-webkit-scrollbar-thumb',
+    'the thumb carries no text and is audited as a `ui` foreground against every scroller ground in contrast.test.ts',
+  ],
+  [
+    'src/styles/base.css — ::-webkit-scrollbar-thumb:hover',
+    'the same thumb, hovered, audited the same way',
+  ],
+]);
 
 /**
  * Which sheet a hashed class name came from.
@@ -188,10 +246,24 @@ function localClass(token: string): { file: string; name: string } | null {
 /* -------------------------------------------------------------------------- */
 
 interface Compound {
+  /**
+   * The element type this compound names, lower-cased — `dt` in `.fact dt` — or
+   * `null` when it names none.
+   *
+   * Reading it is what closed this file's own version of the defect it was
+   * written for. The matcher used to require a CSS-module class on the element
+   * itself, so a compound that names only an element type matched nothing, and
+   * `HomeSurface.tsx`'s `<dt>Platform</dt>` — unclassed, inside
+   * `<div className={styles.fact}>` — was invisible to `.fact dt`. The rule then
+   * appeared in {@link NOT_RENDERED} as though no fixture had mounted it.
+   */
+  readonly tag: string | null;
   readonly classes: readonly string[];
 }
 
 interface SelectorPart {
+  /** The part as written, for a message that can be found in the sheet. */
+  readonly text: string;
   /** Ancestor compounds, outermost first. Empty when the part cannot constrain. */
   readonly ancestors: readonly Compound[];
   readonly subject: Compound;
@@ -215,6 +287,23 @@ interface SelectorPart {
   readonly state: string;
   /** `a·10000 + b·100 + c`, enough to order this repo's selectors. */
   readonly specificity: number;
+  /**
+   * Whether some compound in this part names a CSS-module class.
+   *
+   * A class is the only thing that ties a rule in a component's CSS Module to
+   * an element that component rendered: the hashed name appears on the DOM node and
+   * nowhere else. A part with no class anywhere — `li`, `*`, `#root` — could be
+   * on any element in the app or on none, and this matcher has no way to tell
+   * which. It answers **no match**, and a "no match" is indistinguishable from
+   * "no fixture mounted it".
+   *
+   * That is the same collapse `css-model.ts` removed on the value side, where a
+   * value the reader cannot parse became `unreadable` rather than absent. Here
+   * the third answer is this flag: an unanchored part is reported by
+   * `no audited rule is scoped to the DOM by something this audit cannot see`
+   * instead of being quietly filed under un-rendered.
+   */
+  readonly anchored: boolean;
 }
 
 /** Splits on `character` at depth zero, ignoring `[…]` and `(…)`. */
@@ -244,7 +333,13 @@ function compoundOf(text: string): Compound {
   // ignored condition widens what a rule is measured against, which is the
   // direction that cannot hide a composition.
   const bare = text.replace(/\[[^\]]*\]/gu, '').replace(/\([^()]*\)/gu, '');
-  return { classes: [...bare.matchAll(/\.([-\w]+)/gu)].map((match) => match[1] ?? '') };
+  // An element type can only be written first in a compound, so anything after
+  // a `.`, `:` or `#` is not one. An `#id` is dropped from what is matched on —
+  // it is unhashed and this file cannot resolve it against a fixture — and
+  // `parseSelector` records it as a condition so that dropping it can widen the
+  // match without also winning the cascade.
+  const tag = /^([a-z][-\w]*)/u.exec(bare)?.[1]?.toLowerCase() ?? null;
+  return { tag, classes: [...bare.matchAll(/\.([-\w]+)/gu)].map((match) => match[1] ?? '') };
 }
 
 function specificityOf(text: string): number {
@@ -267,19 +362,34 @@ function parseSelector(selector: string): readonly SelectorPart[] {
     // ancestor half of the selector is dropped instead of being evaluated wrongly.
     const siblings = /[+~]/u.test(text);
     const withoutPseudoElement = text.replace(PSEUDO_ELEMENT, '');
+    // Everything in a selector that this matcher does **not** evaluate, in one
+    // list: attribute conditions, pseudo-classes, and `#id`. Collecting them
+    // here is what keeps an unevaluated condition out of the base cascade —
+    // see {@link SelectorPart.conditional}. `#id` is in the list because
+    // `compoundOf` drops it from the compound it matches on while
+    // `specificityOf` counts it at 10000: an id-bearing rule is matched against
+    // nothing and outranks every class in the file, so in the base cascade it
+    // would win and report a colour the engine may never paint. No module sheet
+    // in `src/` writes one today — this is the door, closed before anybody uses
+    // it.
     const conditions = [
-      ...withoutPseudoElement.matchAll(/\[[^\]]*\]|(?<!:):(?!:)[-\w]+(?:\([^)]*\))?/gu),
+      ...withoutPseudoElement.matchAll(/\[[^\]]*\]|(?<!:):(?!:)[-\w]+(?:\([^)]*\))?|#[-\w]+/gu),
     ]
       .map((match) => match[0])
       .sort();
+    const ancestors = siblings ? [] : compounds.slice(0, -1).map(compoundOf);
+    const subject = compoundOf(last);
     return [
       {
-        ancestors: siblings ? [] : compounds.slice(0, -1).map(compoundOf),
-        subject: compoundOf(last),
+        text,
+        ancestors,
+        subject,
         pseudoElement: PSEUDO_ELEMENT.exec(last)?.[0] ?? null,
         conditional: conditions.length > 0,
         state: conditions.join(''),
         specificity: specificityOf(text),
+        anchored:
+          subject.classes.length > 0 || ancestors.some((one) => one.classes.length > 0),
       },
     ];
   });
@@ -302,6 +412,32 @@ function lookupFor(rule: Rule, palette: Map<string, string>): Lookup {
   return (name) => locals.get(name) ?? palette.get(name);
 }
 
+/**
+ * A rule inside an at-rule is a **state**, never a competitor.
+ *
+ * `@media print { .fact dd { color: … } }` is later in source order than the
+ * `.fact dd` above it and has identical specificity, so a cascade that ignored
+ * the condition would hand this file the print colour and never mention the one
+ * on screen — a paint the engine does not use, reported as the paint it does.
+ * Folding the conditions into {@link SelectorPart.state} instead puts the rule
+ * in a cascade of its own, exactly as `:hover` is: it is measured *as well*,
+ * and it displaces nothing. That over-approximates, which is the direction that
+ * cannot hide a composition.
+ *
+ * No module rule under a condition declares a paint today, so nothing this
+ * repository currently measures moves — observed, not a bound.
+ */
+function partsOf(rule: Rule): readonly SelectorPart[] {
+  const parts = parseSelector(rule.selector);
+  if (rule.conditions.length === 0) return parts;
+  const under = rule.conditions.join(' ');
+  return parts.map((part) => ({
+    ...part,
+    conditional: true,
+    state: `${part.state} under ${under}`,
+  }));
+}
+
 function prepare(rules: readonly Rule[], palette: Map<string, string>): readonly Prepared[] {
   return rules.map((rule, order) => {
     const lookup = lookupFor(rule, palette);
@@ -310,7 +446,7 @@ function prepare(rules: readonly Rule[], palette: Map<string, string>): readonly
     return {
       rule,
       order,
-      parts: parseSelector(rule.selector),
+      parts: partsOf(rule),
       foreground: colour === undefined ? undefined : readPaint(colour, lookup),
       ground: ground === undefined ? undefined : readPaint(ground, lookup),
     };
@@ -321,7 +457,11 @@ function prepare(rules: readonly Rule[], palette: Map<string, string>): readonly
 /* matching a rule to a rendered element                                       */
 /* -------------------------------------------------------------------------- */
 
+const classCache = new WeakMap<Element, Map<string, Set<string>>>();
+
 function classesByFile(element: Element): Map<string, Set<string>> {
+  const cached = classCache.get(element);
+  if (cached !== undefined) return cached;
   const found = new Map<string, Set<string>>();
   for (const token of Array.from(element.classList)) {
     const local = localClass(token);
@@ -330,31 +470,72 @@ function classesByFile(element: Element): Map<string, Set<string>> {
     set.add(local.name);
     found.set(local.file, set);
   }
+  classCache.set(element, found);
   return found;
+}
+
+const NO_CLASSES: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Whether one compound of a selector describes this element.
+ *
+ * The class test is scoped to the rule's own sheet, which is what keeps
+ * `.fact` in one module from matching `.fact` in another: the DOM carries the
+ * hashed spelling and `classesByFile` maps it back to the file that emitted it.
+ * The element-type test needs no such scoping — but it is only ever asked
+ * inside a part that some class already anchors (see {@link SelectorPart.anchored}).
+ */
+function compoundMatches(compound: Compound, element: Element, file: string): boolean {
+  if (compound.tag !== null && element.tagName.toLowerCase() !== compound.tag) return false;
+  if (compound.classes.length === 0) return true;
+  const own = classesByFile(element).get(file) ?? NO_CLASSES;
+  return compound.classes.every((name) => own.has(name));
 }
 
 /** The parts of a rule's selector that reach this element, if any. */
 function matchingParts(prepared: Prepared, element: Element): readonly SelectorPart[] {
   const own = classesByFile(element).get(prepared.rule.file);
-  if (own === undefined) return [];
   return prepared.parts.filter((part) => {
-    if (part.subject.classes.length === 0 && part.ancestors.length === 0) return false;
-    if (!part.subject.classes.every((name) => own.has(name))) return false;
+    if (!part.anchored) return false;
+    // The whole cost of this file is here, so the cheap rejection comes first:
+    // a part whose subject names a class cannot reach an element carrying none
+    // of this sheet's classes. A part whose subject names no class has to walk
+    // instead. Measured over the module sheets as this was written: 618 rules,
+    // 670 selector parts, of which 31 have a subject naming no class and 27 of
+    // those name an element type. Two of the 27 are `.fact dt` and `.fact dd`,
+    // the composition that got past the previous matcher. Observed and open —
+    // a sheet can add or remove one at any time.
+    if (part.subject.classes.length > 0 && own === undefined) return false;
+    if (!compoundMatches(part.subject, element, prepared.rule.file)) return false;
     let index = part.ancestors.length - 1;
     let node = element.parentElement;
     while (index >= 0 && node !== null) {
-      const theirs = classesByFile(node).get(prepared.rule.file);
       const compound = part.ancestors[index];
-      if (
-        compound !== undefined &&
-        theirs !== undefined &&
-        compound.classes.every((name) => theirs.has(name))
-      ) {
+      if (compound !== undefined && compoundMatches(compound, node, prepared.rule.file)) {
         index -= 1;
       }
       node = node.parentElement;
     }
     return index < 0;
+  });
+}
+
+/**
+ * Every selector part in an audited rule that nothing scopes to the DOM.
+ *
+ * Empty today, and the assertion that reads it says so exactly rather than as a
+ * floor. See {@link SelectorPart.anchored} for why an unanchored part is a
+ * third answer and not a "no".
+ */
+function unanchoredParts(rules: readonly Rule[]): readonly string[] {
+  return rules.flatMap((rule) => {
+    const paints =
+      declaredValue(rule, 'color') !== undefined ||
+      declaredValue(rule, 'background', 'background-color') !== undefined;
+    if (!paints) return [];
+    return partsOf(rule)
+      .filter((part) => !part.anchored)
+      .map((part) => `${rule.file} — ${rule.selector} — \`${part.text}\` names no CSS-module class`);
   });
 }
 
@@ -428,6 +609,9 @@ function inState<T>(
 /* what the element stands on, and what colour it is painted in                */
 /* -------------------------------------------------------------------------- */
 
+/** A {@link Paint} that resolved to an actual colour. */
+type Solid = Extract<Paint, { readonly kind: 'colour' }>;
+
 interface Layer {
   readonly rgba: Rgba;
   /** The role chain, nearest first, for the failure message. */
@@ -441,7 +625,7 @@ const ROOT = 'src/styles/base.css';
  * asserted in a comment: every fixture's root inherits them unless it says
  * otherwise, so a change to that rule must move these numbers.
  */
-function rootPaint(palette: Map<string, string>): { colour: Paint; ground: Paint } {
+function rootPaint(palette: Map<string, string>): { colour: Solid; ground: Solid } {
   const sheet = SHEETS.find(({ name }) => name === ROOT);
   const body = sheet?.rules.find(({ selector }) => selector === 'body');
   if (body === undefined) throw new Error(`${ROOT} no longer has a \`body\` rule to read`);
@@ -451,7 +635,19 @@ function rootPaint(palette: Map<string, string>): { colour: Paint; ground: Paint
   if (colour === undefined || ground === undefined) {
     throw new Error(`${ROOT} \`body\` no longer declares both a colour and a ground`);
   }
-  return { colour: readPaint(colour, lookup), ground: readPaint(ground, lookup) };
+  const painted = { colour: readPaint(colour, lookup), ground: readPaint(ground, lookup) };
+  // Not a fallback. The ground under every fixture used to default to opaque
+  // black here and the root colour to nothing at all, so a `body` rule whose
+  // paint stopped resolving would have this file measure the whole app against
+  // a colour no sheet declares — and report ratios for it. Failing names the
+  // half that stopped resolving instead, and it is the reason no colour value
+  // is written anywhere in this file.
+  if (painted.colour.kind !== 'colour' || painted.ground.kind !== 'colour') {
+    throw new Error(
+      `${ROOT} \`body\` no longer resolves: colour is ${painted.colour.kind}, ground is ${painted.ground.kind}`,
+    );
+  }
+  return { colour: painted.colour, ground: painted.ground };
 }
 
 class Audit {
@@ -1053,7 +1249,7 @@ const THRESHOLD = 4.5;
 /**
  * THE DEBT, ENUMERATED.
  *
- * Every rule that declares a `color` and that no fixture above ever mounted.
+ * Every rule that declares a `color` and that no fixture above **reached**.
  * These are not exemptions and none of them is safe: each one is a composition
  * this file does not measure, sitting in the tree exactly as it sat there
  * before this file existed. The difference is that it is now *written down*,
@@ -1061,10 +1257,36 @@ const THRESHOLD = 4.5;
  * Add a colour rule anywhere under `src/` and this file goes red until either a
  * fixture reaches it or somebody adds the line and says why not.
  *
- * The way to shrink it is a fixture, not an edit here. 276 rules paint text and
- * 164 of them are reached at the time of writing — observed, and open in both
- * directions: a fixture that renders one more state moves both numbers, and
- * nothing here forces either bound.
+ * **Unreached is not the same as un-mounted, and this list does not tell them
+ * apart.** A rule lands here either because no fixture mounts that component,
+ * or because a fixture mounts it in a shape or a state no part of its selector
+ * matched. The comment that used to sit here claimed the first — "no fixture
+ * above ever mounted" — of a list that contained four rules a fixture was
+ * mounting all along: `HomeSurface.module.css .fact dt`/`.fact dd` and
+ * `DocumentPreview.module.css .grant dt`/`.grant dd` paint `<dt>` and `<dd>`
+ * elements that `HomeSurface.tsx` and `DocumentPreview.tsx` really render, and
+ * they were absent only because the matcher then required a CSS-module class on
+ * the element itself. That is how a blind spot becomes accepted debt: it is
+ * written down as something else. Those four are gone from this list now
+ * because {@link Compound.tag} matches them, not because anything about the
+ * components changed.
+ *
+ * A *third* cause — a selector this file cannot scope to the DOM at all — is
+ * deliberately kept out of this list: it is reported by
+ * `no audited rule is scoped to the DOM by something this audit cannot see`
+ * instead. See {@link SelectorPart.anchored}.
+ *
+ * One class of composition in this list is measured anyway, without a fixture:
+ * where a sheet writes the ancestry down itself — a ground on `.a`, a colour on
+ * `.a .b` — `measures the ancestor-ground compositions a sheet writes down,
+ * mounted or not` reads it straight out of the CSS. Four of the entries here
+ * are covered that way: the three `.diagnostics li` rules and `.selected .main`.
+ * Everything else in this list is unmeasured.
+ *
+ * The way to shrink it is a fixture, not an edit here. 276 rules declare a
+ * colour and 168 of them are reached at the time of writing — observed, and
+ * open in both directions: a fixture that renders one more state moves both
+ * numbers, and nothing here forces either bound.
  */
 const NOT_RENDERED: readonly string[] = [
   'src/app/shell/AppShell.module.css — .statusBar',
@@ -1086,8 +1308,6 @@ const NOT_RENDERED: readonly string[] = [
   "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='error']",
   "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='warning']",
   'src/features/canvas/DocumentPreview.module.css — .diagnosticsLead',
-  'src/features/canvas/DocumentPreview.module.css — .grant dd',
-  'src/features/canvas/DocumentPreview.module.css — .grant dt',
   'src/features/canvas/DocumentPreview.module.css — .notice',
   'src/features/conversation/Composer.module.css — .iconButton',
   'src/features/conversation/Composer.module.css — .iconButton:hover',
@@ -1161,8 +1381,6 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/navigation/CommandPalette.module.css — .mark',
   'src/features/navigation/ConversationRow.module.css — .renameInput',
   'src/features/navigation/ConversationRow.module.css — .selected .main',
-  'src/features/navigation/HomeSurface.module.css — .fact dd',
-  'src/features/navigation/HomeSurface.module.css — .fact dt',
   'src/features/navigation/NavigationSurface.module.css — .placeholder',
   'src/features/navigation/Sidebar.module.css — .error',
   'src/features/navigation/Sidebar.module.css — .note',
@@ -1226,7 +1444,6 @@ function paintsText(element: Element): boolean {
 }
 
 async function readTheApp(theme: Theme): Promise<Reading> {
-  const { paletteFor } = await import('./css-model');
   const palette = paletteFor(theme, SHEETS);
   const prepared = prepare(MODULE_RULES, palette);
   const root = rootPaint(palette);
@@ -1242,21 +1459,15 @@ async function readTheApp(theme: Theme): Promise<Reading> {
   for (const fixture of FIXTURES) {
     const beneath: readonly Layer[] =
       fixture.beneath === undefined
-        ? [
-            {
-              rgba: root.ground.kind === 'colour' ? root.ground.rgba : { r: 0, g: 0, b: 0, a: 1 },
-              label: (root.ground.kind === 'colour' ? root.ground.token : null) ?? 'base.css body',
-            },
-          ]
+        ? [{ rgba: root.ground.rgba, label: root.ground.token ?? 'base.css body' }]
         : fixture.beneath.map((token) => {
             const paint = readPaint(`var(${token})`, (name) => palette.get(name));
             if (paint.kind !== 'colour') throw new Error(`${fixture.name}: ${token} is not a colour`);
             return { rgba: paint.rgba, label: token };
           });
-    const rootColour: readonly Layer[] =
-      root.colour.kind === 'colour'
-        ? [{ rgba: root.colour.rgba, label: root.colour.token ?? 'base.css body' }]
-        : [];
+    const rootColour: readonly Layer[] = [
+      { rgba: root.colour.rgba, label: root.colour.token ?? 'base.css body' },
+    ];
 
     mounting = fixture.name;
     await fixture.mount();
@@ -1280,9 +1491,12 @@ async function readTheApp(theme: Theme): Promise<Reading> {
         // THE TOTALITY FLOOR. An element the walk reached but measured nothing
         // on is not a pass — it is an absence wearing a pass's clothes. The way
         // this whole file goes quietly vacuous is a colour chain that resolves
-        // to nothing: `coloursFor` bottoms out at `base.css body`, and if that
-        // ever stops resolving, every element that *inherits* its colour yields
-        // zero pairs, contributes zero `failures`, and reads as green.
+        // to nothing: `coloursFor` bottoms out at `rootColour`, and every
+        // element that *inherits* its colour then yields zero pairs,
+        // contributes zero `failures`, and reads as green. `rootPaint` refuses
+        // to hand back a `base.css body` that stopped resolving, so that is one
+        // route closed at the source; this catches the rest, wherever a chain
+        // comes back empty.
         if (pairs.length === before) {
           blank.push(
             `${fixture.name} — <${element.tagName.toLowerCase()}>` +
@@ -1389,9 +1603,8 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
       // Two laws replace the one floor, and neither is a number anybody chose:
       //
       // 1. `blank` — no element the walk reached may measure nothing. Emptying
-      //    `rootColour` (what a `base.css body` whose colour stopped resolving
-      //    would do) deletes every *inherited* colour in the app, and the old
-      //    floor stayed green because the minority of elements that declare
+      //    `rootColour` deletes every *inherited* colour in the app, and the
+      //    old floor stayed green because the minority of elements that declare
       //    their own colour still cleared 100.
       // 2. `walk` — the two themes must walk identically. The walk is
       //    palette-independent by construction (see {@link Walked}), so this is
@@ -1451,13 +1664,118 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     const unreached = painting.filter((name) => !light.reached.has(name)).sort();
     expect(
       unreached,
-      'reach it with a fixture, or add the line to NOT_RENDERED and say why it cannot be',
+      'reach it with a fixture. Add a line to NOT_RENDERED only when no fixture can mount it — ' +
+        'never to answer a reading that timed out, and never because a rule you can see on screen ' +
+        'was not matched: that is a hole in the matcher, and it belongs in ' +
+        '`no audited rule is scoped to the DOM by something this audit cannot see`',
     ).toEqual(NOT_RENDERED);
     expect(
       painting.length - unreached.length,
       'the fixtures have stopped reaching rules',
     ).toBeGreaterThan(120);
   }, READING_BUDGET_MS);
+
+  it('measures the ancestor-ground compositions a sheet writes down, mounted or not', () => {
+    // THE SLIVER OF THE DOM EDGE THAT CSS TEXT ALONE CAN PROVE.
+    //
+    // Everything else in this file needs a fixture, so the 108 rules in
+    // NOT_RENDERED are unmeasured: a ground on `.a` and a colour on `.a .b`, in
+    // a component nothing mounts, is invisible here and invisible to
+    // contrast.test.ts (which can only read a composition a *single* rule
+    // states). But when the descendant selector is written as a descendant of
+    // the grounding selector, the two rules state the ancestry between them —
+    // no DOM required — and that is measurable without mounting anything.
+    //
+    // It is a sliver and not the edge: `SkillsPanel`'s worked example —
+    // `.detail` grounds and `.body` paints, with the nesting living in the TSX
+    // — is exactly the shape this cannot see, which is why the fixtures exist.
+    // What it adds is the whole of the un-mounted debt for the nested case,
+    // including the three `.diagnostics li` rules that no fixture reaches.
+    const failures: string[] = [];
+    for (const theme of ['light', 'dark'] as const) {
+      const prepared = prepare(MODULE_RULES, paletteFor(theme, SHEETS));
+      for (const ground of prepared) {
+        const paint = ground.ground;
+        if (paint === undefined || paint.kind !== 'colour' || paint.rgba.a < 1) continue;
+        for (const outer of ground.parts) {
+          // Only a plain, unconditional class ground: a `:hover` or
+          // `[data-…]` ground is a state, and pairing it with a descendant's
+          // base colour would manufacture a composition nothing paints.
+          if (outer.conditional || outer.ancestors.length > 0) continue;
+          if (outer.subject.classes.length === 0 || outer.pseudoElement !== null) continue;
+          for (const text of prepared) {
+            if (text.rule.file !== ground.rule.file) continue;
+            const colour = text.foreground;
+            if (colour === undefined || colour.kind !== 'colour') continue;
+            // A descendant that grounds itself stands on its own ground, and
+            // contrast.test.ts already measures a rule that declares both.
+            const own = text.ground;
+            if (own !== undefined && own.kind === 'colour' && own.rgba.a >= 1) continue;
+            for (const inner of text.parts) {
+              const nested = inner.ancestors.some((one) =>
+                outer.subject.classes.every((name) => one.classes.includes(name)),
+              );
+              if (!nested) continue;
+              const ratio = contrastRatio(composite(colour.rgba, paint.rgba), paint.rgba);
+              if (ratio + 0.005 >= THRESHOLD) continue;
+              failures.push(
+                `${ratio.toFixed(2)}:1 (needs ${THRESHOLD.toFixed(1)}) in ${theme} — ` +
+                  `${colour.token ?? 'a literal colour'} on ${paint.token ?? 'a literal colour'} — ` +
+                  `${text.rule.file} \`${ground.rule.selector}\` grounds \`${text.rule.selector}\``,
+              );
+            }
+          }
+        }
+      }
+    }
+    expect([...new Set(failures)].sort(), 'a sheet states this ancestry itself').toEqual([]);
+  });
+
+  it('no audited rule is scoped to the DOM by something this audit cannot see', () => {
+    // THE THIRD ANSWER, ON THE SELECTOR SIDE.
+    //
+    // `css-model.ts` gave the *value* reader a third answer — `unreadable`,
+    // rather than "no ground here" — because every escape it was written for
+    // was a reader saying nothing for something it could not parse. The matcher
+    // had the identical collapse one level up and it was live: a part naming no
+    // CSS-module class returns no match, and no match is what a rule no fixture
+    // mounted also returns. The rule then lands in NOT_RENDERED, where the next
+    // reader is told it is un-rendered debt.
+    //
+    // This is the arm that keeps those apart. It is empty today; if a module
+    // sheet ever paints through `*`, `#root` or a bare element type, that shows
+    // up here by name instead of in NOT_RENDERED as a lie.
+    expect(
+      unanchoredParts(MODULE_RULES),
+      'scope it with a module class, or this audit cannot tell what it paints from what it never mounted',
+    ).toEqual([]);
+  });
+
+  it('no global stylesheet paints outside what is already measured', () => {
+    // See GLOBAL_PAINT. This file's universe is the module sheets; the reason
+    // that is not a hole is that the global sheets are small, enumerated, and
+    // each entry names the guard that reads it.
+    const painting = SHEETS.flatMap((sheet) =>
+      sheet.name.endsWith('.module.css')
+        ? []
+        : sheet.rules
+            .filter(
+              (rule) =>
+                declaredValue(rule, 'color') !== undefined ||
+                declaredValue(rule, 'background', 'background-color') !== undefined,
+            )
+            .map((rule) => `${rule.file} — ${rule.selector}`),
+    );
+    expect(
+      [...new Set(painting)].sort(),
+      'move it into a CSS Module where this file can attribute it, or name what measures it in GLOBAL_PAINT',
+    ).toEqual([...GLOBAL_PAINT.keys()].sort());
+    // An entry with no reader named is an exemption, not an accounting.
+    expect(
+      [...GLOBAL_PAINT].filter(([, reader]) => reader.trim() === '').map(([rule]) => rule),
+      'say what reads this rule, or it is exempt rather than measured',
+    ).toEqual([]);
+  });
 
   it('the class-name map is intact', async () => {
     // If Vitest's class-name spelling changes, every `applies()` returns false,
@@ -1475,4 +1793,137 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     expect(light.unknownClasses, 'a rendered class this audit cannot attribute').toEqual(new Set());
     expect(light.reached.size).toBeGreaterThan(20);
   }, READING_BUDGET_MS);
+});
+
+/* -------------------------------------------------------------------------- */
+/* the matcher itself                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE SHAPES THAT GOT PAST THIS FILE, AS INPUTS.
+ *
+ * Every assertion in the describe above is of the form "the set of findings is
+ * empty" over the real stylesheets, and that is precisely the shape that goes
+ * quiet when the matcher stops matching: a composition it cannot see produces
+ * no finding, which is what a composition that is fine also produces. Asserting
+ * on `src/` can only ever say "nothing is wrong today". These say "the matcher
+ * still matches", by handing it a tree and a sheet whose right answer is known,
+ * non-empty, and — for the first one — below AA.
+ *
+ * The first case is not hypothetical. It is the evasion that was walked through
+ * this file while it was being graded: two tokens already in `tokens.css`, no
+ * colour value introduced, an unclassed `<dt>` that `HomeSurface.tsx` really
+ * renders inside `<div className={styles.fact}>`, and both guards green.
+ */
+describe('the matcher is not fooled by the shapes that fooled it', () => {
+  const FILE = 'src/features/navigation/HomeSurface.module.css';
+  const PALETTE = paletteFor('light', SHEETS);
+
+  /** The class name the renderer emits for `styles.<name>` in {@link FILE}. */
+  const hashed = (name: string): string => MODULES[`/${FILE}`]?.default[name] ?? '';
+
+  const layer = (token: string): Layer => {
+    const paint = readPaint(`var(${token})`, (name) => PALETTE.get(name));
+    if (paint.kind !== 'colour') throw new Error(`${token} is not a colour`);
+    return { rgba: paint.rgba, label: token };
+  };
+
+  /**
+   * A `<div class={styles.fact}>` with one child of the given type, inside an
+   * unclassed wrapper — the shape a component really mounts in, and the reason
+   * a selector with an ancestor above `.fact` has something to match.
+   */
+  function tree(childTag: string, childClass?: string): Element {
+    const outer = document.createElement('div');
+    const parent = document.createElement('div');
+    parent.className = hashed('fact');
+    const child = document.createElement(childTag);
+    if (childClass !== undefined) child.className = hashed(childClass);
+    parent.appendChild(child);
+    outer.appendChild(parent);
+    return child;
+  }
+
+  function auditOf(css: string): Audit {
+    return new Audit(prepare(parseStylesheet(FILE, css), PALETTE), [layer('--vela-bg')], [
+      layer('--vela-text'),
+    ]);
+  }
+
+  it('measures a ground and a colour that meet only on an unclassed element', () => {
+    // THE EVASION, DEAD. `.fact` grounds the box, `.fact dt` paints the text,
+    // and the `<dt>` between them carries no class at all — so the matcher that
+    // required one answered "no rule reaches this element" and the composition
+    // was measured nowhere.
+    const dt = tree('dt');
+    const audit = auditOf(
+      `.fact { background: var(--vela-accent-quiet); } .fact dt { color: var(--vela-code-text); }`,
+    );
+    const ground = audit.groundIn(dt, '');
+    const colour = audit.colourIn(dt, '');
+    expect(ground.map((one) => one.label)).toEqual(['--vela-accent-quiet']);
+    expect(colour.map((one) => one.label)).toEqual(['--vela-code-text']);
+    const [only] = ground;
+    const [text] = colour;
+    if (only === undefined || text === undefined) throw new Error('nothing to measure');
+    // The number is asserted rather than written in a comment: this is the
+    // ship-blocker ratio the whole track exists for, and if it ever stops being
+    // one this test should say so rather than a sentence beside it.
+    expect(contrastRatio(composite(text.rgba, only.rgba), only.rgba)).toBeCloseTo(1.19, 2);
+  });
+
+  it('does not match an element type the rule did not name', () => {
+    // The other half of reading the element type, and the direction the old
+    // matcher was wrong in: with the class requirement satisfied by *any* class
+    // from the sheet, `.fact dt` reached a classed `<dd>` as readily as a `<dt>`,
+    // because an empty list of subject classes is satisfied by everything.
+    const dd = tree('dd', 'fact');
+    const audit = auditOf(`.fact dt { color: var(--vela-code-text); }`);
+    expect(audit.colourIn(dd, '').map((one) => one.label)).toEqual(['--vela-text']);
+  });
+
+  it('never lets a rule under an at-rule displace the one that paints on screen', () => {
+    // `@media print` is later in source order and identical in specificity, so a
+    // cascade that ignored the condition would report the print colour — a
+    // paint the engine never uses — and the one on screen would go unmeasured.
+    const dd = tree('dd');
+    const audit = auditOf(
+      `.fact dd { color: var(--vela-danger); }` +
+        ` @media print { .fact dd { color: var(--vela-text); } }`,
+    );
+    expect(audit.colourIn(dd, '').map((one) => one.label)).toEqual(['--vela-danger']);
+    // and it is measured as a state of its own rather than dropped.
+    expect(audit.coloursFor(dd).map((one) => one.label).sort()).toEqual([
+      '--vela-danger',
+      '--vela-text',
+    ]);
+  });
+
+  it('never lets an id it cannot evaluate win the cascade', () => {
+    // CSS Modules hash class names and leave ids alone, so an id in a module
+    // sheet is a global selector this file cannot resolve against a fixture —
+    // and it outranks every class in the file. Treating it as a state rather
+    // than as a competitor is the same move the at-rule above gets, and the
+    // same one `[data-…]` and `:hover` have always had.
+    const dd = tree('dd');
+    const audit = auditOf(
+      `#nowhere .fact dd { color: var(--vela-text); } .fact dd { color: var(--vela-danger); }`,
+    );
+    expect(audit.colourIn(dd, '').map((one) => one.label)).toEqual(['--vela-danger']);
+    expect(audit.coloursFor(dd).map((one) => one.label).sort()).toEqual([
+      '--vela-danger',
+      '--vela-text',
+    ]);
+  });
+
+  it('reports a selector it cannot scope instead of matching nothing', () => {
+    // A bare element selector in a module sheet is not a rule that paints
+    // nothing — it is a rule this file cannot attribute to any element, and the
+    // two answers were the same answer.
+    const found = unanchoredParts(parseStylesheet(FILE, `li { color: var(--vela-danger); }`));
+    expect(found).toEqual([`${FILE} — li — \`li\` names no CSS-module class`]);
+    expect(unanchoredParts(parseStylesheet(FILE, `.fact li { color: var(--vela-danger); }`))).toEqual(
+      [],
+    );
+  });
 });

@@ -902,15 +902,27 @@ describe('every colour role is audited', () => {
  * answer is known and non-empty.
  */
 describe('the reader is not fooled by the shapes that fooled its regexes', () => {
-  const ROLE = new Map([
-    ['--vela-accent-quiet', '#e6fbf8'],
-    ['--vela-code-bg', '#0b1020'],
-    ['--vela-code-text', '#e0e3ed'],
-  ]);
+  // The roles these fixtures are written in, resolved from `tokens.css` itself
+  // rather than from a local table of values. The table it replaces was three
+  // colour values written into `src/` by hand, one of which — checked afterwards
+  // — matched no token in the sheet at all; and a fixture whose ground is not a
+  // ground the product paints is a fixture that goes on passing after the
+  // palette moves out from under it.
+  const ROLE = LIGHT_PALETTE;
   const read = (css: string): Painted[] =>
     parseStylesheet('probe.css', css).map((rule) => paintedBy(rule, ROLE));
   const ground = (entry: Painted | undefined): string | null | undefined =>
     entry?.ground?.kind === 'colour' ? entry.ground.token : (entry?.ground?.kind ?? undefined);
+
+  it('is written in roles the token sheet still declares', () => {
+    // Without this the fixtures degrade quietly: rename a token and every read
+    // below answers `unreadable`, which several of these tests would still
+    // report as "not a ground", and they would stop testing the shapes they
+    // were written for while staying green.
+    for (const token of ['--vela-accent-quiet', '--vela-code-bg', '--vela-code-text']) {
+      expect(ROLE.get(token), `${token} is no longer declared`).toBeDefined();
+    }
+  });
 
   it('reads a ground written through a var() fallback', () => {
     const [rule] = read(

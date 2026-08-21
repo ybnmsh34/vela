@@ -45,10 +45,17 @@
  *                               its own installer, which is a near neighbour
  *                               of the very defect it exists for. So the NSIS
  *                               row demands NSIS's first-header signature,
- *                               `EF BE AD DE` + `NullsoftInst`: present once
- *                               at offset 52,744 in the real 5,444,437-byte
- *                               setup and absent from `vela.exe` entirely
- *                               (both measured on this tree). The MSI row
+ *                               `EF BE AD DE` + `NullsoftInst` — the SIXTEEN
+ *                               bytes taken together, which is what `findBytes`
+ *                               below searches for. Measured on this tree, in
+ *                               the real 5,444,437-byte setup: those sixteen
+ *                               bytes occur exactly once, beginning at offset
+ *                               52,740. Neither half would do. The ASCII
+ *                               `NullsoftInst` alone begins four bytes later,
+ *                               at 52,744, and `EF BE AD DE` alone occurs
+ *                               twice, first at 9,732. `vela.exe` carries the
+ *                               sixteen bytes nowhere, and the substring
+ *                               `Nullsoft` nowhere either. The MSI row
  *                               needs no such addition; OLE2's eight-byte
  *                               magic is already specific.
  *  4. `+ newer than --since`  — LAST WEEK'S INSTALLER SATISFIES ALL THREE. A
@@ -305,6 +312,16 @@ function checkBundle({ root, targetDir, since, platform = process.platform }) {
           });
           continue;
         }
+        // WHERE it was found, not merely that it was. Read by
+        // `src/platform/bundle-guard.test.ts`, 'the --json row says WHERE the
+        // NSIS signature was found', which drives this guard over a synthetic
+        // tree that embeds the sequence at a known offset and asserts this
+        // field equals it. Without that reader, a `findBytes` that returned any
+        // non-negative number on a hit would satisfy every other assertion
+        // anyone has written about this guard — measured twice: replacing the
+        // `indexOf` in `findBytes` with `includes(...) ? 0 : -1` reds that one
+        // test and nothing else across the five release-path test files,
+        // `1 failed | 86 passed (87)`, with `expected +0 to be 52740`.
         row.signatureAt = at;
       }
       if (version !== '' && !file.includes(version)) {

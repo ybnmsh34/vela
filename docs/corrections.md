@@ -9,6 +9,90 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 (round 3) — a correction measured four bytes off, and a comment whose mutation was never run
+
+Both entries below were found by the round-2 critic, by measuring the bytes and by mutating the
+tree. Both are claims written by round 2 *while correcting round 1*.
+
+### 1. The NSIS signature offset was stated four bytes past where the guard finds it
+
+**Claimed:** round 2, entry 2 of this file, and the same sentence in `scripts/check-bundle.mjs`
+step 3b, `docs/release-posture.md`, and three times in `src/platform/bundle-guard.test.ts` — that
+`EF BE AD DE` + `NullsoftInst` is "present once at offset 52,744" in the real 5,444,437-byte
+setup. `src/platform/bundle-guard.test.ts` also set `const NSIS_SIGNATURE_AT = 52_744` as the
+offset its fixture writes the sequence at, under a comment saying this was "the real one so that
+the fixture and the artefact it stands for are the same shape", and
+`src/platform/bundle-runner.test.ts` carried the same constant.
+
+**True:** the sixteen-byte sequence begins at **52,740**. 52,744 is where the ASCII `NullsoftInst`
+begins, four bytes into it. Re-measured on this tree with the guard's own method — `body.indexOf`
+over the whole file — at the commit this entry ships in:
+
+```
+nsis bytes          = 5444437
+SIG(16) offsets     = [52740]          <- efbeadde4e756c6c736f6674496e7374
+"NullsoftInst" offs = [52744]
+EF BE AD DE count   = 2 first = 9732
+bytes 52736..52760  = 00000000 efbeadde 4e756c6c736f6674496e7374 06200100
+SIG(16) in vela.exe = -1
+"Nullsoft" in exe   = -1
+```
+
+So the guard's own `findBytes` contradicted the guard's own header by four, and the fixture and
+the artefact were **not** the same shape — they differed by exactly those four bytes, which is the
+one thing that comment claimed they did not.
+
+**How it was caught:** the critic ran the guard's method against the artefact instead of reading
+the sentence.
+
+**Consequence:** 52,740 wherever the subject is the sixteen-byte sequence. Grepping the tree for
+the number found **seven sites in five files** — `scripts/check-bundle.mjs`, `docs/corrections.md`,
+`docs/release-posture.md`, three in `src/platform/bundle-guard.test.ts` and one in
+`src/platform/bundle-runner.test.ts`. The critic named four files; the fifth,
+`bundle-runner.test.ts`'s copy of the constant, came out of the grep. Each site now also says why
+neither half of the sequence would do: `NullsoftInst` alone starts at 52,744, and `EF BE AD DE`
+alone occurs twice, first at 9,732. The two fixture constants are now 52,740, which is what makes
+the "same shape" claim true.
+
+**What is now gated, and what is still only written down.** `src/platform/bundle-guard.test.ts`
+gains `the --json row says WHERE the NSIS signature was found`: it writes the sequence into a
+synthetic setup at `NSIS_SIGNATURE_AT`, runs the guard with `--json`, and asserts the row's
+`signatureAt` equals that constant — which also gives that field, an unread write this branch was
+failed for, its reader. Measured twice: replacing the `indexOf` in the guard's `findBytes` with
+`includes(...) ? 0 : -1` reds that test and nothing else across the five release-path files,
+`1 failed | 86 passed (87)`, `expected +0 to be 52740`. What that does **not** gate is the equality
+of the constant to the real artefact's offset: `pnpm test` runs on `ubuntu-latest`, where there is
+no `target/release/bundle`, and a test that asserts only when an artefact happens to be present is
+the vacuous pass step 7 of the guard's own header refuses. That equality is a hand measurement —
+the block above — and nothing more.
+
+### 2. "A sentinel taken after the build ... passes this tree" was never run
+
+**Claimed:** `src/platform/bundle-runner.test.ts`, in the STALE test — "A sentinel taken after the
+build, or none at all, passes this tree."
+
+**True:** only "none at all" passes it. Measured by mutating `scripts/bundle.mjs` and running that
+file twice per mutation:
+
+| mutation | this file's verdict |
+|---|---|
+| delete `'--since', String(sentinelMs)` from the check's argv | STALE test **red**, `1 failed \| 5 passed (6)`, twice |
+| move `const sentinelMs = Date.now()` to after the spawn | STALE test **green**; the two good-bundler tests red instead, `2 failed \| 4 passed (6)`, twice |
+
+The backdated artefacts are two days old, so they are stale against a sentinel taken after the
+build as well as before it. What a post-build sentinel actually breaks is the opposite case: it is
+later than the mtimes the bundler just wrote, so *fresh* installers are called STALE and the
+load-bearing "the bundler FAILS and the check still runs" test plus its control go red. A
+post-build sentinel is a false-**red** machine, not a false-green one.
+
+**How it was caught:** the critic performed the mutation the comment described.
+
+**Consequence:** the clause is withdrawn. The comment now states both mutations and which tests
+each one reds, with the counts above, and says plainly that this test holds down the missing
+`--since` and not the misplaced sentinel.
+
+---
+
 ## 2026-08-21 (round 2) — the fix carried the defect one level down, four times
 
 Every entry below was found by the round-1 critic, by mutating the tree rather than reading it.
@@ -55,6 +139,11 @@ followed by `NullsoftInst` — anywhere in the file. Measured on this tree: pres
 52,744, in the real 5,444,437-byte setup; absent from `vela.exe`, which contains no `Nullsoft`
 substring at all. `bundle-guard.test.ts` gains step 3b (a PE image without it is
 `APP-NOT-INSTALLER`) and a control (the same fixture plus those sixteen bytes is `OK`).
+
+> **The offset in the paragraph above is wrong and is corrected in round 3, entry 1.** The
+> sixteen-byte sequence begins at **52,740**; 52,744 is where `NullsoftInst` alone begins. The
+> paragraph is left standing because this file is append-only, and this note is here so that no
+> reader carries the wrong number away from it.
 
 ### 3. A comment in `verify.mjs` described a rule the file two doors down says was abandoned
 

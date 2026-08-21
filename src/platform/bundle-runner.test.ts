@@ -64,9 +64,16 @@ const VERSION = '0.1.0';
 const MSI_MAGIC = 'd0cf11e0a1b11ae1';
 /** `MZ`. A PE image — which `vela.exe` is too, hence the signature below. */
 const PE_MAGIC = '4d5a';
-/** NSIS's first header: `EF BE AD DE` + `NullsoftInst`. */
+/** NSIS's first header: `EF BE AD DE` + `NullsoftInst`, all sixteen bytes. */
 const NSIS_SIGNATURE = 'efbeadde4e756c6c736f6674496e7374';
-const NSIS_SIGNATURE_AT = 52_744;
+/**
+ * Where the real setup carries it: measured at 52,740 in
+ * `src-tauri/target/release/bundle/nsis/Vela_0.1.0_x64-setup.exe`. The offset
+ * is immaterial to this file — the guard scans — but it matches
+ * `bundle-guard.test.ts`, and 52,744 is the wrong number for this sequence;
+ * see `docs/corrections.md`, round 3, entry 1.
+ */
+const NSIS_SIGNATURE_AT = 52_740;
 const BIG = 4_000_000;
 
 let scratch: string;
@@ -200,8 +207,27 @@ describe('the sentinel is taken before the bundler starts', { timeout: SPAWN_TIM
     // Why the sentinel and the build are in one file at all. The bundler here
     // exits 0 and both artefacts are present, well formed and correctly named —
     // they are simply dated two days ago, which is what a run that skipped
-    // bundling and left last week's output behind looks like on disk. A
-    // sentinel taken after the build, or none at all, passes this tree.
+    // bundling and left last week's output behind looks like on disk.
+    //
+    // What this test does and does not hold down, measured on this tree by
+    // mutating `bundle.mjs` and running this file twice per mutation:
+    //
+    //   - demanding no age at all (deleting `'--since', String(sentinelMs)`
+    //     from the check's argv): THIS test goes red, `1 failed | 5 passed
+    //     (6)`, the log reading `BUNDLER_EXIT=0` / `BUNDLE_EXIT=0`. That is the
+    //     mutation this test is for.
+    //   - moving `const sentinelMs = Date.now()` to after the spawn: this test
+    //     stays GREEN — the artefacts are backdated two days, so they are stale
+    //     against a post-build sentinel too. What goes red instead is the pair
+    //     of good-bundler cases above, `2 failed | 4 passed (6)`, because a
+    //     sentinel taken after the bundler wrote is later than the mtimes the
+    //     bundler just produced and the fresh installers are called STALE.
+    //
+    // So a post-build sentinel is caught by this file, but by those two tests
+    // and not by this one: it is a false-red machine rather than a false-green
+    // one. The claim in round 2 that "a sentinel taken after the build ...
+    // passes this tree" was wrong in the direction that matters and is
+    // withdrawn; `docs/corrections.md`, round 3, entry 2.
     const bundler = writeFakeBundler(0, 'installers', 48 * 60 * 60 * 1000);
     const { code, out } = runCli(bundler);
 

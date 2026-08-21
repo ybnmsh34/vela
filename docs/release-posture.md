@@ -938,9 +938,13 @@ The signature clause is a round-2 correction and not a flourish. `MZ` — the
 original NSIS test — says "PE image", and `target/release/vela.exe` is a PE
 image: copied into `bundle/nsis/` under the setup's name it produced
 `OK ... NSIS setup (PE image)`, `BUNDLE_OK=yes`, exit 0. The guard now demands
-`EF BE AD DE` + `NullsoftInst` somewhere in the file, which is present once at
-offset 52,744 in the real setup and nowhere at all in `vela.exe`. See
-`docs/corrections.md`, 2026-08-21 round 2, entry 2.
+`EF BE AD DE` + `NullsoftInst` somewhere in the file — all sixteen bytes, which
+in the real setup occur exactly once, beginning at offset **52,740**, and in
+`vela.exe` nowhere at all. Neither half would do: `NullsoftInst` alone begins
+four bytes later at 52,744, and `EF BE AD DE` alone occurs twice, first at
+9,732. Round 2 wrote 52,744 for the whole sequence at seven sites in five
+files; see
+`docs/corrections.md`, 2026-08-21 round 3, entry 1, and round 2, entry 2.
 
 ### The run on this branch
 
@@ -1181,6 +1185,75 @@ is what a loaded machine does to a suite that binds ports and not what a defect
 does. It is recorded rather than suppressed: the flake is real, it is not this
 branch's, and a reader who hits it should know it is known.
 
+#### The round-3 run, and the flake before it
+
+Round 3 changed comments, two fixture constants, two test files and this
+document; no product code and no script logic. The ten gates were run again, one
+process, no `--from`, cargo prepended, on 2026-08-21. Same scope statement as
+above: every file was in its committed state when the run started and the only
+edit afterwards was writing this subsection, which no gate reads.
+
+```
+GATE                       STATUS    EXIT   SECONDS
+typecheck                  PASS         0      64.8
+lint:rust                  PASS         0      22.6
+test                       PASS         0     103.4
+test:harness               PASS         0      11.7
+test:click-harness         PASS         0       9.8
+build                      PASS         0      77.2
+test:transcripts           PASS         0       8.4
+test:secrets               PASS         0      95.3
+cargo-build                PASS         0      35.9
+cargo-test                 PASS         0     210.9
+
+RUST_TAIL=CONFIRMED
+
+10 passed, 0 failed, 0 SKIPPED (skipped is not passed), 0 NOT-RUN (not-run is not passed either)
+VERIFY_EXIT=0
+```
+
+| gate | what it reported |
+| --- | --- |
+| `test` | 122 files, 2447 tests, all passed — two more tests than the run above, which are the two this round added |
+| `test:harness` | 12 files, 142 tests |
+| `test:click-harness` | 2 files, 41 tests |
+| `test:secrets` | `no credential material found in 1270 tracked files (docs/ included)` |
+| `cargo-test` | 65 `test result: ok` lines, zero `test result: FAILED` |
+| the probe | `all 40 integration test targets have a compiled binary`, and `age demand: (nothing: no age is demanded ...)` |
+
+**Two `pnpm test` reds either side of it, and that is on the record too.** The
+attempt twenty minutes before this run gave `test FAIL 1` with the seven gates
+behind it `SKIPPED` and `VERIFY_EXIT=1`. One test timed out:
+`src/components/ModalSurface.test.tsx > ModalSurface contains Tab > leaves
+nothing outside the dialog reachable in either direction`, `Test timed out in
+5000ms`, `1 failed | 2446 passed (2447)`. A later `pnpm test`, run on its own
+against the final bytes, went red the same way on a **different** test:
+`src/features/navigation/Sidebar.test.tsx > Sidebar > resizes by keyboard
+through the separator, and reports the width`, again `Test timed out in 5000ms`,
+again `1 failed | 2446 passed (2447)`.
+
+Neither file is changed since tag `run-start-2026-08-17` — last touched at
+`aa33893` and `535f482` respectively, both 2026-08-14 — and nothing this round
+touches either. Run alone, `ModalSurface.test.tsx` was `8 passed (8)`, exit 0,
+three times out of three; `Sidebar.test.tsx` was `1 passed (1)`, exit 0, three
+times out of three. **And the measurement that explains both:** in that
+isolated, otherwise idle run, `resizes by keyboard through the separator` took
+**4535 ms**. Vitest's default `testTimeout` is 5000 ms. A test whose measured
+cost on a quiet machine is 90.7% of its own budget is not protected by that
+budget; it is a coin toss that any concurrent load decides. The failing logs say
+the same thing from the other side: `Duration 156.73s` against
+`environment 811.58s` and `setup 467.01s`, worker time far exceeding wall clock.
+A different test name each time is what load does to a suite; a defect picks the
+same one.
+
+Recorded rather than suppressed, on the same principle as the `cargo-test` flake
+above. Neither timeout was raised, because raising a timeout in a file this
+branch does not own would hide the finding rather than fix it. **For whoever
+owns those two files: the fix is an explicit per-test timeout with a stated
+reason, the way `bundle-guard.test.ts` and `bundle-runner.test.ts` already carry
+`SPAWN_TIMEOUT_MS`.** On the final bytes `pnpm test` was re-run to completion and
+reported `122 files, 2447 tests, all passed`, exit 0, read from the log body.
+
 ### 13c. How `pnpm verify` behaves when it cannot run everything
 
 Two behaviours that a reader of section 13 would otherwise meet for the first
@@ -1224,3 +1297,22 @@ reports on the rest is the defect `verify.mjs` exists to remove.
 
 The prepend that makes the ten gates runnable here is the one at the top of
 every transcript in this document: put `C:\Users\User\.cargo\bin` on PATH first.
+
+**And the `verify` line itself is pinned by exact string** (round 3).
+`src/platform/verify-covers-ci.test.ts` already ran `package.json`'s `verify`
+line with `--list` appended and compared what came back to `scripts/gates.json`,
+which catches a `verify` that no longer reaches the gate list. It could not
+catch a `verify` line that *already ends in* `--list`: measured twice, setting
+
+```
+"verify": "node scripts/verify.mjs --list"
+```
+
+— a `pnpm verify` that starts no gate and exits 0 — left that file and
+`src/platform/verify-runner.test.ts` at `58 passed (58)`, exit 0, because a
+listing that lists twice lists the same thing. So the line is now also asserted
+verbatim against `node scripts/verify.mjs`, the way
+`src/platform/bundle-runner.test.ts` pins `pnpm bundle`. Under the same mutation
+that file is now `1 failed | 58 passed (59)`, reproduced twice. Neither
+assertion subsumes the other: the string one sees a flag that neuters the run,
+the executed one sees the script pointed at a different gate file.

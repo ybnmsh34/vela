@@ -1042,11 +1042,15 @@ const JOBS: readonly WorkflowJob[] = SURFACE.workflows.flatMap(jobsIn);
  * Everything above asserts over `scripts/gates.json`. That was the fix for the
  * fifth defect and it is the right shape — but it left `package.json`'s
  * `verify` script, the command a developer and CI actually type, with **no
- * reader anywhere in the repository**. Measured: setting
+ * reader anywhere in the repository**. Measured against the file as it stood
+ * BEFORE this section was added: setting
  *
  *     "verify": "echo nothing at all"
  *
- * left this file green. The gate list would have been perfect and unreachable,
+ * left it green. (Against the file as it stands now the same mutation takes TWO
+ * tests red — the string assertion below and the listing below that —
+ * `2 failed | 44 passed (46)`, measured twice.) The gate list would have been
+ * perfect and unreachable,
  * which is the same class of hole one level down — the fourth time this project
  * has fixed a check by moving the question somewhere the executed thing is not.
  *
@@ -1059,8 +1063,40 @@ const JOBS: readonly WorkflowJob[] = SURFACE.workflows.flatMap(jobsIn);
  *
  * `--list` is cheap on purpose — it loads the gate file, prints ids and exits
  * without starting a gate — so this stays a unit test and not a ten-minute one.
+ *
+ * ## And the hole that left, which is the same shape again
+ *
+ * Asking `verify --list` what it enumerates cannot see a `verify` line that
+ * already ends in `--list`. Measured on this tree, twice: setting
+ *
+ *     "verify": "node scripts/verify.mjs --list"
+ *
+ * — a `pnpm verify` that runs zero gates and exits 0 — left this file and
+ * `src/platform/verify-runner.test.ts` at `58 passed (58)`, exit 0, because the
+ * executed check appends its own `--list` and compares gate ids, and a listing
+ * that lists twice lists the same thing.
+ *
+ * So the line is ALSO pinned by exact string, the way
+ * `src/platform/bundle-runner.test.ts` pins `pnpm bundle`. The two assertions
+ * answer different questions and neither subsumes the other: the string one
+ * catches a flag that neuters the run while leaving the program intact; the
+ * executed one catches the string still naming `scripts/verify.mjs` while that
+ * script reads a different gate file, which no amount of string comparison can
+ * see. A deliberate change to the verify line has to update the constant here,
+ * which is the point of pinning it.
  */
 describe('the script developers run reaches the gate list this file asserts over', () => {
+  it('`pnpm verify` runs the gate runner with no arguments at all', () => {
+    expect(
+      PACKAGE.scripts.verify,
+      'the `verify` line changed. Every argument it carries is one this file has ' +
+        'not measured, and at least one of them makes the line certify nothing: ' +
+        '`node scripts/verify.mjs --list` starts no gate and exits 0. If the ' +
+        'change is deliberate, measure what the new line does and update this ' +
+        'constant.',
+    ).toBe('node scripts/verify.mjs');
+  });
+
   it(
     'running package.json\'s `verify` line with --list enumerates exactly scripts/gates.json',
     { timeout: 60_000 },

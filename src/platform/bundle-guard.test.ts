@@ -54,11 +54,14 @@ const MSI_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 const PE_MAGIC = Buffer.from([0x4d, 0x5a]);
 /**
  * NSIS's first header: `EF BE AD DE` (0xDEADBEEF little-endian) followed by
- * the ASCII `NullsoftInst`. Measured in the real artefact this branch built —
+ * the ASCII `NullsoftInst` — sixteen bytes, and the guard demands all sixteen.
+ * Measured in the real artefact this branch built,
  * `src-tauri/target/release/bundle/nsis/Vela_0.1.0_x64-setup.exe`, 5,444,437
- * bytes — where it occurs exactly once, at offset 52,744. `vela.exe`
- * (18,095,104 bytes) contains neither this sequence nor the substring
- * `Nullsoft` at all.
+ * bytes: the sixteen-byte sequence occurs exactly once, beginning at offset
+ * 52,740. Its two halves are each weaker — `NullsoftInst` alone begins four
+ * bytes later at 52,744, `EF BE AD DE` alone occurs twice (first at 9,732).
+ * `vela.exe` (18,095,104 bytes) contains neither the sixteen bytes nor the
+ * substring `Nullsoft` at all.
  */
 const NSIS_SIGNATURE = Buffer.concat([
   Buffer.from([0xef, 0xbe, 0xad, 0xde]),
@@ -66,10 +69,23 @@ const NSIS_SIGNATURE = Buffer.concat([
 ]);
 /**
  * Where the fixtures put it. Any offset inside the file would do — the guard
- * scans rather than seeking — and this is the real one so that the fixture and
- * the artefact it stands for are the same shape.
+ * scans rather than seeking — and this is the real one, 52,740, so that the
+ * fixture and the artefact it stands for are the same shape. It shipped as
+ * 52,744 in round 2, which is where `NullsoftInst` starts and not where the
+ * demanded sequence starts; `docs/corrections.md`, round 3, entry 1.
+ *
+ * WHAT IS AND IS NOT GATED HERE. That the guard reports the offset it actually
+ * found is gated — the `--json` test at the bottom of this file writes the
+ * sequence at this constant and reads the number back. That this constant
+ * *equals the real setup's* offset is NOT gated and cannot be: `pnpm test` runs
+ * on `ubuntu-latest`, where there is no `target/release/bundle` to measure, and
+ * a test that asserts only when an artefact happens to be present is the
+ * vacuous pass that step 7 of the guard's own header refuses. It is a
+ * hand measurement, re-run at the commit this line ships in and printed in
+ * `docs/corrections.md`, round 3, entry 1. Changing it changes nothing a test
+ * can see, which is exactly why it is written down twice.
  */
-const NSIS_SIGNATURE_AT = 52_744;
+const NSIS_SIGNATURE_AT = 52_740;
 
 const VERSION = '0.1.0';
 const BIG = 4_000_000;
@@ -216,7 +232,8 @@ describe('the guard fails the trees a weaker one would pass', { timeout: SPAWN_T
   it('step 3b control: the same file plus NSIS’s first header is accepted', () => {
     // Without this, "the guard rejects a PE image" would be satisfied by a
     // guard that rejects every PE image, including real setups. The two
-    // fixtures differ by sixteen bytes at offset 52,744 and by nothing else.
+    // fixtures differ by sixteen bytes at offset 52,740 — NSIS_SIGNATURE at
+    // NSIS_SIGNATURE_AT — and by nothing else.
     writeConfig({ active: true, targets: 'all' });
     goodMsi();
     goodNsis();
@@ -317,5 +334,55 @@ describe('the guard reads the real repository configuration', { timeout: SPAWN_T
     const parsed = JSON.parse(child.stdout ?? '{}') as { expected?: string[]; version?: string };
     expect(parsed.expected).toEqual(['msi', 'nsis']);
     expect(parsed.version).toBe(VERSION);
+  });
+});
+
+describe('the --json document has a reader for every field it carries', { timeout: SPAWN_TIMEOUT_MS }, () => {
+  it('the --json row says WHERE the NSIS signature was found', () => {
+    // `signatureAt` shipped in round 2 written and read by nothing, which is
+    // the same unread-write shape this branch had already been failed for once.
+    // It is not deleted because it is the one field that can distinguish "the
+    // sequence is somewhere in this file" from "the sequence is at the offset a
+    // real setup puts it at": every other assertion in this file is satisfied
+    // by a `findBytes` that returns any non-negative number.
+    //
+    // Asserted against the synthetic tree and not the repository's own bundle
+    // directory, on purpose. `this tree declares both Windows installers`, the
+    // one test here that points the guard at the real repository, asks the
+    // real `tauri.conf.json` for the EXPECTATION only, because a developer who
+    // has not run `pnpm bundle` has no `target/release/bundle` and that is not
+    // a failing repository. Here the fixture writes the sequence itself, so the
+    // offset is known without anything having been built.
+    writeConfig({ active: true, targets: 'all' });
+    goodMsi();
+    goodNsis();
+
+    const child = spawnSync(
+      process.execPath,
+      [GUARD, '--root', root, '--platform', 'win32', '--json'],
+      { encoding: 'utf8', shell: false },
+    );
+    const parsed = JSON.parse(child.stdout ?? '{}') as {
+      ok?: boolean;
+      rows?: { target: string; verdict: string; signatureAt?: number }[];
+    };
+
+    const nsis = (parsed.rows ?? []).find((row) => row.target === 'nsis');
+    expect(nsis?.verdict).toBe('OK');
+    expect(
+      nsis?.signatureAt,
+      'the guard reported the NSIS signature at a different offset than the one ' +
+        'the fixture wrote it at, so it is not reporting the position it found',
+    ).toBe(NSIS_SIGNATURE_AT);
+
+    // The MSI row has no signature demand at all, so it must not acquire the
+    // field — otherwise this assertion would pass on a guard that stamps every
+    // row with a constant.
+    const msi = (parsed.rows ?? []).find((row) => row.target === 'msi');
+    expect(msi?.verdict).toBe('OK');
+    expect(msi).not.toHaveProperty('signatureAt');
+
+    expect(parsed.ok).toBe(true);
+    expect(child.status).toBe(0);
   });
 });

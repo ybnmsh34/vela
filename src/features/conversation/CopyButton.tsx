@@ -50,6 +50,20 @@ export function CopyButton({ getText, label, subtle = false }: CopyButtonProps) 
       className={subtle ? `${styles.button} ${styles.subtle}` : styles.button}
       onClick={onClick}
       aria-label={label}
+      // THE OUTCOME IS NOT ONLY A COLOUR.
+      //
+      // `data-outcome` is what `CopyButton.module.css` recolours, and this
+      // branch is what made that recolour carry meaning — success and failure
+      // moved onto the code palette and now differ from each other by a border.
+      // Colour is never the only channel: the words "Copied" and "Copy failed"
+      // are in the DOM, which satisfies 1.4.1 for anyone who can see them. It
+      // did not satisfy 4.1.3 for anyone who cannot, because `aria-label` fixes
+      // the accessible name to `label` and the outcome never entered it — the
+      // button said "Copy this reply" before the click and "Copy this reply"
+      // after a refused one. `aria-live` announces the content change itself,
+      // so the outcome is spoken without moving the name the rest of the app
+      // (and `CopyButton.test.tsx`) addresses this button by.
+      aria-live="polite"
       data-outcome={outcome}
     >
       {outcome === 'copied' ? 'Copied' : outcome === 'failed' ? 'Copy failed' : 'Copy'}

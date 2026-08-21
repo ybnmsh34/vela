@@ -1,10 +1,16 @@
 /**
- * The four things a session is configured with **before the first message**.
+ * The five things a session is configured with **before the first message**.
  *
  * The spec is emphatic that this happens up front — environment, project
- * folder, model, permission mode — and the reason is that all four change what a
- * message *means*. A prompt sent before the permission mode is settled has
- * already been answered under whatever mode happened to be in force.
+ * folder, model, permission mode — and the reason is that every one of them
+ * changes what a message *means*. A prompt sent before the permission mode is
+ * settled has already been answered under whatever mode happened to be in
+ * force. This build adds a fifth to the spec's four, the worktree name, because
+ * a session here *is* a worktree and there is nothing else to tell two of them
+ * apart by; the footnote on screen counts five for that reason, and `isComplete`
+ * in `src/state/code-workspace-store.ts` refuses a draft until all six of its
+ * fields are set — five controls, six fields, because a model is a provider and
+ * an id.
  *
  * So the form is a gate, not a preference sheet: until it is complete there is
  * no session, and until there is a session there is no composer to type into.

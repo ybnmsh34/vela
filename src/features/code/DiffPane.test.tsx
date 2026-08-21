@@ -102,6 +102,31 @@ function queue(): readonly string[] {
   return useCodeWorkspaceStore.getState().work[SESSION]?.queue ?? [];
 }
 
+/**
+ * The invariant, in one expression: `expected` Remove buttons on screen and no
+ * two of them named the same.
+ *
+ * Twice before, this file asserted distinctness for the one arrangement the
+ * last reviewer had named — different bodies, then different files — and both
+ * times the next arrangement collided. The property is what the tests below
+ * assert instead, over every axis a name is built from: the file, the line, the
+ * side, the quoted line and the body, plus the case where a reviewer writes the
+ * same comment twice and none of those differ at all.
+ *
+ * `expected` is passed rather than read off the store because a pending comment
+ * on a changed file the reviewer has not selected renders no button at all, so
+ * the number of buttons is a fact about the arrangement rather than about the
+ * round.
+ */
+function distinctRemoveNames(expected: number): readonly string[] {
+  const names = screen
+    .getAllByRole('button', { name: /^Remove comment/ })
+    .map((button) => button.getAttribute('aria-label') ?? '');
+  expect(names).toHaveLength(expected);
+  expect(new Set(names).size).toBe(expected);
+  return names;
+}
+
 beforeEach(() => {
   resetCodeWorkspaceStore();
 });
@@ -352,6 +377,26 @@ describe('a comment when the file moves under it', () => {
     await user.keyboard('{Enter}');
   }
 
+  /**
+   * The same thing on any row of the file on screen, by the row's own name.
+   *
+   * `side` is the word the row button uses, not the stored `'left'`/`'right'` —
+   * a removed row and an added row can share a line number, and the pair of
+   * them is the only way to reach two comments that differ by side alone.
+   */
+  async function commentOn(
+    user: ReturnType<typeof driver>,
+    row: { readonly line: number; readonly side: 'before' | 'after' },
+    body: string,
+  ): Promise<void> {
+    await user.click(
+      screen.getByRole('button', { name: `Comment on line ${row.line} ${row.side}` }),
+    );
+    await user.click(screen.getByLabelText(`Your comment on line ${row.line}`));
+    await user.paste(body);
+    await user.keyboard('{Enter}');
+  }
+
   it('follows the line it quotes when a line is inserted above it', async () => {
     const user = driver();
     render(<DiffPane sessionId={SESSION} />);
@@ -486,11 +531,7 @@ describe('a comment when the file moves under it', () => {
     await user.paste('and name the file too');
     await user.keyboard('{Enter}');
 
-    const names = screen
-      .getAllByRole('button', { name: /^Remove comment/ })
-      .map((button) => button.getAttribute('aria-label'));
-    expect(names).toHaveLength(2);
-    expect(new Set(names).size).toBe(2);
+    distinctRemoveNames(2);
   });
 
   it('tells two Remove buttons apart when the comments are on different files', async () => {
@@ -525,11 +566,7 @@ describe('a comment when the file moves under it', () => {
     await user.paste('fix this');
     await user.keyboard('{Enter}');
 
-    const names = screen
-      .getAllByRole('button', { name: /^Remove comment/ })
-      .map((button) => button.getAttribute('aria-label'));
-    expect(names).toHaveLength(2);
-    expect(new Set(names).size).toBe(2);
+    const names = distinctRemoveNames(2);
     expect(names).toContain('Remove comment on src/a.ts, line 1 after: fix this');
     expect(names).toContain('Remove comment on line 1 after: fix this');
 
@@ -540,6 +577,137 @@ describe('a comment when the file moves under it', () => {
     );
     const left = useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? [];
     expect(left.map((comment) => comment.path)).toEqual(['src/other.ts']);
+  });
+
+  it('tells two Remove buttons apart when both comments have lost the line they quote', async () => {
+    // Same file, same arm, same body — the case a path prefix cannot separate,
+    // and the one the previous round's fix left behind. Two comments on two
+    // different added lines, then an edit that takes both of those lines away
+    // while the file itself keeps differing: both land on
+    // `line === null && path === current`, where the name has no line number to
+    // carry and the path is the file on screen, so on 687c189's naming both
+    // come back `Remove comment on a line no longer in the diff: nit` —
+    // measured with a probe that prints the names, not inferred.
+    //
+    // The quoted line is the discriminator and it is already on screen —
+    // `.driftedQuote` prints `foo` above one button and `bar` above the other.
+    const user = driver();
+    seed([{ path: 'src/a.ts', baseline: 'x', working: 'x\nfoo\nbar' }]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+    await commentOn(user, { line: 3, side: 'after' }, 'nit');
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'x\nqux');
+    });
+
+    const stranded = within(
+      screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+    );
+    expect(stranded.getByText('foo')).toBeInTheDocument();
+    expect(stranded.getByText('bar')).toBeInTheDocument();
+
+    const names = distinctRemoveNames(2);
+    expect(names).toContain('Remove comment on a line no longer in the diff (it read "foo"): nit');
+    expect(names).toContain('Remove comment on a line no longer in the diff (it read "bar"): nit');
+
+    // Distinct is not enough on its own: the button named for `foo` has to be
+    // the one that removes the comment on `foo`.
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Remove comment on a line no longer in the diff (it read "foo"): nit',
+      }),
+    );
+    const left = useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? [];
+    expect(left.map((comment) => comment.text)).toEqual(['bar']);
+  });
+
+  it('tells two identical comments apart by where they sit in the round', async () => {
+    // The floor of the problem: a reviewer writes "nit" twice on the same line.
+    // Every field a name can be built from agrees — file, line, side, quoted
+    // text, body — so no clause added to the name separates them, and every
+    // clause the previous rounds added still leaves one name on two buttons.
+    // Measured on 687c189's naming rather than argued: both buttons come back
+    // `Remove comment on line 2 after: nit`. What is left is the order they
+    // were written in, which is the order they are drawn in, and that is what
+    // the name falls back to.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+
+    const names = distinctRemoveNames(2);
+    expect(names).toContain('Remove comment on line 2 after: nit (1 of 2)');
+    expect(names).toContain('Remove comment on line 2 after: nit (2 of 2)');
+
+    const ids = (useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? []).map(
+      (comment) => comment.id,
+    );
+    expect(ids).toHaveLength(2);
+
+    // `(1 of 2)` is the first one written, so it is the first one in the store.
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: nit (1 of 2)' }),
+    );
+    const left = useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? [];
+    expect(left.map((comment) => comment.id)).toEqual([ids[1]]);
+
+    // And the suffix goes away with the collision it exists for, rather than
+    // being a permanent decoration on a comment that no longer shares a name.
+    expect(distinctRemoveNames(1)).toEqual(['Remove comment on line 2 after: nit']);
+  });
+
+  it('gives every Remove button in a round a name of its own, whatever collides', async () => {
+    // One round, three collisions at once, and the assertion is the property
+    // rather than any one of them: the same body on two files, the same body on
+    // the two sides of one line number, and the same comment written twice. A
+    // fifth comment differing only by line number is in the round as the
+    // control — it collides with nothing and needs no suffix, which is what
+    // makes the two suffixes that ARE present a consequence of the collision
+    // rather than a decoration on every button. The tests above measure two of
+    // these arms in isolation; this one measures that they do not have to be
+    // reached one at a time to be told apart.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/b.ts', baseline: 'one\ntwo', working: 'ONE\ntwo' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    // On src/a.ts, on its context line, so the anchor survives the revert.
+    await commentOn(user, { line: 1, side: 'after' }, 'nit');
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+
+    // src/b.ts is now the file on screen, and it has a removed row and an added
+    // row on the same line number — the side axis. No other test in this file
+    // puts two comments on it; `numbers each row on the side it exists in`
+    // asserts the two ROW buttons, which is a different pair of names.
+    await commentOn(user, { line: 1, side: 'before' }, 'nit');
+    await commentOn(user, { line: 1, side: 'after' }, 'nit');
+    await commentOn(user, { line: 1, side: 'after' }, 'nit');
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+
+    const ids = (useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? []).map(
+      (comment) => comment.id,
+    );
+    expect(ids).toHaveLength(5);
+
+    const names = distinctRemoveNames(5);
+    expect(names).toContain('Remove comment on src/a.ts, line 1 after: nit');
+    expect(names).toContain('Remove comment on line 1 before: nit');
+    expect(names).toContain('Remove comment on line 1 after: nit (1 of 2)');
+    expect(names).toContain('Remove comment on line 1 after: nit (2 of 2)');
+    expect(names).toContain('Remove comment on line 2 after: nit');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 1 after: nit (2 of 2)' }),
+    );
+    const left = useCodeWorkspaceStore.getState().work[SESSION]?.comments ?? [];
+    expect(left.map((comment) => comment.id)).toEqual([ids[0], ids[1], ids[2], ids[4]]);
   });
 });
 

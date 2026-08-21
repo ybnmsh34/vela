@@ -83,45 +83,146 @@ import styles from './CodeWorkspace.module.css';
 const GUTTER: Record<DiffRow['kind'], string> = { same: ' ', added: '+', removed: '-' };
 
 /**
- * What a Remove button removes, said in its accessible name.
+ * Every Remove button in the round, named for the comment it removes — and
+ * named so that no two of them are the same.
  *
- * Every card renders one and every one of them read "Remove", so a round of N
- * comments was N controls with one name and N different consequences — the
- * collision this file's own test helper had already worked around with a name
- * regex rather than fixing. Reverting the whole function body to a bare
- * `'Remove comment'` gives `3 failed | 20 passed (23)` in this file, twice:
- * `names each Remove button for the comment it removes`,
- * `tells two Remove buttons apart when the comments are on different files`,
- * and `keeps a comment removable when its file leaves the changed list with the
- * quoted line intact`. The body is what the reviewer would use to tell two of
- * their own comments apart, so it is what the name carries.
+ * ## Why this is one pass over the round rather than one call per button
+ *
+ * Twice now this file has fixed a colliding accessible name by naming the field
+ * that happened to differ in the arrangement the last reviewer described, and
+ * both times the next arrangement collided. At `13e8cc7` the Remove buttons had
+ * no `aria-label` at all, so N cards were N controls named "Remove" with N
+ * different consequences. `b0a9efd` added line, side and body, which fixed the
+ * round where the bodies differed. `687c189` added the path, which fixed the
+ * round where the paths differed. Neither reaches two comments that agree on
+ * every field a name can be derived from — same file, same line, same side,
+ * same quoted text, same body — which is an ordinary reviewer writing "nit"
+ * twice; and neither reaches two comments whose only difference is a quoted
+ * line the name does not carry. Both of those are measured, on `687c189`'s own
+ * naming, in the mutation list below.
+ *
+ * So the guard here is the invariant, not the arrangement: build every name,
+ * then make the names distinct. What the fields cannot separate, the round
+ * order separates — a shared name is suffixed `(1 of 2)`, `(2 of 2)` in the
+ * order the reviewer wrote them. That is also the order the cards sharing it
+ * are drawn in: {@link anchorComments} maps over the store's array without
+ * reordering it, and both call sites reach their cards by filtering that array.
+ * `(1 of 2)` is not a fact about the comment. It is the last discriminator left
+ * once the comment is a copy of another one, and a position in the round is
+ * what a reader has instead.
+ *
+ * The count is over the **round** rather than over what is on screen, and that
+ * is not a hole the suffix falls into. Two entries cannot share a name without
+ * sharing a path — an empty file clause on both means both paths are the file
+ * on screen, a non-empty one means the two paths are equal — and cannot share a
+ * name without agreeing on whether their line is `null`. Those are exactly the
+ * two things the render conditions read: `drifted` tests the path against
+ * `listed` and against the file on screen, and `DiffRows` draws a card when the
+ * path is the file on screen and the line is a number. So a set that shares a
+ * name is drawn all together or not at all, and no reader meets `(2 of 2)` with
+ * nothing else to compare it to. That is derived from those two conditions, not
+ * measured: there is no round to seed in which a suffixed name is alone on
+ * screen. Counting only the rendered buttons instead would rename a button when
+ * the reviewer selects a different file, which is the worse failure — the name
+ * a screen reader has just read out would stop matching the control.
+ *
+ * ## What each clause is for, and what happens without it
  *
  * `onScreen` is the path of the file whose rows are drawn below. Every card in
  * `DiffRows` is on that file by construction, but a `drifted` card need not be —
  * the `!listed` arm shows a comment from a file that has left the changed-file
- * list, wherever the reviewer happens to be. Line, side and body alone are then
- * not a discriminator: two comments with the same body on line 1 of two
- * different files produce one name for two buttons that remove different
- * things. Naming the file for exactly those cards is what
- * `tells two Remove buttons apart when the comments are on different files`
- * measures. Replacing the clause with `''` was run twice and gives
- * `2 failed | 21 passed (23)` in this file both times: that test with
- * `expected 1 to be 2` on the count of distinct names, and
- * `keeps a comment removable when its file leaves the changed list with the
- * quoted line intact` with
- * `Unable to find an accessible element with the role "button" and name
- * "Remove comment on src/a.ts, line 1 after: this line worries me"`.
+ * list, wherever the reviewer happens to be. So the path is said only when it
+ * differs from the file on screen, and the quoted line is said on exactly the
+ * arm that has no line number to say instead. Both are already printed by
+ * `.driftedQuote` directly above the button, so neither clause invents a
+ * discriminator: it gives the accessible name the one the screen already had.
  *
- * The path is also what `.driftedQuote` already prints above the same card, so
- * this gives the accessible name the discriminator the screen already had.
+ * Each clause is bitten on its own. Every figure below is this file's own
+ * `npx vitest run src/features/code/DiffPane.test.tsx`, one mutation applied at
+ * a time and restored from a byte snapshot before the next, run twice with both
+ * runs agreeing:
+ *
+ * - the naming dropped altogether, every id mapped to a bare `'Remove comment'`
+ *   → `6 failed | 20 passed (26)`, which is every test in that file asserting a
+ *   Remove button's name or the distinctness of the round's names. The two that
+ *   only ever *click* one, by the shared `/^Remove comment/` prefix, stay green:
+ *   a query that matches every button in the round cannot tell that they have
+ *   stopped being different, which is why the guards assert names rather than
+ *   only clicking;
+ * - the path clause replaced with `''` → `3 failed | 23 passed (26)`, on
+ *   `keeps a comment removable when its file leaves the changed list with the
+ *   quoted line intact`, `tells two Remove buttons apart when the comments are
+ *   on different files` and `gives every Remove button in a round a name of its
+ *   own, whatever collides`. Note *what* reddens: the names stay distinct,
+ *   because the suffix below takes over the moment the path stops separating
+ *   them, and it is the assertions on the literal name that fail
+ *   (`Unable to find an accessible element with the role "button" and name
+ *   "Remove comment on src/a.ts, line 1 after: this line worries me"`, and
+ *   twice `expected [ …(2) ] to include 'Remove comment on src/a.ts, line 1
+ *   af…'`). Distinctness alone would not have caught this, which is why the
+ *   tests assert the name as well as the property;
+ * - the quoted-line clause dropped, so the `line === null` arm reads only
+ *   `a line no longer in the diff` again → `1 failed | 25 passed (26)`, on
+ *   `tells two Remove buttons apart when both comments have lost the line they
+ *   quote`;
+ * - the suffix dropped, so a shared name is handed to every id that shares it →
+ *   `2 failed | 24 passed (26)`, on `tells two identical comments apart by
+ *   where they sit in the round` (`expected 1 to be 2`) and `gives every Remove
+ *   button in a round a name of its own, whatever collides` (`expected 4 to be
+ *   5`) — both of them the distinct-count assertion in `distinctRemoveNames`.
+ *
+ * The last two together are `687c189`'s naming exactly: with both applied, the
+ * three statements that build `where`, `file` and `name` read the same as that
+ * commit's `removeLabel` body, and every id is then handed its base name
+ * unchanged. That is how the collisions this round closes were measured rather
+ * than argued. Applied together → `3 failed | 23 passed (26)` twice, and with a
+ * probe that prints the colliding names instead of counting them, the three
+ * failures return, twice each:
+ *
+ *     ["Remove comment on a line no longer in the diff: nit",
+ *      "Remove comment on a line no longer in the diff: nit"]
+ *     ["Remove comment on line 2 after: nit",
+ *      "Remove comment on line 2 after: nit"]
+ *     ["Remove comment on src/a.ts, line 1 after: nit",
+ *      "Remove comment on line 1 before: nit",
+ *      "Remove comment on line 1 after: nit",
+ *      "Remove comment on line 1 after: nit",
+ *      "Remove comment on line 2 after: nit"]
+ *
+ * The first is the round-4 critic's case. The other two are collisions they did
+ * not name, and their suggested remedy — carry the quoted line on the
+ * `line === null` arm — reaches neither: every comment in both has a line
+ * number, so that arm never runs for any of them.
+ *
+ * The returned map is keyed by comment id and is read at the pane's two card
+ * sites and nowhere else: the `drifted` group's button and `DiffRows`'s
+ * `attached` button. Both draw their entries out of the same `anchored` array
+ * this is built from, so every button they render has a name here.
  */
-function removeLabel(entry: AnchoredComment, onScreen: string): string {
-  const where =
-    entry.line === null
-      ? 'a line no longer in the diff'
-      : `line ${entry.line} ${entry.comment.side === 'left' ? 'before' : 'after'}`;
-  const file = entry.comment.path === onScreen ? '' : `${entry.comment.path}, `;
-  return `Remove comment on ${file}${where}: ${entry.comment.body}`;
+function removeLabels(
+  entries: readonly AnchoredComment[],
+  onScreen: string,
+): ReadonlyMap<string, string> {
+  const byName = new Map<string, string[]>();
+  for (const entry of entries) {
+    const where =
+      entry.line === null
+        ? `a line no longer in the diff (it read "${entry.comment.text}")`
+        : `line ${entry.line} ${entry.comment.side === 'left' ? 'before' : 'after'}`;
+    const file = entry.comment.path === onScreen ? '' : `${entry.comment.path}, `;
+    const name = `Remove comment on ${file}${where}: ${entry.comment.body}`;
+    const sharing = byName.get(name);
+    if (sharing === undefined) byName.set(name, [entry.comment.id]);
+    else sharing.push(entry.comment.id);
+  }
+
+  const labels = new Map<string, string>();
+  for (const [name, ids] of byName) {
+    ids.forEach((id, index) => {
+      labels.set(id, ids.length === 1 ? name : `${name} (${index + 1} of ${ids.length})`);
+    });
+  }
+  return labels;
 }
 
 export function DiffPane({ sessionId }: { readonly sessionId: string }) {
@@ -218,6 +319,12 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
       (entry.line === null && entry.comment.path === current.file.path),
   );
 
+  // Built once for the whole round rather than per card, because distinctness
+  // is a property of the set and no per-card call can see the set. Not a hook:
+  // it is cheap, and hoisting it above the early return would mean handing it a
+  // file-on-screen that does not exist there.
+  const removeNames = removeLabels(anchored, current.file.path);
+
   function submit(): void {
     const message = composeReviewMessage(anchored);
     if (message === null) return;
@@ -297,7 +404,7 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
                 <button
                   type="button"
                   className={styles.paneButton}
-                  aria-label={removeLabel(entry, current.file.path)}
+                  aria-label={removeNames.get(entry.comment.id)}
                   onClick={() => removeComment(sessionId, entry.comment.id)}
                 >
                   Remove
@@ -311,6 +418,7 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
           rows={current.diff.rows}
           path={current.file.path}
           anchored={anchored}
+          removeNames={removeNames}
           commentingRow={commentingRow}
           draft={draft}
           onDraft={setDraft}
@@ -385,6 +493,7 @@ function DiffRows({
   rows,
   path,
   anchored,
+  removeNames,
   commentingRow,
   draft,
   onDraft,
@@ -396,6 +505,8 @@ function DiffRows({
   readonly path: string;
   /** Every pending comment of the session, with the line it points at *now*. */
   readonly anchored: readonly AnchoredComment[];
+  /** {@link removeLabels} over the whole round, keyed by comment id. */
+  readonly removeNames: ReadonlyMap<string, string>;
   readonly commentingRow: number | null;
   readonly draft: string;
   readonly onDraft: (value: string) => void;
@@ -484,7 +595,7 @@ function DiffRows({
                 <button
                   type="button"
                   className={styles.paneButton}
-                  aria-label={removeLabel(entry, path)}
+                  aria-label={removeNames.get(entry.comment.id)}
                   onClick={() => onRemove(entry.comment.id)}
                 >
                   Remove

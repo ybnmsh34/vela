@@ -155,11 +155,19 @@ describe('the session gate', () => {
     // The session line carries four of the five choices — worktree, folder,
     // environment, permission mode — and this reads all four back off it. The
     // model is the fifth and it is on no line, so it is read back off the
-    // session itself. Before that last pair of assertions, every other
-    // `modelId` and `providerId` in a test under `src/` was a value being
-    // written into a seeded session, never one being read back out of a session
-    // the form had built — the Model select was driven and its result checked
-    // by nothing.
+    // session itself. That last pair of assertions is the only place in the
+    // code workspace's own tests where the pair is read back out of a session
+    // this form built. Every other occurrence of the pair in this workspace's
+    // test files is an object-literal property being written into a fixture,
+    // four of them: the provider registered on the host in `host()` here and
+    // the identical one in `src/app/code-workspace-wiring.test.tsx`, and the
+    // provider/model pair the session seed passes to `startSession` in
+    // `DiffPane.test.tsx`. So the Model select was driven and its result checked
+    // by nothing. (Elsewhere under `src/` the pair is read back out of plenty of
+    // things that are neither a seed nor a session: catalogue entries in
+    // `src/features/models/catalogue.test.ts`, a reply record in
+    // `src/features/conversation/use-conversation-record.test.tsx`. This is a
+    // claim about this workspace's tests, not about the tree.)
     const line = screen.getByTestId('code-session-line');
     expect(line).toHaveTextContent('fix-a');
     expect(line).toHaveTextContent('C:/code/vela');

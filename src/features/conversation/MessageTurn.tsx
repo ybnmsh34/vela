@@ -139,7 +139,23 @@ interface RetryTarget {
   readonly replyCount: number;
 }
 
-/** How much of the question the retry control's name quotes. */
+/**
+ * How much of the question the retry control's name quotes.
+ *
+ * RULE W, AND THE ROUND-7 FINDING. The cut this number performs was the one
+ * branch of `turnControlName` nothing held: the measurer collapsed the ternary
+ * below to `trimmed`, removing truncation entirely, and got `tsc` exit 0 and
+ * 121 files / 2451 tests green — every retry and copy control would have carried
+ * an entire unbounded user question into its accessible name.
+ *
+ * Why the test aimed at this code could not catch it: *keeps two questions apart
+ * when the quoted part of both is identical* asserts DISTINCTNESS, and this cut
+ * is what CREATES the collision distinctness is about. Remove it and the two
+ * questions diverge at character 67, so the names get *more* distinct and the
+ * assertion holds harder. That test now also asserts the produced name against
+ * the literal cut string, so removing the cut names the character it stopped
+ * cutting at.
+ */
 const QUESTION_IN_NAME = 60;
 
 /**

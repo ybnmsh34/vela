@@ -227,11 +227,41 @@
 
 /* WHERE YOU ARE, IN THE RAIL.
 
-   `aria-current="page"` is the semantics; these two rules are the pixels. Each
-   is declaration-for-declaration the `:hover` rule on the same element —
-   `--vela-text` over `--vela-surface` on the icon button, `--vela-border-strong`
-   with `--vela-text` on the search button — so this state puts no colour pair on
-   screen that the sheet did not already draw.
+   `aria-current="page"` is the semantics; these two rules are the pixels. The
+   colour each puts on screen is one the sheet already drew — `--vela-text` over
+   `--vela-surface` on the icon button, which is its own `:hover` pair, and
+   `--vela-border-strong` with `--vela-text` on the search button.
+
+   THE BORDER COLOUR ON `.iconButton[aria-current='page']` IS NOT DECORATION.
+   An earlier version of this comment said each rule was declaration-for-declaration
+   its own `:hover` rule, and for the icon button that was true and was the
+   defect: `.iconButton` rests at `border: 1px solid transparent`, a forced-colours
+   mode **preserves** a fully transparent border rather than substituting it (see
+   `Composer.module.css`, which says the same thing for the pressed state), and so
+   the `border-style: dashed` restatement below had no border to draw. The rail's
+   current-location cue was inert for exactly the users the restatement exists for.
+   Giving the state a non-transparent resting colour is what makes the dashed
+   restatement paint: the colour is substituted, the style is not.
+   `forced-colors.test.ts`'s *leaves no forced-colours restatement resting on a
+   border that stays transparent* is the guard, and it is a scan of every sheet
+   rather than an assertion about this one.
+
+   THIS FIX DOES NOT DEPEND ON THAT MECHANISM BEING TRUE, WHICH IS WHY IT COULD
+   BE MADE WITHOUT RENDERING. jsdom implements none of `forced-colors` and this
+   run does not launch Vela, so nothing here has watched a High Contrast pixel.
+   Under the reading where a transparent border IS preserved, this line is what
+   turns the cue on. Under the reading where it is substituted like any other
+   colour, the cue already worked and this line changes nothing about it. The
+   round-6 critic's finding was that exactly one of two sentences had to be wrong
+   and the tree could not say which; the answer is a border that is right either
+   way, plus a law that fails the next restatement written on a transparent one.
+
+   WHAT IT COSTS IN ORDINARY COLOURS, STATED. The current rail button now draws a
+   1px `--vela-border-strong` edge that it did not before — the same treatment
+   `.searchButton[aria-current='page']` above has always had, so the two rail
+   affordances now say "you are here" the same way instead of two ways. It also
+   separates *current* from *hover*, which were previously the same two
+   declarations on this element
 
    What that does and does not buy from `contrast.test.ts`, stated exactly: the
    pair `--vela-text` on `--vela-surface` is in that file's table, as
@@ -247,11 +277,14 @@
 
 .iconButton[aria-current='page'] {
   background: var(--vela-surface);
+  border-color: var(--vela-border-strong);
   color: var(--vela-text);
 }
 
 /* Forced colours replaces both of those with the user's own pair, and "current"
-   stops being visible at all. Border style is not a colour and survives. */
+   stops being visible at all. Border style is not a colour and survives — on a
+   border whose colour is substituted rather than preserved, which is what the
+   `border-color` on each of the two rules above is for. */
 @media (forced-colors: active) {
   .searchButton[aria-current='page'],
   .iconButton[aria-current='page'] {

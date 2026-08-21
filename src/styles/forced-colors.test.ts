@@ -51,9 +51,46 @@
  * is the only one; a class-name scan is the obvious next widening and it is not
  * in this file.
  *
- * **It says nothing about the rest of forced-colours support.** Focus rings,
- * `border: 1px solid transparent` controls, the inline SVG glyph set, and every
- * opacity-only affordance are not examined here at all.
+ * **`border: 1px solid transparent` controls are examined now, and they were the
+ * gap.** A forced-colours mode substitutes a border colour but **preserves a
+ * fully transparent one**, so a control resting at `border: 1px solid transparent`
+ * keeps an invisible border and a `border-style` restatement written on it draws
+ * nothing. The rail's `aria-current` cue shipped in exactly that state — the
+ * round-6 critic could show that either the cue was inert or the sentence
+ * stating the mechanism was false, and no test in the tree could say which.
+ * {@link inertBorderRestatements} is the answer, as a law over every sheet:
+ * *leaves no forced-colours restatement resting on a border that stays
+ * transparent*.
+ *
+ * ## What this file still says nothing about, stated rather than implied
+ *
+ * * **Focus rings.** Measured over `src/` at this commit: 35 rules carry
+ *   `:focus-visible`, 34 of them draw the ring with `outline`, and **0** reach
+ *   for `box-shadow` — which matters because forced colours forces `box-shadow`
+ *   to `none` outright, where it merely substitutes an outline's colour. So the
+ *   rings survive, by construction rather than by anything asserted here. The
+ *   one rule that is neither is `Sidebar.module.css`'s
+ *   `.handle:hover::after, .handle:focus-visible::after { opacity: 1 }`: the
+ *   drag line is a `::after` with a `background`, revealed by opacity, so forced
+ *   colours repaints it in the user's pair and it survives too. All of that is a
+ *   count taken today, not a rule this file enforces — nothing here fails on the
+ *   first `box-shadow` focus ring somebody writes.
+ * * **Icons.** The inline SVG glyph set is not examined. `fill`/`stroke` are in
+ *   {@link SUBSTITUTED}, so a glyph drawn with either is repainted rather than
+ *   lost, but a glyph carried by a background image or by `opacity` is not
+ *   checked by anything.
+ * * **`prefers-contrast`.** There is no `prefers-contrast` rule anywhere under
+ *   `src/` and this round did not add one. Raising contrast means changing
+ *   colour values, and the palette is frozen for this run — so the honest
+ *   position is that Vela answers `forced-colors` and does not answer
+ *   `prefers-contrast: more`, rather than a rule that pretends to.
+ * * **`forced-color-adjust`.** Not used anywhere, and deliberately: it is the
+ *   opt-out, for a swatch that must keep its own colour to mean anything. This
+ *   track's surfaces have no such swatch. The canvas diff rows come closest and
+ *   they carry `+`/`-` prefixes instead, which is the better answer.
+ * * **Rendering.** jsdom implements none of this. Every assertion in this file
+ *   is a claim about stylesheet source, and 100/125/150% zoom, real High
+ *   Contrast themes and the actual painted result remain unmeasured here.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -181,6 +218,15 @@ const RESTATEMENT_MAY_USE: ReadonlySet<string> = new Set([
  *
  * Comments are stripped first, because the prose around the guards that use
  * this quotes the declarations it is talking about.
+ *
+ * Three of this function's four filters are guarded by a named test — the
+ * comment strip, the selector filter and the `border` prefix each red *keeps a
+ * turn's ending apart from an ordinary notice* when removed. The fourth was
+ * `if (declaration === '') continue;`, and it is gone rather than pinned: an
+ * empty declaration's `split(':')[0]` is `''`, which fails `startsWith('border')`
+ * on the very next line, so no input could tell the two versions apart. A
+ * branch nothing can distinguish from its own absence is not an unguarded
+ * invariant, it is a redundancy, and the honest close for one is deletion.
  */
 function borderDeclarationsOf(text: string, selector: RegExp): readonly string[] {
   const found: string[] = [];
@@ -189,12 +235,124 @@ function borderDeclarationsOf(text: string, selector: RegExp): readonly string[]
     if (!selector.test(head)) continue;
     for (const one of (rule[2] ?? '').split(';')) {
       const declaration = one.trim().split(/\s+/u).join(' ');
-      if (declaration === '') continue;
       if (!(declaration.split(':')[0] ?? '').trim().startsWith('border')) continue;
       found.push(`${head} { ${declaration} }`);
     }
   }
   return found;
+}
+
+/**
+ * The value `property` is **last** given, outside the forced-colours blocks, by
+ * a rule of `text` whose selector list holds `selector` exactly — or `undefined`
+ * when no such rule declares it.
+ *
+ * Last, because that is what the cascade does between two rules of equal
+ * specificity in one sheet, and exactly, because a substring match would let
+ * `.title` read `.selected .title`'s value and report a state as restated when
+ * it had only restated itself.
+ *
+ * Read by *keeps the sidebar saying which conversation is open*, which is the
+ * guard that used to assert a property NAME appeared in the forced block and so
+ * stayed green when the round-6 critic set the restated weight to the exact
+ * weight the resting rule already carries.
+ */
+function declaredValue(text: string, selector: string, property: string): string | undefined {
+  let value: string | undefined;
+  for (const rule of text.replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+    const heads = (rule[1] ?? '')
+      .trim()
+      .split(/\s+/u)
+      .join(' ')
+      .split(',')
+      .map((one) => one.trim());
+    if (!heads.includes(selector)) continue;
+    for (const one of (rule[2] ?? '').split(';')) {
+      const declaration = one.trim().split(/\s+/u).join(' ');
+      const at = declaration.indexOf(':');
+      if (at === -1) continue;
+      if (declaration.slice(0, at).trim() !== property) continue;
+      value = declaration.slice(at + 1).trim();
+    }
+  }
+  return value;
+}
+
+/**
+ * The border colour an element matching `selector` rests at, outside the
+ * forced-colours blocks.
+ *
+ * Read from the rule for `selector` itself **and** from the rule for its
+ * unqualified base — `.iconButton[aria-current='page']` also takes what
+ * `.iconButton` sets — because the `border: 1px solid transparent` that makes a
+ * restatement inert is normally written on the base and never repeated on the
+ * state. The later of the two wins, which is the cascade for two rules in one
+ * sheet where the state's specificity is the higher.
+ *
+ * The `border` shorthand is read as its last whitespace-separated token, which
+ * is where the colour sits in every spelling this tree uses. `undefined` means
+ * no rule in the chain says anything about a border colour, and an element with
+ * no border at all cannot have an inert one.
+ */
+function restingBorderColour(text: string, selector: string): string | undefined {
+  const base = selector.replace(/\[[^\]]*\]/gu, '').trim();
+  const outside = text.replace(
+    /@media\s*\(\s*forced-colors\s*:\s*active\s*\)\s*\{[\s\S]*?\n\}/gu,
+    '',
+  );
+  const said: string[] = [];
+  for (const from of [base, selector]) {
+    const shorthand = declaredValue(outside, from, 'border');
+    if (shorthand !== undefined) {
+      const parts = shorthand.split(' ');
+      const last = parts[parts.length - 1];
+      if (last !== undefined) said.push(last);
+    }
+    const longhand = declaredValue(outside, from, 'border-color');
+    if (longhand !== undefined) said.push(longhand);
+  }
+  return said[said.length - 1];
+}
+
+/**
+ * Every forced-colours restatement in `text` that leans on a border the mode
+ * will not repaint — and therefore says nothing at all.
+ *
+ * **THE FACT THIS FILE NOW HOLDS IN ONE PLACE.** A forced-colours mode
+ * substitutes `border-color`, but it **preserves a fully transparent one**: an
+ * element resting at `border: 1px solid transparent` keeps an invisible border
+ * in High Contrast, and a `border-style: dashed` restatement on it draws
+ * nothing. `Composer.module.css` states that fact and builds its pressed-state
+ * reasoning on it; `Sidebar.module.css` shipped a rail cue whose resting border
+ * was exactly that transparent one, so the round-6 critic could say only that
+ * one of the two was wrong and no test in the tree could say which. This is the
+ * test that says which: the fact is now a law over every sheet, the rail's
+ * resting border carries a colour that is substituted rather than preserved,
+ * and the next restatement written on a transparent border fails here.
+ *
+ * jsdom does not implement `forced-colors`, so this is still a claim about the
+ * source and not about a rendered pixel — stated plainly rather than implied.
+ * What it buys is that the claim is made once, in one place, over the whole
+ * tree, instead of being a sentence in a stylesheet comment.
+ */
+function inertBorderRestatements(text: string): readonly string[] {
+  const inert: string[] = [];
+  for (const rule of forcedColorsBlocks(text).matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+    const heads = (rule[1] ?? '')
+      .trim()
+      .split(/\s+/u)
+      .join(' ')
+      .split(',')
+      .map((one) => one.trim());
+    const leansOnABorder = (rule[2] ?? '')
+      .split(';')
+      .some((one) => one.trim().startsWith('border'));
+    if (!leansOnABorder) continue;
+    for (const head of heads) {
+      if (restingBorderColour(text, head) === 'transparent') inert.push(head);
+    }
+  }
+  return inert;
 }
 
 interface ColourAloneRule {
@@ -203,30 +361,53 @@ interface ColourAloneRule {
 }
 
 /**
- * Every rule under `src/` that says a persistent state with nothing but colour
- * — read from **outside** the forced-colours blocks, so a restatement is not
- * mistaken for the thing it restates.
+ * Every rule of one stylesheet that says a persistent state with nothing but
+ * colour — read from **outside** the forced-colours blocks, so a restatement is
+ * not mistaken for the thing it restates.
+ *
+ * A pure function of the text, so its **branches** can be pinned as well as its
+ * result. Each of the six `continue`s below is a structural position, and
+ * *reads every structural position the scanners in this file branch on* feeds
+ * one synthetic sheet carrying all six and asserts the enumerated outcome — so
+ * deleting any one of them names the position that stopped being read. Before
+ * that test existed, four of the six could be deleted with the whole suite
+ * green; the sixth — the forced-colours strip on the line below, the line the
+ * "read from outside" sentence above is about — could be broken by pointing its
+ * marker at a string no sheet contains, and 551 targeted tests stayed green.
  */
-function colourAloneStateRules(): readonly ColourAloneRule[] {
+function colourAloneRulesIn(text: string, file: string): readonly ColourAloneRule[] {
   const found: ColourAloneRule[] = [];
-  for (const file of stylesheets()) {
-    const text = sheet(file)
-      .replace(/\/\*[\s\S]*?\*\//gu, '')
-      .replace(/@media\s*\(\s*forced-colors\s*:\s*active\s*\)\s*\{[\s\S]*?\n\}/gu, '');
-    for (const match of text.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
-      const selector = (match[1] ?? '').trim().split(/\s+/u).join(' ');
-      if (selector.startsWith('@')) continue;
-      if (!ATTRIBUTE_STATE.test(selector) || TRANSIENT.test(selector)) continue;
-      const declarations = (match[2] ?? '')
-        .split(';')
-        .map((one) => one.trim())
-        .filter((one) => one !== '');
-      if (declarations.length === 0) continue;
-      if (!declarations.every((one) => SUBSTITUTED.test((one.split(':')[0] ?? '').trim()))) continue;
-      found.push({ file, selector });
-    }
+  const outside = text
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/@media\s*\(\s*forced-colors\s*:\s*active\s*\)\s*\{[\s\S]*?\n\}/gu, '');
+  for (const match of outside.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+    const selector = (match[1] ?? '').trim().split(/\s+/u).join(' ');
+    // An at-rule statement that ends in `;` has no block of its own, so the
+    // next selector is glued onto it by the rule pattern above. Five heads in
+    // `src/` arrive that way today — four `@font-face` and base.css's two
+    // `@import`s in front of `*, *::before, *::after` — and every one of them
+    // would also be refused by {@link ATTRIBUTE_STATE}. That is what made this
+    // deletable in silence; it stops being so the moment an `@import` sits in
+    // front of a selector that does carry a state, which is the fixture case.
+    if (selector.startsWith('@')) continue;
+    if (!ATTRIBUTE_STATE.test(selector)) continue;
+    if (TRANSIENT.test(selector)) continue;
+    const declarations = (match[2] ?? '')
+      .split(';')
+      .map((one) => one.trim())
+      .filter((one) => one !== '');
+    // An empty body makes `every` below vacuously true, so without this a rule
+    // that declares nothing is reported as saying a state with colour alone.
+    if (declarations.length === 0) continue;
+    if (!declarations.every((one) => SUBSTITUTED.test((one.split(':')[0] ?? '').trim()))) continue;
+    found.push({ file, selector });
   }
   return found;
+}
+
+/** {@link colourAloneRulesIn}, over every stylesheet under `src/`. */
+function colourAloneStateRules(): readonly ColourAloneRule[] {
+  return stylesheets().flatMap((file) => colourAloneRulesIn(sheet(file), file));
 }
 
 /**
@@ -341,6 +522,136 @@ function forcedColorsBlocks(text: string): string {
   return out.join('\n');
 }
 
+/**
+ * The structural positions {@link colourAloneRulesIn} branches on, in the order
+ * its filters meet them, and therefore the positions {@link FIXTURE} has to
+ * contain for a deleted branch to be nameable.
+ *
+ * Enumerated rather than counted: a count says how many were read, and this run
+ * has spent six rounds learning that the question is always *which one stopped*.
+ */
+const POSITIONS = [
+  'an at-rule statement glued to the selector that follows it',
+  'a selector with no attribute state at all',
+  'a transient pseudo-class beside an attribute state',
+  'an attribute state whose body is empty',
+  'an attribute state that also says something colour does not carry',
+  'a colour-alone attribute state inside a forced-colours block',
+  'a colour-alone attribute state — the one thing the scan is for',
+  'a colour-alone attribute state written after a forced-colours block',
+] as const;
+
+/**
+ * One stylesheet holding every entry of {@link POSITIONS}, plus the inputs the
+ * three value readers below branch on.
+ *
+ * Written here rather than taken from `src/`, for the reason the round-6 critic
+ * gave about the escape hatch: a scan asserted only against the tree it scans
+ * reports whatever that tree happens to contain, and goes green the day the
+ * tree stops containing it. Four of this file's filters reject **nothing** in
+ * `src/` today — {@link TRANSIENT} rejects 0 rules, the empty-body skip rejects
+ * 0, the forced-colours strip removes 0 rules that would otherwise be reported,
+ * and all 5 at-rule heads would be refused by {@link ATTRIBUTE_STATE} anyway,
+ * all four counts measured at this commit. Their universe is empty, so the tree
+ * cannot pin them and this has to.
+ *
+ * The `@import` on the first line is not decoration: an at-rule statement that
+ * ends in `;` has no block, so the rule pattern glues it onto the head of the
+ * selector that follows — which is how a real selector can arrive at the scan
+ * wearing an `@`.
+ */
+const FIXTURE = `
+/* an at-rule statement glued to the selector that follows it */
+@import './tokens.css';
+.glued[data-state='on'] {
+  color: var(--vela-text);
+}
+
+/* a selector with no attribute state at all */
+.plain {
+  color: var(--vela-text);
+}
+
+/* a transient pseudo-class beside an attribute state */
+.hovered[data-state='on']:hover {
+  background: var(--vela-row-hover);
+}
+
+/* an attribute state whose body is empty */
+.blank[data-state='on'] {
+}
+
+/* an attribute state that also says something colour does not carry */
+.mixed[data-state='on'] {
+  color: var(--vela-text);
+  font-weight: var(--vela-weight-bold);
+}
+
+/* a colour-alone attribute state — the one thing the scan is for */
+.found[data-state='on'] {
+  background: var(--vela-row-selected);
+  color: var(--vela-row-selected-text);
+}
+
+.weighted {
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.listed,
+.listed-elsewhere {
+  color: var(--vela-text);
+}
+
+.edge {
+  border: 1px solid transparent;
+  border-left-width: 3px;
+  padding: var(--vela-space-2);
+}
+
+.edge[data-state='on'] {
+  border-color: var(--vela-border);
+  border-style: solid;
+}
+
+.inert {
+  border: 1px solid transparent;
+}
+
+.painted {
+  border: 1px solid transparent;
+}
+
+.painted[data-state='on'] {
+  border-color: var(--vela-border-strong);
+  border-style: solid;
+}
+
+@media (forced-colors: active) {
+  /* a colour-alone attribute state inside a forced-colours block */
+  .restated[data-state='on'] {
+    color: CanvasText;
+  }
+
+  .selected .weighted {
+    font-weight: var(--vela-weight-bold);
+  }
+
+  .inert[data-state='on'] {
+    border-style: dashed;
+  }
+
+  .painted[data-state='on'] {
+    border-style: dashed;
+  }
+}
+
+/* a colour-alone attribute state written after a forced-colours block */
+.after[data-state='on'] {
+  color: var(--vela-accent);
+}
+`;
+
 describe('a distinction carried by colour alone is restated without colour', () => {
   it('keeps the two note tones apart in the transcript', () => {
     // `.note[data-tone='warning']` differs from `.note` by `background` and
@@ -454,9 +765,47 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // This is the one in the scan that is genuinely colour-alone: `aria-current`
     // reaches a screen reader, and nothing reaches a sighted user in a
     // forced-colours mode once `--vela-surface` and `--vela-text` are replaced.
-    const block = forcedColorsBlocks(sheet('features/navigation/Sidebar.module.css'));
+    //
+    // WHAT THIS ASSERTED BEFORE, AND WHY IT WAS NOT ENOUGH. It read two property
+    // NAMES out of the block — that `[aria-current='page']` appeared and that
+    // some `border-style: dashed` did. The round-6 critic set
+    // `.searchButton[aria-current='page']`'s `border-color` to `transparent`,
+    // which makes the dashed restatement paint nothing on that branch, and
+    // measured the whole suite green twice. And the other branch — the rail's
+    // `.iconButton` — was ALREADY in that state at HEAD: it rests at
+    // `border: 1px solid transparent`, forced colours preserves a transparent
+    // border rather than substituting it, so the cue this track added to the
+    // collapsed rail drew nothing for the users it was added for.
+    //
+    // Both halves are values now. The resting border colour of each branch is
+    // read from the sheet and asserted to be a colour the mode replaces, and
+    // *leaves no forced-colours restatement resting on a border that stays
+    // transparent* makes the same check over every sheet in `src/`.
+    const text = sheet('features/navigation/Sidebar.module.css');
+    const block = forcedColorsBlocks(text);
     expect(block).toContain("[aria-current='page']");
     expect(block).toMatch(/border-style:\s*dashed/u);
+
+    // The border the dashed restatement is drawn on, per branch, by value.
+    expect(restingBorderColour(text, ".iconButton[aria-current='page']")).toBe(
+      'var(--vela-border-strong)',
+    );
+    expect(restingBorderColour(text, ".searchButton[aria-current='page']")).toBe(
+      'var(--vela-border-strong)',
+    );
+    // …and the unselected rail button is the one that stays invisible, which is
+    // the distinction. Read from the base rule, which is where the shorthand is.
+    expect(restingBorderColour(text, '.iconButton')).toBe('transparent');
+
+    // Every border declaration the two rail affordances carry, verbatim — the
+    // whole-set equality that worked for `.error`/`.ending`, so a declaration
+    // added, removed or re-valued fails here in any spelling.
+    expect(borderDeclarationsOf(text, /\.iconButton\b/u)).toEqual([
+      '.iconButton { border: 1px solid transparent }',
+      '.iconButton { border-radius: var(--vela-radius-md) }',
+      ".iconButton[aria-current='page'] { border-color: var(--vela-border-strong) }",
+      ".searchButton[aria-current='page'], .iconButton[aria-current='page'] { border-style: dashed }",
+    ]);
   });
 
   it('keeps the sidebar saying which conversation is open', () => {
@@ -464,11 +813,33 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // attribute — and the one with the most riding on it. `aria-current='page'`
     // is on `.main` and reaches assistive technology; the fill is all a sighted
     // user gets, and it is the fill that goes.
+    //
+    // WHAT THIS ASSERTED BEFORE. That `.selected .title` appeared in the block
+    // and that the block said `font-weight:` somewhere — two property NAMES.
+    // The round-6 critic set the restated weight to `var(--vela-weight-medium)`,
+    // the exact weight `.title` already rests at one screen up, so the
+    // restatement restated nothing, and measured 121 files / 2451 tests green.
+    // A restatement that says what the resting rule says is not a restatement,
+    // and only a value can tell the two apart.
     const text = sheet('features/navigation/ConversationRow.module.css');
     expect(text).toMatch(/\.selected,\s*\.selected:hover\s*\{\s*background:/u);
     const block = forcedColorsBlocks(text);
     expect(block).toContain('.selected .title');
-    expect(block).toMatch(/font-weight:/u);
+
+    const resting = declaredValue(text, '.title', 'font-weight');
+    const restated = declaredValue(block, '.selected .title', 'font-weight');
+    expect(resting).toBe('var(--vela-weight-medium)');
+    expect(restated).toBe('var(--vela-weight-bold)');
+    // The assertion the two above exist for: the restatement has to *differ*
+    // from what the row already looked like, or it says nothing.
+    expect(
+      restated,
+      'the selected row restates itself in the weight every row already has',
+    ).not.toBe(resting);
+    // And both were read, rather than defaulting to undefined together — which
+    // would satisfy `not.toBe` in silence and is the shape of the defect above.
+    expect(resting).not.toBeUndefined();
+    expect(restated).not.toBeUndefined();
   });
 
   it('leaves no persistent colour-alone state unaccounted for, anywhere in src', () => {
@@ -687,7 +1058,30 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // Both are scope, not leakage: a restatement the scan cannot see does not
     // *satisfy* the colour-alone check either, so it cannot be used to excuse a
     // rule. It can only fail to be checked itself.
-    for (const name of stylesheets().filter((one) => sheet(one).includes('forced-colors'))) {
+    //
+    // AND THE FLOOR ONE LEVEL UP, WHICH WAS MISSING. The loop below floors the
+    // declaration count INSIDE each sheet — 'a block whose declarations stopped
+    // being found would pass the loop above without reading anything'. It did
+    // not floor the number of sheets. The round-6 critic pointed the filter at
+    // `forced-colorsZZZ`, which makes this examine ZERO sheets, and measured it
+    // green twice. The sibling test floors `stylesheets().length > 40`; this is
+    // the same line, one level up.
+    //
+    // Exact rather than a floor, for the reason {@link RESTATEMENT_MAY_USE} is a
+    // list rather than a ban: a sheet growing a forced-colours block is a change
+    // that should have a reviewer's eyes on it, and adding a line here is how it
+    // gets them. The list is measured, not remembered.
+    const withBlocks = stylesheets().filter((one) => sheet(one).includes('forced-colors'));
+    expect(withBlocks).toEqual([
+      'features/canvas/CanvasPanel.module.css',
+      'features/canvas/DocumentPreview.module.css',
+      'features/conversation/Composer.module.css',
+      'features/conversation/MessageTurn.module.css',
+      'features/conversation/TurnNotices.module.css',
+      'features/navigation/ConversationRow.module.css',
+      'features/navigation/Sidebar.module.css',
+    ]);
+    for (const name of withBlocks) {
       const block = forcedColorsBlocks(sheet(name));
       expect(block.length, `${name} has no forced-colors block`).toBeGreaterThan(0);
       let properties = 0;
@@ -706,5 +1100,109 @@ describe('a distinction carried by colour alone is restated without colour', () 
       // the loop above without reading anything.
       expect(properties, `${name}: no declaration was read`).toBeGreaterThan(0);
     }
+  });
+  it('leaves no forced-colours restatement resting on a border that stays transparent', () => {
+    // RULE V, ON THE FACT EVERY BORDER RESTATEMENT IN THIS TREE RESTS ON.
+    //
+    // `Composer.module.css` states it — a forced-colours mode preserves a fully
+    // transparent border rather than substituting it — and the round-6 critic's
+    // blocking finding was that nothing asserted it while the rail's own cue was
+    // built on its negation. Exactly one of the two had to be wrong and no test
+    // could say which. The fact is now a law over the tree: a `border-style` or
+    // `border-width` restatement written on an element whose resting border is
+    // `transparent` paints nothing, and fails here.
+    const offenders = stylesheets().flatMap((file) =>
+      inertBorderRestatements(sheet(file)).map((selector) => `${file} :: ${selector}`),
+    );
+    expect(
+      offenders,
+      'each of these restates a state on a border forced colours will not repaint: give the resting rule a border colour that is substituted, or restate the state in an outline',
+    ).toEqual([]);
+
+    // AND THE READER IS LOOKING AT SOMETHING. An empty answer over the tree is
+    // what a scan that found nothing returns too, which is the round-6 shape
+    // exactly — so the same reader is run over a sheet built to contain one, and
+    // has to find it.
+    expect(inertBorderRestatements(FIXTURE)).toEqual([".inert[data-state='on']"]);
+    // …and not to find the one whose resting colour is a token, which is the
+    // distinction the whole law turns on.
+    expect(inertBorderRestatements(FIXTURE)).not.toContain(".painted[data-state='on']");
+  });
+
+  it('reads every structural position the scanners in this file branch on', () => {
+    // RULE W, APPLIED TO THIS FILE'S OWN READERS.
+    //
+    // Every guard above is a claim about what a scan of `src/` found. A scan is
+    // a chain of filters, and a filter nothing asserts is a law whose universe
+    // is a set nobody pinned — which is the defect this run keeps finding one
+    // level down from wherever it was last closed. Round 6 pinned the DATA
+    // ({@link SUBSTITUTED}, {@link RESTATEMENT_MAY_USE}) and left the CODE that
+    // reads it unpinned: the round-7 measurer deleted four of
+    // {@link colourAloneRulesIn}'s six `continue`s, one at a time, and the whole
+    // suite stayed green for each.
+    //
+    // {@link FIXTURE} is one stylesheet carrying every structural position that
+    // function branches on, and the equality below is the enumerated answer. A
+    // branch removed changes the answer and names the position it stopped
+    // reading — which is what these positions are, in the order the reader meets
+    // them.
+    expect(POSITIONS).toEqual([
+      'an at-rule statement glued to the selector that follows it',
+      'a selector with no attribute state at all',
+      'a transient pseudo-class beside an attribute state',
+      'an attribute state whose body is empty',
+      'an attribute state that also says something colour does not carry',
+      'a colour-alone attribute state inside a forced-colours block',
+      'a colour-alone attribute state — the one thing the scan is for',
+      'a colour-alone attribute state written after a forced-colours block',
+    ]);
+    // The fixture actually contains each of them, marked by name, so a position
+    // cannot be quietly dropped from the input to make the answer come out.
+    for (const position of POSITIONS) {
+      expect(FIXTURE, `${position} is not in the fixture`).toContain(`/* ${position} */`);
+    }
+
+    // THE ANSWER. Two rules and no others: the six `continue`s above reject the
+    // other six positions, one position each.
+    expect(colourAloneRulesIn(FIXTURE, 'fixture.css')).toEqual([
+      { file: 'fixture.css', selector: ".found[data-state='on']" },
+      { file: 'fixture.css', selector: ".after[data-state='on']" },
+    ]);
+
+    // `forcedColorsBlocks` reads the other side of the same sheet: the block's
+    // body and nothing outside it, through a nested rule, so both arms of its
+    // depth counter are exercised by this input too.
+    const block = forcedColorsBlocks(FIXTURE);
+    expect(block).toContain(".restated[data-state='on']");
+    expect(block).toContain(".inert[data-state='on']");
+    expect(block).not.toContain('.found');
+    expect(block).not.toContain('.after');
+
+    // `borderDeclarationsOf` over the same input: the selector filter, the
+    // `border` prefix filter and the comment strip, enumerated.
+    expect(borderDeclarationsOf(FIXTURE, /\.edge\b/u)).toEqual([
+      '.edge { border: 1px solid transparent }',
+      '.edge { border-left-width: 3px }',
+      ".edge[data-state='on'] { border-color: var(--vela-border) }",
+      ".edge[data-state='on'] { border-style: solid }",
+    ]);
+
+    // `declaredValue`: last wins, the selector must match a whole entry of the
+    // list rather than a substring of one, and an undeclared property is
+    // `undefined` rather than an empty string.
+    expect(declaredValue(FIXTURE, '.weighted', 'font-weight')).toBe('var(--vela-weight-medium)');
+    expect(declaredValue(FIXTURE, '.selected .weighted', 'font-weight')).toBe(
+      'var(--vela-weight-bold)',
+    );
+    expect(declaredValue(FIXTURE, '.listed', 'color')).toBe('var(--vela-text)');
+    expect(declaredValue(FIXTURE, '.weighted', 'border-color')).toBeUndefined();
+
+    // `restingBorderColour`: the shorthand's last token, the longhand that
+    // overrides it, the base rule a state inherits its border from, and the
+    // element that has no border at all.
+    expect(restingBorderColour(FIXTURE, '.edge')).toBe('transparent');
+    expect(restingBorderColour(FIXTURE, ".edge[data-state='on']")).toBe('var(--vela-border)');
+    expect(restingBorderColour(FIXTURE, ".inert[data-state='on']")).toBe('transparent');
+    expect(restingBorderColour(FIXTURE, '.weighted')).toBeUndefined();
   });
 });

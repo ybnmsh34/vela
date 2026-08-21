@@ -36,8 +36,27 @@ import styles from './CodeBlock.module.css';
  * across a transcript by construction rather than by wording, which is the
  * property the questions-only version of the turn fix could not hold.
  *
- * Undefined for a `<Markdown>` rendered without a `within` and holding a single
- * fence — the name is then the bare label, which is where it was.
+ * ## When the name falls back to the bare label, and how
+ *
+ * A `<Markdown>` rendered without a `within` and holding a single fence draws
+ * its copy control as `Copy ts code` — the name it had before any of this. An
+ * earlier version of this paragraph said that happened because `place` was
+ * `undefined` there, and that is **false**: in exactly that case `place` is
+ * `{ index: 1, count: 1, within: undefined }`, and the bare label comes from the
+ * `parts.length === 0` arm of `copyControlName`, which finds a count of one and
+ * a document of none and so has nothing to append. Measured both ways — replacing
+ * the `place === undefined` guard's body with a throw leaves the whole suite
+ * green and the guard unhit, while deleting the `parts.length === 0` arm reds
+ * *leaves a lone fence in an unplaced document with the name it always had*.
+ *
+ * `place === undefined` is unreachable from product code: the sole caller is
+ * `Markdown.tsx`'s `BlockNode` `case 'code'`, which always passes
+ * `place={places.get(block)}`, and `codePlaces` maps every fence its walk
+ * reaches — a walk that covers `code`, `quote` and `list`, which are the only
+ * `Block` kinds that can nest a `Block`. It survives because the map lookup is
+ * typed `| undefined` and `noUncheckedIndexedAccess` will not let it be dropped.
+ * *places every fence in a document, at every depth the walk reaches* is what
+ * holds that unreachability in place; see the note on `copyControlName`.
  */
 export interface CodePlace {
   /** 1-based position among the code blocks of the document it was parsed from. */
@@ -51,6 +70,15 @@ export interface CodePlace {
    * `Copy ts code — code block 1 of 2, in the reply`. Correct at rest and
    * unavoidable while the count is derived rather than declared — a name that
    * did not renumber would have to be wrong about one of the two states.
+   *
+   * RULE V: that paragraph was true and nothing checked it. The round-7 measurer
+   * reproduced both strings exactly with a throwaway probe and then deleted the
+   * probe, which is the whole problem — the only streaming test that touches
+   * this pushes one fence and asserts one name, so the renumbering this field
+   * both causes and defends was never exercised. *renumbers the first control
+   * when a second fence arrives in the same answer* in `Markdown.test.tsx` is
+   * the assertion now: it renders one fence, reads the name, renders two, and
+   * reads both, against the literal strings above.
    */
   readonly count: number;
   /** That document, in the reader's terms — 'reply 2 of 3', 'the reasoning'. */
@@ -77,6 +105,16 @@ interface CodeBlockProps {
  */
 function copyControlName(label: string | null, place: CodePlace | undefined): string {
   const base = label === null ? 'Copy code' : `Copy ${label} code`;
+  // UNREACHABLE FROM PRODUCT CODE, AND KEPT ANYWAY — see {@link CodePlace}.
+  //
+  // `places.get(block)` is typed `CodePlace | undefined` because a `Map` lookup
+  // is, and `codePlaces` maps every fence, so no render reaches this. Deleting
+  // it is caught by `tsc` (three TS18048) and by no test, and a throw in its
+  // body is never hit. It stays because the alternative is a non-null assertion
+  // in `Markdown.tsx`, which would be the same unreachability with the compiler
+  // silenced instead of satisfied. What holds the unreachability is *places
+  // every fence in a document, at every depth the walk reaches*, which pins the
+  // map's coverage rather than this line's behaviour.
   if (place === undefined) return base;
   const parts: string[] = [];
   if (place.count > 1) parts.push(`code block ${String(place.index)} of ${String(place.count)}`);

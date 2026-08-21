@@ -237,6 +237,142 @@ describe('a conversation is written as it happens', () => {
     expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'ask once' }]);
   });
 
+  it('does nothing for an id that is not in the transcript', async () => {
+    // RULE V, ON `Conversation.retry`'s OWN DOCBLOCK.
+    //
+    // 'No-op for an id that is not in the transcript' — stated on the interface,
+    // reinforced by the longest inline comment in the function ('falling back to
+    // "the last turn" is what this function used to do unconditionally, and
+    // doing it here would put the defect back for exactly the case — a stale
+    // button — where it does the most damage'), and asserted by nothing. The
+    // round-7 measurer replaced all three of `retry`'s guard bodies with throws
+    // and ran the whole suite: 121 files, exit 0, zero probe hits. The branch the
+    // comment argues hardest for was the one nothing exercised.
+    //
+    // The stale button is not hypothetical. A conversation is retried, the tail
+    // is dropped from the transcript, and a render still holding the old entry
+    // id calls `retry` with it. Falling back to the last turn would re-send a
+    // message the user never pressed anything about.
+    const { wrapper, conversationId } = await fixture();
+    const sent: StreamTurnRequest[] = [];
+    const chat = scripted([answered('the only answer')], sent);
+    const { result } = renderHook(
+      () =>
+        useConversation({
+          conversationId,
+          providerId: 'workstation',
+          modelId: 'local-model',
+          repository: chat,
+          scheduleCommit: (run) => {
+            run();
+          },
+        }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.send('the one question');
+    });
+    await waitFor(() => {
+      expect(result.current.streaming).toBe(false);
+    });
+    expect(sent).toHaveLength(1);
+    const before = result.current.entries;
+    expect(before).toHaveLength(2);
+
+    act(() => {
+      result.current.retry('entry_that_was_dropped_by_an_earlier_retry');
+    });
+
+    // Nothing went to the model, and the transcript is byte-for-byte the one the
+    // user was looking at. The count alone would not say it: the fallback this
+    // guard replaced also produced two entries — the wrong two.
+    expect(sent, 'a stale id re-sent a turn').toHaveLength(1);
+    expect(result.current.entries).toEqual(before);
+  });
+
+  it('does nothing for a turn with no user message at or before it', async () => {
+    // The other half of the same docblock sentence — 'and for one with no user
+    // message at or before it' — and the second of `retry`'s three guards. The
+    // three mask one another in a chain, which is why neither could be found by
+    // deleting one: with `at === -1` gone, `slice(0, 0).lastIndexOf('user')` is
+    // -1 and this one returns; with this one gone too, `current[-1]` is
+    // `undefined` and the third returns; and the third is caught only by `tsc`.
+    // Nothing reached any of them.
+    //
+    // A transcript of assistant rows with no question in front of them is a real
+    // restored shape — `ConversationSurface.test.tsx` renders one under *still
+    // names a control when no question precedes the turn*, and every one of those
+    // turns draws a **Try again** button. That test reads accessible names and
+    // never presses one.
+    //
+    // AT OR BEFORE, NOT ANYWHERE. The transcript below puts a question *after*
+    // the orphan reply, which is the shape that separates the two readings of
+    // 'the question this turn answers'. `retry` takes `current.slice(0, at + 1)`
+    // and searches backwards inside that window; a search over the whole
+    // transcript would find the later question and re-send it, discarding a turn
+    // the user never pointed at. Widening the window to `current.slice(0)` reds
+    // this test — which is what makes the window a position and not a habit.
+    const { wrapper, conversationId } = await fixture();
+    const sent: StreamTurnRequest[] = [];
+    const chat = scripted([answered('should never be asked for')], sent);
+    const row = (
+      id: string,
+      role: 'user' | 'assistant',
+      text: string,
+    ): Parameters<typeof entriesFromStored>[0][number] => ({
+      id,
+      conversationId,
+      seq: 0,
+      role,
+      status: role === 'user' ? 'complete' : 'failed',
+      parts: [{ kind: 'text', text }],
+      providerId: 'workstation',
+      modelId: 'local-model',
+      answeredByProviderId: null,
+      answeredByModelId: null,
+      usage: NO_USAGE,
+      stopReason: null,
+      errorMessage: role === 'user' ? null : 'the endpoint hung up',
+      createdAtMs: 1_700_000_000_000,
+      updatedAtMs: 1_700_000_000_000,
+    });
+    const orphan = entriesFromStored([
+      row('m1', 'assistant', 'an orphan reply'),
+      row('m2', 'user', 'a question asked afterwards'),
+      row('m3', 'assistant', 'and its answer'),
+    ]);
+    expect(orphan).toHaveLength(3);
+    const { result } = renderHook(
+      () =>
+        useConversation({
+          conversationId,
+          providerId: 'workstation',
+          modelId: 'local-model',
+          repository: chat,
+          initialEntries: orphan,
+          scheduleCommit: (run) => {
+            run();
+          },
+        }),
+      { wrapper },
+    );
+
+    const target = result.current.entries[0];
+    expect(target?.kind).toBe('assistant');
+    const before = result.current.entries;
+
+    act(() => {
+      result.current.retry(target?.id ?? '');
+    });
+
+    // There is no question to re-send, so nothing is sent and nothing is
+    // dropped. Pressing the button on such a turn is inert, which is what the
+    // docblock says and what a user would otherwise discover by losing the turn.
+    expect(sent, 'a turn with no question re-sent something').toHaveLength(0);
+    expect(result.current.entries).toEqual(before);
+  });
+
   it('shows a restored empty reply and does not send it to the model', async () => {
     // WHAT THE EMPTY-REPLY ROW COSTS ON THE NEXT TURN, AND WHO PAYS IT.
     //

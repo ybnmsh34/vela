@@ -277,7 +277,12 @@ export interface Conversation {
    * would leave that behaviour one forgotten call site away.
    *
    * No-op for an id that is not in the transcript, and for one with no user
-   * message at or before it.
+   * message at or before it. Both halves are asserted, by
+   * `use-conversation-record.test.tsx`'s *does nothing for an id that is not in
+   * the transcript* and *does nothing for a turn with no user message at or
+   * before it* — each presses the case rather than describing it, and each
+   * checks that nothing reached the model and that the transcript is unchanged.
+   * Until round 7 this sentence was the only thing that held either.
    */
   retry: (entryId: string) => void;
   /** Whether the next turn runs through the agent runtime, and whether it may. */
@@ -1050,17 +1055,37 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     if (streaming) return;
     const current = entriesRef.current;
     const at = current.findIndex((entry) => entry.id === entryId);
+    // THREE GUARDS, AND WHAT REACHES EACH.
+    //
+    // They mask one another in a chain, which is why deleting one at a time
+    // proves nothing: with `at === -1` gone, `slice(0, 0).lastIndexOf('user')`
+    // is -1 and the second returns; with the second gone too, `current[-1]` is
+    // `undefined` and the third returns. The round-7 measurer replaced all three
+    // bodies with throws and ran the whole suite — 121 files, exit 0, not one
+    // probe hit. Nothing in the tree pressed a stale retry button or a turn with
+    // no question in front of it.
+    //
     // An id no longer in the transcript. Falling back to "the last turn" is what
     // this function used to do unconditionally, and doing it here would put the
     // defect back for exactly the case — a stale button — where it does the most
-    // damage.
+    // damage. Asserted by *does nothing for an id that is not in the transcript*.
     if (at === -1) return;
     const questionIndex = current
       .slice(0, at + 1)
       .map((entry) => entry.kind)
       .lastIndexOf('user');
+    // A reply with no question at or before it — a restored transcript whose
+    // question was never written, or trimmed away. Every one of those turns
+    // draws a **Try again** button and there is nothing to re-send. Asserted by
+    // *does nothing for a turn with no user message at or before it*.
     if (questionIndex === -1) return;
     const lastUser = current[questionIndex];
+    // Total rather than reachable: `lastIndexOf` returned an index into
+    // `current`, so this is `noUncheckedIndexedAccess` being satisfied and the
+    // `kind` re-check being belt-and-braces. It is caught by `tsc` (TS18048) and
+    // by no test, and it cannot be — a run that reaches it would mean
+    // `lastIndexOf` returned an index whose element is not the kind it searched
+    // for. Stated here rather than left for the next measurer to rediscover.
     if (lastUser === undefined || lastUser.kind !== 'user') return;
     // Everything before that user turn is the history; the failed reply and the
     // message itself are replaced, not appended to.

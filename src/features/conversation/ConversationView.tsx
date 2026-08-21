@@ -21,7 +21,7 @@ import { Composer } from './Composer';
 import { EmptyConversation } from './EmptyConversation';
 import { AssistantTurn, UserTurn } from './MessageTurn';
 import { isPinnedToBottom, restingScrollTop, scrollEdges } from './scroll';
-import type { Conversation } from './use-conversation';
+import type { Conversation, ConversationEntry } from './use-conversation';
 import styles from './ConversationView.module.css';
 
 interface ConversationViewProps {
@@ -134,15 +134,15 @@ export function ConversationView({
             <EmptyConversation capabilities={capabilities} modelLabel={modelLabel} />
           ) : (
             <div className={styles.transcript} role="log" aria-live="polite" aria-busy={conversation.streaming}>
-              {conversation.entries.map((entry, index) =>
-                entry.kind === 'user' ? (
-                  <UserTurn key={entry.id} text={entry.text} />
+              {replies.placed.map((row, index) =>
+                row.kind === 'user' ? (
+                  <UserTurn key={row.entry.id} text={row.entry.text} />
                 ) : (
                   <AssistantTurn
-                    key={entry.id}
-                    id={entry.id}
-                    turn={entry.turn}
-                    runDegradations={entry.runDegradations}
+                    key={row.entry.id}
+                    id={row.entry.id}
+                    turn={row.entry.turn}
+                    runDegradations={row.entry.runDegradations}
                     selectedProviderId={selectedProviderId ?? null}
                     // **Bound to this turn, not to the transcript.** Every
                     // assistant turn used to be handed the same argument-less
@@ -154,7 +154,7 @@ export function ConversationView({
                       conversation.streaming
                         ? undefined
                         : () => {
-                            conversation.retry(entry.id);
+                            conversation.retry(row.entry.id);
                           }
                     }
                     // Retrying replaces this turn and everything after it. When
@@ -173,7 +173,7 @@ export function ConversationView({
                     // agree over the whole of the quote. See `RetryTarget`.
                     retryTarget={{
                       question: questionAnswered(conversation.entries, index),
-                      replyIndex: replies.ordinals[index] ?? 1,
+                      replyIndex: row.replyIndex,
                       replyCount: replies.count,
                     }}
                   />
@@ -218,28 +218,63 @@ function questionAnswered(entries: Conversation['entries'], index: number): stri
 }
 
 /**
+ * A transcript entry carrying the one thing the render needs that the entry
+ * itself does not: **which reply this is**, for an assistant turn.
+ *
+ * Discriminated at the top level rather than through `entry.kind`, because a
+ * nested discriminant does not narrow the row it sits on — and the whole point
+ * is that the arm which draws a turn is the arm that has a `replyIndex`.
+ */
+type PlacedEntry =
+  | { readonly kind: 'user'; readonly entry: Extract<ConversationEntry, { kind: 'user' }> }
+  | {
+      readonly kind: 'assistant';
+      readonly entry: Extract<ConversationEntry, { kind: 'assistant' }>;
+      /** This turn's 1-based position among the transcript's assistant entries. */
+      readonly replyIndex: number;
+    };
+
+/**
  * Where each assistant turn sits among the assistant turns, and how many there
  * are — the part of a retry control's name that **cannot** collide.
  *
- * `ordinals[i]` is the 1-based position of the entry at `i` among the
- * transcript's assistant entries, for an `i` that is one; for a user entry it
- * is the count so far, which nothing reads. No two assistant entries share a
- * value, which is the whole property {@link AssistantTurn}'s `RetryTarget`
- * rests on — a name built from it is distinct however the questions read.
+ * No two assistant entries share a `replyIndex`, which is the whole property
+ * {@link AssistantTurn}'s `RetryTarget` rests on — a name built from it is
+ * distinct however the questions read.
  *
  * One pass rather than a count per turn: the alternative is a scan inside the
  * render loop, which is quadratic in a transcript that can hold hundreds of
  * rows and grows a row per step of an agent run.
+ *
+ * **WHY THIS RETURNS ROWS AND NOT A PARALLEL ARRAY, AND WHAT WENT WITH THE
+ * CHANGE.** It used to return `ordinals: readonly number[]`, read at the call
+ * site as `ordinals[index] ?? 1`. `noUncheckedIndexedAccess` requires that `??`;
+ * the array always held one entry per transcript entry, so the arm was
+ * unreachable; and the round-7 measurer confirmed it by changing `?? 1` to
+ * `?? 999`, which typechecks clean and leaves the targeted suite green. A
+ * default nothing can reach is a value the next reader takes for a real one, and
+ * `1` reads as a claim that an unplaced turn is the first reply. The parallel
+ * array also put an ordinal on every *user* row that nothing read, which the old
+ * docblock had to disclose. Both go away by handing the ordinal to the row that
+ * has one. There is no index lookup left, so there is no arm left to guard.
+ *
+ * `every reply is placed once, and no two share a position` in
+ * `ConversationSurface.test.tsx` asserts what the shape now makes true, over an
+ * enumerated set of transcript shapes.
  */
 function replyPositions(entries: Conversation['entries']): {
-  readonly ordinals: readonly number[];
+  readonly placed: readonly PlacedEntry[];
   readonly count: number;
 } {
-  const ordinals: number[] = [];
+  const placed: PlacedEntry[] = [];
   let count = 0;
   for (const entry of entries) {
-    if (entry.kind === 'assistant') count += 1;
-    ordinals.push(count);
+    if (entry.kind === 'assistant') {
+      count += 1;
+      placed.push({ kind: 'assistant', entry, replyIndex: count });
+    } else {
+      placed.push({ kind: 'user', entry });
+    }
   }
-  return { ordinals, count };
+  return { placed, count };
 }

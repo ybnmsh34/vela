@@ -15,7 +15,7 @@
 
 import { StrictMode } from 'react';
 
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -1324,6 +1324,39 @@ describe('the conversation surface: no two controls in a transcript share a name
     expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
     expect(names[0]).toContain('reply 1 of 3');
     expect(names[1]).toContain('reply 2 of 3');
+
+    // THE CUT ITSELF, WHICH THIS TEST DID NOT ASSERT AND WAS WRITTEN FOR.
+    //
+    // RULE W, and the sharpest instance of it on this track. Everything above
+    // is a DISTINCTNESS assertion, and truncation is the thing that CREATES the
+    // collision distinctness is about: delete `turnControlName`'s
+    // `trimmed.length > QUESTION_IN_NAME ? … : trimmed` ternary and these two
+    // questions stop agreeing at character 67, so the three names get MORE
+    // distinct and `new Set(names).size === 3` still holds. The round-7 measurer
+    // removed the whole branch and got `tsc` exit 0 and 121 files / 2451 tests
+    // green — the retry and copy names would then carry an entire unbounded user
+    // question and nothing in the tree would notice. A guard that tests the
+    // consequence in the direction the branch's removal moves away from can
+    // never red on that removal.
+    //
+    // So the produced name is asserted against the literal string, cut and all.
+    // Sixty is `QUESTION_IN_NAME`; it is written here as a number because the
+    // point is to fail when the cut moves, and a test that imported the constant
+    // would move with it.
+    const cut = `${first.slice(0, 60)}…`;
+    expect(cut).toHaveLength(61);
+    expect(names[0]).toBe(`Try again from here — reply 1 of 3, to “${cut}”`);
+    expect(names[1]).toBe(`Try again from here — reply 2 of 3, to “${cut}”`);
+    // …and the part past the cut is gone, which is the whole reason for it: a
+    // screen reader must not read a paragraph before it reaches the verb.
+    expect(names[0]).not.toContain('migration');
+    expect(names[1]).not.toContain('rollback');
+    // The copy control is named through the same function, so the cut has to
+    // reach it too — the round-3 defect was fixing one of the two.
+    const copyNames = screen
+      .getAllByRole('button', { name: /^Copy this reply/u })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+    expect(copyNames[0]).toBe(`Copy this reply — reply 1 of 3, to “${cut}”`);
   });
 
   it('still names a control when no question precedes the turn', () => {
@@ -1346,6 +1379,88 @@ describe('the conversation surface: no two controls in a transcript share a name
       'Try again — reply 3 of 3',
     ]);
     expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+  });
+
+  it('every reply is placed once, and no two share a position', () => {
+    // RULE W, ON THE LOOKUP THAT USED TO HAVE A DEAD DEFAULT.
+    //
+    // `ConversationView`'s `replyPositions` fed a parallel `ordinals` array that
+    // the render read as `ordinals[index] ?? 1`. The `?? 1` was unreachable —
+    // one ordinal was pushed per entry, so an in-range index was always defined
+    // — and the round-7 measurer proved nothing held it by changing it to
+    // `?? 999` with `tsc` clean and the targeted suite green. It is gone: the
+    // ordinal now travels on the row it belongs to and there is no lookup.
+    //
+    // What that leaves to assert is the property the old default pretended to
+    // stand in for — that every assistant turn gets its own position, in reading
+    // order, whatever the user turns around it do. Four shapes, enumerated, each
+    // with the positions it must produce read out of the rendered names.
+    const shapes: readonly {
+      readonly says: string;
+      readonly rows: readonly StoredMessage[];
+      readonly positions: readonly string[];
+    }[] = [
+      {
+        says: 'one question, one reply',
+        rows: [storedMessage('m0', 'user', 'a'), storedMessage('m1', 'assistant', 'A')],
+        // One reply to be among, so the position is left off the name entirely
+        // — 'reply 1 of 1' would be noise. See `turnControlName`.
+        positions: ['Try again — the reply to “a”'],
+      },
+      {
+        says: 'one question, three replies — a reopened agent run',
+        rows: [
+          storedMessage('m0', 'user', 'a'),
+          storedMessage('m1', 'assistant', 'A'),
+          storedMessage('m2', 'assistant', 'B'),
+          storedMessage('m3', 'assistant', 'C'),
+        ],
+        positions: [
+          'Try again from here — reply 1 of 3, to “a”',
+          'Try again from here — reply 2 of 3, to “a”',
+          'Try again — reply 3 of 3, to “a”',
+        ],
+      },
+      {
+        says: 'replies with user turns between them',
+        rows: [
+          storedMessage('m0', 'user', 'a'),
+          storedMessage('m1', 'assistant', 'A'),
+          storedMessage('m2', 'user', 'b'),
+          storedMessage('m3', 'assistant', 'B'),
+        ],
+        positions: [
+          'Try again from here — reply 1 of 2, to “a”',
+          'Try again — reply 2 of 2, to “b”',
+        ],
+      },
+      {
+        says: 'a reply with no question in front of it, then a normal pair',
+        rows: [
+          storedMessage('m1', 'assistant', 'A'),
+          storedMessage('m2', 'user', 'b'),
+          storedMessage('m3', 'assistant', 'B'),
+        ],
+        positions: [
+          'Try again from here — reply 1 of 2',
+          'Try again — reply 2 of 2, to “b”',
+        ],
+      },
+    ];
+    expect(shapes).toHaveLength(4);
+
+    for (const shape of shapes) {
+      cleanup();
+      show(shape.rows);
+      const names = retryNames();
+      expect(names, shape.says).toEqual(shape.positions);
+      // The property the enumeration exists for: one control per assistant row,
+      // and no two of them at the same position.
+      expect(names, shape.says).toHaveLength(
+        shape.rows.filter((row) => row.role === 'assistant').length,
+      );
+      expect(new Set(names).size, shape.says).toBe(names.length);
+    }
   });
 
   it('names each reply’s copy control for itself, in the same transcript shape', () => {

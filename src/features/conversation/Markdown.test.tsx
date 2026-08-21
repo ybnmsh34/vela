@@ -545,7 +545,109 @@ describe('two fences in one document do not draw one control twice', () => {
     // Nothing to disambiguate: one fence, and a caller that said nothing about
     // which document this is. The name is the bare label, which is where it was
     // before any of this.
+    //
+    // WHICH BRANCH ACTUALLY PRODUCES IT, MEASURED. `CodePlace`'s docblock used
+    // to say this case reached `copyControlName`'s `place === undefined` guard.
+    // It does not: `place` here is `{ index: 1, count: 1, within: undefined }`,
+    // and the bare label comes from the `parts.length === 0` arm, which finds a
+    // count of one and no document phrase and has nothing to append. Deleting
+    // that arm reds this test; a throw in the `place === undefined` guard leaves
+    // it green and is never hit.
     render(<Markdown source={'```ts\nconst only = 1;\n```\n'} />);
     expect(screen.getByRole('button', { name: 'Copy ts code' })).toBeInTheDocument();
+  });
+
+  it('places every fence in a document, at every depth the walk reaches', () => {
+    // RULE W, ON THE MAP THE UNREACHABLE GUARD RESTS ON.
+    //
+    // `copyControlName`'s `place === undefined` branch is dead in product code
+    // because `codePlaces` maps every fence — a claim about the map's coverage,
+    // not about the branch. `Block` has seven kinds and exactly three of them
+    // can nest a `Block`: `code` is a fence itself, `quote` holds blocks, and
+    // `list` holds blocks per item. This document puts a fence at every one of
+    // those positions AND nests them, and the enumerated names below are what
+    // total coverage looks like — a fence the walk missed appears as the bare
+    // `Copy ts code`, and the count in every other name drops with it, so one
+    // missed fence changes every entry of this list rather than one.
+    const positions = ['top level', 'a list item', 'a quote', 'a quote inside a list item'];
+    expect(positions).toHaveLength(4);
+    render(
+      <Markdown
+        source={[
+          '```ts',
+          'const atTopLevel = 1;',
+          '```',
+          '',
+          '- a bullet:',
+          '',
+          '  ```ts',
+          '  const inAListItem = 2;',
+          '  ```',
+          '',
+          '> quoted:',
+          '>',
+          '> ```ts',
+          '> const inAQuote = 3;',
+          '> ```',
+          '',
+          '- another bullet:',
+          '',
+          '  > and a quote inside it:',
+          '  >',
+          '  > ```ts',
+          '  > const inAQuoteInAListItem = 4;',
+          '  > ```',
+        ].join('\n')}
+        within="the reply"
+      />,
+    );
+
+    const controls = screen.getAllByRole('button', { name: /^Copy ts code/u });
+    expect(controls.map((button) => button.getAttribute('aria-label') ?? '')).toEqual([
+      'Copy ts code — code block 1 of 4, in the reply',
+      'Copy ts code — code block 2 of 4, in the reply',
+      'Copy ts code — code block 3 of 4, in the reply',
+      'Copy ts code — code block 4 of 4, in the reply',
+    ]);
+    // And each number is on the fence at the position it is claimed for, in the
+    // order the positions are listed above.
+    const bodies = controls.map((button) => button.closest('figure')?.textContent ?? '');
+    expect(bodies[0]).toContain('const atTopLevel = 1;');
+    expect(bodies[1]).toContain('const inAListItem = 2;');
+    expect(bodies[2]).toContain('const inAQuote = 3;');
+    expect(bodies[3]).toContain('const inAQuoteInAListItem = 4;');
+    // No control on this screen fell back to the bare label, which is what an
+    // unplaced fence looks like and the only thing the dead guard could produce.
+    expect(screen.queryByRole('button', { name: 'Copy ts code' })).toBeNull();
+  });
+
+  it('renumbers the first control when a second fence arrives in the same answer', () => {
+    // RULE V, ON `CodePlace.count`'s OWN DOCBLOCK.
+    //
+    // That field's comment states this renumbering in two literal strings and
+    // argues from it that a derived count is the right trade. Nothing asserted
+    // either string. The one streaming test that touches this pushes a single
+    // fence and asserts a single name, so the behaviour the docblock both
+    // describes and defends had never been exercised — a comment stating a
+    // property, which is round 5's form of this run's defect.
+    //
+    // Re-rendered rather than streamed: the count is a pure function of the
+    // parsed document, and a second fence arriving mid-stream reaches this
+    // component as a longer `source` and nothing else.
+    const one = '```ts\nconst first = 1;\n```\n';
+    const two = `${one}\nand then\n\n\`\`\`ts\nconst second = 2;\n\`\`\`\n`;
+
+    const view = render(<Markdown source={one} within="the reply" />);
+    expect(
+      screen.getAllByRole('button', { name: /^Copy ts code/u }).map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Copy ts code — in the reply']);
+
+    view.rerender(<Markdown source={two} within="the reply" />);
+    expect(
+      screen.getAllByRole('button', { name: /^Copy ts code/u }).map((b) => b.getAttribute('aria-label')),
+    ).toEqual([
+      'Copy ts code — code block 1 of 2, in the reply',
+      'Copy ts code — code block 2 of 2, in the reply',
+    ]);
   });
 });

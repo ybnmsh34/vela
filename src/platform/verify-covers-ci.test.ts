@@ -643,18 +643,98 @@
  *   means verify may run gates CI does not; it no longer means verify may run
  *   invocations this reader has never classified.
  *
+ * ### Round seven: the class moved from the branch to the licence to have no branch
+ *
+ * Six rounds of this file's governing class, each a level below the last: a
+ * comment stated a false fact; the comment correcting it carried a wrong
+ * number; a test block was named for a property it did not check; the unread
+ * fields got readers and two more sat one line above; the property keeping each
+ * fix from regressing was stated in a comment and asserted by nothing; the data
+ * list was pinned and the reader's branch list was not. Round seven found the
+ * seventh form in two places at once, and they are the same shape from opposite
+ * sides:
+ *
+ * - **On the code side, the branch list is the REFUSAL wall.** This file pinned
+ *   every reader's OUTPUT and left the refusals of the two readers underneath
+ *   it — {@link parseWorkflowYaml} and {@link shellCommands} — and the
+ *   classifiers beside them asserted by nothing. Twenty-seven structural
+ *   branches were reported deletable with `tsc` at exit 0 and the whole suite
+ *   green, by a measurer and two adversaries working independently. Twenty-six
+ *   of them are now held by a case that names the position; the twenty-seventh,
+ *   `isThirdPartyAction`'s `split <= 0`, was removed rather than guarded,
+ *   because the `segments.length < 2` guard below it already refused every
+ *   input it could have refused — a branch whose deletion changes no verdict is
+ *   not a guard, and pinning it would have pinned nothing. Each of the
+ *   twenty-six was re-deleted after the fix, twice, and each reds at a named
+ *   case.
+ *   `parseWorkflowYaml`'s docblock enumerated nine refused constructs and five
+ *   arms held them; `shellCommands`' named four families, its table asserted
+ *   five spellings drawn from three, and the reader had ten arms — three of
+ *   which shared one message with a second arm, so no assertion could have told
+ *   those arms apart even in principle. Fixed by {@link PARSER_REFUSALS},
+ *   {@link SHELL_REFUSALS} and {@link RUNNER_CLASSES}: the branch list is data
+ *   the reader indexes into, so the compiler refuses a new branch that is not in
+ *   it, and each record's key set is pinned against a table with one synthetic
+ *   input per key, so a DELETED branch reds a row that names the position that
+ *   stopped being read.
+ *
+ * - **On the data side, the exemption from the pin was granted by a list, and
+ *   what the list claimed was asserted by nothing.** Round six made the pin the
+ *   default and called the result a closed dichotomy — "there is no third option
+ *   and no sentence granting one". The third option was the word *interpreted*:
+ *   membership in {@link INTERPRETED_KEYS} turns the pin OFF, and nothing
+ *   asserted that the reader a key was exempted FOR decides the question the pin
+ *   would have decided. `runs-on`, `needs`, `shell`, `with` and `defaults` each
+ *   had a reader that answered something adjacent — that a name resolves, that a
+ *   prefix is recognised, that a shell is splittable, that a key is known — and
+ *   one construction a maintainer would plausibly write walked through each.
+ *   Fixed by moving all five into {@link PINNED_SETTING_KEYS} and by
+ *   {@link EXEMPT_KEY_DECISIONS}, which withdraws the residue paragraph's
+ *   concession: an exemption now costs two documents the reader must tell apart.
+ *
+ * Three holes the pin could not see from either side are closed beside them:
+ * {@link needsCycle} (a graph the runner would refuse to load, where every name
+ * resolves), {@link CI_STEP_SURFACE} (eleven steps in `ci.yml` carry no pinned
+ * key, so deleting one moved no line), and the three channels that empty a gate
+ * without touching its invocation — {@link MANIFEST_SCRIPTS} for the script
+ * body, {@link CONFIG_SELECTIONS} for the config a gate loads without naming,
+ * and {@link WRAPPER_DECISIONS} for the retry wrapper this file had a case
+ * about and had read no byte of.
+ *
+ * And the header's own convention about counts is now a case rather than a
+ * paragraph — see bullet 1 of *Two claims this file does not make*.
+ *
  * ### What this still cannot see, stated so nobody over-reads a green
  *
  * It compares *invocations at the command level*. It does not know what an
  * invocation does, and it does not read anything an invocation reads. All of
  * these keep every assertion here green:
  *
- * - **Rewriting what a gate is.** `"test": "vitest run --passWithNoTests
- *   --exclude src"` is still the `pnpm test` gate to this file. So is a change
- *   to `vite.config.ts`'s `test.include`, or to a vitest config a gate points
- *   at, or to `scripts/run-bash.mjs`, `scripts/check-transcripts.sh` or
- *   `scripts/secret-scan.sh`. The *argument list* of a gate is now pinned; the
- *   *definition* of the gate is not, and pinning it is a different guard.
+ * - **Rewriting what a gate is.** This bullet said, for two rounds, that
+ *   `"test": "vitest run --passWithNoTests --exclude src"` was still the
+ *   `pnpm test` gate to this file, and so was a change to `vite.config.ts`'s
+ *   `test.include` — "the *argument list* of a gate is now pinned; the
+ *   *definition* of the gate is not, and pinning it is a different guard".
+ *   Both halves were reachable and both are closed now, by
+ *   {@link MANIFEST_SCRIPTS} for the script body behind an invocation and by
+ *   {@link CONFIG_SELECTIONS} for the config a gate loads without naming it;
+ *   {@link WRAPPER_DECISIONS} closes the third, `scripts/ci-retry-vitest-crash.mjs`,
+ *   which this file had a case ABOUT and had read no byte OF. Stating a
+ *   reachable hole is better than not stating it and is not the same as closing
+ *   it — a bullet that says "pinning it is a different guard" is a bullet
+ *   describing work nobody did.
+ *
+ *   **What is still not read, and this is the honest remainder:** a config file
+ *   that is NOT at the repository root. `test:harness` names
+ *   `tests/harness/mock-provider/vitest.config.ts` and `test:click-harness`
+ *   names `tests/harness/desktop-click/vitest.config.mjs`; the invocation is
+ *   pinned by {@link MANIFEST_SCRIPTS} and the file it points at is not opened.
+ *   The same is true of every `scripts/*.sh` a gate runs, of
+ *   `scripts/run-bash.mjs`, and of `vitest.workspace`-style files if any are
+ *   ever added. {@link SELECTION_CONFIG_FILES} is bounded to the root because
+ *   that is the class {@link ROOT_FILES} enumerates and therefore the class this
+ *   file can be total over; going deeper means enumerating a second directory,
+ *   which is the shape of defect twenty-two and wants its own round.
  * - **`working-directory:` and `env:` on a `run:` step.** Both change what a
  *   command does without changing its text, and for five rounds their values
  *   were "read as known step keys and not compared with anything". That is no
@@ -663,11 +743,17 @@
  *   Clippy step's `working-directory: src-tauri` to another tree is
  *   **one red**, exit 1, twice on the tree this comment ships
  *   in — the same edit was **green**, exit 0 one round ago.
- *   `defaults.run.working-directory` is still admitted without a pin, because
- *   `defaults` is taken apart by `modelOf` rather than reaching `settingsOf`;
- *   `defaults.run.shell` is refused, because that one changes how this reader
- *   may split a body at all — defect nine. What remains unpinned there is the
- *   boundary to watch, and it is now one key wide rather than three.
+ *   Round six disclosed that `defaults.run.working-directory` was "still
+ *   admitted without a pin, because `defaults` is taken apart by `modelOf`
+ *   rather than reaching `settingsOf`", and called the remaining boundary "one
+ *   key wide rather than three". The one remaining key was `defaults.run.shell`,
+ *   which is the wider of the two: it moves every `run:` step in every job onto
+ *   another shell, and on `test-windows` off `pwsh` entirely — the hazard that
+ *   job's transcripts step spends a paragraph on. A disclosure that names the
+ *   narrower hole and not the wider one beside it is the shape this file keeps
+ *   losing to. Both are closed the same way: `defaults` is in
+ *   {@link PINNED_SETTING_KEYS}, so the whole block is one line of
+ *   {@link CI_SETTINGS} and writing one where there was none is a red.
  *
  *   **`env:` on a `uses:` step is NOT in this list any more** — it is refused,
  *   and defect twenty-one is that it sat here without ever being covered by the

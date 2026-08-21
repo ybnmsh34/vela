@@ -464,6 +464,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'document.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'SkillHeader',
     handedTo: `${IPC_SKILLS_KEY}::SkillsReadRes`,
     because:
@@ -586,6 +587,10 @@ describe('the skills crate and the skills contract spell the same vocabulary', (
       // row that was written about a different type from the one it now names.
       const scanned = SCAN().find((item) => qualified(item) === name);
       expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      // And its form, for the same reason: a newtype that grows a braced body
+      // stops crossing as its inner value and starts putting keys of its own
+      // on the wire, under a name this guard has agreed not to pair.
+      expect(scanned?.form, `${name} is registered as a ${entry.form} item`).toBe(entry.form);
       if (entry.handedTo !== null) {
         expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired here`).toContain(
           entry.handedTo,

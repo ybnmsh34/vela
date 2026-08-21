@@ -65,11 +65,32 @@
  * `{ kind: 'reasoning', text: … }` out of a key that had stopped crossing. A
  * perfectly read attribute fed into a comparison that discarded the reading.
  *
- * One surface remains outside, stated rather than implied: nothing in
- * TypeScript observes actual bytes. Only the Rust side does, in `model.rs`'s
- * `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`, which
- * serialises a `ChatResponse` and therefore speaks for `answeredBy` and
- * `AnswerProvenance` and for nothing else.
+ * One surface remains outside, stated rather than implied: **this guard never
+ * serialises anything.** It compares an identifier and the attributes above it
+ * against a spelling in `contract.ts`, and an identifier is evidence about a
+ * key only for as long as the attributes say it is — which is why every
+ * attribute it cannot model is a refusal rather than a shrug.
+ *
+ * Bytes are observed on the Rust side, and an earlier version of this
+ * paragraph named one test as the only place it happens. That was wrong and it
+ * was wrong in the direction that understates the tree: inside these five
+ * files, four tests serialise a value and assert keys off the JSON —
+ * `error.rs`'s `errors_serialise_camel_case_for_the_ipc_layer` (`kind`,
+ * `limitTokens`, and `diagnosis.cause`, so a `Diagnosis` **is** serialised and
+ * key-pinned here), `event.rs`'s `events_serialise_camel_case_and_tagged`
+ * (`type`, `delta.argumentsFragment`), and `model.rs`'s
+ * `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`
+ * (a `ChatResponse`, pinning `answeredBy` and the whole `AnswerProvenance`
+ * sub-object) and `content_parts_serialise_with_the_stores_tags` (`kind`,
+ * `callId`). The other two files serialise too, and neither pins a key:
+ * `capability.rs` twice, to assert an *absence* — that no adapter free text and
+ * no backend model id reach the flag set the UI branches on — and
+ * `diagnostic.rs` several times over unit variants, whose serialised form is a
+ * string rather than an object, asserted against each variant's own `code()`.
+ *
+ * Each of those speaks for the value it serialises and for nothing further, and
+ * that is the gap this guard fills: they are a handful of types deep, and this
+ * is every paired type wide.
  *
  * ## What this does not claim
  *
@@ -961,20 +982,26 @@ interface Registered extends SerialisableItem {
    * The type this one's contract is discharged by, qualified as
    * `file.rs::Type`, or `null` when nothing here takes it over.
    *
-   * Nine of the ten entries below are `null`, and that is the honest answer
-   * rather than a decorative one: the seven `request DTO boundary` rows and
-   * the two `capability DTO boundary` rows are each discharged by a type in
+   * Nine of the thirteen entries below are `null`, and that is the honest
+   * answer rather than a decorative one: the seven `request DTO boundary` rows
+   * and the two `capability DTO boundary` rows are each discharged by a type in
    * `src-tauri/src/ipc/`, which this guard does not read, so their reasons
    * stay what they are — statements about the direction those types travel,
    * not hand-offs this file can prove.
    *
-   * The tenth is not like them and an earlier version of this sentence said it
-   * was. `HarmCategory` is discharged inside this guard's own reach:
+   * The other four are not like them and an earlier version of this sentence
+   * said there was only one. `HarmCategory` is discharged inside this guard's
+   * own reach:
    * `diagnostic.rs`'s `FilterVerdict` holds it as `categories: HarmCategories`,
    * a `#[serde(transparent)]` newtype over `u8`, and `FilterVerdict` is paired
    * here. Nothing under `src-tauri/src/ipc/` mentions `HarmCategory` at all.
    * So that row names its hand-off and the assertion below checks it, which is
-   * the whole difference this field was added to make.
+   * the whole difference this field was added to make. The three newtype rows
+   * added this round are the same shape: each names the paired type that holds
+   * it as a field — `ProviderError::ModelNotFound::model_id` for
+   * `ConfiguredModelId`, `Diagnosis::correlation` for `CorrelationId`,
+   * `FilterVerdict::categories` for `HarmCategories` — and the assertion below
+   * makes each of those three a checked edge rather than a sentence.
    *
    * The field exists because the
    * sibling guard's register wrote a hand-off in prose, pointed it at a Rust
@@ -993,6 +1020,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'ChatRequest',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1000,6 +1028,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'ChatMessage',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1007,6 +1036,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'ToolDefinition',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1014,6 +1044,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'enum',
+    form: 'braced',
     rust: 'ResponseFormat',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1021,6 +1052,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'enum',
+    form: 'braced',
     rust: 'ReasoningRequest',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1028,6 +1060,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'CacheHints',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1035,6 +1068,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'model.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'Sampling',
     handedTo: null,
     because: 'request DTO boundary',
@@ -1044,6 +1078,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'capability.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'CapabilityFinding',
     handedTo: null,
     because: 'capability DTO boundary',
@@ -1051,6 +1086,7 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'capability.rs',
     keyword: 'struct',
+    form: 'braced',
     rust: 'ModelCapabilities',
     handedTo: null,
     because: 'capability DTO boundary',
@@ -1062,9 +1098,45 @@ const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [
   {
     file: 'diagnostic.rs',
     keyword: 'enum',
+    form: 'braced',
     rust: 'HarmCategory',
     handedTo: 'diagnostic.rs::FilterVerdict',
     because: 'crosses as a bitset, not as names',
+  },
+  // The three newtypes. Each derives `Serialize` and each is a tuple struct,
+  // so none of them has a member name to pair — but "cannot be paired" is not
+  // "cannot put keys on the wire", and until this round the scan answered the
+  // second question by testing the first and left all three off an inventory
+  // that called itself complete. `form: 'tuple'` is the load-bearing part of
+  // each row: a newtype that grows a braced body starts putting keys of its
+  // own on the wire, and that is the change these rows are here to catch.
+  //
+  // `#[serde(transparent)]` is what makes them harmless today — each crosses
+  // as its inner value and adds no key. That attribute is not read here and
+  // this comment does not pretend it is; what is asserted is the form.
+  {
+    file: 'diagnostic.rs',
+    keyword: 'struct',
+    form: 'tuple',
+    rust: 'ConfiguredModelId',
+    handedTo: 'error.rs::ProviderError',
+    because: 'a transparent newtype: crosses as its inner value, with no key of its own',
+  },
+  {
+    file: 'diagnostic.rs',
+    keyword: 'struct',
+    form: 'tuple',
+    rust: 'CorrelationId',
+    handedTo: 'diagnostic.rs::Diagnosis',
+    because: 'a transparent newtype: crosses as its inner value, with no key of its own',
+  },
+  {
+    file: 'diagnostic.rs',
+    keyword: 'struct',
+    form: 'tuple',
+    rust: 'HarmCategories',
+    handedTo: 'diagnostic.rs::FilterVerdict',
+    because: 'a transparent newtype: crosses as its inner value, with no key of its own',
   },
 ];
 
@@ -1180,6 +1252,11 @@ describe('chat contract parity with vela-providers', () => {
       // row that was written about a different type from the one it now names.
       const scanned = SCAN().find((item) => qualified(item) === name);
       expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      // And its form. A register row is written about a type as it stood, and
+      // the change worth catching is a newtype growing a braced body: it stops
+      // crossing as its inner value and starts putting keys of its own on the
+      // wire, under a name this guard has already agreed not to pair.
+      expect(scanned?.form, `${name} is registered as a ${entry.form} item`).toBe(entry.form);
       if (entry.handedTo !== null) {
         expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired`).toContain(
           entry.handedTo,
@@ -1299,10 +1376,34 @@ describe('the parity parser itself', () => {
 
     // Where the single implementation this file used to carry is wrong. The
     // word split on the lowercase-to-uppercase boundary answers `httperror`
-    // for both of these; serde answers neither. No member in the tree has a
-    // second capital run today, which is exactly why the bug was invisible.
+    // for both of these; serde answers neither.
     expect(wireName('HTTPError', 'camelCase', 'variant')).toBe('hTTPError');
     expect(wireName('HTTPError', 'snake_case', 'variant')).toBe('h_t_t_p_error');
+
+    // An earlier version of this comment said no member in the tree had a
+    // second capital run, and offered that as the reason the bug was
+    // invisible. Both halves were wrong. Three live members have one —
+    // `SkillMountProblem::NameIsNotASinglePathSegment` in
+    // `src-tauri/crates/vela-projects/src/mount.rs` (the run `AS`),
+    // `SkillProblem::NameIsNotASinglePathSegment` in
+    // `src-tauri/crates/vela-skills/src/document.rs`, and
+    // `WorkingDirectoryProblem::NotADirectory` in
+    // `src-tauri/crates/vela-projects/src/workdir.rs` (the run `AD`) — and on
+    // all three the word split disagrees with serde: `nameIsNotAsinglePathSegment`
+    // against `nameIsNotASinglePathSegment`, `notAdirectory` against
+    // `notADirectory`. The contract spells them serde's way, so the word split
+    // would have reported both sides wrong about a name the host really sends.
+    //
+    // The real reason it was invisible is narrower and is about which file
+    // carried it: the word-split `wireName` lived in *this* file, which reads
+    // only the five `vela-providers` sources, and none of those five holds such
+    // a member. The two guards that do read those three members already had the
+    // correct implementation. That is the shape of the whole defect — a reader
+    // asserting about a tree it does not open.
+    expect(wireName('NameIsNotASinglePathSegment', 'camelCase', 'variant')).toBe(
+      'nameIsNotASinglePathSegment',
+    );
+    expect(wireName('NotADirectory', 'camelCase', 'variant')).toBe('notADirectory');
   });
 
   it('implements every rule it claims to recognise', () => {
@@ -1374,12 +1475,20 @@ describe('the parity parser itself', () => {
    * a claim it cannot see, which is worse than an absent guard, because the
    * absent one does not get believed.
    *
-   * Actual bytes are still verified only on the Rust side, by serialising a
-   * value and reading the keys off the JSON: `model.rs`'s
-   * `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`. Note
-   * what that test does and does not cover — it serialises a `ChatResponse`,
-   * so it speaks for `answeredBy` and `AnswerProvenance` and for nothing else.
-   * `Diagnosis` is never serialised there.
+   * Actual bytes are verified on the Rust side, by serialising a value and
+   * reading the keys off the JSON. An earlier version of this paragraph named
+   * `model.rs`'s `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`
+   * as *the* place that happens and added that `Diagnosis` is never serialised
+   * there. The first half was too narrow — the header lists the four tests in
+   * these five files that do it — and the second half was false about the very
+   * type it named: `error.rs`'s `errors_serialise_camel_case_for_the_ipc_layer`
+   * serialises a `ProviderError::ContextLengthExceeded`, which carries a
+   * `Diagnosis`, and asserts `json["diagnosis"]["cause"]`.
+   *
+   * What survives is the sentence that was doing the work: a test that
+   * serialises one value speaks for that value's keys and no others, so
+   * `answeredBy` and `AnswerProvenance` are pinned in bytes and the field this
+   * test is about — a per-field `rename` on any other type — is not.
    */
   it('refuses to compare a field carrying a per-field serde rename', () => {
     const fixture = [
@@ -1701,8 +1810,17 @@ describe('the parity parser itself', () => {
     ].join('\n');
     expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
       'fixture.rs::WhereClaused',
+      'fixture.rs::ATupleStruct',
     ]);
     expect(wireNames(parseRustItem(fixture, 'struct', 'WhereClaused'))).toEqual(['answeredBy']);
+    // The tuple struct is on the inventory and is still a tuple struct: the
+    // scan reports the form rather than using it to drop the item, and
+    // `parseRustItem` is the thing that refuses to pair one.
+    expect(scanSerialisable(fixture, 'fixture.rs').map((item) => item.form)).toEqual([
+      'braced',
+      'tuple',
+    ]);
+    expect(() => parseRustItem(fixture, 'struct', 'ATupleStruct')).toThrow(/is a tuple item/);
   });
 
   it('refuses an item carrying a container attribute it does not model', () => {
@@ -1723,7 +1841,7 @@ describe('the parity parser itself', () => {
 
   /* -- the inventory scanner --------------------------------------------- */
 
-  it('finds the serialisable braced items, and only those', () => {
+  it('finds the serialisable items, and only those', () => {
     const fixture = [
       '#[derive(Debug, Clone, Serialize, Deserialize)]',
       '#[serde(rename_all = "camelCase")]',
@@ -1751,7 +1869,18 @@ describe('the parity parser itself', () => {
     ].join('\n');
     expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
       'fixture.rs::OnTheWire',
+      'fixture.rs::ANewtype',
       'fixture.rs::SpelledAcrossLines',
+    ]);
+    // `NotSerialised` is the "only those" half and it is the one that matters:
+    // a derive list without `Serialize` keeps a type off the inventory however
+    // it is spelled. `ANewtype` is on it because it derives `Serialize` — the
+    // inventory's question is what can put keys on the wire, not what this
+    // parser can pair.
+    expect(scanSerialisable(fixture, 'fixture.rs').map((item) => item.form)).toEqual([
+      'braced',
+      'tuple',
+      'braced',
     ]);
   });
 
@@ -2006,9 +2135,14 @@ describe('the parity parser itself', () => {
   });
 
   it('blanks a raw string whose contents end in a backslash', () => {
-    // `r"\\?\"` is real in this tree — `vela-projects/src/workdir.rs` holds four
-    // raw string literals and `link.rs` two, which is every one in either of the two
-    // crates whose whole `src` a guard scans. A raw string has no escapes, so that
+    // `r"\\?\"` is real in this repository — though not in the five files
+    // *this* guard opens, and the distinction is the point rather than a hedge.
+    // `vela-projects/src/workdir.rs` holds four raw string literals and
+    // `link.rs` two, which is every one in either of the two crates whose whole
+    // `src` a sibling guard scans; none of this guard's five files holds one.
+    // The blanker is shared, so the fixture belongs wherever the blanker is
+    // exercised — what would not be honest is calling the construct live in the
+    // files read here. A raw string has no escapes, so that
     // trailing backslash is content; read with escape rules the `\"` is taken
     // as an escaped quote, the literal never closes, and every brace after it
     // is invisible to the reader.
@@ -2032,9 +2166,10 @@ describe('the parity parser itself', () => {
   });
 
   it('blanks a char literal, so a quote inside one opens no string', () => {
-    // Live in the tree this reads: `vela-skills/src/document.rs` spells the
-    // char literal holding a double quote inside `is_single_path_segment`, and
-    // its byte form inside `unquote`. Handed to the ordinary string scanner,
+    // Live in this repository, in a file a sibling guard scans rather than in
+    // one of this guard's five: `vela-skills/src/document.rs` spells the char
+    // literal holding a double quote inside `is_single_path_segment`, and its
+    // byte form inside `unquote`. Handed to the ordinary string scanner,
     // the first bare quote opens a
     // literal that closes on the next one and everything between is blanked —
     // here a whole `#[derive(Serialize)]` declaration, which then leaves the
@@ -2128,6 +2263,228 @@ describe('the parity parser itself', () => {
     ]);
   });
 
+  it('refuses a member line whose angle brackets do not pair up', () => {
+    // `topLevelParts` tracks `<` as a bracket, and the doc above it used to say
+    // that was safe because "a struct or enum body holds no expressions — every
+    // `<` on one of these lines is type syntax, never a comparison". A const
+    // array length is an expression. Under the old reading the `<` left depth
+    // at 1 across the separating comma, the line read as one member, and the
+    // second field's rename was read by nothing while its key crossed.
+    const fixture = [
+      '#[derive(Serialize)]',
+      'pub struct ComparisonInALength {',
+      '    pub flags: [bool; { 1 < 2 } as usize], #[serde(rename = "Sneak")] pub b: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(fixture, 'struct', 'ComparisonInALength')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+  });
+
+  it('refuses a one-line struct variant whose angle brackets do not pair up', () => {
+    // The same under-split, one construct in, where it was **silent** rather
+    // than mis-answered: this path iterated whatever it was handed and had no
+    // accounting of its own, so the swallowed comma dropped a field and the
+    // payload comparison reported the same keys it always had.
+    //
+    // The control below is the identical bytes with `Vec<u8>` in place of the
+    // shifted array length: there the comma is a separator, all three fields
+    // are read, and the payload comparison sees `secretPath`. So the refusal
+    // is what stands between "this parser cannot tell" and "this parser said
+    // two keys when three crossed".
+    const shifted = [
+      '#[derive(Serialize)]',
+      '#[serde(tag = "kind", rename_all = "camelCase")]',
+      '#[serde(rename_all_fields = "camelCase")]',
+      'pub enum OneLineVariant {',
+      '    Image { mime_type: String, data: [u8; 1 << 5], secret_path: String },',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(shifted, 'enum', 'OneLineVariant')).toThrow(
+      /does not pair its `<` with a `>`/,
+    );
+    const control = shifted.replace('[u8; 1 << 5]', 'Vec<u8>');
+    expect(payloadWireKeys(parseRustItem(control, 'enum', 'OneLineVariant'))).toEqual({
+      image: ['data', 'mimeType', 'secretPath'],
+    });
+  });
+
+  it('finds a declaration that shares its line with its own attributes', () => {
+    // `DECLARATION` was anchored `^[ \t]*`, which said *a declaration begins
+    // its own line* — rustfmt's habit, not Rust's rule. The one-line spelling
+    // was invisible to `declarationsIn`, therefore to `scanSerialisable`,
+    // therefore to every inventory equality and every register, with the whole
+    // suite green. Two newlines were the whole difference between caught and
+    // blind.
+    const oneLine =
+      '#[derive(Debug, Clone, Serialize)] #[serde(rename_all = "camelCase")] ' +
+      'pub struct StoreAuditRow { pub taken_at: String, pub secret_path: String }\n';
+    expect(scanSerialisable(oneLine, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::StoreAuditRow',
+    ]);
+    // And the attributes on that line are inside the region, not outside it:
+    // `attributeRegionBefore` now runs from the declaration's own position.
+    // Reading the wire keys is what proves the `rename_all` was seen: the two
+    // members are spelled snake_case in the fixture, and only a `rename_all`
+    // that was actually read turns them into the camelCase keys asserted below.
+    expect(() => parseRustItem(oneLine, 'struct', 'StoreAuditRow')).toThrow(
+      /puts more than one member on one line/,
+    );
+    const spaced = oneLine.replace('String, pub secret_path', 'String,\n    pub secret_path');
+    expect(wireNames(parseRustItem(spaced, 'struct', 'StoreAuditRow'))).toEqual([
+      'takenAt',
+      'secretPath',
+    ]);
+  });
+
+  it('reads a declaration broken between its keyword and its name', () => {
+    // The other member of the same family: `(enum|struct)[ \t]+` could not span
+    // a newline, so a declaration wrapped there scanned to nothing at all.
+    const fixture = ['#[derive(Serialize)]', 'pub struct', 'Wrapped {', '    pub a: String,', '}', ''].join(
+      '\n',
+    );
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Wrapped']);
+  });
+
+  it('reaches the rustfmt::skip refusal on a one-line declaration', () => {
+    // `rustfmt::skip` is deliberately absent from `INERT_ATTRIBUTES`, because
+    // an item exempted from the formatter is an item whose layout this parser
+    // may no longer assume. That refusal lives in `parseRustItem` and fires
+    // only once the declaration has been found, so under the line anchor it was
+    // unreachable in exactly the case it was written for: the attribute and the
+    // item on one line were found by nothing, so nothing refused them either.
+    const fixture =
+      '#[rustfmt::skip] #[derive(Serialize)] pub struct Skipped { pub a: String }\n';
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::Skipped',
+    ]);
+    expect(() => parseRustItem(fixture, 'struct', 'Skipped')).toThrow(/rustfmt::skip/);
+  });
+
+  it('refuses a file that declares its types through a macro', () => {
+    // `declarationsIn` reads the file as written; rustc reads it expanded. A
+    // `macro_rules!` body can carry the whole declaration — this repository
+    // does exactly that in `src-tauri/crates/vela-store/src/model.rs`, whose
+    // `id_newtype!` emits a `#[derive(…, Serialize, Deserialize)]
+    // #[serde(transparent)] pub struct $name(String);` and is invoked six
+    // times. The name alphabet here is `[A-Za-z][A-Za-z0-9_]*`, so `pub struct
+    // $name` matches nothing and the invocation's argument is not a declaration
+    // either: the type is in the crate and on no inventory.
+    const fixture = [
+      'macro_rules! audit_row {',
+      '    ($name:ident) => {',
+      '        #[derive(Debug, Clone, Serialize)]',
+      '        #[serde(rename_all = "camelCase")]',
+      '        pub struct $name {',
+      '            pub taken_at: String,',
+      '        }',
+      '    };',
+      '}',
+      '',
+      'audit_row!(StoreAuditRow);',
+      '',
+    ].join('\n');
+    // Named out loud: without the refusal this fixture scans to nothing, which
+    // is the failure, not a pass.
+    expect(() => scanSerialisable(fixture, 'fixture.rs')).toThrow(
+      /where an item can be declared/,
+    );
+    expect(() => scanSerialisable(fixture, 'fixture.rs')).toThrow(/macro_rules! audit_row/);
+  });
+
+  it('refuses a file that splices another file in with include!', () => {
+    // `#[path = "…"]` is refused because the set of files a walk finds is not
+    // the set of modules a crate has. `include!` does the same thing without
+    // being an attribute, so the `#[path]` refusal never sees it. The spelling
+    // below is the build-script codegen one, and it is the reachable form here
+    // because `src-tauri/build.rs` already exists — it emits cargo directives
+    // today and generates no Rust, so this is a plausible next commit rather
+    // than a present miss.
+    const fixture = [
+      'include!(concat!(env!("OUT_DIR"), "/wire.rs"));',
+      '',
+      '#[derive(Serialize)]',
+      'pub struct Kept {',
+      '    pub a: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => scanSerialisable(fixture, 'lib.rs')).toThrow(/where an item can be declared/);
+  });
+
+  it('does not call an expression-position macro an item-position one', () => {
+    // The control, and it is the one that decides whether the refusal above is
+    // usable: `vec!`, `matches!` and `cfg!` are all live in the files these
+    // guards scan. Each sits in expression position, in a function body, or
+    // both, and none of them may turn a real file into a refusal.
+    const fixture = [
+      'pub const MAX: usize = if cfg!(windows) { 260 } else { 4096 };',
+      '',
+      '#[derive(Serialize)]',
+      'pub struct Kept {',
+      '    pub a: String,',
+      '}',
+      '',
+      'impl Kept {',
+      '    fn check(&self) -> bool {',
+      '        let vocabulary = vec![1, 2, 3];',
+      '        println!("{}", vocabulary.len());',
+      '        matches!(self.a.as_str(), "x")',
+      '    }',
+      '}',
+      '',
+      '#[cfg(test)]',
+      'mod tests {',
+      '    #[test]',
+      '    fn works() {',
+      '        assert!(true);',
+      '    }',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Kept']);
+    // And a macro invocation inside an inline `mod` is still item position.
+    const inModule = [
+      'pub mod generated {',
+      '    id_newtype!(ProjectId, "prj", "project");',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => scanSerialisable(inModule, 'fixture.rs')).toThrow(
+      /where an item can be declared/,
+    );
+  });
+
+  it('blanks a raw C string literal, which is a prefix the lexer did not have', () => {
+    // The raw-literal prefix test read `b?r` only. `cr"…"` — a C string
+    // literal, stable since Rust 1.77 — fell through to escape rules, so a
+    // literal whose contents end in a backslash never closed. This is the same
+    // failure as the `r"\\?\UNC\"` case one prefix along, and it lands on the
+    // throw rather than on a silent erase, which is the direction the blanker
+    // promises.
+    const fixture = [
+      'pub const UNC: &core::ffi::CStr = cr"\\\\?\\UNC\\";',
+      '',
+      '#[derive(Serialize)]',
+      'pub struct AfterTheLiteral {',
+      '    pub a: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::AfterTheLiteral',
+    ]);
+    // The plain `c"…"` form was already handled — its `c` is an ordinary
+    // identifier byte and the `"` case takes it from there — and the fenced
+    // form is the same case as `r#"…"#`.
+    const fenced = fixture.replace('cr"\\\\?\\UNC\\"', 'cr#"a "quoted" thing"#');
+    expect(scanSerialisable(fenced, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::AfterTheLiteral',
+    ]);
+  });
+
   it('keeps a braced item whose where clause hides a semicolon', () => {
     // `itemForm` tracked only `<` and `>`, so the `;` inside the const-generic
     // bound `[T; N]` read at depth zero, the item came back a unit, and a unit
@@ -2169,8 +2526,8 @@ describe('the parity parser itself', () => {
 
   it('still calls a tuple struct a tuple struct', () => {
     // The control for the two above. Widening the form scan must not turn every
-    // item into a braced one, or the inventory grows types the parser cannot
-    // read and the register grows entries that mean nothing.
+    // item into a braced one, or the pairing reader is handed items it cannot
+    // read as members.
     const fixture = [
       '#[derive(Serialize)]',
       'pub struct CorrelationId(u64);',
@@ -2181,7 +2538,52 @@ describe('the parity parser itself', () => {
       '}',
       '',
     ].join('\n');
-    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Braced']);
+    expect(scanSerialisable(fixture, 'fixture.rs')).toEqual([
+      { file: 'fixture.rs', keyword: 'struct', rust: 'CorrelationId', form: 'tuple' },
+      { file: 'fixture.rs', keyword: 'struct', rust: 'Braced', form: 'braced' },
+    ]);
+  });
+
+  it('puts a Serialize-deriving tuple struct on the inventory rather than out of sight', () => {
+    // The round-4 disclosure, closed. `scanSerialisable` used to `continue`
+    // past a non-braced item **before** it asked whether the item derived or
+    // implemented `Serialize`, so a tuple struct on the wire was not on any
+    // inventory and no register entry was owed for it. Three of them are live
+    // in `diagnostic.rs`, which this guard reads, and the assertion named
+    // `accounts for every serialisable type in the files it reads` listed none
+    // of the three while calling itself complete.
+    const scanned = serialisableItems('diagnostic.rs');
+    expect(scanned.filter((item) => item.form === 'tuple').map(qualified)).toEqual([
+      'diagnostic.rs::ConfiguredModelId',
+      'diagnostic.rs::CorrelationId',
+      'diagnostic.rs::HarmCategories',
+    ]);
+  });
+
+  it('reaches a hand-written Serialize impl on a tuple struct', () => {
+    // The half of the same defect that made `IMPL_SERIALIZE` unreachable. The
+    // `continue` on form sat above the `manual` test, so the one item shape
+    // most likely to carry a hand-written impl — a newtype whose whole reason
+    // to exist is a wire form other than its inner value's — was the one shape
+    // the manual-impl scan could never see. Two keys crossed under a type on
+    // no inventory.
+    const fixture = [
+      'pub struct StoreAudit(String, String);',
+      '',
+      'impl Serialize for StoreAudit {',
+      '    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {',
+      '        use serde::ser::SerializeStruct;',
+      '        let mut row = s.serialize_struct("StoreAudit", 2)?;',
+      '        row.serialize_field("takenAt", &self.0)?;',
+      '        row.serialize_field("secretPath", &self.1)?;',
+      '        row.end()',
+      '    }',
+      '}',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs')).toEqual([
+      { file: 'fixture.rs', keyword: 'struct', rust: 'StoreAudit', form: 'tuple' },
+    ]);
   });
 
   it('refuses a file that imports Serialize under another name', () => {

@@ -727,9 +727,26 @@ describe('the project crate and the project contract spell the same vocabulary',
     }
   });
 
-  // The renderer words every one of these, and its switches are exhaustive: a
-  // seventh `SkillMountProblem` variant, or a rename of any of the six it has,
-  // is a skill the user switched on that the UI can say nothing true about.
+  // This comment used to read "the renderer words every one of these, and its
+  // switches are exhaustive". That is true of the sibling guard's
+  // `SkillProblem`, whose fourteen spellings are the keys of `PROBLEM_LABELS`
+  // in `src/features/skills/SkillsPanel.tsx`; it was transplanted onto a
+  // boundary the renderer does not read. Nothing under `src/features/` or
+  // `src/app/` names `SkillMountProblem` or `SkillMountStatus` at all, and five
+  // of the six problem spellings appear nowhere there either. The sixth,
+  // `nameIsNotASinglePathSegment`, does appear — as a key of `PROBLEM_LABELS`
+  // in `src/features/skills/SkillsPanel.tsx`, which is typed
+  // `Record<SkillProblem, string>` over the *document* union from
+  // `contract.ts`. The two unions share that one spelling and nothing else; the
+  // label is not wording this type.
+  //
+  // So the stake here is one step earlier and it is still a stake: this is the
+  // vocabulary the host will send, closed by `everyVariantOf` on the TypeScript
+  // side and by the crate on the Rust side. Nothing renders it yet, which means
+  // nothing would go red on the day the two drifted — this loop is the only
+  // thing that would. The first renderer to word these is entitled to a list
+  // that is the crate's list, and a boundary nobody reads is exactly where
+  // drift accumulates unobserved.
   for (const pairing of PAIRINGS) {
     it(`${pairing.ts} carries every ${pairing.rust} member, and no other`, () => {
       expectMembers(pairing);
@@ -787,6 +804,10 @@ describe('the project crate and the project contract spell the same vocabulary',
       // row that was written about a different type from the one it now names.
       const scanned = SCAN().find((item) => qualified(item) === name);
       expect(scanned?.keyword, `${name} is registered as a ${entry.keyword}`).toBe(entry.keyword);
+      // And its form, for the same reason: a newtype that grows a braced body
+      // stops crossing as its inner value and starts putting keys of its own
+      // on the wire, under a name this guard has agreed not to pair.
+      expect(scanned?.form, `${name} is registered as a ${entry.form} item`).toBe(entry.form);
       if (entry.handedTo !== null) {
         expect(paired, `${name} is handed to ${entry.handedTo}, which is not paired`).toContain(
           entry.handedTo,

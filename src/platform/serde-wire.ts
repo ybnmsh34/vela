@@ -130,6 +130,11 @@
  * construct, and it fails in the direction that cannot report a serialisable
  * type as absent.
  *
+ * That section used to end by calling the class closed. It was not, and the
+ * next section is why: six is the number of instances that round was handed,
+ * not a property of the class. A list of constructs cannot be finished by
+ * adding constructs to it.
+ *
  * - **The reader was line-oriented and its refusal was line-oriented with it.**
  *   `pub assets: Vec<String>, #[serde(rename = "Scripts")] pub extra: Vec<String>,`
  *   is one line the reader *recognises and mis-answers*, so
@@ -158,9 +163,81 @@
  *   failing — which is how this one stayed wrong.
  *
  * And under all of them, {@link withoutCommentsOrStrings} is a **lexer** now
- * rather than a set of recognisers: char literals and nested block comments were
- * the two Rust tokens it did not have a case for, and either one erases
- * arbitrary spans of live code from every structural read in this file.
+ * rather than a set of recognisers: char literals, nested block comments and
+ * raw C string literals were the three Rust tokens it did not have a case for,
+ * and any one of them erases arbitrary spans of live code from every
+ * structural read in this file.
+ *
+ * ## The fifth thing: which bytes the reader is looking at
+ *
+ * The round after that one got past the whole list above without inventing a
+ * single construct this file mis-spells. Each of the refusals named above —
+ * `rename`, `flatten`, `untagged`, `transparent`, `skip_serializing_if`, a
+ * `cfg_attr` wrapper, a nested block comment, a char literal, a raw string, a
+ * `where` clause holding `[T; N]`, `r#type`, a duplicate name, a `Serialize`
+ * alias, `#[path]` — carries a named fixture in
+ * `src/platform/chat-contract-parity.test.ts`, and all of them still fire. The
+ * lexer held too, in the one sense that matters: the prefix it was missing was
+ * the raw C string, and the pre-fix blanker handed `cr"\\?\UNC\"` to escape
+ * rules, ran off the end of the file and threw `unterminated string literal`
+ * rather than blanking a declaration away. Measured, by running the pre-fix
+ * blanking against that fixture.
+ *
+ * What got past was **one layer further out than the text, and it is about the
+ * file**. Three premises were assumed rather than asked, and none of them is a
+ * spelling, which is why no entry added to {@link INERT_ATTRIBUTES},
+ * {@link CONTAINER_KEYS} or {@link FIELD_KEYS} could have reached any of them:
+ *
+ * - **The source read is not the source rustc compiles.** `#[path]` was the
+ *   member of this family that had been closed; `macro_rules!` and `include!`
+ *   are the two doors an attribute list has no entry for, and both put a type
+ *   into the crate without putting a declaration into the text. Not
+ *   hypothetical: `src-tauri/crates/vela-store/src/model.rs`'s `id_newtype!`
+ *   emits a `Serialize` derive from inside a macro body and is invoked six
+ *   times. {@link itemPositionMacroIn} refuses both, and it decides *item
+ *   position* structurally so that the `vec!`, `matches!` and `cfg!` live in
+ *   the scanned files are untouched.
+ * - **A serialisable type is not the same thing as a braced item.** This scan
+ *   dropped every tuple and unit item *before* asking whether it derived or
+ *   implemented `Serialize`. Three `Serialize`-deriving tuple structs sit in
+ *   `diagnostic.rs` today, which the chat guard reads, and the assertion that
+ *   calls its inventory complete listed none of the three — so
+ *   {@link scanSerialisable}'s own doctrine, *under-inclusion costs a miss*,
+ *   was false about the tree it was scanning. The form is recorded on
+ *   {@link SerialisableItem.form} now instead of being used to skip.
+ * - **Whole-line accounting was a property of one reader, not of the file.**
+ *   {@link topLevelParts} tracks `<` as a bracket on a premise its own doc
+ *   comment stated as a universal — *"a struct or enum body holds no
+ *   expressions"* — which a const array length falsifies. On a member line
+ *   that under-split is {@link refuseSecondMember}; on the one-line
+ *   struct-variant path inside {@link parseRustItem}, which iterates the same
+ *   parts with no accounting of its own, it was a **silent field drop** on a
+ *   live paired type. Both readers now refuse a line whose angle brackets do
+ *   not pair up, through {@link refuseUnpairedAngle}.
+ *
+ * ## What is knowingly left open
+ *
+ * A stated limit is honest; an unstated one is the defect. So:
+ *
+ * - **A macro defined elsewhere and invoked inside an inline `mod` this scan
+ *   did not recognise as a module.** {@link itemPositionMacroIn}'s frame test
+ *   is a two-word lookback, and where it guesses wrong it guesses towards
+ *   silence.
+ * - **`vela-providers` is inventoried for five of the thirty-seven `.rs` files
+ *   under its `src`, and `src-tauri/src/ipc/` for one of its nineteen.**
+ *   Inherited, and named in the file lists at the top of this comment rather
+ *   than implied by them.
+ * - **These guards depend on a gate they do not run.** The body reader assumes
+ *   one member per line, which is rustfmt's output; `cargo fmt --all --check`
+ *   runs in CI and in `pnpm lint:rust`, and nothing here asserts it. The
+ *   declaration reader no longer depends on it — that was this round's fix —
+ *   but the body reader still does, and the mitigation is that a line it
+ *   cannot account for is a refusal rather than a mis-answer.
+ * - **Whether a type is `#[serde(transparent)]` is not read.** A transparent
+ *   newtype crosses as its inner value and adds no key; deleting the attribute
+ *   changes what crosses and moves no assertion here. The register rows record
+ *   the item's form, which is a weaker statement, and it is the one that is
+ *   made.
  *
  * Nothing outside a test imports this, so it is not in the shipped bundle, and
  * `src/runtime/reachable.test.ts` asserts that rather than assuming it.
@@ -737,14 +814,28 @@ function accountedSerdeArguments(
  * - **Nested block comments.** Rust's block comments nest; a `/*` inside one
  *   opens a second, and the first `*\/` closes only the inner. Closing on the
  *   first `*\/` leaves the outer comment's tail as live text.
+ * - **C string literals.** `c"…"` and `cr#"…"#` are string literals, stable
+ *   since Rust 1.77, and the raw prefix test used to read `b?r` only. The
+ *   plain `c"…"` form was already handled, because its `c` is an ordinary
+ *   identifier byte and the `"` case takes it from there; `cr"…"` was not, and
+ *   fell through to escape rules. Adding `c` to the prefixes is a one-character
+ *   fix and it is made here rather than argued about, because the alternative
+ *   is a token this file cannot read. Naming it also retires the closed-world
+ *   sentence that used to end this doc: a case list is not provably the whole
+ *   of Rust's token set, which is why the throw below matters.
  *
  * **Throws** if the text ends inside an unterminated literal or block comment.
  * A previous version of this sentence called that "the one outcome in which
  * every index this returns is wrong", which was false in exactly the way the
  * char-literal case shows: a missing token type produces a *terminated*
  * phantom literal whose indices are wrong and which nothing downstream can
- * tell. The throw is the last resort, not the guarantee; the guarantee is that
- * the case list above is the whole of Rust's `"`- and `{`-carrying tokens.
+ * tell. So the throw is not a decoration on a complete case list — it is what
+ * an incomplete one lands on when the language gains a token this file has
+ * never heard of, and the direction it lands in is *loud*: `cr"\\?\UNC\"` read
+ * under escape rules runs off the end of the file and throws
+ * `unterminated string literal`, rather than blanking a declaration away.
+ * A case list is a claim about a language that keeps changing, and this file
+ * makes it a refusable one rather than a true one.
  */
 /**
  * A Rust char literal, anchored at its opening quote: one escape sequence or
@@ -800,8 +891,9 @@ function withoutCommentsOrStrings(text: string): string {
       continue;
     }
     const couldOpenRaw =
-      (character === 'r' || character === 'b') && !/[A-Za-z0-9_]/.test(text[index - 1] ?? ' ');
-    const raw = couldOpenRaw ? /^b?r(#*)"/.exec(text.slice(index, index + 16)) : null;
+      (character === 'r' || character === 'b' || character === 'c') &&
+      !/[A-Za-z0-9_]/.test(text[index - 1] ?? ' ');
+    const raw = couldOpenRaw ? /^[bc]?r(#*)"/.exec(text.slice(index, index + 16)) : null;
     if (raw !== null) {
       const fence = `"${raw[1] as string}`;
       const opened = index + (raw[0] as string).length;
@@ -1014,8 +1106,31 @@ function whereClauseForm(text: string, from: number): { form: ItemForm; openBrac
  * declaration?"*. A private item is included too — privacy is a Rust rule about
  * paths, not a statement about the wire, and a private struct is serialised
  * whenever a public type holds one.
+ *
+ * **It is no longer anchored to the start of a line, and that was the last
+ * spelling standing in for this question.** `^[ \t]*` said *"a declaration
+ * begins its own line"*, which is rustfmt's habit and not Rust's rule:
+ * `#[derive(Debug, Clone, Serialize)] pub struct StoreAuditRow { pub taken_at:
+ * String }` is one legal line, and under the anchor it was invisible to
+ * {@link declarationsIn}, therefore to {@link scanSerialisable}, therefore to
+ * every inventory equality and every register — with the whole suite green.
+ * Two newlines were the whole difference between caught and blind. The anchor
+ * is replaced by a boundary that is about identifiers rather than about
+ * layout, so an identifier ending in the keyword, or one continuing past it,
+ * is still not the keyword; and the separators are `\s+` so that a declaration
+ * broken across lines between its keyword and its name — legal, and what a
+ * `#[rustfmt::skip]` item may be spelled as — is read too.
+ *
+ * Dropping the anchor costs nothing in reach: measured over the fifteen `.rs`
+ * files the three guards scan, the anchored and unanchored patterns select the
+ * identical set of declarations, name for name, in every one of them. What it
+ * buys is that {@link attributeRegionBefore} now runs from the declaration's
+ * own position instead of from the start of its line, so an attribute sharing
+ * that line is inside the region rather than outside it — which is what makes
+ * the deliberate omission of `rustfmt::skip` from {@link INERT_ATTRIBUTES}
+ * reachable in the one case it was written for.
  */
-const DECLARATION = '^[ \\t]*(?:pub(?:\\s*\\([^)]*\\))?[ \\t]+)?';
+const DECLARATION = '(?<![A-Za-z0-9_])(?:pub(?:\\s*\\([^)]*\\))?\\s+)?';
 
 /**
  * A trait implementation of `Serialize`, whatever path it is written under.
@@ -1035,7 +1150,15 @@ const IMPL_SERIALIZE =
 interface Declaration {
   readonly name: string;
   readonly keyword: 'enum' | 'struct';
-  /** Index of the start of the declaration's line, in the source. */
+  /**
+   * Index of the first byte of the declaration itself — its visibility token
+   * when it has one, otherwise its `enum` / `struct` keyword — in the source.
+   *
+   * Not the start of its line. {@link attributeRegionBefore} walks back from
+   * here to the end of the previous item, so anything written between the two
+   * is in the region whether or not a newline separates it from the
+   * declaration.
+   */
   readonly at: number;
   /** Index just past the item's name, where {@link itemForm} reads on from. */
   readonly after: number;
@@ -1046,13 +1169,15 @@ interface Declaration {
  *
  * Matched against the source with comments and string literals blanked, and
  * the indices are indices into the source because the blanking is
- * length-preserving. Widening the pattern to any indentation without blanking
- * first would let `/// pub struct Example {` in a doc comment, or the same text
- * inside a string, join the inventory as a type that does not exist.
+ * length-preserving. The blanking is what lets the pattern be unanchored at
+ * all: `/// pub struct Example {` in a doc comment, or the same text inside a
+ * string literal, would otherwise join the inventory as a type that does not
+ * exist, and that risk grows — not shrinks — once the pattern stops requiring
+ * the declaration to begin its line.
  */
 function declarationsIn(source: string): readonly Declaration[] {
   const found: Declaration[] = [];
-  const pattern = new RegExp(`${DECLARATION}(enum|struct)[ \\t]+([A-Za-z][A-Za-z0-9_]*)`, 'gm');
+  const pattern = new RegExp(`${DECLARATION}(enum|struct)\\s+([A-Za-z][A-Za-z0-9_]*)`, 'g');
   for (const match of withoutCommentsOrStrings(source).matchAll(pattern)) {
     if (match.index === undefined) continue;
     found.push({
@@ -1085,11 +1210,13 @@ interface BodyLine {
    * an attribute broken across lines. Such a line is a continuation, never a
    * member of its own, and reading it as one invents members: `Foo(\n
    * Bar,\n),` would otherwise contribute `Bar` to an enum that has no such
-   * variant. Angle brackets are deliberately *not* tracked, because `<` and `>`
-   * are also comparison operators and a type-position-only reading of them is a
-   * second parser; a generic argument list broken across lines therefore
-   * reaches the refusal below rather than being silently skipped, which is the
-   * safe direction.
+   * variant. Angle brackets are deliberately *not* tracked here, because `<`
+   * and `>` are also comparison operators and a type-position-only reading of
+   * them is a second parser. They are still accounted for, one layer in: a
+   * generic argument list broken across lines leaves its first line with an
+   * unpaired `<`, and {@link topLevelParts} reports that to
+   * {@link refuseUnpairedAngle}. So the construct reaches a named refusal
+   * rather than being silently skipped, which is the safe direction.
    */
   readonly continuation: boolean;
 }
@@ -1145,16 +1272,50 @@ const FIELD_DECLARATION = /^(?:pub(?:\s*\([^)]*\))?\s+)?(?:r#)?([a-z_][a-z0-9_]*
 /** A variant declaration — `Named`, `Named {`, `Named(`, `r#Type,`. */
 const VARIANT_DECLARATION = /^(?:r#)?([A-Z][A-Za-z0-9]*)\s*(?:[,{(]|$)/;
 
+/** What one body line splits into — see {@link topLevelParts}. */
+interface LineParts {
+  /** The comma-separated parts at bracket depth zero, trimmed, blanks dropped. */
+  readonly parts: readonly string[];
+  /**
+   * Whether every `<` on the line met a `>` and no `>` arrived without one.
+   *
+   * False is not "this line has no members". It is *this reader cannot say
+   * where this line's members end*, and the caller turns it into a refusal.
+   */
+  readonly angleBalanced: boolean;
+}
+
 /**
- * The comma-separated parts of one body line, at bracket depth zero.
+ * The comma-separated parts of one body line, at bracket depth zero, **plus
+ * whether the line accounted for its own angle brackets**.
  *
  * `(`, `[`, `{` **and** `<` are all tracked, because the commas that are not
  * separators live inside all four: `pub index: HashMap<String, u32>,` is one
  * member and `pub a: u8, pub b: u8,` is two. `->` and `=>` are stepped over so
  * a function-pointer field does not close a generic list that was never
- * opened. Angle brackets are safe to track *here*, and only here, because a
- * struct or enum body holds no expressions — every `<` on one of these lines is
- * type syntax, never a comparison.
+ * opened.
+ *
+ * **`<` is not always a bracket, and the previous version of this comment said
+ * it was.** It claimed that "a struct or enum body holds no expressions — every
+ * `<` on one of these lines is type syntax, never a comparison", and a const
+ * array length is an expression: `pub flags: [bool; { 1 < 2 } as usize],
+ * #[serde(rename = "Sneak")] pub b: String,` left depth at 1 across the
+ * separating comma and read as one member, with the second field's rename read
+ * by nothing. `Image { mime_type: String, data: [u8; 1 << 5], secret_path:
+ * String },` did the same thing to a live paired type, and there the loss was
+ * worse than a mis-answer one layer out: the one-line struct-variant reader
+ * below iterates these parts with no accounting of its own, so the dropped
+ * field was **silent** where the identical under-split on a member line is a
+ * named refusal.
+ *
+ * Narrowing `<` to type position would be a second parser. So the answer is
+ * the one this file gives everywhere else: the reader says what it could not
+ * account for, and the caller refuses. A line whose `<` and `>` do not pair up
+ * is a line whose commas this reader cannot place, and both callers throw on
+ * it. Measured over the fifteen `.rs` files these guards scan, every body line
+ * of every braced item pairs its angle brackets — the refusal costs nothing
+ * today and fires the moment an expression appears where this reader assumed a
+ * type.
  *
  * This exists because the member reader was line-oriented and its **refusal was
  * line-oriented with it**. `FIELD_DECLARATION.exec(text)` keeps the first match
@@ -1170,16 +1331,25 @@ const VARIANT_DECLARATION = /^(?:r#)?([A-Z][A-Za-z0-9]*)\s*(?:[,{(]|$)/;
  * **whole line**, the way {@link accountedSerdeArguments} accounts for the whole
  * attribute region.
  */
-function topLevelParts(code: string): readonly string[] {
+function topLevelParts(code: string): LineParts {
   const parts: string[] = [];
   let current = '';
   let depth = 0;
+  let angle = 0;
+  let angleBalanced = true;
   for (let index = 0; index < code.length; index += 1) {
     const character = code[index] as string;
-    if (character === '<' || character === '(' || character === '[' || character === '{') {
+    if (character === '<') {
+      depth += 1;
+      angle += 1;
+    } else if (character === '(' || character === '[' || character === '{') {
       depth += 1;
     } else if (character === '>') {
-      if (code[index - 1] !== '-' && code[index - 1] !== '=' && depth > 0) depth -= 1;
+      if (code[index - 1] !== '-' && code[index - 1] !== '=') {
+        if (angle === 0) angleBalanced = false;
+        else angle -= 1;
+        if (depth > 0) depth -= 1;
+      }
     } else if (character === ')' || character === ']' || character === '}') {
       if (depth > 0) depth -= 1;
     } else if (character === ',' && depth === 0) {
@@ -1190,7 +1360,8 @@ function topLevelParts(code: string): readonly string[] {
     current += character;
   }
   parts.push(current);
-  return parts.map((part) => part.trim()).filter(Boolean);
+  if (angle !== 0) angleBalanced = false;
+  return { parts: parts.map((part) => part.trim()).filter(Boolean), angleBalanced };
 }
 
 /** More than one member written on one line — see {@link topLevelParts}. */
@@ -1200,6 +1371,25 @@ function refuseSecondMember(name: string, file: string, line: string, extra: str
     `serde-wire: in ${name} in ${file}, \`${shown}\` puts more than one member on one line ` +
       `and this parser reads one. The second (\`${extra.slice(0, 40)}\`) and any serde ` +
       `attribute on it would be read by nothing while its key crossed the bridge.`,
+  );
+}
+
+/**
+ * A line whose `<` and `>` do not pair up — see {@link topLevelParts}.
+ *
+ * The same posture as {@link refuseSecondMember}, one construct further out.
+ * There the reader mis-answered a line it could read; here it cannot tell
+ * whether a comma separates two members or sits inside a generic argument
+ * list, and answering either way invents or drops a key.
+ */
+function refuseUnpairedAngle(name: string, file: string, line: string): Error {
+  const shown = line.length > 60 ? `${line.slice(0, 57)}...` : line;
+  return new Error(
+    `serde-wire: in ${name} in ${file}, \`${shown}\` does not pair its \`<\` with a \`>\`. ` +
+      `This parser tracks angle brackets to tell a generic argument list's commas from the ` +
+      `commas between members, and on this line they are something else — a comparison in a ` +
+      `const array length, or a generic list broken across lines. Either way it cannot say ` +
+      `where the members on this line end, and guessing drops one.`,
   );
 }
 
@@ -1421,12 +1611,22 @@ export function parseRustItem(
     // members is a line this reader mis-answers rather than fails to read, so
     // `refuseUnreadable` below never sees it — and the second member's serde
     // attribute is read by nothing while its key crosses the bridge.
-    const parts = topLevelParts(line.code);
+    const split = topLevelParts(line.code);
+    // Before the count, because a line whose angle brackets do not pair up has
+    // no trustworthy count: the comma that would have made it two parts was
+    // read as sitting inside a generic list that never opened.
+    if (!split.angleBalanced) throw refuseUnpairedAngle(name, file, text);
+    const parts = split.parts;
     if (parts.length > 1) {
       // Decided on `line.code`, where a comma inside a string literal has been
       // blanked away and cannot be mistaken for a separator; quoted from
       // `line.text`, which is what somebody reading the error has to go and find.
-      throw refuseSecondMember(name, file, text, topLevelParts(text)[1] ?? (parts[1] as string));
+      throw refuseSecondMember(
+        name,
+        file,
+        text,
+        topLevelParts(text).parts[1] ?? (parts[1] as string),
+      );
     }
     if (line.depth === 1) {
       // A field inside a struct-bodied variant. Its key is on the wire under
@@ -1477,7 +1677,18 @@ export function parseRustItem(
     if (brace < 0) continue;
     const closeBrace = matchingBracket(text, brace);
     if (closeBrace < 0) continue; // opens here, closes below: the depth-1 branch has it
-    for (const part of topLevelParts(text.slice(brace + 1, closeBrace))) {
+    // The same whole-line accounting the member line above does, and it was
+    // missing here: this loop reads whatever `topLevelParts` hands it and has
+    // no way to notice that a comma was swallowed, so an under-split here is a
+    // **silent field drop** where the identical under-split one layer out is a
+    // named refusal. `Image { mime_type: String, data: [u8; 1 << 5],
+    // secret_path: String },` on the live, paired `ContentPart` reported the
+    // same two payload keys it reports today while `secretPath` crossed the
+    // bridge. Round 4 wrote `refuseSecondMember` for exactly this failure and
+    // fitted it to one of the two readers that need it.
+    const inner = topLevelParts(text.slice(brace + 1, closeBrace));
+    if (!inner.angleBalanced) throw refuseUnpairedAngle(name, file, text);
+    for (const part of inner.parts) {
       if (part.includes('#[')) {
         throw refuseField('an attribute inside a one-line struct variant');
       }
@@ -1654,6 +1865,22 @@ export interface SerialisableItem {
   readonly file: string;
   readonly keyword: 'enum' | 'struct';
   readonly rust: string;
+  /**
+   * Whether the item has a braced body, a tuple body, or no body at all.
+   *
+   * On the inventory rather than filtered out of it, and that is this round's
+   * correction. A tuple or unit item has no member names, so
+   * {@link parseRustItem} cannot pair it — but "cannot be paired" and "cannot
+   * put keys on the wire" are two different sentences, and this scan used to
+   * answer the second by testing the first. Three `Serialize`-deriving tuple
+   * structs sit in `diagnostic.rs`, a file the chat guard reads, and the
+   * assertion that calls its inventory complete listed none of them.
+   *
+   * The register rows carry this field too, so a newtype that grows a braced
+   * body — which is a type that starts putting its own keys on the wire —
+   * fails its row instead of passing quietly under the same name.
+   */
+  readonly form: 'braced' | 'tuple' | 'unit';
 }
 
 export function qualified(item: { readonly file: string; readonly rust: string }): string {
@@ -1733,15 +1960,103 @@ function modulePathAttributesIn(source: string, blanked: string): string | null 
 }
 
 /**
- * Every braced `enum` / `struct` in one file that can put keys on the wire.
+ * The first macro invocation written where an **item** can be declared, as
+ * written, or `null`.
  *
- * Tuple and unit structs are out of scope on purpose: they have no member
- * names for {@link parseRustItem} to read, so they cannot be paired at all.
- * `#[serde(transparent)]` newtypes such as `CorrelationId(u64)` and
- * `HarmCategories(u8)` are all of that shape here.
+ * `declarationsIn` reads the file as written. rustc reads it expanded, and
+ * between the two sits every construct that puts a declaration into the crate
+ * without putting one into the text. `#[path]` is one such construct and is
+ * refused above; a macro is the other two.
+ *
+ * - **A macro body can declare the type.** This repository already does it:
+ *   `src-tauri/crates/vela-store/src/model.rs` declares `macro_rules!
+ *   id_newtype` whose body carries `#[derive(…, Serialize, Deserialize)]
+ *   #[serde(transparent)] pub struct $name(String);`, and invokes it six
+ *   times. Six serialisable types in Vela are declared this way today. The
+ *   name alphabet here is `[A-Za-z][A-Za-z0-9_]*`, so `pub struct $name`
+ *   matches nothing and the invocation's argument is not a declaration either:
+ *   the type is in the crate and on no inventory. `vela-store` is not one of
+ *   the three directories these guards walk, so this is a shape one crate away
+ *   rather than a live miss — and folding the three hand-written newtypes in
+ *   the scanned `diagnostic.rs` into that same macro is ordinary tidying.
+ * - **`include!` splices a file.** It does what `#[path]` does — puts source
+ *   from an arbitrary relative path into the crate — without being an
+ *   attribute, so the `#[path]` refusal never sees it. The build-script form,
+ *   `include!(concat!(env!("OUT_DIR"), "/wire.rs"))`, is what every codegen
+ *   crate in the ecosystem ships, and `src-tauri/build.rs` already exists.
+ *
+ * Both are macro invocations at item position, so both are one refusal. Item
+ * position is decided structurally, not by a name list: the braces enclosing
+ * the invocation must all have been opened by `mod`, and the nearest thing
+ * before it — skipping whitespace and whole attribute groups — must be `;`,
+ * `{`, `}` or the start of the file. That is what keeps `let mut vocabulary =
+ * vec![…]`, `if matches!(…)` and `if cfg!(windows) { … }` out of it, all three
+ * of which are live in the scanned files: they sit in expression position, in
+ * a function body, or both. Measured over the fifteen `.rs` files these guards
+ * scan, this returns `null` for every one of them, so the refusal costs
+ * nothing today and fires on the first commit that moves a wire type behind a
+ * macro.
+ *
+ * The narrower thing it does **not** see, said plainly rather than implied: a
+ * macro *defined* elsewhere and invoked inside an inline `mod` whose opening
+ * this scan failed to recognise as a module. The frame test is a two-word
+ * lookback (`mod NAME {`), and where it guesses wrong it guesses towards
+ * silence.
+ */
+function itemPositionMacroIn(source: string, blanked: string): string | null {
+  const modules: boolean[] = [];
+  let word = '';
+  let wordAt = -1;
+  let previous = '';
+  let beforePrevious = '';
+  const atItemStart = (from: number): boolean => {
+    let index = from - 1;
+    while (index >= 0) {
+      const character = blanked[index] as string;
+      if (/\s/.test(character) || character === '#') {
+        index -= 1;
+        continue;
+      }
+      if (character === ']' || character === ')') {
+        const open = openingBracket(blanked, index);
+        if (open < 0) return false;
+        index = open - 1;
+        continue;
+      }
+      return character === ';' || character === '{' || character === '}';
+    }
+    return true;
+  };
+  for (let index = 0; index < blanked.length; index += 1) {
+    const character = blanked[index] as string;
+    if (/[A-Za-z0-9_]/.test(character)) {
+      if (word === '') wordAt = index;
+      word += character;
+      continue;
+    }
+    if (character === '!' && word !== '' && modules.every(Boolean) && atItemStart(wordAt)) {
+      return source
+        .slice(wordAt, Math.min(index + 24, source.length))
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    if (word !== '') {
+      beforePrevious = previous;
+      previous = word;
+      word = '';
+      wordAt = -1;
+    }
+    if (character === '{') modules.push(beforePrevious === 'mod');
+    else if (character === '}') modules.pop();
+  }
+  return null;
+}
+
+/**
+ * Every `enum` / `struct` in one file that can put keys on the wire.
  *
  * **Over-inclusion costs an entry on a register; under-inclusion costs a miss,
- * and a miss is what this scan exists to prevent.** Three earlier versions each
+ * and a miss is what this scan exists to prevent.** Four earlier versions each
  * substituted a spelling for the question and each lost a live type to it:
  *
  * - `pub struct X … {` at the end of one line missed a `where` clause, whose
@@ -1750,6 +2065,10 @@ function modulePathAttributesIn(source: string, blanked: string): string | null 
  * - `^pub ` missed `pub(crate)` and anything indented inside a `mod`.
  *   {@link DECLARATION} now spells every visibility Rust allows, and no
  *   visibility at all.
+ * - `^[ \t]*` — the remainder of that anchor — missed a declaration sharing a
+ *   line with its own attributes, which is legal Rust that rustfmt happens not
+ *   to produce. {@link DECLARATION} no longer says where on a line a
+ *   declaration may start.
  * - a `derive` naming `Serialize` missed a hand-written
  *   `impl serde::Serialize for X`, which satisfies the same trait and puts
  *   whatever keys its body writes on the wire. {@link IMPL_SERIALIZE} finds
@@ -1777,6 +2096,29 @@ function modulePathAttributesIn(source: string, blanked: string): string | null 
  *   the walk's premise an asserted one: with no `#[path]` anywhere in the files
  *   scanned, rustc's default mapping puts every module of the crate under the
  *   directory of its parent, and the crate root is in `src`.
+ *
+ * And three more, which are what this round is about. The first two are the
+ * same sentence as `#[path]` — *the source read is not the source rustc
+ * compiles* — reached through doors an attribute list cannot have an entry
+ * for, and {@link itemPositionMacroIn} refuses both. The third is the one that
+ * was **already false about the tree being scanned**:
+ *
+ * - **A serialisable type need not be a braced item.** This scan used to
+ *   `continue` past every tuple and unit item before it asked whether the
+ *   thing derived or implemented `Serialize`, on the reasoning that an item
+ *   with no member names cannot be paired. True, and beside the point: the
+ *   sentence two paragraphs up says under-inclusion costs a *miss*, and
+ *   `diagnostic.rs` — one of the chat guard's five files — declares
+ *   `ConfiguredModelId(String)`, `CorrelationId(u64)` and `HarmCategories(u8)`,
+ *   each under a derive list containing `Serialize`, each absent from the
+ *   inventory that assertion calls complete. Worse, the `continue` sat *above*
+ *   the `manual.has(name)` test, so {@link IMPL_SERIALIZE} — written because a
+ *   hand-written impl "puts whatever keys its body writes on the wire" — could
+ *   not fire on the one item shape most likely to carry one: a newtype whose
+ *   whole reason to exist is a wire form other than its inner value's.
+ *   Non-braced items now join the inventory carrying their
+ *   {@link SerialisableItem.form}, which puts them on a register rather than
+ *   out of sight, exactly as the doctrine above says it should.
  */
 export function scanSerialisable(source: string, file: string): readonly SerialisableItem[] {
   const declarations = declarationsIn(source);
@@ -1795,6 +2137,18 @@ export function scanSerialisable(source: string, file: string): readonly Seriali
       `serde-wire: ${file} carries \`${offTree}\`. A \`#[path]\` attribute puts a module's ` +
         `source somewhere other than where the module tree says it is, so a guard that walks ` +
         `a directory for \`.rs\` files is no longer walking the crate's modules.`,
+    );
+  }
+  const spliced = itemPositionMacroIn(source, blanked);
+  if (spliced !== null) {
+    throw new Error(
+      `serde-wire: ${file} invokes \`${spliced}\` where an item can be declared. A macro at ` +
+        `item position declares whatever its expansion declares — this repository's own ` +
+        `\`id_newtype!\` emits a \`#[derive(…, Serialize)] pub struct\` from inside a ` +
+        `\`macro_rules!\` body — and \`include!\` splices a file from an arbitrary path, ` +
+        `which is what \`#[path]\` does without being an attribute. This scan reads the ` +
+        `source as written, not as expanded, so either one puts a type in the crate that no ` +
+        `inventory here can name.`,
     );
   }
   const manual = new Set<string>();
@@ -1818,7 +2172,10 @@ export function scanSerialisable(source: string, file: string): readonly Seriali
           `and leave the inventory silently, which is the one failure an inventory prevents.`,
       );
     }
-    if (form !== 'braced') continue;
+    // The form is *recorded*, not used to skip. It used to `continue` here —
+    // above the `manual.has(name)` test below, which is why a hand-written
+    // `Serialize` impl on a tuple struct was unreachable — and the three
+    // `Serialize`-deriving tuple structs in `diagnostic.rs` were the price.
     const region = attributeRegionBefore(source, at);
     const read = readAttributeText(region);
     if (read.unaccounted !== null) {
@@ -1833,7 +2190,7 @@ export function scanSerialisable(source: string, file: string): readonly Seriali
     );
     const derived = derives.some((attribute) => /\bSerialize\b/.test(attribute.body ?? ''));
     if (!derived && !manual.has(name)) continue;
-    found.push({ file, keyword, rust: name });
+    found.push({ file, keyword, rust: name, form });
   }
   return found;
 }

@@ -57,7 +57,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { SkillListing, SkillProblem, SkillResources } from './contract';
-import { parseRustItem, qualified, scanSerialisable, wireName, wireNames } from './serde-wire';
+import {
+  parseRustItem,
+  payloadWireNames,
+  qualified,
+  scanSerialisable,
+  wireName,
+  wireNames,
+} from './serde-wire';
 import type { RustItem, SerialisableItem } from './serde-wire';
 
 /* -------------------------------------------------------------------------- */
@@ -70,7 +77,7 @@ import type { RustItem, SerialisableItem } from './serde-wire';
  * Same device as `src/platform/chat-contract-parity.test.ts` and
  * `src/platform/project-host-parity.test.ts`, restated rather than shared:
  * exporting it would make one file's type-level helper part of another file's
- * public surface, and it is nine lines.
+ * public surface, and it is eight lines.
  */
 function everyVariantOf<U extends string>() {
   return <L extends readonly U[]>(
@@ -116,6 +123,29 @@ const SKILL_LISTING = everyVariantOf<TagsOf<SkillListing, typeof SKILL_LISTING_T
   'skill',
   'invalid',
 ]);
+
+/** Every key of any arm of a union: the payload fields, plus the tag. */
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+
+/**
+ * The keys the fields *inside* `SkillListing`'s struct-bodied variants cross
+ * under.
+ *
+ * `directory`, `name`, `description` and `problem` are not members of the enum
+ * — they are fields of two of its arms — so the variant comparison above walks
+ * straight past them, exactly as it used to walk past the tag key. They are
+ * also every field of every skill row the user sees:
+ * `src/features/skills/SkillsPanel.tsx` reads `entry.directory`, `entry.name`,
+ * `entry.description` and `entry.problem`, and each of those four is one of
+ * these keys.
+ *
+ * Closed by the compiler on this side (`KeysOfUnion` minus the tag) and read
+ * off the crate on the other, so a field added or renamed on either side alone
+ * fails one of the two.
+ */
+const SKILL_LISTING_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnion<SkillListing> & string, typeof SKILL_LISTING_TAG>
+>()(['directory', 'name', 'description', 'problem']);
 
 const SKILL_RESOURCE_FIELDS = everyVariantOf<keyof SkillResources & string>()([
   'scripts',
@@ -179,6 +209,16 @@ interface Pairing {
    * render as broken, and this file stay green. Measured, not supposed.
    */
   readonly tag: string | null;
+  /**
+   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
+   * item that has none.
+   *
+   * Required for the same reason {@link tag} is, and against the same class of
+   * failure: these keys are members of nothing, so a comparison over members
+   * cannot see them. An enum that grows a struct-bodied variant, or one whose
+   * `rename_all_fields` changes, fails here rather than passing silently.
+   */
+  readonly payload: readonly string[];
 }
 
 const PAIRINGS: readonly Pairing[] = [
@@ -188,6 +228,7 @@ const PAIRINGS: readonly Pairing[] = [
     keyword: 'enum',
     ts: 'SkillProblem',
     tag: null,
+    payload: [],
     listed: SKILL_PROBLEM,
   },
   {
@@ -196,6 +237,7 @@ const PAIRINGS: readonly Pairing[] = [
     keyword: 'enum',
     ts: 'SkillListing',
     tag: SKILL_LISTING_TAG,
+    payload: SKILL_LISTING_PAYLOAD,
     listed: SKILL_LISTING,
   },
   {
@@ -204,6 +246,7 @@ const PAIRINGS: readonly Pairing[] = [
     keyword: 'struct',
     ts: 'SkillResources',
     tag: null,
+    payload: [],
     listed: SKILL_RESOURCE_FIELDS,
   },
 ];
@@ -242,6 +285,13 @@ function expectMembers(pairing: Pairing): void {
   // `TagsOf<…, typeof SKILL_LISTING_TAG>`, which stops compiling if the union
   // does not carry that key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
+  // The fields inside struct-bodied variants. Members of nothing, so the
+  // comparison above cannot reach them, and `rename_all_fields` renames them
+  // under a rule of its own.
+  expect(
+    [...payloadWireNames(item)],
+    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
+  ).toEqual([...pairing.payload].sort());
 }
 
 /* -------------------------------------------------------------------------- */

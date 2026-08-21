@@ -29,10 +29,17 @@
  *   checked by `tsc` and none is scanned here. A wire-key reader written in
  *   `.mjs` is outside this question.
  * - **Reading Rust without naming a `.rs` file.** The detector is "names a
- *   string literal ending `.rs`, with the comments removed". A reader that
- *   assembles its filenames by concatenation is invisible to it. That is a real
- *   hole, and it is why {@link RUST_READERS} carries a reason per entry rather
- *   than a bare list: the reasons are what a later reader checks against.
+ *   string literal ending `.rs`, with the comments removed, *and* gets hold of
+ *   the filesystem". A reader that assembles its filenames by concatenation is
+ *   invisible to it. That is a real hole, and it is why {@link RUST_READERS}
+ *   carries a reason per entry rather than a bare list: the reasons are what a
+ *   later reader checks against.
+ * - **Reading through a local helper.** The second half of the detector is
+ *   {@link READS_THE_FILESYSTEM}, which matches the `node:fs` import and the
+ *   read-call names. A file that imports a reader from another module under
+ *   `src/` and names neither is not selected. That is written out at the
+ *   detector rather than only here, because the first version of it was two
+ *   function names and a probe walked around it in one import.
  * - **`tests/`.** Out of scope, and not by choice: `no-app-import.test.ts`
  *   forbids any file under `src/` from naming the harness outside a comment, so
  *   a register living here cannot list a harness path.
@@ -98,7 +105,7 @@ function stripComments(source: string): string {
 const NAMES_A_RUST_SOURCE = /['"`][A-Za-z0-9_@./-]*\.rs['"`]/;
 
 /**
- * A call that opens the tree.
+ * Getting hold of the filesystem at all.
  *
  * Required alongside {@link NAMES_A_RUST_SOURCE} because naming a Rust file is
  * not reading one: `attachment-rules.test.ts` classifies a fabricated
@@ -108,13 +115,32 @@ const NAMES_A_RUST_SOURCE = /['"`][A-Za-z0-9_@./-]*\.rs['"`]/;
  * churns on every new fixture, and a register that churns is a register that
  * gets weakened.
  *
- * The pair is still over-inclusive in one direction, deliberately: a `.rs`
- * written in prose *inside a string literal* survives the comment strip, which
- * is why `reachable.test.ts` is registered below. Over-inclusion costs an
- * entry; under-inclusion costs a miss, and a miss is the failure this file
- * exists to prevent.
+ * **This used to be two function names**, `readFileSync` and `readdirSync`, and
+ * that was the hole. A probe wrote a fourth reader of the crate carrying the
+ * exact old `rename_all` regex and reached the bytes with `readFile` from
+ * `node:fs/promises`; this file stayed green, and switching that one import
+ * back to `readFileSync` turned it red — so the detector, not the register, was
+ * the single point of narrowness. Two function names are a literal standing in
+ * for a capability. The **import** is the capability: nothing under `src/` can
+ * open a file without asking `node:fs` for the means, so that is matched first,
+ * with read-call names kept as a second alternative so a module that gets its
+ * reader from somewhere else is still caught at the call site.
+ *
+ * Measured while swapping it, on the tree this is committed in: both the old
+ * detector and this one select the same nine files out of 268 TypeScript files
+ * under `src/`, so the widening costs no register entry today.
+ *
+ * The residual hole, stated rather than implied: a file that imports a *local*
+ * helper which does the reading, and itself names neither `node:fs` nor a read
+ * call, is invisible here. So is anything outside `src/` — see the header. The
+ * pair is also over-inclusive in one direction, deliberately: a `.rs` written in
+ * prose *inside a string literal* survives the comment strip, which is why
+ * `reachable.test.ts` is registered below. Over-inclusion costs an entry;
+ * under-inclusion costs a miss, and a miss is the failure this file exists to
+ * prevent.
  */
-const READS_THE_FILESYSTEM = /\breadFileSync\s*\(|\breaddirSync\s*\(/;
+const READS_THE_FILESYSTEM =
+  /(?:from|import|require)\s*\(?\s*['"]node:fs(?:\/promises)?['"]|\bread(?:File|dir)(?:Sync)?\s*\(|\bcreateReadStream\s*\(|\bglobSync\s*\(/;
 
 function typescriptFilesUnder(directory: string, prefix: string, found: string[]): string[] {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -224,6 +250,8 @@ const RUST_READERS: ReadonlyMap<string, Reader> = new Map<string, Reader>([
 const OWN_PARSE = [
   /function\s+parseRustItem\b/,
   /function\s+wireName\b/,
+  /function\s+payloadWireNames\b/,
+  /function\s+readAttributeText\b/,
   /function\s+scanSerialisable\b/,
   /rename_all\\s\*=/,
 ];
@@ -290,6 +318,38 @@ describe('the detectors can fail', () => {
   it('does count a .rs filename the code actually opens', () => {
     const code = "const source = readFileSync(join(CRATE, 'model.rs'), 'utf8');";
     expect(NAMES_A_RUST_SOURCE.test(stripComments(code))).toBe(true);
+    expect(READS_THE_FILESYSTEM.test(stripComments(code))).toBe(true);
+  });
+
+  it('counts a reader that never spells readFileSync', () => {
+    // The evasion this detector was widened for, as a fixture. A fourth guard
+    // that reads the crate with the promises API was invisible to a detector
+    // made of two function names, and the register cannot fail for a file the
+    // scan never selects.
+    const promises = [
+      "import { readFile } from 'node:fs/promises';",
+      "const source = await readFile(join(CRATE, 'store.rs'), 'utf8');",
+      'const rename = /rename_all\\s*=\\s*"(camelCase|snake_case)"/.exec(source);',
+    ].join('\n');
+    expect(NAMES_A_RUST_SOURCE.test(promises)).toBe(true);
+    expect(READS_THE_FILESYSTEM.test(promises)).toBe(true);
+    // Both halves of the detector select it on their own, so removing either
+    // one would not reopen this specific hole — which is the point of matching
+    // the capability and the call site rather than one of them.
+    expect(/(?:from|import|require)\s*\(?\s*['"]node:fs(?:\/promises)?['"]/.test(promises)).toBe(
+      true,
+    );
+    expect(/\bread(?:File|dir)(?:Sync)?\s*\(/.test(promises)).toBe(true);
+    // And the detector it replaced does not.
+    expect(/\breadFileSync\s*\(|\breaddirSync\s*\(/.test(promises)).toBe(false);
+  });
+
+  it('does not count a file that names a .rs source but opens nothing', () => {
+    const inert = ["const FIXTURE = 'main.rs';", 'export const UPLOAD = { name: FIXTURE };'].join(
+      '\n',
+    );
+    expect(NAMES_A_RUST_SOURCE.test(inert)).toBe(true);
+    expect(READS_THE_FILESYSTEM.test(inert)).toBe(false);
   });
 
   it('does not mistake a neighbouring extension for a Rust source', () => {

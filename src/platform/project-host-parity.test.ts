@@ -86,7 +86,14 @@ import {
   PROJECT_NAME_MAX_CHARS,
 } from './contract-project';
 import { declaredCommandsIn } from './declared-commands';
-import { parseRustItem, qualified, scanSerialisable, wireName, wireNames } from './serde-wire';
+import {
+  parseRustItem,
+  payloadWireNames,
+  qualified,
+  scanSerialisable,
+  wireName,
+  wireNames,
+} from './serde-wire';
 import type { RustItem, SerialisableItem } from './serde-wire';
 
 /* -------------------------------------------------------------------------- */
@@ -99,7 +106,7 @@ import type { RustItem, SerialisableItem } from './serde-wire';
  * The same device `src/platform/chat-contract-parity.test.ts` and
  * `src/platform/skill-store-parity.test.ts` each carry, restated here for the
  * reason the second of those gives: exporting it would make one file's
- * type-level helper part of another file's public surface, and it is nine lines.
+ * type-level helper part of another file's public surface, and it is eight lines.
  */
 function everyVariantOf<U extends string>() {
   return <L extends readonly U[]>(
@@ -203,6 +210,44 @@ const WORKING_DIRECTORY_BINDING = everyVariantOf<
   'path',
 ]);
 
+/* -- the fields inside struct-bodied variants ---------------------------- */
+
+/**
+ * **Keys that are members of nothing, and were therefore in no comparison.**
+ *
+ * `SkillMountStatus::Copied { path, copied_at_ms, stale }` puts three keys on
+ * the wire; none of them is a variant of the enum and none is a field of a
+ * struct this file pairs, so every assertion above walks past all three. It is
+ * the same blindness the discriminant key had before {@link Pairing.tag}
+ * existed, and it has the same consequence — a mount row rendering as though
+ * it had never been copied.
+ *
+ * Four of the enums below carry `rename_all_fields`, which is a *different*
+ * attribute from the `rename_all` that renames the variants. Flipping one from
+ * `camelCase` to `PascalCase` changes no identifier and no variant name, and
+ * until these lists existed nothing in this file could see it.
+ *
+ * Each list is closed by the compiler against the TypeScript union — every key
+ * of every arm, minus the tag — and compared against what the crate spells.
+ */
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+
+const LINK_STRATEGY_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnion<LinkStrategy> & string, typeof LINK_STRATEGY_TAG>
+>()(['reason']);
+
+const SKILL_MOUNT_STATUS_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnion<SkillMountStatus> & string, typeof SKILL_MOUNT_STATUS_TAG>
+>()(['link', 'path', 'copiedAtMs', 'stale', 'problem']);
+
+const WORKING_DIRECTORY_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnion<WorkingDirectory> & string, typeof WORKING_DIRECTORY_TAG>
+>()(['path', 'writable', 'problem']);
+
+const WORKING_DIRECTORY_BINDING_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnion<WorkingDirectoryBinding> & string, typeof WORKING_DIRECTORY_BINDING_TAG>
+>()(['path']);
+
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
 /* -------------------------------------------------------------------------- */
@@ -269,6 +314,16 @@ interface Pairing {
    * renderer go false, and this file stay green.
    */
   readonly tag: string | null;
+  /**
+   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
+   * item that has none.
+   *
+   * Required for the same reason {@link tag} is, and against the same class of
+   * failure. These keys are members of nothing, so a comparison over members
+   * cannot reach them; an enum that grows a struct-bodied variant, or whose
+   * `rename_all_fields` changes, fails here instead of passing silently.
+   */
+  readonly payload: readonly string[];
 }
 
 const PAIRINGS: readonly Pairing[] = [
@@ -277,6 +332,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'link.rs',
     keyword: 'enum',
     ts: 'SkillLinkKind',
+    payload: [],
     tag: null,
     listed: SKILL_LINK_KIND,
   },
@@ -285,6 +341,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'link.rs',
     keyword: 'enum',
     ts: 'LinkFallbackReason',
+    payload: [],
     tag: null,
     listed: LINK_FALLBACK_REASON,
   },
@@ -293,6 +350,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'link.rs',
     keyword: 'enum',
     ts: 'LinkStrategy',
+    payload: LINK_STRATEGY_PAYLOAD,
     tag: LINK_STRATEGY_TAG,
     listed: LINK_STRATEGY,
   },
@@ -301,6 +359,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'mount.rs',
     keyword: 'enum',
     ts: 'SkillMountProblem',
+    payload: [],
     tag: null,
     listed: SKILL_MOUNT_PROBLEM,
   },
@@ -309,6 +368,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'mount.rs',
     keyword: 'enum',
     ts: 'SkillMountStatus',
+    payload: SKILL_MOUNT_STATUS_PAYLOAD,
     tag: SKILL_MOUNT_STATUS_TAG,
     listed: SKILL_MOUNT_STATUS,
   },
@@ -317,6 +377,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'mount.rs',
     keyword: 'struct',
     ts: 'SkillMount',
+    payload: [],
     tag: null,
     listed: SKILL_MOUNT_FIELDS,
   },
@@ -325,6 +386,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'enum',
     ts: 'ProjectDirectory',
+    payload: [],
     tag: null,
     listed: PROJECT_DIRECTORY,
   },
@@ -333,6 +395,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'struct',
     ts: 'ProjectPaths',
+    payload: [],
     tag: null,
     listed: PROJECT_PATHS_FIELDS,
   },
@@ -341,6 +404,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'layout.rs',
     keyword: 'struct',
     ts: 'ProjectLayout',
+    payload: [],
     tag: null,
     listed: PROJECT_LAYOUT_FIELDS,
   },
@@ -349,6 +413,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'workdir.rs',
     keyword: 'enum',
     ts: 'WorkingDirectoryProblem',
+    payload: [],
     tag: null,
     listed: WORKING_DIRECTORY_PROBLEM,
   },
@@ -357,6 +422,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'workdir.rs',
     keyword: 'enum',
     ts: 'WorkingDirectory',
+    payload: WORKING_DIRECTORY_PAYLOAD,
     tag: WORKING_DIRECTORY_TAG,
     listed: WORKING_DIRECTORY,
   },
@@ -365,6 +431,7 @@ const PAIRINGS: readonly Pairing[] = [
     file: 'workdir.rs',
     keyword: 'enum',
     ts: 'WorkingDirectoryBinding',
+    payload: WORKING_DIRECTORY_BINDING_PAYLOAD,
     tag: WORKING_DIRECTORY_BINDING_TAG,
     listed: WORKING_DIRECTORY_BINDING,
   },
@@ -398,6 +465,13 @@ function expectMembers(pairing: Pairing): void {
   // `TagsOf<…, typeof X_TAG>`, which stops compiling if the union does not
   // carry that key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
+  // The fields inside struct-bodied variants. Members of nothing, so the
+  // comparison above cannot reach them, and serde renames them under
+  // `rename_all_fields`, which is not the attribute that renames the variants.
+  expect(
+    [...payloadWireNames(item)],
+    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
+  ).toEqual([...pairing.payload].sort());
 }
 
 /**

@@ -42,18 +42,26 @@
  * ## What this compares, and what it refuses to
  *
  * Wire keys, as far as they can be read out of source text: member names after
- * the container's `rename_all`, and the internal tag key. Where an attribute
- * severs the identifier from the key — a per-field `rename`, a `flatten` — the
- * parser **throws** rather than compare an identifier it knows is not the key.
- * Refusing is the posture: a guard that reports agreement it never checked is
- * worse than an absent one, because the absent one does not get believed.
+ * the container's `rename_all`, the internal tag key, and the fields inside
+ * struct-bodied variants after `rename_all_fields`. Where an attribute severs
+ * the identifier from the key — a per-field `rename`, a `flatten` — the parser
+ * **throws** rather than compare an identifier it knows is not the key, and it
+ * throws for **any** attribute whose effect on the wire it has not written
+ * down, including one reached through a `cfg_attr` wrapper or written above the
+ * derive. Refusing is the posture: a guard that reports agreement it never
+ * checked is worse than an absent one, because the absent one does not get
+ * believed.
  *
- * Two surfaces remain outside the comparison, stated rather than implied. The
- * payload fields of struct variants (`rename_all_fields`, `ContentPart::Image`
- * carrying `mimeType`) are not members of the enum and are not read here. And
- * nothing in TypeScript observes actual bytes; only the Rust side does, in
- * `model.rs`'s `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`,
- * which serialises a `ChatResponse` and therefore speaks for `answeredBy` and
+ * The payload fields of struct variants used to be outside this comparison, and
+ * that sentence sat in this header describing it as a stated limitation. It was
+ * a hole, not a limitation: `rename_all_fields` is a second rename rule under a
+ * second attribute name, and flipping it changed every payload key on the wire
+ * with every assertion here still green. {@link Pairing.payload} closes it.
+ *
+ * One surface remains outside, stated rather than implied: nothing in
+ * TypeScript observes actual bytes. Only the Rust side does, in `model.rs`'s
+ * `provenance_crosses_the_bridge_under_the_keys_the_renderer_reads`, which
+ * serialises a `ChatResponse` and therefore speaks for `answeredBy` and
  * `AnswerProvenance` and for nothing else.
  *
  * ## What this does not claim
@@ -99,6 +107,7 @@ import type {
 } from './contract';
 import {
   parseRustItem,
+  payloadWireNames,
   qualified,
   RENAME_RULES,
   scanSerialisable,
@@ -372,6 +381,98 @@ const FILTER_VERDICT_FIELDS = everyVariantOf<keyof FilterVerdict & string>()([
   'generatedChars',
 ]);
 
+/* -- the fields inside struct-bodied variants ---------------------------- */
+
+/**
+ * **Keys that are members of nothing, and were therefore in no comparison.**
+ *
+ * `ContentPart::Image { mime_type, data }` puts `mimeType` and `data` on the
+ * wire. Neither is a variant of `ContentPart` and neither is a field of a
+ * struct this file pairs, so every assertion above walks past them — the same
+ * shape of blindness the discriminant key had before {@link Pairing.tag}
+ * existed, and the same consequence: `src/runtime/content-part-codec.ts`'s
+ * `toInput` reads `part.mimeType` off an image part on its way into the next
+ * request, and nothing here could tell it had stopped arriving.
+ *
+ * That is not hypothetical. Serde renames these under `rename_all_fields`,
+ * which is a *different* attribute from the `rename_all` that renames the
+ * variants, and six of the enums below carry it. Flipping one of those from
+ * `camelCase` to `PascalCase` is a one-token edit to an attribute already
+ * spelled fourteen times in this repository's Rust; it changes no identifier and
+ * no variant name, and before these lists existed every assertion in this file
+ * stayed green while `mimeType`, `callId` and `isError` crossed as `MimeType`,
+ * `CallId` and `IsError`.
+ *
+ * Each list is closed by the compiler against the TypeScript union — every key
+ * of every arm, minus the tag — and compared against what the crate really
+ * spells, so a field added on one side alone fails one of the two.
+ */
+type KeysOfUnionOf<T> = T extends unknown ? keyof T : never;
+
+const CONTENT_PART_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<ContentPart> & string, typeof CONTENT_PART_TAG>
+>()([
+  'text',
+  'signature',
+  'redacted',
+  'mimeType',
+  'data',
+  'callId',
+  'name',
+  'arguments',
+  'content',
+  'isError',
+]);
+
+const TOOL_CALL_OUTCOME_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<ToolCallOutcome> & string, typeof TOOL_CALL_OUTCOME_TAG>
+>()(['callId', 'name', 'arguments', 'emulated', 'index', 'rawArguments', 'reason']);
+
+const DEGRADATION_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<Degradation> & string, typeof DEGRADATION_TAG>
+>()([
+  'toolCount',
+  'droppedMessages',
+  'approxDroppedTokens',
+  'strategy',
+  'detail',
+  'count',
+  'recoveredAnswerChars',
+  'attempts',
+]);
+
+const TOOL_CHOICE_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<ToolChoiceInput> & string, typeof TOOL_CHOICE_TAG>
+>()(['name']);
+
+const STREAM_EVENT_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<ChatStreamEvent> & string, typeof STREAM_EVENT_TAG>
+>()(['text', 'delta', 'usage', 'response', 'error']);
+
+const PROVIDER_ERROR_PAYLOAD = everyVariantOf<
+  Exclude<KeysOfUnionOf<ChatError> & string, typeof PROVIDER_ERROR_TAG>
+>()([
+  'limitTokens',
+  'requestedTokens',
+  'diagnosis',
+  'retryAfterMs',
+  'modelId',
+  'capability',
+  'failure',
+]);
+
+/**
+ * `TransportFailure` is externally tagged, so its payload arms cross as
+ * single-key objects and the payload field sits one level *inside* the arm —
+ * `{ server: { status } }`. `ValuesOfUnion` steps through that key to reach it,
+ * which is why this one list is built differently from the five above.
+ */
+type ValuesOfUnion<T> = T extends unknown ? T[keyof T] : never;
+
+const TRANSPORT_FAILURE_PAYLOAD = everyVariantOf<
+  KeysOfUnionOf<ValuesOfUnion<Exclude<TransportFailure, string>>> & string
+>()(['status']);
+
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
 /* -------------------------------------------------------------------------- */
@@ -424,6 +525,16 @@ interface Pairing {
    * assertions stay green, because the tag key is a member of nothing.
    */
   readonly tag: string | null;
+  /**
+   * The wire keys of the fields inside struct-bodied variants, or `[]` for an
+   * item that has none.
+   *
+   * Required for the same reason {@link tag} is, and against the same class of
+   * failure. These keys are members of nothing, so a comparison over members
+   * cannot reach them; an enum that grows a struct-bodied variant, or whose
+   * `rename_all_fields` changes, fails here instead of passing silently.
+   */
+  readonly payload: readonly string[];
 }
 
 const ENUMS: readonly Pairing[] = [
@@ -432,6 +543,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'MessageRole',
+    payload: [],
     tag: null,
     listed: MESSAGE_ROLE,
   },
@@ -440,6 +552,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'StopReason',
+    payload: [],
     tag: null,
     listed: STOP_REASON,
   },
@@ -448,6 +561,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'ContentPart',
+    payload: CONTENT_PART_PAYLOAD,
     tag: CONTENT_PART_TAG,
     listed: CONTENT_PART,
   },
@@ -456,6 +570,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'MalformedToolCallReason',
+    payload: [],
     tag: null,
     listed: MALFORMED_TOOL_CALL,
   },
@@ -464,6 +579,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'ToolCallOutcome',
+    payload: TOOL_CALL_OUTCOME_PAYLOAD,
     tag: TOOL_CALL_OUTCOME_TAG,
     listed: TOOL_CALL_OUTCOME,
   },
@@ -472,6 +588,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'Degradation',
+    payload: DEGRADATION_PAYLOAD,
     tag: DEGRADATION_TAG,
     listed: DEGRADATION,
   },
@@ -480,6 +597,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'ContextStrategy',
+    payload: [],
     tag: null,
     listed: CONTEXT_STRATEGY,
   },
@@ -488,6 +606,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'enum',
     ts: 'ToolChoiceInput',
+    payload: TOOL_CHOICE_PAYLOAD,
     tag: TOOL_CHOICE_TAG,
     listed: TOOL_CHOICE,
   },
@@ -496,6 +615,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'event.rs',
     keyword: 'enum',
     ts: 'ChatStreamEvent',
+    payload: STREAM_EVENT_PAYLOAD,
     tag: STREAM_EVENT_TAG,
     listed: STREAM_EVENT,
   },
@@ -504,6 +624,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'error.rs',
     keyword: 'enum',
     ts: 'CapabilityName',
+    payload: [],
     tag: null,
     listed: CAPABILITY,
   },
@@ -512,6 +633,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'error.rs',
     keyword: 'enum',
     ts: 'TransportFailure',
+    payload: TRANSPORT_FAILURE_PAYLOAD,
     tag: null,
     listed: TRANSPORT_FAILURE,
   },
@@ -520,6 +642,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'error.rs',
     keyword: 'enum',
     ts: 'ChatError',
+    payload: PROVIDER_ERROR_PAYLOAD,
     tag: PROVIDER_ERROR_TAG,
     listed: PROVIDER_ERROR,
   },
@@ -528,6 +651,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'capability.rs',
     keyword: 'enum',
     ts: 'CapabilitySupport',
+    payload: [],
     tag: null,
     listed: SUPPORT,
   },
@@ -536,6 +660,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'capability.rs',
     keyword: 'enum',
     ts: 'CapabilityEvidence',
+    payload: [],
     tag: null,
     listed: EVIDENCE,
   },
@@ -544,6 +669,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'KnownCause',
+    payload: [],
     tag: null,
     listed: CAUSE,
   },
@@ -552,6 +678,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'FilterStage',
+    payload: [],
     tag: null,
     listed: FILTER_STAGE,
   },
@@ -560,6 +687,7 @@ const ENUMS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'enum',
     ts: 'FilterKind',
+    payload: [],
     tag: null,
     listed: FILTER_KIND,
   },
@@ -571,6 +699,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'TokenUsage',
+    payload: [],
     tag: null,
     listed: TOKEN_USAGE_FIELDS,
   },
@@ -579,6 +708,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'ChatResponseBody',
+    payload: [],
     tag: null,
     listed: CHAT_RESPONSE_FIELDS,
   },
@@ -587,6 +717,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'AnswerProvenance',
+    payload: [],
     tag: null,
     listed: ANSWER_PROVENANCE_FIELDS,
   },
@@ -595,6 +726,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'model.rs',
     keyword: 'struct',
     ts: 'SchemaMismatch',
+    payload: [],
     tag: null,
     listed: SCHEMA_MISMATCH_FIELDS,
   },
@@ -603,6 +735,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'event.rs',
     keyword: 'struct',
     ts: 'ToolCallDelta',
+    payload: [],
     tag: null,
     listed: TOOL_CALL_DELTA_FIELDS,
   },
@@ -611,6 +744,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'EndpointIdentity',
+    payload: [],
     tag: null,
     listed: ENDPOINT_IDENTITY_FIELDS,
   },
@@ -619,6 +753,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'Diagnosis',
+    payload: [],
     tag: null,
     listed: DIAGNOSIS_FIELDS,
   },
@@ -627,6 +762,7 @@ const STRUCTS: readonly Pairing[] = [
     file: 'diagnostic.rs',
     keyword: 'struct',
     ts: 'FilterVerdict',
+    payload: [],
     tag: null,
     listed: FILTER_VERDICT_FIELDS,
   },
@@ -709,6 +845,15 @@ function expectMembers(pairing: Pairing): void {
   // typeof X_TAG>`, which stops compiling if the union does not carry that
   // key, and this is the other half.
   expect(item.tag, `${pairing.file}::${pairing.rust} discriminant key`).toBe(pairing.tag);
+  // The fields inside struct-bodied variants. Members of nothing, so the
+  // comparison above cannot reach them, and serde renames them under
+  // `rename_all_fields` — a different attribute from the one that renames the
+  // variants, and one that was recorded as tolerated here until a probe
+  // flipped it and nothing went red.
+  expect(
+    [...payloadWireNames(item)],
+    `${pairing.file}::${pairing.rust} struct-variant payload keys`,
+  ).toEqual([...pairing.payload].sort());
 }
 
 describe('chat contract parity with vela-providers', () => {
@@ -1049,6 +1194,170 @@ describe('the parity parser itself', () => {
     // key that was never looked for.
     expect(readRustItem('error.rs', 'enum', 'TransportFailure').tag).toBeNull();
     expect(readRustItem('diagnostic.rs', 'struct', 'Diagnosis').tag).toBeNull();
+  });
+
+  /**
+   * **The refusal, asked as the right question.**
+   *
+   * The first version of the refusal searched the attribute text for the
+   * literal `#[serde(` and refused what it found inside — which answers *"is
+   * there a `#[serde(` here I cannot model?"* when the question is *"can this
+   * identifier still be trusted as the wire key?"*. A probe against this tree
+   * walked around it three ways, each legal Rust that `cargo build` accepts,
+   * and each left the guard green while a key changed. They are fixtures now.
+   */
+  it('refuses a serde attribute smuggled through a cfg_attr wrapper', () => {
+    // `all()` is the empty conjunction, so it is always true and the attribute
+    // expands unconditionally. Nothing in the text spells `#[serde(`.
+    const fixture = [
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct FixtureStruct {',
+      '    #[cfg_attr(all(), serde(rename = "Scripts"))]',
+      '    pub scripts: Vec<String>,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(fixture, 'struct', 'FixtureStruct')).toThrow(
+      /carries `#\[serde\(rename\)\]`/,
+    );
+    // The wrapper is unwrapped rather than skipped, in both directions: a
+    // container rule inside one is read, not lost.
+    const wrapped = [
+      '#[derive(Serialize)]',
+      '#[cfg_attr(all(), serde(rename_all = "PascalCase"))]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(parseRustItem(wrapped, 'struct', 'FixtureStruct').renameAll).toBe('PascalCase');
+  });
+
+  it('reads an attribute written above the derive', () => {
+    // Legal Rust, and serde reads it. The old slice started at the last
+    // `#[derive`, so everything above it was outside the parse and outside the
+    // refusal with it.
+    const above = [
+      '#[serde(rename_all = "PascalCase")]',
+      '#[derive(Serialize)]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(parseRustItem(above, 'struct', 'FixtureStruct').renameAll).toBe('PascalCase');
+    expect(wireNames(parseRustItem(above, 'struct', 'FixtureStruct'))).toEqual(['AnsweredBy']);
+
+    const refusedAbove = [
+      '#[serde(untagged)]',
+      '#[derive(Serialize)]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(() => parseRustItem(refusedAbove, 'struct', 'FixtureStruct')).toThrow(
+      /does not model/,
+    );
+  });
+
+  it('refuses an attribute whose effect on the wire is not written down', () => {
+    // Not a serde attribute at all, and that is the point: `rustfmt::skip`
+    // unmakes the one-member-per-line layout the body reader depends on, and
+    // `cfg` decides whether a field is on the wire at all. A parser that only
+    // inspected `#[serde(` would have shrugged at both.
+    for (const attribute of ['rustfmt::skip', 'cfg(feature = "extra")', 'serde_as']) {
+      const fixture = [
+        `#[${attribute}]`,
+        '#[derive(Serialize)]',
+        '#[serde(rename_all = "camelCase")]',
+        'pub struct FixtureStruct {',
+        '    pub answered_by: String,',
+        '}',
+        '',
+      ].join('\n');
+      expect(() => parseRustItem(fixture, 'struct', 'FixtureStruct'), attribute).toThrow(
+        /does not model/,
+      );
+    }
+    // The inert ones are still read without complaint, or the refusal would be
+    // a refusal of everything and would have to be turned off.
+    const inert = [
+      '/// A doc comment.',
+      '#[allow(dead_code)]',
+      '#[non_exhaustive]',
+      '#[derive(Debug, Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct FixtureStruct {',
+      '    pub answered_by: String,',
+      '}',
+      '',
+    ].join('\n');
+    expect(wireNames(parseRustItem(inert, 'struct', 'FixtureStruct'))).toEqual(['answeredBy']);
+  });
+
+  it('reads the fields inside struct-bodied variants, however they are laid out', () => {
+    // `ContentPart::Image` is one line and `ContentPart::Reasoning` is five.
+    // Reading only the multi-line spelling would have made this comparison a
+    // measurement of how long a variant happened to be.
+    const part = readRustItem('model.rs', 'enum', 'ContentPart');
+    expect(part.renameAllFields).toBe('camelCase');
+    expect(part.payloadFields).toContain('mime_type');
+    expect(part.payloadFields).toContain('signature');
+    expect(payloadWireNames(part)).toContain('mimeType');
+    expect(payloadWireNames(part)).toContain('isError');
+    // A struct has no variants, so it has no payload at all — not an empty
+    // read of something that was there.
+    expect(readRustItem('model.rs', 'struct', 'TokenUsage').payloadFields).toEqual([]);
+  });
+
+  it('sees rename_all_fields change every payload key while changing no identifier', () => {
+    const fixture = (rule: string): string =>
+      [
+        '#[derive(Serialize)]',
+        `#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "${rule}")]`,
+        'pub enum FixtureEnum {',
+        '    Image { mime_type: String, data: Vec<u8> },',
+        '    ToolResult {',
+        '        call_id: String,',
+        '        is_error: bool,',
+        '    },',
+        '}',
+        '',
+      ].join('\n');
+    const camel = parseRustItem(fixture('camelCase'), 'enum', 'FixtureEnum');
+    const pascal = parseRustItem(fixture('PascalCase'), 'enum', 'FixtureEnum');
+    expect(camel.members).toEqual(pascal.members);
+    expect(wireNames(camel)).toEqual(wireNames(pascal));
+    expect(payloadWireNames(camel)).toEqual(['callId', 'data', 'isError', 'mimeType']);
+    expect(payloadWireNames(pascal)).toEqual(['CallId', 'Data', 'IsError', 'MimeType']);
+  });
+
+  it('scans an item whose declaration does not end in a brace', () => {
+    // A `where` clause puts the opening brace on a line of its own. The scan
+    // used to match `pub struct X … {` at the end of one line, so an item like
+    // this was absent from the inventory — and an inventory that silently
+    // misses an item is the one failure an inventory exists to prevent.
+    const fixture = [
+      '#[derive(Serialize)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct WhereClaused<T>',
+      'where',
+      '    T: Serialize,',
+      '{',
+      '    pub answered_by: T,',
+      '}',
+      '',
+      '#[derive(Serialize)]',
+      '#[serde(transparent)]',
+      'pub struct ATupleStruct(u64);',
+      '',
+    ].join('\n');
+    expect(scanSerialisable(fixture, 'fixture.rs').map(qualified)).toEqual([
+      'fixture.rs::WhereClaused',
+    ]);
+    expect(wireNames(parseRustItem(fixture, 'struct', 'WhereClaused'))).toEqual(['answeredBy']);
   });
 
   it('refuses an item carrying a container attribute it does not model', () => {

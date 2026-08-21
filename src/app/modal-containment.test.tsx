@@ -239,6 +239,35 @@ describe('a modal dialog holds the keyboard it says it holds', () => {
 
     expect(reachableIfUntrapped).not.toContain(document.activeElement);
   });
+
+  it('does not let Tab out of the endpoint-removal dialog into the panel behind it', async () => {
+    // The third surface driven in this file, out of the seven that render
+    // through `ModalSurface` — driven for the same property rather than assumed
+    // to inherit it. The background here is a different one from the two above:
+    // the endpoints panel, its rows, the local-endpoint form and the debug
+    // switch. So the non-vacuity floor is measured against that screen rather
+    // than carried over.
+    const user = userEvent.setup({ delay: null });
+    render(<App adapter={await host()} />);
+    await openConversation(user);
+
+    await user.click(screen.getByRole('button', { name: /The workstation/u }));
+    await user.click(await screen.findByRole('button', { name: 'Manage endpoints…' }));
+    const panel = await screen.findByRole('region', { name: 'Endpoints' });
+    await user.click(within(panel).getByRole('button', { name: 'Remove: The workstation' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+    const reachableIfUntrapped = behind(dialog);
+    expect(
+      reachableIfUntrapped.length,
+      'nothing focusable behind the dialog — this test would pass vacuously',
+    ).toBeGreaterThan(8);
+
+    await walkTab(user, dialog, 6);
+    await walkTab(user, dialog, 6, true);
+
+    expect(reachableIfUntrapped).not.toContain(document.activeElement);
+  });
 });
 
 describe('containing the keyboard did not cost the giving of it back', () => {

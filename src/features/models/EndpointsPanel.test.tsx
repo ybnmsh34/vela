@@ -7,7 +7,7 @@
  * something wrong.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -38,9 +38,11 @@ import { useProviders } from './use-providers';
  * | ten `user.click` | 584ms | 2894 / 4070 / 2553ms |
  * | ten `user.click`, `delay: null` | 138ms | 619 / 898 / 1276ms |
  *
- * Six of this file's nine tests failed at least once across six full-suite runs
- * under that load before this change; the two that never did are the two that
- * type nothing, and they pay the same per-click tick. A per-test `timeout`
+ * Six of the nine tests this file held at the time failed at least once across
+ * six full-suite runs under that load before this change; the two that never
+ * did are the two that type nothing, and they pay the same per-click tick.
+ * (The count is the file's as it stood then — it has gained tests since, and
+ * the measurement was not repeated for them.) A per-test `timeout`
  * override treats the symptom and, worse, raises the ceiling that catches a real
  * hang. `delay: null` removes the cost instead.
  */
@@ -201,7 +203,7 @@ describe('the endpoint list', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/baseUrl/);
   });
 
-  it('removes an endpoint and its key together', async () => {
+  it('removes an endpoint and its key together, once the question is answered', async () => {
     const user = userEvent.setup({ delay: null });
     const adapter = new BrowserAdapter();
     mount(adapter);
@@ -211,13 +213,55 @@ describe('the endpoint list', () => {
     await screen.findByText('Temporary');
 
     // Named for the row it deletes. Bare `Remove` was one name shared by every
-    // configured endpoint's delete button, and it deletes without asking.
+    // configured endpoint's delete button.
     await user.click(screen.getByRole('button', { name: 'Remove: Temporary' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove this endpoint' }));
     await waitFor(() => {
-      expect(screen.queryByText('Temporary')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     });
     expect((await adapter.invoke('settings_get', {})).providers).toEqual([]);
   });
+
+  it('asks before it removes, and destroys nothing while the question is up', async () => {
+    // The property the rename could not buy. `Remove: <endpoint>` makes the two
+    // rows of a two-endpoint panel distinguishable *by name*; it cannot make
+    // two rows the user called the same thing distinguishable, because the text
+    // inside the name is theirs. What survives that is the consequence: this
+    // click asks, and a wrong landing costs a Cancel.
+    const user = userEvent.setup({ delay: null });
+    const adapter = new BrowserAdapter();
+    mount(adapter);
+
+    await addEndpoint(user, { name: 'Temporary', address: 'http://127.0.0.1:9999/v1' });
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }));
+    await screen.findByText('Temporary');
+
+    await user.click(screen.getByRole('button', { name: 'Remove: Temporary' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+    // Nothing is gone yet, and the keyboard is on the safe control.
+    expect((await adapter.invoke('settings_get', {})).providers).toHaveLength(1);
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    // The two fields that differ when two endpoints share a display name. The
+    // dialog is the only place either of them is stated at the moment of the
+    // decision.
+    expect(dialog).toHaveTextContent('http://127.0.0.1:9999/v1');
+    expect(dialog).toHaveTextContent('temporary');
+    // And they are *announced*, not merely present: the paragraph is the
+    // dialog's `aria-describedby` target, so a screen reader reads it on open
+    // rather than leaving it to be found. Without this assertion the id on that
+    // paragraph would be a write nothing reads.
+    expect(dialog).toHaveAccessibleDescription(/http:\/\/127\.0\.0\.1:9999\/v1/u);
+    expect(dialog).toHaveAccessibleDescription(/identified as temporary/u);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect((await adapter.invoke('settings_get', {})).providers).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Remove: Temporary' })).toBeInTheDocument();
+  });
+
 
   it('names the credential store it is actually using, rather than implying one', async () => {
     mount(new BrowserAdapter());

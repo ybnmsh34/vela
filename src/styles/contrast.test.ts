@@ -255,6 +255,7 @@ const U = (fg: string, on: readonly string[], where: string, rule?: RuleRef): Pa
 });
 
 const CANVAS_PANEL = 'src/features/canvas/CanvasPanel.module.css';
+const REMOVE_ENDPOINT_DIALOG = 'src/features/models/RemoveEndpointDialog.module.css';
 
 const BG = ['--vela-bg'] as const;
 const SURFACE = ['--vela-surface'] as const;
@@ -413,6 +414,25 @@ const PAIRS: readonly Pair[] = [
   T('--vela-text-subtle', SURFACE, 'EndpointsPanel .rowModel'),
   T('--vela-danger', SURFACE, 'EndpointsPanel .rowDanger'),
   T('--vela-danger', ['--vela-danger-bg'], 'EndpointsPanel .error'),
+  /* The endpoint-removal dialog. Every composition here is one the delete
+     dialog already declares, so the ratio assertions were green before these
+     lines existed; the three that co-declare a colour and a ground are bound to
+     their rules so that stripping one reddens this file by name. */
+  T('--vela-text', RAISED, 'RemoveEndpointDialog .dialog / .name / .identifier', {
+    file: REMOVE_ENDPOINT_DIALOG,
+    selector: '.dialog',
+  }),
+  T('--vela-text-muted', RAISED, 'RemoveEndpointDialog .body'),
+  T('--vela-text', SURFACE, 'RemoveEndpointDialog .cancel', {
+    file: REMOVE_ENDPOINT_DIALOG,
+    selector: '.cancel',
+  }),
+  T('--vela-text', INSET, 'RemoveEndpointDialog .cancel:hover'),
+  T('--vela-text-on-danger', ['--vela-danger'], 'RemoveEndpointDialog .confirm', {
+    file: REMOVE_ENDPOINT_DIALOG,
+    selector: '.confirm',
+  }),
+  U('--vela-focus', RAISED, 'RemoveEndpointDialog .cancel / .confirm :focus-visible'),
   T('--vela-text-muted', CHROME, 'ModelBar .limits'),
   T('--vela-text-muted', ['--vela-row-hover', '--vela-chrome'], 'ModelBar .limits:hover'),
   T('--vela-warning', CHROME, 'ModelBar .limitsActive'),

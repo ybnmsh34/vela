@@ -256,4 +256,36 @@ describe('focus has an owner: no overlay may drop the keyboard on the floor', ()
     expectKeyboardIsSomewhere();
     expect(composer()).toHaveFocus();
   });
+
+  it('does not drop the keyboard when the endpoint row that opened the question is destroyed', async () => {
+    // `DeleteConversationDialog`'s recorded case, in the second dialog to have
+    // it. `ModalSurface` captures whatever held the keyboard when the dialog
+    // opened; here that is the Remove button of the row the dialog is asking
+    // permission to destroy, so on confirm the remembered element is detached
+    // and a plain `restore.focus()` would land on <body>. The ladder is what
+    // answers instead — and which rung answers is asserted, not described.
+    const user = userEvent.setup();
+    render(<App adapter={await host()} />);
+    await openConversation(user);
+
+    await user.click(screen.getByRole('button', { name: /The workstation/u }));
+    await user.click(await screen.findByRole('button', { name: 'Manage endpoints…' }));
+    const panel = await screen.findByRole('region', { name: 'Endpoints' });
+
+    await user.click(within(panel).getByRole('button', { name: 'Remove: The workstation' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove this endpoint' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    expectKeyboardIsSomewhere();
+    expect(screen.queryByRole('button', { name: 'Remove: The workstation' })).toBeNull();
+    // Which rung answered, not merely "not body". The endpoints panel replaces
+    // the transcript, so with it open there is no composer and no home-screen
+    // primary action mounted to take the keyboard; the floor of the ladder is
+    // the `main` landmark, and that is what holds focus here — measured, then
+    // asserted.
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
 });

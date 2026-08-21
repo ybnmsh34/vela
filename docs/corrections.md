@@ -9,6 +9,75 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — two numbers in a report about numbers, and the rename that could not finish
+
+**Claimed**, in this branch's round-2 report — not in the tree, which is why the tree stayed green
+while the account of it did not.
+
+1. That the ladder evidence was produced with `playwright-core@1.60.1`.
+2. That the branch diff against `run-start-2026-08-17` was `19 files, 1430 insertions, 31
+   deletions`.
+
+**True:**
+
+1. The package actually sitting in the directory the report says it installed into reads
+   `"version": "1.61.1"` — re-measured here by reading `package.json` in that same scratch
+   directory, which is still on disk. Whether `1.60.1` was ever published I could not check from
+   this session: `npm view playwright-core versions` did not return and was killed at 120s, so the
+   claim that the version does not exist stands on the round-2 critic's measurement, not on mine.
+   Either way the number was written without looking at the thing it named.
+2. `git diff --shortstat run-start-2026-08-17..1176ca5` is **1432** insertions. 1430 is the count
+   at `8e91daf`, the commit *before* the one the report described — a figure measured in a tree
+   other than the one being handed over.
+
+Neither number was load-bearing. That is the same excuse the entry below this one refused, and it
+is refused again: a number nobody needs is a number nobody checks, and this was the second
+consecutive round in which this track's report carried one.
+
+**How it was caught:** by the round-2 critic re-running the two measurements against the tree at
+the graded commit instead of reading them.
+
+**What changed:** nothing in the product. The procedure: the diff stat and any tool version quoted
+in a report are taken *after* the last commit, from the tree and the directory being described, and
+pasted rather than recalled.
+
+---
+
+**Also on this branch, and this one is in the product.**
+
+**Claimed:** that renaming the endpoint delete button from `Remove` to `Remove: <endpoint>` closed
+the collision it was renamed for.
+
+**True:** it closed the collision with `Remove shot.png` and the one between two configured rows,
+and it could not close the general case, because the text it interpolates is the user's.
+`EndpointForm` derives the identifier from the display name but leaves the field editable, so two
+endpoints can be given one display name and two ids — and then two buttons named
+`Remove: The workstation` each delete a different endpoint, and the key stored for it, with nothing
+in between. A name is a way of pointing at a control; it is not a property of what the control
+does, and the defect here was always in what the control does.
+
+**How it was caught:** by the round-2 critic, who took the fix and asked what it carried one level
+down, rather than checking that the named pair was gone.
+
+**What changed:** `src/features/models/RemoveEndpointDialog.tsx`. The click now asks, and the
+question states the address and the identifier — the two fields that differ when the display names
+do not. The duplicate name is admitted in `src/app/accessible-names.test.tsx`'s ledger *on that
+basis*, so deleting the dialog reddens the sweep and not only the endpoint tests, and the state
+that produces it (`the endpoints panel with two endpoints the user called the same thing`) is
+driven there.
+
+**And one the new guard caught on its own author.** The first version of the dialog copied
+`Sidebar`'s shape — close the dialog, then start the delete. `ModalSurface` restores focus to
+whatever held it when the dialog opened, which is the Remove button of the row being destroyed, and
+at the moment of that restore the row is still on screen because the removal has not been awaited.
+So the restore succeeded, the reload then detached the element it had succeeded on, and focus fell
+to `<body>` with no overlay left to run the ladder — the exact defect `src/state/focus-store.ts`
+exists for, reintroduced by a component written after it. The assertion added to
+`src/app/focus-ownership.test.tsx` failed with `focus was dropped to <body>` before the order was
+changed to destroy first and close after.
+
+---
+
 ## 2026-08-21 — the guard that stopped at its own family, and a count that was never measured
 
 **Claimed**, on this branch, one day earlier. Two things, both by me.

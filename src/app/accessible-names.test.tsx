@@ -184,6 +184,11 @@ const ACCEPTED: readonly Accepted[] = [
   },
   {
     role: 'button',
+    name: 'Remove: The workstation',
+    why: 'Two endpoints the user gave the same display name. The name is built from the user’s text, so this duplicate is the one no naming scheme can remove — the collision is in what they typed. It is admitted because the consequence is guarded rather than the name: the button opens `RemoveEndpointDialog`, which names the address and the identifier (the two fields that differ), defaults the keyboard to Cancel, and destroys nothing until it is answered. Delete that dialog and this entry stops being true, which is why it says so here.',
+  },
+  {
+    role: 'button',
     name: 'Pin',
     why: 'One per memory entry. Same verb, different entry, and reversible.',
   },
@@ -283,10 +288,23 @@ const ACTIONABLE: ReadonlySet<string> = new Set([
  *  - `Offer tools` inside `Never offer tools`, two options of one select whose
  *    consequences are opposed — now `Always offer tools`, in
  *    `src/features/models/LocalEndpointSection.tsx`;
- *  - `Remove` inside `Remove shot.png`, where the shorter one deletes a
- *    configured endpoint and does not ask first — now `Remove: <endpoint>`, in
- *    `src/features/models/EndpointsPanel.tsx`, which also ends the duplicate
- *    that stood between two configured rows.
+ *  - `Remove` inside `Remove shot.png`, where the shorter one deleted a
+ *    configured endpoint and its stored key in one click — now
+ *    `Remove: <endpoint>`, in `src/features/models/EndpointsPanel.tsx`, which
+ *    also ends the duplicate that stood between two configured rows.
+ *
+ * ## Where renaming stops working, and what took over
+ *
+ * The second of those renames is the ledger's own worked example of a fix that
+ * can only go so far. `Remove: <endpoint>` interpolates the user's text, so two
+ * endpoints the user called the same thing produce two identical names again —
+ * and no naming scheme fixes that, because the part that collides is not the
+ * product's to choose. What makes that landing survivable is the consequence,
+ * not the name: `src/features/models/RemoveEndpointDialog.tsx` now asks first,
+ * and states the address and the identifier, which are what differ between two
+ * rows with one name. The `Remove: <endpoint>` duplicate is admitted in
+ * {@link ACCEPTED} on exactly that basis, so deleting the dialog reddens this
+ * file rather than only the endpoint tests.
  */
 interface AcceptedNesting {
   /** The shorter name — the one a substring query would over-match. */
@@ -532,6 +550,32 @@ async function host(endpoints = 1, vision = false): Promise<BrowserAdapter> {
   return adapter;
 }
 
+/**
+ * Two endpoints the user called the same thing.
+ *
+ * `EndpointForm` derives the identifier from the display name but leaves the
+ * field editable, so this is reachable without any store poke: type one name,
+ * type a different identifier. The ids differ, the display names do not, and
+ * every control named from the display name collides.
+ */
+async function hostWithTwinNames(): Promise<BrowserAdapter> {
+  const adapter = new BrowserAdapter();
+  for (const [id, port] of [
+    ['workstation', 8080],
+    ['study-box', 8081],
+  ] as const) {
+    await adapter.invoke('settings_put_provider', {
+      id,
+      displayName: 'The workstation',
+      kind: 'local',
+      baseUrl: `http://127.0.0.1:${String(port)}/v1`,
+      modelId: 'local-model',
+    });
+  }
+  adapter.seedCapabilities(report(false));
+  return adapter;
+}
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** `delay: null` for the reason `src/app/modal-containment.test.tsx` records. */
@@ -645,6 +689,27 @@ const STATES: readonly State[] = [
       render(<App adapter={await host(2)} />);
       await openConversation(user);
       await openEndpoints(user);
+    },
+  },
+  {
+    id: 'the endpoints panel with two endpoints the user called the same thing',
+    drive: async (user) => {
+      render(<App adapter={await hostWithTwinNames()} />);
+      await openConversation(user);
+      await openEndpoints(user);
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: 'Remove: The workstation' })).toHaveLength(2);
+      });
+    },
+  },
+  {
+    id: 'the endpoint removal confirmation over the endpoints panel',
+    drive: async (user) => {
+      render(<App adapter={await host()} />);
+      await openConversation(user);
+      await openEndpoints(user);
+      await user.click(screen.getByRole('button', { name: 'Remove: The workstation' }));
+      await screen.findByRole('alertdialog', { name: 'Remove this endpoint?' });
     },
   },
   {

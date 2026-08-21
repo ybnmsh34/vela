@@ -36,6 +36,7 @@ import { returnFocusTo } from '@/state/focus-store';
 
 import { EndpointForm } from './EndpointForm';
 import { LocalEndpointSection } from './LocalEndpointSection';
+import { RemoveEndpointDialog } from './RemoveEndpointDialog';
 import { SecurityNotice } from './SecurityNotice';
 import styles from './EndpointsPanel.module.css';
 import type { ProvidersState } from './use-providers';
@@ -59,7 +60,16 @@ export function EndpointsPanel({
 }: EndpointsPanelProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  /**
+   * The endpoint a Remove click is asking about, by id. `null` is "nothing is
+   * being asked". Held here rather than in the row so that the dialog is a
+   * sibling of the panel's own content instead of a descendant of a list item —
+   * a modal nested inside the row it is about would unmount mid-question if the
+   * list reloaded under it.
+   */
+  const [removing, setRemoving] = useState<string | null>(null);
   const panel = useRef<HTMLElement>(null);
+  const pending = pendingRemoval(state, removing);
 
   useEffect(() => {
     const openedFrom = document.activeElement;
@@ -120,7 +130,9 @@ export function EndpointsPanel({
                       setEditing(editing === view.id ? null : view.id);
                     }}
                     onSave={onSave}
-                    onRemove={onRemove}
+                    onRequestRemove={() => {
+                      setRemoving(view.id);
+                    }}
                     onStoreCredential={onStoreCredential}
                     onClearCredential={onClearCredential}
                   />
@@ -160,10 +172,66 @@ export function EndpointsPanel({
               which is exactly when the debug log is worth turning on and the
               only moment its `trace` ids mean anything. */}
           <DebugLogSwitch />
+
+          {/* `find` rather than a stored copy: the row may have been re-read
+              from the host while the question was on screen, and the dialog
+              must state what is true now. A `removing` id with no row left —
+              the endpoint went away underneath the question — renders nothing,
+              which is the dialog closing itself rather than asking about a
+              thing that is already gone. */}
+          {pending === undefined ? null : (
+            <RemoveEndpointDialog
+              view={pending}
+              onCancel={() => {
+                setRemoving(null);
+              }}
+              onConfirm={() => {
+                const target = removing;
+                if (target === null) return;
+                // Destroy first, close after — and this order is the whole
+                // point of the line, not a stylistic preference.
+                //
+                // `Sidebar` closes its delete dialog and *then* starts the
+                // delete, and the same shape here dropped the keyboard on the
+                // floor: `ModalSurface` restores to whatever held focus when
+                // the dialog opened, which is this row's Remove button, and at
+                // the moment of the restore that button is still on screen —
+                // the removal has not been awaited yet. So the restore
+                // succeeds, the reload then detaches the element it succeeded
+                // on, and focus falls to `<body>` with no overlay left to run
+                // the ladder. Measured, not reasoned: the assertion in
+                // `src/app/focus-ownership.test.tsx` named it as
+                // `focus was dropped to <body>` before this was reordered.
+                //
+                // Awaiting first means the row is already gone when the dialog
+                // unmounts, so the opener rung is correctly refused and the
+                // ladder in `src/state/focus-store.ts` answers instead. The
+                // dialog does not need `setRemoving` to close — `pending` goes
+                // undefined the moment the reload lands — but a rejected
+                // removal would otherwise leave the question on screen forever.
+                void onRemove(target).finally(() => {
+                  setRemoving(null);
+                });
+              }}
+            />
+          )}
         </>
       )}
     </section>
   );
+}
+
+/**
+ * The row a pending Remove is about, or `undefined` if there is no question on
+ * screen. Exported to nothing: it exists so the guard and the prop read the
+ * same expression rather than two that could drift apart.
+ */
+function pendingRemoval(
+  state: ProvidersState,
+  removing: string | null,
+): ProviderView | undefined {
+  if (removing === null || state.status !== 'ready') return undefined;
+  return state.providers.find((view) => view.id === removing);
 }
 
 interface EndpointRowProps {
@@ -173,7 +241,8 @@ interface EndpointRowProps {
   readonly editing: boolean;
   readonly onEdit: () => void;
   readonly onSave: (config: SettingsPutProviderReq) => Promise<unknown>;
-  readonly onRemove: (providerId: string) => Promise<void>;
+  /** Opens the question. Nothing is destroyed until the dialog is confirmed. */
+  readonly onRequestRemove: () => void;
   readonly onStoreCredential: (providerId: string, value: string) => Promise<void>;
   readonly onClearCredential: (providerId: string) => Promise<void>;
 }
@@ -184,7 +253,7 @@ function EndpointRow({
   editing,
   onEdit,
   onSave,
-  onRemove,
+  onRequestRemove,
   onStoreCredential,
   onClearCredential,
 }: EndpointRowProps) {
@@ -218,22 +287,26 @@ function EndpointRow({
             The visible word stays `Remove`; the accessible name names the row.
             Two reasons, and both are the reason `Close` had to be scoped above.
             One: with two endpoints configured there were two buttons called
-            `Remove`, and this one deletes an endpoint without asking first.
-            Two: bare `Remove` is a substring of the attachment tray's
+            `Remove`. Two: bare `Remove` is a substring of the attachment tray's
             `Remove shot.png`, which is on screen at the same time — a non-exact
             query for `Remove` matched both, and which one it clicked was
             document order. `Remove: ` follows the convention the schedules and
             memory rows already use (`Delete: Daily digest`, `Forget: Same
             note`). Read by `EndpointsPanel.test.tsx` and by the sweep in
             `src/app/accessible-names.test.tsx`.
+
+            The name is where this stops being able to help, which is why the
+            click now only *asks*. Display names are the user's text, so two
+            rows may carry the same one and this label cannot separate them —
+            no naming scheme can. `RemoveEndpointDialog` is what makes landing
+            on the wrong one survivable: it names the address and the
+            identifier, which are what differ, and it defaults to Cancel.
           */}
           <button
             type="button"
             className={styles.rowDanger}
             aria-label={`Remove: ${view.displayName}`}
-            onClick={() => {
-              void onRemove(view.id);
-            }}
+            onClick={onRequestRemove}
           >
             Remove
           </button>

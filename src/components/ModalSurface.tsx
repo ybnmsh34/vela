@@ -32,7 +32,14 @@
  * not available here.
  *
  * The wrap needs no engine support, runs identically everywhere, and is asserted
- * end to end against both dialogs in `src/app/modal-containment.test.tsx`.
+ * end to end in `src/app/modal-containment.test.tsx` against three of the
+ * surfaces that render through here — the command bar, the delete-conversation
+ * dialog and the endpoint-removal dialog — each driven against its own
+ * background rather than assumed to inherit the property from the one before
+ * it. Four more render through here and are **not** driven there: the memory,
+ * skills, schedules and projects panels. They get the containment by
+ * construction, which is the point of this component, but nothing in that file
+ * walks Tab out of them.
  *
  * ## What the wrap has to answer
  *

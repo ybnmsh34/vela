@@ -70,26 +70,27 @@ interface AssistantTurnProps {
    */
   readonly laterTurnsFollow?: boolean | undefined;
   /**
-   * **Which reply this turn's retry control would discard**, for that control's
-   * accessible name and for nothing else.
+   * **Which reply this turn is**, for the accessible names of the two controls
+   * it draws and for nothing else.
    *
    * Every retryable turn in a transcript draws a button reading "Try again from
    * here", and each one discards from a different anchor: an earlier one throws
-   * away every reply after it, a later one throws away fewer. Read out of
-   * context by a screen reader they were the same control repeated, and the
-   * visible wording could not fix that — it is the same on every one of them
-   * because it is true of every one of them.
+   * away every reply after it, a later one throws away fewer. Every turn with an
+   * answer also draws a "Copy" button, and each one copies a different reply.
+   * Read out of context by a screen reader each family was the same control
+   * repeated, and the visible wording could not fix that — it is the same on
+   * every one of them because it is true of every one of them.
    *
    * So the *name* carries the target while the *label* stays short. Undefined
    * for a caller that does not know the transcript — `MessageTurn.test.tsx`
-   * mounts turns on their own — and then the name falls back to the label,
-   * which is where it was.
+   * mounts turns on their own — and then both names fall back to their labels,
+   * which is where they were.
    */
   readonly retryTarget?: RetryTarget | undefined;
 }
 
 /**
- * What a retry control's name says about the reply it would discard.
+ * What a turn's controls say about the reply they act on.
  *
  * ## Why the question is not enough on its own
  *
@@ -119,7 +120,8 @@ interface AssistantTurnProps {
  * previous fix was one questions could defeat.
  *
  * `ConversationSurface.test.tsx` walks every retry control in a mounted
- * transcript and asserts the names are distinct, in both shapes above.
+ * transcript and asserts the names are distinct, in both shapes above, and does
+ * the same walk over the copy controls.
  */
 interface RetryTarget {
   /**
@@ -140,8 +142,8 @@ const QUESTION_IN_NAME = 60;
  * "Try again from here" → "Try again from here — reply 2 of 3, to “…”".
  *
  * The visible label is unchanged, so nothing about the button's appearance or
- * its wording depends on this, and the name still *begins* with the visible
- * label so voice control keeps matching what the user can read (WCAG 2.5.3).
+ * its wording depends on this, and the name still *begins* with the label a
+ * sighted user can read, so voice control keeps matching it (WCAG 2.5.3).
  *
  * The position is stated only when there is more than one reply to be among:
  * a transcript with one assistant turn has only that turn to draw a control
@@ -150,8 +152,18 @@ const QUESTION_IN_NAME = 60;
  * truncated quote is free to stay short. Per turn is not per control; the note
  * beside `retryAccessibleName` in {@link AssistantTurn} says what is still open
  * about a turn that could draw two.
+ *
+ * **Two controls use this, not one.** The round-3 critic pointed out that the
+ * copy button in this same turn’s footer had the same defect and nobody had
+ * named it: `label="Copy this reply"` rendered once per assistant
+ * turn with a non-empty answer, so an N-reply transcript drew N controls with
+ * one byte-identical accessible name, each copying a different reply. Fixing
+ * the retry control alone would have been the instance rather than the class,
+ * which is the failure this run exists for — so this function is named for what
+ * it does to a label rather than for the button it was written for, and the
+ * copy control passes its own label through it.
  */
-function retryName(label: string, target: RetryTarget | undefined): string {
+function turnControlName(label: string, target: RetryTarget | undefined): string {
   if (target === undefined) return label;
   const trimmed = target.question?.trim() ?? '';
   const quoted =
@@ -195,7 +207,15 @@ export function AssistantTurn({
   // `turnFromStored` overrides neither field, so a restored turn has both
   // `null`. But "I did not find one" is not "there is none", and the ordering
   // inside `streamTurn`'s catch is not something this file can see.
-  const retryAccessibleName = retryName(retryLabel, retryTarget);
+  const retryAccessibleName = turnControlName(retryLabel, retryTarget);
+
+  // The same treatment for the other control this turn draws. Its visible text
+  // is 'Copy' — and becomes 'Copied' or 'Copy failed' for 1600ms after a click,
+  // which is a Label-in-Name gap this name inherits rather than introduces: the
+  // accessible name has begun with 'Copy' and not with 'Copied' since before
+  // this track existed, and changing the visible text mid-interaction is
+  // `CopyButton`'s decision to own, not this file's.
+  const copyAccessibleName = turnControlName('Copy this reply', retryTarget);
 
   /**
    * How this turn ended, when the text above does not say — the empty reply, the
@@ -350,7 +370,7 @@ export function AssistantTurn({
           so that turn still says it exactly once. */}
       <footer className={styles.footer}>
         {turn.answer === '' ? null : (
-          <CopyButton getText={() => turn.answer} label="Copy this reply" />
+          <CopyButton getText={() => turn.answer} label={copyAccessibleName} />
         )}
         {hasReportedUsage(turn.usage) ? (
           <span className={styles.usage}>{formatUsage(turn.usage)}</span>

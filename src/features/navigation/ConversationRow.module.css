@@ -124,11 +124,12 @@
 
 /* FORCED COLOURS: WHICH CONVERSATION IS OPEN.
 
-   `.selected` says it with `--vela-row-selected` and with nothing else, and a
-   forced-colours mode replaces that background with the same fill every other
-   row has. `aria-current="page"` is on `.main` and reaches assistive
-   technology; a sighted user in High Contrast is left reading forty identical
-   rows.
+   `.selected` says it in colour and in nothing but colour — a
+   `--vela-row-selected` fill on the row and a `--vela-row-selected-text`
+   foreground on `.main` — and a forced-colours mode substitutes both, leaving
+   the selected row drawn in the same pair as every other row.
+   `aria-current="page"` is on `.main` and reaches assistive technology; a
+   sighted user in High Contrast is left reading forty identical rows.
 
    Restated in weight, which forced colours does not substitute. Not in a border
    — `.main` has `border: 0`, so giving it one would move every row by a pixel

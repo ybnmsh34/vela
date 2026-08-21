@@ -64,9 +64,10 @@ export function HomeSurface({ secretBackend = null }: HomeSurfaceProps) {
    * This screen is the second rung of the focus ladder. It is also a screen
    * that can appear *because* something went away — deleting the open
    * conversation closes it and lands the user here — though that is no longer
-   * the only way to reach it: `select(null)` had exactly one caller, the delete
-   * path in `use-conversations.ts`, so until the sidebar grew a **Home** control
-   * the only route back to this screen was to destroy a conversation.
+   * the only way to reach it: `select(null)` had exactly one caller in product
+   * code, the delete path in `use-conversations.ts`, so until the sidebar grew a
+   * **Home** control the only route back to this screen was to destroy a
+   * conversation. That path is unchanged; it is no longer the only one.
    *
    * So it does two things. It registers its primary action as a destination
    * other surfaces can fall back to, and on arrival it takes the keyboard **if

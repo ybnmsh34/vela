@@ -202,21 +202,49 @@
 /* FORCED COLOURS: WHETHER THE AGENT TOGGLE IS ON.
 
    The rule above says why this state must read without its label — it changes
-   what pressing Send does — and it says it in three colours, all three of which
-   a forced-colours mode replaces. The toggle then looks identical on and off,
-   which is the mode the user cannot see they are in, back again.
+   what pressing Send does — and it says it in three declarations, `color`,
+   `border-color` and `background`. Every one of those is a property a
+   forced-colours mode substitutes, which is why the tree-wide scan in
+   `forced-colors.test.ts` picks this selector up as colour-alone.
 
-   An outline rather than the border, and that is not a style preference: this
-   button's resting border is `1px solid transparent`, and forced colours
-   preserves `transparent`. A border-style change on an invisible border draws
-   nothing. `outline-color` defaults to `currentColor`, which is substituted
-   with the user's own text colour and is therefore visible.
+   WHAT SUBSTITUTION LEAVES BEHIND IS NOT NOTHING, and this comment used to
+   claim it was. The resting button is `border: 1px solid transparent` and
+   forced colours preserves a computed `transparent`; this rule's
+   `border-color: var(--vela-border)` is not transparent, so it is replaced
+   rather than erased and a pressed button does keep a 1px edge an unpressed one
+   does not have. What goes is the pair doing the visible work — the accent text
+   colour and the inset fill both become the mode's own foreground and
+   background, the same pair every other icon button in the row is drawn in. The
+   state survives as the faintest of its three signals, on a control whose
+   neighbours are also 1px-bordered boxes.
+
+   So it is restated in shape: a 2px dashed outline, which no substitution can
+   flatten because it is not a colour, and which does not depend on the rule
+   above continuing to pick a non-transparent border. `outline-color` is left
+   unset so it stays `currentColor` and is substituted along with the text —
+   visible by construction rather than by a value chosen here.
 
    The offset is `--vela-focus-offset-inset` and not a number: `design-system.
-   test.ts` refuses a hand-written `outline-offset` anywhere under `src/`, and
-   it is right to — the offset is the part that drifts, and this ring is inset
-   for the same reason the focus rings that use that token are, so it should be
-   inset by the same amount. */
+   test.ts` refuses a hand-written `outline-offset` in every `*.module.css`
+   under `src/` — 40 of the 43 stylesheets. The other three are global sheets it
+   never opens, and `base.css`'s `:focus-visible` writes both an `outline`
+   shorthand and an `outline-offset` with bare pixel values today: both of that
+   test's two patterns match those two lines, and the suite is green only
+   because the scan never reaches that file. This comment cannot quote the two
+   declarations verbatim, and that is the measurement — quoting them here turned
+   `design-system.test.ts` red, because it reads raw lines and does not strip
+   comments. The token is the right answer here regardless: this ring is inset
+   for the same reason the focus rings that use that token are.
+
+   TWO THINGS THIS DOES NOT DO. It does not keep *pressed* apart from *focused*
+   on the same button: `.iconButton:focus-visible` above and
+   `.iconButton[aria-pressed='true']` here have equal specificity and this block
+   is later in the sheet, so the outline style, width and offset set here win on
+   a button that is both — one dashed inset ring where an unpressed focused
+   button draws the solid outset one. And none of this is observed: jsdom does
+   not implement `forced-colors` and this run may not launch the app, so every
+   sentence above about what a user would see is read off the substitution rules
+   in CSS Color Adjust and off this sheet, not off a screen. */
 @media (forced-colors: active) {
   .iconButton[aria-pressed='true'] {
     outline-style: dashed;

@@ -204,11 +204,30 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // colours, and redden nothing. Measured against a sheet with that shorthand
     // added to `.error`: the old pattern returns false, this one returns true.
     //
-    // It covers the `border-left` shorthand and the `border-left-*` longhands,
-    // which is what it claims and no more. A four-value `border-width:
-    // 1px 1px 1px 3px` sets the same edge without the substring and would still
-    // slip past — an open hole, narrower than the one it replaces.
+    // It covers the `border-left` shorthand and the `border-left-*` longhands.
     expect(text).not.toMatch(/\.error\s*\{[^}]*border-left/u);
+
+    // AND THE FOUR-VALUE HOLE THIS COMMENT USED TO LEAVE OPEN. The line above
+    // reads a substring, so a four-value `border-width` — 1px on three sides
+    // and 3px on the fourth — set the same left edge without ever writing
+    // `border-left`, and reddened nothing. Both spellings are refused now, on
+    // every rule in this sheet whose selector mentions `.error` rather than on
+    // the bare `.error {` rule alone. There is no third spelling: the `border`
+    // shorthand takes one width for all four sides, so it cannot single an edge
+    // out. Comments are stripped first, because this file's own prose quotes
+    // the declaration it is banning.
+    const rules = text.replace(/\/\*[\s\S]*?\*\//gu, '');
+    let errorRules = 0;
+    for (const rule of rules.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+      const selector = (rule[1] ?? '').trim();
+      if (!/\.error\b/u.test(selector)) continue;
+      errorRules += 1;
+      expect(rule[2] ?? '', `${selector} gives itself a left edge`).not.toMatch(
+        /border-left|border-width/u,
+      );
+    }
+    // A scan that stopped finding the rules would pass the loop above silently.
+    expect(errorRules).toBeGreaterThanOrEqual(3);
     expect(block).toMatch(/\.ending\s*\{\s*border-style:\s*solid/u);
     expect(block).toMatch(/\.ending\[data-tone='warning'\]\s*\{\s*border-style:\s*dashed/u);
     expect(block).toMatch(/\.error\s*\{\s*border-style:\s*dashed/u);

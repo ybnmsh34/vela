@@ -588,11 +588,12 @@ describe('the conversation surface: failure and cancellation', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('The reply stopped arriving');
     expect(screen.getByText('As far as I got')).toBeInTheDocument();
-    // Matched on the *start* of the name throughout this file: the accessible
-    // name now carries the question the button's turn answers, so that two of
-    // them in one transcript are not the same control announced twice. The
-    // visible label is still exactly 'Try again' and is asserted as such where
-    // the wording is the point.
+    // Matched on the *start* of the name — the form this file uses wherever it
+    // only needs to find the control, nine queries in all. The accessible name
+    // now carries the question the button's turn answers, so that two of them in
+    // one transcript are not the same control announced twice. The visible label
+    // is still exactly 'Try again', and where the wording is the point this file
+    // asserts the whole name rather than its start.
     expect(screen.getByRole('button', { name: /^Try again/u })).toBeInTheDocument();
   });
 
@@ -1154,8 +1155,12 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
  * Both are driven through the real `entriesFromStored` and the real
  * `ConversationView`, and both assert the property rather than a wording: every
  * retry control in the transcript has a name of its own.
+ *
+ * *names each reply’s copy control for itself, in the same transcript shape*
+ * asks the same question of the **copy** controls, which had the same defect and
+ * went three rounds without anybody naming it.
  */
-describe('the conversation surface: no two retry controls share a name', () => {
+describe('the conversation surface: no two turn controls share a name', () => {
   function storedMessage(id: string, role: 'user' | 'assistant', text: string): StoredMessage {
     return {
       id,
@@ -1275,7 +1280,7 @@ describe('the conversation surface: no two retry controls share a name', () => {
     // 'Try again from here — the reply to
     //  “please review the attached design document and tell me wheth…”' —
     // that ellipsis is where the sixtieth character falls, copied from the
-    // failure message a mutation of `retryName` actually produced.
+    // failure message a mutation of `turnControlName` actually produced.
     expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
     expect(names[0]).toContain('reply 1 of 3');
     expect(names[1]).toContain('reply 2 of 3');
@@ -1301,5 +1306,31 @@ describe('the conversation surface: no two retry controls share a name', () => {
       'Try again — reply 3 of 3',
     ]);
     expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+  });
+
+  it('names each reply’s copy control for itself, in the same transcript shape', () => {
+    // THE INSTANCE NOBODY NAMED FOR THREE ROUNDS. The round-3 critic found it:
+    // the copy button in the same turn’s footer in `MessageTurn.tsx` had
+    // exactly the defect the retry button had spent two rounds fixing — `label="Copy this reply"` on every assistant turn with
+    // an answer, so a reopened three-step run drew three controls with one
+    // byte-identical accessible name, each copying a different reply.
+    show([
+      storedMessage('m0', 'user', 'refactor the parser and run the tests'),
+      storedMessage('m1', 'assistant', 'looking at the parser'),
+      storedMessage('m2', 'assistant', 'running the tests'),
+      storedMessage('m3', 'assistant', 'the tests fail'),
+    ]);
+
+    const controls = screen.getAllByRole('button', { name: /^Copy this reply/u });
+    const names = controls.map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+    expect(names[0]).toContain('reply 1 of 3');
+    expect(names[1]).toContain('reply 2 of 3');
+    expect(names[2]).toContain('reply 3 of 3');
+    // WCAG 2.5.3, and the visible text is unchanged by any of this: the button
+    // reads 'Copy', and every name begins with that word.
+    for (const button of controls) expect(button).toHaveTextContent('Copy');
+    for (const name of names) expect(name.startsWith('Copy')).toBe(true);
   });
 });

@@ -9,21 +9,31 @@
  *
  * So this file asks the wider question in two ways:
  *
- *  1. **Every ending, enumerated.** The table below crosses each
- *     {@link TurnPhase} with each {@link StopReason} and with the turn being
- *     empty or not, and asserts the kind for every cell. A cell nobody thought
- *     about is a row that has to be written down before this file compiles, not
- *     a `null` nobody notices.
- *  2. **The unions are read off their own sources.** The last two tests parse
- *     `contract.ts` and `turn-stream.ts` for the members of `StopReason` and
- *     `TurnPhase` and fail if `turn-ending.ts` does not name each one in a
- *     `case`. Add a sixth stop reason and this file goes red — the type checker
- *     already would, but a `default:` added in haste would silence it and this
- *     would not.
+ *  1. **Every ending, enumerated.** {@link EXPECTED} crosses each
+ *     {@link TurnPhase} with each stop reason — the five members of
+ *     {@link StopReason}, plus `null`, which is not a member of that union but
+ *     is what a turn carries until the endpoint names one — and each of those
+ *     thirty pairs with the turn carrying content and with it carrying nothing.
+ *     *asserts a decided kind for all sixty cells* reads the expected kind out
+ *     of that table and compares it, cell by cell, so changing what any one cell
+ *     returns reddens this file. The table's type is
+ *     `Record<TurnPhase, Record<StopKey, …>>`, so a sixth phase or a sixth stop
+ *     reason is a cell that must be written down before `pnpm typecheck` passes,
+ *     not a `null` nobody notices.
+ *  2. **The unions are read off their own sources.** Two tests in *the endings
+ *     stay total against the unions they switch over* — 'names every member of
+ *     StopReason in a case' and 'names every member of TurnPhase in a case' —
+ *     parse `contract.ts` and `turn-stream.ts` for the members of each union and
+ *     fail if `turn-ending.ts` does not name a member in a `case`, or if
+ *     {@link EXPECTED} carries no cells for it. Add a sixth stop reason and this
+ *     file goes red — the type checker already would, but a `default:` added in
+ *     haste would silence it and this would not.
  *
  * RULE T applies to the doc comments in `turn-ending.ts` as much as to anyone
  * else's: `describeTurnEnding` *claims* it goes quiet when an error or a refusal
- * is already speaking. The `hasError`/`hasRefusal` rows below check the fact.
+ * is already speaking. That claim is checked by its own test below — *goes quiet
+ * whenever the error or refusal block is already speaking* — and not by the
+ * table, whose sixty cells all carry `hasError: false, hasRefusal: false`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -67,15 +77,100 @@ function ending(
   return describeTurnEnding({ phase, stopReason, ...rest })?.kind ?? null;
 }
 
+/**
+ * A stop reason as a key: the union's members, plus a name for the `null` a
+ * turn carries until the endpoint gives one. An object cannot be keyed on
+ * `null`, and a key is what makes {@link EXPECTED} exhaustive to the compiler.
+ */
+type StopKey = NonNullable<StopReason> | 'noReason';
+
+function reasonOf(key: StopKey): StopReason | null {
+  return key === 'noReason' ? null : key;
+}
+
 /** Every stop reason on the contract's union, named here so the table is total. */
-const STOP_REASONS: readonly (StopReason | null)[] = [
+const STOP_KEYS: readonly StopKey[] = [
   'endTurn',
   'maxTokens',
   'cancelled',
   'toolUse',
   'unspecified',
-  null,
+  'noReason',
 ];
+
+const STOP_REASONS: readonly (StopReason | null)[] = STOP_KEYS.map(reasonOf);
+
+/**
+ * **The whole input space, one cell at a time.**
+ *
+ * Each cell is `[what a turn with content gets, what an empty turn gets]` —
+ * {@link SETTLED} and {@link NOTHING}, which differ only in whether there is an
+ * answer to read. `null` means *say nothing*, which is a decision like any
+ * other and is written down as one.
+ *
+ * The type is what makes this total: `Record<TurnPhase, Record<StopKey, …>>`
+ * has no optional keys, so a sixth phase or a sixth stop reason fails
+ * `pnpm typecheck` here until somebody decides what it should draw. That is the
+ * defect this module exists for, stated as a type rather than as a hope — the
+ * original bug was one ending nobody had thought about being drawn as nothing.
+ */
+const EXPECTED: Readonly<
+  Record<TurnPhase, Readonly<Record<StopKey, readonly [TurnEndingKind | null, TurnEndingKind | null]>>>
+> = {
+  // Not settled: there is no ending yet, whatever the endpoint has said.
+  awaiting: {
+    endTurn: [null, null],
+    maxTokens: [null, null],
+    cancelled: [null, null],
+    toolUse: [null, null],
+    unspecified: [null, null],
+    noReason: [null, null],
+  },
+  streaming: {
+    endTurn: [null, null],
+    maxTokens: [null, null],
+    cancelled: [null, null],
+    toolUse: [null, null],
+    unspecified: [null, null],
+    noReason: [null, null],
+  },
+  // The only phase whose ending depends on the stop reason at all.
+  complete: {
+    endTurn: [null, 'silent'],
+    // Before emptiness, deliberately: a truncation with nothing written yet is
+    // still a truncation, which is why this row is `truncated` twice.
+    maxTokens: ['truncated', 'truncated'],
+    // `settleRun`'s completed branch copies the whole union, `cancelled`
+    // included — see the last describe, which executes that translation.
+    cancelled: ['cutShort', 'cutShort'],
+    toolUse: [null, 'silent'],
+    unspecified: [null, 'silent'],
+    noReason: [null, 'silent'],
+  },
+  // Cut short is cut short whatever reason came with it, and whether or not any
+  // text arrived before the stop.
+  stopped: {
+    endTurn: ['cutShort', 'cutShort'],
+    maxTokens: ['cutShort', 'cutShort'],
+    cancelled: ['cutShort', 'cutShort'],
+    toolUse: ['cutShort', 'cutShort'],
+    unspecified: ['cutShort', 'cutShort'],
+    noReason: ['cutShort', 'cutShort'],
+  },
+  // `recordedFailure` is `null` in both {@link SETTLED} and {@link NOTHING}, so
+  // every cell here is the un-quoted sentence; the quoted one has its own test.
+  failed: {
+    endTurn: ['failedUnrecorded', 'failedUnrecorded'],
+    maxTokens: ['failedUnrecorded', 'failedUnrecorded'],
+    cancelled: ['failedUnrecorded', 'failedUnrecorded'],
+    toolUse: ['failedUnrecorded', 'failedUnrecorded'],
+    unspecified: ['failedUnrecorded', 'failedUnrecorded'],
+    noReason: ['failedUnrecorded', 'failedUnrecorded'],
+  },
+};
+
+/** Read off the table, so the loop below cannot iterate a shorter list than it. */
+const PHASES = Object.keys(EXPECTED) as readonly TurnPhase[];
 
 describe('how a turn ended, for every way a turn can end', () => {
   it('marks an answer cut off at the output cap, with or without text', () => {
@@ -195,21 +290,25 @@ describe('how a turn ended, for every way a turn can end', () => {
     }
   });
 
-  it('has a decided answer for every phase crossed with every stop reason', () => {
-    // Not an assertion about any one cell — an assertion that no cell throws and
-    // that the empty and non-empty cases were both considered everywhere. The
-    // rows above are what pin the values.
-    const phases: readonly TurnPhase[] = ['awaiting', 'streaming', 'complete', 'stopped', 'failed'];
+  it('asserts a decided kind for all sixty cells', () => {
+    // Every cell, against the kind {@link EXPECTED} says it should be — not a
+    // "nothing throws" sweep, which is what this was and which let any single
+    // cell change its answer silently. The tests above pin the cells that carry
+    // an argument; this one pins the other fifty-odd, including the ones nobody
+    // would think to write a test about, which is where the original defect was.
     let cells = 0;
-    for (const phase of phases) {
-      for (const stopReason of STOP_REASONS) {
-        for (const rest of [SETTLED, NOTHING]) {
-          expect(() => ending(phase, stopReason, rest)).not.toThrow();
-          cells += 1;
-        }
+    for (const phase of PHASES) {
+      for (const key of STOP_KEYS) {
+        const [withContent, whenEmpty] = EXPECTED[phase][key];
+        expect(ending(phase, reasonOf(key), SETTLED), `${phase} × ${key} × content`).toBe(
+          withContent,
+        );
+        expect(ending(phase, reasonOf(key), NOTHING), `${phase} × ${key} × empty`).toBe(whenEmpty);
+        cells += 2;
       }
     }
-    expect(cells).toBe(phases.length * STOP_REASONS.length * 2);
+    expect(cells).toBe(60);
+    expect(cells).toBe(PHASES.length * STOP_KEYS.length * 2);
   });
 });
 
@@ -227,6 +326,12 @@ describe('the endings stay total against the unions they switch over', () => {
       expect(SOURCE, `StopReason '${String(member)}' has no case in turn-ending.ts`).toContain(
         `case '${String(member)}':`,
       );
+      for (const phase of PHASES) {
+        expect(
+          Object.keys(EXPECTED[phase]),
+          `StopReason '${String(member)}' has no cells under phase '${phase}'`,
+        ).toContain(member);
+      }
     }
   });
 
@@ -240,6 +345,10 @@ describe('the endings stay total against the unions they switch over', () => {
       expect(SOURCE, `TurnPhase '${String(member)}' has no case in turn-ending.ts`).toContain(
         `case '${String(member)}':`,
       );
+      expect(
+        Object.keys(EXPECTED),
+        `TurnPhase '${String(member)}' has no row in the table`,
+      ).toContain(member);
     }
   });
 

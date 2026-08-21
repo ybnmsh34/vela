@@ -227,11 +227,19 @@
 
 /* WHERE YOU ARE, IN THE RAIL.
 
-   `aria-current="page"` is the semantics; these two rules are the pixels. They
-   reuse the exact declarations the `:hover` rules on the same two elements
-   already make — `--vela-text` on `--vela-surface`, `--vela-border-strong` — so
-   no composition enters this stylesheet that `contrast.test.ts` has not already
-   measured. */
+   `aria-current="page"` is the semantics; these two rules are the pixels. Each
+   is declaration-for-declaration the `:hover` rule on the same element —
+   `--vela-text` over `--vela-surface` on the icon button, `--vela-border-strong`
+   with `--vela-text` on the search button — so this state puts no colour pair on
+   screen that the sheet did not already draw.
+
+   What that does and does not buy from `contrast.test.ts`, stated exactly: the
+   pair `--vela-text` on `--vela-surface` is in that file's table, as
+   `Sidebar .iconButton:hover`. Neither of the two selectors below has a row of
+   its own — the search button's only row is `--vela-text-muted` on
+   `--vela-surface` — and `--vela-border-strong` does not appear in that file at
+   all, because the table measures a foreground against its backgrounds and
+   never measures a border. So: the pair is audited, these two rules are not. */
 .searchButton[aria-current='page'] {
   border-color: var(--vela-border-strong);
   color: var(--vela-text);

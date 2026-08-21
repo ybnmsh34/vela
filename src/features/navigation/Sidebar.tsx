@@ -32,13 +32,18 @@
  *
  * ## Home
  *
- * The rail's **Home** control is the only thing in the product that clears the
- * selection. `select(null)` had one caller before it — `deleteConversation` —
- * which meant the home screen was reachable exactly by deleting the
- * conversation you were reading. It is offered in both branches of this
- * component, expanded and collapsed, because a control that exists only in the
- * expanded rail is not reachable from a collapsed one, and `sidebarCollapsed` is
- * persisted across restarts.
+ * Before the **Home** control, `select(null)` had exactly one caller in product
+ * code — `deleteConversation` in `use-conversations.ts` — which meant the home
+ * screen was reachable exactly by deleting the conversation you were reading.
+ * That caller is still there, deliberately: deleting the open conversation
+ * still clears the selection and still lands the user here. What is new is a
+ * way to arrive that costs nothing, which makes this component the second
+ * caller and not the only one.
+ *
+ * It is drawn twice — once in the collapsed rail and once in the expanded head,
+ * so there are two `select(null)` call sites in this file — because a control
+ * that exists only in the expanded rail is not reachable from a collapsed one,
+ * and `sidebarCollapsed` is persisted across restarts.
  *
  * ## Resizing
  *

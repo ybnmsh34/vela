@@ -2,14 +2,20 @@
  * **HOME WAS REACHABLE BY DELETING A CONVERSATION, AND BY NOTHING ELSE.**
  *
  * `NavigationSurface` renders `<HomeSurface/>` when
- * `navigation-store.selectedConversationId` is `null`, and the store's `select`
- * is the only way that field changes. Across the whole renderer, at
- * `run-start-2026-08-17`, `select(null)` had exactly **one** call site:
- * `deleteConversation` in `use-conversations.ts`, guarded by
- * `if (selectedId === conversationId)`. Every other caller — `createConversation`,
- * `CommandPalette`, `HomeSurface`'s recent strip, `Sidebar`'s rows — passes an
- * id. So a user reading a conversation could get back to the home screen by
- * destroying that conversation, and could not get back any other way.
+ * `navigation-store.selectedConversationId` is `null`. In product code the
+ * store's `select` is the only writer of that field — `resetNavigationStore`
+ * clears it too, and tests reach it with `setState`, but neither is a path a
+ * user has. At `run-start-2026-08-17`, `select(null)` had exactly **one** call
+ * site in product code: `deleteConversation` in `use-conversations.ts`, guarded
+ * by `if (selectedId === conversationId)`. Every other caller —
+ * `createConversation`, `CommandPalette`, `HomeSurface`'s recent strip,
+ * `Sidebar`'s rows — passes an id. So a user reading a conversation could get
+ * back to the home screen by destroying that conversation, and could not get
+ * back any other way.
+ *
+ * That call site is still there and is meant to be: deleting the conversation
+ * you are reading still lands you here. What this file adds is a way to arrive
+ * that costs nothing.
  *
  * ## Why the collapsed rail is tested too, and is not an afterthought
  *
@@ -17,8 +23,9 @@
  * mount by `use-sidebar-layout.ts`, so a user who collapses the sidebar is in
  * the collapsed rail on every subsequent launch. A Home control that exists only
  * in the expanded branch would be a fix that is off by one branch — the same
- * shape as the defect. The last test asserts the two branches agree, by reading
- * the component's source for the call rather than by trusting that both were
+ * shape as the defect. *clears the selection from both branches of the
+ * component, not one* asserts the two branches agree, by reading the
+ * component's source for the call rather than by trusting that both were
  * remembered.
  */
 

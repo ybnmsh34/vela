@@ -32,6 +32,7 @@ import type {
   CommandName,
   CommandReq,
   CommandRes,
+  StoredMessage,
   TokenUsage,
 } from '@/platform/contract';
 import { NO_CAPABILITIES } from '@/platform/contract';
@@ -41,7 +42,8 @@ import { useNavigationStore } from '@/state/navigation-store';
 
 import { ConversationSurface } from './ConversationSurface';
 import { ConversationView } from './ConversationView';
-import { useConversation } from './use-conversation';
+import { entriesFromStored } from './stored-entries';
+import { useConversation, type Conversation } from './use-conversation';
 
 const NO_USAGE: TokenUsage = {
   inputTokens: null,
@@ -1045,9 +1047,11 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
     // NAMED FOR ITS TARGET. Two retryable turns in one transcript used to render
     // two buttons with one name — "Try again from here" on both — each
     // discarding from a different anchor. Heard out of context they were the
-    // same control repeated. The name now quotes the question the turn answers.
+    // same control repeated. The name now carries the turn's position among the
+    // replies — which two turns cannot share — and quotes the question it
+    // answers. This transcript holds two replies, so this is the first of two.
     const again = screen.getByRole('button', {
-      name: 'Try again from here — the reply to “first question”',
+      name: 'Try again from here — reply 1 of 2, to “first question”',
     });
     // The *visible* wording is unchanged and still says what the press costs.
     expect(again).toHaveTextContent('Try again from here');
@@ -1124,5 +1128,153 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
     expect(only).not.toHaveTextContent('from here');
     // …and the name still says which reply it would discard.
     expect(only).toHaveAccessibleName('Try again — the reply to “only question”');
+  });
+});
+
+/**
+ * THE TWO TRANSCRIPT SHAPES THAT DEFEATED NAMING A RETRY CONTROL BY ITS
+ * QUESTION.
+ *
+ * Naming each control after the question its turn answers fixed the first
+ * duplicate — two failed turns under two different questions — and left two
+ * shapes that produce the same defect one level down, both of them reachable
+ * through the product's own paths rather than invented for a test:
+ *
+ *  1. **Several replies under one question.** `AgentLoopHarness`'s step loop
+ *     calls `runTurn` once per step and `runTurn` opens with a single
+ *     `transcript.append({ role: 'assistant', … })`, so a run writes one
+ *     assistant row per step. `entriesFromStored` pushes one entry per
+ *     assistant row. Reopening a three-step run therefore yields three
+ *     consecutive assistant turns under one user message.
+ *  2. **Two questions that agree for sixty characters.** The quote in the name
+ *     is cut so a screen reader is not made to read a paragraph before the
+ *     verb, and the cut re-merges two long questions with a shared opening.
+ *
+ * Both are driven through the real `entriesFromStored` and the real
+ * `ConversationView`, and both assert the property rather than a wording: every
+ * retry control in the transcript has a name of its own.
+ */
+describe('the conversation surface: no two retry controls share a name', () => {
+  const NO_USAGE_STORED: TokenUsage = NO_USAGE;
+
+  function storedMessage(id: string, role: 'user' | 'assistant', text: string): StoredMessage {
+    return {
+      id,
+      conversationId: 'conv_1',
+      seq: 0,
+      role,
+      status: role === 'user' ? 'complete' : 'failed',
+      parts: [{ kind: 'text', text }],
+      providerId: 'workstation',
+      modelId: 'local-model',
+      answeredByProviderId: null,
+      answeredByModelId: null,
+      usage: NO_USAGE_STORED,
+      stopReason: null,
+      // A failed row that kept its reason reaches `failedRecorded`, which is an
+      // ending that offers the retry control. That is what puts a button on
+      // every one of these turns.
+      errorMessage: role === 'user' ? null : 'the endpoint hung up',
+      createdAtMs: 1_700_000_000_000,
+      updatedAtMs: 1_700_000_000_000,
+    };
+  }
+
+  /** The real restore, wrapped in the smallest {@link Conversation} that renders. */
+  function conversationOf(messages: readonly StoredMessage[]): Conversation {
+    return {
+      entries: entriesFromStored(messages),
+      streaming: false,
+      memoryPreamble: null,
+      blockedReason: null,
+      send: () => undefined,
+      stop: () => undefined,
+      retry: () => undefined,
+      agent: { available: false, enabled: false, setEnabled: () => undefined },
+    };
+  }
+
+  function retryNames(): readonly string[] {
+    return screen
+      .getAllByRole('button', { name: /^Try again/u })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+  }
+
+  function show(messages: readonly StoredMessage[]): void {
+    render(
+      <PlatformProvider adapter={new BrowserAdapter()}>
+        <ConversationView
+          conversation={conversationOf(messages)}
+          capabilities={NO_CAPABILITIES}
+          modelLabel="the model on this machine"
+        />
+      </PlatformProvider>,
+    );
+  }
+
+  it('names each reply of a reopened multi-step run for itself', () => {
+    // One question, three assistant rows — the shape a reopened agent run has.
+    show([
+      storedMessage('m0', 'user', 'refactor the parser and run the tests'),
+      storedMessage('m1', 'assistant', 'looking at the parser'),
+      storedMessage('m2', 'assistant', 'running the tests'),
+      storedMessage('m3', 'assistant', 'the tests fail'),
+    ]);
+
+    const names = retryNames();
+    expect(names).toHaveLength(3);
+    // THE ASSERTION THAT BITES. Named by the question alone these were
+    // ['…from here — the reply to “refactor the parser and run the tests”',
+    //  the same again, 'Try again — the reply to …'] — three controls, two
+    // names, and the two that matched discard different tails.
+    expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+    // Each still says which question it is under, and where in the run it sits.
+    for (const name of names) expect(name).toContain('refactor the parser');
+    expect(names[0]).toContain('reply 1 of 3');
+    expect(names[1]).toContain('reply 2 of 3');
+    expect(names[2]).toContain('reply 3 of 3');
+    // …and the last one is the only one with nothing after it to discard.
+    expect(names[0]).toContain('Try again from here');
+    expect(names[2]?.startsWith('Try again —')).toBe(true);
+  });
+
+  it('keeps two questions apart when the quoted part of both is identical', () => {
+    // Sixty-one characters that agree, and then they do not. The quote in the
+    // name is cut at sixty, so the quoted part of these two is byte-identical.
+    const shared = 'please review the attached design document and tell me whether';
+    expect(shared.length).toBeGreaterThan(60);
+    const first = `${shared} the migration story holds up`;
+    const second = `${shared} the rollback story holds up`;
+    expect(first.slice(0, 60)).toBe(second.slice(0, 60));
+
+    show([
+      storedMessage('m0', 'user', first),
+      storedMessage('m1', 'assistant', 'on the migration'),
+      storedMessage('m2', 'user', second),
+      storedMessage('m3', 'assistant', 'on the rollback'),
+    ]);
+
+    const names = retryNames();
+    expect(names).toHaveLength(2);
+    // Named by the question alone both of these read
+    // '…— the reply to “please review the attached design document and tell m…”'.
+    expect(new Set(names).size, `two controls, names ${JSON.stringify(names)}`).toBe(2);
+    expect(names[0]).toContain('reply 1 of 2');
+    expect(names[1]).toContain('reply 2 of 2');
+  });
+
+  it('still names a control when no question precedes the turn', () => {
+    // `questionAnswered` returns `undefined` for an assistant turn with no user
+    // message in front of it — a transcript restored from rows whose question
+    // was never written, or trimmed away. The position is not optional, so the
+    // two controls are still distinct and the name still begins with the label
+    // a voice-control user can read (WCAG 2.5.3).
+    show([
+      storedMessage('m1', 'assistant', 'an orphan reply'),
+      storedMessage('m2', 'assistant', 'another orphan reply'),
+    ]);
+
+    const names = retryNames();
+    expect(names).toEqual(['Try again from here — reply 1 of 2', 'Try again — reply 2 of 2']);
   });
 });

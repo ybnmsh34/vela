@@ -197,7 +197,13 @@ describe('a distinction carried by colour alone is restated without colour', () 
     // pair (family, style) four distinct values, and both halves are checked
     // here rather than described.
     expect(text).toMatch(/\.ending\s*\{[^}]*border-left-width:\s*3px/u);
-    expect(text).not.toMatch(/\.error\s*\{[^}]*border-left-width/u);
+    // ANY LEFT EDGE ON `.error`, NOT ONLY THE LONGHAND. This read
+    // `border-left-width` alone, which a `border-left: 3px solid …` shorthand
+    // walks straight past — it would give `.error` the same 3px edge as
+    // `.ending`, collapse the two families back into two boxes under forced
+    // colours, and redden nothing. `border-left` is the prefix of every
+    // spelling that can do it.
+    expect(text).not.toMatch(/\.error\s*\{[^}]*border-left/u);
     expect(block).toMatch(/\.ending\s*\{\s*border-style:\s*solid/u);
     expect(block).toMatch(/\.ending\[data-tone='warning'\]\s*\{\s*border-style:\s*dashed/u);
     expect(block).toMatch(/\.error\s*\{\s*border-style:\s*dashed/u);

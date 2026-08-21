@@ -119,6 +119,7 @@ export function ConversationView({
   }, [conversation.entries]);
 
   const empty = conversation.entries.length === 0;
+  const replies = replyPositions(conversation.entries);
 
   return (
     <section className={styles.surface} aria-label="Conversation">
@@ -159,14 +160,22 @@ export function ConversationView({
                     // Retrying replaces this turn and everything after it. When
                     // there is an "after it", the button says so.
                     laterTurnsFollow={index < conversation.entries.length - 1}
-                    // The question this turn answers, for the retry control's
-                    // accessible name. `retry` resolves the same entry by
-                    // walking back from this turn to the nearest user message,
-                    // so the name is read off the transcript the same way the
-                    // action is — a button that says which reply it discards
-                    // and then discards a different one would be worse than one
-                    // that says nothing.
-                    question={questionAnswered(conversation.entries, index)}
+                    // Which reply the retry control would discard, for its
+                    // accessible name. The question is read off the transcript
+                    // the same way `retry` reads it — walking back from this
+                    // turn to the nearest user message — because a button that
+                    // says which reply it discards and then discards a
+                    // different one would be worse than one that says nothing.
+                    //
+                    // The position comes with it because the question alone
+                    // does not tell two of these apart: several assistant turns
+                    // can sit under one question, and two long questions can
+                    // agree over the whole of the quote. See `RetryTarget`.
+                    retryTarget={{
+                      question: questionAnswered(conversation.entries, index),
+                      replyIndex: replies.ordinals[index] ?? 1,
+                      replyCount: replies.count,
+                    }}
                   />
                 ),
               )}
@@ -206,4 +215,31 @@ function questionAnswered(entries: Conversation['entries'], index: number): stri
     if (entry !== undefined && entry.kind === 'user') return entry.text;
   }
   return undefined;
+}
+
+/**
+ * Where each assistant turn sits among the assistant turns, and how many there
+ * are — the part of a retry control's name that **cannot** collide.
+ *
+ * `ordinals[i]` is the 1-based position of the entry at `i` among the
+ * transcript's assistant entries, for an `i` that is one; for a user entry it
+ * is the count so far, which nothing reads. No two assistant entries share a
+ * value, which is the whole property {@link AssistantTurn}'s `RetryTarget`
+ * rests on — a name built from it is distinct however the questions read.
+ *
+ * One pass rather than a count per turn: the alternative is a scan inside the
+ * render loop, which is quadratic in a transcript that can hold hundreds of
+ * rows and grows a row per step of an agent run.
+ */
+function replyPositions(entries: Conversation['entries']): {
+  readonly ordinals: readonly number[];
+  readonly count: number;
+} {
+  const ordinals: number[] = [];
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.kind === 'assistant') count += 1;
+    ordinals.push(count);
+  }
+  return { ordinals, count };
 }

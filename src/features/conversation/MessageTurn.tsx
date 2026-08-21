@@ -70,8 +70,8 @@ interface AssistantTurnProps {
    */
   readonly laterTurnsFollow?: boolean | undefined;
   /**
-   * **The question this turn answers**, for the retry control's accessible name
-   * and for nothing else.
+   * **Which reply this turn's retry control would discard**, for that control's
+   * accessible name and for nothing else.
    *
    * Every retryable turn in a transcript draws a button reading "Try again from
    * here", and each one discards from a different anchor: an earlier one throws
@@ -81,32 +81,82 @@ interface AssistantTurnProps {
    * because it is true of every one of them.
    *
    * So the *name* carries the target while the *label* stays short. Undefined
-   * for a caller that does not know the question — `MessageTurn.test.tsx` mounts
-   * turns on their own — and then the name falls back to the label, which is
-   * where it was.
+   * for a caller that does not know the transcript — `MessageTurn.test.tsx`
+   * mounts turns on their own — and then the name falls back to the label,
+   * which is where it was.
    */
-  readonly question?: string | undefined;
+  readonly retryTarget?: RetryTarget | undefined;
+}
+
+/**
+ * What a retry control's name says about the reply it would discard.
+ *
+ * ## Why the question is not enough on its own
+ *
+ * The first version of this named a turn by the question it answers and nothing
+ * else, which merges two names into one in two shapes that are both reachable:
+ *
+ *  - **Several replies under one question.** `AgentLoopHarness`'s step loop
+ *    calls its `runTurn` once per step and `runTurn` opens the step with one
+ *    `transcript.append({ role: 'assistant', … })`, so an agent run writes one
+ *    assistant row per step; `entriesFromStored` pushes one entry per assistant
+ *    row. Reopen a three-step run and the transcript holds three consecutive
+ *    assistant turns under a single user message — three buttons discarding
+ *    three different tails, named by the one question all three answer.
+ *  - **Two questions that agree for {@link QUESTION_IN_NAME} characters.** The
+ *    quote is cut so a screen reader does not read a paragraph before the verb,
+ *    and the cut is exactly what re-merges two long questions with a shared
+ *    opening.
+ *
+ * ## What makes the names distinct instead
+ *
+ * {@link replyIndex} — the turn's position among the assistant turns of the
+ * transcript it is drawn in. Two assistant turns cannot share one, so two names
+ * built from one cannot collide, whatever the questions say. That is a property
+ * of the counting rather than of the text, which is the whole point: the
+ * previous fix was one questions could defeat.
+ *
+ * `ConversationSurface.test.tsx` walks every retry control in a mounted
+ * transcript and asserts the names are distinct, in both shapes above.
+ */
+interface RetryTarget {
+  /**
+   * The question this turn answers, or `undefined` when no user message
+   * precedes it. Quoted in the name; never the only thing in it.
+   */
+  readonly question: string | undefined;
+  /** This turn's 1-based position among the transcript's assistant turns. */
+  readonly replyIndex: number;
+  /** How many assistant turns the transcript holds. */
+  readonly replyCount: number;
 }
 
 /** How much of the question the retry control's name quotes. */
 const QUESTION_IN_NAME = 60;
 
 /**
- * "Try again from here" → "Try again from here — the reply to “…”".
+ * "Try again from here" → "Try again from here — reply 2 of 3, to “…”".
  *
  * The visible label is unchanged, so nothing about the button's appearance or
- * its wording depends on this. Long questions are cut at
- * {@link QUESTION_IN_NAME} with an ellipsis rather than read out whole: the name
- * exists to tell two buttons apart, and a screen reader announcing a paragraph
- * before the verb is its own kind of unusable.
+ * its wording depends on this, and the name still *begins* with the visible
+ * label so voice control keeps matching what the user can read (WCAG 2.5.3).
+ *
+ * The position is stated only when there is more than one reply to be among:
+ * a transcript with a single assistant turn has a single retry control, so
+ * "reply 1 of 1" would be noise attached to a name nothing can collide with.
+ * With the position present the names are distinct by construction — see
+ * {@link RetryTarget} — so the truncated quote is free to stay short.
  */
-function retryName(label: string, question: string | undefined): string {
-  if (question === undefined) return label;
-  const trimmed = question.trim();
-  if (trimmed === '') return label;
+function retryName(label: string, target: RetryTarget | undefined): string {
+  if (target === undefined) return label;
+  const trimmed = target.question?.trim() ?? '';
   const quoted =
     trimmed.length > QUESTION_IN_NAME ? `${trimmed.slice(0, QUESTION_IN_NAME)}…` : trimmed;
-  return `${label} — the reply to “${quoted}”`;
+  const where =
+    target.replyCount > 1 ? `reply ${String(target.replyIndex)} of ${String(target.replyCount)}` : '';
+  if (quoted === '') return where === '' ? label : `${label} — ${where}`;
+  if (where === '') return `${label} — the reply to “${quoted}”`;
+  return `${label} — ${where}, to “${quoted}”`;
 }
 
 export function AssistantTurn({
@@ -116,13 +166,30 @@ export function AssistantTurn({
   runDegradations,
   selectedProviderId,
   laterTurnsFollow = false,
-  question,
+  retryTarget,
 }: AssistantTurnProps) {
   const streaming = turn.phase === 'streaming' || turn.phase === 'awaiting';
   const error = turn.error === null ? null : describeChatError(turn.error);
   const showThinkingOnly = turn.answer === '' && turn.reasoning !== '';
   const retryLabel = laterTurnsFollow ? 'Try again from here' : 'Try again';
-  const retryAccessibleName = retryName(retryLabel, question);
+  // ONE NAME PER TURN, AND WHAT IS STILL OPEN ABOUT THAT.
+  //
+  // Three blocks below can each carry a retry control, and they share this one
+  // name — which is right exactly as long as no more than one of them draws a
+  // button. The ending block cannot draw one beside either of the others:
+  // `describeTurnEnding` returns `null` on `hasError || hasRefusal` before it
+  // looks at anything else. The refusal block and the error block are a
+  // different question, and it is **open**: a `TurnState` with both `refusal`
+  // and `error` non-null would draw two identically-named controls, and this
+  // does not prevent it. I did not find a path that produces one — all six
+  // `refuseTurn` call sites in `use-conversation.ts` run before or instead of a
+  // stream (an attachment that would not load, `streamTurn` rejecting, no
+  // project, no harness, a rejected run), `settleRun`'s failed branch returns
+  // early on `isSettled` and a turn carrying an `error` is `failed` and so
+  // settled, and `turnFromStored` restores neither field — but "I did not find
+  // one" is not "there is none", and the ordering inside `streamTurn`'s catch
+  // is not something this file can see.
+  const retryAccessibleName = retryName(retryLabel, retryTarget);
 
   /**
    * How this turn ended, when the text above does not say — the empty reply, the

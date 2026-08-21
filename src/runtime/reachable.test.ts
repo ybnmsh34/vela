@@ -183,9 +183,11 @@
  *    --force` exit 0 and `npx vite build` exit 0, and put `run-doubles.ts` —
  *    the **first `NOT_SHIPPED` entry**, the double this guard exists to keep out
  *    — into `dist/assets/*.js`. Measured by the string `no turn has
- *    been sent`, which occurs in exactly one file under `src/`: present in the
- *    bundle with the plant (221 modules transformed) and absent from the control
- *    build of the unmodified tree (219 modules transformed).
+ *    been sent`, which occurs in exactly one file under `src/` — asserted by
+ *    `the marker that proves a double reached dist/ names exactly one file`,
+ *    because for six rounds it was a fact about the tree that only prose kept
+ *    true. Present in the bundle with the plant (221 modules transformed) and
+ *    absent from the control build of the unmodified tree (219 modules).
  *
  *    So `htmlLoads` replaces `htmlEntries` and inverts the question: an inline
  *    module body is walked as the module it is, and a `<script>` whose body this
@@ -228,8 +230,10 @@
  *    later one deleted the tag between them from the reader's view while Vite
  *    compiled and bundled it. Executed: guard green twice, `tsc -b --force` exit
  *    0, `vite build` exit 0 at 223 modules against a 219-module control, and `no
- *    turn has been sent` — a string in exactly one file under `src/` — inside
- *    `dist/assets/index-*.js` and absent from the control. That is defect 2's
+ *    turn has been sent` — a string in exactly one file under `src/`, which
+ *    `the marker that proves a double reached dist/ names exactly one file`
+ *    now asserts rather than assumes — inside `dist/assets/index-*.js` and
+ *    absent from the control. That is defect 2's
  *    shape (a reader confusing code and prose) inside the function written to
  *    close defect 7. The fix at the time was a one-pass tokenizer, where the
  *    question of which layer runs first cannot be asked — and that tokenizer is
@@ -421,7 +425,9 @@
  *    the exported object and the callees in `plugins` are pinned, which closes
  *    "the config grew a door" and does not close "a door changed behind its own
  *    name". Reading the build's own entry set instead of the config's shape is
- *    the structural fix and it is not what this file does.
+ *    the structural fix, and §22 is where that got done: `recordBuild` captures
+ *    rollup's `input` in a `buildStart` hook, and `the build reaches the
+ *    renderer, and every shipping module under src/` asserts what it captured.
  *
  * 19. **It asked the parser for the document, and the bundler reads the parse.**
  *    Defect 15's fix was to stop hand-rolling a tokenizer and use the parser
@@ -507,8 +513,9 @@
  * 23. **It copied vite's table and none of the function that reads it.**
  *    `HTML_ASSET_SOURCES` was made a transcription of `DEFAULT_HTML_ASSET_SOURCES`
  *    in round 5, and the transcription is correct. `getNodeAssetAttributes`
- *    checks `"vite-ignore" in attributes` and returns a lone `remove` action
- *    before it looks at the table at all, and the build-time script branch is
+ *    checks `"vite-ignore" in attributes` and returns a lone `remove` action —
+ *    **after** the table lookup the function opens with, which round 6 got
+ *    backwards four times over and 29 is — and the build-time script branch is
  *    `if (isIgnored) removeViteIgnoreAttr(…) else { … }`. `vite-ignore` is
  *    documented, first-class API whose whole purpose is "leave this tag alone",
  *    and it appeared **zero times** in this file. Two adversaries landed it
@@ -590,6 +597,111 @@
  *    the ordinary one, being what a contributor writes when told to keep a heavy
  *    dependency out of the initial chunk.
  *
+ * 29. **It asked a build, and the build it asked was not the one this repo
+ *    ships.** Round 6's answer to five rounds of reader-versus-bundler
+ *    divergence was to stop reconstructing vite's front end and ask
+ *    `vite build` what it read. That was right and it works. What it asked was
+ *    a build launched from inside vitest's process, pointed at a config file by
+ *    name. `execFileSync` passed no `env`, so the child resolved the config with
+ *    `VITEST="true"` and `NODE_ENV="test"` — measured directly by instrumenting
+ *    `BUILD_PROGRAM`. Four constructions landed on that: a plugin gated
+ *    `if (process.env.NODE_ENV !== 'production') return realReact();`, the same
+ *    gate on `process.env.VITEST`, a "vite.config.mjs" shadowing the `.ts` one
+ *    (vite's `DEFAULT_CONFIG_FILES` ranks `.js` and `.mjs` ahead of it), and a
+ *    production config named from `package.json`'s build script. Each put the
+ *    double's bytes in the shipped entry chunk with `vite build` exit 0 at 221
+ *    or 222 modules against the control, and this file green at 48/48 twice.
+ *    The boundary is the finding: the same plugin with the gate line deleted
+ *    reds three named assertions, so one five-word conditional was the whole
+ *    difference. `resolved.isProduction` follows `NODE_ENV`, so the recorded
+ *    build also had `import.meta.env.DEV` **true** — dev-only mock wiring
+ *    reddened against a bundle that provably did not contain it, and
+ *    `import.meta.env.PROD` code shipped while being absent here. Both
+ *    directions wrong, from the same line.
+ *
+ * 30. **Its universe was `src/`, and nothing asserted the universe.**
+ *    `readBySourceKind` filtered the bundler's set to `src/`,
+ *    `reachedBySourceKind` filtered the walk's set to `src/`, and
+ *    `shippingModules(SRC_ROOT)` was the must-be-reachable list — so a file one
+ *    directory over was invisible to the build side, invisible to the walk side
+ *    and outside the list, and the two-directional comparison of 28's fix agreed
+ *    about it by being blind to it twice. Two adversaries reached the identical
+ *    construction independently: a scripted turn driver under `tests/support/`
+ *    imported by `src/runtime/app-runtime.ts`, with the include `tsc`'s own
+ *    TS6307 message asks for added to `tsconfig.app.json`. `vite build` exit 0
+ *    at 220 modules against 219, the double's class body in the shipped entry
+ *    chunk, this file green at 48/48 and the whole suite at 118/118. A second
+ *    needed no TypeScript at all: one `@import` from a component stylesheet to a
+ *    stylesheet under `tests/` put a rule from outside `src/` into the shipped
+ *    CSS with the module count unchanged. This repo already compiles TypeScript
+ *    under `tests/` and already has a tsconfig including such a directory beside
+ *    `src`, so the edit is one a reviewer nods at.
+ *
+ * 31. **It closed `await import(…)` and left `.then(…)`.** 28's fix reads a
+ *    dynamic import's binding through `awaitedImportSpecifier(node.initializer)`
+ *    on a `VariableDeclaration`. `import('@/x').then(({ f }) => f())` binds its
+ *    module object in a `ParameterDeclaration`, so the specifier came back
+ *    `null` and the branch did a bare `return` rather than an `escapes.push` —
+ *    invisible in both directions at once, verbatim the failure that function's
+ *    docblock says it was rewritten to end. An adversary put a second
+ *    construction site in a reachable module that way, green twice, while the
+ *    same three lines written `const { f } = await import('@/x')` reddened on
+ *    the first run. The docblock's own excuse — that `unanalysableImports` says
+ *    such an edge out loud — was false by execution: that function reports a
+ *    dynamic import only when its **specifier** is not static, and this one is.
+ *
+ * 32. **It got the bundler's own control flow backwards, in the paragraph
+ *    correcting an earlier version of itself.** 23's fix wrote, in four separate
+ *    places, that `getNodeAssetAttributes` checks `"vite-ignore" in attributes`
+ *    *before* it looks at the asset table. It does the opposite: the function
+ *    opens `const matched = DEFAULT_HTML_ASSET_SOURCES[node.nodeName]; if
+ *    (!matched) return [];` and tests the attribute after that — measured on the
+ *    installed vite@7.3.6, row lookup at offset 57 of the function body and
+ *    attribute test at offset 230. So `htmlLoads` tested the attribute ahead of
+ *    the tag dispatch for **every** element and reported
+ *    `<a href="/src/main.tsx" vite-ignore>` as *the bundler is told to leave this
+ *    tag alone, so everything it names is out of the build*, about a build that
+ *    returns `[]` for an `a` tag before reading a single attribute and does not
+ *    even strip the marker. A message asserting something false about the build
+ *    is the delete-me direction this file already records for `<noscript>`.
+ *
+ * 33. **It pinned the reader's data and not the reader's branches.** A measurer
+ *    deleted 52 structural branches of the functions this file adds, one at a
+ *    time: 21 left `tsc --build --force` at exit 0 and the whole suite at 2432
+ *    passed, and a 22nd was caught by the type checker alone. Seven of the 21
+ *    were in `factoryUsesIn` and `reExported` — the two functions round 6
+ *    rebuilt — and `factoryUsesIn` carried an inline comment saying its branches
+ *    were pinned individually, which was true of three arms and false of six
+ *    beside them. The sharpest single case is one level in from the rest and is
+ *    this round's own shape: `subpathBase` had four synthetic assertions
+ *    covering wildcard, exact key, conditions object and non-subpath, and
+ *    `resolveInTree`'s `?? subpathBase(path)` deleted green — every one of those
+ *    assertions called the helper directly with a synthetic map, this repo
+ *    declares no `imports` field, and the wire from the helper into the resolver
+ *    had never run. **Two thoroughly tested things with an unasserted edge
+ *    between them.** The same at `aliasTarget`'s plain-string arm and at
+ *    `canonical`'s outside-this-repository branch. Nine invariants stated in
+ *    comments were in the same condition, the marker string among them: five
+ *    paragraphs prove a double reached `dist/` by a phrase whose validity
+ *    condition is that it occurs in exactly one file under `src/`, this file
+ *    states that condition three times and names the typographic convention that
+ *    preserves it — and round 6 wrote the phrase unbroken into a docblock 1,500
+ *    lines away. Measured: two files. The fix is not more prose. Every reader
+ *    named in 29–33 is now driven by one input per structural position it
+ *    handles, checked against an enumerated list, so a deleted branch names the
+ *    position that stopped being read.
+ *
+ *    29 through 33 keep the pattern the twenty-eight above it set, and it is
+ *    worth naming rather than hoping it stops. Each round's fix has been the
+ *    right fix and each round's defect has been one level inside it: a
+ *    reconstruction disagreeing with the bundler (1–22), then the recorded build
+ *    differing from the shipping build in its **options** (round 6's `write:
+ *    false`), then the recorded build not being the shipping build's build at
+ *    all — different config file, different environment (29). And beside that,
+ *    the same move in the assertions: the data list pinned and the reader's
+ *    branch list not (round 6), then the reader pinned and the **edge between
+ *    two pinned readers** not (33). Assume there is a level below this one.
+
  *    23 through 28 were found by two adversaries working independently, and three
  *    of the six were landed by both of them. Their shape is one level down from
  *    19–22's: that round's finding was that this file reads the sources it has
@@ -650,7 +762,12 @@
  * - In `index.html`, an attribute is followed only when `HTML_ASSET_SOURCES`
  *   says the bundler rewrites it **and** vite's own row-level `filter` says so,
  *   which is now transcribed rather than stood in for by skipping `<meta>` by
- *   name. Two kinds are read and deliberately **not** followed, each loud
+ *   name. `vite-ignore` is honoured on a `<script>` and on a tag with a row in
+ *   that table, and on nothing else, because those are the two places the
+ *   bundler reads it — `getScriptInfo`, and `getNodeAssetAttributes` **after**
+ *   its row lookup. An inline `style` attribute is read whichever way that goes,
+ *   because `findNeedTransformStyleAttribute` runs on every node and never looks
+ *   at the marker. Two kinds are read and deliberately **not** followed, each loud
  *   instead: a `srcset`/`imagesrcset` candidate list, which this file does not
  *   parse; and any other attribute whose value resolves to a real file here. A
  *   tag carrying `vite-ignore` is read and reported rather than followed, because
@@ -780,12 +897,39 @@
  *   bundler: an import through a path only `tsc` knows about fails `vite build`
  *   with `Rollup failed to resolve import`, exit 1.
  * - All of that is still an enumeration of config surfaces: it reddens when a
- *   door is added, and it cannot see an existing door changing behind its own
- *   name — `@vitejs/plugin-react` growing an html transform in a future version
- *   is a lockfile change and a reviewer. Driving the walk from the entry and
- *   module set `vite build` itself reports, rather than from any config's shape,
- *   is the fix that would not be an enumeration; it is not what this file does,
- *   and four rounds of findings now point at it.
+ *   door is added. What it used not to see at all was an existing door changing
+ *   behind its own name — a `writeBundle` or a `transformIndexHtml` mounted on
+ *   the plugin object `react()` already returns is not a new name, and a critic
+ *   put 10636 bytes of a double at the top of `dist/` that way with the module
+ *   count untouched. `RESOLVED_PLUGINS` therefore pins each plugin's **hook
+ *   set** beside its name, so a hook appearing on any object reddens whoever
+ *   owns the object. A hook that already exists doing something new in a future
+ *   version is still a lockfile change and a reviewer. *Driving* the walk from
+ *   the entry and module set `vite build` itself reports, rather than from any
+ *   config's shape, is the fix that would not be an enumeration; the build's own
+ *   entry set is read and asserted, and the traversal is still this file's.
+ * - The recorded build is a real `vite build` and it is not the shipping build,
+ *   in two named ways and no longer in four. It runs with the runner's
+ *   environment scrubbed — `VITEST`, its three siblings and `NODE_ENV` removed,
+ *   which is what a maintainer's shell gives it — and with no `configFile`
+ *   named, so it discovers the config the way `pnpm build` does; the config it
+ *   found, `isProduction`, `import.meta.env.DEV`/`.PROD` and the two environment
+ *   variables are all recorded and asserted, and `package.json`'s build script is
+ *   read as an argv and held to selecting neither a config nor a root. What
+ *   remains is `build: { write: false, sourcemap: false, minify: false }`.
+ *   Everything downstream of writing is invisible to every assertion that reads
+ *   the recorded set: a `writeBundle` that copies a file next to the bundle adds
+ *   no module, and a hook that branches on `resolved.build.write` can behave one
+ *   way here and another in `dist/`. The hook-set pin above is what stands in
+ *   for it. Reading `dist/` itself is the instrument that would end it, and it is
+ *   a different, slower, non-read-only one.
+ * - The build's own set is now narrowed twice rather than once: to `src/` for
+ *   the two-directional comparison, and — everything else this repo owns — to an
+ *   enumerated list of what the build reads outside `src/` and outside
+ *   `node_modules/`. That list is `index.html` and `package.json` today. It
+ *   catches a file the build **reads**; it does not catch a file that reaches
+ *   `dist/` without being read, which is `public/` (pinned separately) and the
+ *   write half above.
  * - A factory binding used as a value is reported, not followed. `escapes` says
  *   where the analysis stopped; it does not say where the thing is finally built.
  *   A namespace object read with a computed member name is in the same list, for
@@ -824,8 +968,11 @@ const SRC_ROOT = join(REPO_ROOT, 'src');
  * stayed green while what it imported went into `dist/`. `htmlLoads` is what
  * reads it now. What it reports rather than skips is named in its own doc and
  * bounded there — a `<script>` whose body this file does not parse, a
- * `<style>` body, a broken tag, and any attribute outside `HTML_ASSET_SOURCES`
- * whose value resolves to a real file here. The sentence this replaces said it
+ * `<style>` body, and any attribute outside `HTML_ASSET_SOURCES` whose value
+ * resolves to a real file here. An unterminated tag was on this list and is not
+ * any more: parse5 drops it, so there is no element to classify, and the
+ * `'the parser drops it'` expectation inside `reads a script body as text, not
+ * as a place comments can start` is what says so. The sentence this replaces said it
  * reported everything it could not read, and two shapes it reported nothing
  * about were live at the time.
  */
@@ -840,7 +987,10 @@ const HTML_ENTRY = join(REPO_ROOT, 'index.html');
  * had timed out, and on no other, which left the two `constructionSites`
  * assertions at the 5000ms default; measured here on an unloaded box they are
  * the slowest in the file after the build, 397–862ms and 287–489ms against
- * single-digit milliseconds for most of the rest. An adversary reports running
+ * single-digit milliseconds for most of the rest. A measurer on a different box
+ * exceeded both of those ranges — 1576ms and 611ms — which is what an observed
+ * range on one machine is worth and why it is written as one. Both still clear
+ * this budget by more than ten times. An adversary reports running
  * the committed guard on a **loaded** machine, with no plant at all, and getting
  * three timeouts on an unmodified tree — 9755ms, 9373ms and 5379ms, all on
  * `builds the sandbox door once, at the composition root`. That is their
@@ -859,13 +1009,17 @@ const BOUNDARY_BUDGET = 20_000;
 /**
  * The same, for the assertions that run a real `vite build`.
  *
- * The build is memoised, so exactly one of them pays for it. Measured inside the
- * suite on this box: 3308ms at its quickest and 11268ms at its slowest across
- * the runs of this round, against a whole-file cost of well under a second
- * before it existed. That spread on one idle-ish machine is the argument for the
- * number: what is being bounded is a bundler on a box that may be doing
- * something else, and the cost of this budget being too small is a red on a tree
- * nobody touched. It is a range observed here, not a bound.
+ * The build is memoised, so exactly one of them pays for it — and that is a
+ * property with an assertion rather than a sentence: `runs one build for the
+ * whole file, however many assertions read it` counts the child processes.
+ * Measured inside the suite on this box: 2817ms at its quickest and 15053ms at
+ * its slowest across the runs of this round, against a whole-file cost of well
+ * under a second before it existed. A measurer on a different box saw 16814ms
+ * idle and 34789ms under load, so both ends of the range here have already been
+ * exceeded elsewhere; that spread is the argument for the number, because what
+ * is being bounded is a bundler on a box that may be doing something else and
+ * the cost of this budget being too small is a red on a tree nobody touched. It
+ * is a range observed here, open at both ends, not a bound.
  */
 const BUILD_BUDGET = 120_000;
 
@@ -892,45 +1046,65 @@ const PUBLIC_FILES: readonly string[] = [];
  * pointed `vite.config.ts`'s `react` import at a local module and shipped a
  * double through the plugin it returned, against a file that pins the callee's
  * *name*.
+ *
+ * Each row carries the plugin's **hook set** as well as its name, and that is
+ * the round-6 blocker rather than decoration. A name pin reads names, and the
+ * construction it could not see was a hook mounted on an **existing** plugin
+ * object: a `writeBundle` on the react plugin copying
+ * `src/runtime/run-doubles.ts` next to the bundle put 10636 bytes — byte
+ * identical to the first `NOT_SHIPPED` entry — at the top of `dist/` with
+ * `vite build` at 219 modules, the control's own count, and this file green
+ * twice; a `transformIndexHtml` on the same object, guarded by
+ * `if (resolved.build.write === false) return html;`, put the double's code in
+ * the shipped entry chunk at 221 modules against 219, green twice. Neither is a
+ * new name and neither adds an edge the recorded build can see, so for
+ * write-time work the name pin was not the cheap second signal, it was the whole
+ * argument, and it was reading the wrong thing. A hook set moves when a hook is
+ * added to an object, whoever owns the object.
+ *
+ * The keys are `Object.keys(plugin)` less the six that are not hooks — `name`,
+ * `enforce`, `api`, `apply`, `sharedDuringBuild` and
+ * `perEnvironmentStartEndDuringDev` — sorted, so the row is stable across
+ * orderings and moves only when the plugin's surface does.
  */
 const RESOLVED_PLUGINS = [
-  'vite:build-metadata',
-  'vite:watch-package-data',
-  'alias',
-  'vite:react-babel',
-  'vite:react-refresh',
-  'vite:modulepreload-polyfill',
-  'vite:resolve',
-  'vite:html-inline-proxy',
-  'vite:css',
-  'vite:esbuild',
-  'vite:json',
-  'vite:wasm-helper',
-  'vite:worker',
-  'vite:asset',
-  'vite:react-virtual-preamble',
-  'vite:wasm-fallback',
-  'vite:define',
-  'vite:css-post',
-  'vite:build-html',
-  'vite:worker-import-meta-url',
-  'vite:asset-import-meta-url',
-  'vite:force-amd-wrap-require',
-  'vite:force-systemjs-wrap-complete',
-  'vite:prepare-out-dir',
-  'commonjs',
-  'vite:data-uri',
-  'vite:rollup-options-plugins',
-  'vite:dynamic-import-vars',
-  'vite:import-glob',
-  'vite:build-import-analysis',
-  'vite:esbuild-transpile',
-  'vite:terser',
-  'vite:license',
-  'vite:manifest',
-  'vite:ssr-manifest',
-  'vite:reporter',
-  'vite:load-fallback',
+  'vite:build-metadata [renderChunk]',
+  'vite:watch-package-data [buildEnd buildStart watchChange]',
+  'alias [buildStart resolveId]',
+  'vite:react-babel [config configResolved options]',
+  'vite:react-refresh [config load resolveId transformIndexHtml]',
+  'vite:modulepreload-polyfill [load resolveId]',
+  'vite:resolve [load resolveId]',
+  'vite:html-inline-proxy [load resolveId]',
+  'vite:css [buildEnd buildStart load transform]',
+  'vite:esbuild [configureServer transform]',
+  'vite:json [transform]',
+  'vite:wasm-helper [load resolveId]',
+  'vite:worker [buildStart generateBundle load renderChunk transform watchChange]',
+  'vite:asset [buildStart generateBundle load renderChunk resolveId]',
+  'vite:react-virtual-preamble [load resolveId]',
+  'vite:wasm-fallback [load]',
+  'vite:define [transform]',
+  'vite:css-post [augmentChunkHash generateBundle renderChunk renderStart transform]',
+  'vite:build-html [generateBundle transform]',
+  'vite:worker-import-meta-url [applyToEnvironment transform]',
+  'vite:asset-import-meta-url [applyToEnvironment transform]',
+  'vite:force-amd-wrap-require [renderChunk]',
+  'vite:force-systemjs-wrap-complete [renderChunk]',
+  'vite:prepare-out-dir [options renderStart]',
+  'commonjs [applyToEnvironment]',
+  'vite:data-uri [buildStart load resolveId]',
+  'vite:rollup-options-plugins [applyToEnvironment]',
+  'vite:dynamic-import-vars [load resolveId transform]',
+  'vite:import-glob [buildStart hotUpdate transform]',
+  'vite:build-import-analysis [generateBundle load renderChunk resolveId transform]',
+  'vite:esbuild-transpile [applyToEnvironment renderChunk]',
+  'vite:terser [applyToEnvironment closeBundle renderChunk]',
+  'vite:license [generateBundle]',
+  'vite:manifest [applyToEnvironment buildStart generateBundle]',
+  'vite:ssr-manifest [applyToEnvironment generateBundle]',
+  'vite:reporter [generateBundle renderChunk renderStart writeBundle]',
+  'vite:load-fallback [load]',
 ];
 
 /** How the entry list spells an entry that has a body instead of a file. */
@@ -1076,17 +1250,18 @@ const TEST_FILE = /\.test\.tsx?$/;
  * A TypeScript **declaration** file, which has no runtime and cannot be loaded.
  *
  * `extname('vite-env.d.ts')` is `.ts`, so the enumerator counted one as a
- * shipping module and then demanded the walk reach it. a `vite-env` declaration file under `src/` is
- * the file `npm create vite@latest` scaffolds for every TypeScript template, and
- * it is the standard place to declare the `?raw`/`?url` ambient wildcards this
- * guard's own prose leans on. Creating it — or any module augmentation, or any
- * global type — turned this file **red** with a message asserting that a
- * declaration file "is called by nothing", and the only ways to green it were to
- * put a declaration file in `NOT_SHIPPED` (whose docblock says every entry "would be a
- * defect if the application could reach it", which is untrue of a file that has
- * no runtime) or in the debt list (which is worse). a declaration file occurred zero times
- * in this file. That is the delete-me direction: a false red on boilerplate
- * nobody asked this guard about.
+ * shipping module and then demanded the walk reach it. A "vite-env.d.ts" under
+ * `src/` is the file `npm create vite@latest` scaffolds for every TypeScript
+ * template, and it is the standard place to declare the `?raw`/`?url` ambient
+ * wildcards this guard's own prose leans on. Creating it — or any module
+ * augmentation, or any global type — turned this file **red** with a message
+ * asserting that the declaration file "is called by nothing", and the only ways
+ * to green it were to put it in `NOT_SHIPPED` (whose docblock says every entry
+ * "would be a defect if the application could reach it", which is untrue of a
+ * file that has no runtime) or in the debt list (which is worse). No declaration
+ * file exists under `src/` today — measured, zero of them — so nothing here is
+ * describing a file a reader can go and look at. That is the delete-me
+ * direction: a false red on boilerplate nobody asked this guard about.
  *
  * It is a spelling rule rather than an extension entry because the extension is
  * `.ts` either way, and `declares every file kind under src/` still holds:
@@ -1224,11 +1399,22 @@ function isAssetUrl(node: ts.Node): node is ts.NewExpression {
  * The specifier of an `import('…')` an initializer awaits or returns directly, or `null`.
  *
  * `await import(x)`, `import(x)` and a parenthesised spelling of either are the
- * three ways a `VariableDeclaration`'s initializer is the module object. `.then`
- * is deliberately not one of them: `import(x).then(m => …)` binds nothing at the
- * declaration, and the callback parameter it binds instead is a shape this
- * reader does not follow — `unanalysableImports` is where an edge it cannot read
- * gets said out loud.
+ * three ways a `VariableDeclaration`'s initializer is the module object. All
+ * three are driven, one per row, by `reads every initializer shape that is a
+ * module object`; the parenthesised one had a true sentence here and no
+ * assertion anywhere, and deleting its arm left `tsc` at 0 and the whole suite
+ * green.
+ *
+ * `.then` is not one of them, and the sentence that stood here — that
+ * `unanalysableImports` is where an edge this reader cannot read gets said out
+ * loud — was false by execution. `unanalysableImports` reports a dynamic import
+ * only when its **specifier** is not static, and `import('@/x').then(({ f }) =>
+ * f())` has a perfectly static one, so nothing was said out loud and nothing
+ * reddened: an adversary put a second construction site in a reachable module
+ * that way and this file was green twice, while the same three lines written
+ * `const { f } = await import('@/x')` reddened on the first run. `.then` binds
+ * its module object in a `ParameterDeclaration` rather than in a declaration, so
+ * it is read where parameters are read — in `factoryUsesIn`, not here.
  */
 function awaitedImportSpecifier(node: ts.Expression | undefined): string | null {
   let current = node;
@@ -1248,6 +1434,18 @@ function awaitedImportSpecifier(node: ts.Expression | undefined): string | null 
     return null;
   }
   return null;
+}
+
+/** `import('…').then(…)` — the module object bound in a parameter. */
+function isThenOnDynamicImport(
+  node: ts.Node,
+): node is ts.CallExpression & { readonly expression: ts.PropertyAccessExpression } {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'then' &&
+    awaitedImportSpecifier(node.expression.expression) !== null
+  );
 }
 
 /** A `require(...)` call, which has no business in this ESM renderer. */
@@ -2106,10 +2304,17 @@ function withoutQuery(specifier: string): string {
  * specifier this repo declares no mapping for is `lost` and reddens by name,
  * which is also what `vite build` does with it.
  */
-function pointsIntoThisTree(specifier: string): boolean {
+function pointsIntoThisTree(
+  specifier: string,
+  aliases: ReadonlyMap<string, string | null> = ALIASES,
+): boolean {
   const path = withoutQuery(specifier);
   if (path.startsWith('.') || path.startsWith('/') || path.startsWith('#')) return true;
-  return [...ALIASES.keys()].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+  // `path === prefix` is the bare-prefix spelling — `import '~'` with `'~'`
+  // declared — and it was deletable with the whole suite green while the
+  // identical arm one function over, in `aliasBase`, reddened. `recognises a
+  // declared prefix in every spelling that can carry one` drives both.
+  return [...aliases.keys()].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 /** A specifier's alias prefix rewritten to a path, when this file can translate it. */
@@ -2170,9 +2375,19 @@ function resolveInTree(
   fromFile: string,
   specifier: string,
   bareIsRelative = false,
+  aliases: ReadonlyMap<string, string | null> = ALIASES,
+  imports: ReadonlyMap<string, string | null> = SUBPATH_IMPORTS,
 ): Resolution | null {
   const path = withoutQuery(specifier);
-  const aliased = aliasBase(path) ?? subpathBase(path);
+  // Both halves of this, and the wire from each helper into it. `subpathBase` had
+  // four synthetic assertions covering wildcard, exact key, conditions object and
+  // non-subpath, and `?? subpathBase(path)` deleted with `tsc` at 0 and the whole
+  // suite green, because this repo's `package.json` declares no `imports` and no
+  // assertion ever called the resolver with one. Two thoroughly tested things
+  // with an unasserted edge between them is the shape; the maps are parameters
+  // now so `resolves a specifier through every prefix a manifest or a config can
+  // declare` can drive the edge rather than the helper.
+  const aliased = aliasBase(path, aliases) ?? subpathBase(path, imports);
   const base =
     aliased !== null
       ? aliased
@@ -2278,8 +2493,9 @@ type HtmlAssetAttributes = {
  * The sentence that stood there — "being wrong about Vite in either direction is
  * loud" — was an absolute and two adversaries disproved it in one round, in both
  * directions, using the *same* documented attribute. `getNodeAssetAttributes`
- * short-circuits on `"vite-ignore" in attributes` before it reads this table at
- * all, so `<link rel="stylesheet" href="/src/…" vite-ignore />` was an edge here
+ * short-circuits on `"vite-ignore" in attributes` — after the row lookup rather
+ * than before it, which is 29 — so `<link rel="stylesheet" href="/src/…"
+ * vite-ignore />` was an edge here
  * and none in the bundle (the laundering direction: a planted orphan went green,
  * caught only by the `GRAPH.entries` pin), and `<script type="module"
  * src="/src/main.tsx" vite-ignore>` left `vite build` at **1 module transformed
@@ -2288,9 +2504,9 @@ type HtmlAssetAttributes = {
  * this guard green at 33/33. The table was a correct copy of vite's data and
  * none of the function that consumes it. `htmlLoads` now honours `vite-ignore`
  * and this table carries vite's third per-row key; what makes either claim
- * checkable rather than another sentence is `the build reads what this walk
- * reaches, and nothing else`, which compares this reconstruction against the
- * module set `vite build` itself reports.
+ * checkable rather than another sentence is `reads what the build reads, and
+ * reaches nothing the build did not`, which compares this reconstruction
+ * against the module set `vite build` itself reports.
  *
  * Two rows are transcribed because vite carries them and cannot fire in an HTML
  * document: the parser turns an `<image>` start tag into `img`, and `use` and
@@ -2350,17 +2566,46 @@ const HTML_ASSET_SOURCES = new Map<string, HtmlAssetAttributes>([
 /**
  * The attribute that takes a tag out of vite's hands entirely.
  *
- * Documented, first-class vite API, and its presence is checked **before** the
- * asset table and before `getScriptInfo` decides anything: `getNodeAssetAttributes`
- * returns a lone `remove` action, and the build-time script branch is
- * `if (isIgnored) removeViteIgnoreAttr(…) else { … }`. So a tag carrying it is a
- * tag the bundler reads and then declines to act on, which is neither an edge
- * nor — since the maintainer said so on purpose — a surprise worth reddening on
- * its own. It is `unread` rather than silent all the same, because what it takes
- * out of the graph is real: on the one script tag in this document it takes the
- * whole product out.
+ * Documented, first-class vite API, and it is honoured on **two kinds of tag
+ * and no others**. `getScriptInfo` reads it into `isIgnored` for every
+ * `<script>`, and the build-time script branch is
+ * `if (isIgnored) removeViteIgnoreAttr(…) else { … }`. `getNodeAssetAttributes`
+ * reads it for a tag with a row in the table above and for no other, because the
+ * function opens `const matched = DEFAULT_HTML_ASSET_SOURCES[node.nodeName]; if
+ * (!matched) return [];` and tests `"vite-ignore" in attributes` after that.
+ * Measured on the installed vite@7.3.6: the row lookup is at offset 57 of that
+ * function body and the attribute test at offset 230.
+ *
+ * So a tag carrying it is a tag the bundler reads and then declines to act on,
+ * which is neither an edge nor — since the maintainer said so on purpose — a
+ * surprise worth reddening on its own. It is `unread` rather than silent all the
+ * same, because what it takes out of the graph is real: on the one script tag in
+ * this document it takes the whole product out.
+ *
+ * On a tag with no row and no script branch it takes nothing out, because there
+ * was nothing there to take: vite returns `[]` for an `<a>` before it has looked
+ * at a single attribute, and does not even strip the marker. Round 6 tested the
+ * attribute ahead of the tag dispatch for **every** element and stated the
+ * ordering backwards in four separate paragraphs, so
+ * `<a href="/src/main.tsx" vite-ignore>` was reported as *the bundler is told to
+ * leave this tag alone, so everything it names is out of the build* — a message
+ * asserting something false about the build, which is the delete-me direction
+ * this file already records for `<noscript>`. `honoursViteIgnore` is where the
+ * two kinds are decided, and `honours vite-ignore where the bundler honours it,
+ * and reads a style attribute either way` is what asserts them.
  */
 const VITE_IGNORE = 'vite-ignore';
+
+/**
+ * The tags on which `vite-ignore` changes what the bundler does.
+ *
+ * A row in `HTML_ASSET_SOURCES` is `getNodeAssetAttributes`' own gate, and
+ * `<script>` is `getScriptInfo`'s. Every other tag reads the attribute as an
+ * ordinary unknown attribute, which is to say it does not read it.
+ */
+function honoursViteIgnore(tag: string): boolean {
+  return tag === 'script' || HTML_ASSET_SOURCES.has(tag);
+}
 
 /** Tags whose children the bundler's parser never builds elements for. */
 const RAW_TEXT_WHEN_SCRIPTING = new Set(['noscript']);
@@ -2586,8 +2831,9 @@ function viteStringArray(name: string): string[] | null {
  * never resolved, and turned this guard **red** with a message that asserted
  * something false about that build. That is the delete-me direction — a red on
  * ordinary boilerplate — so the walk below stops at a `noscript` element, which
- * is where the bundler's parser stops. `a noscript body is text to the bundler,
- * so it is text here` drives it.
+ * is where the bundler's parser stops. The `specifiersOfLoad` and `unreadOf`
+ * expectations over a `noscript` inside `stops where the bundler's traversal
+ * stops, and reads what it reads` are what drive it.
  *
  * And agreement about the element tree was never agreement about what vite does
  * with the elements in it. `vite-ignore` and an inline `style="…url(…)…"` are
@@ -2611,7 +2857,8 @@ function viteStringArray(name: string): string[] | null {
  * into it. `<template><script type="module">import { FakeTurnDriver } from
  * '/src/runtime/run-doubles.ts'; …</script></template>` in `index.html` was
  * therefore a tag the bundler saw and this file did not — 221 modules against a
- * 219-module control, `no turn has been sent` in the shipped entry chunk, with
+ * 219-module control, `no turn has
+ * been sent` in the shipped entry chunk, with
  * the guard as it then stood green at 30/30. That is defect 19, and the loop below closes it by
  * descending into any element that carries a parsed subtree of its own, keyed on
  * the property rather than on the tag name, so the next element the DOM gives a
@@ -2671,12 +2918,16 @@ function htmlElements(html: string): readonly Element[] {
  *
  * So the reader is built the other way round, and the classes are these:
  *
- * - A tag carrying **`vite-ignore`** is `unread`, and nothing on it is followed.
- *   The attribute is checked before the table and before the script branch,
- *   which is where `getNodeAssetAttributes` and `buildHtmlPlugin` check it. On
+ * - A `<script>`, or a tag with a row in `HTML_ASSET_SOURCES`, carrying
+ *   **`vite-ignore`** is `unread`, and nothing that row or that branch would
+ *   have followed is followed. Those two tags are `honoursViteIgnore`, and they
+ *   are the two places the bundler reads the attribute: `getScriptInfo` for a
+ *   script, `getNodeAssetAttributes` **after** its row lookup for the rest. On
  *   the one script tag in this document it takes the entire product out of the
  *   bundle — `vite build` at 1 module against a 219-module control — so it is
- *   reported rather than passed over in silence.
+ *   reported rather than passed over in silence. A `style` attribute is read
+ *   either way, because `findNeedTransformStyleAttribute` is called on every
+ *   node with no reference to `vite-ignore` at all.
  * - An attribute **in `HTML_ASSET_SOURCES`**, whose row-level `filter` (vite's,
  *   transcribed) admits it, naming a path in this tree is a `file`. Any *other*
  *   attribute whose value resolves to a real file here is `unread` and reddens,
@@ -2744,12 +2995,14 @@ function htmlLoads(html: string): HtmlLoad[] {
         attributes.set(attribute.name.toLowerCase(), attribute.value);
       }
     }
-    // Before the table and before the script branch, exactly as
-    // `getNodeAssetAttributes` and `buildHtmlPlugin` test it. It is reported
-    // rather than dropped: on this document's one script tag it removes the
-    // whole product from the bundle, and a guard that goes quiet about that is
-    // the guard two adversaries walked through in one round.
-    if (attributes.has(VITE_IGNORE)) {
+    // Honoured where the bundler honours it and nowhere else — see
+    // `honoursViteIgnore`. It is reported rather than dropped: on this
+    // document's one script tag it removes the whole product from the bundle,
+    // and a guard that goes quiet about that is the guard two adversaries walked
+    // through in one round. It does not `continue` past the `style` attribute
+    // below, because vite's `findNeedTransformStyleAttribute` runs on every node
+    // whatever `getNodeAssetAttributes` returned for it.
+    if (attributes.has(VITE_IGNORE) && honoursViteIgnore(tag)) {
       found.push({
         kind: 'unread',
         text: collapse(
@@ -2758,9 +3011,7 @@ function htmlLoads(html: string): HtmlLoad[] {
             'and the whole bundle on the entry script',
         ),
       });
-      continue;
-    }
-    if (tag === 'style') {
+    } else if (tag === 'style') {
       if (hasBody) found.push({ kind: 'unread', text: collapse(element.outerHTML) });
     } else if (tag === 'script') {
       // `getScriptInfo` is `p.name === "type" && p.value === "module"` — byte
@@ -2895,9 +3146,11 @@ function miscasedRequest(resolution: Resolution): boolean {
  * as prose about an import: it can stop being true without anything noticing.
  * Since the parser is already loaded, they are read out of the config instead.
  */
+const VITE_CONFIG_PATH = 'vite.config.ts';
+
 const VITE_CONFIG = parse(
-  readFileSync(join(REPO_ROOT, 'vite.config.ts'), 'utf8'),
-  'vite.config.ts',
+  readFileSync(join(REPO_ROOT, VITE_CONFIG_PATH), 'utf8'),
+  VITE_CONFIG_PATH,
 );
 
 /**
@@ -3162,6 +3415,75 @@ function subpathBase(
   return null;
 }
 
+/** One `&&`-separated step of a package script, split into its argv. */
+type CommandStep = {
+  readonly command: string;
+  readonly args: readonly string[];
+};
+
+/**
+ * A package script split into the commands it runs, in order.
+ *
+ * `package.json`'s `scripts` values were read by nothing. `packageJsonKeys` pins
+ * the manifest's top-level key list and `scripts` is already on it, so changing
+ * a script's **value** was invisible by construction — and the value is what
+ * decides which config `pnpm build` hands vite. An adversary added
+ * "vite.config.prod.ts", changed the build script to
+ * "tsc --build --force && vite build --config vite.config.prod.ts", left
+ * `vite.config.ts` byte-identical, and put the first `NOT_SHIPPED` entry's
+ * source into the shipped entry chunk at 222 modules against 220 with this file
+ * green at 48/48 twice. Every AST assertion here was reading a file the shipping
+ * build never loaded.
+ *
+ * The split is on `&&` because that is the only sequencing this repo's scripts
+ * use. A step whose first token is not a command — an empty step — is dropped
+ * rather than reported as a command named `''`.
+ */
+function commandSteps(script: string): CommandStep[] {
+  return script.split('&&').flatMap((step) => {
+    const tokens = step.trim().split(/\s+/).filter((token) => token !== '');
+    const command = tokens[0];
+    return command === undefined ? [] : [{ command, args: tokens.slice(1) }];
+  });
+}
+
+/** The flags that point vite at a config file rather than letting it search. */
+const CONFIG_SELECTING_FLAGS = new Set(['--config', '-c']);
+
+/** The flags that move the directory vite searches from. */
+const ROOT_SELECTING_FLAGS = new Set(['--root', '-r']);
+
+/**
+ * Every value an argv passes to one of `flags`, in both spellings.
+ *
+ * `--config x` and `--config=x` are the same instruction to vite's CLI and a
+ * reader that knows one of them is a reader an ordinary command line walks
+ * through. `reads the build script as the argv it is` drives every position this
+ * function handles against an enumerated list, so deleting one names itself.
+ */
+function selectedBy(args: readonly string[], flags: ReadonlySet<string>): string[] {
+  const found: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index] ?? '';
+    const equals = argument.indexOf('=');
+    const name = equals === -1 ? argument : argument.slice(0, equals);
+    if (!flags.has(name)) continue;
+    found.push(equals === -1 ? (args[index + 1] ?? '') : argument.slice(equals + 1));
+  }
+  return found;
+}
+
+/** A named script from the manifest, or `''` when there is none of that name. */
+function packageScript(name: string, manifest: unknown = PACKAGE_JSON): string {
+  const scripts =
+    typeof manifest === 'object' && manifest !== null
+      ? (manifest as { readonly scripts?: unknown }).scripts
+      : undefined;
+  if (typeof scripts !== 'object' || scripts === null) return '';
+  const value = (scripts as Record<string, unknown>)[name];
+  return typeof value === 'string' ? value : '';
+}
+
 /**
  * Every top-level key `package.json` carries.
  *
@@ -3259,7 +3581,69 @@ function factoryUsesIn(
   const namespaces = new Map<string, string>();
   let calls = 0;
   const escapes: string[] = [];
+  /**
+   * One module object, bound under whatever name the code gave it.
+   *
+   * Shared by the declaration form and the `.then` form because they bind the
+   * same thing: `const { f } = await import(m)` and `import(m).then(({ f }) =>
+   * …)` differ only in which node kind holds the pattern. Written twice, one of
+   * them would go on being read and the other would not, which is exactly what
+   * happened.
+   */
+  const bindModuleObject = (specifier: string, name: ts.BindingName, at: ts.Node): void => {
+    if (ts.isIdentifier(name)) {
+      namespaces.set(name.text, specifier);
+      return;
+    }
+    if (!ts.isObjectBindingPattern(name)) {
+      // An array pattern over a module object is not a shape this reader
+      // follows, and absence is what the two assertions below read as proof.
+      escapes.push(collapse(at.getText(parsed), 80));
+      return;
+    }
+    for (const element of name.elements) {
+      if (!ts.isIdentifier(element.name)) {
+        // A nested or renamed-into-a-pattern binding is a shape this reader
+        // does not follow, and absence is what the two assertions below read
+        // as proof, so it is loud instead.
+        escapes.push(collapse(at.getText(parsed), 80));
+        continue;
+      }
+      const exported = element.propertyName;
+      if (exported === undefined) {
+        if (isFactory(specifier, element.name.text)) locals.add(element.name.text);
+        continue;
+      }
+      if (ts.isIdentifier(exported) || ts.isStringLiteralLike(exported)) {
+        if (isFactory(specifier, exported.text)) locals.add(element.name.text);
+        continue;
+      }
+      escapes.push(collapse(at.getText(parsed), 80));
+    }
+  };
   eachNode(parsed, (node) => {
+    // `import('@/runtime/app-runtime').then(({ createAgentRuntime }) => …)` is
+    // the plain ES lazy-load idiom and it binds the module object in a
+    // **parameter**. Round 6 closed the `await` destructuring and left this one
+    // open — the same "closed evasion, one spelling over" this file records for
+    // `setAttribute`/`setAttributeNS` — and an adversary put a second
+    // construction site in `app-runtime.ts` through it, green twice, while the
+    // `await` spelling of the identical three lines reddened on the first run.
+    // A callback this reader cannot open is loud rather than silent.
+    if (isThenOnDynamicImport(node)) {
+      const specifier = awaitedImportSpecifier(node.expression.expression);
+      if (specifier === null) return;
+      const callback = node.arguments[0];
+      if (callback === undefined) return;
+      if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) {
+        escapes.push(collapse(node.getText(parsed), 80));
+        return;
+      }
+      const parameter = callback.parameters[0];
+      if (parameter === undefined) return;
+      bindModuleObject(specifier, parameter.name, node);
+      return;
+    }
     if (ts.isVariableDeclaration(node)) {
       // `const { createAgentRuntime } = await import('@/runtime/app-runtime')`
       // binds the same export the `import` statement above binds, and this
@@ -3277,31 +3661,7 @@ function factoryUsesIn(
       // was green twice at 33/33.
       const specifier = awaitedImportSpecifier(node.initializer);
       if (specifier === null) return;
-      const name = node.name;
-      if (ts.isIdentifier(name)) {
-        namespaces.set(name.text, specifier);
-        return;
-      }
-      if (!ts.isObjectBindingPattern(name)) return;
-      for (const element of name.elements) {
-        if (!ts.isIdentifier(element.name)) {
-          // A nested or renamed-into-a-pattern binding is a shape this reader
-          // does not follow, and absence is what the two assertions below read
-          // as proof, so it is loud instead.
-          escapes.push(collapse(node.getText(parsed), 80));
-          continue;
-        }
-        const exported = element.propertyName;
-        if (exported === undefined) {
-          if (isFactory(specifier, element.name.text)) locals.add(element.name.text);
-          continue;
-        }
-        if (ts.isIdentifier(exported) || ts.isStringLiteralLike(exported)) {
-          if (isFactory(specifier, exported.text)) locals.add(element.name.text);
-          continue;
-        }
-        escapes.push(collapse(node.getText(parsed), 80));
-      }
+      bindModuleObject(specifier, node.name, node);
       return;
     }
     if (!ts.isImportDeclaration(node)) return;
@@ -3362,7 +3722,14 @@ function factoryUsesIn(
       // repo's `strict`, `noUncheckedIndexedAccess` and
       // `exactOptionalPropertyTypes`, and it reddens this file twice now.
       // Both this branch and the catch-all below it are load-bearing, and
-      // separately: `reads a construction site as a binding` pins each.
+      // separately: `reads a construction site as a binding, not as a spelling`
+      // reds on each. That sentence was written about the whole function and it
+      // was true of three of its arms and false of six others — the qualified
+      // name skip, the property-assignment skip, the import-clause skip, the
+      // default-import binding, the inline-`type` skip and the string-literal
+      // property arm each deleted with the whole suite green. `reads every
+      // binding and every reference shape a factory can arrive in` is the
+      // assertion that names all of them, one row per position.
       if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
         if (isFactory(namespace, parent.name.text)) classify(parent);
         return;
@@ -3643,6 +4010,40 @@ function fileAnalysis(file: string): FileAnalysis {
 }
 
 /** Everything `index.html` reaches at runtime, transitively. */
+/** What one label's edges contribute to the three lists `walk` keeps. */
+type EdgeReport = {
+  readonly unresolved: readonly string[];
+  readonly miscased: readonly string[];
+  readonly reached: readonly string[];
+};
+
+/**
+ * Every edge of one file, sorted into the three answers `walk` has for an edge.
+ *
+ * Lifted out of `walk`'s `record` closure so its structural positions can be
+ * driven directly. One of them — `requested === null` beside `resolved === null`
+ * — was held up by nothing but the type checker: deleting it left the whole
+ * suite at 2432 green and only `tsc --build --force` reddened, with TS2322. A
+ * position the compiler happens to notice is not a position this file asserts,
+ * and the compiler would stop noticing the moment `requested` gained a
+ * non-nullable spelling. `classifies every edge shape the walk can hand it`
+ * supplies one edge per position.
+ */
+function classifyEdges(label: string, edges: readonly Edge[]): EdgeReport {
+  const unresolved: string[] = [];
+  const miscased: string[] = [];
+  const reached: string[] = [];
+  for (const { specifier, resolved, requested, lost } of edges) {
+    if (lost) unresolved.push(`${label}: ${specifier}`);
+    if (resolved === null || requested === null) continue;
+    if (miscasedRequest({ file: resolved, requested })) {
+      miscased.push(`${label}: ${specifier} is on disk as ${asRepoPath(resolved)}`);
+    }
+    reached.push(resolved);
+  }
+  return { unresolved, miscased, reached };
+}
+
 function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
   const loads = htmlLoads(html);
   const reachable = new Set<string>();
@@ -3655,14 +4056,10 @@ function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
   // whatever came back `null`, which put the html on a shorter leash than any
   // module: a mistyped entry read as a clean, and smaller, graph.
   const record = (label: string, edges: readonly Edge[]): void => {
-    for (const { specifier, resolved, requested, lost } of edges) {
-      if (lost) unresolved.push(`${label}: ${specifier}`);
-      if (resolved === null || requested === null) continue;
-      if (miscasedRequest({ file: resolved, requested })) {
-        miscased.push(`${label}: ${specifier} is on disk as ${asRepoPath(resolved)}`);
-      }
-      if (!reachable.has(resolved)) queue.push(resolved);
-    }
+    const report = classifyEdges(label, edges);
+    unresolved.push(...report.unresolved);
+    miscased.push(...report.miscased);
+    for (const file of report.reached) if (!reachable.has(file)) queue.push(file);
   };
   // An attribute value is a document-relative URL, not a module specifier: bare
   // means "next to index.html", not "a package". An inline body's specifiers are
@@ -3766,10 +4163,20 @@ type BuildFacts = {
   readonly inputs: readonly string[];
   /** `publicDir` as the resolved config gives it. */
   readonly publicDir: string;
-  /** Every plugin in the resolved config, in order, this file's recorder aside. */
+  /** Every plugin in the resolved config, `name [hooks]`, this file's recorder aside. */
   readonly plugins: readonly string[];
   /** Every string alias prefix the resolved config carries. */
   readonly aliases: readonly string[];
+  /** The config file vite **found**, as a repo path, or `''` for none. */
+  readonly configFile: string;
+  /** `resolved.isProduction`, which is what decides `import.meta.env`. */
+  readonly isProduction: boolean;
+  /** `import.meta.env.DEV` and `.PROD` as this build resolved them. */
+  readonly dev: boolean;
+  readonly prod: boolean;
+  /** `VITEST` and `NODE_ENV` as the child saw them, so the scrub is checkable. */
+  readonly runnerVitest: string | null;
+  readonly runnerNodeEnv: string | null;
 };
 
 const BUILD_RECORDER = 't05-reachability-recorder';
@@ -3796,14 +4203,25 @@ const BUILD_FENCE = '<<t05-reachability>>';
  */
 const BUILD_PROGRAM = `
 const { build } = await import('vite');
+const NOT_A_HOOK = new Set([
+  'name',
+  'enforce',
+  'api',
+  'apply',
+  'sharedDuringBuild',
+  'perEnvironmentStartEndDuringDev',
+]);
 const read = new Set();
 let inputs = [];
 let publicDir = '';
 let plugins = [];
 let aliases = [];
+let configFile = '';
+let isProduction = false;
+let dev = true;
+let prod = false;
 await build({
   root: process.cwd(),
-  configFile: 'vite.config.ts',
   logLevel: 'silent',
   build: { write: false, sourcemap: false, minify: false },
   plugins: [
@@ -3811,10 +4229,20 @@ await build({
       name: '${BUILD_RECORDER}',
       enforce: 'post',
       configResolved(resolved) {
+        configFile = resolved.configFile ?? '';
+        isProduction = resolved.isProduction === true;
+        dev = resolved.env.DEV === true;
+        prod = resolved.env.PROD === true;
         publicDir = resolved.publicDir;
         plugins = resolved.plugins
-          .map((plugin) => plugin.name)
-          .filter((name) => name !== '${BUILD_RECORDER}');
+          .filter((plugin) => plugin.name !== '${BUILD_RECORDER}')
+          .map((plugin) => {
+            const hooks = Object.keys(plugin)
+              .filter((key) => !NOT_A_HOOK.has(key))
+              .sort()
+              .join(' ');
+            return plugin.name + ' [' + hooks + ']';
+          });
         aliases = resolved.resolve.alias.flatMap((entry) =>
           typeof entry.find === 'string' ? [entry.find] : [],
         );
@@ -3832,11 +4260,39 @@ await build({
   ],
 });
 process.stdout.write(
-  '${BUILD_FENCE}' + JSON.stringify({ read: [...read], inputs, publicDir, plugins, aliases }) + '${BUILD_FENCE}',
+  '${BUILD_FENCE}' +
+    JSON.stringify({
+      read: [...read],
+      inputs,
+      publicDir,
+      plugins,
+      aliases,
+      configFile,
+      isProduction,
+      dev,
+      prod,
+      runnerVitest: process.env.VITEST ?? null,
+      runnerNodeEnv: process.env.NODE_ENV ?? null,
+    }) +
+    '${BUILD_FENCE}',
 );
 `;
 
 let BUILD_FACTS: BuildFacts | null = null;
+
+/**
+ * How many child builds this run has paid for.
+ *
+ * The memo's own property, as a count rather than as a sentence. What stood
+ * here was `The build is memoised, so exactly one of them pays for it` and
+ * nothing else: replacing the memo with `return recordBuild()` was exit 0 twice
+ * at 48 passed, with the file's duration going 9.41s to 20.28s and four builds
+ * running instead of one — RULE V's stated form, found by a critic in the round
+ * that wrote RULE V, while the parse memo twenty lines away got two counters and
+ * a named test. `runs one build for the whole file, however many assertions read
+ * it` reads this.
+ */
+let BUILDS_RECORDED = 0;
 
 /** The build, run at most once per run however many assertions ask for it. */
 function buildFacts(): BuildFacts {
@@ -3850,11 +4306,96 @@ type RecordedBuild = {
   readonly publicDir: string;
   readonly plugins: readonly string[];
   readonly aliases: readonly string[];
+  readonly configFile: string;
+  readonly isProduction: boolean;
+  readonly dev: boolean;
+  readonly prod: boolean;
+  readonly runnerVitest: string | null;
+  readonly runnerNodeEnv: string | null;
 };
 
+/**
+ * The variables vitest sets that a config is entitled to branch on.
+ *
+ * `execFileSync` with no `env` hands the child the runner's environment, and the
+ * child is a `vite build`. Measured by instrumenting this file's own child
+ * process: it saw `VITEST="true"` and `NODE_ENV="test"`. Two consequences, both
+ * executed rather than reasoned about:
+ *
+ * - A plugin gated `if (process.env.NODE_ENV !== 'production') return realReact();`
+ *   — or on `process.env.VITEST`, which is the documented way to keep a
+ *   build-only plugin out of a shared vite/vitest config — is **absent from this
+ *   recording and present in the shipping build**. Two adversaries landed the
+ *   double's bytes in the shipped entry chunk that way, at 221 modules against
+ *   219, with this file green at 48/48 twice. The ungated version of the same
+ *   plugin reds three named assertions, so the entire difference was five words.
+ * - `resolved.isProduction` is `(process.env.NODE_ENV || mode) === 'production'`,
+ *   so under the runner's environment it is **false** and `import.meta.env.DEV`
+ *   resolves **true**. Ordinary `if (import.meta.env.DEV)` mock wiring was
+ *   therefore in the recorded build and absent from the shipping one: a false
+ *   red on an idiom nobody would think twice about, and the mirror image —
+ *   `import.meta.env.PROD` code that ships and is missing here — is the silent
+ *   direction of the same defect.
+ *
+ * Measured both ways on this tree: with the runner's environment,
+ * `resolved.isProduction` is `false` and `env.DEV` is `true`; with it scrubbed,
+ * `true` and `false`. `the recorded build is the build this repo ships` asserts
+ * every one of those values, so the scrub is a property rather than a habit.
+ */
+const RUNNER_ONLY_ENV = ['VITEST', 'VITEST_WORKER_ID', 'VITEST_POOL_ID', 'VITEST_MODE'];
+
+/**
+ * The environment a `vite build` from a clean shell would have.
+ *
+ * `NODE_ENV` is removed rather than set: `vite build` sets it to `production`
+ * itself when it is unset, which is what a maintainer's shell gives it, and
+ * hard-coding a value here would be this file deciding the answer instead of
+ * reading it.
+ */
+function buildEnvironment(from: Record<string, string | undefined>): Record<string, string | undefined> {
+  const scrubbed: Record<string, string | undefined> = { ...from };
+  for (const name of [...RUNNER_ONLY_ENV, 'NODE_ENV']) delete scrubbed[name];
+  return scrubbed;
+}
+
+/**
+ * Rollup's own mark for an id that is not a file: a leading NUL.
+ *
+ * Documented convention — a plugin that invents a module prefixes its id with
+ * `\0` so no other plugin and no filesystem tries to read it. `commonjsHelpers`,
+ * `vite/preload-helper` and the `?commonjs-module` proxies over each CJS
+ * dependency all arrive that way.
+ */
+const VIRTUAL_MODULE_ID = '\u0000';
+
+/**
+ * The ids the recorder reported that name a file inside this repository.
+ *
+ * Split out of `recordBuild` so the positions it decides can be driven directly.
+ * Three of them were individually deletable with the whole suite green, because
+ * a real build reports no id of those shapes — `reads a recorded id as a place
+ * in this repository, or as somewhere else` supplies one of each.
+ *
+ * The virtual-id branch is the fourth and it is a fix rather than a pin. `\0…`
+ * ids are not paths, and `relative(REPO_ROOT, '\0vite/preload-helper.js')`
+ * happily answers "vite/preload-helper.js" — a repo path naming nothing — so
+ * sixteen invented modules were being reported as files in this repository, and
+ * the enumeration of what the build reads outside `src/` could not be written at
+ * all until they stopped being.
+ */
+function insideThisRepo(ids: readonly string[]): string[] {
+  return ids.flatMap((id) => {
+    if (id.startsWith(VIRTUAL_MODULE_ID)) return [];
+    const path = relative(REPO_ROOT, id).split('\\').join('/');
+    return path === '' || path.startsWith('..') || isAbsolute(path) ? [] : [path];
+  });
+}
+
 function recordBuild(): BuildFacts {
+  BUILDS_RECORDED += 1;
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', BUILD_PROGRAM], {
     cwd: REPO_ROOT,
+    env: buildEnvironment(process.env),
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -3865,29 +4406,90 @@ function recordBuild(): BuildFacts {
     throw new Error(`the recorded build printed no result. Its output was: ${collapse(output, 400)}`);
   }
   const recorded = JSON.parse(fenced) as RecordedBuild;
-  const inside = recorded.read.flatMap((id) => {
-    const path = relative(REPO_ROOT, id).split('\\').join('/');
-    return path === '' || path.startsWith('..') || isAbsolute(path) ? [] : [path];
-  });
   return {
-    read: [...new Set(inside)].sort(),
+    read: [...new Set(insideThisRepo(recorded.read))].sort(),
     inputs: recorded.inputs.map(asRepoPath),
     publicDir: recorded.publicDir,
     plugins: recorded.plugins,
     aliases: recorded.aliases,
+    configFile: recorded.configFile === '' ? '' : asRepoPath(recorded.configFile),
+    isProduction: recorded.isProduction,
+    dev: recorded.dev,
+    prod: recorded.prod,
+    runnerVitest: recorded.runnerVitest,
+    runnerNodeEnv: recorded.runnerNodeEnv,
   };
+}
+
+/**
+ * The paths of a set that are under `src/` and of a kind the bundler loads.
+ *
+ * One function rather than the same two filters written twice, because the two
+ * filters were individually deletable with the whole suite green: each side of
+ * the comparison ran the same predicate, so a kind the predicate rejected was
+ * invisible in **both** directions and only deleting both filters at once
+ * reddened anything. `reads a build's set as the src/ modules in it, and names
+ * every kind it drops` drives one entry per structural position against an
+ * enumerated list.
+ *
+ * The query suffix is cut before the kind test, and that is a fix rather than a
+ * tidy. A rollup module id carries it — `src/styles/embedded.css?raw` is the id
+ * for `import embedded from './styles/embedded.css?raw'` — and
+ * `extname('embedded.css?raw')` is `.css?raw`, which is in no map, so the id was
+ * dropped as an unshipped kind. It survived only because `getWatchFiles()`
+ * independently reports the clean path; a module the build **loads** without
+ * watching — a plugin-`load`ed or virtual one — was dropped twice over.
+ */
+function sourceKindPaths(paths: readonly string[]): string[] {
+  const found = new Set<string>();
+  for (const path of paths) {
+    const bare = withoutQuery(path);
+    if (!bare.startsWith('src/')) continue;
+    if (!bundlerLoads(basename(bare))) continue;
+    found.add(bare);
+  }
+  return [...found].sort();
 }
 
 /** The files under `src/` the build read — the bundler's own answer to the walk's question. */
 function readBySourceKind(facts: BuildFacts): string[] {
-  return facts.read.filter((path) => path.startsWith('src/') && bundlerLoads(basename(path)));
+  return sourceKindPaths(facts.read);
 }
 
 /** The files under `src/` this walk reaches, on the same terms. */
 function reachedBySourceKind(): string[] {
-  return [...REACHABLE]
-    .map(asRepoPath)
-    .filter((path) => path.startsWith('src/') && bundlerLoads(basename(path)))
+  return sourceKindPaths([...REACHABLE].map(asRepoPath));
+}
+
+/**
+ * Every file in this repository the build read that is **not** under `src/` and
+ * not a dependency.
+ *
+ * The universe of both instruments was `src/`, and nothing asserted the
+ * universe. `readBySourceKind` filters the bundler's set to `src/`,
+ * `reachedBySourceKind` filters the walk's set to `src/`, and
+ * `shippingModules(SRC_ROOT)` is the must-be-reachable list — so a file one
+ * directory over is invisible to the build side, invisible to the walk side and
+ * outside the list, and the two-directional comparison agrees because neither
+ * side can see it. Two adversaries reached the identical construction
+ * independently: `tests/support/…` exporting a scripted turn driver, imported by
+ * `src/runtime/app-runtime.ts`, with the include added to `tsconfig.app.json`
+ * that `tsc`'s own TS6307 message asks for. `vite build` exit 0 at 220 modules
+ * against 219, the double's class body in the shipped entry chunk, this file
+ * green at 48/48 and the whole suite at 118/118. A second one needed no
+ * TypeScript at all: `@import '../../../tests/support/dev-overlay.css'` in a
+ * component stylesheet put a rule from outside `src/` into the shipped CSS with
+ * the module count unchanged.
+ *
+ * So the universe is pinned the way `PUBLIC_FILES` pins the other unwalked path
+ * into `dist/`: everything the build reads that is neither a dependency nor
+ * under `src/` is named here, and a new one reddens once.
+ */
+const BUILD_READS_OUTSIDE_SRC: readonly string[] = ['index.html', 'package.json'];
+
+function repoReadsOutsideSrc(facts: BuildFacts): string[] {
+  return facts.read
+    .filter((path) => !path.startsWith('src/') && !path.startsWith('node_modules/'))
     .sort();
 }
 
@@ -4168,7 +4770,8 @@ describe('the renderer is wired into the product', () => {
    * while Vite compiled and bundled it (guard green twice, `tsc -b --force` exit
    * 0, `vite build` exit 0 at 223 modules against a 219-module control, and `no
    * turn has been sent` — a sentence in exactly one file under `src/`, which is
-   * why this comment writes it across a line break — inside
+   * why this comment writes it across a line break and why `the marker that
+   * proves a double reached dist/ names exactly one file` asserts it — inside
    * `dist/assets/index-*.js` and absent from the control). Then a hand-written
    * one-pass tokenizer, whose three termination rules were each narrower than the
    * spec: `-->` without `--!>`, `</script>` without `</script/>` or `</script x>`,
@@ -4305,10 +4908,10 @@ describe('the renderer is wired into the product', () => {
     // because it walks the module graph six times and each walk re-read and
     // re-parsed every reachable file. `fileAnalysis` is the fix and it is
     // structural rather than a larger number. Measured on this box after the
-    // build assertions landed: ten consecutive runs of the whole file on a clean
-    // tree, exit 0 ten times out of ten, 3541-16834ms for all forty-eight
-    // assertions together - an observed range on one machine doing other things,
-    // not a bound. The explicit budget is belt as well as braces, because a false
+    // build assertions landed: consecutive runs of the whole file on a clean
+    // tree, exit 0 every time, 11.16-14.51s for all sixty-five assertions
+    // together, and a measurer on another box reports 19847ms - an observed
+    // range on machines doing other things, open at both ends, not a bound. The explicit budget is belt as well as braces, because a false
     // red on somebody else's clean tree costs this guard its life; and an idle
     // box is exactly the measurement that cannot see such a red, which is why
     // BOUNDARY_BUDGET is now on every assertion that walks the graph rather than
@@ -4676,8 +5279,11 @@ describe('the renderer is wired into the product', () => {
     // here. What it does not close is an existing door changing behind its own
     // name — `@vitejs/plugin-react` gaining an html transform in a future version
     // is a lockfile change and a reviewer, not something this assertion can see.
-    // The structural fix is to stop reading the config for the entry set and read
-    // the build's own; that is not what this file does today.
+    // The structural fix is to stop reading the config for the entry set and
+    // read the build's own, and `facts.inputs` is that: `recordBuild` captures
+    // rollup's `input` in a `buildStart` hook and `the build reaches the
+    // renderer, and every shipping module under src/` asserts it. What this pin
+    // remains for is the config surface itself, not the entry set.
     expect(
       objectKeys(VITE_CONFIG_ROOT),
       'a top-level key in vite.config.ts this guard has not been told about. ' +
@@ -5918,9 +6524,10 @@ describe('the renderer is wired into the product', () => {
     const unreadOf = (html: string): number =>
       htmlLoads(html).filter((load) => load.kind === 'unread').length;
 
-    // Checked before the asset table and before `getScriptInfo` reads anything,
-    // exactly where `getNodeAssetAttributes` checks it. Loud rather than silent,
-    // because on this document's one script tag it removes the whole product.
+    // Read by `getScriptInfo` on a script and by `getNodeAssetAttributes` after
+    // its row lookup on a table tag, which is what `honoursViteIgnore` says.
+    // Loud rather than silent, because on this document's one script tag it
+    // removes the whole product.
     const ignoredEntry = '<script type="module" src="/src/main.tsx" vite-ignore></script>';
     expect(specifiersOfLoad(ignoredEntry), 'vite is told to leave this tag alone').toEqual([]);
     expect(unreadOf(ignoredEntry)).toBe(1);
@@ -6349,8 +6956,22 @@ describe('the renderer is wired into the product', () => {
    * `NOT_SHIPPED` reads absence from `REACHABLE` as proof that nothing ships a
    * module, and `REACHABLE` is this file's reconstruction. Three separate
    * constructions have made a `NOT_SHIPPED` entry ship while that set stayed
-   * clean. This one reads the bundler's own set, so a double in the bundle is a
-   * red no matter what the reconstruction believes.
+   * clean. This one reads the bundler's own set instead, so it is right about a
+   * double the reconstruction is wrong about.
+   *
+   * What stood here was an absolute — *a double in the bundle is a red no matter
+   * what the reconstruction believes* — and a critic disproved it by execution
+   * twice in the round that wrote it, and adversaries disproved it five more
+   * times in the round after. The set this reads is what the recorded build
+   * **loaded**, and loading is not the only way into `dist/`: a `writeBundle`
+   * copying a file next to the bundle adds no module and is invisible here, and
+   * `build: { write: false }` means everything downstream of writing is
+   * invisible to it as well. `RESOLVED_PLUGINS` now carries each plugin's hook
+   * set for exactly that reason, which turns "a hook appeared on an existing
+   * object" into a red — and a hook that already exists doing something new is
+   * still outside this assertion. `What it still cannot see` says so in the
+   * limits list rather than here, and reading `dist/` itself is the instrument
+   * that would end it.
    */
   it('no exemption is in the build', () => {
     const facts = buildFacts();
@@ -6476,4 +7097,1045 @@ describe('the renderer is wired into the product', () => {
       'a second pass over the module graph re-parsed modules already parsed',
     ).toBe(0);
   }, BOUNDARY_BUDGET);
+
+  /**
+   * ## Reader positions, not only reader tables
+   *
+   * Round 6 pinned a thirteen-name data list with a synthetic source carrying
+   * every name, and then wrote a thirteen-branch reader whose branch list
+   * nothing pinned at all. A measurer swept the functions this diff adds and
+   * deleted 52 structural branches one at a time: 21 of them left
+   * `tsc --build --force` at exit 0 and the whole suite at 2432 passed, and a
+   * 22nd was held up by the type checker alone. Seven of the 21 were in
+   * `factoryUsesIn` and `reExported` — the two functions round 6 rebuilt — and
+   * `factoryUsesIn` carried a comment claiming its branches were pinned
+   * individually, which was true of three arms and false of six beside them.
+   *
+   * So each assertion below drives one reader against **one input per structural
+   * position it handles**, checked against an enumerated list, and names the
+   * position in its own failure message. Deleting a branch stops naming a
+   * position rather than going quiet.
+   */
+  it('reads every initializer shape that is a module object', () => {
+    const initializerOf = (expression: string): ts.Expression | undefined => {
+      let found: ts.Expression | undefined;
+      eachNode(parse(`const probe = ${expression};`, 'probe.ts'), (node) => {
+        if (found === undefined && ts.isVariableDeclaration(node)) found = node.initializer;
+      });
+      return found;
+    };
+    // Every position `awaitedImportSpecifier` decides, and the answer it owes.
+    // The parenthesised arm was described by a true sentence in its own docblock
+    // and asserted by nothing: deleting it was `tsc` exit 0 and 2432 green.
+    const shapes = new Map<string, string | null>([
+      ["await import('@/a')", '@/a'],
+      ["import('@/a')", '@/a'],
+      ["(await import('@/a'))", '@/a'],
+      ["(import('@/a'))", '@/a'],
+      ['await import(`@/a`)', '@/a'],
+      ['await import(name)', null],
+      ["import('@/a').then((m) => m)", null],
+      ["require('@/a')", null],
+      ['plainValue', null],
+    ]);
+    expect(shapes.size, 'the position list is empty; this assertion is vacuous').toBe(9);
+    for (const [expression, specifier] of shapes) {
+      expect(
+        awaitedImportSpecifier(initializerOf(expression)),
+        `\`${expression}\` is no longer read as the module object it is`,
+      ).toBe(specifier);
+    }
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every binding shape a factory can arrive in, and every reference shape it
+   * can be spelled with, one module per position.
+   *
+   * Six arms of `factoryUsesIn` deleted with the whole suite green while a
+   * comment beside them said each was pinned: the qualified-name skip, the
+   * property-assignment skip, the import-clause skip, the default-import
+   * binding, the inline-`type` skip in named bindings, and the string-literal
+   * property arm of the object binding pattern. Each is a row here. So is
+   * `.then`, which is not a skipped arm but an arm that did not exist — an
+   * adversary put a second construction site through it in a reachable module,
+   * green twice, while the `await` spelling of the same three lines reddened on
+   * the first run.
+   *
+   * `escapes` is counted rather than matched, because its contents are source
+   * text and the property is that the residue is **loud**, not what it says.
+   */
+  it('reads every binding and every reference shape a factory can arrive in', () => {
+    const isFactory = (specifier: string, exported: string): boolean =>
+      specifier === '@/f' && (exported === 'make' || exported === 'default');
+    const uses = (source: string): string => {
+      const found = factoryUses(source, 'probe.ts', isFactory);
+      return `${found.calls} called, ${found.escapes.length} loud`;
+    };
+    const positions = new Map<string, { source: string; calls: number; escapes: number }>([
+      ['a named import', { source: "import { make } from '@/f';\nmake();", calls: 1, escapes: 0 }],
+      [
+        'a renamed named import',
+        { source: "import { make as build } from '@/f';\nbuild();", calls: 1, escapes: 0 },
+      ],
+      [
+        'a default import',
+        { source: "import make from '@/f';\nmake();", calls: 1, escapes: 0 },
+      ],
+      [
+        'an inline type-only named import, which is erased',
+        { source: "import { type make } from '@/f';\nmake();", calls: 0, escapes: 0 },
+      ],
+      [
+        'a wholly type-only import clause, which is erased',
+        { source: "import type { make } from '@/f';\nmake();", calls: 0, escapes: 0 },
+      ],
+      [
+        'a namespace member read',
+        { source: "import * as f from '@/f';\nf.make();", calls: 1, escapes: 0 },
+      ],
+      [
+        'a namespace member read with a literal key',
+        { source: "import * as f from '@/f';\nf['make']();", calls: 1, escapes: 0 },
+      ],
+      [
+        'a namespace member read with a computed key, which is loud',
+        { source: "import * as f from '@/f';\nf[key]();", calls: 0, escapes: 1 },
+      ],
+      [
+        'a namespace object leaving, which is loud',
+        { source: "import * as f from '@/f';\nregister(f);", calls: 0, escapes: 1 },
+      ],
+      [
+        'the import clause itself, which is a binding and not a use',
+        { source: "import { make } from '@/f';\nmake();\nimport * as make2 from '@/f';", calls: 1, escapes: 0 },
+      ],
+      [
+        'a property access whose name happens to be the factory',
+        { source: "import { make } from '@/f';\nmake();\nother.make;", calls: 1, escapes: 0 },
+      ],
+      [
+        'a property assignment whose key happens to be the factory',
+        { source: "import { make } from '@/f';\nmake();\nconst o = { make: 1 };", calls: 1, escapes: 0 },
+      ],
+      [
+        'a qualified type name whose right half happens to be the factory',
+        { source: "import { make } from '@/f';\nmake();\nlet v: other.make;", calls: 1, escapes: 0 },
+      ],
+      [
+        'a lazy import destructured at the declaration',
+        { source: "const { make } = await import('@/f');\nmake();", calls: 1, escapes: 1 },
+      ],
+      [
+        'a lazy import destructured by a string-literal property',
+        { source: "const { 'make': build } = await import('@/f');\nbuild();", calls: 1, escapes: 1 },
+      ],
+      [
+        // The binding identifier of a namespace object is itself in the loud
+        // residue: `locals`/`namespaces` are built in the same pass the
+        // references are read in, so the declaration's own name is one of the
+        // references. That is the conservative direction and it is why the two
+        // boundary assertions can read `escapes` as "this analysis stopped
+        // here" — but it is a property of this reader, so it is written down
+        // rather than left for the next person to rediscover.
+        'a lazy import bound whole, whose binding name is itself loud',
+        { source: "const f = await import('@/f');\nf.make();", calls: 1, escapes: 1 },
+      ],
+      [
+        'a lazy import destructured in a .then callback',
+        { source: "import('@/f').then(({ make }) => make());", calls: 1, escapes: 1 },
+      ],
+      [
+        'a .then callback taking the module object whole, whose parameter is loud',
+        { source: "import('@/f').then((f) => f.make());", calls: 1, escapes: 1 },
+      ],
+      [
+        'a .then callback this reader cannot open, which is loud',
+        { source: "import('@/f').then(handler);", calls: 0, escapes: 1 },
+      ],
+      [
+        'a lazy import of something else',
+        { source: "const { make } = await import('@/other');\nmake();", calls: 0, escapes: 0 },
+      ],
+    ]);
+    expect(positions.size, 'the position list is empty; this assertion is vacuous').toBe(20);
+    // One object rather than one expectation per row, so a deleted branch names
+    // **every** position that stopped being read rather than only the first.
+    const read: Record<string, string> = {};
+    const owed: Record<string, string> = {};
+    for (const [name, { source, calls, escapes }] of positions) {
+      read[name] = uses(source);
+      owed[name] = `${calls} called, ${escapes} loud`;
+    }
+    expect(
+      read,
+      'a binding or reference shape this reader claims to read stopped being ' +
+        'read. Every key below is one structural position in `factoryUsesIn`; ' +
+        'the ones that moved are the branches that are gone',
+    ).toEqual(owed);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every re-export shape, and the two this reader deliberately does not follow.
+   *
+   * `export * as ns from` was folded in "deliberately conservatively" by a
+   * sentence in its own docblock and by nothing else: deleting the whole
+   * fallthrough left `tsc` at 0 and 2432 green, because the test drove `export
+   * *`, named and type-only re-exports and never the namespace form. The
+   * inline-`type` skip in the named-exports loop deleted green for the same
+   * reason.
+   */
+  it('reads every re-export shape, and the two it deliberately does not', () => {
+    const from = join(SRC_ROOT, 'runtime', 'app-runtime.ts');
+    const target = join(SRC_ROOT, 'data', 'sandbox-repository.ts');
+    const reaching = (asked: string): ReadonlySet<string> | undefined =>
+      asked === target ? new Set(['make']) : undefined;
+    const namesOf = (source: string): string[] =>
+      reExported(parse(source, 'probe.ts'), from, reaching);
+    const positions = new Map<string, { source: string; found: string[] }>([
+      ['a star re-export', { source: "export * from '@/data/sandbox-repository';", found: ['make'] }],
+      [
+        'a named re-export',
+        { source: "export { make } from '@/data/sandbox-repository';", found: ['make'] },
+      ],
+      [
+        'a renamed re-export',
+        { source: "export { make as build } from '@/data/sandbox-repository';", found: ['build'] },
+      ],
+      [
+        'a named re-export of something else',
+        { source: "export { other } from '@/data/sandbox-repository';", found: [] },
+      ],
+      [
+        'a namespace re-export, folded in conservatively',
+        { source: "export * as ns from '@/data/sandbox-repository';", found: ['ns'] },
+      ],
+      [
+        'an inline type-only re-export, which is erased',
+        { source: "export { type make } from '@/data/sandbox-repository';", found: [] },
+      ],
+      [
+        'a wholly type-only re-export, which is erased',
+        { source: "export type { make } from '@/data/sandbox-repository';", found: [] },
+      ],
+      [
+        'a re-export from a module outside this tree',
+        { source: "export * from 'react';", found: [] },
+      ],
+      ['a local export, which names no module', { source: 'export { make };', found: [] }],
+    ]);
+    expect(positions.size, 'the position list is empty; this assertion is vacuous').toBe(9);
+    for (const [name, { source, found }] of positions) {
+      expect(namesOf(source), `${name} is no longer read as a re-export`).toEqual(found);
+    }
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The resolver's candidate list and both prefix wires, driven end to end.
+   *
+   * `subpathBase` was pinned in four directions — wildcard, exact key,
+   * conditions object, non-subpath — by assertions that all called it directly
+   * with a synthetic map, and `resolveInTree`'s `?? subpathBase(path)` deleted
+   * with `tsc` at 0 and the whole suite green, because this repo's
+   * `package.json` declares no `imports` and no assertion had ever driven the
+   * edge between the two. That is the shape this round is about: two thoroughly
+   * tested things with nothing asserting the wire between them. The same was
+   * true of `aliasBase`'s bare-prefix arm and of `join(base, 'index.tsx')`,
+   * which has no file under `src/` to reach it — measured, ten `index.ts` and
+   * zero of the other.
+   *
+   * So the maps are parameters, the candidate list is driven against a directory
+   * outside this repository whose entries are seeded, and every position is a
+   * row. The seeded directory is not on any real path: nothing in this repo
+   * resolves through `..`, and `DIRECTORY_ENTRIES` is consulted before the disk,
+   * so this cannot make a real lookup answer differently.
+   */
+  it('resolves a specifier through every prefix and every candidate it names', () => {
+    const outside = resolve(REPO_ROOT, '..', 't05-outside-this-repository');
+    DIRECTORY_ENTRIES.set(outside, [
+      { name: 'Exact.css', isFile: true },
+      { name: 'ts-file.ts', isFile: true },
+      { name: 'tsx-file.tsx', isFile: true },
+      { name: 'ts-dir', isFile: false },
+      { name: 'tsx-dir', isFile: false },
+    ]);
+    DIRECTORY_ENTRIES.set(join(outside, 'ts-dir'), [{ name: 'index.ts', isFile: true }]);
+    DIRECTORY_ENTRIES.set(join(outside, 'tsx-dir'), [{ name: 'index.tsx', isFile: true }]);
+    const from = join(outside, 'probe.ts');
+    const none = new Map<string, string | null>();
+    const candidateOf = (specifier: string): string | null => {
+      const found = resolveInTree(from, specifier, false, none, none);
+      return found === null ? null : basename(found.file);
+    };
+    // One row per candidate `resolveInTree` tries, in the order it tries them.
+    const candidates = new Map<string, string | null>([
+      ['./Exact.css', 'Exact.css'],
+      ['./ts-file', 'ts-file.ts'],
+      ['./tsx-file', 'tsx-file.tsx'],
+      ['./ts-dir', 'index.ts'],
+      ['./tsx-dir', 'index.tsx'],
+      ['./nothing-here', null],
+    ]);
+    expect(candidates.size, 'the candidate list is empty; this assertion is vacuous').toBe(6);
+    const tried: Record<string, string | null> = {};
+    const owed: Record<string, string | null> = {};
+    for (const [specifier, file] of candidates) {
+      tried[specifier] = candidateOf(specifier);
+      owed[specifier] = file;
+    }
+    expect(
+      tried,
+      'a candidate spelling this resolver claims to try stopped being tried. ' +
+        'Each key is one entry of the candidate list',
+    ).toEqual(owed);
+
+    // The outside-this-repository branch of `canonical`: no anchor to walk down
+    // from, so the last segment and only the last segment is respelled. The
+    // whole branch was replaceable by `return null` with the suite green.
+    const miscased = resolveInTree(from, './exact.css', false, none, none);
+    expect(
+      miscased === null ? null : basename(miscased.file),
+      'a path outside this repository is no longer respelled at all',
+    ).toBe('Exact.css');
+    expect(
+      miscased === null ? null : basename(miscased.requested),
+      'and the spelling the specifier asked for is no longer carried out beside it',
+    ).toBe('exact.css');
+
+    // The two wires. Both targets are real files, so the whole path — prefix
+    // translation, candidate list, `canonical` — has to run for these to answer.
+    const double = join(SRC_ROOT, 'runtime', 'run-doubles.ts');
+    const wires = new Map<
+      string,
+      { specifier: string; aliases: Map<string, string | null>; imports: Map<string, string | null> }
+    >([
+      [
+        'an alias prefix with a path after it',
+        {
+          specifier: '~t05/run-doubles.ts',
+          aliases: new Map([['~t05', join(SRC_ROOT, 'runtime')]]),
+          imports: none as Map<string, string | null>,
+        },
+      ],
+      [
+        'an alias prefix spelled bare',
+        {
+          specifier: '~t05',
+          aliases: new Map([['~t05', double]]),
+          imports: none as Map<string, string | null>,
+        },
+      ],
+      [
+        'a wildcard subpath import',
+        {
+          specifier: '#t05/run-doubles.ts',
+          aliases: none as Map<string, string | null>,
+          imports: new Map([['#t05/*', './src/runtime/*']]),
+        },
+      ],
+      [
+        'an exact subpath import',
+        {
+          specifier: '#t05',
+          aliases: none as Map<string, string | null>,
+          imports: new Map([['#t05', './src/runtime/run-doubles.ts']]),
+        },
+      ],
+    ]);
+    expect(wires.size, 'the wire list is empty; this assertion is vacuous').toBe(4);
+    const reached: Record<string, string | null> = {};
+    for (const [name, { specifier, aliases, imports }] of wires) {
+      const found = resolveInTree(HTML_ENTRY, specifier, false, aliases, imports);
+      reached[name] = found === null ? null : asRepoPath(found.file);
+    }
+    expect(
+      reached,
+      'a declared prefix stopped reaching the file it names. The helper that ' +
+        'translates it is pinned separately; this is the edge from the helper ' +
+        'into the resolver, which is the edge that was pinned by nothing',
+    ).toEqual({
+      'an alias prefix with a path after it': 'src/runtime/run-doubles.ts',
+      'an alias prefix spelled bare': 'src/runtime/run-doubles.ts',
+      'a wildcard subpath import': 'src/runtime/run-doubles.ts',
+      'an exact subpath import': 'src/runtime/run-doubles.ts',
+    });
+    expect(
+      resolveInTree(HTML_ENTRY, '#t05/run-doubles.ts', false, none, none),
+      'an undeclared subpath import must resolve to nothing, loudly, rather ' +
+        'than to whatever the last declared one happened to map',
+    ).toBe(null);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every spelling a declared prefix can carry, on both sides of the question.
+   *
+   * `pointsIntoThisTree`'s `path === prefix` arm deleted with the whole suite
+   * green while the identical arm one function over, in `aliasBase`, reddened.
+   * `subpathBase`'s wildcard length guard deleted green as well: no real
+   * `imports` key overlaps its own head and tail, so nothing ever reached it.
+   */
+  it('recognises a declared prefix in every spelling that can carry one', () => {
+    const aliases = new Map<string, string | null>([['~', join(SRC_ROOT, 'runtime')]]);
+    const inTree = new Map<string, boolean>([
+      ['./relative', true],
+      ['../up-one', true],
+      ['/root-absolute', true],
+      ['#subpath/thing', true],
+      ['~', true],
+      ['~/thing', true],
+      ['~notaprefix', false],
+      ['react', false],
+      ['@tauri-apps/api/core', false],
+    ]);
+    expect(inTree.size, 'the spelling list is empty; this assertion is vacuous').toBe(9);
+    const answered: Record<string, boolean> = {};
+    const owed: Record<string, boolean> = {};
+    for (const [specifier, points] of inTree) {
+      answered[specifier] = pointsIntoThisTree(specifier, aliases);
+      owed[specifier] = points;
+    }
+    expect(
+      answered,
+      'a specifier spelling stopped being recognised as naming a file in this ' +
+        'tree. Anything that stops being recognised stops being `lost` when it ' +
+        'resolves to nothing, which is the silent `continue` defect 5 abolished',
+    ).toEqual(owed);
+
+    const keys = new Map<string, string>([
+      ['a wildcard key', '#w/thing'],
+      ['an exact key', '#e'],
+      ['a conditions object, which is not a guess', '#c'],
+      ['a key whose head and tail overlap the whole specifier', '#o'],
+      ['a specifier that is not a subpath at all', './plain'],
+    ]);
+    const imports = new Map<string, string | null>([
+      ['#w/*', './src/runtime/*'],
+      ['#e', './src/runtime/run-doubles.ts'],
+      ['#c', null],
+      ['#o*o', './src/*'],
+    ]);
+    const mapped: Record<string, string | null> = {};
+    for (const [name, specifier] of keys) {
+      const base = subpathBase(specifier, imports);
+      mapped[name] = base === null ? null : asRepoPath(base);
+    }
+    expect(
+      mapped,
+      'a subpath key shape stopped being translated, or started being ' +
+        'translated into something the manifest does not say',
+    ).toEqual({
+      'a wildcard key': 'src/runtime/thing',
+      'an exact key': 'src/runtime/run-doubles.ts',
+      'a conditions object, which is not a guess': null,
+      'a key whose head and tail overlap the whole specifier': null,
+      'a specifier that is not a subpath at all': null,
+    });
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every shape a config's exported object, its plugin list and its alias
+   * targets can be written in.
+   *
+   * Three arms of the config readers deleted with the whole suite green:
+   * `configRootOf`'s `node.isExportEquals === true` guard, `calleeNames`' bare
+   * identifier arm, and — the one that matters most — `aliasTarget`'s
+   * plain-string arm, which is the spelling vite accepts and the spelling this
+   * file's own decoy configs are written in, while every real assertion drove
+   * the `fileURLToPath` one.
+   */
+  it('reads a config through every shape its object, plugins and aliases take', () => {
+    const rootKeys = (source: string): string[] | null => {
+      const root = configRootOf(parse(source, 'probe.ts'));
+      return root === null ? null : objectKeys(root);
+    };
+    const exports = new Map<string, string[] | null>([
+      ['export default { plugins: [] };', ['plugins']],
+      ['export default defineConfig({ plugins: [] });', ['plugins']],
+      ['export = { plugins: [] };', null],
+      ['export const config = { plugins: [] };', null],
+    ]);
+    expect(exports.size, 'the export list is empty; this assertion is vacuous').toBe(4);
+    const found: Record<string, string[] | null> = {};
+    const owed: Record<string, string[] | null> = {};
+    for (const [source, keys] of exports) {
+      found[source] = rootKeys(source);
+      owed[source] = keys;
+    }
+    expect(
+      found,
+      'a config export form stopped being read, or a form vite cannot use ' +
+        'started being read as the config. `export =` is CommonJS and an ESM ' +
+        'config file cannot use it, so reading it would be this file inventing ' +
+        'a config the bundler never sees',
+    ).toEqual(owed);
+
+    const plugins = new Map<string, string[] | null>([
+      ['[react()]', ['react']],
+      ['[react]', ['react']],
+      ['[...packaging]', ['<SpreadElement>']],
+      ["['react']", ['<StringLiteral>']],
+      ['{}', null],
+    ]);
+    const listed: Record<string, string[] | null> = {};
+    const listedOwed: Record<string, string[] | null> = {};
+    for (const [source, names] of plugins) {
+      listed[source] = calleeNames(configProperty(['plugins'], configRootOf(
+        parse(`export default { plugins: ${source} };`, 'probe.ts'),
+      )));
+      listedOwed[source] = names;
+    }
+    expect(
+      listed,
+      'a plugin-list element shape stopped being reported. An element this ' +
+        'reader does not understand must come back as its syntax kind and ' +
+        'redden, not be skipped: a skipped element is a plugin nobody named',
+    ).toEqual(listedOwed);
+
+    const aliasesOf = (source: string): (string | null)[] => [
+      ...aliasesIn(configRootOf(parse(`export default { resolve: { alias: ${source} } };`, 'probe.ts'))).values(),
+    ].map((target) => (target === null ? null : asRepoPath(target)));
+    const targets = new Map<string, (string | null)[]>([
+      ["{ '@': './src' }", ['src']],
+      ["{ '@': fileURLToPath(new URL('./src', import.meta.url)) }", ['src']],
+      ["{ '@': somewhereElse }", [null]],
+    ]);
+    const translated: Record<string, (string | null)[]> = {};
+    const translatedOwed: Record<string, (string | null)[]> = {};
+    for (const [source, paths] of targets) {
+      translated[source] = aliasesOf(source);
+      translatedOwed[source] = paths;
+    }
+    expect(
+      translated,
+      'an alias target spelling stopped being translated. `null` is the safe ' +
+        'answer — the prefix is still declared, so every specifier using it is ' +
+        'lost and loud — and a spelling silently dropped from the map is not ' +
+        '`null`, it is a prefix this file has never heard of',
+    ).toEqual(translatedOwed);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every position the stylesheet reader decides, from the token scanner up.
+   *
+   * The escape arm of `readCss`'s string scanner deleted with the whole suite
+   * green — every forged-marker and string-laundering case in
+   * `reads a stylesheet as a module, and a CSS comment as prose` uses unescaped
+   * strings — and so did `cssParts`' brace skip, and so did the
+   * already-a-`url()` arm of `urlTargets`' image-set loop, while the sibling
+   * `cssNotProcessedRE` arm beside it reddened.
+   */
+  it('reads a stylesheet through every token and statement position it names', () => {
+    const scanned = new Map<string, { atRoot: string; literals: string[] }>();
+    const scan = (name: string, css: string): void => {
+      const read = readCss(css);
+      scanned.set(name, { atRoot: read.atRoot.trim(), literals: [...read.literals] });
+    };
+    scan('a comment, which is not a token', '@import /* x */ "a";');
+    scan('a double-quoted string, which is opaque', '@import "a";');
+    scan('a single-quoted string, which is opaque', "@import 'a';");
+    scan('an escaped quote, which does not end the string', '@import "a\\"b";');
+    scan('an escaped backslash, which does not escape the quote after it', '@import "a\\\\";');
+    expect(scanned.size, 'the token list is empty; this assertion is vacuous').toBe(5);
+    expect(
+      Object.fromEntries([...scanned].map(([name, { literals }]) => [name, literals])),
+      'a token position in the CSS scanner stopped being read. A string whose ' +
+        'interior leaks into the statement text is a specifier this file can be ' +
+        'shown, which is defect 6 rebuilt out of the fix for defect 6',
+    ).toEqual({
+      'a comment, which is not a token': ['a'],
+      'a double-quoted string, which is opaque': ['a'],
+      'a single-quoted string, which is opaque': ['a'],
+      'an escaped quote, which does not end the string': ['a"b'],
+      'an escaped backslash, which does not escape the quote after it': ['a\\'],
+    });
+
+    const parts = cssParts(
+      readCss(
+        '@charset "utf-8"; @import "base.css"; @media print { .a { color: red } }' +
+          ' .b { background: url("x.png") } @supports (a: b) { .c { color: blue } }',
+      ),
+    );
+    expect(
+      parts.declarationValues.length,
+      'a declaration value stopped reaching the reader postcss hands them to',
+    ).toBe(3);
+    expect(
+      parts.declarationValues
+        .map((value) => value.trim())
+        .filter((value) => !value.includes('url(')),
+      'and each one is the text after the first colon, block by block',
+    ).toEqual(['red', 'blue']);
+    expect(
+      parts.elsewhere.filter((statement) => statement === '{' || statement === '}'),
+      'the brace statements `readCss` leaves in `atRoot` to mark where a block ' +
+        'started are being reported as text the bundler never reads. They are ' +
+        'position markers for `importRules`, not statements',
+    ).toEqual([]);
+    expect(
+      parts.elsewhere.some((statement) => statement.startsWith('@media')),
+      'an at-rule prelude stopped being reported. A url() in one is dead text ' +
+        'to the bundler and this file has to say so rather than follow it',
+    ).toBe(true);
+    expect(
+      parts.elsewhere.some((statement) => /^@(?:import|charset)\b/i.test(statement)),
+      '`@import` and `@charset` are owned by `importRules`, which reports them ' +
+        'under the preamble rule; counting them here reddens base.css',
+    ).toBe(false);
+
+    const imageSet = readCss(
+      '.a { background-image: image-set(url("/src/a.png") 1x, "/src/b.png" 2x,' +
+        ' linear-gradient(red, blue) 3x) }',
+    );
+    expect(
+      urlTargets(imageSet),
+      'an image-set candidate that is already a url() must be taken once, by ' +
+        'the url() loop, and a candidate vite’s own cssNotProcessedRE ' +
+        'declines must not be taken at all',
+    ).toEqual(['/src/a.png', '/src/b.png']);
+    // The already-a-url() guard needs a token the ordinary spelling cannot
+    // supply. `url("/src/a.png")` taken whole is a function call, so
+    // `viteSkipsUrl` declines it a second time and deleting the guard changes
+    // nothing — measured, green twice. Where the two differ is a candidate whose
+    // `url(` is not at the head of the token: `VITE_FUNCTION_CALL_RE` is
+    // anchored, so it does not match, and only the guard stands between this and
+    // an edge invented out of a path the url() loop has already read. The guard
+    // is vite's own `cssUrlRE.test(candidate) || cssNotProcessedRE.test(candidate)`
+    // continue, transcribed, so agreeing with it here is the whole point.
+    expect(
+      urlTargets(readCss('.a { background-image: image-set(/src/a/url(b.png) 1x) }')),
+      'a candidate carrying a url() the declaration loop has already taken is ' +
+        'being taken a second time, as a path naming the candidate itself',
+    ).toEqual(['./b.png']);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Every shape an edge can be in when the walk classifies it.
+   *
+   * `classifyEdges` was `walk`'s `record` closure, and one of its positions —
+   * `requested === null` beside `resolved === null` — was held up by the type
+   * checker and by nothing else: deleting it left the whole suite at 2432 green
+   * and only `tsc --build --force` reddened. A position `tsc` happens to notice
+   * is not a position this file asserts.
+   */
+  it('classifies every edge shape the walk can hand it', () => {
+    const file = join(SRC_ROOT, 'main.tsx');
+    const other = join(SRC_ROOT, 'runtime', 'run-doubles.ts');
+    const edges: Edge[] = [
+      { specifier: './lost', resolved: null, requested: null, lost: true },
+      { specifier: 'react', resolved: null, requested: null, lost: false },
+      { specifier: './main', resolved: file, requested: file, lost: false },
+      { specifier: './Main', resolved: file, requested: join(SRC_ROOT, 'Main.tsx'), lost: false },
+      { specifier: './half', resolved: other, requested: null, lost: false },
+    ];
+    const report = classifyEdges('probe', edges);
+    expect(
+      {
+        unresolved: [...report.unresolved],
+        miscased: [...report.miscased],
+        reached: report.reached.map(asRepoPath),
+      },
+      'an edge shape stopped being classified the way this walk classifies it. ' +
+        'An edge resolved to a file with no spelling beside it cannot be tested ' +
+        'for casing — `requested` is the other half of that test — so it is ' +
+        'neither reached nor reported as mis-cased',
+    ).toEqual({
+      unresolved: ['probe: ./lost'],
+      miscased: ['probe: ./Main is on disk as src/main.tsx'],
+      reached: ['src/main.tsx', 'src/main.tsx'],
+    });
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * `vite-ignore` on the two kinds of tag the bundler reads it on, and on one it
+   * does not.
+   *
+   * Round 6 tested the attribute ahead of the tag dispatch for every element and
+   * said four times over that `getNodeAssetAttributes` does the same. It does
+   * not: it opens with the row lookup and tests the attribute after it, so on a
+   * tag with no row vite returns `[]` having read no attribute at all and having
+   * left the marker in place. `<a href="/src/main.tsx" vite-ignore>` was
+   * therefore reported as *the bundler is told to leave this tag alone, so
+   * everything it names is out of the build* — a message about a build that had
+   * done nothing of the kind. Measured against the installed vite@7.3.6: row
+   * lookup at offset 57 of that function body, attribute test at offset 230.
+   */
+  it('honours vite-ignore where the bundler honours it, and reads a style attribute either way', () => {
+    const honoured = new Map<string, boolean>([
+      ['script', true],
+      ['link', true],
+      ['img', true],
+      ['meta', true],
+      ['a', false],
+      ['div', false],
+      ['style', false],
+      ['template', false],
+    ]);
+    expect(honoured.size, 'the tag list is empty; this assertion is vacuous').toBe(8);
+    const answered: Record<string, boolean> = {};
+    const owed: Record<string, boolean> = {};
+    for (const [tag, honours] of honoured) {
+      answered[tag] = honoursViteIgnore(tag);
+      owed[tag] = honours;
+    }
+    expect(
+      answered,
+      'a tag changed sides on whether `vite-ignore` does anything to it. The ' +
+        'two sides are `getScriptInfo`, which reads it for every script, and ' +
+        '`getNodeAssetAttributes`, which reads it only after finding a row',
+    ).toEqual(owed);
+
+    const textOf = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'unread' ? [load.text] : []));
+    expect(
+      textOf('<a href="/src/main.tsx" vite-ignore>x</a>'),
+      'a tag with no row and no script branch must be reported for the reason ' +
+        'it is really unread — an attribute outside the table naming a file ' +
+        'here — and not for a bundler decision that never happened',
+    ).toEqual(['<a href="/src/main.tsx"> names a file this reader does not follow']);
+    expect(
+      textOf('<script type="module" src="/src/main.tsx" vite-ignore></script>').length,
+      'the one script tag in this document, taken out of the build by one ' +
+        'documented attribute, stopped being reported',
+    ).toBe(1);
+    expect(
+      htmlLoads(
+        '<img src="/src/main.tsx" vite-ignore style="background: url(\'/src/main.tsx\')" />',
+      ).flatMap((load) => (load.kind === 'file' ? [load.specifier] : [])),
+      'a style attribute is read whatever `getNodeAssetAttributes` returned ' +
+        'for the tag: `findNeedTransformStyleAttribute` runs on every node and ' +
+        'never looks at `vite-ignore`',
+    ).toEqual(['/src/main.tsx']);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The three positions `insideThisRepo` decides, one recorded id each.
+   *
+   * All three deleted with the whole suite green, because a real build reports
+   * no id of any of those shapes: every path it names is either under this repo
+   * or comfortably outside it. A filter nothing supplies an input for is a
+   * filter that is not being read.
+   */
+  it('reads a recorded id as a place in this repository, or as somewhere else', () => {
+    const ids = new Map<string, string>([
+      ['a module under src/', join(SRC_ROOT, 'main.tsx')],
+      ['a dependency', join(REPO_ROOT, 'node_modules', 'react', 'index.js')],
+      ['the repository root itself, which is a directory and not a file', REPO_ROOT],
+      ['a path above the repository', resolve(REPO_ROOT, '..', 'elsewhere', 'x.ts')],
+      // On Windows a path on another root has no relative spelling at all and
+      // `relative` hands back the absolute path; on a single-rooted filesystem
+      // the same input comes back as `../…`. Either way it is not in this repo,
+      // and on this box it is the only input that reaches the `isAbsolute` arm.
+      ['a path on another filesystem root', 'D:\\elsewhere\\x.ts'],
+      ["a bundler's virtual module id", `${VIRTUAL_MODULE_ID}vite/preload-helper.js`],
+      [
+        "a bundler's virtual module id over a real dependency",
+        `${VIRTUAL_MODULE_ID}${join(REPO_ROOT, 'node_modules', 'react', 'index.js')}?commonjs-module`,
+      ],
+    ]);
+    expect(ids.size, 'the id list is empty; this assertion is vacuous').toBe(7);
+    const placed: Record<string, string | null> = {};
+    const owed: Record<string, string | null> = {
+      'a module under src/': 'src/main.tsx',
+      'a dependency': 'node_modules/react/index.js',
+      'the repository root itself, which is a directory and not a file': null,
+      'a path above the repository': null,
+      'a path on another filesystem root': null,
+      "a bundler's virtual module id": null,
+      "a bundler's virtual module id over a real dependency": null,
+    };
+    for (const [name, id] of ids) {
+      placed[name] = insideThisRepo([id])[0] ?? null;
+    }
+    expect(
+      placed,
+      'a recorded id shape stopped being placed. Anything this drops is a file ' +
+        'the build read and no assertion in this file ever sees',
+    ).toEqual(owed);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * Both filters of the src/ narrowing, and the query suffix that got past one.
+   *
+   * Each filter was individually deletable with the whole suite green, and only
+   * deleting both at once reddened anything — because both sides of the build
+   * comparison ran the same predicate, so a kind it rejected was invisible in
+   * both directions and their disagreement never appeared. Two branches, neither
+   * pinned, under an assertion that appears to cover them and covers only the
+   * case where both are gone.
+   *
+   * The query row is a real defect rather than a shape nobody writes:
+   * `extname('embedded.css?raw')` is `.css?raw`, which is in no map, so the
+   * rollup module id for `import x from './styles/embedded.css?raw'` was dropped
+   * as an unshipped kind. It survived only because `getWatchFiles()` reports the
+   * clean path beside it.
+   */
+  it('reads a build set as the src/ modules in it, whatever query an id carries', () => {
+    const recorded = [
+      'src/main.tsx',
+      'src/styles/base.css',
+      'src/styles/base.css?used',
+      // The row that matters: a module the recorder reported *only* under a
+      // query. With the suffix left on, `extname` answers `.ts?raw`, which is in
+      // no map, and the module the build read disappears from this set.
+      'src/runtime/run-doubles.ts?raw',
+      'src/runtime/reachable.test.ts',
+      'src/runtime/nothing.d.ts',
+      'src/features/README.md',
+      'index.html',
+      'package.json',
+      'tests/support/double.ts',
+      'node_modules/react/index.js',
+    ];
+    expect(
+      sourceKindPaths(recorded),
+      'a kind or a place this narrowing decides stopped being decided. A test ' +
+        'file, a declaration file, a kind the bundler has no loader for and a ' +
+        'path outside src/ are each one row; a query-suffixed id is the same ' +
+        'module as the id without it, and dropping it drops a module the build ' +
+        'read',
+    ).toEqual(['src/main.tsx', 'src/runtime/run-doubles.ts', 'src/styles/base.css']);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The marker five paragraphs of this file measure a shipped double by.
+   *
+   * Its validity condition is that it occurs in exactly one file under `src/`,
+   * this file states that condition three times, one of those sentences names
+   * the typographic convention that preserves it — and the same round wrote the
+   * phrase unbroken into a docblock 1,500 lines away, so the condition was false
+   * and nothing noticed. A convention held up by a habit in prose is the
+   * canonical RULE V shape: the property the fix depends on, asserted by
+   * nothing. The phrase is built from pieces here for the same reason the
+   * docblocks break it across a line.
+   */
+  it('the marker that proves a double reached dist/ names exactly one file', () => {
+    const marker = ['no turn has', 'been sent'].join(' ');
+    const readable = new Set([...SHIPPING_EXTENSIONS.keys(), ...NOT_LOADED_EXTENSIONS.keys()]);
+    const under = publicFiles(SRC_ROOT).filter((name) =>
+      readable.has(extname(name).toLowerCase()),
+    );
+    expect(under.length, 'the sweep enumerated nothing; this assertion is vacuous').toBeGreaterThan(
+      100,
+    );
+    expect(
+      under.filter((name) => readFileSync(join(SRC_ROOT, name), 'utf8').includes(marker)).sort(),
+      'the string this file measures a shipped double by is in more than one ' +
+        'file under src/, or in none. Every paragraph that reports "the marker ' +
+        'was in the entry chunk" is reporting something weaker than it says the ' +
+        'moment a second file carries it',
+    ).toEqual(['runtime/run-doubles.ts']);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The build script's argv, one row per flag spelling that can move the config.
+   *
+   * `package.json`'s `scripts` values were read by nothing at all, and
+   * `packageJsonKeys` pins the manifest's key list rather than its contents, so
+   * `scripts` was already on the list and changing a script's **value** was
+   * invisible by construction.
+   */
+  it('reads a build script as the argv it is', () => {
+    const readOf = (script: string): string =>
+      commandSteps(script)
+        .map(
+          (step) =>
+            `${step.command}(${selectedBy(step.args, CONFIG_SELECTING_FLAGS).join(',')}|` +
+            `${selectedBy(step.args, ROOT_SELECTING_FLAGS).join(',')})`,
+        )
+        .join(' ');
+    const scripts = new Map<string, string>([
+      ['vite build', 'vite(|)'],
+      ['tsc --build --force && vite build', 'tsc(|) vite(|)'],
+      ['vite build --config other.ts', 'vite(other.ts|)'],
+      ['vite build --config=other.ts', 'vite(other.ts|)'],
+      ['vite build -c other.ts', 'vite(other.ts|)'],
+      ['vite build -c=other.ts', 'vite(other.ts|)'],
+      ['vite build --root packages/app', 'vite(|packages/app)'],
+      ['vite build --root=packages/app', 'vite(|packages/app)'],
+      ['vite build -r packages/app', 'vite(|packages/app)'],
+      ['   ', ''],
+    ]);
+    expect(scripts.size, 'the argv list is empty; this assertion is vacuous').toBe(10);
+    const read: Record<string, string> = {};
+    const owed: Record<string, string> = {};
+    for (const [script, shape] of scripts) {
+      read[script] = readOf(script);
+      owed[script] = shape;
+    }
+    expect(
+      read,
+      'a command-line spelling that points vite at a different config, or at a ' +
+        'different root, stopped being read. Anything this misses is a config ' +
+        'the shipping build loads and this file has never opened',
+    ).toEqual(owed);
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * `pnpm build` and this file's recorder resolve the same config, the same way.
+   *
+   * The recorder used to name `vite.config.ts` outright, which is not what vite
+   * does: `DEFAULT_CONFIG_FILES` ranks "vite.config.js" and "vite.config.mjs"
+   * **ahead** of it, so adding a "vite.config.mjs" that imports the `.ts` one,
+   * spreads it and appends a plugin left `vite build` at 222 modules against 220
+   * with the double's bytes in the shipped entry chunk and this file green twice
+   * — the recorder loading one config and the product built from another.
+   * Dropping the name is half the fix; the other half is that the config vite
+   * **found** is now recorded and compared against the file every AST assertion
+   * here parses.
+   *
+   * That still leaves how the build is invoked, and nothing read it. A
+   * "vite.config.prod.ts" named from `package.json`'s build script survives the
+   * first half entirely: auto-discovery finds `vite.config.ts`, which is still
+   * not the file `pnpm build` uses. So the script is read as an argv and held to
+   * selecting neither a config nor a root.
+   */
+  it('the build script and the recorded build resolve the same config', () => {
+    const script = packageScript('build');
+    expect(script, 'package.json declares no build script for this to hold').not.toBe('');
+    const steps = commandSteps(script);
+    expect(
+      steps.map((step) => step.command),
+      'the build script runs a command this guard has not been told about. ' +
+        'Every step is a chance to point vite somewhere else — a wrapper, an ' +
+        'env shim, a second bundler — and none of them is visible in the config',
+    ).toEqual(['tsc', 'vite']);
+    const bundling = steps.filter((step) => step.command === 'vite' && step.args[0] === 'build');
+    expect(bundling.length, 'no step of the build script runs `vite build`').toBe(1);
+    for (const step of bundling) {
+      expect(
+        selectedBy(step.args, CONFIG_SELECTING_FLAGS),
+        'the build script names a config file. Every AST assertion in this ' +
+          'file reads vite.config.ts, and the shipping build would be reading ' +
+          'this one instead',
+      ).toEqual([]);
+      expect(
+        selectedBy(step.args, ROOT_SELECTING_FLAGS),
+        'the build script moves vite’s root, so the config it discovers is not ' +
+          'the one discovered from this repository root',
+      ).toEqual([]);
+    }
+  }, BOUNDARY_BUDGET);
+
+  /**
+   * The recorded build is the build this repo ships, in the four ways it was not.
+   *
+   * `execFileSync` passed no `env`, so the child inherited vitest's — measured
+   * directly by instrumenting this file's own `BUILD_PROGRAM`:
+   * `VITEST="true"`, `NODE_ENV="test"`. Two adversaries landed the double's
+   * bytes in the shipped entry chunk through one five-word conditional on each
+   * of those variables, at 221 modules against 219, with this file green at
+   * 48/48 twice; the ungated version of the same plugin reds three named
+   * assertions, so the gate was the entire difference. And `resolved.isProduction`
+   * is `(process.env.NODE_ENV || mode) === 'production'`, so the recorded build
+   * had `import.meta.env.DEV` **true** — dev-only mock wiring was in this set and
+   * absent from `dist/`, a false red on an ordinary idiom, and `import.meta.env.PROD`
+   * code shipped while being absent here.
+   *
+   * Measured both ways on this tree: under the runner's environment
+   * `isProduction` is `false` and `env.DEV` is `true`; with it scrubbed, `true`
+   * and `false`. All four values are asserted, so the scrub cannot quietly stop
+   * happening.
+   */
+  it('the recorded build is the build this repo ships', () => {
+    expect(
+      buildEnvironment({
+        VITEST: 'true',
+        VITEST_WORKER_ID: '1',
+        VITEST_POOL_ID: '1',
+        VITEST_MODE: 'run',
+        NODE_ENV: 'test',
+        PATH: 'kept',
+      }),
+      'a variable the runner sets survived into the environment the recorded ' +
+        'build resolves its config in. A config is entitled to branch on any of ' +
+        'them, and a plugin behind such a branch is a plugin this file records ' +
+        'the absence of and the product ships',
+    ).toEqual({ PATH: 'kept' });
+
+    const facts = buildFacts();
+    expect(
+      facts.configFile,
+      'the config vite found is not the config this file parses. Every claim ' +
+        'here about plugins, aliases, keys and callees is a claim about a file ' +
+        'the bundler did not load — vite ranks vite.config.js and ' +
+        'vite.config.mjs ahead of the .ts one',
+    ).toBe(VITE_CONFIG_PATH);
+    expect(
+      {
+        vitest: facts.runnerVitest,
+        nodeEnv: facts.runnerNodeEnv,
+        isProduction: facts.isProduction,
+        dev: facts.dev,
+        prod: facts.prod,
+      },
+      'the recorded build resolved its config in an environment the shipping ' +
+        'build does not have. Anything a config gates on these four values is ' +
+        'recorded here and shipped there, or the reverse',
+    ).toEqual({
+      vitest: null,
+      nodeEnv: 'production',
+      isProduction: true,
+      dev: false,
+      prod: true,
+    });
+  }, BUILD_BUDGET);
+
+  /**
+   * Everything the build reads that is neither under `src/` nor a dependency.
+   *
+   * The universe of both instruments was `src/`, and nothing asserted the
+   * universe. Two adversaries reached the same construction independently: a
+   * scripted turn driver under `tests/support/`, imported by
+   * `src/runtime/app-runtime.ts`, with the include `tsc`'s own TS6307 message
+   * asks for added to `tsconfig.app.json` — `vite build` exit 0 at 220 modules
+   * against 219, the double's class body in the shipped entry chunk, this file
+   * green at 48/48 and the whole suite at 118/118. A second needed no TypeScript
+   * at all: `@import '../../../tests/support/dev-overlay.css'` in a component
+   * stylesheet put a rule from outside `src/` into the shipped CSS with the
+   * module count unchanged. The repo already compiles TypeScript under `tests/`
+   * and already has a tsconfig including such a directory beside `src`, so this
+   * is a refactor a reviewer nods at.
+   *
+   * `PUBLIC_FILES` is the same pin over the other unwalked path into `dist/`,
+   * and this is the third. A new entry reddens once and gets named.
+   */
+  it('names every file outside src/ the build reads', () => {
+    const facts = buildFacts();
+    expect(
+      repoReadsOutsideSrc(facts),
+      'the build read a file in this repository that is neither under src/ nor ' +
+        'a dependency. Nothing under src/ governs it: `readBySourceKind` and ' +
+        '`reachedBySourceKind` both drop it, and `shippingModules(SRC_ROOT)` ' +
+        'never enumerated it, so the two-directional comparison agrees about it ' +
+        'by being blind to it twice. Name it here, or take it out of the build',
+    ).toEqual([...BUILD_READS_OUTSIDE_SRC]);
+    expect(
+      facts.read.some((path) => path.startsWith('node_modules/')),
+      'the recorded set contains no dependency at all, so the filter above is ' +
+        'not narrowing anything and this assertion is vacuous',
+    ).toBe(true);
+  }, BUILD_BUDGET);
+
+  /**
+   * One `vite build` per run, counted rather than described.
+   *
+   * The count is taken after this assertion's own call, so it holds whether the
+   * seven assertions above that read the build ran or a `-t` filter skipped
+   * them: the first call is the one that pays, and every later one is free.
+   */
+  it('runs one build for the whole file, however many assertions read it', () => {
+    buildFacts();
+    expect(
+      BUILDS_RECORDED,
+      'more than one child `vite build` ran in this file. The memo is what ' +
+        'keeps seven readers from costing seven bundles, and removing it was ' +
+        'exit 0 twice with nothing but the clock to notice',
+    ).toBe(1);
+    const paid = BUILDS_RECORDED;
+    buildFacts();
+    buildFacts();
+    expect(
+      BUILDS_RECORDED - paid,
+      'a second reader of the recorded build ran the build again',
+    ).toBe(0);
+  }, BUILD_BUDGET);
 });

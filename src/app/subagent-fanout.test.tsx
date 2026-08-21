@@ -3,23 +3,38 @@
  *
  * ## What was untestable, and why that was a property of the fake
  *
- * `use-conversation.ts` offers `subagentToolDefinition` on every agent run and
- * `app-runtime.ts` wires `createSubagentToolkit` into `toolsFor`, so the path
- * from a model's `spawn_subagent` call to a second live run is complete by
- * inspection. Nothing could execute it. `BrowserAdapter`'s `#chatSend` answered
- * every turn with `toolCalls: []` — a literal, not a decision the request could
- * influence — so the agent loop's `executableCalls` came back empty on every
- * turn `<App />` could produce, the toolkit's `execute` was never called, and
- * `createAgentRuntime`'s `newRunId` and `newConversationId` closures (the latter
- * being the only caller of `store_create_conversation` under `src/runtime/`) had
- * no executing test anywhere in the tree.
+ * The path from a model's `spawn_subagent` call to a second live run has two
+ * halves, and only the second one used to be hard to reach.
  *
- * The existing subagent proof, `src/runtime/subagent-toolkit.test.ts`, is driven
- * by `FakeTurnDriver`: it substitutes the whole adapter, so it says nothing
- * about `chat_send`, about `chat:event`, about the store, or about anything
- * `App.tsx` assembles. `BrowserAdapter.seedReplyScript` is the seam-preserving
- * alternative — the tool call is carried by the same `chat:event` stream every
- * other turn uses, over the same `chat_send` the same validation refuses.
+ * **The offer.** `use-conversation.ts` puts `subagentToolDefinition` in
+ * `startRun`'s `tools`, and `app-runtime.ts` wires `createSubagentToolkit` into
+ * `toolsFor`. Nothing below asserts either by reading it. The catalogue is read
+ * back off the `ChatSendReq` the host actually received, and the scripted call
+ * is **gated** on it: a script that invented a call regardless of what it was
+ * handed would prove the execution half while leaving the offer — the first
+ * link — free to be deleted with the suite still green. So an agent run started
+ * with an empty `tools` fans out to nothing, and every assertion below the
+ * offer goes with it.
+ *
+ * **The execution.** That half had no executing test anywhere in the tree.
+ * `BrowserAdapter`'s `#chatSend` answered every turn with `toolCalls: []` — a
+ * literal, not a decision the request could influence — so the agent loop's
+ * `executableCalls` came back empty on every turn `<App />` could produce, the
+ * toolkit's `execute` was never called, and `createAgentRuntime`'s `newRunId`
+ * and `newConversationId` closures never ran. (`newConversationId` is the only
+ * non-test caller of `store_create_conversation` under `src/runtime/`;
+ * `adapter-integration.test.ts` invokes the command itself.)
+ *
+ * The existing subagent proof, `src/runtime/subagent-toolkit.test.ts`, has no
+ * adapter in it at all: it hands `createHarnessRuntime` a `FakeTurnDriver`, a
+ * recording transcript writer, and its own `newRunId` and `newConversationId`.
+ * So it says nothing about `chat_send`, about `chat:event`, about the store, or
+ * about anything `App.tsx` assembles — including the two id minters the
+ * shipping wiring supplies instead.
+ *
+ * `BrowserAdapter.seedReplyScript` is the seam-preserving alternative: the tool
+ * call is carried by the same `chat:event` stream every other turn uses, over
+ * the same `chat_send` the same validation refuses.
  *
  * ## Why a barrier and not a snapshot
  *
@@ -44,6 +59,11 @@
  *    runtime — but it is not two OS threads and must not be read as such.
  *  - **The clock.** `Date.now`, un-driven. No claim is made about how long a
  *    fan-out takes.
+ *
+ * The last test in the file is about `seedReplyScript` itself rather than about
+ * the fan-out: it is the only thing in the tree that stops a turn while its
+ * script is still an unsettled promise, which is a state no other turn in this
+ * fake can be in.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -54,12 +74,15 @@ import { App } from '@/app/App';
 import { BrowserAdapter, type ScriptedReply } from '@/platform/browser-adapter';
 import {
   NO_CAPABILITIES,
+  type ChatEventEnvelope,
   type ChatSendReq,
+  type ChatStreamEvent,
   type ModelCapabilityReport,
   type StoredMessage,
   type ToolCallOutcome,
+  type ToolDefinitionInput,
 } from '@/platform/contract';
-import { SUBAGENT_TOOL_NAME } from '@/runtime/subagent-toolkit';
+import { SUBAGENT_TOOL_NAME, subagentToolDefinition } from '@/runtime/subagent-toolkit';
 import { resetModelStore } from '@/state/model-store';
 import { resetNavigationStore } from '@/state/navigation-store';
 
@@ -67,6 +90,8 @@ import { resetNavigationStore } from '@/state/navigation-store';
 const PARENT_ASK = 'delegate this';
 /** The two tasks the scripted model delegates. One child each. */
 const TASKS: readonly string[] = ['read the log', 'write the summary'];
+/** What a script decides after its turn was already stopped. Must reach nobody. */
+const AFTER_THE_STOP = 'answered after the stop';
 
 /**
  * How long a held child waits for its sibling before the rendezvous gives up.
@@ -127,6 +152,22 @@ function ok(callId: string, task: string): ToolCallOutcome {
 /** The last thing a *user* said in this turn's replay, which is what an echo answers. */
 function lastUserText(request: ChatSendReq): string {
   return [...request.messages].reverse().find((message) => message.role === 'user')?.text ?? '';
+}
+
+/**
+ * The tool catalogue this turn was handed, as the host received it.
+ *
+ * `ChatSendReq.tools` is optional, and absent is not the same statement as
+ * empty — but it is the same catalogue, so the reading below flattens them and
+ * the distinction is left to whatever cares about it.
+ */
+function offeredTools(request: ChatSendReq): readonly ToolDefinitionInput[] {
+  return request.tools ?? [];
+}
+
+/** Whether this turn could have asked for the subagent tool at all. */
+function wasOfferedSubagent(request: ChatSendReq): boolean {
+  return offeredTools(request).some((tool) => tool.name === SUBAGENT_TOOL_NAME);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -234,6 +275,8 @@ describe('the fan-out reaches a second run through the composition root', () => 
 
       const childTurnIds: string[] = [];
       const parentTurnIds: string[] = [];
+      /** What each turn was offered, by `turnId`. Asserted after the run. */
+      const offered = new Map<string, readonly ToolDefinitionInput[]>();
       let parentConversationId: string | null = null;
       /** Read while both children are parked. See `rendezvous`. */
       let whileHeld: {
@@ -254,6 +297,7 @@ describe('the fan-out reaches a second run through the composition root', () => 
       });
 
       adapter.seedReplyScript(async (request): Promise<ScriptedReply> => {
+        offered.set(request.turnId, offeredTools(request));
         // Ordered widest-first: the parent's second turn still has `PARENT_ASK`
         // as its last *user* message, because tool results are `role: 'tool'`.
         if (request.messages.some((message) => message.role === 'tool')) {
@@ -267,6 +311,12 @@ describe('the fan-out reaches a second run through the composition root', () => 
           return { text: `finished: ${task}` };
         }
         parentTurnIds.push(request.turnId);
+        // A model may only call a tool it was handed, so neither may this
+        // script. Without the gate the fan-out below would happen whatever
+        // `startRun` offered, and deleting `subagentToolDefinition` from it —
+        // which makes the feature invisible to every real endpoint — would not
+        // redden a single assertion in this file.
+        if (!wasOfferedSubagent(request)) return { text: 'nothing here to delegate with' };
         return {
           text: 'fanning out',
           toolCalls: [ok('call-a', TASKS[0] ?? ''), ok('call-b', TASKS[1] ?? '')],
@@ -281,16 +331,29 @@ describe('the fan-out reaches a second run through the composition root', () => 
       await delegate(user);
       await settled(TEST_TIMEOUT_MS - 5_000);
 
+      // ── the offer ─────────────────────────────────────────────────────────
+      // The first link, and the one the script above refuses to work around.
+      // Pinned by value rather than by name: `startRun` must hand over the
+      // definition `createSubagentToolkit` dispatches on and whose `task`
+      // parameter `readTask` reads, not merely something called the same.
+      const firstParentTurn = parentTurnIds[0] ?? '';
+      expect(
+        offered.get(firstParentTurn),
+        'the agent run was started without `subagentToolDefinition` in its `tools`, ' +
+          'so a real model would never learn that `spawn_subagent` exists',
+      ).toContainEqual(subagentToolDefinition);
+
       // ── the concurrency claim ─────────────────────────────────────────────
-      // Stated first, because every assertion below is only interesting if this
-      // one holds: no child was released by the detector, so each was released
-      // by the other's arrival.
+      // Both halves of the pair, and in this order because `deadlocked` alone is
+      // vacuously false when nothing ever arrived: it is `arrived` that says the
+      // rendezvous happened, and `deadlocked` that says the detector was not
+      // what ended it. Neither carries the claim without the other.
+      expect([...meeting.arrived].sort()).toEqual([...TASKS].sort());
       expect(
         meeting.deadlocked,
         `a held child was released by the ${String(RENDEZVOUS_DEADLOCK_MS)}ms deadlock ` +
           'detector rather than by its sibling arriving — the two children did not overlap',
       ).toBe(false);
-      expect([...meeting.arrived].sort()).toEqual([...TASKS].sort());
 
       // Two children, two conversations, both mid-turn at the same instant.
       expect(whileHeld.children).toHaveLength(2);
@@ -304,6 +367,18 @@ describe('the fan-out reaches a second run through the composition root', () => 
       expect(parentRunId).not.toBe('');
       for (const turnId of childTurnIds) {
         expect(turnId).toMatch(new RegExp(`^${parentRunId}\\.\\d+:\\d+$`));
+        // The ceiling reached the wire, and not only the toolkit: `toolsFor`
+        // strips the subagent tool from a child that is already at `maxDepth`,
+        // so a child is not offered the means to delegate further. Read off the
+        // request the host received, the same place the parent's offer above is
+        // read from. (What each child was handed on this tree is the empty
+        // catalogue, the subagent tool being the only one `startRun` offers —
+        // an observation, not the assertion: the assertion is the absence.)
+        expect(
+          (offered.get(turnId) ?? []).map((tool) => tool.name),
+          `child turn ${turnId} was offered ${SUBAGENT_TOOL_NAME} — the depth ceiling ` +
+            'did not reach the request, so a child could delegate without bound',
+        ).not.toContain(SUBAGENT_TOOL_NAME);
       }
 
       // ── the results came back as tool results, in call order ──────────────
@@ -348,11 +423,19 @@ describe('the fan-out reaches a second run through the composition root', () => 
   it(
     'leaves each child a conversation of its own that the user can open',
     async () => {
-      // `newConversationId` in `app-runtime.ts` calls `store_create_conversation`,
-      // and this is the only test in the tree that executes that call. What it
-      // buys the user is asserted rather than assumed: a real row, named, with
-      // the child's own answer in it — not a synthetic id whose first append
-      // would have failed and taken the child down before its first token.
+      // `createAgentRuntime`'s `newConversationId` is where the product calls
+      // `store_create_conversation`, and this file is where that closure runs:
+      // with a counter in it, a full-suite run reached it four times, twice in
+      // this test and twice in the one above, and from nowhere else. (Other
+      // tests do call the command — `adapter-integration.test.ts` invokes it on
+      // the adapter directly — but nothing else executes the product's caller.
+      // An observation of one run, and the sort of thing that changes the
+      // moment another test drives an agent fan-out.)
+      //
+      // What it buys the user is asserted rather than assumed: a real row,
+      // named, with the child's own answer in it — not a synthetic id whose
+      // first append would have failed and taken the child down before its
+      // first token.
       const user = userEvent.setup();
       const adapter = await host();
 
@@ -360,6 +443,11 @@ describe('the fan-out reaches a second run through the composition root', () => 
         if (request.messages.some((message) => message.role === 'tool')) return { text: 'done' };
         const task = lastUserText(request);
         if (TASKS.includes(task)) return { text: `finished: ${task}` };
+        // Gated on the offer for the same reason the first test's script is:
+        // an ungated script here would keep this test green on a build where
+        // `startRun` offers nothing, and a child conversation created for a
+        // tool no model can see is not a feature.
+        if (!wasOfferedSubagent(request)) return { text: 'nothing here to delegate with' };
         return {
           text: 'fanning out',
           toolCalls: [ok('call-a', TASKS[0] ?? ''), ok('call-b', TASKS[1] ?? '')],
@@ -376,9 +464,11 @@ describe('the fan-out reaches a second run through the composition root', () => 
       const { conversations } = await adapter.invoke('store_list_conversations', {});
       const children = conversations.filter((conversation) => conversation.id !== parentId);
       expect(children).toHaveLength(2);
-      // The title is `subagentConversationTitle`'s, and the sidebar is what
-      // reads it back: `use-conversations.ts` lists from
-      // `store_list_conversations` and renders `title` on every row.
+      // The title is `subagentConversationTitle`'s. What reads it back is the
+      // sidebar: `use-conversations.ts` loads the list through
+      // `conversations-repository`'s `list`, which is the caller of
+      // `store_list_conversations`, and `ConversationRow` renders
+      // `conversation.title` on the row it draws for each one.
       expect(children.map((child) => child.title).sort()).toEqual(['Subagent 1', 'Subagent 2']);
 
       // Each child's own transcript holds its own answer, and only its own.
@@ -401,6 +491,13 @@ describe('the fan-out reaches a second run through the composition root', () => 
       // that can make this fake ask for a tool; an adapter with no script must
       // behave exactly as it did before there was one, or every other test in
       // the tree is quietly being told something new.
+      //
+      // "Exactly as it did before" is asserted here rather than gestured at:
+      // the answer's text is the echo of what the user typed. Without that one
+      // line this test passes against an adapter whose unscripted answer has
+      // changed, and the property this test is named for is left to whatever
+      // else in the tree happens to notice. A control that does not control is
+      // worse than no control, because it gets cited.
       const user = userEvent.setup();
       const adapter = await host();
       render(<App adapter={adapter} />);
@@ -413,7 +510,65 @@ describe('the fan-out reaches a second run through the composition root', () => 
       expect(ids).toHaveLength(1);
       const messages = await messagesIn(adapter, ids[0] ?? '');
       expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+      expect(textOf(messages[1])).toBe(PARENT_ASK);
       expect(within(screen.getByRole('log')).getAllByRole('article')).toHaveLength(2);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'ends the turn cancelled, once, when the stop lands while the script is still deciding',
+    async () => {
+      // The state `seedReplyScript` makes reachable and nothing else in this
+      // fake can produce: a turn stopped while its script is still an unsettled
+      // promise, so not one frame has been scheduled for it. `#chatCancel` sets
+      // a flag and emits nothing, so the single terminal event has to come from
+      // `step`'s own cancelled check once the reply finally arrives — which is
+      // why the script's resolution path carries no cancel branch of its own.
+      //
+      // Asserted on the wire rather than on the screen, because "once" is the
+      // claim: a second terminal for a turn that already ended is exactly the
+      // shape of defect a rendered transcript can absorb without showing it.
+      const user = userEvent.setup();
+      const adapter = await host();
+
+      const terminals: ChatStreamEvent[] = [];
+      const unlisten = await adapter.listen('chat:event', (envelope: ChatEventEnvelope) => {
+        const { event } = envelope;
+        if (event.type === 'done' || event.type === 'error') terminals.push(event);
+      });
+
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let deciding = false;
+      adapter.seedReplyScript(async (): Promise<ScriptedReply> => {
+        deciding = true;
+        await held;
+        return { text: AFTER_THE_STOP };
+      });
+
+      render(<App adapter={adapter} />);
+      await openConversation(user);
+      await delegate(user);
+
+      // The stop has to land *inside* the script, which is the whole point, so
+      // it waits for the script to be entered rather than for a frame.
+      await waitFor(() => {
+        expect(deciding).toBe(true);
+      });
+      await user.click(await screen.findByRole('button', { name: 'Stop' }));
+      release();
+
+      await settled(10_000);
+      expect(terminals.map((event) => event.type)).toEqual(['error']);
+      expect(terminals[0]).toEqual({ type: 'error', error: { kind: 'cancelled' } });
+      // And what the script decided after the stop is not passed off as an
+      // answer: a cancelled turn has no reply, on the wire or on the screen.
+      expect(screen.getByRole('log')).not.toHaveTextContent(AFTER_THE_STOP);
+
+      unlisten();
     },
     TEST_TIMEOUT_MS,
   );

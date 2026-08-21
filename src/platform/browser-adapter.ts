@@ -1691,6 +1691,11 @@ export class BrowserAdapter implements PlatformAdapter {
         if (turn.cancelled) {
           // What a real backend produces when the caller cancels: a terminal
           // `Error` of kind `cancelled`, not a `Done` pretending the turn ran.
+          //
+          // Two kinds of turn reach this: one cancelled between frames, and one
+          // cancelled while a {@link ReplyScript} was still deciding — the
+          // latter arrives here with `index` still 0, having streamed nothing,
+          // and its reply is dropped rather than delivered late.
           this.#turns.delete(request.turnId);
           this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
           return;
@@ -1741,15 +1746,11 @@ export class BrowserAdapter implements PlatformAdapter {
       void Promise.resolve()
         .then(() => script(request))
         .then(
+          // A turn cancelled while the script was still deciding is handed to
+          // `stream` like any other, and refused at `step`'s first check — see
+          // the note there. A second cancel branch here would emit the same
+          // event a little earlier and is not worth a second way to end a turn.
           (reply) => {
-            // A turn cancelled while the script was still deciding never
-            // streamed a frame, so `step` would not see it: the terminal
-            // `cancelled` is owed here instead.
-            if (turn.cancelled) {
-              this.#turns.delete(request.turnId);
-              this.#emitChat(request.turnId, { type: 'error', error: { kind: 'cancelled' } });
-              return;
-            }
             stream(reply);
           },
           (error: unknown) => {

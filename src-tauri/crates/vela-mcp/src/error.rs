@@ -51,6 +51,11 @@ pub enum McpFailureCode {
     /// The server answered, and what it said was not a legal MCP message.
     ProtocolError,
     /// The server is alive and did not answer in time.
+    ///
+    /// **Which** peer held the line open is in [`McpError::TimedOut`]'s `peer`
+    /// field and not in this code, for the reason
+    /// [`McpFailureCode::EndpointUnreachable`] gives above: an entry can name
+    /// two hosts and this code says nothing about which of them went quiet.
     TimedOut,
     /// The server answered the request with a JSON-RPC error.
     ServerError,
@@ -115,8 +120,30 @@ pub enum McpError {
     #[error("the server sent something that is not a legal MCP message: {0}")]
     Protocol(String),
 
-    #[error("the server did not answer within {0:?}")]
-    TimedOut(Duration),
+    /// Something on the other end held the connection or the pipe open and did
+    /// not answer inside the deadline.
+    ///
+    /// `peer` names **what** did not answer, on the same rule as
+    /// [`McpError::Unreachable`]'s `endpoint` and for exactly the same reason:
+    /// an OAuth entry names two hosts on two different lines, and a failure
+    /// attributed to the wrong one sends a user to go and fix a server that is
+    /// answering. For the HTTP transport it is the `call.url` of the round trip
+    /// that timed out, taken in `HttpTransport::exchange`; for the stdio
+    /// transport there is no host at all and it is the configured `command`,
+    /// which [`McpError::SpawnFailed`]'s own message already prints, so neither
+    /// substrate discloses anything here it does not disclose elsewhere.
+    ///
+    /// This field is the second half of a rule the first half already obeyed.
+    /// `exchange`'s doc claimed both arms named the host they called while only
+    /// [`McpError::Unreachable`] carried one, so a token endpoint that hung —
+    /// rather than refusing — still reported "the server did not answer" about
+    /// a healthy MCP server that had received nothing.
+    /// `a_token_endpoint_that_times_out_names_itself_and_not_the_mcp_server`,
+    /// beside `an_unreachable_token_endpoint_names_itself_and_not_the_mcp_server`
+    /// in this crate's `tests/http_end_to_end.rs`, is what holds the two arms
+    /// together now.
+    #[error("`{peer}` did not answer within {after:?}")]
+    TimedOut { peer: String, after: Duration },
 
     #[error("the server answered with error {code}: {message}")]
     Rpc { code: i64, message: String },
@@ -143,7 +170,7 @@ impl McpError {
             McpError::HandshakeFailed(_) => McpFailureCode::HandshakeFailed,
             McpError::ServerExited => McpFailureCode::ServerExited,
             McpError::Protocol(_) => McpFailureCode::ProtocolError,
-            McpError::TimedOut(_) => McpFailureCode::TimedOut,
+            McpError::TimedOut { .. } => McpFailureCode::TimedOut,
             McpError::Rpc { .. } => McpFailureCode::ServerError,
         }
     }
@@ -161,8 +188,30 @@ mod tests {
         // on: a caller must be able to tell "gone, restart it" from "busy, wait".
         assert_eq!(McpError::ServerExited.code(), McpFailureCode::ServerExited);
         assert_eq!(
-            McpError::TimedOut(Duration::from_secs(1)).code(),
+            McpError::TimedOut {
+                peer: "https://mcp.example.com/mcp".into(),
+                after: Duration::from_secs(1),
+            }
+            .code(),
             McpFailureCode::TimedOut
+        );
+    }
+
+    #[test]
+    fn a_timeout_names_the_peer_that_did_not_answer() {
+        // The arm that used to say "the server", singular and unnamed, while
+        // its sibling `Unreachable` named the host it had actually called. An
+        // OAuth entry names two hosts; a message that names neither is the same
+        // misattribution as a message that names the wrong one, minus the
+        // evidence that it is wrong.
+        let rendered = McpError::TimedOut {
+            peer: "https://auth.example.com/token".into(),
+            after: Duration::from_secs(30),
+        }
+        .to_string();
+        assert!(
+            rendered.contains("https://auth.example.com/token"),
+            "{rendered}"
         );
     }
 

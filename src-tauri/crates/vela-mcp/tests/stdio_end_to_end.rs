@@ -16,13 +16,15 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use vela_mcp::client::McpConnection;
 use vela_mcp::config::{McpConfig, ServerSpec, StdioServer};
 use vela_mcp::error::McpError;
 use vela_mcp::pool::McpPool;
+use vela_mcp::stdio::StdioTransport;
 
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-mcp-server.mjs")
@@ -306,4 +308,40 @@ fn a_command_that_does_not_exist_fails_to_spawn_rather_than_hanging() {
         connect("missing", &ServerSpec::Stdio(missing)),
         Err(McpError::SpawnFailed { .. })
     ));
+}
+
+#[test]
+fn a_request_the_server_never_answers_times_out_and_names_the_command() {
+    // The stdio half of the attribution rule `tests/http_end_to_end.rs` holds
+    // for the remote half. `McpError::TimedOut` used to carry a `Duration` and
+    // nothing else, and said "the server did not answer" — true of every server
+    // in the configuration at once. It now names what it was waiting on, and on
+    // this substrate that is the configured `command`.
+    //
+    // The `hang` tool is why this is a real timeout and not a simulated one: the
+    // fixture stays alive, keeps reading, and never replies, so nothing but the
+    // deadline ends the wait. `die` cannot stand in for it — end-of-file is a
+    // different failure with a different arm.
+    let transport = StdioTransport::spawn(&stdio_server(), Arc::new(|_: &str, _: &Value| {}))
+        .expect("the fixture must spawn");
+
+    let error = transport
+        .request_within(
+            "tools/call",
+            json!({ "name": "hang", "arguments": {} }),
+            Duration::from_millis(400),
+        )
+        .expect_err("`hang` never answers");
+
+    assert!(matches!(error, McpError::TimedOut { .. }), "{error:?}");
+    let rendered = format!("{error} / {error:?}");
+    assert!(
+        rendered.contains("node"),
+        "the timeout should name the command it was waiting on: {rendered}"
+    );
+
+    // Alive, not dead: a timeout is not a burial, and the transport that just
+    // reported one can still be used. This is the stdio twin of
+    // `a_token_endpoint_that_refuses_a_connection_does_not_bury_the_transport`.
+    assert!(transport.is_alive(), "a slow answer is not a dead server");
 }

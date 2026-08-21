@@ -106,6 +106,19 @@ impl HttpCall {
     /// Attaching one anywhere else would mean a second copy of the rule that a
     /// credential header is a thing `Debug` must not print, and the second copy
     /// is the one that gets forgotten.
+    ///
+    /// **This line makes a plain-text copy that nothing zeroizes**, and the copy
+    /// is not incidental: `to_owned` produces an ordinary `String` holding
+    /// `Bearer ` and the whole access token, and `crate::http::HttpTransport`
+    /// builds a fresh one for **every request that carries a credential** — the
+    /// header is attached under an `if let Some(..)` on the authorization, so an
+    /// entry with no stored token makes no copy at all. It is listed in `crate::oauth::scrub`'s
+    /// ledger beside `HttpCall::body`, which is the same problem with the same
+    /// cause — both fields are moved out of the call by
+    /// `vela_app::mcp_http::ProviderBackedExchange::send`, so a `Drop` on
+    /// [`HttpCall`] would be a partial-move error. It is written here as well as
+    /// there because a reader who arrives at the `to_owned` should not have to
+    /// find the ledger to learn it is known.
     pub fn with_credential_header(mut self, name: impl AsRef<str>, value: &SecretValue) -> Self {
         let name = name.as_ref().to_ascii_lowercase();
         self.headers.push((name.clone(), value.expose().to_owned()));

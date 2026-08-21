@@ -1434,6 +1434,12 @@ export interface MessageListRes {
  *  - `serverExited` — it was running and is not any more. Asking again restarts
  *    it: the pool replaces a dead connection rather than returning it. For a
  *    remote server this is also what an ended session reads as.
+ *  - `timedOut` — something on the other end held the connection or the pipe
+ *    open and said nothing before the deadline. The "which host" caveat on
+ *    `endpointUnreachable` applies here word for word and for the same reason:
+ *    a remote entry can name two hosts, either can be the one that went silent,
+ *    and this code says which *kind* of silence it was and not whose. The
+ *    Rust-side `McpError::TimedOut` carries a `peer`; this wire type does not.
  */
 export type McpFailureReason =
   | 'notConfigured'

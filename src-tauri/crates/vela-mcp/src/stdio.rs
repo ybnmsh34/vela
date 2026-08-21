@@ -128,6 +128,20 @@ pub struct StdioTransport {
     shared: Arc<Shared>,
     readers: Mutex<Vec<JoinHandle<()>>>,
     timeout: Duration,
+    /// What to call the other end in a [`McpError::TimedOut`].
+    ///
+    /// That arm gained a `peer` for the HTTP transport's sake, where an entry
+    /// names two hosts and a timeout attributed to the wrong one is a real
+    /// misdirection. A child process is not a host and this transport has no
+    /// such ambiguity, so what is stored is the configured `command`, verbatim
+    /// — the same string [`McpError::SpawnFailed`] already prints for the same
+    /// server, which is why carrying it discloses nothing the stdio path did
+    /// not already disclose.
+    ///
+    /// Written once, in [`StdioTransport::spawn`]. Read at exactly one place,
+    /// the `RecvTimeoutError::Timeout` arm of [`StdioTransport::request_within`]
+    /// (`grep -n 'self\.peer' src/stdio.rs`).
+    peer: String,
 }
 
 impl StdioTransport {
@@ -214,6 +228,7 @@ impl StdioTransport {
             shared,
             readers: Mutex::new(vec![out_reader, err_reader]),
             timeout: DEFAULT_REQUEST_TIMEOUT,
+            peer: server.command.clone(),
         })
     }
 
@@ -262,7 +277,10 @@ impl StdioTransport {
                     protocol::NOTIFY_CANCELLED,
                     serde_json::json!({ "requestId": id }),
                 ));
-                Err(McpError::TimedOut(timeout))
+                Err(McpError::TimedOut {
+                    peer: self.peer.clone(),
+                    after: timeout,
+                })
             }
             // The sender is dropped only by the reader thread's burial path,
             // which sends before dropping; reaching here means the process died

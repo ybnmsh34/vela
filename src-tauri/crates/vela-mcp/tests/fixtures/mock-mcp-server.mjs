@@ -22,6 +22,8 @@
 //                    cache is invalidated by the notification
 //   die            — exits the process without answering, so a test can prove an
 //                    in-flight request fails instead of hanging forever
+//   hang           — stays alive and never answers, so a test can prove a
+//                    request deadline expires and says whose silence it was
 //
 // It deliberately writes a line to stderr at startup. The stdio transport spec
 // says a client MUST NOT treat stderr output as an error, and a fixture that was
@@ -74,6 +76,11 @@ const baseTools = [
     description: 'Exits immediately without answering.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'hang',
+    description: 'Stays alive and never answers.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 const grownTool = {
@@ -124,6 +131,11 @@ function callTool(id, params) {
     case 'die':
       // No response, no flush, no goodbye — the shape a crashing server has.
       process.exit(3);
+      return undefined;
+    case 'hang':
+      // Alive, reading, and silent — the shape a wedged server has, and the one
+      // `die` does not cover: end-of-file never arrives, so only the client's
+      // own deadline ends the wait.
       return undefined;
     default:
       // A tool that fails is a result with isError, not a JSON-RPC error: the

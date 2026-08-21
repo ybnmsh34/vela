@@ -189,7 +189,7 @@ impl McpConnection {
                 McpError::ServerExited => McpError::ServerExited,
                 unreachable @ McpError::Unreachable { .. } => unreachable,
                 unauthorized @ McpError::AuthorizationRequired { .. } => unauthorized,
-                timed_out @ McpError::TimedOut(_) => timed_out,
+                timed_out @ McpError::TimedOut { .. } => timed_out,
                 other => McpError::HandshakeFailed(other.to_string()),
             })?;
 

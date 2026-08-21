@@ -115,6 +115,51 @@ fn harness_with(url: &str, extra: Value, store: Arc<dyn SecretStore>) -> Harness
     }
 }
 
+/// A [`LoopbackExchange`] that hangs — reports [`ExchangeError::TimedOut`] —
+/// for one nominated URL, and opens a real socket for every other.
+///
+/// **This is the one simulated thing in this file, and it is simulated on
+/// purpose.** A real timeout means waiting out `DEFAULT_REQUEST_TIMEOUT`, which
+/// `crate::stdio` sets to thirty seconds; a test suite that waits half a minute
+/// to prove an attribution rule is a test suite nobody runs. What is faked is the clock
+/// expiring, at the one seam that reports it. Everything the assertion is about
+/// — which host the transport names, and whether the other host was contacted —
+/// is real: the MCP server is a real `MockServer` on a real socket, and the
+/// calls that do not match `hangs` go down the real `LoopbackExchange` path.
+struct HangsFor {
+    hangs: String,
+    inner: LoopbackExchange,
+}
+
+impl vela_mcp::exchange::HttpExchange for HangsFor {
+    fn send(
+        &self,
+        call: vela_mcp::exchange::HttpCall,
+        timeout: std::time::Duration,
+    ) -> Result<vela_mcp::exchange::HttpReply, vela_mcp::exchange::ExchangeError> {
+        if call.url == self.hangs {
+            return Err(vela_mcp::exchange::ExchangeError::TimedOut);
+        }
+        self.inner.send(call, timeout)
+    }
+}
+
+fn harness_hanging_on(
+    url: &str,
+    extra: Value,
+    store: Arc<dyn SecretStore>,
+    hangs: &str,
+) -> McpPool {
+    let deps = RemoteDeps {
+        credentials: store,
+        http: Arc::new(HangsFor {
+            hangs: hangs.to_owned(),
+            inner: LoopbackExchange::default(),
+        }) as Arc<dyn vela_mcp::exchange::HttpExchange>,
+    };
+    McpPool::with_remote(config_for(url, extra), deps)
+}
+
 fn harness(url: &str) -> Harness {
     harness_with(url, json!({}), Arc::new(MemoryStore::new()))
 }
@@ -844,6 +889,53 @@ fn an_unreachable_token_endpoint_names_itself_and_not_the_mcp_server() {
     assert!(
         rendered.contains(&token_endpoint),
         "the error should name the host that went quiet: {rendered}"
+    );
+    assert!(
+        !rendered.contains(&server.url("/mcp")),
+        "the error names the MCP server, which is answering: {rendered}"
+    );
+    assert!(
+        server.received().is_empty(),
+        "the MCP server was contacted after all: {:?}",
+        server.received()
+    );
+}
+
+#[test]
+fn a_token_endpoint_that_times_out_names_itself_and_not_the_mcp_server() {
+    // THE SAME ATTRIBUTION RULE, ON THE OTHER FAILURE ARM. A host that accepts
+    // the connection and then says nothing is not the same failure as a host
+    // that refuses one, and until this test existed it was not treated as the
+    // same rule either: `McpError::TimedOut` carried a `Duration` and nothing
+    // else, so its message said "the server did not answer" about an MCP server
+    // that had received no request at all. The sibling test above was passing
+    // the whole time, which is exactly why one test per arm and not per rule.
+    let server = MockServer::start(|request| mcp_answer(request, false));
+    let token_endpoint = format!("http://127.0.0.1:{}/token", dead_port());
+
+    let store: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
+    store_token(
+        store.as_ref(),
+        // `expiresAt: 1` is 1970, so the refresh runs before the first request
+        // and the token endpoint is the first host on the wire.
+        &json!({ "accessToken": ACCESS_ONE, "refreshToken": REFRESH_ONE, "expiresAt": 1 })
+            .to_string(),
+    );
+    let pool = harness_hanging_on(
+        &server.url("/mcp"),
+        json!({ "auth": { "type": "oauth", "clientId": "c",
+                          "tokenEndpoint": token_endpoint } }),
+        store,
+        &token_endpoint,
+    );
+
+    let error = failure(&pool);
+    assert_eq!(error.code(), McpFailureCode::TimedOut, "{error:?}");
+
+    let rendered = format!("{error} / {error:?}");
+    assert!(
+        rendered.contains(&token_endpoint),
+        "the error should name the host that held the line open: {rendered}"
     );
     assert!(
         !rendered.contains(&server.url("/mcp")),

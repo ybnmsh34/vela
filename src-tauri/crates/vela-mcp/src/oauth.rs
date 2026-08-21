@@ -118,8 +118,31 @@ impl TokenSet {
     /// and it works until the server refuses it. Rejecting that shape would
     /// leave a user with a valid token and an unusable server.
     pub fn parse(stored: &SecretValue) -> Self {
+        Self::parse_scrubbing(stored).0
+    }
+
+    /// [`TokenSet::parse`], handing back the intermediate document once it has
+    /// been scrubbed.
+    ///
+    /// # Why the sibling exists
+    ///
+    /// A zeroized buffer that has already been dropped cannot be looked at.
+    /// `parse` scrubs a local [`Value`] and drops it, so "it is scrubbed" was a
+    /// claim no test could turn into an assertion — and before the three tests
+    /// this shape exists for, deleting all three production `scrub` calls left
+    /// the crate green. It is still true that nothing else catches that
+    /// deletion: the measurement on the tree as committed is that removing the
+    /// three calls fails exactly the three tests below, and no others. Handing
+    /// the document back is what makes the call site itself testable.
+    ///
+    /// The production path is unchanged: `parse` takes the [`TokenSet`] and
+    /// drops the returned [`Value`], whose strings are already empty. The
+    /// reader of the returned document is
+    /// `parse_scrubs_the_document_it_read_the_credential_out_of`, in this
+    /// module's tests, and nothing else.
+    fn parse_scrubbing(stored: &SecretValue) -> (Self, Value) {
         let Ok(mut document) = serde_json::from_str::<Value>(stored.expose()) else {
-            return Self::new(stored.clone(), None, None);
+            return (Self::new(stored.clone(), None, None), Value::Null);
         };
         let parsed = match document.as_object() {
             None => Self::new(stored.clone(), None, None),
@@ -141,7 +164,7 @@ impl TokenSet {
         // The parsed document holds its own plain-text copy of both tokens,
         // whichever branch was taken. See [`scrub`].
         scrub(&mut document);
-        parsed
+        (parsed, document)
     }
 
     /// The value to hand the credential store.
@@ -162,8 +185,22 @@ impl TokenSet {
     /// outside a `SecretValue`". It was not one place and it is not one now.
     /// The claim made here is only about this function — **every plain-text copy
     /// it makes is scrubbed before it is dropped** — and [`scrub`] carries the
-    /// ledger of all the others, including the one nothing scrubs.
+    /// ledger of all the others, including the two nothing scrubs.
     pub fn to_secret(&self) -> SecretValue {
+        self.to_secret_scrubbing().0
+    }
+
+    /// [`TokenSet::to_secret`], handing back both intermediates once they have
+    /// been scrubbed. See [`TokenSet::parse_scrubbing`] for why the sibling
+    /// exists at all; the reader of the two returned values is
+    /// `to_secret_scrubs_both_of_the_intermediates_it_serialises_through`, in
+    /// this module's tests, and nothing else.
+    ///
+    /// The order matters and the test does not prove it: `SecretValue::new`
+    /// copies the JSON *before* `json.zeroize()` empties it, so the returned
+    /// [`SecretValue`] is the credential and the returned `String` is the
+    /// emptied husk.
+    fn to_secret_scrubbing(&self) -> (SecretValue, Value, String) {
         let mut document = serde_json::json!({
             "accessToken": self.access.expose(),
             "refreshToken": self.refresh.as_ref().map(SecretValue::expose),
@@ -173,7 +210,7 @@ impl TokenSet {
         let value = SecretValue::new(json.as_str());
         json.zeroize();
         scrub(&mut document);
-        value
+        (value, document, json)
     }
 }
 
@@ -190,14 +227,42 @@ impl TokenSet {
 ///
 /// # The ledger: every plain-text copy of a token this crate makes
 ///
-/// Written out because the last version of this area claimed one place, and the
-/// list below has six — five that are now scrubbed and one that is not. Grep is
-/// `zeroize()` and `scrub(` in `src/`.
+/// Counted **eight**: six scrubbed and two that are not. The number counts
+/// *copies*, not bullets — the version of this ledger before this one said
+/// "six", and it reached six by counting its own bullets. That folded the two
+/// copies [`TokenSet::to_secret`] makes into one entry and left the
+/// `Authorization` header out altogether. Counting a list against itself is how
+/// this comment has now been wrong twice; the count below is against the crate.
 ///
-/// **Scrubbed:**
+/// How the eight were counted, written out so the next reader redoes the count
+/// instead of trusting it. **Four** come from `grep -rn '\.expose()' src/`,
+/// discarding the hits below this file's `mod tests`: those four are every point
+/// where material leaves a [`SecretValue`] into something that is not one —
+/// `with_credential_header`, `with_form_body`, the point where
+/// [`TokenSet::parse`] deserialises the stored credential, and the `json!` in
+/// [`TokenSet::to_secret`]. **Four more are invisible to that
+/// grep** and have to be added by reading, because their material either never
+/// sat in a [`SecretValue`] or was copied out of something the grep already
+/// found:
 ///
-/// * [`TokenSet::to_secret`] — the `json!` [`Value`], and the `String` from
-///   `to_string`. `scrub` and `String::zeroize`.
+/// * [`TokenSet::to_secret`]'s `to_string`, a second allocation off the `json!`
+///   document — the copy the previous "six" folded into its neighbour's bullet;
+/// * the `String` `form_encode` builds inside the closure `SecretValue::map`
+///   runs for [`refresh_call`];
+/// * [`parse_token_response`]'s document, parsed from the bytes off the wire;
+/// * `renew`'s `reply.body`, the `Vec<u8>` those bytes arrive in.
+///
+/// Two things that look like copies and are not: [`TokenSet::authorization`] and
+/// the `format!` inside [`refresh_call`] both hand their `String` straight to
+/// `SecretValue::map`, which takes ownership, so the material is inside a
+/// self-scrubbing wrapper from the moment it exists. Neither is a `.expose()`
+/// hit either, which is why the grep does not raise them and why the grep alone
+/// is not the count.
+///
+/// **Scrubbed — six copies at five sites:**
+///
+/// * [`TokenSet::to_secret`] — the `json!` [`Value`] (`scrub`) **and** the
+///   `String` from `to_string` (`String::zeroize`). Two copies, one site.
 /// * [`TokenSet::parse`] — the [`Value`] parsed out of the stored credential.
 /// * [`parse_token_response`] — the [`Value`] parsed out of the token
 ///   endpoint's answer, on all five ways out.
@@ -206,13 +271,29 @@ impl TokenSet {
 /// * `crate::http::HttpTransport::renew` — the token endpoint's response body,
 ///   the only response body in this crate that is credential material.
 ///
-/// **NOT scrubbed, and known:** the request body itself. `HttpCall::body` is a
-/// `Vec<u8>` holding the form-encoded refresh token, and
-/// `vela_app::mcp_http::ProviderBackedExchange` moves it out of the call by
-/// field, so `HttpCall` cannot be given a `Drop` without that becoming a
-/// partial-move error. From there it is the HTTP client's buffer and outside
-/// this crate entirely. Closing it means changing the seam, not adding a call
-/// here, and it is written down rather than left to be discovered.
+/// **NOT scrubbed, and known — two copies, both fields of one [`HttpCall`]:**
+///
+/// * `HttpCall::headers` — the `String` `HttpCall::with_credential_header`
+///   pushes, holding `Bearer ` and the whole access token. Minted by
+///   `crate::http::HttpTransport::request_call` on every request that carries a
+///   credential — not on every request: the header is attached under an `if let
+///   Some(..)`, so an entry with no stored token makes no copy — and again by
+///   `crate::http::HttpTransport::shutdown` for the session `DELETE`, which is
+///   conditional in the same way and for a second reason: shutdown attaches a
+///   credential only if one is still readable, and gives up rather than
+///   demanding one. Those two are its only production callers. This is the entry the previous ledger
+///   omitted while calling itself the complete list, which made the omission the
+///   one thing the comment existed to prevent.
+/// * `HttpCall::body` — the `Vec<u8>` `HttpCall::with_form_body` pushes, holding
+///   the form-encoded refresh token. [`refresh_call`] is its only production
+///   caller.
+///
+/// One reason covers both, which is why the argument is written once:
+/// `vela_app::mcp_http::ProviderBackedExchange::send` moves `headers:
+/// call.headers` and `body: call.body` out of the call by field, so `HttpCall`
+/// cannot be given a `Drop` without both of those becoming partial-move errors.
+/// From there they are the HTTP client's buffers and outside this crate
+/// entirely. Closing either means changing the seam, not adding a call here.
 ///
 /// This is hygiene and not a boundary in any case. It shortens how long plain
 /// text sits in freed heap; it does nothing about a copy the allocator or the
@@ -299,23 +380,48 @@ pub fn refresh_call(config: &OAuthConfig, refresh_token: &SecretValue) -> HttpCa
 /// refresh.
 ///
 /// The split with [`read_token_document`] is not decomposition for its own sake:
-/// the read leaves by four early refusals and one success, and this wrapper is
-/// what scrubs the parsed document down all five without that having to be
-/// remembered at each one. See [`scrub`].
+/// the read leaves by four early refusals and one success, and
+/// [`parse_token_response_scrubbing`] beneath this is what scrubs the parsed
+/// document down all five without that having to be remembered at each one. See
+/// [`scrub`].
 pub fn parse_token_response(
     server_id: &str,
     body: &[u8],
     now: u64,
     previous_refresh: Option<&SecretValue>,
 ) -> McpResult<TokenSet> {
-    let mut document: Value =
-        serde_json::from_slice(body).map_err(|e| McpError::AuthorizationRequired {
-            server: server_id.to_owned(),
-            detail: format!("the token endpoint did not answer with JSON: {e}"),
-        })?;
+    parse_token_response_scrubbing(server_id, body, now, previous_refresh).0
+}
+
+/// [`parse_token_response`], handing back the parsed document once it has been
+/// scrubbed. See [`TokenSet::parse_scrubbing`] for why the sibling exists; the
+/// reader of the returned document is
+/// `a_refused_token_response_is_scrubbed_on_the_way_out_as_well_as_a_good_one`,
+/// in this module's tests, and nothing else.
+///
+/// A body that is not JSON never becomes a document, so that path returns
+/// a null `Value` — there is nothing holding a token to scrub.
+fn parse_token_response_scrubbing(
+    server_id: &str,
+    body: &[u8],
+    now: u64,
+    previous_refresh: Option<&SecretValue>,
+) -> (McpResult<TokenSet>, Value) {
+    let mut document: Value = match serde_json::from_slice(body) {
+        Ok(document) => document,
+        Err(e) => {
+            return (
+                Err(McpError::AuthorizationRequired {
+                    server: server_id.to_owned(),
+                    detail: format!("the token endpoint did not answer with JSON: {e}"),
+                }),
+                Value::Null,
+            )
+        }
+    };
     let outcome = read_token_document(server_id, &document, now, previous_refresh);
     scrub(&mut document);
-    outcome
+    (outcome, document)
 }
 
 fn read_token_document(
@@ -437,6 +543,114 @@ mod tests {
         assert!(document["list"].is_array());
         // And the keys, which are the schema rather than the secret.
         assert!(printed.contains("access_token"), "{printed}");
+    }
+
+    // -----------------------------------------------------------------
+    // The three production `scrub` call sites, each pinned by name
+    // -----------------------------------------------------------------
+    //
+    // The test above proves `scrub` scrubs. It does not prove anybody calls it,
+    // and that gap was measured rather than suspected: deleting all three
+    // production `scrub(&mut document)` calls used to leave the whole crate
+    // green, so five of the ledger's six scrubbed copies could regress in
+    // silence. On the tree as committed the same deletion fails exactly these
+    // three and nothing else — one test per call site, and still nothing else
+    // watching. Each reads the document the function scrubbed rather than the
+    // one it dropped; see `TokenSet::parse_scrubbing` for why it has to be
+    // handed back at all.
+
+    #[test]
+    fn parse_scrubs_the_document_it_read_the_credential_out_of() {
+        let stored = SecretValue::new(
+            serde_json::json!({ "accessToken": ACCESS, "refreshToken": REFRESH }).to_string(),
+        );
+        let (tokens, document) = TokenSet::parse_scrubbing(&stored);
+
+        // The credential really was read: this is not an empty document that
+        // was empty all along.
+        assert_eq!(tokens.authorization().expose(), format!("Bearer {ACCESS}"));
+        assert_eq!(tokens.refresh_token().unwrap().expose(), REFRESH);
+
+        let printed = document.to_string();
+        assert!(
+            !printed.contains(ACCESS),
+            "the parsed document kept the access token: {printed}"
+        );
+        assert!(
+            !printed.contains(REFRESH),
+            "the parsed document kept the refresh token: {printed}"
+        );
+        // The keys survive, so the document is scrubbed and not replaced.
+        assert!(printed.contains("accessToken"), "{printed}");
+    }
+
+    #[test]
+    fn to_secret_scrubs_both_of_the_intermediates_it_serialises_through() {
+        let tokens = TokenSet::new(
+            SecretValue::new(ACCESS),
+            Some(SecretValue::new(REFRESH)),
+            Some(4_000_000_000),
+        );
+        let (secret, document, json) = tokens.to_secret_scrubbing();
+
+        // The returned credential is the real one, so the two intermediates
+        // below were carrying the material when they were scrubbed.
+        assert!(
+            secret.expose().contains(ACCESS),
+            "the stored value lost the token"
+        );
+
+        let printed = document.to_string();
+        assert!(
+            !printed.contains(ACCESS),
+            "the `json!` document kept the access token: {printed}"
+        );
+        assert!(
+            !printed.contains(REFRESH),
+            "the `json!` document kept the refresh token: {printed}"
+        );
+        assert!(
+            !json.contains(ACCESS),
+            "the serialised `String` kept the access token: {json}"
+        );
+        assert!(
+            !json.contains(REFRESH),
+            "the serialised `String` kept the refresh token: {json}"
+        );
+    }
+
+    #[test]
+    fn a_refused_token_response_is_scrubbed_on_the_way_out_as_well_as_a_good_one() {
+        // Both directions through `read_token_document`, because the refusal
+        // paths are the ones a `?` would have carried past the scrub.
+        let good = serde_json::json!({
+            "access_token": ACCESS, "refresh_token": REFRESH, "token_type": "Bearer",
+        })
+        .to_string();
+        let (outcome, document) = parse_token_response_scrubbing("team", good.as_bytes(), 0, None);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        let printed = document.to_string();
+        assert!(!printed.contains(ACCESS), "{printed}");
+        assert!(!printed.contains(REFRESH), "{printed}");
+
+        // A non-Bearer `token_type` is one of the four refusals, and it refuses
+        // *after* the tokens have been read into the document.
+        let refused = serde_json::json!({
+            "access_token": ACCESS, "refresh_token": REFRESH, "token_type": "mac",
+        })
+        .to_string();
+        let (outcome, document) =
+            parse_token_response_scrubbing("team", refused.as_bytes(), 0, None);
+        assert!(outcome.is_err(), "a non-Bearer token_type must be refused");
+        let printed = document.to_string();
+        assert!(
+            !printed.contains(ACCESS),
+            "a refused response kept the access token: {printed}"
+        );
+        assert!(
+            !printed.contains(REFRESH),
+            "a refused response kept the refresh token: {printed}"
+        );
     }
 
     #[test]

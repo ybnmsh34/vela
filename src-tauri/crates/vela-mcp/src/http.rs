@@ -334,17 +334,31 @@ impl HttpTransport {
     /// The previous version of this sentence claimed the same and was false, so
     /// both halves are spelled out.
     ///
-    /// **The failure names the host this call actually went to**, taken from
-    /// `call.url` and never from `self.server.url`. Two different hosts reach
-    /// this method — the MCP endpoint, and the OAuth token endpoint named by a
-    /// different line of the same entry. Attributing either failure to
-    /// `self.server.url` tells a user to go and fix the URL of a server that is
-    /// answering. It is the same confusion [`Self::send`] was split off to
-    /// prevent for session ids, asked of the round trip instead of the session.
+    /// **Both failure arms name the host this call actually went to**, taken
+    /// from `call.url` and never from `self.server.url`: the host goes into
+    /// [`McpError::Unreachable`]'s `endpoint` when nothing was listening, and
+    /// into [`McpError::TimedOut`]'s `peer` when something was listening and
+    /// said nothing. Two different hosts reach this method — the MCP endpoint,
+    /// and the OAuth token endpoint named by a different line of the same entry.
+    /// Attributing either failure to `self.server.url` tells a user to go and
+    /// fix the URL of a server that is answering. It is the same confusion
+    /// [`Self::send`] was split off to prevent for session ids, asked of the
+    /// round trip instead of the session.
+    ///
+    /// The timeout half is the one an earlier version of this paragraph claimed
+    /// and did not have. `McpError::TimedOut` carried only a duration and nothing
+    /// else, and its message said "the server did not answer" — so a token
+    /// endpoint that accepted the connection and then hung reported a healthy
+    /// MCP server, one that had received no request at all, as the thing that
+    /// went silent. The sentence above was true of the `Unreachable` arm and
+    /// false of the arm beside it. Giving `TimedOut` a `peer` is what made the
+    /// sentence true rather than what made it narrower.
     ///
     /// `config::validate_remote_url` holds `url` and `auth.tokenEndpoint` to the
     /// same rules — no credential-named query parameter, no userinfo — so
-    /// putting either in an error carries the same exposure, not a new one.
+    /// putting either in an error carries the same exposure, not a new one, and
+    /// that argument covers the new arm because it is the same string from the
+    /// same `call.url`.
     ///
     /// It also does **not** bury the transport. Only the MCP endpoint being
     /// unreachable means *this* transport is finished; a token endpoint that
@@ -358,7 +372,10 @@ impl HttpTransport {
                 self.note(format!("{} {}", reply.status, reply.media_type()));
                 Ok(reply)
             }
-            Err(ExchangeError::TimedOut) => Err(McpError::TimedOut(self.timeout)),
+            Err(ExchangeError::TimedOut) => Err(McpError::TimedOut {
+                peer: endpoint,
+                after: self.timeout,
+            }),
             Err(error) => Err(McpError::Unreachable {
                 endpoint,
                 detail: error.to_string(),

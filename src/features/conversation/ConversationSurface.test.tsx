@@ -1238,12 +1238,17 @@ describe('the conversation surface: no two retry controls share a name', () => {
   });
 
   it('keeps two questions apart when the quoted part of both is identical', () => {
-    // Sixty-one characters that agree, and then they do not. The quote in the
-    // name is cut at sixty, so the quoted part of these two is byte-identical.
+    // Sixty-seven characters that agree, and then they do not — measured, not
+    // eyeballed: `shared` is 62 characters and the two questions go on agreeing
+    // through the ' the ' after it. The quote in the name is cut at sixty, so
+    // the quoted part of these two is byte-identical.
     const shared = 'please review the attached design document and tell me whether';
-    expect(shared.length).toBeGreaterThan(60);
+    expect(shared).toHaveLength(62);
     const first = `${shared} the migration story holds up`;
     const second = `${shared} the rollback story holds up`;
+    let agree = 0;
+    while (agree < first.length && first[agree] === second[agree]) agree += 1;
+    expect(agree).toBe(67);
     expect(first.slice(0, 60)).toBe(second.slice(0, 60));
 
     // A THIRD TURN, SO THE TWO THAT COLLIDE ALSO SHARE A LABEL. `laterTurnsFollow`
@@ -1268,7 +1273,9 @@ describe('the conversation surface: no two retry controls share a name', () => {
     expect(names[1]?.startsWith('Try again from here')).toBe(true);
     // Named by the question alone the first two both read
     // 'Try again from here — the reply to
-    //  “please review the attached design document and tell me whether…”'.
+    //  “please review the attached design document and tell me wheth…”' —
+    // that ellipsis is where the sixtieth character falls, copied from the
+    // failure message a mutation of `retryName` actually produced.
     expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
     expect(names[0]).toContain('reply 1 of 3');
     expect(names[1]).toContain('reply 2 of 3');

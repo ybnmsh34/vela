@@ -112,6 +112,14 @@ export interface SessionFile {
  * out of the current diff at submit time would quote whatever the editor has
  * done to it since, and the comment "this should be a constant" would arrive
  * attached to a line that no longer says what it said.
+ *
+ * `line` is where it was written, and it is **not** where the comment points
+ * once the file has been edited above it. Nothing here can keep it current — the
+ * store holds no diff — so nothing here pretends to: `anchorComments` in
+ * `src/features/code/review-comments.ts` re-finds the quoted line in the diff as
+ * it reads now, and it is the only thing that decides which row a card sits
+ * under or which coordinate a submitted message carries. Reading `line` for
+ * either of those is the defect that shipped in the first version.
  */
 export interface LineComment {
   readonly id: string;
@@ -325,9 +333,11 @@ export const useCodeWorkspaceStore = create<CodeWorkspaceState>((set, get) => {
         files: work.files.map((file) =>
           file.path === path ? { ...file, baseline: file.working } : file,
         ),
-        // A comment anchored to a line of a diff that no longer exists has
-        // nothing to point at. Saving is the one action that can erase the diff
-        // wholesale, so it is the one action that has to say so.
+        // A save moves the baseline up to the working copy, so the file's
+        // whole diff goes and every comment on it has nothing left to point at.
+        // This is the *erased* case and only that. The narrower and more common
+        // case — the diff is still there but has moved under the comment — is
+        // not answerable here and is not answered here: see `LineComment`.
         comments: work.comments.filter((comment) => comment.path !== path),
       })),
 

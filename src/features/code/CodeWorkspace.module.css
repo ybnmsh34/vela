@@ -449,6 +449,32 @@
   font-size: var(--vela-text-xs);
 }
 
+/* Comments whose quoted line is no longer anywhere in the diff. They have no
+   row to sit under, so they sit above the rows instead of disappearing — a
+   pending comment that vanishes is a reviewer's work thrown away silently. */
+.drifted {
+  flex: 0 0 auto;
+  padding: var(--vela-space-2) 0;
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.driftedLead {
+  margin: 0;
+  padding: 0 var(--vela-space-3) var(--vela-space-1);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-prose);
+}
+
+.driftedQuote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .diffRows {
   flex: 1 1 auto;
   min-height: 0;

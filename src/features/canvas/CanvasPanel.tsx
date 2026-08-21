@@ -213,7 +213,7 @@ function DiffView({ track, selected }: { readonly track: ArtifactTrack; readonly
         v{selected} → v{selected + 1} ·{' '}
         {diff.aligned
           ? `${diff.added} added, ${diff.removed} removed`
-          : 'too large to compare line by line — shown as a whole-file replacement'}
+          : 'too large to compare line by line — the changed part is shown as a wholesale replacement'}
       </p>
       <pre className={styles.diffBody}>
         {diff.rows.map((row, index) => (

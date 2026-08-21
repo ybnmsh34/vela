@@ -334,10 +334,20 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           <ProjectsIcon />
           <span>Projects</span>
         </button>
-        {/* The joint that makes `src/features/code/` reachable. Without this
-            line the workspace, its pane system and its diff review are code the
-            application cannot get to — the defect `src/runtime/reachable.test.ts`
-            exists for, and that guard fails if this button goes. */}
+        {/* One of the two doors into `src/features/code/` — this one and the
+            icon button on the collapsed rail above, which calls the same
+            action. Either one alone keeps the workspace reachable, so removing
+            this button is not what bites.
+
+            What bites if both go, measured in this tree rather than assumed:
+            `src/app/code-workspace-wiring.test.tsx` goes red on all three of
+            its tests. `src/runtime/reachable.test.ts` does **not** — it walks
+            import specifiers, and `src/app/App.tsx` still imports and renders
+            `<CodeWorkspaceSurface />`, so the feature stays on the graph with
+            nothing to press. An earlier draft of this comment named that guard
+            as the one that fails; it was corrected in `App.tsx` and in
+            `src/features/code/README.md` and left standing here, two files from
+            its own correction. */}
         <button
           type="button"
           className={styles.searchButton}

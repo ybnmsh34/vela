@@ -7,10 +7,20 @@
  * `+12 -1` is the indicator the spec describes, and it is a claim about how many
  * lines changed. `src/lib/text-diff.ts` can decline to align a pair that is too
  * large, and when it does, those two numbers stop counting changes and start
- * counting lines. So this reads {@link TextDiff.aligned} and says "not
- * compared line by line" rather than printing a number that means something
- * else. The version of this indicator that did not exist yet was already going
- * to be wrong, because the module it would have read from had no way to tell it.
+ * counting lines. So this reads {@link TextDiff.aligned} and says "not aligned"
+ * rather than printing a number that means something else. The version of this
+ * indicator that did not exist yet was already going to be wrong, because the
+ * module it would have read from had no way to tell it.
+ *
+ * The words matter as much as the flag. An earlier draft of this pane said the
+ * file was "not compared" and "shown as a whole-file replacement"; neither is
+ * true, because `diffText` trims the common prefix and suffix *before* it
+ * decides, and emits both as `same` rows either way. The test that now says so
+ * (`does not call the fallback a whole-file replacement, because it is not one`)
+ * uses one shared line at each end and gets 2004 rows back, two of them `same`:
+ * the old wording announced a whole-file replacement directly above lines the
+ * module had just compared. A longer shared head and tail makes it worse, not
+ * different.
  *
  * ## Why the rows are buttons, and why only one of them is a Tab stop
  *
@@ -27,32 +37,67 @@
  * one structured message (`review-comments.ts`) and queues it for the session —
  * which the chat pane reads. Six comments are one argument about one change; six
  * messages are six chances to act on the first before reading the sixth.
+ *
+ * ## Why the diffs are cached per file
+ *
+ * `work.files` is a fresh array on every keystroke — `editFile` rebuilds it —
+ * so a `useMemo` keyed on it re-diffs *every* file in the session each time a
+ * character is typed in the editor pane, which is the pane that is open beside
+ * this one in the default layout. The cache is keyed on the two strings a diff
+ * is actually a function of, so an untouched file is never diffed twice.
+ * `re-diffs only the file that changed, not every file in the session` is what
+ * measures it: it seeds three files, types into one, and expects one call.
+ * Reverting the cache makes it see three — one per file in the session.
+ *
+ * It has no eviction, and that is a statement about this build rather than a
+ * general one: nothing removes a file from a session, so the cache is bounded
+ * by the number of files the user has opened. A close-file action would need to
+ * drop the entry with it.
+ *
+ * ## And where a comment goes when the file moves under it
+ *
+ * A comment is stored against the line it was written on and quotes that line
+ * verbatim, so an edit *above* it silently renumbers what it points at. This
+ * pane therefore never reads `comment.line` to decide which row a card belongs
+ * under: `anchorComments` re-finds the quoted line in the diff as it reads now,
+ * and every card, every Remove button and the submitted message are placed from
+ * that answer. A comment whose line is gone is shown apart, saying so.
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-import { diffText, type DiffRow } from '@/lib/text-diff';
-import {
-  useCodeWorkspaceStore,
-  workOf,
-  type LineComment,
-  type SessionFile,
-} from '@/state/code-workspace-store';
+import { diffText, type DiffRow, type TextDiff } from '@/lib/text-diff';
+import { useCodeWorkspaceStore, workOf, type SessionFile } from '@/state/code-workspace-store';
 
-import { composeReviewMessage } from './review-comments';
+import {
+  anchorComments,
+  anchorOf,
+  composeReviewMessage,
+  type AnchoredComment,
+} from './review-comments';
 import styles from './CodeWorkspace.module.css';
 
-/** The side and the line number a row is commented against. */
-function anchorOf(row: DiffRow): { readonly side: LineComment['side']; readonly line: number } {
-  if (row.kind === 'removed') return { side: 'left', line: row.leftLine };
-  if (row.kind === 'added') return { side: 'right', line: row.rightLine };
-  // An unchanged line is legitimately worth commenting on, and it exists on both
-  // sides. It is anchored to the *after* side because that is the text the
-  // change is being asked about.
-  return { side: 'right', line: row.rightLine };
-}
-
 const GUTTER: Record<DiffRow['kind'], string> = { same: ' ', added: '+', removed: '-' };
+
+/**
+ * What a Remove button removes, said in its accessible name.
+ *
+ * Every card renders one and every one of them read "Remove", so a round of N
+ * comments was N controls with one name and N different consequences — the
+ * collision this file's own test helper had already worked around with a name
+ * regex rather than fixing. Measured at N = 2: reverting this function leaves
+ * both buttons with the same accessible name, and
+ * `names each Remove button for the comment it removes` goes red. The body is
+ * what the reviewer would use to tell two of their own comments apart, so it is
+ * what the name carries.
+ */
+function removeLabel(entry: AnchoredComment): string {
+  const where =
+    entry.line === null
+      ? 'a line no longer in the diff'
+      : `line ${entry.line} ${entry.comment.side === 'left' ? 'before' : 'after'}`;
+  return `Remove comment on ${where}: ${entry.comment.body}`;
+}
 
 export function DiffPane({ sessionId }: { readonly sessionId: string }) {
   const work = useCodeWorkspaceStore((state) => workOf(state, sessionId));
@@ -60,11 +105,37 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
   const removeComment = useCodeWorkspaceStore((state) => state.removeComment);
   const submitComments = useCodeWorkspaceStore((state) => state.submitComments);
 
+  const cached = useRef(new Map<string, { readonly key: string; readonly diff: TextDiff }>());
   const diffs = useMemo(
-    () => work.files.map((file) => ({ file, diff: diffText(file.baseline, file.working) })),
+    () =>
+      work.files.map((file) => {
+        // Length-prefixed, not merely joined. A plain `baseline + working`
+        // makes `('ab', 'c')` and `('a', 'bc')` the same key, and a separator
+        // alone does not fix it because a separator can occur in the text. The
+        // leading length says where the first string ends, whatever is in it.
+        const key = `${file.baseline.length}\u0000${file.baseline}\u0000${file.working}`;
+        const seen = cached.current.get(file.path);
+        if (seen !== undefined && seen.key === key) return { file, diff: seen.diff };
+        const diff = diffText(file.baseline, file.working);
+        cached.current.set(file.path, { key, diff });
+        return { file, diff };
+      }),
     [work.files],
   );
   const changed = diffs.filter((entry) => entry.diff.added + entry.diff.removed > 0);
+
+  // Every pending comment, re-asked against the diff as it reads now. Built over
+  // *all* the session's files rather than the selected one, because a submit
+  // sends the whole round and a file the reviewer has navigated away from is
+  // still in it.
+  const anchored = useMemo(
+    () =>
+      anchorComments(
+        work.comments,
+        new Map(diffs.map((entry) => [entry.file.path, entry.diff.rows])),
+      ),
+    [work.comments, diffs],
+  );
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const current =
@@ -82,8 +153,22 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
     );
   }
 
+  // A comment with no line to sit under, and nowhere else it would be seen.
+  // Two ways to get here and both submit the comment: its quoted line was
+  // edited away, or the whole file was edited back to its baseline so it left
+  // the changed-file list and took its own row with it. The second one has no
+  // file row to select, so "show it under the file it belongs to" would show it
+  // never — hence `!listed`, which is what keeps a comment the round is going
+  // to send in front of the reviewer who can still delete it.
+  const listed = new Set(changed.map((entry) => entry.file.path));
+  const drifted = anchored.filter(
+    (entry) =>
+      entry.line === null &&
+      (entry.comment.path === current.file.path || !listed.has(entry.comment.path)),
+  );
+
   function submit(): void {
-    const message = composeReviewMessage(work.comments);
+    const message = composeReviewMessage(anchored);
     if (message === null) return;
     submitComments(sessionId, message);
     setCommentingRow(null);
@@ -126,13 +211,46 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
           {current.file.path} ·{' '}
           {current.diff.aligned
             ? `+${current.diff.added} -${current.diff.removed}`
-            : 'too large to compare line by line — shown as a whole-file replacement'}
+            : 'too large to compare line by line — the changed part is shown as a wholesale replacement'}
         </p>
+
+        {drifted.length === 0 ? null : (
+          <div
+            className={styles.drifted}
+            role="group"
+            aria-label="Comments whose line has moved"
+          >
+            <p className={styles.driftedLead}>
+              {drifted.length === 1
+                ? 'One comment quotes a line that is'
+                : `${drifted.length} comments quote lines that are`}{' '}
+              no longer in the diff. They are still sent, without a line number.
+            </p>
+            {drifted.map((entry) => (
+              <div key={entry.comment.id} className={styles.commentCard}>
+                <p className={styles.driftedQuote}>
+                  {entry.comment.path === current.file.path
+                    ? entry.comment.text
+                    : `${entry.comment.path} · ${entry.comment.text}`}
+                </p>
+                <p className={styles.commentBody}>{entry.comment.body}</p>
+                <button
+                  type="button"
+                  className={styles.paneButton}
+                  aria-label={removeLabel(entry)}
+                  onClick={() => removeComment(sessionId, entry.comment.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <DiffRows
           rows={current.diff.rows}
           path={current.file.path}
-          comments={work.comments}
+          anchored={anchored}
           commentingRow={commentingRow}
           draft={draft}
           onDraft={setDraft}
@@ -195,7 +313,7 @@ function FileRow({
       >
         <span className={styles.filePath}>{file.path}</span>
         <span className={styles.fileStat}>
-          {aligned ? `+${added} -${removed}` : 'not compared'}
+          {aligned ? `+${added} -${removed}` : 'not aligned'}
         </span>
         {comments > 0 ? <span className={styles.fileComments}>{comments}</span> : null}
       </button>
@@ -206,7 +324,7 @@ function FileRow({
 function DiffRows({
   rows,
   path,
-  comments,
+  anchored,
   commentingRow,
   draft,
   onDraft,
@@ -216,7 +334,8 @@ function DiffRows({
 }: {
   readonly rows: readonly DiffRow[];
   readonly path: string;
-  readonly comments: readonly LineComment[];
+  /** Every pending comment of the session, with the line it points at *now*. */
+  readonly anchored: readonly AnchoredComment[];
   readonly commentingRow: number | null;
   readonly draft: string;
   readonly onDraft: (value: string) => void;
@@ -264,9 +383,14 @@ function DiffRows({
     >
       {rows.map((row, index) => {
         const anchor = anchorOf(row);
-        const attached = comments.filter(
-          (comment) =>
-            comment.path === path && comment.side === anchor.side && comment.line === anchor.line,
+        // `entry.line`, never `comment.line`: the stored line is where the
+        // comment was written, and an edit above it moves the row without moving
+        // the number.
+        const attached = anchored.filter(
+          (entry) =>
+            entry.comment.path === path &&
+            entry.comment.side === anchor.side &&
+            entry.line === anchor.line,
         );
         return (
           <div key={`${row.kind}-${index}`}>
@@ -294,13 +418,14 @@ function DiffRows({
               <span className={styles.lineText}>{row.text}</span>
             </button>
 
-            {attached.map((comment) => (
-              <div key={comment.id} className={styles.commentCard}>
-                <p className={styles.commentBody}>{comment.body}</p>
+            {attached.map((entry) => (
+              <div key={entry.comment.id} className={styles.commentCard}>
+                <p className={styles.commentBody}>{entry.comment.body}</p>
                 <button
                   type="button"
                   className={styles.paneButton}
-                  onClick={() => onRemove(comment.id)}
+                  aria-label={removeLabel(entry)}
+                  onClick={() => onRemove(entry.comment.id)}
                 >
                   Remove
                 </button>

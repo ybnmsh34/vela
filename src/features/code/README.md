@@ -45,6 +45,18 @@ the cards now would mean shipping a control that can never appear.
 
 **Anything that contacts a model.** The chat pane queues. It says so on screen.
 
+## What is approximate, and known to be
+
+**Where a review comment points after the file is edited under it.** A comment is stored
+against the line it was written on and quotes that line verbatim. Editing the file above it
+renumbers the diff, so `anchorComments` in `review-comments.ts` re-finds the quoted line by
+its **text and side** rather than trusting the stored number. That is a heuristic and it has a
+known limit: it cannot tell two identical lines apart, and picks the one nearest to where the
+comment was written. A comment whose quoted line is nowhere in the diff is shown apart and
+submitted without a coordinate rather than being attached to whatever now occupies its old
+line number. What would remove the heuristic is a diff the host computes and identities that
+survive an edit — neither exists while `src/platform/contract.ts` declares no `git_*`.
+
 ## The rules this feature is built under
 
 - A feature may not import another feature (`src/features/README.md`). That is why the line
@@ -54,7 +66,9 @@ the cards now would mean shipping a control that can never appear.
   reads every `*.module.css` under `src/` and fails on any of them.
 - Everything under `src/` must be reachable from `src/main.tsx`
   (`src/runtime/reachable.test.ts`). The joint is the Code button in
-  `src/features/navigation/Sidebar.tsx` and `<CodeWorkspaceSurface />` in `src/app/App.tsx`;
+  `src/features/navigation/Sidebar.tsx` — there are **two** of them, the collapsed rail's
+  icon and the expanded list's row, calling the same action, so removing either one alone
+  changes nothing — and `<CodeWorkspaceSurface />` in `src/app/App.tsx`;
   `src/app/code-workspace-wiring.test.tsx` fails if the two stop meeting. The reachability
   guard alone does not: it walks import specifiers, so deleting the mount and keeping the
   import leaves it green (`pnpm typecheck` is what catches that, with TS6133). Deleting the

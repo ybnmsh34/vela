@@ -15,8 +15,21 @@
  * Home and End jump, typing a letter jumps — in the same way `aria-modal`
  * promises containment. `src/components/ModalSurface.tsx` spends its header on
  * what happens when a promise like that ships without its enforcement. This is a
- * button that shows a list of buttons: Tab moves between them, Escape closes it,
- * and that is exactly what a disclosure claims.
+ * button that shows a list of buttons: Tab moves between them, Escape closes it
+ * and hands the keyboard back to the trigger, and that is exactly what a
+ * disclosure claims.
+ *
+ * The first version of this header made that argument and then did not keep the
+ * smaller promise either. Escape was handled **on the list**, and the list does
+ * not contain the trigger — it sits beside the `paneActions` <div> the trigger
+ * lives in. After clicking Move the keyboard is on the trigger, so the key never
+ * reached that handler at all: it bubbled to the workspace's own `ModalSurface`,
+ * which closed the entire workspace and left the menu open behind it. The
+ * handler is now on the `<header>`, the nearest element that is an ancestor of
+ * both, and it claims the key only while the list is open — so Escape with no
+ * menu open still leaves the surface. `CodeWorkspace.test.tsx` describe
+ * `Escape, with a menu open` is what says all three, and reverting this handler
+ * to the list reddens two of its three tests.
  *
  * ## Why the region takes focus at `tabIndex={-1}`
  *
@@ -82,6 +95,7 @@ export function PaneFrame({
   children,
 }: PaneFrameProps) {
   const region = useRef<HTMLElement>(null);
+  const moveTrigger = useRef<HTMLButtonElement>(null);
   const [movesOpen, setMovesOpen] = useState(false);
 
   useEffect(() => {
@@ -110,6 +124,14 @@ export function PaneFrame({
     >
       <header
         className={styles.paneHead}
+        onKeyDown={(event) => {
+          // Only while the disclosure is open. Swallowing Escape whenever a pane
+          // header has the keyboard would take away the workspace's own exit.
+          if (event.key !== 'Escape' || !movesOpen) return;
+          event.stopPropagation();
+          setMovesOpen(false);
+          moveTrigger.current?.focus();
+        }}
         draggable
         // No `dataTransfer` is read or written. Drag and drop here are two ends
         // of one gesture inside one document, so the dragged pane is state the
@@ -134,6 +156,7 @@ export function PaneFrame({
 
         <div className={styles.paneActions}>
           <button
+            ref={moveTrigger}
             type="button"
             className={styles.paneButton}
             aria-expanded={movesOpen}
@@ -153,14 +176,7 @@ export function PaneFrame({
         </div>
 
         {movesOpen ? (
-          <div
-            className={styles.moveList}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.stopPropagation();
-              setMovesOpen(false);
-            }}
-          >
+          <div className={styles.moveList}>
             {moves.length === 0 ? (
               <p className={styles.moveEmpty}>This is the only pane open.</p>
             ) : (

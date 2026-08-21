@@ -20,7 +20,7 @@
 
 import { Fragment, type ReactNode } from 'react';
 
-import { floorFor, paneOrder, positionOf } from '@/lib/pane-layout';
+import { columnEdgeRange, paneOrder, positionOf, slotEdgeRange } from '@/lib/pane-layout';
 import { useCodeWorkspaceStore, type PaneKind } from '@/state/code-workspace-store';
 
 import { PANE_TITLES, PaneFrame, type PaneMove } from './PaneFrame';
@@ -51,8 +51,6 @@ export function PaneGrid({ renderPane, dragging, onDragging }: PaneGridProps) {
       </p>
     );
   }
-
-  const columnFloor = floorFor(layout.columns.length);
 
   function movesFor(pane: PaneKind, column: number, slot: number): readonly PaneMove[] {
     if (open.length <= 1) return [];
@@ -94,7 +92,6 @@ export function PaneGrid({ renderPane, dragging, onDragging }: PaneGridProps) {
   return (
     <div className={styles.grid}>
       {layout.columns.map((column, columnIndex) => {
-        const slotFloor = floorFor(column.slots.length);
         return (
           <Fragment key={column.slots.map((slot) => slot.pane).join('+')}>
             {columnIndex > 0 ? (
@@ -102,7 +99,9 @@ export function PaneGrid({ renderPane, dragging, onDragging }: PaneGridProps) {
                 orientation="vertical"
                 label={`Resize ${columnName(layout.columns[columnIndex - 1]?.slots ?? [])} and ${columnName(column.slots)}`}
                 before={layout.columns[columnIndex - 1]?.weight ?? 0}
-                floor={columnFloor}
+                // The pair's range, from the module that does the clamping. A
+                // floor would be the wrong input: see `Splitter.tsx`'s header.
+                range={columnEdgeRange(layout, columnIndex - 1) ?? FULL_RANGE}
                 onResize={(delta) => resizeColumns(columnIndex - 1, delta)}
               />
             ) : null}
@@ -115,7 +114,7 @@ export function PaneGrid({ renderPane, dragging, onDragging }: PaneGridProps) {
                       orientation="horizontal"
                       label={`Resize ${PANE_TITLES[column.slots[slotIndex - 1]?.pane ?? slot.pane]} and ${PANE_TITLES[slot.pane]}`}
                       before={column.slots[slotIndex - 1]?.weight ?? 0}
-                      floor={slotFloor}
+                      range={slotEdgeRange(layout, columnIndex, slotIndex - 1) ?? FULL_RANGE}
                       onResize={(delta) => resizeSlots(columnIndex, slotIndex - 1, delta)}
                     />
                   ) : null}
@@ -151,6 +150,14 @@ export function PaneGrid({ renderPane, dragging, onDragging }: PaneGridProps) {
     </div>
   );
 }
+
+/**
+ * The range for an edge that does not exist. Unreachable — a splitter is only
+ * rendered between two members, which is exactly when `columnEdgeRange` and
+ * `slotEdgeRange` answer — and it is the whole range rather than a point so that
+ * if it ever were reached it would understate nothing.
+ */
+const FULL_RANGE = { min: 0, max: 1 } as const;
 
 function columnName(slots: readonly { readonly pane: PaneKind }[]): string {
   return slots.map((slot) => PANE_TITLES[slot.pane]).join(' and ') || 'column';

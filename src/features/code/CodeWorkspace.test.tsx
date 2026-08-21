@@ -58,10 +58,10 @@ async function host(): Promise<BrowserAdapter> {
   return adapter;
 }
 
-function mount(adapter: BrowserAdapter) {
+function mount(adapter: BrowserAdapter, onClose: () => void = () => undefined) {
   return render(
     <PlatformProvider adapter={adapter}>
-      <CodeWorkspace onClose={() => undefined} />
+      <CodeWorkspace onClose={onClose} />
     </PlatformProvider>,
   );
 }
@@ -298,6 +298,75 @@ describe('the pane system', () => {
   });
 });
 
+describe('Escape, with a menu open', () => {
+  /**
+   * The disclosure's own header argues that a disclosure claims Tab and Escape
+   * and nothing more — so Escape has to actually close it. It did not: the key
+   * handler sat on the list, which is a *sibling* of the trigger button, and
+   * after clicking Move the keyboard is on the trigger. The key bubbled past the
+   * list to the workspace's own Escape handler and closed the whole surface,
+   * leaving the menu open behind it.
+   */
+  it('closes a pane’s move disclosure and leaves the workspace open', async () => {
+    const user = driver();
+    let closes = 0;
+    mount(await host(), () => {
+      closes += 1;
+    });
+    await startSession(user, 'fix-a');
+
+    const trigger = screen.getByRole('button', { name: 'Move Diff pane' });
+    await user.click(trigger);
+    expect(screen.getByRole('button', { name: 'Move into the column on the left' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+
+    await user.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('button', { name: 'Move into the column on the left' }),
+    ).not.toBeInTheDocument();
+    expect(closes).toBe(0);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes the Views menu and leaves the workspace open', async () => {
+    const user = driver();
+    let closes = 0;
+    mount(await host(), () => {
+      closes += 1;
+    });
+    await startSession(user, 'fix-a');
+
+    const trigger = screen.getByRole('button', { name: 'Views' });
+    await user.click(trigger);
+    expect(screen.getByRole('button', { name: 'Reset layout' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('button', { name: 'Reset layout' })).not.toBeInTheDocument();
+    expect(closes).toBe(0);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('still closes the workspace when no menu is open', async () => {
+    // The other half: swallowing Escape whenever a header is focused would take
+    // away the exit the surface is supposed to have.
+    const user = driver();
+    let closes = 0;
+    mount(await host(), () => {
+      closes += 1;
+    });
+    await startSession(user, 'fix-a');
+
+    await user.click(screen.getByRole('button', { name: 'Move Diff pane' }));
+    await user.keyboard('{Escape}');
+    await user.keyboard('{Escape}');
+
+    expect(closes).toBe(1);
+  });
+});
+
 describe('the splitter between two panes', () => {
   it('is focusable and reports where it is', async () => {
     const user = driver();
@@ -338,6 +407,46 @@ describe('the splitter between two panes', () => {
     const weights = useCodeWorkspaceStore.getState().layout.columns.map((c) => c.weight);
     expect(weights[1]).toBeGreaterThan(0);
     expect(weights.reduce((total, weight) => total + weight, 0)).toBeCloseTo(1, 10);
+  });
+
+  it('announces a maximum the edge can actually be dragged to', async () => {
+    // `aria-valuemax` was `100 - floor`, computed from the per-member floor —
+    // but how far an *edge* can move is set by the pair it divides, and only
+    // `shiftPair` in `src/lib/pane-layout.ts` knows that. The announced 92 was a
+    // number the control could not reach; End stops at 58. Same shape as the
+    // defect this track's diff work fixed: a value computed from an input that
+    // cannot answer the question.
+    const user = driver();
+    mount(await host());
+    await startSession(user, 'fix-a');
+
+    const [first] = screen.getAllByRole('separator');
+    const announced = Number((first as HTMLElement).getAttribute('aria-valuemax'));
+
+    (first as HTMLElement).focus();
+    await user.keyboard('{End}');
+
+    const reached = Math.round(
+      (useCodeWorkspaceStore.getState().layout.columns[0]?.weight ?? 0) * 100,
+    );
+    expect(announced).toBe(reached);
+  });
+
+  it('announces a minimum the edge can actually be dragged to', async () => {
+    const user = driver();
+    mount(await host());
+    await startSession(user, 'fix-a');
+
+    const [first] = screen.getAllByRole('separator');
+    const announced = Number((first as HTMLElement).getAttribute('aria-valuemin'));
+
+    (first as HTMLElement).focus();
+    await user.keyboard('{Home}');
+
+    const reached = Math.round(
+      (useCodeWorkspaceStore.getState().layout.columns[0]?.weight ?? 0) * 100,
+    );
+    expect(announced).toBe(reached);
   });
 
   it('moves by the fraction of the workspace the pointer travelled', async () => {

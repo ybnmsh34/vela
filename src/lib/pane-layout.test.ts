@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MINIMUM_SHARE,
   closePane,
+  columnEdgeRange,
   columnsOf,
   emptyLayout,
   floorFor,
@@ -27,6 +28,7 @@ import {
   positionOf,
   resizeColumns,
   resizeSlots,
+  slotEdgeRange,
   type PaneLayout,
 } from './pane-layout';
 
@@ -239,5 +241,63 @@ describe('reading a layout', () => {
     expect(positionOf(layout, 'diff')).toEqual({ column: 1, slot: 0 });
     expect(positionOf(layout, 'editor')).toBeNull();
     expect(isOpen(layout, 'editor')).toBe(false);
+  });
+});
+
+describe('how far an edge can actually be dragged', () => {
+  /**
+   * The range a splitter announces through `aria-valuemin`/`aria-valuemax`. It
+   * was being computed at the control as `floor` and `1 - floor`, which is a
+   * fact about one member and not about the pair — so the default three-column
+   * layout announced a maximum of 92% for an edge that stops at 58%. These
+   * assert the property that makes the announcement honest: the range is where
+   * a drag of `+/-1` actually lands.
+   */
+  function draggedTo(direction: 1 | -1): number {
+    const moved = resizeColumns(columnsOf('chat', 'editor', 'diff'), 0, direction);
+    return moved.columns[0]?.weight ?? 0;
+  }
+
+  it('is the pair’s range, not the member’s floor', () => {
+    const layout = columnsOf('chat', 'editor', 'diff');
+    const range = columnEdgeRange(layout, 0);
+
+    expect(range?.min).toBeCloseTo(draggedTo(-1), 10);
+    expect(range?.max).toBeCloseTo(draggedTo(1), 10);
+    // The number the control used to announce, kept here so the difference is
+    // visible rather than merely fixed: 1 - 1/12 is 0.9166…, and the edge stops
+    // at 1/3 + 1/3 - 1/12.
+    expect(range?.max).toBeLessThan(1 - floorFor(3));
+    expect(range?.max).toBeCloseTo(1 / 3 + 1 / 3 - 1 / 12, 10);
+  });
+
+  it('answers for a horizontal edge from the column that holds it', () => {
+    const layout = movePane(columnsOf('chat', 'editor', 'diff'), 'diff', 1, 1);
+    const range = slotEdgeRange(layout, 1, 0);
+    const dragged = resizeSlots(layout, 1, 0, 1).columns[1]?.slots[0]?.weight ?? 0;
+
+    expect(range?.max).toBeCloseTo(dragged, 10);
+  });
+
+  it('declines rather than inventing a range where there is no edge', () => {
+    const layout = columnsOf('chat', 'editor', 'diff');
+
+    expect(columnEdgeRange(layout, 2)).toBeNull();
+    expect(columnEdgeRange(layout, -1)).toBeNull();
+    expect(slotEdgeRange(layout, 9, 0)).toBeNull();
+    expect(slotEdgeRange(layout, 0, 0)).toBeNull();
+  });
+
+  it('still contains where the edge is when the floor is all there is', () => {
+    // Thirteen columns cannot each hold a twelfth, so `floorFor(13)` gives way
+    // to 1/13 and every member sits exactly on it: the edge cannot move at all,
+    // and the range is the point it is already at. A range that excluded the
+    // current position would be a second wrong answer.
+    const many = columnsOf('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm');
+    const range = columnEdgeRange(many, 3);
+    const before = many.columns[3]?.weight ?? 0;
+
+    expect(range?.min).toBeLessThanOrEqual(before);
+    expect(range?.max).toBeGreaterThanOrEqual(before);
   });
 });

@@ -212,6 +212,12 @@ describe('a revision is a version of the same artifact', () => {
     const diff = screen.getByTestId('canvas-diff');
     expect(diff).toHaveTextContent('too large to compare line by line');
     expect(diff).not.toHaveTextContent('added, ');
+    // …and it is not a *whole-file* replacement, which is what the lead used to
+    // call it. The two revisions share their opening and closing lines, and
+    // `diffText` trims the common prefix and suffix before it applies the cap,
+    // so both are still emitted as `same` rows underneath the sentence.
+    expect(diff).not.toHaveTextContent('whole-file');
+    expect(diff).toHaveTextContent('</svg>');
   });
 });
 

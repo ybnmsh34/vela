@@ -24,6 +24,17 @@
  * around by a pixel. Incremental deltas mean the drag and the layout agree about
  * where the edge is, because the layout is the only one holding a position.
  *
+ * ## The range it announces is the range it can reach
+ *
+ * `aria-valuemin` and `aria-valuemax` are a promise about where this control can
+ * be put, and the first version computed them from the per-member floor as
+ * `floor` and `100 - floor`. That is right for the minimum and wrong for the
+ * maximum, because everything the member before the edge gains comes out of the
+ * member after it and stops at *that* one's floor: the default three columns
+ * announced a maximum of 92 and stopped at 58. So the range arrives as a value
+ * from `src/lib/pane-layout.ts`, which is the only module that knows, rather
+ * than being re-derived here from a number that cannot answer.
+ *
  * ## What is *not* proven about the pointer path
  *
  * `getBoundingClientRect` is all zeros in jsdom, so the container width a drag
@@ -34,6 +45,8 @@
  */
 
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+
+import type { EdgeRange } from '@/lib/pane-layout';
 
 import styles from './CodeWorkspace.module.css';
 
@@ -46,13 +59,16 @@ export interface SplitterProps {
   readonly label: string;
   /** The share held by the member before this edge, 0–1. */
   readonly before: number;
-  /** The floor either member may be dragged to, 0–1. */
-  readonly floor: number;
+  /**
+   * How far this edge can actually travel, as shares of the whole. Produced by
+   * `columnEdgeRange`/`slotEdgeRange`; see the header for why it is not a floor.
+   */
+  readonly range: EdgeRange;
   /** Positive moves the edge toward the *end* — right, or down. */
   readonly onResize: (delta: number) => void;
 }
 
-export function Splitter({ orientation, label, before, floor, onResize }: SplitterProps) {
+export function Splitter({ orientation, label, before, range, onResize }: SplitterProps) {
   // Where the pointer was at the last report, and how big the box it moves
   // inside is. Both live in a ref because neither is rendered and a re-render
   // per pointermove is exactly the cost a drag cannot pay.
@@ -109,7 +125,6 @@ export function Splitter({ orientation, label, before, floor, onResize }: Splitt
   };
 
   const percent = Math.round(before * 100);
-  const floorPercent = Math.round(floor * 100);
 
   return (
     <div
@@ -118,8 +133,8 @@ export function Splitter({ orientation, label, before, floor, onResize }: Splitt
       aria-orientation={orientation}
       aria-label={label}
       aria-valuenow={percent}
-      aria-valuemin={floorPercent}
-      aria-valuemax={100 - floorPercent}
+      aria-valuemin={Math.round(range.min * 100)}
+      aria-valuemax={Math.round(range.max * 100)}
       aria-valuetext={`${percent}%`}
       className={vertical ? styles.splitterVertical : styles.splitterHorizontal}
       onKeyDown={handleKeyDown}

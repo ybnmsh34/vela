@@ -4,19 +4,39 @@
  * Mounted on its own rather than through the whole workspace, because the
  * session and the file it reads are cheaper to seed through the store than to
  * type — and because the case this file exists for, a change larger than
- * `MAXIMUM_ALIGNED_LINES`, is four thousand lines that no test should be pasting
- * a character at a time. The workspace's own wiring is proven in
+ * `MAXIMUM_ALIGNED_LINES`, is two texts of 2001 lines each that no test should
+ * be pasting a character at a time. The workspace's own wiring is proven in
  * `CodeWorkspace.test.tsx`, which drives the same pane by hand.
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MAXIMUM_ALIGNED_LINES } from '@/lib/text-diff';
 import { resetCodeWorkspaceStore, useCodeWorkspaceStore } from '@/state/code-workspace-store';
 
 import { DiffPane } from './DiffPane';
+
+/**
+ * How many times the pane actually diffed something.
+ *
+ * `vi.hoisted` because `vi.mock` is lifted above the imports, so a plain
+ * module-level binding is not initialised yet when the factory runs. The real
+ * `diffText` still does the work — this only counts the calls.
+ */
+const diffCalls = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock('@/lib/text-diff', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/text-diff')>();
+  return {
+    ...actual,
+    diffText: (before: string, after: string) => {
+      diffCalls.count += 1;
+      return actual.diffText(before, after);
+    },
+  };
+});
 
 const SESSION = 'fix-a';
 
@@ -115,14 +135,55 @@ describe('what the diff pane shows', () => {
     const before = Array.from({ length: MAXIMUM_ALIGNED_LINES + 1 }, (_, i) => `L${i}`).join('\n');
     const after = Array.from({ length: MAXIMUM_ALIGNED_LINES + 1 }, (_, i) => `R${i}`).join('\n');
 
-    it('says the file was not compared, rather than printing a line count as a change count', () => {
-      seed([{ path: 'src/huge.ts', baseline: before, working: after }]);
+    it('says the change was not aligned, rather than printing a line count as a change count', () => {
+      // The huge file is listed *second*, so the pane selects the first and
+      // never renders four thousand row buttons — this test is about the stat
+      // on the file row, and the lead beside the rows is asserted below. It ran
+      // to 5776ms solo before this change, which is the ceiling-versus-cost
+      // argument `src/features/models/EndpointsPanel.test.tsx` makes at length:
+      // a budget raised to cover a cost that scales with load gets raised
+      // again.
+      seed([
+        { path: 'src/small.ts', baseline: 'one', working: 'ONE' },
+        { path: 'src/huge.ts', baseline: before, working: after },
+      ]);
       render(<DiffPane sessionId={SESSION} />);
 
       const list = within(screen.getByRole('list', { name: 'Changed files' }));
-      expect(list.getByRole('button', { name: /huge/ })).toHaveTextContent('not compared');
+      expect(list.getByRole('button', { name: /huge/ })).toHaveTextContent('not aligned');
       expect(list.getByRole('button', { name: /huge/ })).not.toHaveTextContent('+2001');
-      expect(screen.getByText(/too large to compare line by line/)).toBeInTheDocument();
+      expect(list.getByRole('button', { name: /huge/ })).not.toHaveTextContent('-2001');
+    });
+
+    it('does not call the fallback a whole-file replacement, because it is not one', () => {
+      // The common prefix and suffix are trimmed *before* the cap is applied and
+      // are emitted as `same` rows either way, so a pair with identical ends is
+      // partly compared. The first draft announced a whole-file replacement
+      // directly above the lines it had just compared.
+      const shared = 'shared header';
+      seed([
+        {
+          path: 'src/ends.ts',
+          baseline: `${shared}\n${before}\n${shared}`,
+          working: `${shared}\nrewritten\n${shared}`,
+        },
+      ]);
+      render(<DiffPane sessionId={SESSION} />);
+
+      const lead = screen.getByText(/too large to compare line by line/);
+      expect(lead).toHaveTextContent('the changed part is shown as a wholesale replacement');
+      expect(lead).not.toHaveTextContent('whole-file');
+
+      // Two rows still read `shared header` — the prefix and the suffix. A
+      // whole-file replacement would have neither. `getAllByText` rather than a
+      // role-and-name query on purpose: this diff renders 2004 row buttons
+      // (1 prefix + 2001 removed + 1 added + 1 suffix), and computing an
+      // accessible name for each of them ran past the 5s per-test budget when
+      // this test was first written that way. Only the left side is over the
+      // cap — that is enough to refuse the alignment, and it halves the rows
+      // against a version where both sides were.
+      const group = within(screen.getByRole('group', { name: /^Changes in/ }));
+      expect(group.getAllByText(shared)).toHaveLength(2);
     });
 
     it('does not reach the cap merely because the file is long', () => {
@@ -179,7 +240,7 @@ describe('commenting on a line', () => {
     await user.keyboard('{Enter}');
     expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(1);
 
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await user.click(screen.getByRole('button', { name: /^Remove comment/ }));
 
     expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(0);
     expect(screen.queryByText('on reflection, no')).not.toBeInTheDocument();
@@ -253,6 +314,109 @@ describe('commenting on a line', () => {
   });
 });
 
+describe('a comment when the file moves under it', () => {
+  /**
+   * The class this track's diff work was about, one level down. A comment is
+   * anchored by (path, side, line) and quotes the line verbatim; `saveFile`
+   * clears a file's comments because a save erases the diff wholesale. Editing
+   * does not erase the diff — it *renumbers* it, and nothing re-asked whether
+   * the anchor still pointed at the line it quotes. A comment written on `BETA`
+   * rendered under `INSERTED` and would have been submitted as `src/a.ts:2
+   * (after)` quoting `BETA`.
+   */
+  beforeEach(() => {
+    seed([{ path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' }]);
+  });
+
+  async function commentOnBeta(user: ReturnType<typeof driver>): Promise<void> {
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 2'));
+    await user.paste('this should be a constant');
+    await user.keyboard('{Enter}');
+  }
+
+  it('follows the line it quotes when a line is inserted above it', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user);
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha\nINSERTED\nBETA');
+    });
+
+    const card = screen.getByText('this should be a constant').closest('div');
+    expect(card?.previousElementSibling).toHaveTextContent('BETA');
+    expect(card?.previousElementSibling).not.toHaveTextContent('INSERTED');
+
+    await user.click(screen.getByRole('button', { name: 'Submit review' }));
+    expect(queue()[0]).toContain('src/a.ts:3 (after)');
+    expect(queue()[0]).not.toContain('src/a.ts:2 (after)');
+  });
+
+  it('says the line is gone rather than naming one that now says something else', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user);
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha\nGAMMA');
+    });
+
+    expect(screen.getByText(/no longer in the diff/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Submit review' }));
+    expect(queue()[0]).toContain('no longer in the diff');
+    expect(queue()[0]).not.toContain('src/a.ts:2 (after)');
+    expect(queue()[0]).toContain('BETA');
+  });
+
+  it('keeps a comment visible when its whole file stops differing', async () => {
+    // The other way to lose a line to point at, and the one with nowhere
+    // obvious to show the result: editing the file back to its baseline takes
+    // it out of the changed-file list, so it has no row to select and the
+    // comment would be sent from a place the reviewer cannot see or delete.
+    // A save is different and is handled in the store — it clears the file's
+    // comments outright.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user);
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+
+    const list = within(screen.getByRole('list', { name: 'Changed files' }));
+    expect(list.queryByRole('button', { name: /src\/a\.ts/ })).not.toBeInTheDocument();
+    const stranded = within(screen.getByRole('group', { name: 'Comments whose line has moved' }));
+    expect(stranded.getByText(/src\/a\.ts · BETA/)).toBeInTheDocument();
+    expect(stranded.getByText('this should be a constant')).toBeInTheDocument();
+
+    await user.click(stranded.getByRole('button', { name: /^Remove comment/ }));
+    expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(0);
+  });
+
+  it('names each Remove button for the comment it removes', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user);
+
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 2'));
+    await user.paste('and name the file too');
+    await user.keyboard('{Enter}');
+
+    const names = screen
+      .getAllByRole('button', { name: /^Remove comment/ })
+      .map((button) => button.getAttribute('aria-label'));
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+  });
+});
+
 describe('reaching a line by keyboard', () => {
   beforeEach(() => {
     seed([{ path: 'src/a.ts', baseline: 'one\ntwo\nthree', working: 'one\nTWO\nthree' }]);
@@ -277,5 +441,41 @@ describe('reaching a line by keyboard', () => {
 
     fireEvent.keyDown(rows()[1] as HTMLElement, { key: 'End' });
     expect(rows().at(-1)).toHaveAttribute('tabindex', '0');
+  });
+});
+
+describe('what typing in the editor costs the diff pane', () => {
+  /**
+   * `editFile` rebuilds `work.files`, so a `useMemo` keyed on that array re-runs
+   * on every keystroke — and the version that did so re-diffed every file the
+   * session held, not the one being typed into. Both panes are open in the
+   * default layout, so that is the ordinary loop rather than an edge case.
+   */
+  it('re-diffs only the file that changed, not every file in the session', () => {
+    seed([
+      { path: 'src/a.ts', baseline: 'a', working: 'A' },
+      { path: 'src/b.ts', baseline: 'b', working: 'B' },
+      { path: 'src/c.ts', baseline: 'c', working: 'C' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    diffCalls.count = 0;
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'AB');
+    });
+
+    expect(diffCalls.count).toBe(1);
+  });
+
+  it('does not diff again when something else in the session changes', () => {
+    seed([{ path: 'src/a.ts', baseline: 'a', working: 'A' }]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    diffCalls.count = 0;
+    act(() => {
+      useCodeWorkspaceStore.getState().queueMessage(SESSION, 'unrelated');
+    });
+
+    expect(diffCalls.count).toBe(0);
   });
 });

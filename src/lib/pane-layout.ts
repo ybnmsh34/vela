@@ -273,6 +273,73 @@ export function movePane<Id extends string>(
 }
 
 /**
+ * How far the member **before** an edge can be dragged, as shares of the whole.
+ *
+ * Not the same question as "what is the floor". A floor is a fact about one
+ * member; how far an *edge* can travel is a fact about the pair it divides,
+ * because everything the member before gains is taken from the member after and
+ * stops when *that* one reaches its floor. Three even columns with a floor of a
+ * twelfth give an edge a reachable range of 8%–58%, not 8%–92%: the second
+ * column runs out first.
+ *
+ * It exists because the splitter announces this range through `aria-valuemin`
+ * and `aria-valuemax`, and it was announcing `100 - floor` — a maximum computed
+ * from an input that cannot answer the question, which is the same defect this
+ * workspace's diff stat was fixed for. {@link shiftPair} is the only thing that
+ * knows, so the answer is derived here beside it rather than approximated at the
+ * control.
+ */
+export interface EdgeRange {
+  /** The smallest share the member before the edge can be dragged to. */
+  readonly min: number;
+  /** The largest. */
+  readonly max: number;
+}
+
+function rangeOfPair(weights: readonly number[], boundary: number): EdgeRange | null {
+  const before = weights[boundary];
+  const after = weights[boundary + 1];
+  if (before === undefined || after === undefined) return null;
+  const floor = floorFor(weights.length);
+  // `Math.min`/`Math.max` against the current share is defensive, not a case
+  // this layout reaches: `normalise` pins every member at or above `floorFor`,
+  // and past twelve siblings `floorFor` gives way to an equal share, so `before`
+  // sits *on* the floor rather than under it. If a range ever were wrong, this
+  // is what keeps it containing where the edge already is instead of excluding
+  // it — a range that excludes the current position is a second wrong answer,
+  // not a correction.
+  return {
+    min: Math.min(before, floor),
+    max: Math.max(before, before + after - floor),
+  };
+}
+
+/** {@link EdgeRange} for the vertical edge between columns `boundary` and `boundary + 1`. */
+export function columnEdgeRange<Id extends string>(
+  layout: PaneLayout<Id>,
+  boundary: number,
+): EdgeRange | null {
+  return rangeOfPair(
+    layout.columns.map((column) => column.weight),
+    boundary,
+  );
+}
+
+/** The same, for the horizontal edge between two slots of one column. */
+export function slotEdgeRange<Id extends string>(
+  layout: PaneLayout<Id>,
+  column: number,
+  boundary: number,
+): EdgeRange | null {
+  const entry = layout.columns[column];
+  if (entry === undefined) return null;
+  return rangeOfPair(
+    entry.slots.map((slot) => slot.weight),
+    boundary,
+  );
+}
+
+/**
  * Drag the vertical edge between column `boundary` and column `boundary + 1` by
  * `delta` of the workspace's width.
  *

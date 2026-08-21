@@ -22,7 +22,7 @@
  * each one needs before it can exist.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { ModalSurface } from '@/components/ModalSurface';
 import { isOpen } from '@/lib/pane-layout';
@@ -47,6 +47,7 @@ export function CodeWorkspace({ onClose }: { readonly onClose: () => void }) {
   const openPane = useCodeWorkspaceStore((state) => state.openPane);
   const resetLayout = useCodeWorkspaceStore((state) => state.resetLayout);
 
+  const viewsTrigger = useRef<HTMLButtonElement>(null);
   const [viewsOpen, setViewsOpen] = useState(false);
   const [dragging, setDragging] = useState<PaneKind | null>(null);
 
@@ -66,7 +67,22 @@ export function CodeWorkspace({ onClose }: { readonly onClose: () => void }) {
         onClose();
       }}
     >
-      <header className={styles.workspaceHead}>
+      <header
+        className={styles.workspaceHead}
+        // The Views menu is a disclosure with the same structure and the same
+        // repair as the pane header's: the list does not contain the trigger —
+        // the trigger is inside `headActions` and the list sits beside it — so
+        // the key has to be caught here, on the element that is an ancestor of
+        // both. Without this the workspace's own Escape closed the whole surface
+        // while the menu it was aimed at stayed open. `PaneFrame.tsx`'s header
+        // carries the full account.
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || !viewsOpen) return;
+          event.stopPropagation();
+          setViewsOpen(false);
+          viewsTrigger.current?.focus();
+        }}
+      >
         <h2 className={styles.workspaceTitle}>Code</h2>
 
         {session === null ? null : (
@@ -100,6 +116,7 @@ export function CodeWorkspace({ onClose }: { readonly onClose: () => void }) {
           ) : null}
 
           <button
+            ref={viewsTrigger}
             type="button"
             className={styles.paneButton}
             aria-expanded={viewsOpen}
@@ -113,14 +130,7 @@ export function CodeWorkspace({ onClose }: { readonly onClose: () => void }) {
         </div>
 
         {viewsOpen ? (
-          <div
-            className={styles.viewsList}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.stopPropagation();
-              setViewsOpen(false);
-            }}
-          >
+          <div className={styles.viewsList}>
             {ALL_PANES.map((pane) => (
               <button
                 key={pane}

@@ -51,11 +51,22 @@ export function ChatPane({ session }: { readonly session: CodeSession }) {
       <div className={styles.modelBar}>
         <span className={styles.modelName}>{session.modelId}</span>
         <span className={styles.contextReadout} data-verdict={budget.verdict}>
-          {budget.verdict === 'unknown'
-            ? budget.unknownReason === 'noWindow'
-              ? `About ${budget.approxUsedTokens ?? 0} tokens · window unknown`
-              : 'Context unknown'
-            : `About ${budget.approxUsedTokens ?? 0} of ${budget.windowTokens ?? 0} tokens`}
+          {/* Branched on the nulls themselves rather than on the verdict, and
+              with no `??` anywhere. The previous form read
+              `budget.approxUsedTokens ?? 0`, which puts back in one character
+              the "about 0" conflation the header above forbids — `null` there
+              means *nothing was measured*, and rendering it as zero is how a
+              user with a full window is told they have room. It printed the
+              same three strings this does, because this call site always hands
+              `contextBudget` an array and so can never see the null; that is
+              precisely the sort of unreachable that stops being unreachable
+              when a caller changes. No test bites this: there is no way to
+              reach it from the product today. */}
+          {budget.approxUsedTokens === null
+            ? 'Context unknown'
+            : budget.windowTokens === null
+              ? `About ${budget.approxUsedTokens} tokens · window unknown`
+              : `About ${budget.approxUsedTokens} of ${budget.windowTokens} tokens`}
         </span>
       </div>
 

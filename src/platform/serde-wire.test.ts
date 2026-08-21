@@ -189,6 +189,7 @@ const RUST_READERS: ReadonlyMap<string, Reader> = new Map<string, Reader>([
   ['src/platform/chat-contract-parity.test.ts', { role: 'wire-keys' }],
   ['src/platform/skill-store-parity.test.ts', { role: 'wire-keys' }],
   ['src/platform/project-host-parity.test.ts', { role: 'wire-keys' }],
+  ['src/platform/serde-wire-positions.test.ts', { role: 'wire-keys' }],
   [
     'src/platform/serde-wire.test.ts',
     {
@@ -251,28 +252,96 @@ const RUST_READERS: ReadonlyMap<string, Reader> = new Map<string, Reader>([
 const SHARED_READER = 'src/platform/serde-wire.ts';
 
 /**
- * Every function the shared reader defines, **read out of it** rather than
- * listed here.
+ * **The spellings a definition can be written in, each with the four things
+ * that make it a checkable spelling rather than a filter nobody looks at.**
  *
- * The list this replaces was six names written by hand, and its membership was
- * stated by the list and asserted by nothing. Measured on the committed tree:
- * deleting `/function\s+payloadRecord\b/` — the entry the round before this
- * one added, in the commit whose message says the point is that a shared
- * definition must be one definition — left this file at 12 passed, exit 0.
- * The only control over it fabricates a source matching two patterns and
- * asserts the count is two, so it cannot see any other entry leaving. That is
- * this repository's recurring shape one more time: a list whose job is to name
- * things, checked by a number.
+ * The list this replaces derived its names from one pattern —
+ * `/\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)/` — under a sentence promising that
+ * *"a list read off the definition site cannot be short by an entry somebody
+ * forgot"*. It was short by twenty-seven entries, and short **structurally**
+ * rather than by forgetfulness, which is the one failure that sentence claims
+ * cannot happen. Measured on the shared reader's own bytes: the `function`
+ * pattern yields forty names, and the file defines eighteen further top-level
+ * `const`s — `FIELD_DECLARATION`, `VARIANT_DECLARATION`, `CLOSING_PUNCTUATION`,
+ * `CHAR_LITERAL`, `DECLARATION`, `RUST_IDENTIFIER`, `IDENTIFIER_CHARACTER`,
+ * `IDENTIFIER_CONTINUE`, `CONTAINER_KEYS`, `FIELD_KEYS`, `INERT_ATTRIBUTES`,
+ * `RENAME_RULES`, `CLOSERS`, `LONGEST_CHAR_LITERAL` and the four this round
+ * adds — plus nine `const … = (…) =>` helpers, `atItemStart`, `pathStartAt`,
+ * `bangBelongsToWord`, `readFieldAttribute`, `refuseField`, `refuseContainer`,
+ * `rule`, `blank` and `quote`.
  *
- * A list read off the definition site cannot be short by an entry somebody
- * forgot, and a definition added to the shared reader joins on the commit that
- * adds it. Comments are already stripped from {@link CODE}, so a `function` in
- * a doc comment is not one.
+ * Both directions were live and an adversary measured both. A working second
+ * copy of `topLevelParts` written `const topLevelParts = (code: string) => …`
+ * ran green in `skill-store-parity.test.ts` where the byte-identical
+ * restatement spelled with `function` reds two named tests — because
+ * `OWN_PARSE` compiled each name into `new RegExp('function\\s+' + name)`, so
+ * even a name on the list escaped in the spelling the shared reader itself
+ * prefers. And `FIELD_DECLARATION`, copied verbatim out of the shared reader
+ * into `project-host-parity.test.ts`, was permitted, because a `const` could
+ * not be on the list at all. **That is the historical failure mode, not a
+ * hypothetical one:** the two stale copies this whole file exists to prevent
+ * carried `rename_all\s*=`, a `const` regex.
+ *
+ * The fix that would have failed the same way is a wider pattern. What is here
+ * instead is a **register of spellings**, and each row is asserted:
+ *
+ * - `derives` is what reads names out of the shared reader;
+ * - `forbids` is what a guard restating one of those names is caught by, in
+ *   *this* spelling;
+ * - `restate` fabricates a definition in this spelling, so
+ *   `forbids every definition the shared reader has, in every spelling it has
+ *   one` can require the catch;
+ * - `floor` is a name the shared reader really defines this way, so a spelling
+ *   that stopped selecting anything is a named failure here rather than a
+ *   silently empty half of a union.
+ *
+ * That last row is the thing the previous version had no equivalent of, and it
+ * is the whole of the difference: a derived list is only as wide as its filter,
+ * and a filter nothing asserts is the same defect one level down.
+ */
+interface DefinitionSpelling {
+  readonly spelling: string;
+  readonly derives: RegExp;
+  readonly forbids: (name: string) => RegExp;
+  readonly restate: (name: string) => string;
+  readonly floor: string;
+}
+
+const DEFINITION_SPELLINGS: readonly DefinitionSpelling[] = [
+  {
+    spelling: 'a `function` declaration',
+    derives: /\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)/g,
+    forbids: (name) => new RegExp(`function\\s+${name}\\b`),
+    restate: (name) => `function ${name}(source: string) { return source; }`,
+    floor: 'parseRustItem',
+  },
+  {
+    spelling: 'a top-level `const`',
+    derives: /^(?:export\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)/gm,
+    forbids: (name) => new RegExp(`const\\s+${name}\\s*(?::[^=;\\n]*)?=`),
+    restate: (name) => `const ${name} = /^(?:pub\\s+)?([a-z_][a-z0-9_]*)\\s*:/;`,
+    floor: 'FIELD_DECLARATION',
+  },
+  {
+    spelling: 'a `const` bound to an arrow function',
+    derives:
+      /\bconst\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]*)?=\s*(?:\([^)]*\)|[A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n]*?)?=>/g,
+    forbids: (name) => new RegExp(`const\\s+${name}\\s*(?::[^=;\\n]*)?=`),
+    restate: (name) => `const ${name} = (source: string): string => source;`,
+    floor: 'atItemStart',
+  },
+];
+
+/**
+ * Every definition the shared reader has, in every spelling it has one,
+ * **read out of it** rather than listed here.
  */
 const SHARED_DEFINITIONS: readonly string[] = [
   ...new Set(
-    [...(CODE.get(SHARED_READER) ?? '').matchAll(/\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)/g)].map(
-      (match) => match[1] as string,
+    DEFINITION_SPELLINGS.flatMap((entry) =>
+      [...(CODE.get(SHARED_READER) ?? '').matchAll(entry.derives)].map(
+        (match) => match[1] as string,
+      ),
     ),
   ),
 ].sort();
@@ -309,7 +378,9 @@ const FORBIDDEN_DEFINITIONS: readonly string[] = SHARED_DEFINITIONS.filter(
  * is not a definition name, so it is written here rather than derived.
  */
 const OWN_PARSE = [
-  ...FORBIDDEN_DEFINITIONS.map((name) => new RegExp(`function\\s+${name}\\b`)),
+  ...FORBIDDEN_DEFINITIONS.flatMap((name) =>
+    DEFINITION_SPELLINGS.map((entry) => entry.forbids(name)),
+  ),
   /rename_all\\s\*=/,
 ];
 
@@ -338,6 +409,7 @@ describe('there is one reader of Rust wire keys, and it is known how many there 
     expect(wireKeyReaders).toEqual([
       'src/platform/chat-contract-parity.test.ts',
       'src/platform/project-host-parity.test.ts',
+      'src/platform/serde-wire-positions.test.ts',
       'src/platform/skill-store-parity.test.ts',
     ]);
     for (const file of wireKeyReaders) {
@@ -431,19 +503,49 @@ describe('the detectors can fail', () => {
     expect(OWN_PARSE.filter((pattern) => pattern.test(fabricated))).toHaveLength(2);
   });
 
-  it('forbids every definition the shared reader has, and can see each one restated', () => {
+  it('reads a definition out of the shared reader in every spelling it has one', () => {
+    // **The filter, asserted.** A derived list is exactly as wide as the
+    // pattern that derives it, and the previous version's pattern was one
+    // third of the file's definitions under a sentence saying the list could
+    // not be short. Each spelling has to select a non-empty set out of the
+    // shared reader and has to select the name it is floored on, so a spelling
+    // that stops seeing anything — because the file's style moved, or because
+    // somebody widened a character class by mistake — names itself here rather
+    // than quietly halving the law two tests down.
+    const code = CODE.get(SHARED_READER) ?? '';
+    expect(code.length, 'the shared reader was not loaded').toBeGreaterThan(1000);
+    for (const entry of DEFINITION_SPELLINGS) {
+      const found = [...code.matchAll(entry.derives)].map((match) => match[1] as string);
+      expect(found.length, `${entry.spelling} selects nothing in the shared reader`).toBeGreaterThan(
+        0,
+      );
+      expect(found, `${entry.spelling} no longer sees ${entry.floor}`).toContain(entry.floor);
+      expect(SHARED_DEFINITIONS, `${entry.floor} is not on the derived list`).toContain(entry.floor);
+    }
+    // And the three floors are three different definitions, so a register of
+    // three rows that had collapsed onto one pattern would fail here too.
+    expect(new Set(DEFINITION_SPELLINGS.map((entry) => entry.floor)).size).toBe(
+      DEFINITION_SPELLINGS.length,
+    );
+  });
+
+  it('forbids every definition the shared reader has, in every spelling it has one', () => {
     // What the hand-written list could not say. A count of matches against one
     // fabricated source says nothing about the entries that source does not
     // match, so an entry could be deleted — and one was, in the probe that
     // produced this test — with everything green. Here each forbidden name is
-    // fabricated in turn and the list has to fire on it, so an entry that
-    // stopped matching anything is a named failure.
+    // fabricated in turn, **in each spelling**, and the list has to fire on
+    // every one of them. One spelling per name was the previous version, and
+    // an adversary landed a working second copy of `topLevelParts` through the
+    // spelling it did not fabricate.
     for (const name of FORBIDDEN_DEFINITIONS) {
-      const restated = `function ${name}(source: string) { return source; }`;
-      expect(
-        OWN_PARSE.some((pattern) => pattern.test(restated)),
-        `${name} is defined in the shared reader and nothing here forbids restating it`,
-      ).toBe(true);
+      for (const entry of DEFINITION_SPELLINGS) {
+        const restated = entry.restate(name);
+        expect(
+          OWN_PARSE.some((pattern) => pattern.test(restated)),
+          `${name} restated as ${entry.spelling} is not forbidden`,
+        ).toBe(true);
+      }
     }
     // The floor, named rather than counted: these are the definitions the two
     // stale copies actually carried, so a refactor that moved one *out* of the

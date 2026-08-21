@@ -93,6 +93,9 @@ import {
   payloadWireKeys,
   qualified,
   filePathsNamedIn,
+  moduleDeclarationsIn,
+  moduleFileCandidates,
+  scanDeserialiseOnly,
   scanSerialisable,
   wireName,
   wireNames,
@@ -374,18 +377,38 @@ type HasNoOptionalKey<T> = [OptionalKeysOf<T>] extends [never]
  * A two-arm union with an optional key on one arm — the shape a contract type
  * takes the day a backend field becomes nullable, and the shape the
  * non-distributing detector could not see. If the distribution is ever
- * removed, `HasNoOptionalKey` of this becomes `true`, `true` is not assignable
- * to the annotation, and `pnpm typecheck` fails naming this constant. Read by
+ * removed, `HasNoOptionalKey` of this becomes `true`, the two-element tuple
+ * written below is not assignable to `true`, and `tsc --build --force` exits
+ * 2 on this construct. Measured rather than asserted, twice per guard, by
+ * reverting `OptionalKeysOf` to the non-distributing form: the message is
+ * `error TS2322: Type 'string[]' is not assignable to type 'true'`, reported
+ * at the arm this type declares `reason` on.
+ *
+ * **The previous shape of this control could not fail, and its docblock said
+ * it could.** Both arms declared `body`, so `keyof T` — which for a union is
+ * the keys common to every arm — kept it, `Pick` preserved the `?` on the arm
+ * that had one, and the answer was `'body'` with the distribution and without
+ * it. Measured twice in each guard by reverting `OptionalKeysOf` to the exact
+ * non-distributing form named above: **zero** errors at this constant, in
+ * either guard, in either run, and the vitest test named for it 2/2 green. The
+ * loss was caught only incidentally, by the string-literal-union entries in
+ * `NO_OPTIONAL_KEYS` — so a `CONTRACT_TYPES` table of interfaces would have
+ * caught nothing at all. That is round 3's shape at the type level: a check
+ * named for a property it does not check.
+ *
+ * The key is on **one** arm now and named on neither other. `keyof T` without
+ * the distribution is `'kind'` alone, `OptionalKeysOf` is `never`,
+ * `HasNoOptionalKey` is `true`, and `true` is not a two-element tuple. Read by
  * `the optional-key detector sees one arm of a union` below, which pins the
  * value; the annotation is what pins the type.
  */
 type OneArmSpellsAKeyOptional =
   | { readonly kind: 'present'; readonly body: string }
-  | { readonly kind: 'absent'; readonly body?: string };
+  | { readonly kind: 'absent'; readonly reason?: string };
 
 const OPTIONAL_KEY_ON_ONE_ARM_OF_A_UNION: HasNoOptionalKey<OneArmSpellsAKeyOptional> = [
   'this contract type now spells a key optional',
-  'body',
+  'reason',
 ];
 
 /**
@@ -665,6 +688,42 @@ interface Registered extends SerialisableItem {
   readonly handedTo: string | null;
 }
 
+/** A file that attaches two modules from elsewhere and opens one inline. */
+const MODULE_DECLARATION_FIXTURE = [
+  'pub mod wire;',
+  'pub(crate) mod r#gen;',
+  'mod tests { }',
+  '',
+].join('\n');
+
+/** A type whose wire keys are written by an impl body rather than derived. */
+const HAND_WRITTEN_SERIALIZE_FIXTURE = [
+  'pub struct Wired { pub scripts: Vec<String> }',
+  '',
+  'impl Serialize for Wired {',
+  '    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {',
+  '        use serde::ser::SerializeStruct;',
+  '        let mut row = s.serialize_struct("Wired", 1)?;',
+  '        row.serialize_field("Scripts", &self.scripts)?;',
+  '        row.end()',
+  '    }',
+  '}',
+  '',
+].join('\n');
+
+/**
+ * A type that can be built from the wire and cannot be put on it — the shape
+ * an inventory keyed on the token `Serialize` cannot see.
+ */
+const DESERIALISE_ONLY_FIXTURE = [
+  '#[derive(Debug, Clone, Deserialize)]',
+  '#[serde(rename_all = "camelCase")]',
+  'pub struct Request {',
+  '    pub skill_name: String,',
+  '}',
+  '',
+].join('\n');
+
 const NOT_ON_THIS_BOUNDARY: readonly Registered[] = [];
 
 /** Sets, not sequences: declaration order is not part of the wire contract. */
@@ -827,7 +886,7 @@ describe('the project crate and the project contract spell the same vocabulary',
     // compiling.
     expect(OPTIONAL_KEY_ON_ONE_ARM_OF_A_UNION).toEqual([
       'this contract type now spells a key optional',
-      'body',
+      'reason',
     ]);
     expect(NO_OPTIONAL_KEYS.WorkingDirectory).toBe(true);
     for (const pairing of PAIRINGS) {
@@ -892,6 +951,124 @@ describe('the project crate and the project contract spell the same vocabulary',
       .sort();
     const accounted = [...PAIRINGS.map(qualified), ...NOT_ON_THIS_BOUNDARY.map(qualified)].sort();
     expect(scanned, 'a serialisable type is neither paired nor on the register').toEqual(accounted);
+  });
+
+  /**
+   * **The premise a directory walk gets for free, and a named file list does
+   * not.**
+   *
+   * Both adversaries landed the same construction against both of the guards
+   * that name their files: `pub mod wire;` at the head of
+   * `vela-providers/src/model.rs` with a `#[derive(Serialize)]` struct in a new
+   * wire module beside it, and `pub mod extra;` at the head of
+   * `src-tauri/src/ipc/skills.rs` with one in an extra module beside that. Live wire
+   * keys crossed with every assertion here green and no entry on any register,
+   * because the inventory equality compares a scan of a list against a
+   * register, and both sides move together when the list is short.
+   *
+   * The two crate-walking guards were never open to it — without `#[path]` a
+   * `mod x;` always resolves under the walked directory — so this is the
+   * premise they have, written down and asserted for the guards that do not.
+   * It is the same sentence `#[path]` is refused for: *the source read is not
+   * the source rustc compiles*.
+   */
+  /**
+   * **The other direction of the bridge, which an inventory built on the token
+   * `Serialize` cannot see at all.**
+   *
+   * An adversary renamed one field of a live `Deserialize`-only request type in
+   * a file one of these guards opens by name, and every assertion in the
+   * repository stayed green: `Deserialize` does not contain the token
+   * `Serialize`, so the type was on no inventory, on no pairing and on no
+   * register, and the equality named *"accounts for every serialisable type in
+   * the files it reads"* was satisfied without it. The renderer would keep
+   * sending the old key, the host would demand the new one, and every call on
+   * that command would be an invalid payload.
+   *
+   * This guard's files declare none today, so the equality is against an empty
+   * list — which is exactly the shape that has to be controlled, and is.
+   */
+  it('accounts for every deserialisation-only type in the files it reads', () => {
+    const scanned = CRATE_FILES.flatMap((file) => scanDeserialiseOnly(SOURCES[file] ?? '', file)).map(qualified).sort();
+    expect(scanned, 'a deserialisation-only type is on no list here').toEqual(
+      [],
+    );
+    // The control, and it carries the whole weight when the list above is
+    // empty: the scan has to be able to find one.
+    expect(
+      scanDeserialiseOnly(DESERIALISE_ONLY_FIXTURE, 'fixture.rs').map(qualified),
+    ).toEqual(['fixture.rs::Request']);
+    // And it must not double-count: a type that crosses both ways is already
+    // on the serialisable inventory under the same name.
+    const both = DESERIALISE_ONLY_FIXTURE.replace('Deserialize)', 'Serialize, Deserialize)');
+    expect(scanDeserialiseOnly(both, 'fixture.rs')).toEqual([]);
+    expect(scanSerialisable(both, 'fixture.rs').map(qualified)).toEqual(['fixture.rs::Request']);
+  });
+
+  it('reads every module the files it scans attach', () => {
+    for (const file of CRATE_FILES) {
+      for (const module of moduleDeclarationsIn(SOURCES[file] ?? '')) {
+        const candidates = moduleFileCandidates(file, module);
+        expect(
+          candidates.some((candidate) => (CRATE_FILES as readonly string[]).includes(candidate)),
+          `${file} attaches \`mod ${module};\` and this guard reads neither ` +
+            candidates.join(' nor '),
+        ).toBe(true);
+      }
+    }
+    // The controls, because a reader that found no module would satisfy the
+    // loop above without reading anything, and on this guard's files it may
+    // legitimately find none. Both halves are fabricated so that either one
+    // going blind is a named failure here rather than silence up there.
+    expect(moduleDeclarationsIn(MODULE_DECLARATION_FIXTURE)).toEqual(['wire', 'gen']);
+    expect(moduleFileCandidates('model.rs', 'wire')).toEqual([
+      'model/wire.rs',
+      'model/wire/mod.rs',
+    ]);
+    expect(moduleFileCandidates('lib.rs', 'store')).toEqual(['store.rs', 'store/mod.rs']);
+    expect(moduleFileCandidates('ipc/skills.rs', 'extra')).toEqual([
+      'ipc/skills/extra.rs',
+      'ipc/skills/extra/mod.rs',
+    ]);
+  });
+
+  /**
+   * **A hand-written `Serialize` impl puts whatever keys its body writes on
+   * the wire, and nothing in this repository reads an impl body.**
+   *
+   * That sentence is `serializeImplTarget`'s stated reason for existing and it
+   * is written three times in `serde-wire.ts`. Until this round it had no
+   * reader: an adversary dropped `Serialize` from `store.rs::SkillResources`'s
+   * derive list, hand-wrote an impl calling `serialize_field("Scripts", …)`,
+   * and every guard stayed green — the impl scan found the type, which is what
+   * kept it on the inventory, and the comparison then read the *declared*
+   * field identifiers. The keys crossing were `Scripts`/`References`/`Assets`,
+   * verbatim the edit `serde-wire.ts`'s header cites as its founding
+   * measurement.
+   *
+   * So a paired type has to be derive-serialised. There is no hand-written
+   * impl in any file these guards read today, so this costs nothing and the
+   * door is shut; a type that grows one has to go on the register, or the impl
+   * body has to be read.
+   */
+  it('pairs no type whose Serialize impl is hand-written', () => {
+    const paired = new Set(PAIRINGS.map(qualified));
+    const seen = (CRATE_FILES.flatMap((file) => scanSerialisable(SOURCES[file] ?? '', file))).filter((item) => paired.has(qualified(item)));
+    for (const item of seen) {
+      expect(
+        item.serialisedBy,
+        `${qualified(item)} is paired against its declared members and its \`Serialize\` ` +
+          `impl is hand-written, so the keys on the wire are whatever that body writes`,
+      ).toBe('derive');
+    }
+    // The floor that says the loop looked at every pairing rather than none.
+    expect(seen.map(qualified).sort()).toEqual([...paired].sort());
+    // And the control: the assertion has to be able to fail.
+    expect(
+      scanSerialisable(HAND_WRITTEN_SERIALIZE_FIXTURE, 'fixture.rs').map(
+        (item) => item.serialisedBy,
+      ),
+    ).toEqual(['manual']);
   });
 
   /**

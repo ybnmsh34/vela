@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAXIMUM_ALIGNED_LINES } from '@/lib/text-diff';
 import { resetCodeWorkspaceStore, useCodeWorkspaceStore } from '@/state/code-workspace-store';
 
-import { DiffPane } from './DiffPane';
+import { diffCacheKey, DiffPane } from './DiffPane';
 
 /**
  * How many times the pane actually diffed something.
@@ -149,6 +149,31 @@ describe('what the diff pane shows', () => {
     const list = within(screen.getByRole('list', { name: 'Changed files' }));
     expect(list.getByRole('button', { name: /src\/a\.ts/ })).toHaveTextContent('+2 -1');
     expect(list.queryByRole('button', { name: /untouched/ })).not.toBeInTheDocument();
+  });
+
+  it('names the file whose diff is on screen, and moves the mark when the reviewer changes file', async () => {
+    // The highlight on the selected row is a CSS class, which a screen reader
+    // cannot see, so `aria-current` is the only programmatic answer to "which
+    // file am I looking at". It is also the last rung of the ladder that catches
+    // the keyboard after a removal (`removalLadder`), so this asserts an
+    // attribute two different readers depend on and neither of them is prose.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'one', working: 'ONE' },
+      { path: 'src/b.ts', baseline: 'two', working: 'TWO' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    const list = within(screen.getByRole('list', { name: 'Changed files' }));
+    const first = list.getByRole('button', { name: /src\/a\.ts/ });
+    const second = list.getByRole('button', { name: /src\/b\.ts/ });
+    expect(first).toHaveAttribute('aria-current', 'true');
+    expect(second).not.toHaveAttribute('aria-current');
+
+    await user.click(second);
+    expect(screen.getByRole('group', { name: 'Changes in src/b.ts' })).toBeInTheDocument();
+    expect(second).toHaveAttribute('aria-current', 'true');
+    expect(first).not.toHaveAttribute('aria-current');
   });
 
   it('numbers each row on the side it exists in', () => {
@@ -436,6 +461,49 @@ describe('a comment when the file moves under it', () => {
     expect(queue()[0]).toContain('BETA');
   });
 
+  it('a lost line waits on its own file rather than following the reviewer onto every other diff', async () => {
+    // The qualifier on `drifted`'s second arm, on its own. A comment whose
+    // quoted line is gone from a file that is STILL in the changed list has a
+    // row to be shown beside — its own file's — so it waits there. Without the
+    // `path === current` half it is drawn on every other file's diff as well,
+    // under a group whose lead says "no row in the diff below to sit under"
+    // while the diff below is a file the comment has nothing to do with.
+    //
+    // The other arm is deliberately not exercised here: a comment whose file
+    // has LEFT the list does follow the reviewer everywhere, and that is
+    // `keeps a comment removable when its file leaves the changed list…`.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'x', working: 'x\nfoo' },
+      { path: 'src/b.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    await commentOn(user, { line: 2, side: 'after' }, 'about foo');
+    act(() => {
+      // `foo` goes; the file it was on still differs, so it keeps its row.
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'x\nqux');
+    });
+
+    const list = within(screen.getByRole('list', { name: 'Changed files' }));
+    expect(list.getByRole('button', { name: /src\/a\.ts/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+    ).toBeInTheDocument();
+
+    await user.click(list.getByRole('button', { name: /src\/b\.ts/ }));
+    expect(screen.getByRole('group', { name: 'Changes in src/b.ts' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('group', { name: 'Comments with no row to sit under' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('about foo')).not.toBeInTheDocument();
+
+    // And it is still there when the reviewer goes back to the file it is about,
+    // so what is being asserted is where it waits rather than that it is gone.
+    await user.click(list.getByRole('button', { name: /src\/a\.ts/ }));
+    expect(screen.getByText('about foo')).toBeInTheDocument();
+  });
+
   it('keeps a comment visible when its whole file stops differing', async () => {
     // The other way to lose a row to sit under, and the one with nowhere
     // obvious to show the result: editing the file back to its baseline takes
@@ -659,6 +727,48 @@ describe('a comment when the file moves under it', () => {
     expect(distinctRemoveNames(1)).toEqual(['Remove comment on line 2 after: nit']);
   });
 
+  it('renumbers the siblings a removal leaves behind, which is what a position in the round means', async () => {
+    // The cost of the suffix, asserted rather than argued about. `(1 of 3)` is
+    // a position in the round, so removing one of the three moves the others —
+    // the button a reader was just told was `(3 of 3)` is `(2 of 2)` a moment
+    // later, and it is the same button, not a redrawn one.
+    //
+    // This is the property `removeLabels` says it accepts, and it is here so
+    // that a later round cannot quietly swap the discriminator for a stable
+    // creation ordinal while the docblock still claims this behaviour. The
+    // alternative was measured against the same round: a stable ordinal leaves
+    // `(3 of 3)` on screen with two buttons in the group.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+    await commentOn(user, { line: 2, side: 'after' }, 'nit');
+
+    const names = distinctRemoveNames(3);
+    expect(names).toEqual([
+      'Remove comment on line 2 after: nit (1 of 3)',
+      'Remove comment on line 2 after: nit (2 of 3)',
+      'Remove comment on line 2 after: nit (3 of 3)',
+    ]);
+
+    // Held across the removal on purpose: this is the node a screen reader was
+    // sitting on, not a fresh query afterwards.
+    const last = screen.getByRole('button', {
+      name: 'Remove comment on line 2 after: nit (3 of 3)',
+    });
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: nit (1 of 3)' }),
+    );
+
+    expect(last.isConnected).toBe(true);
+    expect(last).toHaveAttribute('aria-label', 'Remove comment on line 2 after: nit (2 of 2)');
+    expect(distinctRemoveNames(2)).toEqual([
+      'Remove comment on line 2 after: nit (1 of 2)',
+      'Remove comment on line 2 after: nit (2 of 2)',
+    ]);
+  });
+
   it('gives every Remove button in a round a name of its own, whatever collides', async () => {
     // One round, three collisions at once, and the assertion is the property
     // rather than any one of them: the same body on two files, the same body on
@@ -711,9 +821,195 @@ describe('a comment when the file moves under it', () => {
   });
 });
 
+describe('after Remove, the keyboard is somewhere and the removal is spoken', () => {
+  /**
+   * Remove is the pane's only destructive control and it unmounts the button
+   * that was just pressed. A browser answers that by focusing `<body>`: the
+   * keyboard is at the top of the document, nothing is announced, and a reader
+   * who cannot see the card vanish has no way to know it did. That is the
+   * defect `src/features/navigation/DeleteConversationDialog.tsx` names in its
+   * own prose and answers with a ladder; these are this pane's rungs, one test
+   * each, plus what the live region says.
+   *
+   * Each one asserts the *element*, not merely "not body" — a rung that fires
+   * and lands somewhere unhelpful would pass the weaker assertion.
+   */
+  beforeEach(() => {
+    seed([{ path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' }]);
+  });
+
+  async function commentOnBeta(user: ReturnType<typeof driver>, body: string): Promise<void> {
+    await user.click(screen.getByRole('button', { name: 'Comment on line 2 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 2'));
+    await user.paste(body);
+    await user.keyboard('{Enter}');
+  }
+
+  it('goes to the next comment on the same line', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'second');
+
+    const survivor = screen.getByRole('button', {
+      name: 'Remove comment on line 2 after: second',
+    });
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: first' }),
+    );
+
+    expect(document.activeElement).toBe(survivor);
+  });
+
+  it('goes to the one before it when the comment removed was the last on its line', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'second');
+
+    const survivor = screen.getByRole('button', {
+      name: 'Remove comment on line 2 after: first',
+    });
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: second' }),
+    );
+
+    expect(document.activeElement).toBe(survivor);
+  });
+
+  it('goes to the row the comment sat under, and leaves the arrow keys there', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'only');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: only' }),
+    );
+
+    const row = screen.getByRole('button', { name: 'Comment on line 2 after' });
+    expect(document.activeElement).toBe(row);
+    // The roving stop came with it. Without that, the keyboard would be on a
+    // row the next Down key does not start from.
+    expect(row).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(row, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Comment on line 1 after' }));
+  });
+
+  it('goes to the next card in the drifted group, which is a stack of its own', async () => {
+    // The group is the other scope a Remove button can be in, and it is not a
+    // diff row: a reviewer clearing two stranded comments should not be sent
+    // back to the file list between them.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'second');
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+    const group = within(screen.getByRole('group', { name: 'Comments with no row to sit under' }));
+    const survivor = group.getByRole('button', { name: /second$/ });
+    await user.click(group.getByRole('button', { name: /first$/ }));
+
+    expect(document.activeElement).toBe(survivor);
+  });
+
+  it('goes to the file on screen when the group it was in is gone with it', async () => {
+    // The drifted group has no row to fall back to — having no row is what put
+    // the comment in it — so the last rung is the changed-file list, found by
+    // the `aria-current` mark on the row of the file being read.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'stranded');
+
+    act(() => {
+      // src/a.ts stops differing, so it leaves the list and takes its rows with
+      // it; the comment moves into the drifted group and src/other.ts is on
+      // screen.
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+    const group = screen.getByRole('group', { name: 'Comments with no row to sit under' });
+    await user.click(within(group).getByRole('button', { name: /^Remove comment/ }));
+
+    expect(
+      screen.queryByRole('group', { name: 'Comments with no row to sit under' }),
+    ).not.toBeInTheDocument();
+    const fileRow = within(screen.getByRole('list', { name: 'Changed files' })).getByRole(
+      'button',
+      { name: /src\/other\.ts/ },
+    );
+    expect(fileRow).toHaveAttribute('aria-current', 'true');
+    expect(document.activeElement).toBe(fileRow);
+  });
+
+  it('says which comment went and how much of the round is left', async () => {
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'first');
+    await commentOnBeta(user, 'second');
+
+    // Empty before anything is removed: a live region that arrives with its
+    // text has not been announced, it has been inserted.
+    expect(screen.getByRole('status')).toHaveTextContent('');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: first' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removed comment on line 2 after: first. 1 comment pending.',
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: second' }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removed comment on line 2 after: second. No comments left in this round.',
+    );
+  });
+
+  it('names the comment without the position it no longer occupies', async () => {
+    // Two identical comments are `(1 of 2)` and `(2 of 2)`; removing one
+    // renumbers the other, so the sentence spoken about the one that went says
+    // the comment and not the slot. `subject` is that name minus the suffix,
+    // which is why it is a field rather than a substring of the label.
+    const user = driver();
+    render(<DiffPane sessionId={SESSION} />);
+    await commentOnBeta(user, 'nit');
+    await commentOnBeta(user, 'nit');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove comment on line 2 after: nit (1 of 2)' }),
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removed comment on line 2 after: nit. 1 comment pending.',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('of 2');
+  });
+});
+
 describe('reaching a line by keyboard', () => {
   beforeEach(() => {
     seed([{ path: 'src/a.ts', baseline: 'one\ntwo\nthree', working: 'one\nTWO\nthree' }]);
+  });
+
+  it('does not take the keyboard just by being drawn', () => {
+    // The roving stop focuses its row only after an arrow key this pane
+    // handled. The same effect without that guard runs on the first render too,
+    // so opening the pane beside an editor would pull the keyboard out of
+    // whatever the user was typing into.
+    render(<DiffPane sessionId={SESSION} />);
+
+    expect(rows().length).toBeGreaterThan(1);
+    expect(document.activeElement).toBe(document.body);
   });
 
   it('costs one Tab stop for the whole diff, not one per line', () => {
@@ -759,6 +1055,24 @@ describe('what typing in the editor costs the diff pane', () => {
     });
 
     expect(diffCalls.count).toBe(1);
+  });
+
+  it('keys the diff cache on where the baseline ends, not just on the two texts run together', () => {
+    // What the cache compares is a string, so two different (baseline, working)
+    // pairs coming out the same is a stale diff on screen: the pane would hand
+    // back the diff it computed for the other pair. Concatenation alone does
+    // exactly that, and a separator does not save it, because a separator can
+    // occur in the text.
+    //
+    // This is a unit test rather than a round driven through the pane, and the
+    // reason is stated at `diffCacheKey`: the cache holds one entry per path and
+    // only ever compares it with that path's next key, and no two CONSECUTIVE
+    // states of one file can collide under today's three store writes. So the
+    // clash is unreachable through the product and the key is defence against a
+    // fourth writer. Defence with a test on it, rather than a comment.
+    expect(diffCacheKey('ab', 'c')).not.toBe(diffCacheKey('a', 'bc'));
+    expect(diffCacheKey('a b', 'c')).not.toBe(diffCacheKey('a', 'b c'));
+    expect(diffCacheKey('ab', 'c')).toBe(diffCacheKey('ab', 'c'));
   });
 
   it('does not diff again when something else in the session changes', () => {

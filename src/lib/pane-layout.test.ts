@@ -7,7 +7,7 @@
  * satisfiable and `floorFor` has to give way to 1/13, and repeated drags against
  * a floor, where per-side clamping loses a sliver of the total each time.
  *
- * Eight of the thirty-one tests here assert the sum of a set of weights. A
+ * Eight of the thirty-two tests here assert the sum of a set of weights. A
  * layout whose shares do not sum to 1 renders as a gap or an overflow, and the
  * sum is the invariant every operation that redistributes weight has to keep.
  */
@@ -299,5 +299,39 @@ describe('how far an edge can actually be dragged', () => {
 
     expect(range?.min).toBeLessThanOrEqual(before);
     expect(range?.max).toBeGreaterThanOrEqual(before);
+  });
+
+  it('contains an edge that is already below the floor, instead of excluding it', () => {
+    // The test above is named for the clamps in `rangeOfPair` and cannot see
+    // them: thirteen equal columns put `before`, `after` and `floorFor(13)` all
+    // at exactly 1/13, where `Math.min(before, floor)` and `floor` are the same
+    // number, and the assertions hold whether or not the clamps are there.
+    //
+    // Seeing them takes a pair that is UNDER the floor, which none of the
+    // operations here will produce: `normalise` pins every member at or above
+    // `floorFor` before a layout is handed out (a weight at or below the floor
+    // becomes the floor exactly), and `shiftPair` clamps a drag at the floor of
+    // whichever side is giving way. So the layout is written out here directly. That is the
+    // point of the clamps: they are what the answer is if a member ever does
+    // sit under the floor, and "cannot happen today" is a fact about the other
+    // functions, not about this one.
+    //
+    // Unclamped, this pair answers min = 1/12 (above where the edge already is,
+    // 0.02) and max = 0.02 + 0.03 - 1/12, which is NEGATIVE — a range that
+    // excludes its own current position and whose maximum is below its minimum.
+    const squeezed: PaneLayout<string> = {
+      columns: [
+        { slots: [{ pane: 'a', weight: 0.02 }], weight: 0.02 },
+        { slots: [{ pane: 'b', weight: 0.03 }], weight: 0.03 },
+        { slots: [{ pane: 'c', weight: 0.95 }], weight: 0.95 },
+      ],
+    };
+    const range = columnEdgeRange(squeezed, 0);
+
+    expect(range?.min).toBeCloseTo(0.02, 10);
+    expect(range?.max).toBeCloseTo(0.02, 10);
+    expect(range?.min).toBeLessThanOrEqual(0.02);
+    expect(range?.max).toBeGreaterThanOrEqual(0.02);
+    expect(range?.max).toBeGreaterThanOrEqual(range?.min ?? 0);
   });
 });

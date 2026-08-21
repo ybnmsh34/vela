@@ -1,17 +1,19 @@
 /**
  * The one message a review round sends.
  *
- * Fourteen tests, and three of them are about ordering: a review read out of
+ * Fifteen tests, and three of them are about ordering: a review read out of
  * order is a different review. Two cover the ways to get it wrong while every
  * comment still has a line — sorting by the comment id, and an unstable
  * tie-break — and both produce output that looks plausible. The third,
  * `sorts a comment whose line is gone after the ones that still have one`, is
  * the case where one comment has no line to sort by at all.
  *
- * Eight are about the coordinate — the `path:line (side)` triple. It is the one
+ * Nine are about the coordinate — the `path:line (side)` triple. It is the one
  * part of the message that goes stale the moment the file is edited above it,
  * and the version that printed `comment.line` printed a coordinate it had never
- * re-checked.
+ * re-checked. Two of the nine are the two halves of one sentence in
+ * `anchorComments`: the nearest row wins, and a tie goes to the row found
+ * first.
  *
  * The remaining three are about the message rather than any comment in it: no
  * comments at all, one message rather than one each, and "1 file" rather than
@@ -172,6 +174,21 @@ describe('re-finding the line a comment quotes', () => {
 
     expect(anchorComments([near], rows)[0]?.line).toBe(4);
     expect(anchorComments([{ ...near, line: 2 }], rows)[0]?.line).toBe(2);
+  });
+
+  it('breaks a tie towards the row it found first, so the same round anchors the same way twice', () => {
+    // "Nearest wins" runs out of answers when two rows quoting the text are the
+    // same distance away, which is what a comment written between two copies of
+    // a repeated line is. Something has to decide, and the module says the row
+    // found first does — i.e. the earlier line. The assertion is not that the
+    // earlier line is the *right* answer, because with a genuine tie there is
+    // no right answer; it is that the rule is fixed, so the coordinate the
+    // message prints does not depend on which comparison the loop happened to
+    // make. Relaxing `<` to `<=` in `anchorComments` moves this to line 4.
+    const rows = diffOf('x', 'x\n}\nkeep\n}');
+    const between = comment({ id: 'comment-1', line: 3, text: '}', body: 'which one' });
+
+    expect(anchorComments([between], rows)[0]?.line).toBe(2);
   });
 
   it('does not match a removed line against an added one that reads the same', () => {

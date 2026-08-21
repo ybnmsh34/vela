@@ -108,6 +108,14 @@ export interface AnchoredComment {
  * heuristic and it is worth naming as one: it cannot tell two identical lines
  * apart, and on a large enough edit it will pick the wrong one of a pair. What
  * it does not do is invent a coordinate for a line that is gone.
+ *
+ * Both halves of that sentence are asserted, because a tie is not a rare shape
+ * — a comment written between two copies of a repeated line is one:
+ * `takes the nearest of several rows quoting the same text` fails if the
+ * comparison is reversed, and `breaks a tie towards the row it found first, so
+ * the same round anchors the same way twice` fails if the strict `<` below is
+ * relaxed to `<=`, which is the one-character edit that silently hands the tie
+ * to the row found last.
  */
 export function anchorComments(
   comments: readonly LineComment[],

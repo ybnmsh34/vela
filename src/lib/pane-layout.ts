@@ -311,6 +311,14 @@ function rangeOfPair(weights: readonly number[], boundary: number): EdgeRange | 
   // is what keeps it containing where the edge already is instead of excluding
   // it — a range that excludes the current position is a second wrong answer,
   // not a correction.
+  //
+  // `contains an edge that is already below the floor, instead of excluding it`
+  // is what asserts that, and it has to build the layout literally, because no
+  // builder here will hand out an under-floor pair. Its neighbour
+  // `still contains where the edge is when the floor is all there is` is named
+  // for this property and cannot see it: thirteen equal columns make `before`,
+  // `after` and `floorFor(13)` the same number, so both clamps are identities on
+  // that fixture and it passes with them deleted.
   return {
     min: Math.min(before, floor),
     max: Math.max(before, before + after - floor),

@@ -26,7 +26,7 @@
 import { useMemo, useState } from 'react';
 
 import type { SandboxRepository } from '@/data/sandbox-repository';
-import { diffText, type TextDiff } from '@/lib/text-diff';
+import { diffText } from '@/lib/text-diff';
 import type { ProjectId } from '@/platform/contract-project';
 
 import type { ArtifactTrack } from './artifacts';
@@ -172,36 +172,37 @@ function ViewTab({
 }
 
 /**
- * Stable identity for "there is no pair to diff", so the `useMemo` above is not
- * re-run by a fresh empty value on every render. It is also, deliberately, an
- * *aligned* empty answer: no pair means no changes, which is a fact, not a
- * refusal.
- */
-const EMPTY_DIFF: TextDiff = {
-  rows: [],
-  added: 0,
-  removed: 0,
-  aligned: true,
-};
-
-/**
  * What changed between the selected version and the one before it.
  *
  * Against the *previous* version rather than against the first, because the
  * question a version rail answers is "what did this revision do" — a diff against
  * the original grows monotonically and stops being readable by version four.
+ *
+ * ## `null` for "there is no pair", and nothing else
+ *
+ * This used to hold an `EMPTY_DIFF` constant — `{rows: [], added: 0, removed: 0,
+ * aligned: true}` — whose docblock said the `aligned: true` was deliberate: no
+ * pair means no changes, which is a fact rather than a refusal. The sentence was
+ * true and unreachable. The memo produced it only when there is no pair, and the
+ * line below returns `null` in exactly that case, so nothing ever read the flag
+ * and flipping it to `false` broke no test in the tree. The memo answers `null`
+ * instead, and the guard below reads it one line later: one value, one reader.
+ *
+ * The state is reachable and is asserted — `goes quiet rather than comparing a
+ * version with nothing` opens the Changes tab on v2 and then clicks back to v1,
+ * where the tab is disabled but the view it selected is still the one showing.
  */
 function DiffView({ track, selected }: { readonly track: ArtifactTrack; readonly selected: number }) {
   const before = track.versions[selected - 1];
   const after = track.versions[selected];
   const diff = useMemo(
     () => (before === undefined || after === undefined
-      ? EMPTY_DIFF
+      ? null
       : diffText(before.program.source, after.program.source)),
     [before, after],
   );
 
-  if (before === undefined || after === undefined) return null;
+  if (diff === null) return null;
 
   return (
     <div className={styles.diff} data-testid="canvas-diff">

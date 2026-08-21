@@ -180,6 +180,22 @@ describe('a revision is a version of the same artifact', () => {
     expect(screen.getByRole('tab', { name: 'Changes' })).toBeDisabled();
   });
 
+  it('goes quiet rather than comparing a version with nothing', async () => {
+    // The Changes tab is disabled on v1, but the *view* is state: open it on v2
+    // and then click back to v1 and the panel is still on Changes with no pair
+    // to compare. `DiffView` answers `null` there — the branch that used to
+    // compute an "empty diff" object no reader ever saw.
+    const user = userEvent.setup();
+    mount([answer(CHART_V1), answer(CHART_V2)]);
+
+    await user.click(screen.getByRole('tab', { name: 'Changes' }));
+    expect(screen.getByTestId('canvas-diff')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'v1' }));
+    expect(screen.getByRole('tab', { name: 'Changes' })).toBeDisabled();
+    expect(screen.queryByTestId('canvas-diff')).not.toBeInTheDocument();
+  });
+
   it('shows what the revision changed', async () => {
     const user = userEvent.setup();
     mount([answer(CHART_V1), answer(CHART_V2)]);

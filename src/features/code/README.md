@@ -15,11 +15,38 @@ isolated by worktree, and diff review with line comments.
 | Chat pane — model, context readout, the session's queue, a composer | built |
 | Editor pane — open a file, edit it, Save | built against session memory, not disk |
 
+## Where the keyboard goes when a comment is removed
+
+Remove is the diff review's only destructive control, and it unmounts the button that was
+pressed. Left alone, a browser answers that by focusing `<body>`: the keyboard is at the top of
+the document and nothing is announced — the defect
+`src/features/navigation/DeleteConversationDialog.tsx` describes in its own prose and answers
+with `returnFocusTo`. `DiffPane.tsx` answers it with a ladder of its own rungs — the next
+Remove in the same card stack, then the previous one, then the diff row the card sat under,
+then the row of the file being read, found by its `aria-current` mark — and with a polite
+`role="status"` region that says which comment went and how many are left. Every rung has a
+test of its own in `DiffPane.test.tsx` (`goes to the next comment on the same line`, `goes to
+the one before it when the comment removed was the last on its line`, `goes to the row the
+comment sat under, and leaves the arrow keys there`, `goes to the file on screen when the group
+it was in is gone with it`), and deleting the restoration call reddens all four with
+`document.activeElement` back at `<body>`.
+
+The `(1 of 2)` suffix on a colliding Remove name is a position in the round, so a removal
+renumbers the siblings it leaves behind: three identical comments are `(1 of 3)`…`(3 of 3)`, and
+removing the first renames the third to `(2 of 2)`. That is accepted rather than overlooked, it
+is argued in `removeLabels`, and `renumbers the siblings a removal leaves behind, which is what
+a position in the round means` asserts it on the surviving DOM node. The sentence the live
+region speaks deliberately leaves the suffix out, because the positions have just moved.
+
 ## What is NOT here, and what each one needs first
 
-**Five of the spec's eight panes.** `docs/spec-parts/claude-code-desktop.md` names eight, twice:
-"panes you can arrange in any layout: chat, diff, browser, terminal, file, plan, tasks, and
-subagent". Chat, diff and file are built (the last as the Editor pane in the table above).
+**Five of the spec's eight panes.** `docs/spec-parts/claude-code-desktop.md` names them twice and
+the two lists are not identical. The §7 lead names eight plus one: "panes you can arrange in any
+layout: chat, diff, browser, terminal, file, plan, tasks, and subagent, along with the iOS Simulator
+on macOS". The reimplementation bullet later in §7 runs the simulator in with the rest — "chat, diff,
+browser, terminal, file, plan, tasks, subagent, simulator", nine entries. Eight is the count used
+here, and the simulator is out of scope for a Windows build either way; the store's own header states
+it the same way (§7 lists eight, plus the iOS simulator). Chat, diff and file are built (the last as the Editor pane in the table above).
 Browser, terminal, plan, tasks and subagent are not, and are deliberately absent from
 `PaneKind` rather than present and empty, so nothing can open a pane with nothing behind it.
 
@@ -76,7 +103,9 @@ submitted without a coordinate rather than being attached to whatever now occupi
 line number — shown apart **on its own file's diff**, because that file is still in the
 changed list and has a row to select, so this arm waits for the reviewer to go there rather
 than following them onto every other file. `DiffPane.tsx`'s `drifted` states the same
-qualifier as `entry.comment.path === current.file.path`.
+qualifier as `entry.comment.path === current.file.path`, and that clause is now asserted rather
+than only described: `a lost line waits on its own file rather than following the reviewer onto
+every other diff` puts the reviewer on a second file and fails if the card follows them.
 
 So is a comment whose **file** has left the changed-file list, and that is a different case
 rather than a special case of the first: editing a file back to its baseline

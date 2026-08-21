@@ -247,3 +247,50 @@ describe('the disclosure survives closing and reopening the conversation', () =>
     expect(within(note).getByText(/home-workstation/u)).toBeInTheDocument();
   });
 });
+
+/**
+ * ONE ENDING, SAID ONCE.
+ *
+ * `turn-ending.ts` states the rule — "this speaks only when nothing else does"
+ * — and the footer was the thing else. A turn with phase `stopped` and no error
+ * drew the `cutShort` block *and* a muted "Stopped" in the footer: two
+ * statements of one ending on one turn, which is exactly what the rule exists
+ * to prevent, and the sort of thing a rule stated in a header does not catch.
+ */
+describe('a turn states how it ended exactly once', () => {
+  const stoppedWithNoError: TurnState = {
+    ...EMPTY_TURN,
+    phase: 'stopped',
+    stopReason: 'cancelled',
+    answer: 'as far as it got',
+  };
+
+  it('does not repeat the ending in the footer', () => {
+    render(<AssistantTurn turn={stoppedWithNoError} id="t5" />);
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+
+    // The block says it, in a sentence, with the control on it.
+    expect(within(reply).getByText('Stopped before it finished')).toBeInTheDocument();
+    expect(reply.querySelectorAll('[data-kind="cutShort"]')).toHaveLength(1);
+
+    // And nothing else on the turn says it a second time. `Stopped` on its own
+    // is the footer's exact wording; the block's is a different sentence, so
+    // this matches the footer and only the footer.
+    expect(within(reply).queryByText('Stopped')).not.toBeInTheDocument();
+  });
+
+  it('still says it once for a stopped turn whose error block speaks instead', () => {
+    // The other half of the old condition, and the half that was right:
+    // `describeChatError`'s `cancelled` title is 'Stopped', so the ending block
+    // returns null there and the error block is the single statement.
+    const cancelledWithError: TurnState = {
+      ...stoppedWithNoError,
+      error: { kind: 'cancelled' },
+    };
+    render(<AssistantTurn turn={cancelledWithError} id="t6" />);
+    const reply = screen.getByRole('article', { name: 'Model reply' });
+
+    expect(within(reply).getAllByText('Stopped')).toHaveLength(1);
+    expect(within(reply).queryByText('Stopped before it finished')).not.toBeInTheDocument();
+  });
+});

@@ -343,7 +343,10 @@ jobs:
   #
   # `pnpm bundle` drives the bundler and then reads the disk: every target
   # `tauri.conf.json` declares must have produced a file that exists, clears a
-  # size floor, carries the format's magic bytes, carries the configured
+  # size floor, carries the format's magic bytes, carries the installer
+  # format's own signature where the magic is not specific enough to be the
+  # question -- `MZ` is satisfied by `vela.exe`, so the NSIS row also demands
+  # NSIS's first header, see step 3b of that file's header -- carries the configured
   # version in its name, and is newer than the moment the build started. A
   # bundler exit code of 0 is explicitly NOT the evidence; see the header of
   # `scripts/check-bundle.mjs` for why each weaker check passes a broken tree.

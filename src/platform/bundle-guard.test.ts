@@ -47,8 +47,29 @@ const GUARD = join(REPO_ROOT, 'scripts', 'check-bundle.mjs');
 
 /** OLE2 compound file — what an MSI actually is. */
 const MSI_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-/** `MZ` — a PE image, which is what an NSIS setup executable is. */
+/**
+ * `MZ` — a PE image. An NSIS setup is one. So is `vela.exe`, which is the
+ * reason the fixtures below need more than this; see NSIS_SIGNATURE.
+ */
 const PE_MAGIC = Buffer.from([0x4d, 0x5a]);
+/**
+ * NSIS's first header: `EF BE AD DE` (0xDEADBEEF little-endian) followed by
+ * the ASCII `NullsoftInst`. Measured in the real artefact this branch built —
+ * `src-tauri/target/release/bundle/nsis/Vela_0.1.0_x64-setup.exe`, 5,444,437
+ * bytes — where it occurs exactly once, at offset 52,744. `vela.exe`
+ * (18,095,104 bytes) contains neither this sequence nor the substring
+ * `Nullsoft` at all.
+ */
+const NSIS_SIGNATURE = Buffer.concat([
+  Buffer.from([0xef, 0xbe, 0xad, 0xde]),
+  Buffer.from('NullsoftInst', 'latin1'),
+]);
+/**
+ * Where the fixtures put it. Any offset inside the file would do — the guard
+ * scans rather than seeking — and this is the real one so that the fixture and
+ * the artefact it stands for are the same shape.
+ */
+const NSIS_SIGNATURE_AT = 52_744;
 
 const VERSION = '0.1.0';
 const BIG = 4_000_000;
@@ -76,12 +97,23 @@ function writeConfig(bundle: Record<string, unknown>): void {
   );
 }
 
-/** An artefact of `bytes` length whose first bytes are `magic`. */
-function artefact(dir: string, name: string, magic: Buffer, bytes = BIG, ageMs = 0): void {
+/**
+ * An artefact of `bytes` length whose first bytes are `magic`, optionally
+ * carrying `embed.what` at `embed.at`.
+ */
+function artefact(
+  dir: string,
+  name: string,
+  magic: Buffer,
+  bytes = BIG,
+  ageMs = 0,
+  embed: { what: Buffer; at: number } | null = null,
+): void {
   const target = join(bundleRoot, dir);
   mkdirSync(target, { recursive: true });
   const body = Buffer.alloc(bytes);
   magic.copy(body, 0);
+  if (embed !== null) embed.what.copy(body, embed.at);
   const path = join(target, name);
   writeFileSync(path, body);
   if (ageMs > 0) {
@@ -94,7 +126,10 @@ function goodMsi(ageMs = 0): void {
   artefact('msi', 'Vela_' + VERSION + '_x64_en-US.msi', MSI_MAGIC, BIG, ageMs);
 }
 function goodNsis(ageMs = 0): void {
-  artefact('nsis', 'Vela_' + VERSION + '_x64-setup.exe', PE_MAGIC, BIG, ageMs);
+  artefact('nsis', 'Vela_' + VERSION + '_x64-setup.exe', PE_MAGIC, BIG, ageMs, {
+    what: NSIS_SIGNATURE,
+    at: NSIS_SIGNATURE_AT,
+  });
 }
 
 function runGuard(args: readonly string[] = []): { code: number; out: string } {
@@ -150,6 +185,46 @@ describe('the guard fails the trees a weaker one would pass', { timeout: SPAWN_T
     expect(out).toMatch(/NOT-A-MSI/u);
     expect(out).toContain('expected d0cf11e0a1b11ae1');
     expect(code).toBe(1);
+  });
+
+  it('step 3b: the APPLICATION binary, in the installer’s place, under the installer’s name', () => {
+    // This is the case the previous version of the guard passed, and it is not
+    // a hypothetical: `target/release/vela.exe` copied to
+    // `bundle/nsis/Vela_0.1.0_x64-setup.exe` produced
+    //   OK  Vela_0.1.0_x64-setup.exe  18095104 bytes, NSIS setup (PE image)
+    //   BUNDLE_OK=yes   exit 0
+    // because the whole of step 3 for this target was "are the first two bytes
+    // MZ", and the application is a PE image too. A build that produced
+    // `vela.exe` and no installer is the exact defect §6 records; a guard that
+    // accepts `vela.exe` AS the installer is one rename away from it.
+    //
+    // The fixture is a PE image of installer-like size with a perfect name and
+    // a fresh mtime, differing from `goodNsis()` in one respect only: it does
+    // not carry NSIS's first header.
+    writeConfig({ active: true, targets: 'all' });
+    goodMsi();
+    artefact('nsis', 'Vela_' + VERSION + '_x64-setup.exe', PE_MAGIC, BIG);
+
+    const { code, out } = runGuard(['--since', String(Date.now() - 60_000)]);
+    expect(out).toMatch(/APP-NOT-INSTALLER\s+Vela_0\.1\.0_x64-setup\.exe/u);
+    expect(out).toContain('NullsoftInst');
+    expect(out).toMatch(/no acceptable installer for: nsis/u);
+    expect(out).toContain('BUNDLE_OK=no');
+    expect(code).toBe(1);
+  });
+
+  it('step 3b control: the same file plus NSIS’s first header is accepted', () => {
+    // Without this, "the guard rejects a PE image" would be satisfied by a
+    // guard that rejects every PE image, including real setups. The two
+    // fixtures differ by sixteen bytes at offset 52,744 and by nothing else.
+    writeConfig({ active: true, targets: 'all' });
+    goodMsi();
+    goodNsis();
+
+    const { code, out } = runGuard(['--since', String(Date.now() - 60_000)]);
+    expect(out).toMatch(/OK\s+Vela_0\.1\.0_x64-setup\.exe/u);
+    expect(out).toContain('BUNDLE_OK=yes');
+    expect(code).toBe(0);
   });
 
   it('step 4: last week’s installers, which satisfy every check above', () => {

@@ -97,11 +97,12 @@ function writeGates(
   return path;
 }
 
-function runVerify(gatesPath: string): { code: number; out: string } {
-  const child = spawnSync(process.execPath, [RUNNER, '--gates', gatesPath, '--root', REPO_ROOT], {
-    encoding: 'utf8',
-    shell: false,
-  });
+function runVerify(gatesPath: string, args: readonly string[] = []): { code: number; out: string } {
+  const child = spawnSync(
+    process.execPath,
+    [RUNNER, '--gates', gatesPath, '--root', REPO_ROOT, ...args],
+    { encoding: 'utf8', shell: false },
+  );
   return { code: child.status ?? -1, out: (child.stdout ?? '') + (child.stderr ?? '') };
 }
 
@@ -177,6 +178,76 @@ describe('the runner distinguishes skipped from passed', { timeout: SPAWN_TIMEOU
     const { out } = runVerify(gatesPath);
     const lines = out.trimEnd().split(/\r?\n/u);
     expect(lines[lines.length - 1]).toBe('VERIFY_EXIT=7');
+  });
+});
+
+describe('a resumed run is not a clean run', { timeout: SPAWN_TIMEOUT_MS }, () => {
+  // `--from <id>` skips the gates before <id>. The first version reported those
+  // as NOT-RUN in the table and then excluded them from the summary counts AND
+  // from the exit code, so `--from` on the real ten-gate list printed
+  //
+  //     1 passed, 0 failed, 0 SKIPPED (skipped is not passed)
+  //     VERIFY_EXIT=0
+  //
+  // over nine gates it never started — the same "did not run reads as passed"
+  // this runner replaced the `&&` chain to remove, reintroduced by the resume
+  // flag. `docs/release-posture.md` §13b quoted exactly such a run as evidence
+  // that the full chain was green. It was not.
+
+  it('gates before --from are NOT-RUN, are counted, and do not exit 0', () => {
+    const gatesPath = writeGates([gate('one', 0), gate('two', 0), gate('three', 0)]);
+    const { code, out } = runVerify(gatesPath, ['--from', 'three']);
+
+    expect(out).toMatch(/^one\s+NOT-RUN\s+-/mu);
+    expect(out).toMatch(/^two\s+NOT-RUN\s+-/mu);
+    expect(out).toMatch(/^three\s+PASS\s+0/mu);
+
+    // The measurement behind the words: the two NOT-RUN gates left no stamp.
+    expect(ranGates(), 'a gate reported NOT-RUN must not have executed').toEqual(['three']);
+
+    expect(
+      out,
+      'the summary must name the gates that did not run. A count of passes that ' +
+        'omits them is the false green.',
+    ).toMatch(/1 passed, 0 failed, 0 SKIPPED \(skipped is not passed\), 2 NOT-RUN/u);
+    expect(out).toMatch(/INCOMPLETE: 2 of 3 gates were not run/u);
+    expect(
+      out,
+      'every gate that ran passed, and the run still must not exit 0 — it did ' +
+        'not certify the tree',
+    ).toContain('VERIFY_EXIT=3');
+    expect(code).toBe(3);
+  });
+
+  it('the control: the same three gates without --from exit 0', () => {
+    // Without this, "a resumed run exits 3" would be satisfied by a runner that
+    // never exits 0 at all.
+    const gatesPath = writeGates([gate('one', 0), gate('two', 0), gate('three', 0)]);
+    const { code, out } = runVerify(gatesPath);
+    expect(out).toMatch(/0 SKIPPED \(skipped is not passed\), 0 NOT-RUN/u);
+    expect(out).not.toMatch(/INCOMPLETE/u);
+    expect(out).toContain('VERIFY_EXIT=0');
+    expect(ranGates()).toEqual(['one', 'three', 'two']);
+    expect(code).toBe(0);
+  });
+
+  it('a real failure in a resumed run still reports the failure, not the resume', () => {
+    // 3 is "incomplete"; a red gate keeps its own status, so the two stay
+    // distinguishable in a log.
+    const gatesPath = writeGates([gate('one', 0), gate('two', 6)]);
+    const { code, out } = runVerify(gatesPath, ['--from', 'two']);
+    expect(out).toMatch(/^one\s+NOT-RUN\s+-/mu);
+    expect(out).toMatch(/^two\s+FAIL\s+6/mu);
+    expect(out).toContain('VERIFY_EXIT=6');
+    expect(code).toBe(6);
+  });
+
+  it('--from naming no gate is refused rather than silently running everything', () => {
+    const gatesPath = writeGates([gate('one', 0)]);
+    const { code, out } = runVerify(gatesPath, ['--from', 'no-such-gate']);
+    expect(out).toMatch(/no gate named no-such-gate/u);
+    expect(code).toBe(2);
+    expect(ranGates()).toEqual([]);
   });
 });
 

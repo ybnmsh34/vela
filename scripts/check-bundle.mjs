@@ -29,9 +29,28 @@
  *  2. `+ size > 0`            — so does a one-line error log someone named
  *                               `Vela_0.1.0_x64_en-US.msi`.
  *  3. `+ format magic`        — an MSI is an OLE2 compound file
- *                               (D0 CF 11 E0 A1 B1 1A E1); an NSIS setup is a
- *                               PE image (MZ). A guard that reads the first
- *                               eight bytes cannot be fooled by a text file.
+ *                               (D0 CF 11 E0 A1 B1 1A E1). A guard that reads
+ *                               the first eight bytes cannot be fooled by a
+ *                               text file.
+ *  3b. `+ the installer's own signature`, where the magic is not specific
+ *                               enough to be the question. `MZ` says "PE
+ *                               image", and the application binary this build
+ *                               also produces is a PE image. MEASURED, not
+ *                               argued: copying `target/release/vela.exe`
+ *                               (18,095,104 bytes) into `bundle/nsis/` under
+ *                               the name `Vela_0.1.0_x64-setup.exe` cleared
+ *                               every check in this list up to and including
+ *                               step 7 and printed `BUNDLE_OK=yes`, exit 0 —
+ *                               i.e. the guard certified the application as
+ *                               its own installer, which is a near neighbour
+ *                               of the very defect it exists for. So the NSIS
+ *                               row demands NSIS's first-header signature,
+ *                               `EF BE AD DE` + `NullsoftInst`: present once
+ *                               at offset 52,744 in the real 5,444,437-byte
+ *                               setup and absent from `vela.exe` entirely
+ *                               (both measured on this tree). The MSI row
+ *                               needs no such addition; OLE2's eight-byte
+ *                               magic is already specific.
  *  4. `+ newer than --since`  — LAST WEEK'S INSTALLER SATISFIES ALL THREE. A
  *                               run that skipped bundling entirely passes on
  *                               the leavings of a run that did not. This is the
@@ -75,8 +94,9 @@
  *
  * READERS: `scripts/bundle.mjs` runs it after driving the bundler;
  * `src/platform/bundle-guard.test.ts` drives it against synthetic bundle trees,
- * one per numbered failure above; `package.json` exposes it as
- * `pnpm bundle:check`.
+ * one per numbered failure above; `src/platform/bundle-runner.test.ts` reaches
+ * it through `bundle.mjs` and reads its output from that log;
+ * `package.json` exposes it as `pnpm bundle:check`.
  */
 
 import { existsSync, openSync, readSync, closeSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -89,20 +109,39 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
  * The bundle targets each platform's bundler produces for `"targets": "all"`,
  * and the shape of what each one leaves on disk.
  *
- * `magic` is the leading byte sequence of the format, as hex. `minBytes` is a
- * deliberate sanity FLOOR, not a measurement of the artefacts: the two Windows
- * installers observed on this tree were 7,102,464 and 5,266,116 bytes, and the
- * floor is set an order of magnitude below the smaller so that a legitimate
- * shrink is not a false red while a truncation still is.
+ * `magic` is the leading byte sequence of the format, as hex.
+ *
+ * `signature` is a byte sequence that must appear SOMEWHERE in the file, for
+ * the formats whose leading magic is not specific enough to answer the
+ * question. Only `nsis` has one, and step 3b of the header is the measurement
+ * that says why.
+ *
+ * `minBytes` is a deliberate sanity FLOOR, not a measurement of the artefacts.
+ * Re-measured on this tree at the commit this line ships in, from
+ * `src-tauri/target/release/bundle/`: the MSI is 7,360,512 bytes and the NSIS
+ * setup is 5,444,437 bytes. Those are two observations of one build on one
+ * machine, not a range the artefacts are known to stay inside; the floor sits
+ * an order of magnitude below the smaller of them so that a legitimate shrink
+ * is not a false red while a truncation still is.
  */
 const TARGET_SHAPES = {
-  msi: { dir: 'msi', ext: '.msi', magic: 'd0cf11e0a1b11ae1', minBytes: 262144, what: 'MSI (OLE2 compound file)' },
-  nsis: { dir: 'nsis', ext: '.exe', magic: '4d5a', minBytes: 262144, what: 'NSIS setup (PE image)' },
-  deb: { dir: 'deb', ext: '.deb', magic: '213c617263683e', minBytes: 65536, what: 'Debian package (ar archive)' },
-  rpm: { dir: 'rpm', ext: '.rpm', magic: 'edabeedb', minBytes: 65536, what: 'RPM package' },
-  appimage: { dir: 'appimage', ext: '.AppImage', magic: '7f454c46', minBytes: 262144, what: 'AppImage (ELF)' },
-  dmg: { dir: 'dmg', ext: '.dmg', magic: null, minBytes: 262144, what: 'macOS disk image' },
-  app: { dir: 'macos', ext: '.app', magic: null, minBytes: 0, what: 'macOS application bundle' },
+  msi: { dir: 'msi', ext: '.msi', magic: 'd0cf11e0a1b11ae1', signature: null, minBytes: 262144, what: 'MSI (OLE2 compound file)' },
+  // `EF BE AD DE` (0xDEADBEEF little-endian) immediately followed by the ASCII
+  // `NullsoftInst`: the first-header signature NSIS writes ahead of its
+  // compressed payload. See step 3b.
+  nsis: {
+    dir: 'nsis',
+    ext: '.exe',
+    magic: '4d5a',
+    signature: { hex: 'efbeadde4e756c6c736f6674496e7374', what: "NSIS's first-header signature (DEADBEEF + NullsoftInst)" },
+    minBytes: 262144,
+    what: 'NSIS setup (PE image carrying an NSIS payload)',
+  },
+  deb: { dir: 'deb', ext: '.deb', magic: '213c617263683e', signature: null, minBytes: 65536, what: 'Debian package (ar archive)' },
+  rpm: { dir: 'rpm', ext: '.rpm', magic: 'edabeedb', signature: null, minBytes: 65536, what: 'RPM package' },
+  appimage: { dir: 'appimage', ext: '.AppImage', magic: '7f454c46', signature: null, minBytes: 262144, what: 'AppImage (ELF)' },
+  dmg: { dir: 'dmg', ext: '.dmg', magic: null, signature: null, minBytes: 262144, what: 'macOS disk image' },
+  app: { dir: 'macos', ext: '.app', magic: null, signature: null, minBytes: 0, what: 'macOS application bundle' },
 };
 
 /** What `"targets": "all"` expands to, per platform. */
@@ -147,6 +186,22 @@ function parseArgs(argv) {
   return options;
 }
 
+/**
+ * Where `needle` first appears in the file, or -1.
+ *
+ * Read whole rather than streamed on purpose. The artefacts this is pointed at
+ * are installers and, in the failure case step 3b was written for, an
+ * application binary — 18,095,104 bytes was the largest measured on this tree.
+ * A chunked scan would need overlap handling to avoid missing a needle that
+ * straddles a boundary, and getting that wrong is a silent false GREEN, which
+ * is the one direction this file must not fail in. The guard runs once per
+ * build.
+ */
+function findBytes(path, needleHex) {
+  const body = readFileSync(path);
+  return body.indexOf(Buffer.from(needleHex, 'hex'));
+}
+
 function leadingBytesHex(path, count) {
   const fd = openSync(path, 'r');
   try {
@@ -162,7 +217,7 @@ function leadingBytesHex(path, count) {
  * The set of installers this configuration says it will produce. Refuses rather
  * than returning an empty list; see point 7 in the header.
  */
-export function expectedTargets(config, platform) {
+function expectedTargets(config, platform) {
   const bundle = config.bundle ?? {};
   if (bundle.active !== true) {
     return { error: 'tauri.conf.json has bundle.active !== true, so no installer is produced at all. That is a configuration decision, not a passing build.' };
@@ -190,7 +245,7 @@ export function expectedTargets(config, platform) {
   return { names };
 }
 
-export function checkBundle({ root, targetDir, since, platform = process.platform }) {
+function checkBundle({ root, targetDir, since, platform = process.platform }) {
   const configPath = join(root, 'src-tauri', 'tauri.conf.json');
   if (!existsSync(configPath)) {
     return { fatal: 'no tauri.conf.json at ' + configPath, rows: [], ok: false };
@@ -238,6 +293,20 @@ export function checkBundle({ root, targetDir, since, platform = process.platfor
           continue;
         }
       }
+      if (shape.signature !== null && !stat.isDirectory()) {
+        const at = findBytes(path, shape.signature.hex);
+        if (at < 0) {
+          rows.push({
+            ...row,
+            verdict: 'APP-NOT-INSTALLER',
+            detail:
+              'nowhere in this file is ' + shape.signature.what + '. The leading bytes ' +
+              'say PE image, which the application binary also is; this is not an installer.',
+          });
+          continue;
+        }
+        row.signatureAt = at;
+      }
       if (version !== '' && !file.includes(version)) {
         rows.push({ ...row, verdict: 'WRONG-VERSION', detail: 'name does not carry version ' + version + ' from tauri.conf.json' });
         continue;
@@ -275,7 +344,7 @@ function main() {
       process.stdout.write('check-bundle: expecting ' + result.expected.join(', ') + ' for version ' + result.version + '\n');
     }
     for (const row of result.rows) {
-      process.stdout.write('  ' + row.verdict.padEnd(14) + ' ' + String(row.file ?? row.path) + '  ' + row.detail + '\n');
+      process.stdout.write('  ' + row.verdict.padEnd(18) + ' ' + String(row.file ?? row.path) + '  ' + row.detail + '\n');
     }
   }
 

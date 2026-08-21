@@ -9,6 +9,92 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 (round 2) — the fix carried the defect one level down, four times
+
+Every entry below was found by the round-1 critic, by mutating the tree rather than reading it.
+All four are the same shape as the entry beneath this one, and three of them are that entry's own
+fix.
+
+### 1. `--from` printed `VERIFY_EXIT=0` over nine gates it never started
+
+**Claimed:** `docs/release-posture.md` §13b, "The final run, with the corrected probe", showing
+`cargo-test PASS 0 168.2 / RUST_TAIL=CONFIRMED / VERIFY_EXIT=0`, presented as the evidence that the
+release path is green.
+
+**True:** that was `node scripts/verify.mjs --from cargo-test` — a ONE-gate run. Its full summary
+line, which the quotation dropped, was `1 passed, 0 failed, 0 SKIPPED (skipped is not passed)`. The
+nine gates ahead of it were recorded `NOT-RUN` in the table and then excluded from the summary
+counts *and* from the exit code, so a run that certified nothing exited 0. The ten-gate table
+printed beside it in the same section carried no `VERIFY_EXIT` line at all, and had ended at 1.
+
+**How it was caught:** the critic ran `--from` on a synthetic three-gate file and read the output.
+
+**Consequence:** `NOT-RUN` is now counted in the summary line and in the exit status. A resumed run
+whose every executed gate passed exits **3** and prints `INCOMPLETE: n of m gates were not run`.
+`src/platform/verify-runner.test.ts` asserts it, with a control that the same gates without
+`--from` still exit 0, and a stamp-file check that a gate reported NOT-RUN did not execute. §13b
+below now carries a genuine ten-gate run instead.
+
+### 2. `check-bundle.mjs` could not tell the installer from the application
+
+**Claimed:** the header of `scripts/check-bundle.mjs`, step 3 — "an NSIS setup is a PE image (MZ).
+A guard that reads the first eight bytes cannot be fooled by a text file."
+
+**True:** it cannot be fooled by a text file, and it could be fooled by `vela.exe`. Copying
+`src-tauri/target/release/vela.exe` (18,095,104 bytes) into `bundle/nsis/` as
+`Vela_0.1.0_x64-setup.exe` produced `OK ... NSIS setup (PE image)`, `BUNDLE_OK=yes`, exit 0 — the
+guard certifying the application binary as its own installer. The defect the file exists for is a
+build that produced `vela.exe` and no installer; this is that defect with a `cp` in front of it.
+`bundle-guard.test.ts`'s own `goodNsis()` fixture was a zero-filled buffer starting `MZ`, so the
+test agreed with the guard on the wrong question and no mutation of step 3 could have shown it.
+
+**How it was caught:** the critic performed the copy.
+
+**Consequence:** the `nsis` row now also demands NSIS's first-header signature — `EF BE AD DE`
+followed by `NullsoftInst` — anywhere in the file. Measured on this tree: present once, at offset
+52,744, in the real 5,444,437-byte setup; absent from `vela.exe`, which contains no `Nullsoft`
+substring at all. `bundle-guard.test.ts` gains step 3b (a PE image without it is
+`APP-NOT-INSTALLER`) and a control (the same fixture plus those sixteen bytes is `OK`).
+
+### 3. A comment in `verify.mjs` described a rule the file two doors down says was abandoned
+
+**Claimed:** `scripts/verify.mjs`, in the tail-probe block — "The probe derives its own threshold
+from the newest source in the workspace, which is the invariant `cargo test` actually establishes.
+See the header of `scripts/check-rust-tail.mjs`."
+
+**True:** the probe derives no threshold and demands no age. `node scripts/check-rust-tail.mjs`
+prints `age demand: (nothing: no age is demanded ...)` on its second line. The header it cites
+records the newest-source rule as the SECOND of two freshness attempts, both abandoned for
+producing false reds. The comment was a survivor of a discarded design, pointing at the document
+that refutes it.
+
+**And the same false claim was two files away.** `scripts/gates.json`'s `_comment` said the probe
+runs "with a `--since` sentinel taken when the run started". It does not; the runner passes
+`--root` and nothing else. Correcting one and not the other is how the last round shipped a false
+comment two files from its own fix, so both were grepped for and both are fixed.
+
+**How it was caught:** the critic ran the probe.
+
+### 4. `scripts/bundle.mjs` was driven by no test at all
+
+**Claimed:** that file's header, at length — "WHY THE CHECK RUNS EVEN WHEN THE BUNDLER FAILS ...
+`x && y` would skip it."
+
+**True:** nothing held it. Inserting `if (buildExit !== 0) { process.exit(1); }` ahead of the disk
+check — which deletes the argument entirely — left all 72 tests in the four release-path test
+files green (the critic's measurement, from the mutation they performed). The `BUNDLER_EXIT=` and
+`BUNDLE_EXIT=` lines it prints had no reader anywhere either.
+
+**How it was caught:** the critic mutated the file and ran the suite.
+
+**Consequence:** `src/platform/bundle-runner.test.ts` drives the real CLI against a synthetic tree
+with a fake bundler: one that exits 1 after writing good installers (the load-bearing case — the
+check's own output must still be in the log), one that exits 0 after writing none, one control that
+works, and one that writes installers dated two days ago, which is what the sentinel is for. Under
+the mutation above the first goes red, twice, and no other test file changes verdict.
+
+---
+
 ## 2026-08-21 — "verify covers CI" was a claim about text, not about execution
 
 **Claimed:** `src/platform/verify-covers-ci.test.ts` established that `pnpm verify` is a superset

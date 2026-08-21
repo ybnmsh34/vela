@@ -49,6 +49,18 @@ has not been shown capable of returning a bad one.
 `docs/release-posture.md` cites its output. Run it before recording any claim
 about where an installed Vela put its data, and paste the table rather than the
 conclusion.
+
+**Its reader is a person, and that is weaker than a gate.** Nothing in this
+repository runs this script: it is not in `package.json`, not in
+`scripts/gates.json`, and not in `.github/workflows/`. It cannot be — the fact
+it measures is a property of the session it runs in, so a CI runner's answer
+would be about the CI runner. That is stated here rather than left to be
+discovered.
+
+`-OutFile` has the same kind of reader — whoever passes it — and it is the
+convention this repository already uses for its operator-run gate scripts:
+`scripts/gate-appdata-root-acl.ps1` and `scripts/gate-m-debug-log-acl.ps1` both
+take one, and both predate this file.
 #>
 
 [CmdletBinding()]

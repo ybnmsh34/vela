@@ -118,6 +118,7 @@
  * covers the spellings you thought of is the same defect with a smaller mouth.
  */
 
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -1034,3 +1035,63 @@ const COMMANDS: readonly WorkflowCommand[] = SURFACE.workflows.flatMap((workflow
 
 /** Every job CI runs, across every workflow. */
 const JOBS: readonly WorkflowJob[] = SURFACE.workflows.flatMap(jobsIn);
+
+/**
+ * ## The sixth defect: the source of truth moved, and nothing checked the door
+ *
+ * Everything above asserts over `scripts/gates.json`. That was the fix for the
+ * fifth defect and it is the right shape — but it left `package.json`'s
+ * `verify` script, the command a developer and CI actually type, with **no
+ * reader anywhere in the repository**. Measured: setting
+ *
+ *     "verify": "echo nothing at all"
+ *
+ * left this file green. The gate list would have been perfect and unreachable,
+ * which is the same class of hole one level down — the fourth time this project
+ * has fixed a check by moving the question somewhere the executed thing is not.
+ *
+ * So this asks the executed thing. It runs `package.json`'s `verify` line, as
+ * written, with `--list` appended, and compares what comes back to the gate
+ * file. Not a regex over the string: `--list` makes the runner enumerate the
+ * gates it loaded, so a match proves the script starts a process that reaches
+ * this exact list. `echo nothing at all --list` prints `nothing at all --list`
+ * and this goes red.
+ *
+ * `--list` is cheap on purpose — it loads the gate file, prints ids and exits
+ * without starting a gate — so this stays a unit test and not a ten-minute one.
+ */
+describe('the script developers run reaches the gate list this file asserts over', () => {
+  it(
+    'running package.json\'s `verify` line with --list enumerates exactly scripts/gates.json',
+    { timeout: 60_000 },
+    () => {
+      const script = PACKAGE.scripts.verify;
+      expect(
+        script,
+        'package.json has no `verify` script, so the gate list below is reached by nothing',
+      ).toBeDefined();
+
+      // Repository text, executed as written. `shell: true` because that is how
+      // a developer's shell and CI's `run:` step execute it; the string comes
+      // from package.json and never from a caller.
+      const child = spawnSync(script + ' --list', {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        shell: true,
+      });
+      const listed = (child.stdout ?? '')
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+
+      expect(
+        listed,
+        `\`${script}\` did not enumerate the gates in scripts/gates.json. Either it ` +
+          'no longer invokes scripts/verify.mjs, or it points at a different gate ' +
+          'file. Every assertion in this file is about gates.json, so a `verify` ' +
+          'script that does not reach it makes all of them decoration.',
+      ).toEqual(GATES.gates.map((gate) => gate.id));
+      expect(child.status, (child.stderr ?? '') || 'the listing must exit 0').toBe(0);
+    },
+  );
+});

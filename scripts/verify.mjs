@@ -61,8 +61,43 @@
  * `tsc`, and floods the log with cascading failures whose common cause is the
  * first one. The reason the old chain was bad was never that it stopped; it was
  * that stopping was indistinguishable from passing. Naming SKIPPED fixes that
- * without paying for it. `--from <id>` exists so a developer can resume after
- * fixing gate 2 rather than re-running gate 1.
+ * without paying for it.
+ *
+ * `--from <id>` — RESUME, AND WHY IT CANNOT EXIT 0
+ *
+ * `--from <id>` exists so a developer can resume after fixing gate 2 rather
+ * than re-running gate 1. Gates before <id> are reported NOT-RUN, which is a
+ * FOURTH outcome and is counted in the summary line and in the exit status: a
+ * resumed run whose every executed gate passed exits **3**, and says
+ * `INCOMPLETE` on its own line. That is not conservatism, it is the same defect
+ * again — the first version excluded NOT-RUN from both, so `--from cargo-test`
+ * printed `1 passed, 0 failed, 0 SKIPPED` and `VERIFY_EXIT=0` over nine gates
+ * it had never started, and `docs/release-posture.md` §13b quoted such a run as
+ * evidence. 3 rather than 1 so that "a gate went red" stays distinguishable
+ * from "gates were skipped by --from".
+ *
+ * `--gates <file>` and `--root <dir>` exist so `verify-runner.test.ts` can
+ * drive this file against synthetic gate lists; nothing in the release path
+ * passes either.
+ *
+ * WHAT PREFLIGHT COSTS, STATED PLAINLY
+ *
+ * Preflight is checked for every gate in the run, not gate by gate as they come
+ * up. On a machine with no cargo on PATH that means `pnpm verify` now runs
+ * ZERO gates and prints ten BLOCKED lines and `VERIFY_EXIT=2`, where the old
+ * `&&` chain at least ran `pnpm typecheck` before dying. That is a deliberate
+ * trade and it is a real loss: the tools a run needs are known before the run,
+ * and spending fifty seconds of `tsc` to arrive at a toolchain problem that was
+ * knowable at second zero is worse than being told at second zero.
+ *
+ * `--from` does NOT get you round it, and this was measured rather than
+ * assumed: `node scripts/verify.mjs --from test` on a cargo-less PATH prints
+ * PREFLIGHT FAILED, eight BLOCKED lines and `VERIFY_EXIT=2`, because preflight
+ * takes the union of `needs` over every gate from the start index ONWARD and
+ * `cargo-build`/`cargo-test` are downstream of `test`. There is deliberately no
+ * flag that runs the gates a missing toolchain does not block. A run that
+ * quietly drops the cargo gates and reports on the rest is the thing this file
+ * was written to stop.
  *
  * READERS: `package.json`'s `verify` script invokes this;
  * `src/platform/verify-runner.test.ts` drives it with synthetic gate files and
@@ -111,7 +146,7 @@ function toolIsResolvable(tool) {
   return probe.error === undefined || probe.error.code !== 'ENOENT';
 }
 
-export function loadGates(gatesFile) {
+function loadGates(gatesFile) {
   const parsed = JSON.parse(readFileSync(gatesFile, 'utf8'));
   const gates = parsed.gates;
   if (!Array.isArray(gates) || gates.length === 0) {
@@ -224,10 +259,22 @@ function main() {
       // thing the first real run corrected. It was passed at first, and the run
       // came back with every gate green, `cargo test --workspace --locked`
       // exit 0, and all forty test targets reported STALE — because cargo is a
-      // build cache and a run that recompiles nothing moves no mtime. The probe
-      // derives its own threshold from the newest source in the workspace,
-      // which is the invariant `cargo test` actually establishes. See the
-      // header of `scripts/check-rust-tail.mjs`.
+      // build cache and a run that recompiles nothing moves no mtime.
+      //
+      // WHAT THE PROBE DEMANDS INSTEAD, STATED AS IT IS AND NOT AS IT WAS
+      // PLANNED. Nothing about age. Given no `--since` it demands EXISTENCE
+      // PER TARGET and prints, on its second line, `age demand: (nothing: no
+      // age is demanded ...)`. A replacement rule — every binary at least as
+      // new as the newest source in the workspace — was written next and
+      // abandoned for producing false reds of its own; the header of
+      // `scripts/check-rust-tail.mjs` records both attempts and why an mtime
+      // comparison cannot settle a question cargo answers by content
+      // fingerprint. So the "last week's binary" hole is closed HERE, by
+      // ordering, not there: this block runs only when the `cargo test` gate
+      // has just PASSED in this process, and reports `RUST_TAIL=NOT-REACHED`
+      // when it has not. The probe answers "did the tail leave its artefacts";
+      // the gate answers "did the tail just run"; neither is asked to do the
+      // other's job.
       const [head, ...rest] = tailProbe.split(/\s+/u).filter((token) => token !== '');
       const executable = head === 'node' ? process.execPath : head;
       const probe = spawnSync(
@@ -258,15 +305,37 @@ function main() {
 
   const failed = results.filter((row) => row.status === 'FAIL');
   const skipped = results.filter((row) => row.status === 'SKIPPED');
+  // NOT-RUN is what `--from` leaves behind, and it is counted here for the same
+  // reason SKIPPED is. The first version of this summary counted PASS, FAIL and
+  // SKIPPED only, so `--from cargo-test` on the ten-gate list printed
+  // "1 passed, 0 failed, 0 SKIPPED" and VERIFY_EXIT=0 over nine gates that were
+  // never started. That is exactly the false green this whole runner exists to
+  // remove, reintroduced by the resume flag — a status written into `results`
+  // and then read by nothing. It is read here, and by `exitCode` below.
+  const notRun = results.filter((row) => row.status === 'NOT-RUN');
   process.stdout.write(
     '\n' + String(results.filter((r) => r.status === 'PASS').length) + ' passed, ' +
       String(failed.length) + ' failed, ' +
-      String(skipped.length) + ' SKIPPED (skipped is not passed)\n',
+      String(skipped.length) + ' SKIPPED (skipped is not passed), ' +
+      String(notRun.length) + ' NOT-RUN (not-run is not passed either)\n',
   );
 
   let exitCode = 0;
   if (failed.length > 0) exitCode = failed[0].code;
   else if (tailVerdict === 'NOT-CONFIRMED') exitCode = 1;
+  else if (notRun.length > 0) {
+    // A distinct code, because this run is not a failure and is not a pass: it
+    // is INCOMPLETE, and the one thing it must not be able to do is look like a
+    // clean verify in a log. 3 rather than 1 so that a reader (or a CI step)
+    // can tell "a gate went red" from "gates were skipped by --from".
+    exitCode = 3;
+    process.stdout.write(
+      '\nINCOMPLETE: ' + String(notRun.length) + ' of ' + String(results.length) +
+        ' gates were not run, because --from ' + String(options.from) + ' started at gate ' +
+        String(startIndex + 1) + '. Every gate above ran and passed; this run does\n' +
+        'not certify the tree, and does not claim to. Re-run without --from for that.\n',
+    );
+  }
 
   // Last line of the BODY, on purpose. A wrapper that ends in a reporting
   // command reports the reporting command; the log has to be able to say what

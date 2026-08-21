@@ -926,12 +926,21 @@ producing good installers, and a bundler that succeeds having produced none.
 `scripts/check-bundle.mjs` is the check. It derives the expected target set from
 `tauri.conf.json` rather than hardcoding it, and for each declared target
 demands a file that exists, clears a size floor, carries the format's magic
-bytes, carries the configured version in its name, and is newer than the
-sentinel. `bundle.active: false`, an empty target list, and an unrecognised
+bytes, **carries the installer format's own signature where the magic is not
+specific enough**, carries the configured version in its name, and is newer than
+the sentinel. `bundle.active: false`, an empty target list, and an unrecognised
 platform are all **refusals**, not passes. The header of that file lists the
-seven progressively weaker checks and the specific broken tree each one lets
-through; `src/platform/bundle-guard.test.ts` builds one synthetic tree per step
-and proves the guard fails it.
+progressively weaker checks and the specific broken tree each one lets through;
+`src/platform/bundle-guard.test.ts` builds one synthetic tree per step and proves
+the guard fails it.
+
+The signature clause is a round-2 correction and not a flourish. `MZ` — the
+original NSIS test — says "PE image", and `target/release/vela.exe` is a PE
+image: copied into `bundle/nsis/` under the setup's name it produced
+`OK ... NSIS setup (PE image)`, `BUNDLE_OK=yes`, exit 0. The guard now demands
+`EF BE AD DE` + `NullsoftInst` somewhere in the file, which is present once at
+offset 52,744 in the real setup and nowhere at all in `vela.exe`. See
+`docs/corrections.md`, 2026-08-21 round 2, entry 2.
 
 ### The run on this branch
 
@@ -1027,6 +1036,21 @@ routine; the 34 occurrences of the string are `FILE_FLAG_BACKUP_SEMANTICS` in
 `vela-privatefs/src/lib.rs`, test fixtures, and a mock server named `backup` in
 a provider example. Vela does not write backups today.
 
+**Re-run on 2026-08-21, in round 2, before deciding again.** Same script, same
+verdicts, same order: `CONTROL PASS`, then REAL / CONTAINER / CONTAINER / REAL
+for the four `%APPDATA%\dev.vela.desktop` rows, CONTAINER for both
+`%LOCALAPPDATA%\Vela` rows, REAL for both `Vela.lnk` paths — `container-only
+paths 4`, exit 1 read from the script's own output. The decision not to install
+therefore stands on a measurement taken twice, a day apart, and not on the
+memory of one. Row 6 is the operative one: the NSIS setup installs into
+`%LOCALAPPDATA%\Vela`, which resolves inside the package container, so an
+install performed from this session would put the application somewhere the
+user's machine does not have — and the resulting "it installed" would be the
+third void observation in this document. That the setup targets that directory
+is not inferred from section 7's transcript alone: the generated
+`target/release/nsis/x64/installer.nsi` sets `StrCpy $INSTDIR
+"$LOCALAPPDATA\${PRODUCTNAME}"`, and `PRODUCTNAME` is `Vela`.
+
 **The honest verdict for the installed application is unchanged from section 12:
 there is none.** `ships` requires an install on a machine this session cannot
 reach.
@@ -1072,7 +1096,10 @@ answers "did the tail just run" — the probe is consulted only when the
 otherwise. `--since` survives as an opt-in for a caller on a cold machine where
 its premise holds; nothing in the repository passes it.
 
-The final run, with the corrected probe:
+#### The evidence this section used to give, withdrawn
+
+Round 1 of this branch printed the following here, introduced as "the final run,
+with the corrected probe":
 
 ```
 cargo-test                 PASS         0     168.2
@@ -1081,19 +1108,119 @@ RUST_TAIL=CONFIRMED
 VERIFY_EXIT=0
 ```
 
-And the full chain before it — the first time every gate in `pnpm verify` has
-run on this project:
+**That was a one-gate run.** It was `node scripts/verify.mjs --from cargo-test`,
+and the nine gates ahead of it were `NOT-RUN`: excluded from the counts on the
+third line and from `VERIFY_EXIT` on the fourth, which is the defect section 13c
+records and fixes. Presented under a ten-gate table, with no `VERIFY_EXIT` line
+of its own, it read as a certification of the whole chain. It was not one.
+
+The ten-gate table that followed it was also real and was also incomplete: it
+carried no `VERIFY_EXIT` line at all. On the round-1 report's own account that
+run ended at **1** — every gate green and the probe red, under the wall-clock
+`--since` rule described above, which was withdrawn immediately afterwards for
+exactly that false red. Both blocks were true statements about two different
+runs, and putting them next to each other said something neither of them said.
+
+Nothing is claimed from either any more. The run below replaces both.
+
+#### The ten-gate run, in one process
+
+One process, no `--from`, cargo prepended to PATH, on 2026-08-21. Every status
+below is read from the log body; `VERIFY_EXIT` is the last line the runner
+prints, on purpose, because a wrapper that ends in a reporting command reports
+the reporting command.
+
+A document cannot quote a run of itself, so the honest statement of scope is
+this: every file in the repository was in its committed state when this run
+started, and the only edit afterwards was writing this section. No gate reads
+this document — `check-transcripts.sh` reads only
+`docs/regression-baseline/mock-matrix`, and the comment-claim guard's roots are
+`src`, `src-tauri`, `tests`, `scripts`, `.github`, `docs/architecture` and
+`docs/vela-progress.md`. `pnpm test` was nevertheless re-run on the exact
+committed bytes afterwards; the round-2 report carries that result.
 
 ```
 GATE                       STATUS    EXIT   SECONDS
-typecheck                  PASS         0      56.6
-lint:rust                  PASS         0     199.7
-test                       PASS         0     168.0
-test:harness               PASS         0      18.8
-test:click-harness         PASS         0      21.8
-build                      PASS         0     146.3
-test:transcripts           PASS         0      13.0
-test:secrets               PASS         0      98.2
-cargo-build                PASS         0      87.3
-cargo-test                 PASS         0     423.3
+typecheck                  PASS         0      93.5
+lint:rust                  PASS         0      30.6
+test                       PASS         0     188.8
+test:harness               PASS         0      40.3
+test:click-harness         PASS         0      26.4
+build                      PASS         0      93.1
+test:transcripts           PASS         0      14.1
+test:secrets               PASS         0     135.0
+cargo-build                PASS         0      61.7
+cargo-test                 PASS         0     281.6
+
+RUST_TAIL=CONFIRMED
+
+10 passed, 0 failed, 0 SKIPPED (skipped is not passed), 0 NOT-RUN (not-run is not passed either)
+VERIFY_EXIT=0
 ```
+
+What the four counted lines above are made of, from the same log:
+
+| gate | what it reported |
+| --- | --- |
+| `test` | 122 files, 2445 tests, all passed |
+| `test:harness` | 12 files, 142 tests |
+| `test:click-harness` | 2 files, 41 tests |
+| `test:secrets` | `no credential material found in 1269 tracked files (docs/ included)` |
+| `cargo-test` | 65 `test result: ok` lines, zero `test result: FAILED` |
+| the probe | `all 40 integration test targets have a compiled binary`, and `age demand: (nothing: no age is demanded ...)` |
+
+**The run before it ended at 101, and that is on the record too.** The identical
+tree, twenty minutes earlier, gave nine gates green and `cargo-test FAIL 101`:
+two tests in `crates/vela-endpoint/tests/dual_endpoint_over_a_real_socket.rs`
+panicked with `Os { code: 10053, kind: ConnectionAborted }` while binding real
+loopback sockets. That file is unchanged since well before tag
+`run-start-2026-08-17` and nothing on this branch touches Rust. Re-running that
+target alone twice gave `12 passed; 0 failed` and then `11 passed; 1 failed` on
+a **different** test — the same socket abort, a different name each time, which
+is what a loaded machine does to a suite that binds ports and not what a defect
+does. It is recorded rather than suppressed: the flake is real, it is not this
+branch's, and a reader who hits it should know it is known.
+
+### 13c. How `pnpm verify` behaves when it cannot run everything
+
+Two behaviours that a reader of section 13 would otherwise meet for the first
+time in a transcript. Both were undocumented, and the first is why 13b's
+headline evidence had to be withdrawn.
+
+**`--from <id>` resumes, and cannot report a clean run.** A developer who has
+fixed gate 2 can restart from it rather than paying for gate 1 again. The gates
+before `<id>` are reported `NOT-RUN`. That is a fourth outcome alongside PASS,
+FAIL and SKIPPED, and it is counted in the summary line and in the exit status:
+a resumed run whose every executed gate passed exits **3**, never 0, and prints
+
+```
+INCOMPLETE: n of m gates were not run, because --from <id> started at gate k.
+Every gate above ran and passed; this run does not certify the tree, and does
+not claim to. Re-run without --from for that.
+```
+
+3 rather than 1 so that "a gate went red" stays distinguishable from "gates were
+skipped". The first version excluded `NOT-RUN` from both the counts and the exit
+code, which is how the withdrawn block below came to print `VERIFY_EXIT=0` over
+nine gates it had never started. `src/platform/verify-runner.test.ts` now holds
+this down: a `--from` run of three synthetic gates must report two `NOT-RUN`,
+must leave no stamp file for either of them, must print `INCOMPLETE: 2 of 3`,
+and must exit 3 — with a control that the same three gates without `--from`
+still exit 0.
+
+**A missing toolchain now blocks the whole run, not just the gates that need
+it.** Preflight resolves the union of every remaining gate's `needs` before the
+first gate starts. On this machine, where cargo is on no shell's PATH, that
+means `pnpm verify` prints ten `BLOCKED` lines and `VERIFY_EXIT=2` and runs
+nothing — measured on this branch, exit status read from the log body. The old
+`&&` chain at least ran `pnpm typecheck` before dying, so this is a real loss,
+and it is a deliberate one: a toolchain problem knowable at second zero should
+not cost fifty seconds of `tsc` first. `--from` does not get round it either —
+`--from test` on a cargo-less PATH still prints `PREFLIGHT FAILED`, eight
+`BLOCKED` lines and `VERIFY_EXIT=2`, because `cargo-build` and `cargo-test` are
+downstream of `test`. There is deliberately no flag that runs "the gates the
+missing tool does not block": a run that quietly drops the cargo gates and
+reports on the rest is the defect `verify.mjs` exists to remove.
+
+The prepend that makes the ten gates runnable here is the one at the top of
+every transcript in this document: put `C:\Users\User\.cargo\bin` on PATH first.

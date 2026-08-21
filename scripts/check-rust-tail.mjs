@@ -129,7 +129,7 @@ function targetName(fileStem) {
 }
 
 /** Every `tests/*.rs` in the workspace: the host package and every crate. */
-export function integrationTestTargets(root) {
+function integrationTestTargets(root) {
   const srcTauri = join(root, 'src-tauri');
   const roots = [srcTauri];
   const cratesDir = join(srcTauri, 'crates');
@@ -191,7 +191,7 @@ function binaryFor(depsDir, name, isWindows) {
   return found[0];
 }
 
-export function checkRustTail({ root, targetDir, since, platform = process.platform }) {
+function checkRustTail({ root, targetDir, since, platform = process.platform }) {
   const resolvedTarget = targetDir ?? join(root, 'src-tauri', 'target');
   const depsDir = join(resolvedTarget, 'debug', 'deps');
   const isWindows = platform === 'win32';

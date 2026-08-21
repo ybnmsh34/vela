@@ -81,6 +81,7 @@ import type {
   SkillsReadRes,
 } from './contract';
 import {
+  conditionalWireKeys,
   parseRustItem,
   payloadRecord,
   payloadWireKeys,
@@ -239,6 +240,51 @@ const SKILLS_READ_RES_PAYLOAD = everyFieldOfEveryArm<
 /* -------------------------------------------------------------------------- */
 /* the Rust half — read off disk                                              */
 /* -------------------------------------------------------------------------- */
+
+
+/**
+ * The keys of `T` the renderer's own type says may be absent — the ones
+ * spelled with a `?`.
+ */
+type OptionalKeysOf<T> = {
+  [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? K : never;
+}[keyof T];
+
+/**
+ * `true` only for a type with no optional key at all.
+ *
+ * Half of a pair, and the half the compiler owns. serde's
+ * `#[serde(skip_serializing_if = "…")]` does not drop a key and does not
+ * leave it alone: it makes the key **conditional**, so the field is optional
+ * on the wire and the TypeScript side has to spell it `?` or dereference
+ * `undefined`. The parser's allow-list used to record that attribute as
+ * leaving the key alone — a wrong answer written *inside* an allow-list,
+ * which is the one thing a have-I-written-this-down posture cannot find,
+ * because it only ever asks whether the key is listed.
+ *
+ * So both sides are asserted. This tuple says no contract type on this
+ * boundary declares an optional key; the runtime assertion below says no Rust
+ * type on this boundary carries a conditional one. Adding a `?` on the
+ * TypeScript side stops this file compiling, and adding the attribute on the
+ * Rust side turns the assertion red — either way somebody has to decide what
+ * the pair means rather than inherit an answer.
+ *
+ * Only the *object* types on this boundary are listed. A union of string
+ * literals has no keys to spell optional, and `OptionalKeysOf` over one is a
+ * question about `String`'s own members rather than about the contract; those
+ * unions are closed by `everyVariantOf` against the pairing's `listed` array
+ * instead, which is the assertion that fits them.
+ */
+type HasNoOptionalKey<T> = [OptionalKeysOf<T>] extends [never]
+  ? true
+  : ['this contract type now spells a key optional', OptionalKeysOf<T>];
+
+const NO_OPTIONAL_KEYS: readonly [
+  HasNoOptionalKey<SkillListing>,
+  HasNoOptionalKey<SkillResources>,
+  HasNoOptionalKey<SkillsListRes>,
+  HasNoOptionalKey<SkillsReadRes>,
+] = [true, true, true, true];
 
 const CRATE = join(process.cwd(), 'src-tauri', 'crates', 'vela-skills', 'src');
 
@@ -452,6 +498,19 @@ function expectMembers(pairing: Pairing): void {
 /* -------------------------------------------------------------------------- */
 
 describe('the skills crate and the skills contract spell the same vocabulary', () => {
+  it('names every key serde may leave off the wire, and there are none', () => {
+    // The runtime half of `NO_OPTIONAL_KEYS`. Nothing on this boundary is
+    // conditional today and nothing on it is spelled `?`; the pair is what
+    // keeps those two facts the same fact.
+    expect(NO_OPTIONAL_KEYS).toHaveLength(4);
+    for (const pairing of PAIRINGS) {
+      expect(
+        conditionalWireKeys(readRustItem(pairing.file, pairing.keyword, pairing.rust)),
+        `${qualified(pairing)} gained a conditional key and nothing decided what it means`,
+      ).toEqual([]);
+    }
+  });
+
   // The renderer words every one of these. A fifteenth problem, or a fourteenth
   // renamed, is a skill the user installed that the UI can say nothing true
   // about.

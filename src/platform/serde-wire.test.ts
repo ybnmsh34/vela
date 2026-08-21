@@ -43,9 +43,12 @@
  * - **`tests/`.** Out of scope, and not by choice: `no-app-import.test.ts`
  *   forbids any file under `src/` from naming the harness outside a comment, so
  *   a register living here cannot list a harness path.
- *   `tests/harness/mock-provider/no-app-import.test.ts` does read Rust — for
- *   `use` lines, not for wire keys — and this file does not see it. A wire-key
- *   reader written under `tests/` would be outside this question entirely.
+ *   `tests/harness/mock-provider/no-app-import.test.ts` does read Rust — every
+ *   `.rs` file under `src-tauri` that is not Rust test infrastructure, tested
+ *   against `/tests\/harness|mock-provider/` after comments and `#[cfg(test)]`
+ *   bodies are stripped, which is a substring scan for harness references and
+ *   not a parse of anything — and this file does not see it. A wire-key reader
+ *   written under `tests/` would be outside this question entirely.
  * - **Whether a registered reason is true.** RULE T applies to this file too. A
  *   `because` saying "scans for forbidden literals" is prose, and prose is not
  *   evidence that the file does that.
@@ -109,8 +112,11 @@ const NAMES_A_RUST_SOURCE = /['"`][A-Za-z0-9_@./-]*\.rs['"`]/;
  *
  * Required alongside {@link NAMES_A_RUST_SOURCE} because naming a Rust file is
  * not reading one: `attachment-rules.test.ts` classifies a fabricated
- * `main.rs` upload and `window-controls.test.tsx` lists `build.rs` among
- * filenames a config reader must refuse. Neither opens anything, and putting
+ * `main.rs` upload, and `window-controls.test.tsx` names `build.rs` as the
+ * negative control in `expect(unreadableConfigsIn(['tauri.conf.json',
+ * 'Cargo.toml', 'build.rs'])).toEqual([])` — a `.rs` filename written down in
+ * order to assert it is *not* a config the loader refuses over. Neither opens
+ * anything, and putting
  * them on the register would make it a list of files that mention Rust — which
  * churns on every new fixture, and a register that churns is a register that
  * gets weakened.

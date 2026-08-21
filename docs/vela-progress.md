@@ -696,6 +696,50 @@ Each round it moves down a level *and changes kind*, which is why closing the pr
 prevents the next. Round 6 asks its critics directly what the sixth form looks like.
 
 
+### Round 6 — RULE V finds 34 unguarded invariants, and a critic names the sixth form
+
+26 agents. No track cleared. Twelve remain CAPPED-PASS; these six are the hard remainder.
+
+| track | claims / false | RULE V unguarded | reachable evasions landed | failing |
+|---|---|---|---|---|
+| T4 contrast | 99 / 3 | **7** | 15 | LADDER, MUTATION, PROBE, DOC-HONESTY |
+| T5 reachability | 38 / 2 | **5** | 10 | LADDER, PROBE, FUNCTIONALITY, MUTATION, DOC-HONESTY |
+| T6 CI coverage | 68 / 2 | **5** | 8 | LADDER, DOC-HONESTY |
+| T7 remaining guards | 42 / 1 | **4** | 10 | LADDER, MUTATION, DOC-HONESTY, PROBE |
+| T14 code workspace | 61 / 1 | **7** | — | LADDER, MUTATION, ACCESSIBILITY |
+| T17 shell & edge | 64 / 0 | **6** | — | LADDER, MUTATION, ACCESSIBILITY |
+
+**RULE V found 34 unguarded invariants in one round** — properties the fixes rely on, stated truly,
+asserted by nothing. MUTATION now fails on four of six because of them. Five rounds of grading had
+never touched this seam, because every member in the panel was checking whether statements were
+*true*, and these all are.
+
+#### The sixth form, in the critic's words
+
+> The builder diagnosed this precisely — *"a list nothing pins is a list that shrinks"* — pinned that
+> list with a synthetic source carrying all thirteen names, and then wrote a **thirteen-branch reader
+> whose branch list nothing pins at all.** The tell is unchanged in shape: **a law whose universe is
+> a filter it never asserts.** It moved from a regex over a spelling to a walk over a node kind, and
+> the kind-list is exactly as unasserted as the spelling-list was.
+
+**The class moved from data to code.** Five branches of that reader delete with `tsc` at 0 and the
+entire suite green. So round 7 adds **RULE W: mutate the reader, not only the data** — hunt any
+`if (ts.isX(node))` or `method === '…'` whose deletion nothing notices.
+
+The two evasions that landed on T4 are worth recording for their ordinariness: an SVG injected
+through `dangerouslySetInnerHTML` — a string literal, so no syntax node the walk ever visits — and
+`setAttributeNS(null, 'fill', …)`, which is the builder's own closed `setAttribute` evasion **one
+method name over**.
+
+#### `forced-colors` finally has an owner
+
+Four consecutive critic reports raised it and no track claimed it: **zero
+`@media (forced-colors: active)` and zero `prefers-contrast` rules anywhere under `src/`**, in a
+product that ships on Windows, where High Contrast discards author colours wholesale. It is now
+assigned to the three tracks that render, with the note that `forced-colors` is the one context
+where the frozen palette does not apply — because the system replaces it.
+
+
 ---
 
 # Previous runs

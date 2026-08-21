@@ -3,9 +3,9 @@
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
   "state": "RUNNING",
-  "round": 6,
+  "round": 7,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-21 - round 5 complete, round 6 running",
+  "updated": "2026-08-21 - round 6 complete, round 7 running",
   "tracks": [
     {
       "id": "t01",
@@ -44,8 +44,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, PROBE, DOC-HONESTY"
+      "round": 7,
+      "blocker": "LADDER, MUTATION, PROBE, DOC-HONESTY"
     },
     {
       "id": "t05",
@@ -54,8 +54,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, PROBE, FUNCTIONALITY, DOC-HONESTY"
+      "round": 7,
+      "blocker": "LADDER, PROBE, FUNCTIONALITY, MUTATION, DOC-HONESTY"
     },
     {
       "id": "t06",
@@ -64,8 +64,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, DOC-HONESTY, PROBE"
+      "round": 7,
+      "blocker": "LADDER, DOC-HONESTY"
     },
     {
       "id": "t07",
@@ -74,8 +74,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, DOC-HONESTY, PROBE"
+      "round": 7,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY, PROBE"
     },
     {
       "id": "t08",
@@ -144,8 +144,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, ACCESSIBILITY"
+      "round": 7,
+      "blocker": "LADDER, MUTATION, ACCESSIBILITY"
     },
     {
       "id": "t15",
@@ -174,8 +174,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 6,
-      "blocker": "LADDER, MUTATION, DOC-HONESTY"
+      "round": 7,
+      "blocker": "LADDER, MUTATION, ACCESSIBILITY"
     },
     {
       "id": "t18",
@@ -188,7 +188,7 @@
       "blocker": "LADDER only - operator decision"
     }
   ],
-  "note": "Round 5: TWELVE of eighteen tracks are CAPPED-PASS. The reachability standard for PROBE did not make guards pass - all four were evaded by constructions classed genuinely reachable (4,2,6,5), so the failures carry information instead of measuring an unsatisfiable bar. T15 measured 110 claims with ZERO false, the first clean sweep of the run. Round 6 adds RULE V after a critic found the class in a fifth form: no longer a false sentence or an unread field, but an UNGUARDED INVARIANT - a property the fix relies on, stated in a true comment, asserted by no test. Two probes reddened nothing.",
+  "note": "Round 6: no track cleared, but RULE V found 34 unguarded invariants across the six (7,5,5,4,7,6) and MUTATION now fails on four of six because of them. A critic named the SIXTH form of the governing class: an invariant asserted only over an input the test itself supplies - the builder pinned the data list its reader consumes and left the reader's own thirteen-branch list entirely unasserted. Five branches deleted with tsc at 0 and the whole suite green. The class moved from data to code, so round 7 adds RULE W. Also assigned at last: forced-colors, raised by four consecutive critic reports and owned by nobody - zero @media (forced-colors: active) anywhere under src/, on a product that ships on Windows where High Contrast discards author colours wholesale.",
   "blocker": {
     "id": "ladder",
     "doc": "docs/run/BLOCKER-ladder.md",
@@ -200,12 +200,13 @@
     "FAIL": "real members outstanding"
   },
   "rules": [
-    "RULE P (reachability-classified, round 5)",
+    "RULE P reachability-classified",
     "RULE Q measurement is not a bound",
     "RULE R symbols not line numbers",
     "RULE S grade against a tag",
     "RULE T a comment is not evidence",
     "RULE U name the reader",
-    "RULE V (new, round 6): an invariant stated in a comment is not guarded - if a fix establishes a property, a test must assert it"
+    "RULE V an invariant in a comment is not guarded",
+    "RULE W (new, round 7): mutate the READER, not only the data - any branch whose deletion reds nothing is an unguarded structural position"
   ]
 }

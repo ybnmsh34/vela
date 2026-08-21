@@ -174,6 +174,26 @@ interface OpenBlock {
  * terminate anything. That is not decoration: a `;` inside an attribute selector
  * used to truncate the emitted selector, and an unbalanced brace inside a string
  * would have desynchronised the brace counter for the rest of the file.
+ *
+ * **Which skip is load-bearing where**, because the sentence above named a case
+ * that neither skip owns. A `;` inside a *quoted* attribute value —
+ * `.row[data-label='a;b']` — is handled by the string skip and by the group
+ * skip alike, so each covers for the other and deleting either one leaves the
+ * suite green. That is how both arms came to be unguarded while a test named
+ * for the attribute selector passed: it asserted the emitted *selectors* and
+ * both still came back. The inputs that tell them apart are in
+ * `contrast.test.ts`'s `every structural position the model reads is one an
+ * input reaches`:
+ *
+ * - the **string** skip is alone in reading `.a { content: '}'; color: … }`,
+ *   where the `}` closes the block and the `color` beside it is lost — visible
+ *   only if you assert the paint rather than the selector;
+ * - the **group** skip is alone in reading
+ *   `background: url(data:image/svg+xml;utf8,x)`, an unquoted `;` inside
+ *   parentheses, which is an ordinary data URI and truncates the declaration
+ *   without it;
+ * - `skipGroup` calls `skipString` itself, a third span skip, told apart only
+ *   by a closing delimiter inside a quoted string inside a group.
  */
 export function parseStylesheet(file: string, text: string): readonly Rule[] {
   const rules: (Rule & { readonly opensAt: number })[] = [];

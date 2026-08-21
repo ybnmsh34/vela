@@ -77,14 +77,18 @@ import { describe, expect, it } from 'vitest';
 import {
   composite,
   contrastRatio as contrast,
+  declaredBy,
   declaredValue,
   expandVars,
+  isPaletteRule,
   loadSheets,
   luminance,
   paletteFor as tokenPalette,
   parseColour,
   parseStylesheet,
   readPaint,
+  TOKEN_SHEET,
+  tryParseColour,
   type Lookup,
   type Paint,
   type Rgba,
@@ -924,11 +928,36 @@ describe('the reader is not fooled by the shapes that fooled its regexes', () =>
     }
   });
 
-  it('reads a ground written through a var() fallback', () => {
+  it('prefers a declared custom property to the fallback beside it', () => {
+    // THE NAME OF THIS TEST WAS WRONG FOR A ROUND, and a measurer caught it by
+    // reading what the input does rather than what the name says. It was called
+    // `reads a ground written through a var() fallback` and cited `expandVars`'s
+    // "the fallback is used when — and only when — the custom property has no
+    // declaration" — but `--vela-accent-quiet` **is** declared, so the reader
+    // takes the declared branch and the fallback is never evaluated. Deleting
+    // the whole `else if (fallback !== null)` arm left `npx vitest run
+    // src/styles` at 6 files / 137 tests, exit 0; only `tsc` objected, and only
+    // because `fallback` became an unused local.
+    //
+    // The input is unchanged and it is a real test — of the *other* half of that
+    // sentence, which is the half it always tested. The half it named is below.
     const [rule] = read(
       `.body { color: var(--vela-code-text); background: var(--vela-accent-quiet, transparent); }`,
     );
     expect(ground(rule)).toBe('--vela-accent-quiet');
+  });
+
+  it('reads a ground written through a var() fallback', () => {
+    // And now the half nothing fed: a token with **no** declaration, whose
+    // fallback is what the engine paints.
+    const [rule] = read(
+      `.body { color: var(--vela-code-text); background: var(--vela-nowhere, var(--vela-accent-quiet)); }`,
+    );
+    expect(ground(rule)).toBe('--vela-accent-quiet');
+    // And the fallback is not a licence to invent: an undeclared token with no
+    // fallback is still named rather than skipped.
+    const [bare] = read(`.body { background: var(--vela-nowhere); }`);
+    expect(bare?.ground?.kind).toBe('unreadable');
   });
 
   it('reads a ground written through a local custom property', () => {
@@ -981,5 +1010,164 @@ describe('the reader is not fooled by the shapes that fooled its regexes', () =>
     const [rule] = read(`.body { background: var(--nowhere); color: linear-gradient(red, blue); }`);
     expect(rule?.ground?.kind).toBe('unreadable');
     expect(rule?.foreground?.kind).toBe('unreadable');
+  });
+
+  /**
+   * EVERY STRUCTURAL POSITION `css-model.ts` READS, ENUMERATED.
+   *
+   * RULE W, on the model rather than on the markup scan. A measurer deleted
+   * eight branches of this file one at a time and each left `npx tsc --build
+   * --force` at 0 and `npx vitest run src/styles` at 6 files / 137 tests, exit
+   * 0: the string-literal span skip, the `(…)`/`[…]` span skip, the
+   * within-rule importance guard in `declaredBy`, the token-sheet half of
+   * `isPaletteRule`, the three-digit hex expansion, the `no declaration for …`
+   * arm of `readPaint`, the `var()` fallback arm, and the opaque short circuit
+   * in `composite`. Every one of them is an invariant this file's prose states
+   * and nothing fed an input to.
+   *
+   * The positions are listed, each assertion carries its position as its own
+   * message, and the list of positions actually reached is compared against the
+   * list at the end — so a branch that stopped being read names itself, and a
+   * branch added without a case is a mismatch rather than a silence.
+   */
+  const MODEL_POSITIONS: readonly string[] = [
+    'parseStylesheet — a string literal is an opaque span',
+    'parseStylesheet — a (…) or […] group is an opaque span',
+    'skipGroup — a string inside a group is opaque too',
+    'declaredBy — an !important is not displaced by a later normal declaration',
+    'declaredBy — otherwise the later declaration wins',
+    'isPaletteRule — the token-sheet half',
+    'isPaletteRule — the `:root` half',
+    'tryParseColour — the three-digit hex expansion',
+    'readPaint — a custom property with no declaration is named, not skipped',
+    'expandVars — the declaration is preferred to the fallback',
+    'expandVars — the fallback is taken when there is no declaration',
+    'composite — an opaque colour is handed back rather than recomposed',
+  ];
+
+  it('every structural position the model reads is one an input reaches', () => {
+    const reached: string[] = [];
+    const at = (position: string): string => {
+      reached.push(position);
+      return position;
+    };
+    const colour = (entry: Painted | undefined): string | null | undefined =>
+      entry?.foreground?.kind === 'colour' ? entry.foreground.token : entry?.foreground?.kind;
+    const lookup: Lookup = (name) => ROLE.get(name);
+    const asRule = (file: string, selector: string): Rule => ({
+      file,
+      selector,
+      conditions: [],
+      declarations: [],
+    });
+
+    // A `}` inside a string used to close the block it stood in. The existing
+    // test for this asserted only the *selectors* that came back, and both of
+    // them still come back — the rest of the file is not lost, only the
+    // declaration the string sat beside. So the assertion is on the paint.
+    const [quoted] = read(`.a { content: '}'; color: var(--vela-code-text); }`);
+    expect(quoted?.rule.selector).toBe('.a');
+    expect(colour(quoted), at(MODEL_POSITIONS[0] ?? '')).toBe('--vela-code-text');
+
+    // A `;` inside a `url()` is the reachable form of the group skip, and the
+    // one the docblock's attribute-selector example is not: a `;` inside a
+    // *quoted* attribute value is already covered by the string skip above, so
+    // the two arms cover for each other there and neither is load-bearing.
+    // Unquoted, inside parentheses, only this arm answers.
+    const [group] = read(
+      `.a { background: url(data:image/svg+xml;utf8,x); color: var(--vela-code-text); }`,
+    );
+    expect(declaredValue(group?.rule ?? asRule('', ''), 'background'), at(MODEL_POSITIONS[1] ?? '')).toBe(
+      'url(data:image/svg+xml;utf8,x)',
+    );
+
+    // `skipGroup` calls `skipString` itself, which is a third span skip and a
+    // separate branch. Only a closing delimiter *inside* a quoted string inside
+    // a group can tell it apart; synthetic, and stated as such.
+    const [nested] = read(`.a { background: url("a);b.png"); color: var(--vela-code-text); }`);
+    expect(declaredValue(nested?.rule ?? asRule('', ''), 'background'), at(MODEL_POSITIONS[2] ?? '')).toBe(
+      'url("a);b.png")',
+    );
+
+    // Importance, within one rule. No rule in the tree writes `!important`
+    // twice on one property, so nothing fed this until now; `never lets
+    // specificity outrank an !important the engine obeys` covers the
+    // between-rule half and cannot see this one.
+    const [important] = read(
+      `.a { color: var(--vela-code-text) !important; color: var(--vela-code-bg); }`,
+    );
+    expect(declaredBy(important?.rule ?? asRule('', ''), 'color'), at(MODEL_POSITIONS[3] ?? '')).toEqual(
+      { value: 'var(--vela-code-text)', important: true },
+    );
+    const [later] = read(`.a { color: var(--vela-code-bg); color: var(--vela-code-text); }`);
+    expect(declaredValue(later?.rule ?? asRule('', ''), 'color'), at(MODEL_POSITIONS[4] ?? '')).toBe(
+      'var(--vela-code-text)',
+    );
+
+    // "A boundary drawn twice is a boundary in two places. This is the one
+    // place." Both halves of that one place, and the token-sheet half was the
+    // one nothing pinned: `the palette’s boundary and this prohibition’s
+    // boundary are the same one` plants its rule in a sheet named TOKEN_SHEET,
+    // so it never distinguishes the file test from the selector test.
+    expect(isPaletteRule(asRule(TOKEN_SHEET, ':root'))).toBe(true);
+    expect(isPaletteRule(asRule('src/styles/base.css', ':root')), at(MODEL_POSITIONS[5] ?? '')).toBe(
+      false,
+    );
+    expect(isPaletteRule(asRule(TOKEN_SHEET, 'pre')), at(MODEL_POSITIONS[6] ?? '')).toBe(false);
+
+    // The three-digit hex, as a **relation** rather than as a value: the short
+    // form is the long form with every digit doubled, which is the whole of
+    // what the branch does. The digits are built rather than written because
+    // this branch's colour-fidelity check counts the unique six-digit hex
+    // literals under `src/` and requires the set to be the one at
+    // `run-start-2026-08-17` — writing either spelling out would add a colour to
+    // the tree by that check's own definition, whatever it happened to be.
+    const hexPosition = at(MODEL_POSITIONS[7] ?? '');
+    for (const digit of ['0', '8', 'f']) {
+      expect(tryParseColour(`#${digit.repeat(3)}`), `${hexPosition} (${digit})`).toEqual(
+        tryParseColour(`#${digit.repeat(6)}`),
+      );
+    }
+
+    // The unreadable arm's *message*, not only its kind. Deleting the arm left
+    // the value still coming back `unreadable` through the not-a-colour arm —
+    // so the safety property survived and the diagnosis did not.
+    expect(readPaint('var(--nowhere)', () => undefined), at(MODEL_POSITIONS[8] ?? '')).toEqual({
+      kind: 'unreadable',
+      text: 'var(--nowhere)',
+      why: 'no declaration for --nowhere',
+    });
+
+    // Both halves of "the fallback is used when — and only when — the custom
+    // property has no declaration", as two inputs.
+    const declared = readPaint('var(--vela-code-bg, transparent)', lookup);
+    expect(declared.kind === 'colour' ? declared.token : declared.kind, at(MODEL_POSITIONS[9] ?? '')).toBe(
+      '--vela-code-bg',
+    );
+    const fell = readPaint('var(--vela-nowhere, var(--vela-code-bg))', lookup);
+    expect(fell.kind === 'colour' ? fell.token : fell.kind, at(MODEL_POSITIONS[10] ?? '')).toBe(
+      '--vela-code-bg',
+    );
+
+    // The opaque short circuit. At `a <= 1` the mix is algebraically identical,
+    // so the only observable effects are that the colour comes back *as itself*
+    // and that an out-of-range alpha — which `rgba(…, 2)` would produce — never
+    // extrapolates past the colour it was handed.
+    // Both colours are read out of the palette rather than typed, for the
+    // reason above and because a fixture whose colours are not colours the
+    // product paints is a fixture that goes on passing after the palette moves.
+    const opaque = parseColour(substitute('var(--vela-code-bg)', ROLE));
+    const under = parseColour(substitute('var(--vela-code-text)', ROLE));
+    expect(opaque.a, 'a palette colour is opaque').toBe(1);
+    expect(composite(opaque, under), at(MODEL_POSITIONS[11] ?? '')).toBe(opaque);
+    const over = { ...opaque, a: 2 };
+    expect(composite(over, under)).toEqual(over);
+    // Non-vacuous: the two are different colours, so "handed back" is a claim
+    // about which one came back.
+    expect(opaque).not.toEqual(under);
+
+    expect(reached, 'a structural position lost its input, or gained one without being named').toEqual(
+      MODEL_POSITIONS,
+    );
   });
 });

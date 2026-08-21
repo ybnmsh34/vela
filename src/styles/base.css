@@ -127,6 +127,59 @@ select {
   background-clip: padding-box;
 }
 
+/* ---- Windows High Contrast ------------------------------------------------ *
+ * Vela ships on Windows, where High Contrast does not tint the palette — it
+ * **discards author colours wholesale** and paints the page in the four or five
+ * the user chose. Neither contrast guard in `src/styles/` models that, and
+ * nothing in this repository had an opinion about whether the result is usable:
+ * four consecutive critic reports counted zero `@media (forced-colors: active)`
+ * and zero `prefers-contrast` rules anywhere under `src/`.
+ *
+ * Two things break there specifically, and neither is a colour problem:
+ *
+ * 1. **`box-shadow` is not painted at all** in forced-colors mode. Eight rules
+ *    in this repository carry one, and every one of them is an elevation
+ *    shadow — `--vela-shadow-sm` on the composer, `--vela-shadow-lg` on the
+ *    seven floating panels and popovers — which is the *only* thing separating
+ *    a panel from the page behind it. In High Contrast the shadow is gone and
+ *    both grounds are the one system canvas, so the panel has no edge at all.
+ *    Those eight are in component sheets, not here; they are written down as
+ *    `SHADOWS_LOST_IN_HIGH_CONTRAST` in `painted-contrast.test.tsx` rather than
+ *    claimed fixed. (The ten inset focus rings are *outlines*, not shadows, and
+ *    outlines are painted in forced-colors mode; they survive.)
+ * 2. **A boundary drawn by ground alone disappears**, because every ground
+ *    becomes the one system canvas. A control the app separates from the page
+ *    with `background: var(--vela-surface)` and no border has no edge left.
+ *    That is the half this block can reach, because the controls are element
+ *    types and an element type is a global selector.
+ *
+ * **No colour value is written here, and that is deliberate rather than
+ * squeamish.** `outline: 2px solid` and `border: 1px solid` leave the colour at
+ * its initial `currentColor`, which the engine has already forced to the user's
+ * own text colour — so this block adds an *edge* and adds no paint, the palette
+ * stays frozen, and `every rule the app writes for High Contrast declares no
+ * colour` asserts exactly that, which also means this block can never become a
+ * back door around the token sheet.
+ *
+ * What is not covered, plainly: the eight elevation shadows above, every status
+ * indicator distinguished by hue alone (`AppShell`'s `.dotOk` / `.dotWarn`, the
+ * diff row tints, the notice tones), and `prefers-contrast` entirely. Those
+ * live in component sheets and want a `forced-color-adjust` decision each. This
+ * block is one track's surface, not the app's answer.                         */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid;
+    outline-offset: 2px;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    border: 1px solid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

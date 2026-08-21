@@ -74,6 +74,17 @@ export function CopyButton({ getText, label, subtle = false }: CopyButtonProps) 
       // contents change, and the accessible name does not move. WCAG 4.1.3 is
       // not closed on the strength of this attribute, and 2.5.3 (Label in Name)
       // is separately still open.
+      //
+      // AND THE SECOND ANNOUNCEMENT IS REAL, which two rounds of review have
+      // asked for in writing and two rounds have not written down. The label
+      // resets to "Copy" after `RESET_MS`, and that reset changes the contents
+      // of this same live region — so a reader that announces the first change
+      // announces a second one 1600 ms later, saying "Copy" for no user action
+      // at all. Nothing here measures it and nothing here fixes it; the fix is
+      // an argument about whether the region should be a separate visually
+      // hidden node that is emptied rather than reset, which is a change to
+      // what this button *is* and not to an attribute on it. Recorded so the
+      // next reader inherits the defect rather than rediscovering it.
       aria-live="polite"
       data-outcome={outcome}
     >

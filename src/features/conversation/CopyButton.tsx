@@ -60,9 +60,20 @@ export function CopyButton({ getText, label, subtle = false }: CopyButtonProps) 
       // did not satisfy 4.1.3 for anyone who cannot, because `aria-label` fixes
       // the accessible name to `label` and the outcome never entered it — the
       // button said "Copy this reply" before the click and "Copy this reply"
-      // after a refused one. `aria-live` announces the content change itself,
-      // so the outcome is spoken without moving the name the rest of the app
-      // (and `CopyButton.test.tsx`) addresses this button by.
+      // after a refused one. `aria-live` marks the changed contents as a live
+      // region, which is the mechanism by which an outcome can be announced
+      // without moving the name the rest of the app addresses this button by.
+      //
+      // WHETHER IT IS SPOKEN IS NOT MEASURED HERE, and the earlier version of
+      // this comment said it was. A polite region that is also the focused
+      // element and carries an `aria-label` is a known-unreliable announcement
+      // path: implementations differ on whether they read the author name or
+      // the changed contents. What is checked, in `CopyButton.test.tsx` >
+      // `announces the outcome without moving the name the app addresses it
+      // by`, is the half that lives in the DOM — the region is on the node whose
+      // contents change, and the accessible name does not move. WCAG 4.1.3 is
+      // not closed on the strength of this attribute, and 2.5.3 (Label in Name)
+      // is separately still open.
       aria-live="polite"
       data-outcome={outcome}
     >

@@ -78,12 +78,12 @@
  *    direction for a guard, and it is why `:hover`, `:focus-visible`,
  *    `::placeholder` and `data-` variants are covered without a fixture per
  *    state.
- * 2. **Un-reached rules are named, not skipped.** `every rule that paints text
- *    is reached by some fixture` lists every rule that declares a colour — or an
- *    `opacity`, which dims one — that no fixture reached, and compares that list
- *    against `NOT_RENDERED` — an exact set, not a floor. Such a rule added
- *    anywhere in `src/` fails this file until a fixture reaches it or somebody
- *    writes down why it cannot. The debt
+ * 2. **Un-reached rules are named, not skipped.** `every rule that puts paint
+ *    on a pixel is reached by some fixture` lists every rule that declares a
+ *    colour, a `background`, or an `opacity` that dims one, and that no fixture
+ *    reached, and compares that list against `NOT_RENDERED` — an exact set, not
+ *    a floor. Such a rule added anywhere in `src/` fails this file until a
+ *    fixture reaches it or somebody writes down why it cannot. The debt
  *    is large and it is *enumerated*; before this file it was invisible. What
  *    that list may not be used for is the subject of {@link NOT_RENDERED}'s own
  *    comment: it enumerates what is unreached, and "unreached" once quietly
@@ -151,8 +151,10 @@
  * `contrast.test.ts` uses.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, extname, join, relative } from 'node:path';
+
+import ts from 'typescript';
 
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -470,6 +472,98 @@ function shippedSources(directory: string = SRC_ROOT): readonly string[] {
 const repoRelative = (path: string): string => relative(REPO_ROOT, path).replace(/\\/gu, '/');
 
 /**
+ * The build configuration, which is part of the shipped surface even though it
+ * is not part of the bundle.
+ *
+ * `shippedSources()` recurses from `src/`. `vite.config.ts` sits at the repo
+ * root, so both text laws read straight past it — and an adversary landed the
+ * round-four shell escape one build step later through exactly that gap:
+ *
+ *     transformIndexHtml: (html) =>
+ *       html.replace('</head>', '<style>body{background:…;color:…}</style></head>'),
+ *
+ * `npx vite build` then puts that `<style>` block into the **built** shell —
+ * the one the app boots into, which is emitted into the build output directory
+ * and is not a file in this tree — with `tsc` at 0 and the whole suite green.
+ * The word law's own docblock lists `<link rel="stylesheet">` in `index.html`
+ * among the escapes it *closed*, "and the last of those ships into
+ * `dist/assets/*.css`"; this is the same class, restored by a file the scan was
+ * not pointed at.
+ *
+ * So the scan is pointed at it. `every kind of file under src/ is read by
+ * something` asserts this list is every `.ts`/`.tsx` at the repo root, so a
+ * `vitest.config.ts` added tomorrow reds instead of arriving unscanned. The
+ * built shell itself is still not read — that would need a build inside a unit
+ * test — and this closes the route rather than the symptom: nothing in `src/`
+ * or in the build config may name a style outside {@link STYLE_EXEMPTIONS},
+ * whatever the build does with it afterwards.
+ */
+const BUILD_CONFIG: readonly string[] = ['vite.config.ts'];
+
+/** Every source the two text laws read: the shipped tree, plus the build config. */
+function scannedSources(): readonly string[] {
+  return [...shippedSources(), ...BUILD_CONFIG.map((name) => join(REPO_ROOT, name))];
+}
+
+/**
+ * WHAT KIND OF FILE MAY LIVE UNDER `src/` — and who reads each kind.
+ *
+ * The universe of every law in this file is a **file-extension filter that was
+ * never asserted**: `shippedSources()` takes `/\.tsx?$/`, `stylesheetFiles()`
+ * takes `.css`. Anything else that ships was not merely unmeasured, it was
+ * unmentionable — there is no ledger it could go in. An adversary landed that
+ * with a file:
+ *
+ *     src/features/attachments/badge.svg
+ *       <circle … fill="a grey hex" stroke="a darker grey hex" />
+ *
+ * plus `import badgeUrl from './badge.svg'` and an `<img src={badgeUrl} />`.
+ * `tsconfig.app.json` already sets `"types": ["vite/client"]`, so that import
+ * typechecks with no configuration change at all; `npx vite build` inlines the
+ * file as a data URI and grepping the emitted bundle for either of those two
+ * six-digit values finds them. Two literal colours in the bundle, invisible to
+ * every scan here. (The values themselves are not written out: this file is
+ * under `src/`, and the branch's colour-fidelity check counts the unique
+ * six-digit hex literals under `src/` and requires the set to be the one at
+ * `run-start-2026-08-17`. A prose example that changed that count would be a
+ * new colour in the tree by that check's own definition.)
+ *
+ * So the filter becomes an assertion, in the shape {@link GLOBAL_PAINT} and
+ * {@link STYLE_EXEMPTIONS} already use: the extensions that exist under `src/`
+ * are enumerated, each with **what reads it**, and a new kind of file fails
+ * `every kind of file under src/ is read by something` by name.
+ *
+ * Stated limits: this is a census of `src/`, and it is paired in that test with
+ * an assertion that no `public/` directory exists — Vite copies `public/`
+ * verbatim into `dist/`, so an `.svg` there would ship without being imported
+ * by anything. A new top-level asset directory named something else is not
+ * covered, and neither is an asset reached from `node_modules`.
+ */
+const SRC_FILE_KINDS: ReadonlyMap<string, string> = new Map([
+  [
+    '.ts',
+    'read as source by `styleOutsideTheSheets` and by `scanMarkupPaint`, and walked for reachability by `src/runtime/reachable.test.ts`',
+  ],
+  ['.tsx', 'the same as `.ts`; JSX attributes are read by `scanMarkupPaint`'],
+  ['.css', 'parsed into `SHEETS` by `loadSheets()`, which is what every rule-based check here reads'],
+  [
+    '.md',
+    'prose. No module imports one and Vite emits no asset for one, so nothing about it reaches a pixel; `src/features/README.md` and `src/lib/README.md` are the two',
+  ],
+]);
+
+/** The file extensions that actually exist under `src/`. See {@link SRC_FILE_KINDS}. */
+function extensionsUnderSrc(directory: string = SRC_ROOT): readonly string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...extensionsUnderSrc(path));
+    else found.push(extname(entry.name).toLowerCase());
+  }
+  return [...new Set(found)].sort();
+}
+
+/**
  * Every place the shipped surface names the styling API outside a stylesheet.
  *
  * Keyed by file, by the identifier found, and by the **line as written**, with
@@ -492,16 +586,45 @@ function namesTheStyleApi(line: string): readonly string[] {
   return found;
 }
 
-function styleOutsideTheSheets(): readonly string[] {
-  const found: string[] = [];
+/** Every source the two text laws read, as `[name, text]` pairs. */
+function scannedText(): readonly (readonly [string, string])[] {
+  return [
+    [SHELL, readFileSync(join(REPO_ROOT, SHELL), 'utf8')] as const,
+    ...scannedSources().map((path) => [repoRelative(path), readFileSync(path, 'utf8')] as const),
+  ];
+}
+
+function styleOutsideTheSheets(
+  sources: readonly (readonly [string, string])[] = scannedText(),
+): readonly string[] {
+  const counts = new Map<string, number>();
   const scan = (name: string, text: string): void => {
     for (const line of text.split('\n')) {
-      for (const word of namesTheStyleApi(line)) found.push(`${name} — ${word} — ${line.trim()}`);
+      // Per LINE, not per occurrence: `<style>${style}</style>` names the API
+      // three times on one line and is one place, while the same line written
+      // twice in one file is two places. The `new Set` is which of those two
+      // this counts.
+      for (const word of new Set(namesTheStyleApi(line))) {
+        const key = `${name} — ${word} — ${line.trim()}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
     }
   };
-  scan(SHELL, readFileSync(join(REPO_ROOT, SHELL), 'utf8'));
-  for (const path of shippedSources()) scan(repoRelative(path), readFileSync(path, 'utf8'));
-  return [...new Set(found)].sort();
+  for (const [name, text] of sources) scan(name, text);
+  // HOW MANY TIMES, NOT ONLY WHETHER.
+  //
+  // This used to collapse the scan with `[...new Set(found)]`, so N copies of
+  // one line in one file cost exactly one exemption — and the `why` beside each
+  // key is written about ONE occurrence in ONE place ("the auto-growing textarea
+  // measures its own scroll height", "the meter fill width"). An adversary
+  // added a second, byte-identical `node.style.height = 'auto';` to
+  // `Composer.tsx` and nothing moved. That is an exemption keyed on a spelling
+  // rather than on the thing exempted, which is this file's own recurring
+  // diagnosis, turned inward. The count rides in the key now, so a second copy
+  // of an exempted line is a different key and reds.
+  return [...counts]
+    .map(([key, times]) => (times === 1 ? key : `${key} — ×${times}`))
+    .sort();
 }
 
 /**
@@ -609,59 +732,325 @@ const STYLE_EXEMPTIONS: ReadonlyMap<string, string> = new Map([
  */
 const INERT_PAINT: ReadonlySet<string> = new Set(['none', 'currentcolor']);
 
+/**
+ * The SVG presentation attributes that can put paint on a pixel.
+ *
+ * Thirteen properties, each written **once**, in its kebab-case CSS spelling.
+ * The list this replaces held twenty entries because it carried both spellings
+ * of five of them — `fillOpacity` *and* `fill-opacity`, `stopColor` *and*
+ * `stop-color` — and two adversaries independently measured what that cost.
+ * Re-measured here by running the old scan's own regexes over the shipped tree:
+ * fifty-one matches, `fill` 25 and `stroke` 26, and **zero for the other
+ * eighteen names**. Eighteen of the twenty therefore looked dead to a reader
+ * and to a coverage tool, and cutting the list to `['fill', 'stroke']` left
+ * `npx vitest run src/styles` at 6 files / 129 tests, exit 0 — both of the old
+ * anti-vacuity floors (`> 40` attributes, `> 20` `currentColor` strokes) are met
+ * by those two names alone. A list nothing pins is a list that shrinks.
+ *
+ * Two things fix that. The comparison is on {@link attributeKey}, so one entry
+ * covers both spellings and every entry names a distinct property; and
+ * `the paint-attribute law spans every attribute it names` feeds this scan a
+ * synthetic source carrying all thirteen and asserts all thirteen come back —
+ * delete one and that test names it.
+ */
 const PAINT_ATTRIBUTES: readonly string[] = [
-  'fill',
-  'fillOpacity',
-  'fill-opacity',
-  'stroke',
-  'strokeOpacity',
-  'stroke-opacity',
-  'opacity',
   'color',
-  'stopColor',
-  'stop-color',
-  'stopOpacity',
-  'stop-opacity',
-  'floodColor',
-  'flood-color',
-  'floodOpacity',
-  'flood-opacity',
-  'lightingColor',
-  'lighting-color',
+  'fill',
+  'fill-opacity',
   'filter',
+  'flood-color',
+  'flood-opacity',
+  'lighting-color',
   'mask',
+  'opacity',
+  'stop-color',
+  'stop-opacity',
+  'stroke',
+  'stroke-opacity',
 ];
+
+/**
+ * One attribute name in the single spelling this law compares by.
+ *
+ * React writes `fillOpacity`, raw SVG and `dangerouslySetInnerHTML` payloads
+ * write `fill-opacity`, and the two are one declaration. Normalising is what
+ * lets {@link PAINT_ATTRIBUTES} name each property once instead of guessing at
+ * its spellings.
+ */
+const attributeKey = (name: string): string => name.toLowerCase().replace(/-/gu, '');
+const PAINT_ATTRIBUTE_KEYS: ReadonlySet<string> = new Set(PAINT_ATTRIBUTES.map(attributeKey));
 
 interface AttributePaint {
   readonly where: string;
   readonly inert: boolean;
 }
 
-function svgPaintAttributes(): readonly AttributePaint[] {
-  const found: AttributePaint[] = [];
-  const patterns = PAINT_ATTRIBUTES.map(
-    (attribute) =>
-      [attribute, new RegExp(`(?<![-\\w])${attribute}\\s*=\\s*(?:"([^"]*)"|\\{([^}]*)\\})`, 'gu')] as const,
-  );
-  const scan = (name: string, text: string): void => {
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (PROSE_LINE.test(trimmed)) continue;
-      for (const [attribute, pattern] of patterns) {
-        for (const match of trimmed.matchAll(pattern)) {
-          const value = (match[1] ?? match[2] ?? '').trim();
-          found.push({
-            where: `${name} — ${attribute}="${value}"`,
-            inert: INERT_PAINT.has(value.toLowerCase()),
-          });
-        }
-      }
+/**
+ * The DOM styling surfaces that are **not** named after the thing they style.
+ *
+ * {@link styleOutsideTheSheets} rests on one sentence: "the DOM's styling
+ * surface is named after the thing it styles", which is why looking for the
+ * word `style` closes an open set of spellings. The Web Animations API is the
+ * counterexample, and an adversary landed it —
+ *
+ *     button.animate([{ color: 'a literal colour' }], { duration: 400, fill: 'forwards' });
+ *
+ * is a **permanent** repaint (`fill: 'forwards'` holds the last keyframe) that
+ * carries no `style` token anywhere, and whose keyframes spell `color:` and
+ * `fill:` as object properties rather than as attributes. The premise the word
+ * law rests on is false, so the exception is named here rather than left to be
+ * inferred. Empty in the tree today: no shipped source calls any of these.
+ *
+ * The keyframe *object* is caught twice over — `color` and `fill` are
+ * {@link PAINT_ATTRIBUTES} entries and {@link scanMarkupPaint} reads object
+ * properties — but that only fires when the paint is a literal this scan can
+ * read. This arm fires on the call whatever the keyframes are, which is the
+ * half that does not depend on reading a value.
+ */
+const ANIMATION_METHODS: ReadonlySet<string> = new Set(['animate', 'getAnimations']);
+const ANIMATION_CONSTRUCTORS: ReadonlySet<string> = new Set(['Animation', 'KeyframeEffect']);
+
+/** See {@link ANIMATION_METHODS}. An exact set, and empty. */
+const ANIMATION_PAINT: readonly string[] = [];
+
+/**
+ * Every paint the shipped surface declares as markup or as a DOM call, read
+ * from the **syntax tree** rather than from the text of a line.
+ *
+ * A presentation attribute is a CSS declaration written in markup — `fill`,
+ * `stroke`, `opacity`, `stop-color` on an element are the properties of the
+ * same name — and it contains no `style`, so {@link styleOutsideTheSheets}
+ * cannot see it and the CSS side never will either, because it is not in a
+ * stylesheet. The tree is full of them: fifty-one occurrences across eight
+ * components today — the same fifty-one the per-line scan this replaces found,
+ * which is one way of saying the parse lost nothing it used to catch.
+ *
+ * They are harmless today for a reason that is a **value**, not a structure:
+ * every one of them says `none` or `currentColor`. Neither introduces a
+ * colour — `none` paints nothing, and `currentColor` is whatever `color` the
+ * cascade hands that element, which is a value written in the sheets this file
+ * reads rather than a value written in the markup. Change one word to a token,
+ * which is the ordinary way to make an icon quieter, and a paint the audit
+ * cannot see is live.
+ *
+ * ## Why this is a parse and not a regex, which is the round-six repair
+ *
+ * The scan this replaces built, per attribute name,
+ * `(?<![-\w])NAME\s*=\s*(?:"([^"]*)"|\{([^}]*)\})` and ran it against
+ * `text.split('\n')`, one trimmed line at a time. Two adversaries working
+ * independently landed the same three constructions through it, and JSX offers
+ * exactly those three degrees of freedom in writing an attribute value — so
+ * this is not three holes, it is the whole surface of one:
+ *
+ * 1. **Which quote.** `fill='var(--vela-border)'` matched nothing: the pattern
+ *    reads `"…"` and `{…}` and not `'…'`. Nothing in this repository normalises
+ *    attribute quoting — `package.json` names neither prettier nor eslint nor
+ *    stylelint (zero case-insensitive matches for any of the three), and there
+ *    is no config file for any of them in the tree — so both spellings are
+ *    equally natural to type and neither would ever be rewritten.
+ * 2. **Whether it is an attribute at all.** `const QUIET = { fill: '…' }` spread
+ *    as `<circle {...QUIET} />` spells `fill:`, not `fill=`. A JSX spread
+ *    already appears ten times across seven shipped files, one of them
+ *    seventeen lines above the glyph both adversaries planted into
+ *    (`AttachmentControls.tsx`, the spread at the `<button>` and the `<circle>`
+ *    below it).
+ * 3. **Where the newlines are.** `fill={` on one line and `}` three lines down
+ *    can never match `\{([^}]*)\}`. Collapsing the identical expression onto one
+ *    line reds the old scan immediately — same characters, same semantics, same
+ *    file. Exactly three attribute values in the shipped tree are already
+ *    written that way, found by scanning for a line that is nothing but a name
+ *    and an opening brace: `LocalEndpointSection.tsx`'s `className={`,
+ *    `CommandPalette.tsx`'s `placeholder={` and `ModelWorkspace.tsx`'s
+ *    `attachments={`. None of them is a paint attribute *yet*.
+ *
+ * `JsxAttribute`, `PropertyAssignment` and `CallExpression` are **structure**.
+ * They are indifferent to quoting, to line breaks and to whether the value was
+ * hoisted into a constant, and no future spelling reopens them — which is the
+ * difference between this repair and the four before it. The parser is
+ * `typescript`, already a dev dependency and already what `pnpm typecheck`
+ * runs.
+ *
+ * A spread — `<circle {...QUIET} />` — is closed at the other end: whatever
+ * object `QUIET` names, its `fill:` is a `PropertyAssignment` in some shipped
+ * source, and every shipped source is parsed. That is why this scan does not
+ * need to resolve the spread.
+ *
+ * Reading the tree also removes the comment problem rather than approximating
+ * it: a `fill="…"` inside a docblock is trivia hanging off a node, not a
+ * `JsxAttribute`, so the `PROSE_LINE` heuristic the old scan needed is gone.
+ *
+ * ## The third answer, on this side too
+ *
+ * A value this scan cannot settle — `fill={quiet}`, a template literal, a
+ * computed property name — is **not** treated as absent. It comes back carrying
+ * the expression's own source text as its value, which is in no case a member
+ * of {@link INERT_PAINT}, so it is reported by name. That is the polarity
+ * `readAlpha` and `readPaint` use, and it is why an identifier-valued paint
+ * attribute reds rather than passing.
+ *
+ * ## What is *not* claimed
+ *
+ * Nothing here measures whether an icon clears 3:1 against its ground. This
+ * asserts only that an icon's paint is the `color` its ancestry hands it, so it
+ * is not a second, invisible palette. One stated limit: `index.html` is HTML
+ * and not TypeScript, so the shell is read with a pattern rather than a parse —
+ * over the whole file rather than per line, and accepting all three ways HTML
+ * lets an attribute value be written. The shell carries no SVG at all today.
+ */
+interface MarkupPaint {
+  readonly attributes: readonly AttributePaint[];
+  readonly animations: readonly string[];
+}
+
+/** The property name a `PropertyAssignment` writes, as source text. */
+const propertyNameOf = (name: ts.PropertyName): string =>
+  ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : name.getText();
+
+/**
+ * Every value an attribute or property initialiser can settle to.
+ *
+ * A ternary yields both branches; `??` and `||` yield both sides; anything this
+ * cannot read yields the expression's own text, which is never inert. A JSX
+ * attribute with no initialiser (`<circle fill />`) is the empty string, which
+ * is also not inert.
+ */
+function attributeValues(initialiser: ts.Node | undefined): readonly string[] {
+  if (initialiser === undefined) return [''];
+  const found: string[] = [];
+  const walk = (node: ts.Node): void => {
+    if (ts.isStringLiteralLike(node)) {
+      found.push(node.text);
+      return;
     }
+    if (ts.isParenthesizedExpression(node)) {
+      walk(node.expression);
+      return;
+    }
+    if (ts.isJsxExpression(node)) {
+      if (node.expression === undefined) found.push('{}');
+      else walk(node.expression);
+      return;
+    }
+    if (ts.isConditionalExpression(node)) {
+      walk(node.whenTrue);
+      walk(node.whenFalse);
+      return;
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+        node.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+    ) {
+      walk(node.left);
+      walk(node.right);
+      return;
+    }
+    // THE THIRD ANSWER: not "no value here", but this text, which is in no case
+    // a member of INERT_PAINT and so is reported by name.
+    found.push(node.getText().replace(/\s+/gu, ' ').trim());
   };
-  scan(SHELL, readFileSync(join(REPO_ROOT, SHELL), 'utf8'));
-  for (const path of shippedSources()) scan(repoRelative(path), readFileSync(path, 'utf8'));
+  walk(initialiser);
   return found;
 }
+
+/** See {@link MarkupPaint}. Exported through {@link readMarkupPaint}, which memoises it. */
+function scanMarkupPaint(sources: readonly (readonly [string, string])[]): MarkupPaint {
+  const attributes: AttributePaint[] = [];
+  const animations: string[] = [];
+  const record = (file: string, attribute: string, value: string, how: string): void => {
+    attributes.push({
+      where: `${file} — ${attribute}="${value}" (${how})`,
+      inert: INERT_PAINT.has(value.trim().toLowerCase()),
+    });
+  };
+  const oneLine = (node: ts.Node): string => node.getText().replace(/\s+/gu, ' ').trim();
+  for (const [file, text] of sources) {
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const walk = (node: ts.Node): void => {
+      if (ts.isJsxAttribute(node)) {
+        const name = node.name.getText();
+        if (PAINT_ATTRIBUTE_KEYS.has(attributeKey(name))) {
+          for (const value of attributeValues(node.initializer)) {
+            record(file, name, value, 'JSX attribute');
+          }
+        }
+      } else if (ts.isPropertyAssignment(node)) {
+        const name = propertyNameOf(node.name);
+        if (PAINT_ATTRIBUTE_KEYS.has(attributeKey(name))) {
+          for (const value of attributeValues(node.initializer)) {
+            record(file, name, value, 'object property');
+          }
+        }
+      } else if (ts.isShorthandPropertyAssignment(node)) {
+        const name = node.name.text;
+        if (PAINT_ATTRIBUTE_KEYS.has(attributeKey(name))) {
+          record(file, name, name, 'object property');
+        }
+      } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const method = node.expression.name.text;
+        const first = node.arguments[0];
+        if (
+          method === 'setAttribute' &&
+          first !== undefined &&
+          ts.isStringLiteralLike(first) &&
+          PAINT_ATTRIBUTE_KEYS.has(attributeKey(first.text))
+        ) {
+          for (const value of attributeValues(node.arguments[1])) {
+            record(file, first.text, value, 'setAttribute');
+          }
+        }
+        if (ANIMATION_METHODS.has(method)) animations.push(`${file} — ${oneLine(node)}`);
+      } else if (
+        ts.isNewExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        ANIMATION_CONSTRUCTORS.has(node.expression.text)
+      ) {
+        animations.push(`${file} — ${oneLine(node)}`);
+      }
+      node.forEachChild(walk);
+    };
+    walk(source);
+  }
+  return { attributes, animations: [...new Set(animations)].sort() };
+}
+
+/** The shell, read with a pattern because it is HTML. See {@link MarkupPaint}. */
+function shellPaintAttributes(html: string): readonly AttributePaint[] {
+  const found: AttributePaint[] = [];
+  for (const attribute of PAINT_ATTRIBUTES) {
+    const pattern = new RegExp(
+      `(?<![-\\w])${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+      'giu',
+    );
+    for (const match of html.matchAll(pattern)) {
+      const value = (match[1] ?? match[2] ?? match[3] ?? '').trim();
+      found.push({
+        where: `${SHELL} — ${attribute}="${value}" (HTML attribute)`,
+        inert: INERT_PAINT.has(value.toLowerCase()),
+      });
+    }
+  }
+  return found;
+}
+
+let markupPaint: MarkupPaint | null = null;
+
+function readMarkupPaint(): MarkupPaint {
+  if (markupPaint !== null) return markupPaint;
+  const parsed = scanMarkupPaint(
+    scannedSources().map((path) => [repoRelative(path), readFileSync(path, 'utf8')] as const),
+  );
+  markupPaint = {
+    attributes: [
+      ...parsed.attributes,
+      ...shellPaintAttributes(readFileSync(join(REPO_ROOT, SHELL), 'utf8')),
+    ],
+    animations: parsed.animations,
+  };
+  return markupPaint;
+}
+
+const svgPaintAttributes = (): readonly AttributePaint[] => readMarkupPaint().attributes;
 
 /**
  * Every stylesheet the app pulls in, as the import that pulls it.
@@ -727,7 +1116,7 @@ function stylesheetsPulledInFromOutside(sheets: readonly Sheet[] = SHEETS): Pull
       resolve(sheet.name, specifier);
     }
   }
-  for (const path of shippedSources()) {
+  for (const path of scannedSources()) {
     const name = repoRelative(path);
     for (const match of readFileSync(path, 'utf8').matchAll(
       /(?:from|import)\s*\(?\s*(['"])([^'"]+)\1/gu,
@@ -972,9 +1361,19 @@ function partsOf(rule: Rule): readonly SelectorPart[] {
  * `opacity`, read to a number.
  *
  * A percentage is the same value in this property's other spelling, and a number
- * outside 0..1 is clamped, which is what the engine does with it. Anything
- * else — a `calc()`, a custom property with no declaration — comes back with a
- * `null` value and is reported by name, never rounded up to `1`.
+ * **above 1** is clamped, which is what the engine does with it. Anything
+ * else — a `calc()`, a custom property with no declaration, a negative number,
+ * which this pattern accepts no sign for — comes back with a `null` value and is
+ * reported by name, never rounded up to `1` and never down to `0`. Rounding
+ * down would be the worse of the two: it would file the rule as painting
+ * nothing on the strength of a value that was never read.
+ *
+ * `reports an opacity it cannot turn into a number, rather than rounding it to
+ * 1` is what holds that, in both directions and including the arm in
+ * {@link Audit.alphaOn} that reports it. Before it, replacing both `null` arms
+ * here with a silent `1` reddened nothing at all: the only reader was
+ * `Reading.unreadable` asserted empty, and no rule in `src/` writes an opacity
+ * this cannot parse, so a reader that reported nothing satisfied it exactly.
  */
 function readAlpha(value: string, lookup: Lookup): Alpha {
   const expansion = expandVars(value, lookup);
@@ -1117,9 +1516,23 @@ function matchingParts(prepared: Prepared, element: Element): readonly SelectorP
  */
 function unanchoredParts(rules: readonly Rule[]): readonly string[] {
   return rules.flatMap((rule) => {
+    // THE SAME UNIVERSE AS THE CENSUS, WHICH IS THE POINT OF THE ARM.
+    //
+    // This condition and `every rule that puts paint on a pixel is reached by
+    // some fixture`'s decide one question in two places, and for two rounds they
+    // disagreed: the census widened to `opacity` and this did not. An adversary
+    // appended `li { opacity: 0.5; }` to a module sheet — a rule that dims
+    // every `<li>` in the app through a selector nothing anchors, declaring no
+    // colour — and this arm stayed GREEN while the census reddened with a
+    // message pointing the reader HERE, at the test that had just passed. The
+    // ordinary response to that message, adding the rule to NOT_RENDERED, then
+    // returned the suite to green with the rule live, matched by nothing, and
+    // filed as un-mounted debt: exactly the collapse `SelectorPart.anchored`
+    // exists to prevent. The two conditions are the same expression now.
     const paints =
       declaredValue(rule, 'color') !== undefined ||
-      declaredValue(rule, 'background', 'background-color') !== undefined;
+      declaredValue(rule, 'background', 'background-color') !== undefined ||
+      (declaredValue(rule, 'opacity') !== undefined && !IN_KEYFRAMES(rule));
     if (!paints) return [];
     return partsOf(rule)
       .filter((part) => !part.anchored)
@@ -1839,17 +2252,28 @@ const INSET_RINGS: readonly string[] = [
  * 'src/styles/tokens.css') continue;` — while {@link isPaletteRule}, which is
  * what actually decides whether the palette reads a declaration, tests the
  * **selector**. Two spellings of one boundary, and the gap between them was a
- * live escape: a non-`:root` rule inside `tokens.css` is exempted by this
- * function because of the file it is in and ignored by `paletteFor` because of
- * the selector it uses. Four lines at the top of the token sheet —
+ * live escape: a non-`:root` rule inside `tokens.css` was exempted by this
+ * function because of the file it was in and ignored by `paletteFor` because of
+ * the selector it used. One line at the top of the token sheet —
  *
  *     pre { --vela-code-bg: var(--vela-bg); }
  *
- * — re-point the code-block ground to the page ground for every `<pre>` in the
+ * — re-points the code-block ground to the page ground for every `<pre>` in the
  * app, taking `--vela-code-text` on `--vela-code-bg` from 15.31:1 to 1.21:1 in
- * light, while this audit goes on reporting 15.31:1. Nothing else caught it
- * either: the rule declares no `color` and no `background`, so it enters no
- * painting set and no census, and `opacity` is not involved.
+ * light. Nothing else would have caught it: the rule declares no `color` and no
+ * `background`, so it enters no painting set and no census, and `opacity` is not
+ * involved.
+ *
+ * That rule was **planted, measured and removed**, so what is checkable here is
+ * its arithmetic and not its existence — the same convention {@link
+ * GLOBAL_PAINT}'s docblock uses for its two constructions. `tokens.css` at HEAD
+ * holds three rules and every one of their selectors is a `:root` form
+ * (`:root`, `:root:not([data-theme='light'])`, `:root[data-theme='dark']`), so
+ * `rules.filter((rule) => !isPaletteRule(rule))` over that sheet is empty. The
+ * planted `pre` rule survives only inside `the palette's boundary and this
+ * prohibition's boundary are the same one`, which asserts that this function
+ * **does** report it, and the ratios were recomputed from the live token sheet
+ * with this file's own `composite` and `contrastRatio`.
  *
  * So the test is now `!isPaletteRule(rule)` over **every** rule in every sheet:
  * one predicate, exported from the file that resolves the palette, asked by the
@@ -3008,13 +3432,14 @@ const THRESHOLD = 4.5;
 /**
  * THE DEBT, ENUMERATED.
  *
- * Every rule that declares a `color` and that no fixture above **reached**.
- * These are not exemptions and none of them is safe: each one is a composition
- * this file does not measure, sitting in the tree exactly as it sat there
- * before this file existed. The difference is that it is now *written down*,
- * and that the assertion below compares the live list to this one **exactly**.
- * Add a colour rule anywhere under `src/` and this file goes red until either a
- * fixture reaches it or somebody adds the line and says why not.
+ * Every rule that declares a `color`, a `background` or a non-keyframe
+ * `opacity` and that no fixture above **reached**. These are not exemptions and
+ * none of them is safe: each one is a composition this file does not measure,
+ * sitting in the tree exactly as it sat there before this file existed. The
+ * difference is that it is now *written down*, and that the assertion below
+ * compares the live list to this one **exactly**. Add a rule that paints
+ * anywhere under `src/` and this file goes red until either a fixture reaches
+ * it or somebody adds the line and says why not.
  *
  * **Unreached is not the same as un-mounted, and this list does not tell them
  * apart.** A rule lands here either because no fixture mounts that component,
@@ -3038,30 +3463,70 @@ const THRESHOLD = 4.5;
  * One class of composition in this list is measured anyway, without a fixture:
  * where a sheet writes the ancestry down itself — a ground on `.a`, a colour on
  * `.a .b` — `measures the ancestor-ground compositions a sheet writes down,
- * mounted or not` reads it straight out of the CSS. Four of the entries here
- * are covered that way: the three `.diagnostics li` rules and `.selected .main`.
- * Everything else in this list is unmeasured.
+ * mounted or not` reads it straight out of the CSS. Some of the entries here
+ * are covered that way, and that test asserts *which* rather than leaving the
+ * count to this sentence: see `MEASURED_WITHOUT_A_FIXTURE`. Everything else in
+ * this list is unmeasured.
  *
- * **What counts as painting text widened when `opacity` did.** The census that
- * reads this list quantifies over every module rule that declares a `color`
- * *or* an `opacity` outside `@keyframes`, because a rule that dims text changes
- * what the text is painted in — see {@link Layer}. Five of the entries below
- * are dimming rules with no `color` of their own; four belong to components
- * (`MessageTurn`, `EndpointForm`) whose every colour rule is already here, and
- * the fifth, `SchedulesPanel .rowOff`, is the off-state of a row the fixture
- * mounts only in its on-state. Before that widening they were unmeasured
- * *and* unlisted, which is the worse of the two.
+ * **What counts as painting widened twice.** The census that reads this list
+ * quantifies over every module rule that declares a `color`, a `background`, or
+ * an `opacity` outside `@keyframes`.
+ *
+ * `opacity` came in round three, because a rule that dims text changes what the
+ * text is painted in — see {@link Layer}. Five of the entries below are dimming
+ * rules with no `color` of their own; four belong to components (`MessageTurn`,
+ * `EndpointForm`) whose every colour rule is already here, and the fifth,
+ * `SchedulesPanel .rowOff`, is the off-state of a row the fixture mounts only in
+ * its on-state.
+ *
+ * `background` came in round six, and it was the larger of the two omissions:
+ * **88 of the 618 module rules declare a ground and no colour of their own**,
+ * which is how this codebase writes a surface (`AppShell .shell`, `.dot`,
+ * `TitleBar .bar`, …), and not one of them could ever have appeared in this
+ * list. A ground nobody mounts is a composition nobody measures in exactly the
+ * way a colour nobody mounts is, and an adversary landed one — a
+ * `.overlayBadge { background: var(--vela-text-subtle); }` appended to a module
+ * sheet, green everywhere, where changing the single word `background` to
+ * `color` reds this test instantly. Thirty-six entries below arrived with that
+ * widening. Before it they were unmeasured *and* unlisted, which is the worse of
+ * the two.
  *
  * The way to shrink it is a fixture, not an edit here. Measured over the module
- * sheets as this was written: 618 rules, of which 276 declare a colour, 291
- * declare a colour or a non-keyframe opacity, and 178 of those 291 are reached —
- * observed, and open in both directions: a fixture that renders one more state
- * moves every one of those numbers, and nothing here forces any bound.
+ * sheets as this was written, by running the census's own predicates over
+ * `loadSheets()`: 618 rules, of which 276 declare a colour, 192 declare a
+ * ground, 88 declare a ground and no colour, 291 declare a colour or a
+ * non-keyframe opacity, 376 declare a colour or a ground or a non-keyframe
+ * opacity, and 227 of those 376 are reached — observed, and open in both
+ * directions: a fixture that renders one more state moves every one of those
+ * numbers, and nothing here forces any bound.
  */
+/**
+ * The entries of {@link NOT_RENDERED} that `measures the ancestor-ground
+ * compositions a sheet writes down, mounted or not` measures anyway.
+ *
+ * Four colour rules and the two grounds they stand on. An exact set, so a
+ * pairing that stopped pairing shrinks it and reds rather than going quiet, and
+ * so the "everything in that list is unmeasured" sentence has a place to be
+ * wrong out loud instead of in a comment.
+ */
+const MEASURED_WITHOUT_A_FIXTURE: readonly string[] = [
+  'src/features/canvas/DocumentPreview.module.css — .diagnostics',
+  'src/features/canvas/DocumentPreview.module.css — .diagnostics li',
+  "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='error']",
+  "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='warning']",
+  'src/features/navigation/ConversationRow.module.css — .selected .main',
+  'src/features/navigation/ConversationRow.module.css — .selected, .selected:hover',
+];
+
 const NOT_RENDERED: readonly string[] = [
+  'src/app/shell/AppShell.module.css — .dot',
+  'src/app/shell/AppShell.module.css — .dotOk',
+  'src/app/shell/AppShell.module.css — .dotWarn',
+  'src/app/shell/AppShell.module.css — .shell',
   'src/app/shell/AppShell.module.css — .statusBar',
   'src/features/attachments/AttachmentControls.module.css — .button',
   'src/features/attachments/AttachmentControls.module.css — .button:hover',
+  'src/features/attachments/AttachmentDropZone.module.css — .overlay',
   'src/features/attachments/AttachmentDropZone.module.css — .overlayHint',
   'src/features/attachments/AttachmentDropZone.module.css — .overlayText',
   'src/features/canvas/CanvasPanel.module.css — .code',
@@ -3074,40 +3539,51 @@ const NOT_RENDERED: readonly string[] = [
   "src/features/canvas/CanvasPanel.module.css — .version[aria-pressed='true']",
   'src/features/canvas/CanvasSurface.module.css — .chip',
   'src/features/canvas/CanvasSurface.module.css — .chip:hover',
+  'src/features/canvas/CanvasSurface.module.css — .rail',
+  'src/features/canvas/DocumentPreview.module.css — .diagnostics',
   'src/features/canvas/DocumentPreview.module.css — .diagnostics li',
   "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='error']",
   "src/features/canvas/DocumentPreview.module.css — .diagnostics li[data-severity='warning']",
   'src/features/canvas/DocumentPreview.module.css — .diagnosticsLead',
+  'src/features/canvas/DocumentPreview.module.css — .frame',
   'src/features/canvas/DocumentPreview.module.css — .notice',
   'src/features/conversation/Composer.module.css — .iconButton',
   'src/features/conversation/Composer.module.css — .iconButton:hover',
   "src/features/conversation/Composer.module.css — .iconButton[aria-pressed='true']",
   'src/features/conversation/Composer.module.css — .stop',
   'src/features/conversation/Composer.module.css — .stop:hover',
+  'src/features/conversation/ConversationView.module.css — .surface',
   'src/features/conversation/EmptyConversation.module.css — .note',
   'src/features/conversation/MessageTurn.module.css — .awaiting',
   'src/features/conversation/MessageTurn.module.css — .dots span',
+  'src/features/conversation/MessageTurn.module.css — .error',
   'src/features/conversation/MessageTurn.module.css — .errorDetail',
   'src/features/conversation/MessageTurn.module.css — .errorTitle',
   'src/features/conversation/MessageTurn.module.css — .errorTrace',
+  "src/features/conversation/MessageTurn.module.css — .error[data-kind='stopped']",
   'src/features/conversation/MessageTurn.module.css — .footer',
   'src/features/conversation/MessageTurn.module.css — .noAnswer',
   'src/features/conversation/MessageTurn.module.css — .retry',
   'src/features/conversation/MessageTurn.module.css — .retry:hover',
   'src/features/conversation/MessageTurn.module.css — .turn:hover .footer, .turn:focus-within .footer',
   'src/features/conversation/MessageTurn.module.css — .usage',
+  'src/features/conversation/MessageTurn.module.css — .userBody',
   'src/features/conversation/MessageTurn.module.css — .userText',
   'src/features/conversation/ThinkingBlock.module.css — .notice',
   'src/features/conversation/ToolCallList.module.css — .preview',
+  'src/features/conversation/ToolCallList.module.css — .pulse',
   'src/features/conversation/ToolCallList.module.css — .static',
+  'src/features/conversation/TurnNotices.module.css — .note',
   'src/features/conversation/TurnNotices.module.css — .noteDetail',
   'src/features/conversation/TurnNotices.module.css — .noteTitle',
+  "src/features/conversation/TurnNotices.module.css — .note[data-tone='warning']",
   'src/features/diagnostics/DebugLogSwitch.module.css — .error',
   'src/features/memory/MemoryPanel.module.css — .category',
   'src/features/memory/MemoryPanel.module.css — .error',
   'src/features/memory/MemoryPanel.module.css — .forget:hover',
   'src/features/memory/MemoryPanel.module.css — .pin, .forget',
   'src/features/memory/MemoryPanel.module.css — .pinned',
+  'src/features/memory/MemoryPanel.module.css — .row',
   'src/features/models/CapabilitySummary.module.css — .badge',
   'src/features/models/CapabilitySummary.module.css — .detail',
   'src/features/models/CapabilitySummary.module.css — .failure',
@@ -3116,22 +3592,29 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/models/CapabilitySummary.module.css — .label',
   'src/features/models/CapabilitySummary.module.css — .probe',
   'src/features/models/CapabilitySummary.module.css — .probe:disabled',
+  'src/features/models/CapabilitySummary.module.css — .probe:hover:not(:disabled)',
+  'src/features/models/ContextMeter.module.css — .over .fill',
   'src/features/models/ContextMeter.module.css — .over .warning',
+  'src/features/models/ContextMeter.module.css — .tight .fill',
   'src/features/models/ContextMeter.module.css — .warning',
   'src/features/models/EndpointForm.module.css — .cancel',
   'src/features/models/EndpointForm.module.css — .checkbox',
   'src/features/models/EndpointForm.module.css — .error',
+  'src/features/models/EndpointForm.module.css — .form',
   'src/features/models/EndpointForm.module.css — .hint',
   'src/features/models/EndpointForm.module.css — .input',
   'src/features/models/EndpointForm.module.css — .label',
   'src/features/models/EndpointForm.module.css — .optional',
   'src/features/models/EndpointForm.module.css — .save',
   'src/features/models/EndpointForm.module.css — .save:disabled',
+  'src/features/models/EndpointForm.module.css — .save:hover:not(:disabled)',
   'src/features/models/EndpointsPanel.module.css — .close, .add',
+  'src/features/models/EndpointsPanel.module.css — .close:hover, .add:hover',
   'src/features/models/EndpointsPanel.module.css — .credentialState',
   'src/features/models/EndpointsPanel.module.css — .error',
   'src/features/models/EndpointsPanel.module.css — .heading',
   'src/features/models/EndpointsPanel.module.css — .muted, .backend',
+  'src/features/models/EndpointsPanel.module.css — .row',
   'src/features/models/EndpointsPanel.module.css — .rowButton, .rowDanger',
   'src/features/models/EndpointsPanel.module.css — .rowDanger',
   'src/features/models/EndpointsPanel.module.css — .rowModel',
@@ -3141,20 +3624,32 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/models/LocalEndpointSection.module.css — .error',
   'src/features/models/LocalEndpointSection.module.css — .reportLine',
   'src/features/models/LocalEndpointSection.module.css — .secondary',
+  'src/features/models/ModelBar.module.css — .bar',
+  'src/features/models/ModelBar.module.css — .details',
   'src/features/models/ModelBar.module.css — .limits',
+  'src/features/models/ModelBar.module.css — .limits:hover',
   'src/features/models/ModelBar.module.css — .limitsActive',
+  'src/features/models/ModelBar.module.css — .notice',
   'src/features/models/ModelBar.module.css — .noticeDismiss',
   'src/features/models/ModelBar.module.css — .noticeText',
   'src/features/models/ModelSwitcher.module.css — .check',
   'src/features/models/ModelSwitcher.module.css — .empty',
   'src/features/models/ModelSwitcher.module.css — .footerAction',
+  'src/features/models/ModelSwitcher.module.css — .footerAction:hover',
   'src/features/models/ModelSwitcher.module.css — .optionActive',
+  'src/features/models/ModelWorkspace.module.css — .workspace',
+  'src/features/models/SecurityNotice.module.css — .elevated',
+  'src/features/models/SecurityNotice.module.css — .high',
   'src/features/models/SecurityNotice.module.css — .level',
   'src/features/models/SecurityNotice.module.css — .list',
+  'src/features/models/SecurityNotice.module.css — .notice',
   'src/features/navigation/CommandPalette.module.css — .footnote',
   'src/features/navigation/CommandPalette.module.css — .mark',
   'src/features/navigation/ConversationRow.module.css — .renameInput',
+  'src/features/navigation/ConversationRow.module.css — .renaming',
   'src/features/navigation/ConversationRow.module.css — .selected .main',
+  'src/features/navigation/ConversationRow.module.css — .selected, .selected:hover',
+  'src/features/navigation/NavigationSurface.module.css — .main',
   'src/features/navigation/NavigationSurface.module.css — .placeholder',
   'src/features/navigation/Sidebar.module.css — .error',
   'src/features/navigation/Sidebar.module.css — .note',
@@ -3164,6 +3659,7 @@ const NOT_RENDERED: readonly string[] = [
   'src/features/schedules/SchedulesPanel.module.css — .action, .delete',
   'src/features/schedules/SchedulesPanel.module.css — .delete:hover',
   'src/features/schedules/SchedulesPanel.module.css — .error',
+  'src/features/schedules/SchedulesPanel.module.css — .row',
   'src/features/schedules/SchedulesPanel.module.css — .rowMeta',
   'src/features/schedules/SchedulesPanel.module.css — .rowOff',
   'src/features/schedules/SchedulesPanel.module.css — .rowPrompt',
@@ -3340,6 +3836,90 @@ function paintsText(element: Element): boolean {
   );
 }
 
+/**
+ * Every composition one element presents, and the two ledgers a *missing*
+ * composition goes into.
+ *
+ * Lifted out of `readTheApp` so that {@link NOT_PAINTED} and `Reading.blank`
+ * have a reader that is not a twenty-three-fixture walk. That is RULE V, and it
+ * was a real hole: NOT_PAINTED's own docblock says "'measured nothing' is also
+ * what a matcher that stopped matching produces, so the set is written down
+ * instead of skipped", and both `notPainted.push(...)` calls could be deleted —
+ * keeping `invisible = true` so the `blank` net stayed quiet — with
+ * `npx vitest run src/styles/painted-contrast.test.tsx` at 36 passed, exit 0.
+ * The two unit tests named for that arm (`an element at opacity 0 has no
+ * composition to measure`, `a pseudo-element at opacity 0 paints nothing
+ * either`) assert `groundIn(...).alpha === 0` and `pseudoPairs(...).ground.alpha
+ * === 0`; neither touched the *recording*, which lived here and was compared
+ * only against an empty list.
+ *
+ * `records an element that paints nothing rather than passing over it` is what
+ * holds it now, over exactly this function.
+ */
+interface Measured {
+  readonly pairs: readonly { colour: Layer; ground: Layer; state: string }[];
+  /** See {@link NOT_PAINTED}. */
+  readonly notPainted: readonly string[];
+  /** See `Reading.blank`. */
+  readonly blank: readonly string[];
+  /** How many states were walked, which `Walked.states` totals. */
+  readonly states: number;
+}
+
+function measureElement(audit: Audit, element: Element, fixture: string): Measured {
+  const pairs: { colour: Layer; ground: Layer; state: string }[] = [];
+  const notPainted: string[] = [];
+  const blank: string[] = [];
+  const tag = element.tagName.toLowerCase();
+  const suffix = (state: string): string => (state === '' ? '' : ` in state \`${state}\``);
+  let states = 0;
+  for (const state of audit.statesOn(element)) {
+    states += 1;
+    const before = pairs.length;
+    let invisible = false;
+    for (const ground of audit.groundIn(element, state)) {
+      // AN ELEMENT AT `opacity: 0` DISPLAYS NOTHING.
+      //
+      // There is no composition to measure, and measuring one anyway would
+      // report the ground against itself at 1:1 — a red on three rules that
+      // exist precisely so a hover or focus state can reveal them. It is
+      // recorded by name instead of skipped: see {@link NOT_PAINTED}.
+      if (ground.alpha <= 0) {
+        invisible = true;
+        notPainted.push(`${fixture} — <${tag}>${suffix(state)} is at opacity 0`);
+        continue;
+      }
+      for (const colour of audit.colourIn(element, state)) pairs.push({ colour, ground, state });
+    }
+    // A `::placeholder`, `::marker` or `::after` paints its own colour — or
+    // the one it inherits — on its own ground, inside its own group.
+    for (const pair of audit.pseudoPairs(element, state)) {
+      if (pair.ground.alpha > 0) {
+        pairs.push({ ...pair, state });
+        continue;
+      }
+      // A pseudo-element at `opacity: 0` displays nothing, and it is
+      // recorded for the same reason the element case is: "measured
+      // nothing" is what a matcher that stopped matching also produces.
+      invisible = true;
+      notPainted.push(`${fixture} — <${tag}>${pair.ground.label}${suffix(state)} is at opacity 0`);
+    }
+    // THE TOTALITY FLOOR. An element the walk reached but measured nothing
+    // on is not a pass — it is an absence wearing a pass's clothes. The way
+    // this whole file goes quietly vacuous is a colour chain that resolves
+    // to nothing: `coloursFor` bottoms out at `rootColour`, and every
+    // element that *inherits* its colour then yields zero pairs,
+    // contributes zero `failures`, and reads as green. `rootPaint` refuses
+    // to hand back a `base.css body` that stopped resolving, so that is one
+    // route closed at the source; this catches the rest, wherever a chain
+    // comes back empty.
+    if (pairs.length === before && !invisible) {
+      blank.push(`${fixture} — <${tag}>${suffix(state)} measured nothing`);
+    }
+  }
+  return { pairs, notPainted, blank, states };
+}
+
 async function readTheApp(theme: Theme): Promise<Reading> {
   const palette = paletteFor(theme, SHEETS);
   const prepared = prepare(MODULE_RULES, palette);
@@ -3380,61 +3960,11 @@ async function readTheApp(theme: Theme): Promise<Reading> {
       audit.noteReach(element);
       if (!paintsText(element)) continue;
       elements += 1;
-      const pairs: { colour: Layer; ground: Layer; state: string }[] = [];
-      for (const state of audit.statesOn(element)) {
-        states += 1;
-        const before = pairs.length;
-        let invisible = false;
-        for (const ground of audit.groundIn(element, state)) {
-          // AN ELEMENT AT `opacity: 0` DISPLAYS NOTHING.
-          //
-          // There is no composition to measure, and measuring one anyway would
-          // report the ground against itself at 1:1 — a red on three rules that
-          // exist precisely so a hover or focus state can reveal them. It is
-          // recorded by name instead of skipped: see {@link NOT_PAINTED}.
-          if (ground.alpha <= 0) {
-            invisible = true;
-            notPainted.push(
-              `${fixture.name} — <${element.tagName.toLowerCase()}>` +
-                `${state === '' ? '' : ` in state \`${state}\``} is at opacity 0`,
-            );
-            continue;
-          }
-          for (const colour of audit.colourIn(element, state)) pairs.push({ colour, ground, state });
-        }
-        // A `::placeholder`, `::marker` or `::after` paints its own colour — or
-        // the one it inherits — on its own ground, inside its own group.
-        for (const pair of audit.pseudoPairs(element, state)) {
-          if (pair.ground.alpha > 0) {
-            pairs.push({ ...pair, state });
-            continue;
-          }
-          // A pseudo-element at `opacity: 0` displays nothing, and it is
-          // recorded for the same reason the element case is: "measured
-          // nothing" is what a matcher that stopped matching also produces.
-          invisible = true;
-          notPainted.push(
-            `${fixture.name} — <${element.tagName.toLowerCase()}>${pair.ground.label}` +
-              `${state === '' ? '' : ` in state \`${state}\``} is at opacity 0`,
-          );
-        }
-        // THE TOTALITY FLOOR. An element the walk reached but measured nothing
-        // on is not a pass — it is an absence wearing a pass's clothes. The way
-        // this whole file goes quietly vacuous is a colour chain that resolves
-        // to nothing: `coloursFor` bottoms out at `rootColour`, and every
-        // element that *inherits* its colour then yields zero pairs,
-        // contributes zero `failures`, and reads as green. `rootPaint` refuses
-        // to hand back a `base.css body` that stopped resolving, so that is one
-        // route closed at the source; this catches the rest, wherever a chain
-        // comes back empty.
-        if (pairs.length === before && !invisible) {
-          blank.push(
-            `${fixture.name} — <${element.tagName.toLowerCase()}>` +
-              `${state === '' ? '' : ` in state \`${state}\``} measured nothing`,
-          );
-        }
-      }
-      for (const { colour, ground, state } of pairs) {
+      const here = measureElement(audit, element, fixture.name);
+      states += here.states;
+      notPainted.push(...here.notPainted);
+      blank.push(...here.blank);
+      for (const { colour, ground, state } of here.pairs) {
         measured += 1;
         const ratio = contrastRatio(paintedOn(colour.rgba, ground), ground.rgba);
         if (sample === null && colour.label === '--vela-text-muted') {
@@ -3476,6 +4006,16 @@ async function readTheApp(theme: Theme): Promise<Reading> {
   };
 }
 
+/**
+ * The themes this file takes a reading of.
+ *
+ * Named rather than written inline twice, so that `every theme the token sheet
+ * defines is a theme this file reads` can compare it against what `tokens.css`
+ * actually declares. A third `:root[data-theme='…']` block would be a palette
+ * `paletteFor` resolves, the engine paints and no reading here covers.
+ */
+const THEMES_READ: readonly Theme[] = ['light', 'dark'];
+
 const readings = new Map<Theme, Promise<Reading>>();
 function reading(theme: Theme): Promise<Reading> {
   const existing = readings.get(theme);
@@ -3505,8 +4045,17 @@ afterAll(() => {
  * file changed between them. So the honest statement of the range is *observed
  * and open* (RULE Q): a reading here has taken between about half a second and
  * about three and a quarter seconds, and Vitest's un-overridden 5 s default is
- * therefore somewhere between 1.5x and 6.6x away depending on what else is
- * running.
+ * therefore somewhere between 1.5x and 9.8x away depending on what else is
+ * running. Both ends of that multiplier come from the same twelve readings as
+ * the range itself — 5000/3245 = 1.54 at the slow end, 5000/509 = 9.82 at the
+ * fast one.
+ *
+ * (This paragraph said "1.5x to 6.6x" for one round. 6.6 is 5000/755, the
+ * fastest *light* reading, while "about half a second" at the other end of the
+ * same sentence is 509 ms, a *dark* one: the range and the multiplier were
+ * drawn from two different subsets of the twelve numbers printed above. A
+ * measurer caught it by doing the division. The reading set has not changed;
+ * only the arithmetic over it has.)
  *
  * The round-four version of this paragraph gave one session's numbers — 2731 /
  * 1105 / 1599 and 1497 / 681 / 1522 — as facts about the machine, and derived
@@ -3521,7 +4070,7 @@ afterAll(() => {
  * Vitest does not cancel a timed-out body. The light reading goes on mounting
  * and calling `cleanup()` while the dark one renders into the same jsdom
  * document; the readings interleave, fixtures come up empty, and the loudest red
- * is `every rule that paints text is reached by some fixture` reporting a dozen
+ * is `every rule that puts paint on a pixel is reached by some fixture` reporting a dozen
  * extra unreached rules. Its own message then advises the reader to *add the
  * line to `NOT_RENDERED`* — that is, to answer a timing failure by permanently
  * shrinking the audit.
@@ -3542,7 +4091,7 @@ afterAll(() => {
 const READING_BUDGET_MS = 120_000;
 
 describe('every composition the rendered tree assembles clears WCAG AA', () => {
-  for (const theme of ['light', 'dark'] as const) {
+  for (const theme of THEMES_READ) {
     it(
       `holds in ${theme}`,
       async () => {
@@ -3647,20 +4196,35 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     expect(light.failures.some((line) => line.includes('var('))).toBe(false);
   }, READING_BUDGET_MS);
 
-  it('every rule that paints text is reached by some fixture', async () => {
+  it('every rule that puts paint on a pixel is reached by some fixture', async () => {
     const light = await reading('light');
-    // A rule that DIMS text paints text. `opacity` is modelled now, and a
-    // dimming rule no fixture reaches is unmeasured in exactly the way a
-    // colour rule no fixture reaches is — so the census quantifies over both,
-    // and the debt is enumerated in NOT_RENDERED rather than being invisible
-    // because the rule happens to declare no `color`. Keyframe stops are not
-    // selectors and no cascade reaches them; they are accounted for in
-    // UNMODELLED_PAINT instead.
+    // A rule that DIMS text paints text, and A RULE THAT GROUNDS TEXT PAINTS
+    // TEXT TOO. `opacity` was added to this census in round three; `background`
+    // in round six, and it was the wider hole of the two.
+    //
+    // An adversary appended one rule to a module sheet —
+    //
+    //     .overlayBadge { background: var(--vela-text-subtle); }
+    //
+    // — that no fixture mounts, and nothing moved. Changing one word,
+    // `background:` to `color:`, reds this test at once with the rule's own
+    // name. The property, not the risk, was deciding whether the guard spoke.
+    // I counted what that cost across the tree: of the module sheets' rules,
+    // 88 declare a ground and no colour of their own — `.shell`, `.bar`,
+    // `.dot`, every surface this codebase draws — and not one of them could
+    // ever have appeared in NOT_RENDERED. The ledger understated itself by
+    // construction, and its own docblock's promise ("add a colour rule anywhere
+    // under `src/` and this file goes red") was exactly true and exactly the
+    // boundary of the escape.
+    //
+    // Keyframe stops are not selectors and no cascade reaches them; they are
+    // accounted for in UNMODELLED_PAINT instead.
     const painting = [
       ...new Set(
         MODULE_RULES.filter(
           (rule) =>
             declaredValue(rule, 'color') !== undefined ||
+            declaredValue(rule, 'background', 'background-color') !== undefined ||
             (declaredValue(rule, 'opacity') !== undefined && !IN_KEYFRAMES(rule)),
         ).map((rule) => `${rule.file} — ${rule.selector}`),
       ),
@@ -3676,19 +4240,27 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     expect(
       painting.length - unreached.length,
       'the fixtures have stopped reaching rules',
-    ).toBeGreaterThan(120);
+    ).toBeGreaterThan(200);
   }, READING_BUDGET_MS);
 
   it('measures the ancestor-ground compositions a sheet writes down, mounted or not', () => {
     // THE SLIVER OF THE DOM EDGE THAT CSS TEXT ALONE CAN PROVE.
     //
-    // Everything else in this file needs a fixture, so the 113 rules in
-    // NOT_RENDERED are unmeasured: a ground on `.a` and a colour on `.a .b`, in
-    // a component nothing mounts, is invisible here and invisible to
+    // Everything else in this file needs a fixture, so all but a handful of the
+    // rules in NOT_RENDERED are unmeasured: a ground on `.a` and a colour on
+    // `.a .b`, in a component nothing mounts, is invisible here and to
     // contrast.test.ts (which can only read a composition a *single* rule
     // states). But when the descendant selector is written as a descendant of
     // the grounding selector, the two rules state the ancestry between them —
     // no DOM required — and that is measurable without mounting anything.
+    //
+    // WHICH of them, as an assertion rather than as this sentence (RULE T): the
+    // previous version of this comment said "the 113 rules in NOT_RENDERED are
+    // unmeasured" while four of the 113 were measured by the very test it
+    // introduces — a correct number carried onto the wrong proposition, and a
+    // measurer caught it by re-running the pairing. So the covered set is now
+    // collected as the test runs and compared against
+    // MEASURED_WITHOUT_A_FIXTURE below, which no prose can drift away from.
     //
     // It is a sliver and not the edge: `SkillsPanel`'s worked example —
     // `.detail` grounds and `.body` paints, with the nesting living in the TSX
@@ -3696,6 +4268,7 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     // What it adds is the whole of the un-mounted debt for the nested case,
     // including the three `.diagnostics li` rules that no fixture reaches.
     const failures: string[] = [];
+    const covered = new Set<string>();
     for (const theme of ['light', 'dark'] as const) {
       const prepared = prepare(MODULE_RULES, paletteFor(theme, SHEETS));
       for (const ground of prepared) {
@@ -3720,6 +4293,8 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
                 outer.subject.classes.every((name) => one.classes.includes(name)),
               );
               if (!nested) continue;
+              covered.add(`${ground.rule.file} — ${ground.rule.selector}`);
+              covered.add(`${text.rule.file} — ${text.rule.selector}`);
               const ratio = contrastRatio(composite(colour.rgba, paint.rgba), paint.rgba);
               if (ratio + 0.005 >= THRESHOLD) continue;
               failures.push(
@@ -3733,6 +4308,14 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
       }
     }
     expect([...new Set(failures)].sort(), 'a sheet states this ancestry itself').toEqual([]);
+    // Non-vacuous, and the count NOT_RENDERED's docblock used to give in prose.
+    // Every entry here is a rule no fixture reaches whose composition this test
+    // measures anyway; if the pairing stops finding them, this is what says so.
+    expect(
+      [...covered].filter((name) => NOT_RENDERED.includes(name)).sort(),
+      'the un-mounted debt this test covers without a fixture',
+    ).toEqual(MEASURED_WITHOUT_A_FIXTURE);
+    expect(covered.size).toBeGreaterThan(MEASURED_WITHOUT_A_FIXTURE.length);
   });
 
   it('no audited rule is scoped to the DOM by something this audit cannot see', () => {
@@ -3886,6 +4469,65 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     expect(namesTheStyleApi('  <span className={styles.label}>Text file</span>')).toEqual([]);
     expect(namesTheStyleApi("  node.setAttribute('style', 'color: red');")).toEqual(['style']);
     expect(namesTheStyleApi("  document.createElement('style');")).toEqual(['style']);
+    // ALL SEVEN PUNCTUATION MEMBERS, not the four the eight cases above happen
+    // to reach. PRECEDES_USE and FOLLOWS_USE together are what decide inertness,
+    // the docblock names all seven, and an adversary emptied PRECEDES_USE and
+    // cut FOLLOWS_USE to `=` with `npx vitest run src/styles` at 6 files / 129
+    // tests, exit 0 — a docblock naming a set where the test checked one branch,
+    // inside a passage headed "asserted rather than described". Each case below
+    // is a COMMENT-SHAPED line, because that is the only situation in which the
+    // classifier's answer depends on these characters at all.
+    //
+    // `.` — the failure mode the docblock itself names: a code line whose first
+    // character is `*`, which is what a wrapped statement inside a block comment
+    // looks like to a line-leading test.
+    expect(namesTheStyleApi("  * node.style.color = 'red';")).toEqual(['style']);
+    // `<` — a `<style>` element opened on a continuation line. One hit, not
+    // two: the closing tag's `style` is preceded by `/`, which is in neither
+    // set. That is a real limit and it costs nothing, because the key
+    // `styleOutsideTheSheets` builds is the LINE — a line carrying `</style>`
+    // and nothing else would be excused, and no such line can close a tag this
+    // scan did not already report on the line that opened it.
+    expect(namesTheStyleApi('  * <style>body{color:red}</style>')).toEqual(['style']);
+    expect(namesTheStyleApi('  * </style>')).toEqual([]);
+    // `(` — `('style')` as an argument, which is how both round-four escapes
+    // that used a string spelled it.
+    expect(namesTheStyleApi("  * createElement('style');")).toEqual(['style']);
+    // `:` — an object property, which is the shape of the plant this law closed.
+    expect(namesTheStyleApi('  * { style: { color } }')).toEqual(['style']);
+    // And the negative: the same words standing in a sentence, with none of the
+    // seven characters adjacent, stay excused.
+    expect(namesTheStyleApi('  * the style of the thing, and its stylesheet')).toEqual([]);
+    // THE EXEMPTION IS PER OCCURRENCE, NOT PER SPELLING. The scan used to end
+    // in `[...new Set(found)]`, so N copies of one line in one file cost one
+    // exemption — and every `why` beside a key is written about one occurrence
+    // in one place. An adversary added a second, byte-identical
+    // `node.style.height = 'auto';` to `Composer.tsx` and nothing moved.
+    const twice = "  node.style.height = 'auto';";
+    expect(styleOutsideTheSheets([['planted.tsx', `${twice}\n`]])).toEqual([
+      "planted.tsx — style — node.style.height = 'auto';",
+    ]);
+    expect(styleOutsideTheSheets([['planted.tsx', `${twice}\n${twice}\n`]])).toEqual([
+      "planted.tsx — style — node.style.height = 'auto'; — ×2",
+    ]);
+    // …and a line that names the API three times is still ONE place, which is
+    // the distinction the `new Set` inside the loop draws.
+    expect(
+      styleOutsideTheSheets([['planted.ts', '  return `<style>${style}</style>`;\n']]),
+    ).toEqual(['planted.ts — style — return `<style>${style}</style>`;']);
+    // THE BUILD CONFIG IS INSIDE THIS LAW'S UNIVERSE — see {@link BUILD_CONFIG}.
+    // A `transformIndexHtml` plugin is how the round-four shell escape came back
+    // one build step later, and `vite.config.ts` is outside `src/`.
+    expect(
+      styleOutsideTheSheets([
+        [
+          'vite.config.ts',
+          "  transformIndexHtml: (html) => html.replace('</head>', '<style>body{color:red}</style></head>'),\n",
+        ],
+      ]),
+    ).toEqual([
+      "vite.config.ts — style — transformIndexHtml: (html) => html.replace('</head>', '<style>body{color:red}</style></head>'),",
+    ]);
   });
 
   it('no paint is declared as an SVG attribute either', () => {
@@ -3896,6 +4538,11 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     // of them and every one is `none` or `currentColor` — a value, not a
     // structure. One word is the difference between the icon deferring to the
     // `color` this audit resolves and the icon carrying a palette of its own.
+    //
+    // Read from the SYNTAX TREE this round, not from a per-line regex: see
+    // {@link MarkupPaint} for the three JSX axes the regex lost on and
+    // `the paint-attribute law is indifferent to how the value is spelled` for
+    // each of them as an input.
     const attributes = svgPaintAttributes();
     expect(
       attributes.filter((found) => !found.inert).map((found) => found.where),
@@ -3903,7 +4550,227 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
     ).toEqual([]);
     // Non-vacuous: the scan really does find the attributes it is judging.
     expect(attributes.length).toBeGreaterThan(40);
-    expect(attributes.filter((found) => found.where.includes('stroke="currentColor"')).length).toBeGreaterThan(20);
+    expect(
+      attributes.filter((found) => found.where.includes('stroke="currentColor"')).length,
+    ).toBeGreaterThan(20);
+    // The shell arm is read and reports nothing, which is a fact about the
+    // shell rather than about the pattern: `index.html` is thirteen lines and
+    // carries no SVG. Stated so that "zero" here is not mistaken for coverage,
+    // and paired with an input below so the pattern is checked either way.
+    expect(attributes.filter((found) => found.where.startsWith(SHELL))).toEqual([]);
+    expect(shellPaintAttributes('<circle fill=\'var(--vela-border)\' />')).toEqual([
+      { where: `${SHELL} — fill="var(--vela-border)" (HTML attribute)`, inert: false },
+    ]);
+    // AND THE SURFACE THE WORD LAW'S PREMISE MISSES. See {@link ANIMATION_METHODS}.
+    expect(
+      readMarkupPaint().animations,
+      'the Web Animations API repaints without naming a style; move it into a sheet or account for it here',
+    ).toEqual(ANIMATION_PAINT);
+  });
+
+  it('the paint-attribute law spans every attribute it names', () => {
+    // RULE V, ON THE NEWEST LAW IN THE FILE.
+    //
+    // `PAINT_ATTRIBUTES` used to hold twenty entries and nothing pinned any of
+    // them. An adversary cut it to `['fill', 'stroke']` — eighteen deleted —
+    // and `npx vitest run src/styles` stayed at 6 files / 129 tests, exit 0,
+    // because seventeen of the twenty matched nothing in the tree and the two
+    // anti-vacuity floors above (`> 40` attributes, `> 20` `currentColor`
+    // strokes) are both satisfied by `fill` and `stroke` alone. A coverage list
+    // whose entries are only ever checked against the tree is a list that can
+    // be silently narrowed to whatever the tree happens to contain.
+    //
+    // So the list is checked against a source that contains all of it. Delete
+    // an entry and this test names the attribute that stopped being read.
+    const planted = PAINT_ATTRIBUTES.map(
+      (attribute) => `  <circle ${attribute}='var(--vela-accent)' />`,
+    ).join('\n');
+    const { attributes } = scanMarkupPaint([
+      ['planted.tsx', `const Icon = (): JSX.Element => (\n<svg>\n${planted}\n</svg>\n);\n`],
+    ]);
+    expect(attributes.map((found) => found.where).sort()).toEqual(
+      PAINT_ATTRIBUTES.map(
+        (attribute) => `planted.tsx — ${attribute}="var(--vela-accent)" (JSX attribute)`,
+      ).sort(),
+    );
+    expect(attributes.every((found) => !found.inert)).toBe(true);
+    // Both spellings of one property are one entry, which is why the list is
+    // thirteen names and not twenty. `attributeKey` is what makes that true.
+    expect(
+      scanMarkupPaint([['react.tsx', `const I = () => <stop stopColor='var(--vela-accent)' />;`]])
+        .attributes.map((found) => found.where),
+    ).toEqual(['react.tsx — stopColor="var(--vela-accent)" (JSX attribute)']);
+    // And `currentColor`/`none` really are the values that pass, in both cases.
+    expect(
+      scanMarkupPaint([['inert.tsx', `const I = () => <path fill="none" stroke="currentColor" />;`]])
+        .attributes.every((found) => found.inert),
+    ).toBe(true);
+  });
+
+  it('the paint-attribute law is indifferent to how the value is spelled', () => {
+    // THE THREE AXES, AS INPUTS. Each of these walked past the per-line regex
+    // with `npx tsc --build --force` at 0 and 119 files / 2440 tests green;
+    // each is reported now, and each is reported for the same reason, which is
+    // that the scan reads structure and structure has no spelling.
+    const axes: readonly (readonly [string, string])[] = [
+      // 1. Single quotes — the arm the regex simply had no branch for.
+      ['quoted.tsx', `const I = () => <circle fill='var(--vela-border)' />;`],
+      // 2. Hoisted paint props, spread onto the element: `fill:`, not `fill=`.
+      [
+        'spread.tsx',
+        `const QUIET = { fill: 'var(--vela-border)' };\nconst I = () => <circle {...QUIET} />;\n`,
+      ],
+      // 3. The identical expression, wrapped. `fill={` and `}` are three lines
+      //    apart, so `\{([^}]*)\}` could never match — the guard's verdict was a
+      //    function of where the newlines were.
+      [
+        'wrapped.tsx',
+        `const I = ({ dim }: { dim: boolean }) => (\n  <circle\n    fill={\n      dim ? 'var(--vela-text-subtle)' : 'currentColor'\n    }\n  />\n);\n`,
+      ],
+    ];
+    expect(
+      scanMarkupPaint(axes)
+        .attributes.filter((found) => !found.inert)
+        .map((found) => found.where),
+    ).toEqual([
+      'quoted.tsx — fill="var(--vela-border)" (JSX attribute)',
+      'spread.tsx — fill="var(--vela-border)" (object property)',
+      'wrapped.tsx — fill="var(--vela-text-subtle)" (JSX attribute)',
+    ]);
+    // A fourth: the same paint set imperatively through a callback ref, with an
+    // inert attribute left in place so the declared value reads compliant.
+    expect(
+      scanMarkupPaint([
+        [
+          'ref.tsx',
+          `const I = () => <circle fill="currentColor" ref={(n) => { n?.setAttribute('fill', 'var(--vela-border)'); }} />;`,
+        ],
+      ])
+        .attributes.filter((found) => !found.inert)
+        .map((found) => found.where),
+    ).toEqual(['ref.tsx — fill="var(--vela-border)" (setAttribute)']);
+    // THE THIRD ANSWER. A value this scan cannot settle is reported, never
+    // rounded down to "no paint here": the expression's own text comes back as
+    // the value and no such text is in INERT_PAINT.
+    expect(
+      scanMarkupPaint([['opaque.tsx', `const I = ({ q }: { q: string }) => <circle fill={q} />;`]])
+        .attributes.map((found) => found.where),
+    ).toEqual(['opaque.tsx — fill="q" (JSX attribute)']);
+    // And a comment is not a declaration — the `PROSE_LINE` heuristic the text
+    // scan needed is gone, because trivia is not a `JsxAttribute`.
+    expect(
+      scanMarkupPaint([['prose.tsx', `// <circle fill='var(--vela-border)' />\nexport const N = 1;\n`]])
+        .attributes,
+    ).toEqual([]);
+    // The animation arm, likewise as an input rather than as a sentence.
+    expect(
+      scanMarkupPaint([
+        [
+          'flash.tsx',
+          `const go = (b: HTMLElement) => { b.animate?.([{ color: 'var(--vela-border)' }], { duration: 400, fill: 'forwards' }); };`,
+        ],
+      ]).animations,
+    ).toEqual([
+      "flash.tsx — b.animate?.([{ color: 'var(--vela-border)' }], { duration: 400, fill: 'forwards' })",
+    ]);
+  });
+
+  it('the two copy outcomes are told apart by more than the word', () => {
+    // RULE V, ON THE ONE DESIGN DECISION THIS BRANCH TOOK.
+    //
+    // `CopyButton.module.css` carries a twenty-line comment above these rules:
+    // "Success and failure stay apart on the border, in the code palette's own
+    // hues rather than the page palette's: `--vela-syntax-string` …
+    // `--vela-syntax-number`." Setting both `border-color`s to the same token —
+    // so that the two outcomes are pixel-identical apart from their text —
+    // reddened nothing at all: `npx vitest run` stayed at 119 files / 2440
+    // tests. The arithmetic in that comment was checkable and correct; the
+    // *differentiation* it exists for was held by the sentence alone.
+    //
+    // It is a contrast property as well as a design one. WCAG 1.4.1 is
+    // satisfied by the word ("Copied" / "Copy failed"), which is why this is not
+    // a failure today either way; what this asserts is that the sheet still does
+    // what it says, on the ground the code bar actually paints.
+    const sheet = SHEETS.find(
+      (one) => one.name === 'src/features/conversation/CopyButton.module.css',
+    );
+    const borderOf = (selector: string, theme: Theme): Paint => {
+      const rule = sheet?.rules.find((one) => one.selector === selector);
+      const declared = declaredValue(rule ?? ({ declarations: [] } as unknown as Rule), 'border-color');
+      if (rule === undefined || declared === undefined) {
+        throw new Error(`${selector} declares no border-color`);
+      }
+      return readPaint(declared, lookupFor(rule, paletteFor(theme, SHEETS)));
+    };
+    const ground = (theme: Theme): Paint =>
+      readPaint('var(--vela-code-surface)', (name) => paletteFor(theme, SHEETS).get(name));
+    for (const theme of ['light', 'dark'] as const) {
+      const copied = borderOf(".subtle[data-outcome='copied']", theme);
+      const failed = borderOf(".subtle[data-outcome='failed']", theme);
+      if (copied.kind !== 'colour' || failed.kind !== 'colour') throw new Error('not a colour');
+      expect(copied.token).toBe('--vela-syntax-string');
+      expect(failed.token).toBe('--vela-syntax-number');
+      expect(
+        copied.token,
+        'the two outcomes must not be one colour: the border is the only thing that separates them',
+      ).not.toBe(failed.token);
+      const under = ground(theme);
+      if (under.kind !== 'colour') throw new Error('the code bar has no ground');
+      // Both borders also stay legible against the bar they sit on, which is
+      // the 3:1 non-text bar rather than this file's 4.5:1 one.
+      for (const border of [copied, failed]) {
+        expect(
+          contrastRatio(composite(border.rgba, under.rgba), under.rgba),
+        ).toBeGreaterThanOrEqual(3);
+      }
+      if (theme === 'light') {
+        // The two numbers the sheet's comment gives, as assertions.
+        expect(contrastRatio(composite(copied.rgba, under.rgba), under.rgba)).toBeCloseTo(12.8, 1);
+        expect(contrastRatio(composite(failed.rgba, under.rgba), under.rgba)).toBeCloseTo(9.8, 1);
+      }
+    }
+    // Non-vacuous: the sheet was found and really does carry these two rules.
+    expect(sheet?.rules.length).toBeGreaterThan(5);
+  });
+
+  it('every kind of file under src/ is read by something', () => {
+    // THE UNIVERSE, WHICH WAS A FILE-EXTENSION FILTER NOBODY ASSERTED.
+    //
+    // See {@link SRC_FILE_KINDS}. `src/features/attachments/badge.svg` plus one
+    // `import badgeUrl from './badge.svg'` ships two literal colours into
+    // `dist/assets/index-*.js` as an inlined data URI, with `vite build` at 0
+    // and every test green, and there was no list here it could have been named
+    // in. Now there is, and a new kind of file fails by its extension.
+    expect(
+      extensionsUnderSrc(),
+      'say what reads this kind of file, or it ships paint nothing here can see',
+    ).toEqual([...SRC_FILE_KINDS.keys()].sort());
+    expect(
+      [...SRC_FILE_KINDS].filter(([, reader]) => reader.trim() === '').map(([kind]) => kind),
+      'name the reader, or the entry is an exemption rather than an account',
+    ).toEqual([]);
+    // Non-vacuous: the walk really does descend, and really does see the two
+    // kinds every other check in this file depends on.
+    expect(extensionsUnderSrc().length).toBeGreaterThan(2);
+    expect(extensionsUnderSrc(join(SRC_ROOT, 'styles'))).toEqual(['.css', '.ts', '.tsx']);
+    // `public/` is copied into `dist/` verbatim by Vite, so a file there ships
+    // without any module importing it and without appearing in this census.
+    // There is none, and that is the assertion rather than a sentence.
+    expect(existsSync(join(REPO_ROOT, 'public'))).toBe(false);
+    // AND THE BUILD CONFIG IS ALL OF IT. See {@link BUILD_CONFIG}: a
+    // `transformIndexHtml` plugin writes a `<style>` block into the shell that
+    // `dist/` boots, and `vite.config.ts` is outside `src/`. Both text laws
+    // read it now, and a second root config file reds here rather than arriving
+    // unscanned.
+    expect(
+      readdirSync(REPO_ROOT, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.tsx?$/u.test(entry.name))
+        .map((entry) => entry.name)
+        .sort(),
+      'a build file the two text laws do not read can put paint in the shell',
+    ).toEqual([...BUILD_CONFIG].sort());
+    expect(scannedSources().length).toBeGreaterThan(shippedSources().length);
+    expect(scannedSources().some((path) => path.endsWith('vite.config.ts'))).toBe(true);
   });
 
   it('every stylesheet the app pulls in is one this file reads', () => {
@@ -3979,6 +4846,37 @@ describe('every composition the rendered tree assembles clears WCAG AA', () => {
         (rule) => rule.declarations.some(({ property }) => property.startsWith('--')) && !isPaletteRule(rule),
       ),
     ).toEqual([]);
+  });
+
+  it('every theme the token sheet defines is a theme this file reads', () => {
+    // `reading()` is called for `'light'` and `'dark'` and for nothing else, and
+    // {@link isPaletteRule} would accept a `:root[data-theme='sepia']` block as
+    // a palette rule quite happily — so a third palette would be resolved by
+    // `paletteFor`, painted by the engine, and audited by NOBODY. An adversary
+    // recorded that as an unrun observation, because the only way to plant it is
+    // to add a block to `tokens.css` and the colour surface is frozen. It does
+    // not need planting to be closed: the two sets can simply be compared.
+    const named = new Set<string>();
+    for (const sheet of SHEETS) {
+      for (const rule of sheet.rules) {
+        if (!isPaletteRule(rule)) continue;
+        for (const found of rule.selector.matchAll(/\[data-theme=['"]?([\w-]+)['"]?\]/gu)) {
+          named.add(found[1] ?? '');
+        }
+      }
+    }
+    expect(
+      [...named].sort(),
+      'add the theme to the readings this file takes, or it paints unaudited',
+    ).toEqual([...THEMES_READ].sort());
+    // Non-vacuous in both directions: the sheet really does name themes, and
+    // the two THEMES_READ drives are two DIFFERENT palettes — a list of two
+    // spellings of one reading would satisfy the equality above and measure the
+    // same tree twice.
+    expect(named.size).toBe(2);
+    expect(THEMES_READ.length).toBe(2);
+    const [first, second] = THEMES_READ.map((theme) => paletteFor(theme, SHEETS));
+    expect(first?.get('--vela-bg')).not.toBe(second?.get('--vela-bg'));
   });
 
   it('the class-name map is intact', async () => {
@@ -4133,6 +5031,108 @@ describe('the matcher is not fooled by the shapes that fooled it', () => {
     expect(unanchoredParts(parseStylesheet(FILE, `.fact li { color: var(--vela-danger); }`))).toEqual(
       [],
     );
+    // …AND OVER THE SAME PROPERTIES THE CENSUS QUANTIFIES OVER, which for two
+    // rounds it did not. `li { opacity: 0.5 }` dims every `<li>` in the app
+    // through a selector nothing anchors and declares no colour; this arm read
+    // `color`/`background` only, so it stayed silent while the census reddened
+    // and sent the reader here. Adding the rule to NOT_RENDERED — the ordinary
+    // answer to that message — then returned the whole suite to green with the
+    // rule live and matched by nothing.
+    expect(unanchoredParts(parseStylesheet(FILE, `li { opacity: 0.5; }`))).toEqual([
+      `${FILE} — li — \`li\` names no CSS-module class`,
+    ]);
+    expect(unanchoredParts(parseStylesheet(FILE, `li { background: var(--vela-bg); }`))).toEqual([
+      `${FILE} — li — \`li\` names no CSS-module class`,
+    ]);
+    // A keyframe stop is not a selector and no cascade reaches one, so it is
+    // not this arm's business — UNMODELLED_PAINT accounts for keyframes.
+    expect(
+      unanchoredParts(parseStylesheet(FILE, `@keyframes pulse { 0% { opacity: 0.5; } }`)),
+    ).toEqual([]);
+    // And a rule that declares no paint at all is not reported for being
+    // unanchored: this arm is about paint nobody can attribute, not about
+    // selectors in general.
+    expect(unanchoredParts(parseStylesheet(FILE, `li { margin: 0; }`))).toEqual([]);
+  });
+
+  it('reports an opacity it cannot turn into a number, rather than rounding it to 1', () => {
+    // RULE V, ON `readAlpha`. Its docblock says a value this audit cannot read
+    // "comes back with a `null` value and is reported by name, never rounded up
+    // to `1`", and `Audit.alphaOn` has a `found.value === null` arm that reports
+    // it. Replacing both `return { value: null, … }` arms with `value: 1` — the
+    // exact silent `1` the docblock forbids — left `npx vitest run
+    // src/styles/painted-contrast.test.tsx` at 36 passed, exit 0, because the
+    // only reader was `result.unreadable` asserted empty and no rule in `src/`
+    // writes an opacity this reader cannot parse. A reader that reports nothing
+    // satisfies that assertion perfectly.
+    const empty: Lookup = () => undefined;
+    expect(readAlpha('0.6', empty)).toEqual({ value: 0.6, text: '0.6' });
+    expect(readAlpha('60%', empty)).toEqual({ value: 0.6, text: '60%' });
+    // Above 1 is clamped, which is what the engine does with it. A NEGATIVE is
+    // not clamped and is not meant to be: the number pattern accepts no sign,
+    // so `-2` falls into the unreadable arm and is named. That is the direction
+    // that cannot hide a composition — clamping it to 0 would file a rule as
+    // "paints nothing" on the strength of a value the reader never parsed. The
+    // docblock said "outside 0..1 is clamped" for a round; it is now precise,
+    // because writing this assertion is what showed the sentence was not.
+    expect(readAlpha('1.4', empty).value).toBe(1);
+    expect(readAlpha('-2', empty)).toEqual({ value: null, text: '-2' });
+    // The two arms that must answer `null`, and the values the docblock names.
+    expect(readAlpha('var(--something-undeclared)', empty)).toEqual({
+      value: null,
+      text: 'var(--something-undeclared)',
+    });
+    expect(readAlpha('calc(1 / 3)', empty)).toEqual({ value: null, text: 'calc(1 / 3)' });
+    // And the arm downstream: an element whose opacity is unreadable is named,
+    // not silently treated as opaque.
+    const audit = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { opacity: calc(1 / 3); }`,
+    );
+    audit.groundIn(tree('dt'), '');
+    expect(audit.unreadable).toEqual([
+      'opacity `calc(1 / 3)` is not a number this audit can read',
+    ]);
+  });
+
+  it('declines a composition it cannot model by name, instead of computing it wrongly', () => {
+    // RULE V, ON `Audit.unmodelled`. Two arms, both asserted only through
+    // `expect(light.unmodelled).toEqual([])` over a tree that contains neither
+    // shape — so deleting both `this.unmodelled.push(...)` calls left the file
+    // at 36 passed, exit 0, with the nested-group multiplication the first one
+    // exists to warn about running silently.
+    //
+    // 1. TWO GROUPS. A box at `opacity` inside a box at `opacity` is two
+    //    compositing groups; this audit models one, and `own * under.alpha` is
+    //    an approximation it must say out loud.
+    const nested = auditOf(
+      `.fact { background: var(--vela-surface-raised); opacity: 0.5; }` +
+        ` .fact dt { color: var(--vela-text-muted); opacity: 0.5; }`,
+    );
+    nested.where = 'a planted sheet';
+    const grounds = nested.groundIn(tree('dt'), '');
+    expect(grounds.map((one) => one.alpha)).toEqual([0.25]);
+    expect(nested.unmodelled).toEqual([
+      'a planted sheet — <dt> is at opacity 0.5 inside a group already at opacity 0.5; ' +
+        'this audit models one group, not two',
+    ]);
+    // 2. `background: inherit` copies the parent's *declared* value, which is
+    //    not the nearest painted ancestor this file walks to. Declined by name
+    //    rather than read as absent.
+    const inherited = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { background: inherit; }`,
+    );
+    inherited.where = 'a planted sheet';
+    inherited.groundIn(tree('dt'), '');
+    expect(inherited.unmodelled).toEqual([
+      'a planted sheet — <dt> declares `background: inherit`, which this audit does not resolve',
+    ]);
+    // Neither arm fires on the ordinary shape, so the two above are measuring
+    // the decline and not something that always happens.
+    const plain = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { opacity: 0.5; }`,
+    );
+    plain.groundIn(tree('dt'), '');
+    expect(plain.unmodelled).toEqual([]);
   });
 
   it('never lets specificity outrank an !important the engine obeys', () => {
@@ -4255,6 +5255,76 @@ describe('the matcher is not fooled by the shapes that fooled it', () => {
     // The element itself is NOT dimmed by its pseudo-element's opacity — only
     // what the pseudo paints is inside that group.
     expect(audit.groundIn(input, '').map((one) => one.alpha)).toEqual([1]);
+  });
+
+  it('records an element that paints nothing rather than passing over it', () => {
+    // RULE V, ON THE TWO `notPainted` ARMS. See {@link Measured}: both
+    // `notPainted.push(...)` calls could be deleted, with `invisible = true`
+    // kept so the `blank` net stayed quiet, and the whole file stayed at exit 0.
+    // The set was compared only against an empty NOT_PAINTED, and the tree
+    // writes `opacity: 0` four times (three of them outside `@keyframes`) with
+    // no fixture mounting an element in a state that applies one — so NOT_PAINTED
+    // is empty either way, and "recorded" and "silently skipped" produced the
+    // same list.
+    //
+    // 1. The element's own box.
+    const dt = tree('dt');
+    const audit = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { opacity: 0; }`,
+    );
+    expect(measureElement(audit, dt, 'a planted fixture')).toEqual({
+      pairs: [],
+      notPainted: ['a planted fixture — <dt> is at opacity 0'],
+      blank: [],
+      states: 1,
+    });
+    // 2. A pseudo-element's own box, which is a group of its own. The line
+    //    carries the ground's label, so a pseudo that declares a ground names
+    //    itself in it and one that only inherits does not — stated, because the
+    //    inherited case below is indistinguishable from the element's own line
+    //    except that the element's own is absent.
+    const h3 = tree('h3');
+    const pseudo = auditOf(
+      `.fact { background: var(--vela-surface-raised); }` +
+        ` .fact h3::after { content: ' preview'; color: var(--vela-text); opacity: 0; }`,
+    );
+    const seen = measureElement(pseudo, h3, 'a planted fixture');
+    expect(seen.notPainted).toEqual([
+      'a planted fixture — <h3>--vela-surface-raised at opacity 0 is at opacity 0',
+    ]);
+    const named = auditOf(
+      `.fact { background: var(--vela-surface-raised); }` +
+        ` .fact h3::after { content: ' preview'; background: var(--vela-text-subtle); opacity: 0; }`,
+    );
+    expect(measureElement(named, tree('h3'), 'a planted fixture').notPainted).toEqual([
+      'a planted fixture — <h3>--vela-text-subtle (::after) over --vela-surface-raised at opacity 0 is at opacity 0',
+    ]);
+    // The element itself still measures: a pseudo at zero does not silence it.
+    expect(seen.pairs.map((pair) => `${pair.colour.label} on ${pair.ground.label}`)).toEqual([
+      '--vela-text on --vela-surface-raised',
+    ]);
+    // 3. AND THE OTHER LEDGER, for the same reason. An element the walk reached
+    //    whose colour chain resolves to nothing is an absence wearing a pass's
+    //    clothes, and `Reading.blank` is where it goes.
+    const starved = new Audit(
+      prepare(parseStylesheet(FILE, `.fact { background: var(--vela-surface-raised); }`), PALETTE),
+      [layer('--vela-bg')],
+      [],
+    );
+    expect(measureElement(starved, tree('dt'), 'a planted fixture')).toEqual({
+      pairs: [],
+      notPainted: [],
+      blank: ['a planted fixture — <dt> measured nothing'],
+      states: 1,
+    });
+    // And the ordinary element lands in neither ledger, so the three above are
+    // measuring the recording and not something that always happens.
+    const ordinary = auditOf(
+      `.fact { background: var(--vela-surface-raised); } .fact dt { color: var(--vela-text); }`,
+    );
+    const plain = measureElement(ordinary, tree('dt'), 'a planted fixture');
+    expect([plain.notPainted, plain.blank]).toEqual([[], []]);
+    expect(plain.pairs.length).toBe(1);
   });
 
   it('a pseudo-element at opacity 0 paints nothing either', () => {

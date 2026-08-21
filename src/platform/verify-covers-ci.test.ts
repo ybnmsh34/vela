@@ -178,6 +178,42 @@
  * harness gate while CI would ignore its failure. Its reader is now *every CI
  * gate can actually fail the job it is listed in*.
  *
+ * ## Defect eleven: the fix for eight was fixed one spelling at a time
+ *
+ * Measured on the tree carrying the fixes for seven to ten, each construction
+ * twice. Defect eight said that `uses:` admitted a value it could not read.
+ * The fix refused the `${{ … }}` spelling of that value — and left the *shape*
+ * of the reader, which decided what a target was by testing the raw bytes for
+ * `./`, `../` and `.yml@`. A target that missed all three patterns fell off the
+ * end of {@link refuseUses} and was classified, in silence, as a third-party
+ * action whose contents are out of reach on purpose.
+ *
+ * The same composite action, four spellings, each **117/117 green** while the
+ * control `uses: ./.github/actions/probe-composite` was red twice on the same
+ * tree:
+ *
+ *     - uses: ./.github/workflows/../actions/probe-composite/action.yml
+ *     - uses: " ./.github/actions/probe-composite"
+ *     - uses: .github/actions/probe-composite
+ *
+ * and at job level `uses: ./.github/workflows/../../shared-ci/gates.yml` with
+ * `secrets: inherit`, which imports a whole reusable workflow whose jobs are in
+ * no model here and contribute no commands to {@link COMMANDS}.
+ *
+ * Two things about this are worth keeping rather than the four inputs. First,
+ * the reader asked a **textual** question ("does this string begin with `./`?")
+ * where it owed a **referential** one ("which file does this name, and did I
+ * read it?"), which is the same substitution as defect five's prefix test and
+ * defect six's `matches.test(VERIFY)`. Second, the old doc comment stated the
+ * allow-branch's justification outright — "enumerating the directory already
+ * read it" — and that sentence was false for every input above. A justification
+ * that is false for the branch's actual acceptance set is the defect, not a
+ * description of it, so the fix is to make the sentence *checked*:
+ * {@link readWorkflowSurface} now hands {@link modelOf} the set of files it
+ * enumerated, and a local `uses:` is admitted only when it normalises onto a
+ * member of that set. Everything else is refused by name, including targets a
+ * more knowledgeable reader could probably classify.
+ *
  * ## What the reader is now, on both sides
  *
  * Both documents are read as **structure**, and both readers are *total*: every
@@ -238,8 +274,11 @@
  * - **CI getting weaker.** The invariant is one-directional — `verify` may not
  *   be looser than CI — so a step behind `if: false`, or a job removed
  *   entirely, is not something this file objects to.
- * - **A third-party `uses:`.** Refusal is two named shapes, and what
- *   `actions/checkout@v4` runs is out of reach on purpose.
+ * - **A third-party `uses:`.** `owner/repo[/path]@ref` is admitted and what
+ *   `actions/checkout@v4` runs is out of reach on purpose. That is now the only
+ *   admission {@link refuseUses} makes without consulting something it read, so
+ *   what {@link isThirdPartyAction} accepts is the size of the remaining hole,
+ *   and it is checked segment by segment for that reason.
  *
  * ### Two claims this file does not make
  *
@@ -250,7 +289,11 @@
  *    counts quoted for those are what the runs printed. Defects seven to ten
  *    were measured, each twice, on the tree carrying the fix for four, five and
  *    six; every count quoted for them is 91/91, which was that tree's full
- *    suite. **These are exact totals of one file's cases at one commit, not a
+ *    suite. Defect eleven was measured, each construction twice, on the tree
+ *    carrying the fix for seven to ten, whose full suite was 117; the counts
+ *    quoted for the mutations that hold this round's fix in place (1 failed |
+ *    140 passed, 18 failed | 123 passed, 141/141) were measured twice each on
+ *    the tree this comment ships in, whose full suite is 141. **These are exact totals of one file's cases at one commit, not a
  *    range and not a bound** — the number moves whenever a case is added, and
  *    nothing about it is evidence for anything but the run that printed it.
  * 2. **Whether GitHub's own parser accepts `"run":` as a quoted mapping key was
@@ -266,6 +309,19 @@
  *    expression in a `uses:` (defect eight). Under either answer the refusal is
  *    an over-report at worst. Neither question was closed, and closing either
  *    means running GitHub's parser, not reasoning about the specification.
+ *
+ *    Defect eleven's four spellings are the same open question and **not** the
+ *    same shape of safe, which is worth stating plainly because it is what
+ *    decided the fix. Whether GitHub resolves a target that hops out of the
+ *    workflows directory with a parent segment, or one with a leading space,
+ *    was not established here either — but the two answers
+ *    are not symmetric. If the runner rejects them, refusing costs a review; if
+ *    it accepts any single one of them, *admitting* them lets a gate reach CI
+ *    unread with this file green. An error that is unsafe under one answer
+ *    cannot be left to the answer, so every one of them is refused. This is the
+ *    general rule the file now follows: an allow-branch must name a fact the
+ *    reader established, and where there is no such fact the answer is a
+ *    refusal, not a guess in the direction that happens to be quiet.
  * 3. **A newline in a workflow `run:` block is read as ending the gating
  *    chain.** Whether it does depends on the shell's `errexit`, which is not
  *    written in this file, and this reader does not assume the answer it would
@@ -278,7 +334,8 @@
  *    which is the honest reason it was affordable to make it this way.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -634,8 +691,20 @@ describe('the workflow is read as a document, not as lines', () => {
   const probeText = (...stepLines: readonly string[]): string =>
     ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', ...stepLines].join('\n');
 
+  /**
+   * What a probe's enumeration is taken to have read: the probe file itself, and
+   * nothing else.
+   *
+   * Every `uses:` case below is really a question about this set. A target that
+   * lands in it is a file whose jobs are in the model; a target that does not is
+   * a file nobody read, whatever it looks like. A second, plausible-looking
+   * workflow name is deliberately absent from the set — before defect eleven a
+   * name like that was admitted on its spelling alone.
+   */
+  const PROBE_READ_WORKFLOWS: ReadonlySet<string> = new Set(['.github/workflows/probe.yml']);
+
   function probe(...stepLines: readonly string[]): () => WorkflowModel {
-    return () => modelOf({ file: 'probe.yml', text: probeText(...stepLines) });
+    return () => modelOf({ file: 'probe.yml', text: probeText(...stepLines) }, PROBE_READ_WORKFLOWS);
   }
 
   /** The same one-job workflow with a top-level `defaults:` block in front. */
@@ -644,7 +713,7 @@ describe('the workflow is read as a document, not as lines', () => {
     ...stepLines: readonly string[]
   ): () => WorkflowModel {
     const text = ['defaults:', ...defaultsLines, probeText(...stepLines)].join('\n');
-    return () => modelOf({ file: 'probe.yml', text });
+    return () => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS);
   }
 
   /**
@@ -688,7 +757,7 @@ describe('the workflow is read as a document, not as lines', () => {
       { spelling: 'single-quoted', key: "'uses'" },
     ])('refuses a composite action behind a $spelling uses: key', ({ key }) => {
       expect(probe(`      - ${key}: ./.github/actions/probe-composite`)).toThrow(
-        'runs "./.github/actions/probe-composite", a composite action in this repository',
+        'has a "uses:" this reader cannot place: "./.github/actions/probe-composite"',
       );
     });
 
@@ -737,13 +806,16 @@ describe('the workflow is read as a document, not as lines', () => {
       // they name, and the parse is asserted rather than inferred from a throw.
       expect(usesTargetOf(...written)).toBe('./.github/actions/foo');
       expect(probe(...written)).toThrow(
-        'runs "./.github/actions/foo", a composite action in this repository',
+        'has a "uses:" this reader cannot place: "./.github/actions/foo"',
       );
     });
 
     it('refuses a composite action reached by a parent-relative path', () => {
+      // `../` is not how GitHub spells a reference into this repository, and it
+      // is not an `owner/repo@ref` either, so this reader has no reading of it
+      // to trust. It says so instead of picking one.
       expect(probe("      - uses: '../actions/foo'")).toThrow(
-        'runs "../actions/foo", a composite action in this repository',
+        'has a "uses:" this reader cannot place: "../actions/foo"',
       );
     });
 
@@ -762,25 +834,172 @@ describe('the workflow is read as a document, not as lines', () => {
       // the key wherever it sat, which was right by accident; this one has to
       // look for it on purpose, so the case is pinned.
       const text = ['jobs:', '  probe:', '    uses: org/repo/.github/workflows/x.yml@main'].join('\n');
-      expect(() => modelOf({ file: 'probe.yml', text })).toThrow(
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow(
         'calls "org/repo/.github/workflows/x.yml@main", a reusable workflow in another repository',
       );
     });
 
     it.each([
-      { spelling: 'unquoted', written: './.github/workflows/reusable.yml', names: './.github/workflows/reusable.yml' },
-      { spelling: 'double-quoted', written: '"./.github/workflows/reusable.yml"', names: './.github/workflows/reusable.yml' },
-      { spelling: 'single-quoted', written: "'./.github/workflows/reusable.yaml'", names: './.github/workflows/reusable.yaml' },
+      { spelling: 'unquoted', written: './.github/workflows/probe.yml', names: './.github/workflows/probe.yml' },
+      { spelling: 'double-quoted', written: '"./.github/workflows/probe.yml"', names: './.github/workflows/probe.yml' },
+      { spelling: 'single-quoted', written: "'./.github/workflows/probe.yml'", names: './.github/workflows/probe.yml' },
     ])('reads a local reusable workflow written $spelling and allows it', ({ written, names }) => {
       // Two assertions, because "it did not throw" on its own is also what a
       // reader that understood nothing would report. The first says what was
       // read; the second says the admission is a decision.
+      //
+      // The target is the probe's own file and not some second, plausible name,
+      // for the whole of defect eleven: the admission is now a membership test
+      // against the files this run enumerated, and PROBE_READ_WORKFLOWS holds
+      // exactly one. The case below feeds it a target spelled identically and
+      // absent from that set.
       expect(usesTargetOf(`      - uses: ${written}`)).toBe(names);
       expect(
         probe(`      - uses: ${written}`),
-        'a local reusable workflow is a file in this directory. Enumerating the ' +
-          'directory already read it and its jobs are already in JOBS.',
+        'a local reusable workflow that the enumeration read is a file whose ' +
+          'jobs are already in JOBS under its own name.',
       ).not.toThrow();
+    });
+
+    it('refuses a local reusable workflow the enumeration never read — defect eleven', () => {
+      // The control for the row above, and the reason that row is not simply
+      // "./ paths ending .yml are fine". Same directory, same extension, same
+      // spelling; the only difference is that no such file was enumerated, so
+      // nothing here has read its jobs.
+      expect(probe('      - uses: ./.github/workflows/reusable.yml')).toThrow(
+        'has a "uses:" this reader cannot place: "./.github/workflows/reusable.yml"',
+      );
+    });
+
+    it.each([
+      {
+        shape: 'a parent hop back out of the workflows directory',
+        written: './.github/workflows/../actions/probe-composite/action.yml',
+        resolves: '.github/actions/probe-composite/action.yml',
+      },
+      {
+        shape: 'two parent hops, landing outside .github entirely',
+        written: './.github/workflows/../../shared-ci/gates.yml',
+        resolves: 'shared-ci/gates.yml',
+      },
+      {
+        shape: 'a dot segment in the middle',
+        written: './.github/workflows/./reusable.yml',
+        resolves: '.github/workflows/reusable.yml',
+      },
+    ])('resolves $shape before deciding — defect eleven', ({ written, resolves }) => {
+      // Each of these was 117/117 green before this fix, measured twice each on
+      // the tree carrying the fixes for seven to ten, and not by missing the old
+      // reader's patterns: each one *matched* them. The old arm tested the
+      // unresolved bytes, so anything beginning `./.github/workflows/` and
+      // ending `.yml` was returned as a local reusable workflow — including
+      // these three, none of which names a file in that directory. The message
+      // names the resolved path, so the case asserts that the resolution
+      // happened rather than only that something threw.
+      expect(probe(`      - uses: ${written}`)).toThrow(
+        `has a "uses:" this reader cannot place: "${written}", which as a path resolves to "${resolves}"`,
+      );
+    });
+
+    it('refuses a uses: padded with whitespace rather than trimming it — defect eleven', () => {
+      // One leading space, inside double quotes so the YAML parser keeps it, was
+      // enough to walk past every prefix test in the old reader. Trimming would
+      // be this file deciding what the runner does with the space.
+      expect(usesTargetOf('      - uses: " ./.github/actions/probe-composite"')).toBe(
+        ' ./.github/actions/probe-composite',
+      );
+      expect(probe('      - uses: " ./.github/actions/probe-composite"')).toThrow(
+        'has a "uses:" padded with whitespace',
+      );
+    });
+
+    it.each([
+      { shape: 'a repository path with no leading ./', written: '.github/actions/probe-composite' },
+      { shape: 'a bare directory name', written: 'probe-composite' },
+      { shape: 'an owner and repo with no ref', written: 'some-org/probe-composite' },
+      { shape: 'a docker image', written: 'docker://alpine:3.19' },
+      { shape: 'a ref with nothing in front of it', written: '@v4' },
+      { shape: 'an owner beginning with a dot', written: '.github/actions/probe@v1' },
+    ])('refuses $shape, which it cannot place — defect eleven', ({ written }) => {
+      // The default is refusal. Before this fix every one of these fell off the
+      // end of `refuseUses` and was silently classified as a third-party action;
+      // `.github/actions/probe-composite` was measured 117/117 green twice. Some
+      // of these the runner may well reject outright — that costs a review, and
+      // the alternative costs a gate.
+      expect(probe(`      - uses: ${written}`)).toThrow('this reader cannot place');
+    });
+
+    it.each([
+      { shape: 'a dot segment', written: './.github/workflows/./probe.yml' },
+      { shape: 'a trailing slash', written: './.github/workflows/probe.yml/' },
+      { shape: 'a doubled separator', written: './.github/workflows//probe.yml' },
+      { shape: 'a hop out and back', written: './.github/workflows/../workflows/probe.yml' },
+    ])('refuses $shape onto a file it did read, rather than picking a reading', ({ written }) => {
+      // The other half of the membership test. All four normalise onto the
+      // probe's own file, which IS in PROBE_READ_WORKFLOWS, so the set alone
+      // would admit every one of them; the admission also requires the bytes to
+      // be the plain path to that file.
+      // Refusing costs whoever writes one of these a review. Admitting one costs
+      // whatever the runner does with a spelling this reader guessed at.
+      expect(probe(`      - uses: ${written}`)).toThrow(
+        'a file this run did read, but not written as the plain path to it',
+      );
+    });
+
+    it.each([
+      {
+        level: 'step',
+        lines: ['      - uses:', '          repository: probe/composite'],
+        message: 'has a "uses:" that is not one value this reader can resolve',
+      },
+    ])('refuses a $level uses: whose value is not one scalar', ({ lines, message }) => {
+      expect(probe(...lines)).toThrow(message);
+    });
+
+    it('refuses a job whose uses: is not one scalar, instead of dropping it', () => {
+      // At job level this one had a silent reading: `scalarOf` returns undefined
+      // for a mapping, which was indistinguishable from "this job has no uses:",
+      // so a job carrying both was modelled as an ordinary steps job with the
+      // `uses:` gone. The same class as everything else here — a value it could
+      // not take apart, skipped rather than named.
+      const text = [
+        'jobs:',
+        '  probe:',
+        '    uses:',
+        '      repository: probe/composite',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: pnpm typecheck',
+      ].join('\n');
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow(
+        'with a "uses:" that is not one value this reader can resolve',
+      );
+    });
+
+    it('refuses a job-level uses: that resolves outside the workflows directory — defect eleven', () => {
+      // The job-level arm, which is where a whole reusable workflow is imported
+      // and where the escape brought in jobs contributing no commands at all.
+      const text = [
+        'jobs:',
+        '  probe:',
+        '    uses: ./.github/workflows/../../shared-ci/gates.yml',
+        '    secrets: inherit',
+      ].join('\n');
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow(
+        'resolves to "shared-ci/gates.yml"',
+      );
+    });
+
+    it.each([
+      { shape: 'a segment that is a parent hop', written: 'some-org/../probe/action@v1' },
+      { shape: 'a segment that is a dot', written: 'some-org/./action@v1' },
+      { shape: 'an empty ref', written: 'some-org/action@' },
+      { shape: 'whitespace inside the ref', written: '"some-org/action@v1 v2"' },
+    ])('refuses $shape rather than reading it as a third-party action', ({ written }) => {
+      // `isThirdPartyAction` is the only remaining allow-arm that does not
+      // consult the enumeration, so what it accepts is the size of the hole. It
+      // is checked segment by segment for that reason.
+      expect(probe(`      - uses: ${written}`)).toThrow('this reader cannot place');
     });
 
     it.each([
@@ -800,15 +1019,18 @@ describe('the workflow is read as a document, not as lines', () => {
     });
 
     it('refuses a relative path into the workflows directory that is not a workflow', () => {
+      // It lands in the right directory and is still not a file the enumeration
+      // read, which is now the only question asked of it.
       expect(probe('      - uses: "./.github/workflows/helper.sh"')).toThrow(
-        'runs "./.github/workflows/helper.sh", a composite action in this repository',
+        'has a "uses:" this reader cannot place: "./.github/workflows/helper.sh"',
       );
     });
 
     it('refuses a uses: whose opening quote never closes', () => {
       // Unquoted this exact target is *allowed* — it is the local reusable
-      // workflow above — so neither guess is safe.
-      expect(probe('      - uses: "./.github/workflows/reusable.yml')).toThrow(
+      // workflow above, and it is in `PROBE_READ_WORKFLOWS` — so neither guess
+      // is safe.
+      expect(probe('      - uses: "./.github/workflows/probe.yml')).toThrow(
         'quote never closes',
       );
     });
@@ -819,10 +1041,13 @@ describe('the workflow is read as a document, not as lines', () => {
       { spelling: 'single-quoted', written: "'dtolnay/rust-toolchain@stable'", names: 'dtolnay/rust-toolchain@stable' },
       { spelling: 'unquoted with a trailing comment', written: 'Swatinem/rust-cache@v2 # cache', names: 'Swatinem/rust-cache@v2' },
     ])('reads a third-party action written $spelling and allows it', ({ written, names }) => {
-      // The refusal is two named shapes, not a blanket one: enumerating what a
-      // third-party action runs is neither this file's business nor within its
-      // reach, and every workflow in this directory is full of them. Widening
-      // either arm to cover these is caught by `ci.yml` itself at module load.
+      // The refusal is the default and the *admission* is two named shapes, one
+      // of which is this: enumerating what a third-party action runs is neither
+      // this file's business nor within its reach, and every workflow in this
+      // directory is full of them. That direction was reversed by defect eleven,
+      // where the default was admission and refusal was the enumerated case.
+      // Narrowing this arm until it stops covering these is caught by `ci.yml`
+      // itself at module load, so the arm cannot quietly close either.
       expect(usesTargetOf(`      - uses: ${written}`)).toBe(names);
       expect(probe(`      - uses: ${written}`)).not.toThrow();
     });
@@ -870,7 +1095,7 @@ describe('the workflow is read as a document, not as lines', () => {
 
     it('refuses a job key it does not know how to reason about', () => {
       const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    surprise: yes'].join('\n');
-      expect(() => modelOf({ file: 'probe.yml', text })).toThrow(
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow(
         'has a job key this reader does not know: "surprise"',
       );
     });
@@ -954,7 +1179,7 @@ describe('the workflow is read as a document, not as lines', () => {
 
     it('refuses a second YAML document in one file', () => {
       const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test', '---', 'jobs: {}'].join('\n');
-      expect(() => modelOf({ file: 'probe.yml', text })).toThrow('a document separator');
+      expect(() => modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS)).toThrow('a document separator');
     });
 
     it('refuses a document with anything left unread after it', () => {
@@ -969,7 +1194,7 @@ describe('the workflow is read as a document, not as lines', () => {
     });
 
     it('refuses a file with no jobs: key', () => {
-      expect(() => modelOf({ file: 'probe.yml', text: 'name: nothing\n' })).toThrow(
+      expect(() => modelOf({ file: 'probe.yml', text: 'name: nothing\n' }, PROBE_READ_WORKFLOWS)).toThrow(
         'has no "jobs:" mapping',
       );
     });
@@ -979,7 +1204,7 @@ describe('the workflow is read as a document, not as lines', () => {
       // than assumed, because "found no steps" and "there are no steps" are the
       // two outcomes this whole file exists to keep apart.
       const text = ['jobs:', '  probe:', '    runs-on: ubuntu-latest', '    steps:', '    - run: pnpm test'].join('\n');
-      expect(modelOf({ file: 'probe.yml', text }).jobs[0]?.steps[0]?.run).toBe('pnpm test');
+      expect(modelOf({ file: 'probe.yml', text }, PROBE_READ_WORKFLOWS).jobs[0]?.steps[0]?.run).toBe('pnpm test');
     });
 
     it('reads a run: whose value is written on the next line', () => {
@@ -1020,6 +1245,80 @@ describe('the workflow is read as a document, not as lines', () => {
         { text: 'sudo apt-get update', gating: false },
         { text: 'sudo apt-get install -y libssl-dev', gating: true },
       ]);
+    });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* the enumeration, wired to the reader that depends on it                    */
+/* -------------------------------------------------------------------------- */
+
+describe('a local uses: is judged against the files the enumeration really read', () => {
+  // Defect ten's lesson, applied before it costs anything: *the rule being
+  // testable is not the wiring being testable*. Every `uses:` case above hands
+  // `modelOf` a set assembled by hand, so all of them stay green under a
+  // `readWorkflowSurface` that passes the wrong set. Measured on this tree,
+  // twice each: replacing the enumeration with `new Set<string>()` is 1 failed |
+  // 140 passed, and the one red is the first case here; dropping the membership
+  // test so that any `./` path is admitted is 18 failed | 123 passed, and the
+  // second case here is among them. Neither mutation is visible to any case
+  // above.
+  //
+  // These two run the real `readWorkflowSurface` over a real directory, which is
+  // why they build one rather than mocking `node:fs`: a mock would be a third
+  // hand-made set.
+
+  function inTemporaryRepository(
+    files: Readonly<Record<string, string>>,
+    body: (root: string) => void,
+  ): void {
+    const root = mkdtempSync(join(tmpdir(), 'verify-covers-ci-'));
+    try {
+      mkdirSync(join(root, ...WORKFLOW_DIRECTORY), { recursive: true });
+      for (const [name, text] of Object.entries(files)) {
+        writeFileSync(join(root, ...WORKFLOW_DIRECTORY, name), text);
+      }
+      body(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  /** A workflow whose only job is a call to a local reusable workflow. */
+  const callerOf = (target: string): string =>
+    ['jobs:', '  call:', `    uses: ./.github/workflows/${target}`].join('\n');
+
+  /** The callee: one real gate, so its arrival in the model is observable. */
+  const CALLEE = [
+    'jobs:',
+    '  gate:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - run: pnpm typecheck',
+  ].join('\n');
+
+  it('admits the call when the directory really contains the target', () => {
+    inTemporaryRepository({ 'main.yml': callerOf('helper.yml'), 'helper.yml': CALLEE }, (root) => {
+      const surface = readWorkflowSurface(root);
+      expect(surface.files).toEqual(['helper.yml', 'main.yml']);
+      // Not just "it did not throw": the allow-branch's justification is that
+      // the target's own jobs are already in the model, so that is what is
+      // asserted. The callee's gate is here, under the callee's own name.
+      expect(surface.models.flatMap((model) => model.jobs).flatMap((job) => job.commands)).toEqual([
+        { text: 'pnpm typecheck', gating: true },
+      ]);
+      expect(surface.models.flatMap((model) => model.jobs).map((job) => `${job.file}:${job.name}`)).toEqual([
+        'helper.yml:gate',
+        'main.yml:call',
+      ]);
+    });
+  });
+
+  it('refuses the identical call when the target is not a file it read', () => {
+    inTemporaryRepository({ 'main.yml': callerOf('missing.yml') }, (root) => {
+      expect(() => readWorkflowSurface(root)).toThrow(
+        'has a "uses:" this reader cannot place: "./.github/workflows/missing.yml"',
+      );
     });
   });
 });
@@ -2005,8 +2304,15 @@ const entry = (entries: readonly YamlEntry[], key: string): YamlNode | undefined
 /**
  * Turn one workflow's YAML into the jobs, steps and commands the rest of this
  * file asserts over — refusing, by name, anything it cannot account for.
+ *
+ * `readWorkflows` is the repo-root-relative path of every workflow file this run
+ * enumerated, and it exists for exactly one reader: {@link refuseUses}, which
+ * may admit a local `uses:` only when the target is a file already in that set.
+ * It is a parameter rather than a module constant so that the admission is a
+ * fact about *this* run's enumeration rather than about the repository the test
+ * process happens to sit in — and so that a case can vary it.
  */
-function modelOf(workflow: Workflow): WorkflowModel {
+function modelOf(workflow: Workflow, readWorkflows: ReadonlySet<string>): WorkflowModel {
   const where = `.github/workflows/${workflow.file}`;
   const at = (line: number): string => `${where}:${String(line + 1)}`;
   const root = parseWorkflowYaml(workflow.file, workflow.text);
@@ -2086,8 +2392,22 @@ function modelOf(workflow: Workflow): WorkflowModel {
       }
     }
 
-    const jobUses = scalarOf(entry(job, 'uses'));
-    if (jobUses !== undefined) refuseUses(where, line, jobUses);
+    // A `uses:` whose value this reader cannot resolve to one string is refused
+    // rather than skipped. `scalarOf` returns `undefined` for a mapping or a
+    // sequence, and at job level that `undefined` used to be indistinguishable
+    // from "this job has no uses:" — so a job with both a non-scalar `uses:` and
+    // `steps:` was modelled as an ordinary job with the `uses:` dropped in
+    // silence. Silence about a value it could not take apart is the failure mode
+    // of every defect in the header.
+    const jobUsesNode = entry(job, 'uses');
+    const jobUses = scalarOf(jobUsesNode);
+    if (jobUsesNode !== undefined && jobUses === undefined) {
+      throw new Error(
+        `${at(line)} declares job "${name}" with a "uses:" that is not one value ` +
+          'this reader can resolve, so it cannot say what that job runs.',
+      );
+    }
+    if (jobUses !== undefined) refuseUses(where, line, jobUses, readWorkflows);
 
     const stepsNode = entry(job, 'steps');
     if (stepsNode === undefined) {
@@ -2111,7 +2431,14 @@ function modelOf(workflow: Workflow): WorkflowModel {
       }
 
       const run = scalarOf(entry(step, 'run'));
-      const uses = scalarOf(entry(step, 'uses'));
+      const usesNode = entry(step, 'uses');
+      const uses = scalarOf(usesNode);
+      if (usesNode !== undefined && uses === undefined) {
+        throw new Error(
+          `${at(item.line)} has a "uses:" that is not one value this reader can ` +
+            'resolve, so it cannot say what steps that brings in.',
+        );
+      }
       if (run !== undefined && uses !== undefined) {
         throw new Error(`${at(item.line)} is a step with both a "run:" and a "uses:", which the runner would reject`);
       }
@@ -2145,7 +2472,7 @@ function modelOf(workflow: Workflow): WorkflowModel {
             'can see. Write the command out.',
         );
       }
-      if (uses !== undefined) refuseUses(where, item.line, uses);
+      if (uses !== undefined) refuseUses(where, item.line, uses, readWorkflows);
       return { line: item.line, run };
     });
 
@@ -2164,30 +2491,130 @@ function modelOf(workflow: Workflow): WorkflowModel {
 }
 
 /**
+ * Where these bytes land when they are read as a repository path: a `/`-joined
+ * path relative to the repository root, or `undefined` when they climb out of
+ * it.
+ *
+ * `.` segments vanish, `..` pops, and a `..` with nothing left to pop is
+ * `undefined` rather than a guess. This answers *which file do these bytes
+ * name*, which is the question {@link refuseUses} owes and used to answer with
+ * a prefix test — defect eleven.
+ */
+function normaliseUsesPath(target: string): string | undefined {
+  const out: string[] = [];
+  for (const segment of target.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (out.pop() === undefined) return undefined;
+      continue;
+    }
+    out.push(segment);
+  }
+  return out.join('/');
+}
+
+/**
+ * Whether these bytes are a reference to an action in *another* repository —
+ * `owner/repo[/path…]@ref`.
+ *
+ * Checked segment by segment, and the `@ref` is required. Every reference to
+ * another repository carries one, which is what makes this a question about
+ * what the target *is* rather than about how it is spelled:
+ * `.github/actions/foo` has no `@ref`, so it cannot reach this arm however it
+ * is written.
+ *
+ * The owner must start alphanumeric, so a first segment beginning with a dot is
+ * not an owner. A segment that is empty, `.` or `..` is refused by name: those
+ * are what make bytes a path, and a path is the other arm's business.
+ */
+function isThirdPartyAction(target: string): boolean {
+  const split = target.indexOf('@');
+  if (split <= 0) return false;
+  const ref = target.slice(split + 1);
+  if (ref === '' || ref.includes('@') || /\s/u.test(ref)) return false;
+  const segments = target.slice(0, split).split('/');
+  if (segments.length < 2) return false;
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/u.test(segments[0] ?? '')) return false;
+  return segments
+    .slice(1)
+    .every((segment) => segment !== '.' && segment !== '..' && /^[A-Za-z0-9._-]+$/u.test(segment));
+}
+
+/**
  * A `uses:` that reaches commands this reader cannot see, refused by name.
  *
- * `uses:` is how a workflow runs somebody else's steps. Most of those are
- * third-party actions — checkout, the toolchain installers — and enumerating
- * what *they* run is not this file's business or within its reach. Two shapes
- * are, because in both the invisible steps are ours:
+ * `uses:` is how a workflow runs somebody else's steps, so the whole of this
+ * function is one question: **can this reader say what the target is, and has
+ * it read the steps?** It is written as a default refusal with two allow-arms,
+ * and each arm now names a fact instead of a spelling. That inversion is defect
+ * eleven.
  *
- * - a relative path, which is a composite action in this repository whose own
- *   `run:` steps live in a file outside this directory;
- * - a `.yml` or `.yaml` in another repository, which is a reusable workflow
- *   whose jobs are not in this directory either.
+ * The two shapes that are allowed through:
  *
- * A relative path *to a workflow file in this directory* is the local reusable
- * workflow case and is allowed through: enumerating the directory already read
- * it, and its jobs are already in {@link JOBS} under their own file's name.
+ * - `owner/repo[/path…]@ref`, an action in another repository. What it runs is
+ *   out of reach on purpose, and every workflow in this directory is full of
+ *   these — see {@link isThirdPartyAction}.
+ * - a `./…` path that **normalises onto a file this run actually enumerated**.
+ *   That is the local reusable workflow case, and the admission rests on a set
+ *   membership rather than on a sentence: every member of `readWorkflows` is a
+ *   file {@link readWorkflowSurface} read and handed to {@link modelOf}, so its
+ *   jobs reach {@link JOBS} under their own file's name.
+ *
+ * A remote reusable workflow (`….yml@ref`) would match the first shape, and is
+ * refused ahead of it: its jobs run as part of this CI and are in no model here.
+ *
+ * ### Defect eleven: the arms decided a target they had never resolved
+ *
+ * The previous version asked a *textual* question — "does this string start
+ * with `./` or `../`, or match `.yml@`?" — in place of the real one, and so
+ * classified as a harmless third-party action every target that missed all
+ * three patterns. Measured on the tree that carried the fixes for seven to ten,
+ * each construction twice, each **117/117 green**, while the control spelling
+ * `./.github/actions/probe-composite` was red twice on that same tree:
+ *
+ *     - uses: ./.github/workflows/../actions/probe-composite/action.yml
+ *     - uses: " ./.github/actions/probe-composite"
+ *     - uses: .github/actions/probe-composite
+ *
+ * and, at job level, `uses: ./.github/workflows/../../shared-ci/gates.yml` with
+ * `secrets: inherit` — an entire reusable workflow whose jobs contribute no
+ * commands to any model here.
+ *
+ * It is defect eight's shape one level down. Eight was `run:` refusing an
+ * unreadable value while `uses:` admitted it; eleven is `uses:` refusing one
+ * spelling of a target while admitting four other spellings of the same target.
+ * The old doc comment stated the admission's justification outright —
+ * "enumerating the directory already read it" — and that sentence was false for
+ * every input above. The fix is therefore to *check* the sentence, not to
+ * soften it.
  *
  * The value arriving here is what the YAML parser resolved, so quoting, a value
  * written on the next line and a block scalar are all one string by the time
- * this is asked — which is what the old header claimed and the old line reader
- * could not deliver. Defects two, three and four are all upstream of here now.
+ * this is asked. Defects two, three and four are all upstream of here now.
+ * Surrounding whitespace is refused rather than trimmed: whether the runner
+ * trims it is not written in this file, and a single leading space is what
+ * defeated the old `startsWith('./')`.
  */
-function refuseUses(where: string, line: number, target: string): void {
+function refuseUses(
+  where: string,
+  line: number,
+  target: string,
+  readWorkflows: ReadonlySet<string>,
+): void {
   const at = `${where}:${String(line + 1)}`;
   if (target === '') throw new Error(`${at} has a "uses:" with no target this reader can read`);
+
+  // Defect eleven's cheapest spelling: `uses: " ./.github/actions/probe"` is a
+  // double-quoted scalar whose value keeps the leading space, which is enough to
+  // defeat any prefix test. Trimming it here would be this reader deciding what
+  // the runner does with the space; refusing says it does not know.
+  if (target !== target.trim()) {
+    throw new Error(
+      `${at} has a "uses:" padded with whitespace: "${target}". Whether the ` +
+        'runner trims that is not written in this file, and the two readings ' +
+        'name different targets, so this reader refuses rather than pick one.',
+    );
+  }
 
   // Defect eight. `run:` has refused a GitHub expression since defect four —
   // "what it runs is not in this file" — and `uses:` did not, so the identical
@@ -2208,17 +2635,6 @@ function refuseUses(where: string, line: number, target: string): void {
     );
   }
 
-  if (target.startsWith('./') || target.startsWith('../')) {
-    const local = target.replace(/^\.\//u, '');
-    if (/\.ya?ml$/u.test(local) && local.startsWith('.github/workflows/')) return;
-    throw new Error(
-      `${at} runs "${target}", a composite action in this repository. Its own ` +
-        'steps can be gates and they are not in this directory, so this reader ' +
-        'cannot see them. Teach it to read the action, or put the gate in a ' +
-        'workflow step; do not let it go unread.',
-    );
-  }
-
   if (/\.ya?ml@/u.test(target)) {
     throw new Error(
       `${at} calls "${target}", a reusable workflow in another repository. Its ` +
@@ -2227,6 +2643,44 @@ function refuseUses(where: string, line: number, target: string): void {
         'local; do not let it go unread.',
     );
   }
+
+  if (isThirdPartyAction(target)) return;
+
+  // The only other thing a `uses:` may be is a reference into this repository,
+  // which GitHub spells `./path/from/the/repository/root`. So: resolve the path
+  // and ask the enumeration whether it read that file, instead of asking the
+  // bytes what they look like. Both halves matter. Without the `./` test a
+  // target that merely *resolves* onto a workflow file would be admitted as
+  // local when it is not spelled as a local reference; without the set the `./`
+  // test admits any path at all, which is defect eleven.
+  const resolved = target.startsWith('./') ? normaliseUsesPath(target) : undefined;
+  if (resolved !== undefined && readWorkflows.has(resolved)) {
+    // Two facts, not one. The set says the file was read; this says the bytes
+    // are the plain path to it, so a target carrying a redundant dot segment,
+    // a trailing slash or a doubled separator is refused even though every one
+    // of those normalises onto a file that was read. Measured on this tree,
+    // twice each: all three, pointed at the real workflow, take the file down at
+    // module load, while the plain path leaves it 141/141 green. The reader has
+    // no way to know which reading the
+    // runner takes, and the cost of asking for the plain spelling is a review
+    // while the cost of guessing is a gate.
+    if (target === `./${resolved}`) return;
+    throw new Error(
+      `${at} names "${target}", which resolves onto "${resolved}" — a file this ` +
+        'run did read, but not written as the plain path to it. This reader will ' +
+        'not decide which of the two readings the runner takes. Write the plain ' +
+        'path.',
+    );
+  }
+
+  throw new Error(
+    `${at} has a "uses:" this reader cannot place: "${target}"` +
+      (resolved === undefined ? '' : `, which as a path resolves to "${resolved}"`) +
+      '. It is neither a well-formed owner/repo[/path]@ref nor a "./" path onto ' +
+      'one of the workflow files this run enumerated, so whatever steps or jobs ' +
+      'it brings in have gone unread. Teach this reader to read that target, or ' +
+      'put the gate in a workflow step; do not let it go unread.',
+  );
 }
 
 /** Everything in `.github/workflows/`, split into what runs and what does not. */
@@ -2271,8 +2725,19 @@ function readWorkflowSurface(repoRoot: string): WorkflowSurface {
     else ignoredFiles.push(path);
   }
 
+  // The set of files the enumeration read, in the form a `uses:` names them:
+  // relative to the repository root. Built before any parse, so every file in
+  // the directory is in it by the time the first `uses:` is judged, and read by
+  // `refuseUses` through `modelOf`. This is the whole of the fix for defect
+  // eleven at the wiring: the old allow-branch asserted that the enumeration had
+  // read the target, and nothing carried the enumeration to the place that
+  // asserted it.
+  const readWorkflows: ReadonlySet<string> = new Set(
+    files.map((file) => `${WORKFLOW_DIRECTORY.join('/')}/${file}`),
+  );
+
   const models = files.map((file) =>
-    modelOf({ file, text: readFileSync(join(directory, ...file.split('/')), 'utf8') }),
+    modelOf({ file, text: readFileSync(join(directory, ...file.split('/')), 'utf8') }, readWorkflows),
   );
 
   return { files, ignoredFiles, models };

@@ -3,9 +3,9 @@
   "tag": "run-start-2026-08-17",
   "sha": "c0feb93",
   "state": "RUNNING",
-  "round": 4,
+  "round": 5,
   "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
-  "updated": "2026-08-21 — round 3 complete, round 4 running",
+  "updated": "2026-08-21 — round 4 complete, round 5 running",
   "tracks": [
     {
       "id": "t01",
@@ -14,7 +14,7 @@
       "guard": false,
       "tier": "dev-clicked",
       "verdict": "FAIL",
-      "round": 4,
+      "round": 5,
       "blocker": "LADDER, DOC-HONESTY, WRITE-READ"
     },
     {
@@ -23,9 +23,9 @@
       "wt": "vela-t02",
       "guard": false,
       "tier": "dev-clicked",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER, DOC-HONESTY, WRITE-READ"
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t03",
@@ -33,9 +33,9 @@
       "wt": "vela-t03",
       "guard": true,
       "tier": "test-bites",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER, DOC-HONESTY"
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t04",
@@ -44,8 +44,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
-      "blocker": "LADDER, PROBE, FUNCTIONALITY, DOC-HONESTY"
+      "round": 5,
+      "blocker": "LADDER, PROBE, DOC-HONESTY, WRITE-READ"
     },
     {
       "id": "t05",
@@ -54,8 +54,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
-      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE"
+      "round": 5,
+      "blocker": "LADDER, FUNCTIONALITY, PROBE, REGRESSION, DOC-HONESTY"
     },
     {
       "id": "t06",
@@ -64,7 +64,7 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
+      "round": 5,
       "blocker": "LADDER, DOC-HONESTY, PROBE"
     },
     {
@@ -74,8 +74,8 @@
       "guard": true,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
-      "blocker": "LADDER, FUNCTIONALITY, DOC-HONESTY, PROBE"
+      "round": 5,
+      "blocker": "LADDER, DOC-HONESTY, PROBE"
     },
     {
       "id": "t08",
@@ -84,8 +84,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
-      "round": 3,
-      "blocker": "LADDER only — see BLOCKER-ladder.md"
+      "round": 4,
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t09",
@@ -94,8 +94,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
-      "round": 3,
-      "blocker": "LADDER only — see BLOCKER-ladder.md"
+      "round": 4,
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t10",
@@ -104,8 +104,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
-      "round": 3,
-      "blocker": "LADDER only — see BLOCKER-ladder.md"
+      "round": 4,
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t11",
@@ -114,8 +114,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
-      "round": 3,
-      "blocker": "LADDER only — see BLOCKER-ladder.md"
+      "round": 4,
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t12",
@@ -124,8 +124,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "CAPPED-PASS",
-      "round": 3,
-      "blocker": "LADDER only — see BLOCKER-ladder.md"
+      "round": 4,
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t13",
@@ -134,8 +134,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
-      "blocker": "LADDER, MUTATION"
+      "round": 5,
+      "blocker": "LADDER, DOC-HONESTY, WRITE-READ"
     },
     {
       "id": "t14",
@@ -144,7 +144,7 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
+      "round": 5,
       "blocker": "LADDER, ACCESSIBILITY"
     },
     {
@@ -154,7 +154,7 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
+      "round": 5,
       "blocker": "LADDER, DOC-HONESTY"
     },
     {
@@ -163,9 +163,9 @@
       "wt": "vela-t16",
       "guard": false,
       "tier": "test-bites",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER, DOC-HONESTY"
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     },
     {
       "id": "t17",
@@ -174,8 +174,8 @@
       "guard": false,
       "tier": "test-bites",
       "verdict": "FAIL",
-      "round": 4,
-      "blocker": "LADDER, DOC-HONESTY"
+      "round": 5,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY, ACCESSIBILITY"
     },
     {
       "id": "t18",
@@ -183,15 +183,20 @@
       "wt": "vela-t18",
       "guard": false,
       "tier": "test-bites",
-      "verdict": "FAIL",
+      "verdict": "CAPPED-PASS",
       "round": 4,
-      "blocker": "LADDER, DOC-HONESTY"
+      "blocker": "LADDER only — operator decision, see BLOCKER-ladder.md"
     }
   ],
-  "note": "Round 3: failing members 43 -> 36 across the 14 active tracks. FIVE tracks (T8,T9,T10,T11,T12) now fail on NOTHING BUT the ladder cap - capped-pass. The freed-builder adversaries succeeded on 16 of 19 evasions against the guards, far above the critics rate: knowing how these fixes are built beats fresh eyes. DOC-HONESTY is the stubborn member - 17, then 12, then 11 - so round 4 applies the RULE P shape to prose: a MEASURER checks every checkable claim in each track diff, by running commands, BEFORE the builder commits.",
+  "note": "Round 4 applied RULE P to prose: a MEASURER checked 1,110 claims across the run by running commands and found 75 false — in prose that had already survived three rounds of DOC-HONESTY grading. NINE of eighteen tracks are now CAPPED-PASS. Two lead rule defects recorded in corrections.md: the binary verdict had no defined answer for an externally-blocked member (two critics passed, five failed, identical facts), now fixed with CAPPED-PASS; and RULE P as written could not be satisfied — as guards improved, adversary success went UP, 16/19 then 21/23, so the standard is now reachability-classified rather than absolute.",
   "blocker": {
     "id": "ladder",
     "doc": "docs/run/BLOCKER-ladder.md",
     "summary": "LADDER fails on all 18 and cannot be lifted from inside this session: the NSIS setup installs to %LOCALAPPDATA%Vela, which resolves inside the Claude MSIX container (4 container-only paths, control passing). Installing from here would produce a void observation, and a previous attempt removed an unrelated third-party Vela shortcuts. Decision needed from the operator."
+  },
+  "verdicts": {
+    "PASS": "LADDER genuinely at reaches-user — impossible this session",
+    "CAPPED_PASS": "every applicable member passes; LADDER is the only failure",
+    "FAIL": "real members outstanding"
   }
 }

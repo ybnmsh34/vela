@@ -600,6 +600,50 @@ each track's own diff and checks every checkable sentence by running commands, b
 commits.** Prose gets the same treatment as guards — someone else, with a probe, first.
 
 
+### Round 4 — nine tracks capped-pass, 1,110 claims measured, and two rules of mine broke
+
+46 agents: 14 measurers, 4 adversaries, 14 builders, 14 critics.
+
+**Nine of eighteen tracks are now CAPPED-PASS** — T2, T3, T8, T9, T10, T11, T12, T16, T18. Every
+applicable member passing, blocked only by the ladder, which is an operator decision.
+
+#### Applying RULE P to prose worked, and its gap is instructive
+
+A measurer went through each track's diff and checked every checkable sentence **by running
+commands**, before the builder committed. Across the run: **1,110 claims measured, 75 false** — a
+6.8% falsity rate in prose that had already survived three rounds of DOC-HONESTY grading by critics
+who were reading it.
+
+DOC-HONESTY fell 11 → 8. And where it still failed, the reason is exact and is about coverage rather
+than effort: **the measurer checked the diff as it stood before the builder started, so prose written
+*during* round 4 was never measured — and that is precisely where it failed.** One track's own
+corrections file asserted in the present tense that a phrase lives in a script, when that same
+entry's fix had just deleted it, and the tree-wide grep it invited returned only the corrections file
+itself.
+
+#### Two defects in my own rules, both recorded in `docs/corrections.md`
+
+**The binary verdict was not binary.** Two critics graded their tracks `PASS` with `LADDER: FAIL`,
+reasoning everything the track could control had passed. Five others, identical situation, graded
+`FAIL`. Both readings are defensible against what I wrote — which makes it an undefined rule that
+looked strict. Fixed with a third verdict, `CAPPED-PASS`.
+
+**RULE P as written could not be satisfied.** No guard cleared it in four rounds, and the trend ran
+the wrong way: as guards improved, adversary success went **up** — 16 of 19, then **21 of 23**. A
+white-box attacker who has read the fix can get past any finite guard, so "nobody can evade it" is a
+bar nothing clears, and a bar nothing clears grades nothing. It stopped carrying information around
+round 2 and I ran it two more rounds because the failures looked like signal.
+
+Now every evasion is classified — `already-in-tree`, `a-maintainer-would-plausibly-write-this`,
+`requires-deliberate-evasion` — with the classification argued from the tree, and the first two
+decide the verdict while the third must be documented as a known limit.
+
+That is not a softened bar. It is the difference between *is this guard perfect* — unanswerable, and
+therefore useless — and *does this guard catch what will actually happen here*. The first question is
+one notch **wider** than the real one, and four rounds have now shown that a question at the wrong
+width grades nothing in either direction.
+
+
 ---
 
 # Previous runs

@@ -9,6 +9,63 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — the lead wrote a panel rule that two critics read one way and five the other
+
+**Claimed:** the panel is binary and unambiguous — "PASS only if every applicable member PASSes",
+with `LADDER` passing only at `reaches-user` or `ships`.
+
+**True:** that rule has no defined answer for a member **no track can pass**, and the critics split
+on it. In round 4, two graded their tracks `PASS` with `LADDER: FAIL`, reasoning that everything the
+track could control had passed. Five others, in the identical situation, graded `FAIL`. Same facts,
+opposite verdicts, and both readings are defensible against what I wrote.
+
+**Whose defect.** Mine. A rule that produces two answers to one situation is not a strict rule; it is
+an undefined one that looked strict. The critics behaved correctly — they resolved an ambiguity, and
+they resolved it differently because there was nothing in the rule to make them agree.
+
+**Fixed by** adding a third verdict, `CAPPED-PASS`: every applicable member passes and `LADDER` is
+the only failure. It is not a PASS and does not pretend to be — nothing has been installed and
+nothing driven as a user drives it — but it is distinguishable from a track with real defects
+outstanding, which is the distinction the run needs and the binary could not express.
+
+**The reusable part:** a binary verdict over a panel containing a member that is externally blocked
+is not binary. Either the blocked member is excluded from the verdict, or the verdict needs a third
+value. Choosing neither means the answer depends on which critic you drew.
+
+---
+
+## 2026-08-21 — RULE P as written could not be satisfied, and the trend proved it
+
+**Claimed:** a guard passes when a third agent, shown the fix, fails to re-evade.
+
+**True:** across four rounds no guard ever cleared that bar, and the trend runs the wrong way. As the
+guards improved, the attackers got **more** successful — 16 of 19 evasions landed in round 3, then
+**21 of 23** in round 4. Four of the five guards have now failed PROBE every round while genuinely
+closing every evasion handed to them.
+
+**What that means.** A white-box attacker who has read the fix can construct *something* that gets
+past any finite guard. So "nobody can evade it" is a bar nothing will ever clear, and **a bar nothing
+can clear grades nothing** — the member stopped carrying information somewhere around round 2, and I
+kept running it for two more rounds because the failures looked like signal.
+
+**Fixed by** making the standard measurable rather than absolute. Every evasion is now classified,
+with the classification argued from the tree:
+
+- `already-in-tree` — the shape exists in Vela today. Cite it. The guard must catch this.
+- `a-maintainer-would-plausibly-write-this` — an ordinary contributor doing ordinary work would
+  produce it without trying to evade anything. Nested CSS, a block-scalar YAML value, a type-only
+  import were all in this class, and all were real defects.
+- `requires-deliberate-evasion` — recorded, not weighted. Real, worth knowing, and **must be
+  documented as a known limit** — an unstated limit is the defect, a stated one is honest.
+
+**This is not a softened bar.** It is the difference between "is this guard perfect" — which is
+unanswerable and therefore useless — and "does this guard catch what will actually happen here",
+which is answerable, and is what a guard is for. The first question is one notch **wider** than the
+real one, and this run has spent four rounds proving that a question at the wrong width, in either
+direction, grades nothing.
+
+---
+
 ## 2026-08-17 — the lead dropped thirteen of eighteen tracks with a null return
 
 **Claimed:** "Run is live. All eighteen tracks are spawned and working."

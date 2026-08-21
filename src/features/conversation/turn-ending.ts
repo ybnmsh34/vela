@@ -98,7 +98,7 @@ export interface TurnEndingInput {
    *
    * `TurnState.recordedFailure`, which is the store's `errorMessage` column read
    * back. Only the `failed` phase consults it, and it is never parsed — see
-   * {@link FAILED_RECORDED}.
+   * {@link failedRecorded}.
    */
   readonly recordedFailure: string | null;
 }

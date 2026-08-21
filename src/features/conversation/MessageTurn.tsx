@@ -74,11 +74,11 @@ interface AssistantTurnProps {
    * and for nothing else.
    *
    * Every retryable turn in a transcript draws a button reading "Try again from
-   * here", and each one discards from a different anchor — the button on turn 2
-   * throws away four later replies, the button on turn 5 throws away one. Read
-   * out of context by a screen reader they were the same control repeated, and
-   * the visible wording could not fix that: it is the same for every one of
-   * them because it is true of every one of them.
+   * here", and each one discards from a different anchor: an earlier one throws
+   * away every reply after it, a later one throws away fewer. Read out of
+   * context by a screen reader they were the same control repeated, and the
+   * visible wording could not fix that — it is the same on every one of them
+   * because it is true of every one of them.
    *
    * So the *name* carries the target while the *label* stays short. Undefined
    * for a caller that does not know the question — `MessageTurn.test.tsx` mounts

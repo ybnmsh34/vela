@@ -89,9 +89,14 @@
 .confirm {
   background: var(--vela-danger);
   border: 1px solid var(--vela-danger);
-  /* The same inversion DeleteConversationDialog .confirm records: the dark
-     theme's danger fill is a light rose, so a fixed white label reads at 2.5:1
-     there. This role inverts with the fill it sits on. */
+  /* The same inversion DeleteConversationDialog .confirm records. In dark the
+     danger fill is a light rose (--vela-rose-400), so a fixed white label reads
+     at **2.98:1** on it, against **6.59:1** for this role. Both figures were
+     resolved from tokens.css and computed by WCAG 2.x relative luminance for
+     this comment, on a function checked against black-on-white = 21.000:1 —
+     the neighbouring file said 2.5:1 for the first of them, and
+     docs/corrections.md records why that number was wrong. This role inverts
+     with the fill it sits on. */
   color: var(--vela-text-on-danger);
 }
 

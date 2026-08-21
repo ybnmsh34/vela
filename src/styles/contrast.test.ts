@@ -38,9 +38,12 @@
  *
  * - `EndpointForm .save` and `DeleteConversationDialog .confirm` painted
  *   `--vela-night-0` (white) on `--vela-accent` / `--vela-danger`. In dark those
- *   fills are *light* — `#5fe2d6`, `#f2668b` — so the label sat at ~1.4:1 and
- *   ~2.5:1. `--vela-text-on-accent` already existed for exactly this and both
- *   files bypassed it.
+ *   fills are *light* — `#5fe2d6`, `#f2668b` — so the label sat at **1.57:1**
+ *   and **2.98:1**. (This line said ~1.4:1 and ~2.5:1 until both were
+ *   recomputed from the token sheet; neither token has changed since the first
+ *   commit, so those figures were never right. `docs/corrections.md`.)
+ *   `--vela-text-on-accent` already existed for exactly this and both files
+ *   bypassed it.
  * - `--vela-warning` (amber-600) at 3.20–3.33:1 in light, including warning text
  *   on the warning fill it is paired with.
  * - `--vela-success` at 3.16–3.60:1 and `--vela-danger` at 4.45:1 in light.

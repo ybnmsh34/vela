@@ -9,6 +9,37 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — a contrast figure four files repeat, and none of them measured
+
+**Claimed**, in `src/features/navigation/DeleteConversationDialog.module.css`: that white on the
+dark theme's danger fill "read at 2.5:1 there". And in `src/styles/contrast.test.ts`'s own
+docblock, listing what the gate found on its first run: that `EndpointForm .save` and
+`DeleteConversationDialog .confirm` "sat at ~1.4:1 and ~2.5:1".
+
+**True:** **1.57:1** and **2.98:1**. Resolved from `src/styles/tokens.css` — dark
+`--vela-accent` is `--vela-signal-300` `#5fe2d6`, dark `--vela-danger` is `--vela-rose-400`
+`#f2668b`, and `--vela-night-0` is `#ffffff` in both themes — and computed by WCAG 2.x relative
+luminance, on a function checked against black-on-white = 21.000:1. Neither token has changed
+since `bb6f768`, the first commit in this repository, so the figures were not stale: they were
+never measured. For completeness the same run gives `--vela-text-on-accent` at 12.47:1 and
+`--vela-text-on-danger` at 6.59:1 on those fills, which is what the repair bought.
+
+**Nothing about the conclusion changes.** 1.57 and 2.98 are as far under AA as 1.4 and 2.5, the
+repair was right, and the gate that enforces it computes its own numbers and never reads these
+comments. That is exactly the danger: a figure no assertion depends on is a figure nobody checks,
+and it survived a full contrast audit written by the same hand.
+
+**How it was caught:** by copying it. This branch added a third dialog whose confirm button takes
+the same role inversion, and the comment beside it was pasted from the file next door. Re-deriving
+it before writing it down was the only reason it came up.
+
+**What changed:** the two source comments now carry the measured figures and say where the old one
+came from. Two records that repeat the old figure are left as written, because they are records of
+what was reported at the time and this entry is the correction:
+`docs/desktop-gate/REQUESTS.md` and `docs/regression-baseline/platform-defaults/RESULTS.md`.
+
+---
+
 ## 2026-08-21 — two numbers in a report about numbers, and the rename that could not finish
 
 **Claimed**, in this branch's round-2 report — not in the tree, which is why the tree stayed green

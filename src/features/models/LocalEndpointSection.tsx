@@ -38,10 +38,21 @@ import type {
 import styles from './LocalEndpointSection.module.css';
 import { useLocalEndpoint } from './use-local-endpoint';
 
-/** What the user can ask for, and the words they read. */
+/**
+ * What the user can ask for, and the words they read.
+ *
+ * `Always offer tools`, not `Offer tools`. An `<option>`'s accessible name is
+ * its own text — there is no `aria-label` escape here — and `Offer tools` was a
+ * substring of `Never offer tools`, the option that means the opposite. A
+ * non-exact query for the first (Playwright's `getByRole` default, and how
+ * Windows Voice Access matches) also matched the second, leaving which of two
+ * opposed tool policies got selected to document order. Making the pair
+ * parallel removes the containment instead of relying on that order.
+ * `src/app/accessible-names.test.tsx` is what re-checks it.
+ */
 const TOOLS_CHOICES: readonly { readonly value: EndpointToolsRequest; readonly label: string }[] = [
   { value: 'default', label: 'Let the address decide' },
-  { value: 'on', label: 'Offer tools' },
+  { value: 'on', label: 'Always offer tools' },
   { value: 'off', label: 'Never offer tools' },
 ];
 

@@ -210,7 +210,9 @@ describe('the endpoint list', () => {
     await user.click(screen.getByRole('button', { name: 'Add endpoint' }));
     await screen.findByText('Temporary');
 
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    // Named for the row it deletes. Bare `Remove` was one name shared by every
+    // configured endpoint's delete button, and it deletes without asking.
+    await user.click(screen.getByRole('button', { name: 'Remove: Temporary' }));
     await waitFor(() => {
       expect(screen.queryByText('Temporary')).not.toBeInTheDocument();
     });

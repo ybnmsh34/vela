@@ -9,6 +9,54 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 — the guard that stopped at its own family, and a count that was never measured
+
+**Claimed**, on this branch, one day earlier. Two things, both by me.
+
+1. `src/app/close-collision.test.tsx` asserted that *"no name is a substring of another"* and
+   presented that, with the consequence assertion, as the two properties the defect needed. It
+   compares close-shaped names **to each other only**.
+2. The branch report headed its list of substring collisions *"Full sweep inventory"*. It had four
+   entries.
+
+**True:** neither was complete, and the incompleteness included nestings this branch *created*.
+Giving the five panel dismiss buttons scoped names (`Close the memory panel`, and the same for
+Skills, Schedules, Projects, Endpoints) put each panel's **opener** inside its dismisser — before
+the branch each dismiss button was called `Close`, which nested with nothing but the control that
+quits Vela. Beside those, the product already held a `button` and a `combobox` sharing the exact
+name `Search conversations`, which the sweep could not see at all because it keyed on
+`(role, name)`. Rendering the 19 states the sweep now drives and comparing every actionable name
+against every other produces **17** containments, not four.
+
+The branch report also gave a baseline of `Tests 2393 passed (2393)` and *"21 new tests"*. Both
+figures were wrong and neither had been measured in the tree they described: the two new files held
+19 tests, no existing test file gained or lost one (`it(`/`test(` counts compared at
+`run-start-2026-08-17` and at HEAD for all five modified test files), and the suite at that HEAD
+with exactly those two files excluded is `Test Files 118 passed (118) / Tests 2395 passed (2395)`.
+The conclusion the figures were offered for — no regression — was true anyway, which is the whole
+danger: a number nobody needs is a number nobody checks.
+
+**How it was caught:** by a critic who rendered the product and enumerated the pairs the guard did
+not compare, rather than reading the guard's own account of itself.
+
+**What changed:** `src/app/accessible-names.test.tsx` now asks three questions off one drive per
+state — one name on two elements, one name inside another, one name on two different roles — each
+against a ledger that carries the reason a case is survivable, and each with a companion test that
+fails when a ledger entry stops being produced. Two containments were **not** admitted, because
+their two landings are not equally survivable, and were renamed instead:
+
+- `Offer tools` inside `Never offer tools` — two `option`s of one select whose consequences are
+  opposed. Now `Always offer tools` (`src/features/models/LocalEndpointSection.tsx`).
+- `Remove` inside `Remove shot.png` — the shorter one deletes a configured endpoint and does not
+  ask first, and the attachment tray puts the longer one on screen beside it. Now
+  `Remove: <endpoint>` (`src/features/models/EndpointsPanel.tsx`), which also ends the shared name
+  two configured rows used to have.
+
+Neither rename changes a visible word except the one option label; `Remove` is still the word drawn
+on the button.
+
+---
+
 ## 2026-08-20 — "ambiguous rather than wrong", and three readers that proved otherwise
 
 **Claimed:** in `src/app/skills-reachable.test.tsx`, beside a query scoped to the dialog: *"the

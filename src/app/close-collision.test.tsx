@@ -41,6 +41,16 @@
  *    two drivers above now pass the panel's own name *and* `exact: true`; this
  *    assertion is what stops the names from drifting back under them.
  *
+ * **The second assertion's scope, stated because it is narrower than the
+ * property it is named after.** It compares close-shaped names *to each other*.
+ * It says nothing about whether some other name in the product contains one of
+ * these, and it did not notice that scoping the dismiss buttons put each
+ * panel's opener (`Memory`, `Skills`, `Schedules`, `Projects`) inside its own
+ * dismisser. That question — every actionable name against every other, in
+ * every state driven — is `src/app/accessible-names.test.tsx`, which carries a
+ * ledger of the containments this product is allowed to have and the reason
+ * each is survivable. Two were not, and were renamed rather than admitted.
+ *
  * The state driven is the worst one the product can reach: the endpoints panel
  * is a `region`, not a modal, so it stays on screen while a dialog opens over
  * it. Three close-shaped controls at once, all reachable with the mouse.

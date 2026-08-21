@@ -214,9 +214,23 @@ function EndpointRow({
               Forget key
             </button>
           ) : null}
+          {/*
+            The visible word stays `Remove`; the accessible name names the row.
+            Two reasons, and both are the reason `Close` had to be scoped above.
+            One: with two endpoints configured there were two buttons called
+            `Remove`, and this one deletes an endpoint without asking first.
+            Two: bare `Remove` is a substring of the attachment tray's
+            `Remove shot.png`, which is on screen at the same time — a non-exact
+            query for `Remove` matched both, and which one it clicked was
+            document order. `Remove: ` follows the convention the schedules and
+            memory rows already use (`Delete: Daily digest`, `Forget: Same
+            note`). Read by `EndpointsPanel.test.tsx` and by the sweep in
+            `src/app/accessible-names.test.tsx`.
+          */}
           <button
             type="button"
             className={styles.rowDanger}
+            aria-label={`Remove: ${view.displayName}`}
             onClick={() => {
               void onRemove(view.id);
             }}

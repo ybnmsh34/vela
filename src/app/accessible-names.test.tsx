@@ -15,9 +15,10 @@
  * `aria-label`, `aria-labelledby`, the element's own text, `title` and the
  * `<title>` of an inline SVG all feed it, in that precedence, and a
  * `<kbd class="srOnly">Control N</kbd>` inside a button silently becomes part of
- * it — which is why the sidebar's new-conversation button is called
- * `New conversation Control N` below and not `New conversation`. Nothing short
- * of the real computation gets that right.
+ * it — which is why the *expanded* sidebar's new-conversation button is called
+ * `New conversation Control N` below, while the collapsed rail's, which carries
+ * no hint, is called `New conversation` — a difference the sweep only sees
+ * because it drives both, and one no amount of reading the JSX produces.
  *
  * The computation used here is Testing Library's own. `queryAllByRole`'s `name`
  * option accepts a **matcher function**, and `queryAllByRole` applies it as
@@ -49,14 +50,28 @@
  * nothing produces is a claim with no reader, and this repo has been burned by
  * exactly that.
  *
- * ## What this file does not claim
+ * ## What this file checks, and what it does not claim
+ *
+ * Three questions, off one drive per state. **One name on two elements** (keyed
+ * on role — {@link ACCEPTED}); **one name wholly inside another** ({@link
+ * ACCEPTED_NESTINGS}); **one name on two different roles** ({@link
+ * ACCEPTED_CROSS_ROLE}). Only the first of the three was here in the version of
+ * this file that shipped first, and it was one notch narrow twice over: keyed on
+ * (role, name) it could not see the `button`/`combobox` pair this product really
+ * has, and asking only about equality it could not see that giving each panel's
+ * dismiss button a scoped name puts that panel's *opener* inside it.
  *
  * The states below are the ones this sweep drives. They are not every state the
- * product has: nothing here opens the command palette over a dialog, drives a
- * tool call, an attachment tray, a canvas diff or an agent run, and a collision
- * that only exists in one of those is not ruled out by a pass here. The list is
- * written out in {@link STATES} so that what was looked at is legible, and so
- * that adding a state is a one-line change rather than a rewrite.
+ * product has: nothing here drives a tool call, a canvas diff or an agent run,
+ * and a collision that only exists in one of those is not ruled out by a pass
+ * here. The list is written out in {@link STATES} so that what was looked at is
+ * legible, and so that adding a state is a one-line change rather than a
+ * rewrite.
+ *
+ * The nesting and cross-role checks look only at {@link ACTIONABLE} roles. Which
+ * roles those are is a judgement, written down there rather than derived, and it
+ * is the reason this file cannot say it compared every pair of names — only
+ * every pair between two things a user can operate.
  *
  * **Honesty (conventions §10):** VERIFIED-BY-FAKE, jsdom, tier `test-bites`.
  * `BrowserAdapter` is an in-memory host. Name *computation* is the real one; the
@@ -169,11 +184,6 @@ const ACCEPTED: readonly Accepted[] = [
   },
   {
     role: 'button',
-    name: 'Remove',
-    why: 'One per configured endpoint. Same verb, different row. Destructive and NOT confirmed — recorded as a real weakness in the track report, not fixed here.',
-  },
-  {
-    role: 'button',
     name: 'Pin',
     why: 'One per memory entry. Same verb, different entry, and reversible.',
   },
@@ -212,6 +222,205 @@ const ACCEPTED: readonly Accepted[] = [
 const ACCEPTED_KEYS = new Set<Key>(ACCEPTED.map((entry) => keyOf(entry.role, entry.name)));
 
 /**
+ * The roles a driver, a voice-control user or a keyboard user *acts through*.
+ *
+ * The two checks below this one — nesting, and one name across two roles — are
+ * restricted to these. The defect this file guards is a query that names one
+ * control and reaches another, and a query only reaches something that can be
+ * clicked, typed into or chosen. Headings, landmarks, articles and images are
+ * left out on purpose: a heading whose text contains a button's name costs
+ * nobody anything, and folding them in would bury the pairs that matter under
+ * pairs that do not.
+ *
+ * `listbox`, `dialog`, `region`, `log`, `list` and `group` are deliberately NOT
+ * here. They are containers a query scopes *to* rather than acts *on*. That is
+ * a judgement, and it is the reason this file cannot claim to have looked at
+ * every pair — only at every pair between two things a user can operate.
+ */
+const ACTIONABLE: ReadonlySet<string> = new Set([
+  'button',
+  'link',
+  'checkbox',
+  'radio',
+  'switch',
+  'tab',
+  'option',
+  'combobox',
+  'textbox',
+  'searchbox',
+  'spinbutton',
+  'slider',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+]);
+
+/**
+ * One actionable name wholly contained in another, and why that is survivable.
+ *
+ * ## Why this ledger exists at all
+ *
+ * `close-collision.test.tsx` asserts non-nesting, but only among close-shaped
+ * names — it compares `Close Vela` to `Close the memory panel` and stops there.
+ * That is the same defect one level down a second time: a guard that checks the
+ * family it was written for and calls the question answered. Playwright's
+ * `getByRole(…, { name })` is a **case-insensitive substring** match unless
+ * `exact: true` is passed, and Windows Voice Access matches on prefix too, so
+ * every nesting anywhere in the product is a query that can land on the wrong
+ * control — not only the ones with `Close` in them.
+ *
+ * ## The rule for admitting one
+ *
+ * Which control a substring query lands on is decided by **document order**,
+ * which is a layout accident, not a design. So an entry is only allowed here
+ * when *either* landing is survivable: the two controls do the same thing to
+ * the same object, or the wrong one is a no-op the user can see and undo. A
+ * pair that fails that test does not get an entry; it gets renamed. Two did,
+ * and both are renamed rather than admitted here:
+ *
+ *  - `Offer tools` inside `Never offer tools`, two options of one select whose
+ *    consequences are opposed — now `Always offer tools`, in
+ *    `src/features/models/LocalEndpointSection.tsx`;
+ *  - `Remove` inside `Remove shot.png`, where the shorter one deletes a
+ *    configured endpoint and does not ask first — now `Remove: <endpoint>`, in
+ *    `src/features/models/EndpointsPanel.tsx`, which also ends the duplicate
+ *    that stood between two configured rows.
+ */
+interface AcceptedNesting {
+  /** The shorter name — the one a substring query would over-match. */
+  readonly inner: string;
+  /** The longer name that contains it. */
+  readonly outer: string;
+  readonly why: string;
+}
+
+const ACCEPTED_NESTINGS: readonly AcceptedNesting[] = [
+  {
+    inner: 'Memory',
+    outer: 'Close the memory panel',
+    why: 'Opener and dismisser of one panel. A substring query for "Memory" that lands on the dismiss button closes the thing it was trying to open — visible, reversible in one click, and it cannot quit Vela or destroy anything. This nesting did not exist before this branch: the dismiss button used to be called "Close", which collided with the control that quits the application instead. That trade is the point.',
+  },
+  {
+    inner: 'Skills',
+    outer: 'Close the skills panel',
+    why: 'As "Memory" / "Close the memory panel".',
+  },
+  {
+    inner: 'Schedules',
+    outer: 'Close the schedules panel',
+    why: 'As "Memory" / "Close the memory panel".',
+  },
+  {
+    inner: 'Projects',
+    outer: 'Close the projects panel',
+    why: 'As "Memory" / "Close the memory panel".',
+  },
+  {
+    inner: 'Search conversations',
+    outer: 'Search conversations Control K',
+    why: 'Produced by the expanded sidebar with the palette open: the palette’s own combobox carries the bare name, and the sidebar button that opens it carries the same words plus its shortcut, because a srOnly <kbd>Control K</kbd> inside a button lands inside the button’s name. One opens the search field, the other is the search field. Nothing is chosen, sent or destroyed by landing on either.',
+  },
+  {
+    inner: 'Name',
+    outer: 'Rename New conversation',
+    why: 'Produced by the endpoint edit form, which leaves the sidebar live behind it: textbox "Name" is the endpoint form’s own field, button "Rename New conversation" is the row action beside a conversation. Landing on the button opens an inline rename the user can see and escape; landing on the field types into a form that changes nothing until Save. Neither sends, deletes nor quits.',
+  },
+  {
+    inner: 'Address',
+    outer: 'Let the address decide',
+    why: 'Produced by the endpoint edit form: textbox "Address" is the field, option "Let the address decide" is the local endpoint section’s tool-policy default further down the same panel. Landing on the option selects the value that select already holds.',
+  },
+  {
+    inner: 'Tools',
+    outer: 'Always offer tools',
+    why: 'The tool-policy select and one of its options. The select cannot be confused for a choice inside it: opening a list and picking from it are steps of one act, and every option in the list says its whole policy out loud.',
+  },
+  {
+    inner: 'Tools',
+    outer: 'Never offer tools',
+    why: 'As "Tools" / "Always offer tools".',
+  },
+  {
+    inner: 'Delete',
+    outer: 'Delete New conversation',
+    why: 'The confirmation dialog\'s Delete, and the sidebar row action that opened it. Both name the same conversation and only one of them destroys anything: getting it wrong re-opens a confirmation that is already up. The dialog is the guard, not the name.',
+  },
+  {
+    inner: 'New conversation',
+    outer: 'New conversation Action',
+    why: 'The collapsed sidebar\'s plus button, and the command bar row that does the identical thing — the palette draws a kind badge reading "Action" and it lands inside the row\'s name. Same verb, same object, no object to get wrong.',
+  },
+  {
+    inner: 'Memory',
+    outer: 'In-memory fake',
+    why: 'Produced by the endpoint edit form: button "Memory" in the sidebar, and option "In-memory fake" — the one wire protocol BrowserAdapter advertises, in the form’s protocol select. The longer name exists only under the fake host, which is worth saying out loud: this containment is an artefact of what this suite runs against, not a fact about the shipping protocol list.',
+  },
+  {
+    inner: 'Memory',
+    outer: 'Memory: Same note',
+    why: 'The sidebar\'s memory button and the editable field of one entry inside the panel it opens. Landing on the field types into a note the user is looking at; landing on the button re-opens the panel that is already open.',
+  },
+  {
+    inner: 'Daily',
+    outer: 'Runs: Daily digest',
+    why: 'Produced by the schedules dialog: option "Daily" is one of CADENCE_LABELS in the create form, and the row belongs to a schedule the user happened to title "Daily digest". The option changes nothing until the form is submitted, and this row control opens a history panel.',
+  },
+  {
+    inner: 'Daily',
+    outer: 'Delete: Daily digest',
+    why: 'As "Daily" / "Runs: Daily digest". Destructive, but the schedule is re-creatable from what is on screen and the name states which one.',
+  },
+  {
+    inner: 'Daily',
+    outer: 'Enabled: Daily digest',
+    why: 'As "Daily" / "Runs: Daily digest". Reversible in one press.',
+  },
+  {
+    inner: 'On this machine',
+    outer: 'Record what endpoints send back, to a file on this machine',
+    why: 'Produced by the endpoint edit form: option "On this machine" is one of three endpoint kinds in the form, and checkbox "Record what endpoints send back, to a file on this machine" is the debug-log switch further down the same panel. This is the least comfortable entry here — the wrong landing turns a log on rather than choosing a kind — and it is admitted because a checkbox states its new value where it stands, the sentence it carries names the whole consequence, and DebugLogSwitch is off again every time Vela starts.',
+  },
+];
+
+const nestingKey = (inner: string, outer: string): Key => JSON.stringify([inner, outer]);
+
+const ACCEPTED_NESTING_KEYS = new Set<Key>(
+  ACCEPTED_NESTINGS.map((entry) => nestingKey(entry.inner, entry.outer)),
+);
+
+/**
+ * One name, two different actionable roles, on screen at once.
+ *
+ * {@link ACCEPTED} is keyed on `(role, name)`, so a `button` and a `combobox`
+ * that share a name are structurally invisible to it — and one such pair really
+ * is in this product. Testing Library queries always carry a role, so this
+ * class is not what bit the harness; a Playwright `getByLabel` or a voice
+ * command carries no role at all, which is why it is checked rather than
+ * ignored.
+ */
+interface AcceptedCrossRole {
+  readonly name: string;
+  /** The roles, sorted, that answer to it. */
+  readonly roles: readonly string[];
+  readonly why: string;
+}
+
+const ACCEPTED_CROSS_ROLE: readonly AcceptedCrossRole[] = [
+  {
+    name: 'Search conversations',
+    roles: ['button', 'combobox'],
+    why: 'The collapsed sidebar\'s search button and the search field of the palette it opens. Same verb, one after the other: pressing the button while the palette is already up leaves the palette up. Neither can send, delete or quit.',
+  },
+];
+
+const crossRoleKey = (name: string, roles: readonly string[]): Key =>
+  JSON.stringify([name, [...roles].sort()]);
+
+const ACCEPTED_CROSS_ROLE_KEYS = new Set<Key>(
+  ACCEPTED_CROSS_ROLE.map((entry) => crossRoleKey(entry.name, entry.roles)),
+);
+
+/**
  * Every visible element that has a role and a non-empty accessible name.
  *
  * `getRoles` supplies the roles actually present, so this does not have to carry
@@ -244,11 +453,52 @@ function collisions(container: HTMLElement): Map<Key, number> {
   return counts;
 }
 
-function report(): ModelCapabilityReport {
+/** The distinct accessible names of everything actionable on screen right now. */
+function actionableNames(container: HTMLElement): string[] {
+  return [
+    ...new Set(
+      namedElements(container)
+        .filter((item) => ACTIONABLE.has(item.role))
+        .map((item) => item.name),
+    ),
+  ];
+}
+
+/**
+ * Every ordered pair of actionable names where the first is contained in the
+ * second, compared case-insensitively because Playwright's non-exact match is.
+ */
+function nestings(container: HTMLElement): { inner: string; outer: string }[] {
+  const names = actionableNames(container);
+  const found: { inner: string; outer: string }[] = [];
+  for (const outer of names) {
+    for (const inner of names) {
+      if (outer === inner) continue;
+      if (outer.toLowerCase().includes(inner.toLowerCase())) found.push({ inner, outer });
+    }
+  }
+  return found;
+}
+
+/** Names held by elements of two or more *different* actionable roles. */
+function crossRoleNames(container: HTMLElement): Map<string, string[]> {
+  const byName = new Map<string, Set<string>>();
+  for (const item of namedElements(container)) {
+    if (!ACTIONABLE.has(item.role)) continue;
+    const roles = byName.get(item.name) ?? new Set<string>();
+    roles.add(item.role);
+    byName.set(item.name, roles);
+  }
+  const shared = new Map<string, string[]>();
+  for (const [name, roles] of byName) if (roles.size > 1) shared.set(name, [...roles].sort());
+  return shared;
+}
+
+function report(vision: boolean): ModelCapabilityReport {
   return {
     providerId: 'workstation',
     modelId: 'local-model',
-    capabilities: { ...NO_CAPABILITIES, streaming: true },
+    capabilities: { ...NO_CAPABILITIES, streaming: true, vision },
     structuredOutput: false,
     toolCallsEmulated: false,
     contextWindowTokens: 128_000,
@@ -258,7 +508,7 @@ function report(): ModelCapabilityReport {
   };
 }
 
-async function host(endpoints = 1): Promise<BrowserAdapter> {
+async function host(endpoints = 1, vision = false): Promise<BrowserAdapter> {
   const adapter = new BrowserAdapter();
   await adapter.invoke('settings_put_provider', {
     id: 'workstation',
@@ -276,7 +526,7 @@ async function host(endpoints = 1): Promise<BrowserAdapter> {
       modelId: 'other-model',
     });
   }
-  adapter.seedCapabilities(report());
+  adapter.seedCapabilities(report(vision));
   return adapter;
 }
 
@@ -423,6 +673,53 @@ const STATES: readonly State[] = [
     },
   },
   {
+    id: 'the command bar over the memory dialog',
+    drive: async (user) => {
+      render(<App adapter={await host()} />);
+      await user.click(await screen.findByRole('button', { name: 'Memory' }));
+      await screen.findByRole('dialog', { name: 'Memory' });
+      // The sidebar is behind a modal, so the palette is opened the only way it
+      // can be from here: the global Control+K that
+      // `use-navigation-shortcuts.ts` binds on `window`.
+      await user.keyboard('{Control>}k{/Control}');
+      await screen.findByRole('dialog', { name: 'Command bar' });
+    },
+  },
+  {
+    id: 'the endpoint edit form',
+    drive: async (user) => {
+      render(<App adapter={await host()} />);
+      await openConversation(user);
+      await openEndpoints(user);
+      await user.click(screen.getByRole('button', { name: 'Edit' }));
+      await screen.findByRole('textbox', { name: 'Address' });
+    },
+  },
+  {
+    id: 'the delete-conversation confirmation over the sidebar',
+    drive: async (user) => {
+      render(<App adapter={await host()} />);
+      await openConversation(user);
+      await user.click(screen.getByRole('button', { name: 'Delete New conversation' }));
+      await screen.findByRole('alertdialog');
+    },
+  },
+  {
+    id: 'a staged image under the endpoints panel',
+    drive: async (user) => {
+      render(<App adapter={await host(1, true)} />);
+      await openConversation(user);
+      // A one-pixel PNG: enough for the tray to stage and name it, and the
+      // picker is the shipping affordance rather than a store poke.
+      await user.upload(
+        await screen.findByTestId('attachment-picker-with-images'),
+        new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'shot.png', { type: 'image/png' }),
+      );
+      await screen.findByTestId('attachment-tray');
+      await openEndpoints(user);
+    },
+  },
+  {
     id: 'a transcript of two answered turns, each carrying code',
     drive: async (user) => {
       render(<App adapter={await host()} />);
@@ -487,6 +784,8 @@ const STATES: readonly State[] = [
  * is the last one.
  */
 const observed = new Set<Key>();
+const observedNestings = new Set<Key>();
+const observedCrossRole = new Set<Key>();
 
 /**
  * Generous, and deliberately not a claim about how long anything takes. These
@@ -508,10 +807,13 @@ beforeEach(() => {
 describe('no two things on screen answer to the same name, unless the ledger says why', () => {
   for (const state of STATES) {
     it(
-      `holds no unrecorded duplicate name in ${state.id}`,
+      `holds no unrecorded duplicate, nesting or cross-role name in ${state.id}`,
       async () => {
         await state.drive(driver());
 
+        // Three checks off one drive, and `expect.soft` so a state reports all
+        // three at once. Driving three times instead would triple the slowest
+        // part of this file for nothing.
         const found = collisions(document.body);
         const unrecorded: string[] = [];
         for (const [key, count] of found) {
@@ -521,12 +823,47 @@ describe('no two things on screen answer to the same name, unless the ledger say
           }
         }
 
-        expect(
+        expect.soft(
           unrecorded,
           `In ${state.id}, ${String(unrecorded.length)} name(s) are held by more than one ` +
             `element and are not in the ledger. Either give one of them its own name, or add ` +
             `it to ACCEPTED with the reason the consequences are the same:\n  ` +
             unrecorded.join('\n  '),
+        ).toEqual([]);
+
+        const unrecordedNestings: string[] = [];
+        for (const { inner, outer } of nestings(document.body)) {
+          const key = nestingKey(inner, outer);
+          observedNestings.add(key);
+          if (!ACCEPTED_NESTING_KEYS.has(key)) {
+            unrecordedNestings.push(`"${inner}" is inside "${outer}"`);
+          }
+        }
+
+        expect.soft(
+          unrecordedNestings,
+          `In ${state.id}, ${String(unrecordedNestings.length)} actionable name(s) contain ` +
+            `another one, so a non-exact query for the shorter also matches the longer and ` +
+            `document order decides which is clicked. Either rename one, or add it to ` +
+            `ACCEPTED_NESTINGS with the reason both landings are survivable:\n  ` +
+            unrecordedNestings.join('\n  '),
+        ).toEqual([]);
+
+        const unrecordedCrossRole: string[] = [];
+        for (const [name, roles] of crossRoleNames(document.body)) {
+          const key = crossRoleKey(name, roles);
+          observedCrossRole.add(key);
+          if (!ACCEPTED_CROSS_ROLE_KEYS.has(key)) {
+            unrecordedCrossRole.push(`"${name}" is held by ${roles.join(' and ')}`);
+          }
+        }
+
+        expect.soft(
+          unrecordedCrossRole,
+          `In ${state.id}, ${String(unrecordedCrossRole.length)} name(s) are held by two ` +
+            `different actionable roles, which the (role, name) ledger above cannot see. ` +
+            `Either rename one, or add it to ACCEPTED_CROSS_ROLE with the reason:\n  ` +
+            unrecordedCrossRole.join('\n  '),
         ).toEqual([]);
       },
       BUDGET_MS,
@@ -545,6 +882,31 @@ describe('no two things on screen answer to the same name, unless the ledger say
       stale,
       `${String(stale.length)} ledger entries were not observed by any state above. ` +
         `Delete them, or add the state that produces them:\n  ` + stale.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('has no accepted nesting that nothing produces', () => {
+    // Same rule as above, applied to the nesting ledger. It matters more here:
+    // a nesting entry is a *permission*, and one whose pair no longer appears
+    // is a permission nobody can see the shape of.
+    const stale = ACCEPTED_NESTINGS.filter(
+      (entry) => !observedNestings.has(nestingKey(entry.inner, entry.outer)),
+    ).map((entry) => `"${entry.inner}" inside "${entry.outer}"`);
+    expect(
+      stale,
+      `${String(stale.length)} accepted nestings were not observed by any state above. ` +
+        `Delete them, or add the state that produces them:\n  ` + stale.join('\n  '),
+    ).toEqual([]);
+  });
+
+  it('has no accepted cross-role name that nothing produces', () => {
+    const stale = ACCEPTED_CROSS_ROLE.filter(
+      (entry) => !observedCrossRole.has(crossRoleKey(entry.name, entry.roles)),
+    ).map((entry) => `"${entry.name}" as ${[...entry.roles].sort().join(' and ')}`);
+    expect(
+      stale,
+      `${String(stale.length)} accepted cross-role names were not observed by any state ` +
+        `above. Delete them, or add the state that produces them:\n  ` + stale.join('\n  '),
     ).toEqual([]);
   });
 });

@@ -11,6 +11,25 @@
  * `Enter`/`Space` open (the row is a button, so that is free), `F2` renames,
  * `Delete` asks to delete, `Home`/`End` jump.
  *
+ * ## The rail's icon-only controls
+ *
+ * Collapsed, this component is a column of buttons whose only content is a
+ * 14px glyph. `aria-label` gives each one a name for assistive technology and
+ * gives a sighted user nothing at all: a rail of eight unlabelled marks, of
+ * which two — the folder and the sheets — are a coin toss even for someone who
+ * has used the app before.
+ *
+ * Every one of them carries a `title` equal to its `aria-label`, which is what
+ * `TitleBar.tsx` already does for the three caption buttons it draws instead of
+ * the OS. `title` is the browser's own tooltip and it does not change the
+ * accessible name — `aria-label` wins that computation — so this adds a name
+ * for the pointer without touching the one already announced.
+ *
+ * It is the narrow fix and not the wide one. A tooltip is a hover affordance:
+ * it does not appear for a keyboard user tabbing the rail, and it does not
+ * appear on touch. The wide fix is a real tooltip component bound to focus as
+ * well as hover, and there is no such component in this codebase to reuse.
+ *
  * ## Home
  *
  * The rail's **Home** control is the only thing in the product that clears the
@@ -181,6 +200,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           className={styles.iconButton}
           onClick={toggleSidebar}
           aria-label="Expand sidebar"
+          title="Expand sidebar"
         >
           <ChevronIcon direction="right" />
         </button>
@@ -189,6 +209,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
           className={styles.iconButton}
           onClick={() => void createConversation()}
           aria-label="New conversation"
+          title="New conversation"
         >
           <PlusIcon />
         </button>
@@ -199,6 +220,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             select(null);
           }}
           aria-label="Home"
+          title="Home"
           {...(selectedId === null ? { 'aria-current': 'page' as const } : {})}
         >
           <HomeIcon />
@@ -210,6 +232,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             openPalette('search');
           }}
           aria-label="Search conversations"
+          title="Search conversations"
         >
           <SearchIcon />
         </button>
@@ -220,6 +243,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             setMemoryOpen(true);
           }}
           aria-label="Memory"
+          title="Memory"
         >
           <MemoryIcon />
         </button>
@@ -230,6 +254,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             setSkillsOpen(true);
           }}
           aria-label="Skills"
+          title="Skills"
         >
           <SkillsIcon />
         </button>
@@ -240,6 +265,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             setSchedulesOpen(true);
           }}
           aria-label="Schedules"
+          title="Schedules"
         >
           <ScheduleIcon />
         </button>
@@ -250,6 +276,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             setProjectsOpen(true);
           }}
           aria-label="Projects"
+          title="Projects"
         >
           <ProjectsIcon />
         </button>
@@ -288,6 +315,7 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
             className={styles.iconButton}
             onClick={toggleSidebar}
             aria-label="Collapse sidebar"
+            title="Collapse sidebar"
           >
             <ChevronIcon direction="left" />
           </button>

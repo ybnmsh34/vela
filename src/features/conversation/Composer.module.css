@@ -198,3 +198,29 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* FORCED COLOURS: WHETHER THE AGENT TOGGLE IS ON.
+
+   The rule above says why this state must read without its label — it changes
+   what pressing Send does — and it says it in three colours, all three of which
+   a forced-colours mode replaces. The toggle then looks identical on and off,
+   which is the mode the user cannot see they are in, back again.
+
+   An outline rather than the border, and that is not a style preference: this
+   button's resting border is `1px solid transparent`, and forced colours
+   preserves `transparent`. A border-style change on an invisible border draws
+   nothing. `outline-color` defaults to `currentColor`, which is substituted
+   with the user's own text colour and is therefore visible.
+
+   The offset is `--vela-focus-offset-inset` and not a number: `design-system.
+   test.ts` refuses a hand-written `outline-offset` anywhere under `src/`, and
+   it is right to — the offset is the part that drifts, and this ring is inset
+   for the same reason the focus rings that use that token are, so it should be
+   inset by the same amount. */
+@media (forced-colors: active) {
+  .iconButton[aria-pressed='true'] {
+    outline-style: dashed;
+    outline-width: 2px;
+    outline-offset: var(--vela-focus-offset-inset);
+  }
+}

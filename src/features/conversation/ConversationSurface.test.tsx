@@ -586,7 +586,12 @@ describe('the conversation surface: failure and cancellation', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('The reply stopped arriving');
     expect(screen.getByText('As far as I got')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // Matched on the *start* of the name throughout this file: the accessible
+    // name now carries the question the button's turn answers, so that two of
+    // them in one transcript are not the same control announced twice. The
+    // visible label is still exactly 'Try again' and is asserted as such where
+    // the wording is the point.
+    expect(screen.getByRole('button', { name: /^Try again/u })).toBeInTheDocument();
   });
 
   it('offers no retry for a failure that would fail identically', async () => {
@@ -610,7 +615,7 @@ describe('the conversation surface: failure and cancellation', () => {
     });
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('The endpoint rejected the credential');
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Try again/u })).not.toBeInTheDocument();
     // The endpoint the *user* configured, so three candidates can be told apart.
     expect(alert).toHaveTextContent('https://gpu.example.test/v1');
 
@@ -695,7 +700,7 @@ describe('the conversation surface: failure and cancellation', () => {
         },
       });
     });
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await user.click(screen.getByRole('button', { name: /^Try again/u }));
 
     expect(host.sent).toHaveLength(2);
     expect(host.sent[1]?.messages).toEqual([{ role: 'user', text: 'try me' }]);
@@ -944,7 +949,7 @@ describe('the conversation surface: how a turn ended', () => {
     // write, which is a defect in its own right (RULE U).
     expect(document.querySelector('[data-kind="silent"]')).not.toBeNull();
     // "A state a user can act on" is the requirement, and a sentence is not one.
-    const again = screen.getByRole('button', { name: 'Try again' });
+    const again = screen.getByRole('button', { name: /^Try again/u });
     await user.click(again);
     await waitFor(() => {
       expect(host.sent).toHaveLength(2);
@@ -968,7 +973,7 @@ describe('the conversation surface: how a turn ended', () => {
     expect(document.querySelector('[data-kind="truncated"]')).not.toBeNull();
     // Re-running the same request hits the same cap. The control offered must
     // not be the one that does that.
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Try again/u })).not.toBeInTheDocument();
   });
 
   it('does not mark an ordinary finish', async () => {
@@ -1005,7 +1010,7 @@ describe('the conversation surface: how a turn ended', () => {
 
     // The error block owns this ending. The ending block must stay silent, or
     // the turn carries two sentences about one ending and two buttons.
-    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^Try again/u })).toHaveLength(1);
     expect(visibleText()).not.toContain('The model returned nothing');
   });
 });
@@ -1037,7 +1042,15 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
 
     // The button on the *first* turn. It is labelled for what it does: retrying
     // it replaces that turn and everything after it.
-    const again = screen.getByRole('button', { name: 'Try again from here' });
+    // NAMED FOR ITS TARGET. Two retryable turns in one transcript used to render
+    // two buttons with one name — "Try again from here" on both — each
+    // discarding from a different anchor. Heard out of context they were the
+    // same control repeated. The name now quotes the question the turn answers.
+    const again = screen.getByRole('button', {
+      name: 'Try again from here — the reply to “first question”',
+    });
+    // The *visible* wording is unchanged and still says what the press costs.
+    expect(again).toHaveTextContent('Try again from here');
     await user.click(again);
 
     await waitFor(() => {
@@ -1057,6 +1070,40 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
     expect(visibleText()).not.toContain('the second answer');
   });
 
+  it('gives two retry controls in one transcript two different names', async () => {
+    // THE ACCESSIBILITY HAZARD THIS FILE EXISTS TO KEEP CLOSED: controls with
+    // the same accessible name and different consequences. Two failed turns
+    // render two buttons; the one on the earlier turn discards the later turn
+    // as well, and the one on the later turn does not. Read out of context by
+    // a screen reader they used to be one control announced twice.
+    const host = new ScriptedHost();
+    mount(host);
+
+    const fail = (correlation: number): void => {
+      act(() => {
+        host.push({
+          type: 'error',
+          error: { kind: 'malformedResponse', diagnosis: { cause: 'response_was_not_json', correlation } },
+        });
+      });
+    };
+
+    await ask('the first thing');
+    fail(11);
+    await ask('the second thing');
+    fail(12);
+
+    const buttons = screen.getAllByRole('button', { name: /^Try again/u });
+    expect(buttons).toHaveLength(2);
+    const names = buttons.map((button) => button.getAttribute('aria-label'));
+    expect(new Set(names).size, `two controls, names ${JSON.stringify(names)}`).toBe(2);
+    // Each names its own question, and the earlier one says what it costs.
+    expect(names[0]).toContain('the first thing');
+    expect(names[0]).toContain('from here');
+    expect(names[1]).toContain('the second thing');
+    expect(names[1]).not.toContain('from here');
+  });
+
   it('says "Try again" plainly when there is nothing after the turn to discard', async () => {
     const host = new ScriptedHost();
     mount(host);
@@ -1071,7 +1118,11 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
       });
     });
 
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again from here' })).not.toBeInTheDocument();
+    const only = screen.getByRole('button', { name: /^Try again/u });
+    // The visible label is the plain one: nothing follows this turn.
+    expect(only).toHaveTextContent('Try again');
+    expect(only).not.toHaveTextContent('from here');
+    // …and the name still says which reply it would discard.
+    expect(only).toHaveAccessibleName('Try again — the reply to “only question”');
   });
 });

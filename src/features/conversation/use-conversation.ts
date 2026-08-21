@@ -112,6 +112,20 @@ const NO_PARTS: readonly ContentPartInput[] = [];
 /** Nothing remembered, as a shared constant so an empty read allocates nothing. */
 const NO_MEMORY: readonly MemoryEntry[] = [];
 
+/**
+ * **A reply that produced nothing**, in the only shape the store will take one.
+ *
+ * A message with no parts is refused by both hosts; a message with one empty
+ * text part is not, and `vela_store`'s own part validation says why in a comment
+ * — a streaming row opens as an empty buffer. `turnFromParts` reads it back as
+ * an empty answer, which is what it was.
+ *
+ * Never sent to a model: `historyMessages` skips a settled assistant entry whose
+ * `answer` is `''`, so a restored empty reply is a thing the transcript shows
+ * and the next request does not carry.
+ */
+const ENDED_WITH_NOTHING: readonly ContentPartInput[] = [{ kind: 'text', text: '' }];
+
 /** Shown instead of the transcript's contents when the store cannot be read. */
 const UNREADABLE = 'This conversation could not be read from the store';
 
@@ -1131,14 +1145,25 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
    * row and closing it later, which is what `StoreAppendMessageReq.status` and
    * `store_update_message` are shaped for — is the better record. It is not
    * this change: it needs the write to survive an unmount that currently
-   * abandons the turn, and both hosts reject a message with no parts, so an
-   * opening row would have to carry a placeholder part that the close then has
-   * to remember to replace.
+   * abandons the turn.
    *
-   * The question is always written; the reply is written only if it produced
-   * something, because a message with no parts is a payload both hosts refuse.
-   * So a turn that failed before a single token restores as what it was — the
-   * user's message, with nothing after it.
+   * **A settled reply is always written, including one with nothing in it.**
+   * Both hosts reject a message with no `parts` — `append_message` in
+   * `src-tauri/src/ipc/transcript.rs` and the browser adapter both return
+   * "a message needs at least one part" — but an *empty text part* is a
+   * different thing and both accept it: `vela_store`'s `ContentPart::validate`
+   * says so in as many words, because a streaming row legitimately opens as an
+   * empty buffer. So a reply that produced no text is written as one empty text
+   * part and {@link ENDED_WITH_NOTHING} is that part.
+   *
+   * This used to skip the write, and skipping it is what made the empty-reply
+   * and stopped-before-a-token states last exactly as long as the window: the
+   * transcript stated the ending, the record kept no reply at all, and reopening
+   * the conversation put the question back on screen with nothing after it and
+   * no explanation. `entriesFromStored` rebuilds the row through
+   * `turnFromParts`, which reads an empty text part back as an empty answer, so
+   * the restored turn reaches the same `describeTurnEnding` arm the live one
+   * did.
    */
   useEffect(() => {
     if (conversationId === null || streaming) return;
@@ -1151,7 +1176,11 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
     claimed.current.add(reply.id);
 
     const { turn } = reply;
-    const parts = partsOfTurn(turn);
+    // The turn's own content, or the one empty part that makes "it produced
+    // nothing" a row the store will accept. Never both: `partsOfTurn` returns
+    // `[]` only when the answer and the reasoning are both empty.
+    const content = partsOfTurn(turn);
+    const parts = content.length === 0 ? ENDED_WITH_NOTHING : content;
     const errorMessage = errorMessageOfTurn(turn);
     enqueue(async () => {
       if (!messageIds.current.has(asked.id)) {
@@ -1165,7 +1194,6 @@ export function useConversation(options: UseConversationOptions = {}): Conversat
         });
         messageIds.current.set(asked.id, written.id);
       }
-      if (parts.length === 0) return;
       const written = await transcript.append({
         conversationId,
         role: 'assistant',

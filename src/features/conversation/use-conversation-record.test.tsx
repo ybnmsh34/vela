@@ -18,6 +18,7 @@ import { PlatformProvider } from '@/platform/PlatformProvider';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import type { ChatStreamEvent } from '@/platform/contract';
 
+import { entriesFromStored } from './stored-entries';
 import { useConversation } from './use-conversation';
 
 const NO_USAGE = {
@@ -118,11 +119,17 @@ describe('a conversation is written as it happens', () => {
     expect(messages[1]?.status).toBe('complete');
   });
 
-  it('keeps the question when the turn produced no reply to keep', async () => {
-    // Both hosts reject a message with no parts, so a turn that failed before a
-    // single token has nothing to write as the reply. What must not happen is
-    // the question going missing with it — the user said that, and the record
-    // is of what happened, which includes being answered by nothing.
+  it('keeps a reply that produced nothing, instead of losing it at the window', async () => {
+    // THE END-TO-END HALF OF THE EMPTY-REPLY FIX, and the half that was missing.
+    // The transcript stated the ending and offered the control; the write was
+    // skipped whenever `partsOfTurn` came back empty, so reopening the
+    // conversation put the question back with nothing after it and no
+    // explanation — the state the fix exists to remove, restored by a reload.
+    //
+    // Both hosts reject a message with no `parts` at all. An *empty text part*
+    // is a different thing and both accept it: `vela_store`'s
+    // `ContentPart::validate` allows it in as many words, because a streaming
+    // row opens as an empty buffer. So the reply is written as one.
     const { adapter, wrapper, conversationId } = await fixture();
     const chat = scripted([[{ type: 'error', error: { kind: 'cancelled' } }]]);
     const { result } = renderHook(
@@ -144,11 +151,27 @@ describe('a conversation is written as it happens', () => {
     });
 
     await waitFor(async () => {
-      expect(await messagesIn(adapter, conversationId)).toHaveLength(1);
+      expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
     });
-    const [only] = await messagesIn(adapter, conversationId);
-    expect(only?.role).toBe('user');
-    expect(only?.parts).toEqual([{ kind: 'text', text: 'into the void' }]);
+    const messages = await messagesIn(adapter, conversationId);
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    // The question the user asked is still first, which was already true.
+    expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'into the void' }]);
+    // And the reply that produced nothing is a row now, in the shape the store
+    // takes one: a single empty text part, carrying the status and the reason.
+    expect(messages[1]?.parts).toEqual([{ kind: 'text', text: '' }]);
+    expect(messages[1]?.status).toBe('cancelled');
+
+    // Read back, it is the same turn the user was looking at — `turnFromParts`
+    // reads an empty text part as an empty answer, so `describeTurnEnding`
+    // reaches the same arm it reached live.
+    const restored = entriesFromStored(messages);
+    expect(restored).toHaveLength(2);
+    const reply = restored[1];
+    expect(reply?.kind).toBe('assistant');
+    const turn = reply?.kind === 'assistant' ? reply.turn : null;
+    expect(turn?.answer).toBe('');
+    expect(turn?.phase).toBe('stopped');
   });
 
   it('replaces what retry replaces, instead of recording it twice', async () => {
@@ -178,9 +201,13 @@ describe('a conversation is written as it happens', () => {
     act(() => {
       result.current.send('ask once');
     });
+    // Two rows, not one: the cancelled reply is kept as an empty text part
+    // rather than skipped — see the empty-reply test above for why.
     await waitFor(async () => {
-      expect(await messagesIn(adapter, conversationId)).toHaveLength(1);
+      expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
     });
+    const before = await messagesIn(adapter, conversationId);
+    expect(before[1]?.parts).toEqual([{ kind: 'text', text: '' }]);
 
     act(() => {
       // Retry is bound to a turn now, so the test says which one: the last
@@ -188,13 +215,17 @@ describe('a conversation is written as it happens', () => {
       result.current.retry(result.current.entries[result.current.entries.length - 1]?.id ?? '');
     });
 
+    // Waited on the *content*, not on the count: the count was already two
+    // before the retry, so a length assertion alone would pass before the
+    // replacement had happened at all.
     await waitFor(async () => {
-      expect(await messagesIn(adapter, conversationId)).toHaveLength(2);
+      const written = await messagesIn(adapter, conversationId);
+      expect(written).toHaveLength(2);
+      expect(written[1]?.parts).toEqual([{ kind: 'text', text: 'second time lucky' }]);
     });
     const messages = await messagesIn(adapter, conversationId);
     expect(messages.map((message) => message.role)).toEqual(['user', 'assistant']);
     expect(messages[0]?.parts).toEqual([{ kind: 'text', text: 'ask once' }]);
-    expect(messages[1]?.parts).toEqual([{ kind: 'text', text: 'second time lucky' }]);
   });
 
   it('says the transcript is unreadable rather than showing it as empty', async () => {

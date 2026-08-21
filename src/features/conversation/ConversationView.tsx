@@ -159,6 +159,14 @@ export function ConversationView({
                     // Retrying replaces this turn and everything after it. When
                     // there is an "after it", the button says so.
                     laterTurnsFollow={index < conversation.entries.length - 1}
+                    // The question this turn answers, for the retry control's
+                    // accessible name. `retry` resolves the same entry by
+                    // walking back from this turn to the nearest user message,
+                    // so the name is read off the transcript the same way the
+                    // action is — a button that says which reply it discards
+                    // and then discards a different one would be worse than one
+                    // that says nothing.
+                    question={questionAnswered(conversation.entries, index)}
                   />
                 ),
               )}
@@ -178,4 +186,24 @@ export function ConversationView({
       />
     </section>
   );
+}
+
+/**
+ * The question an assistant turn answers — the nearest user message **at or
+ * before** it, or `undefined` for a turn with none in front of it.
+ *
+ * Deliberately the same walk `use-conversation.ts`'s `retry` makes: it takes
+ * `current.slice(0, at + 1)` and `lastIndexOf('user')`. A retry control whose
+ * accessible name quoted one question while the action discarded from another
+ * would be a worse defect than the unnamed button it replaces, so the two read
+ * the transcript the same way. `retry` owns the action and this owns the name;
+ * neither derives from the other, which is why the comment says so rather than
+ * leaving a reader to notice.
+ */
+function questionAnswered(entries: Conversation['entries'], index: number): string | undefined {
+  for (let at = index; at >= 0; at -= 1) {
+    const entry = entries[at];
+    if (entry !== undefined && entry.kind === 'user') return entry.text;
+  }
+  return undefined;
 }

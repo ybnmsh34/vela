@@ -240,3 +240,27 @@
   background: var(--vela-danger-bg);
   color: var(--vela-text);
 }
+
+/* FORCED COLOURS: WHICH TAB IS OPEN, AND WHICH VERSION IS PINNED.
+
+   Both states are colour and nothing else — `.tab[aria-selected='true']` is a
+   quiet accent fill over accent text, `.version[aria-pressed='true']` is an
+   accent border over accent text — and both collapse into their unselected
+   siblings once the user's own pair is substituted. `aria-selected` and
+   `aria-pressed` carry the state to assistive technology either way; this is
+   for the eyes that are left.
+
+   Two different properties because the two elements are: `.tab` has `border: 0`
+   and gaining one in this mode alone would shift the whole strip, so it is
+   restated in the underline. `.version` already reserves a 1px border, so the
+   style of the border it already has is free. */
+@media (forced-colors: active) {
+  .tab[aria-selected='true'] {
+    text-decoration-line: underline;
+    text-underline-offset: 3px;
+  }
+
+  .version[aria-pressed='true'] {
+    border-style: dashed;
+  }
+}

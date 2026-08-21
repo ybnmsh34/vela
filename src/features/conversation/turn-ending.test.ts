@@ -32,8 +32,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { StopReason } from '@/platform/contract';
 
+import { entriesFromStored, statusOfTurn } from './stored-entries';
 import { describeTurnEnding, type TurnEndingInput, type TurnEndingKind } from './turn-ending';
-import type { TurnPhase } from './turn-stream';
+import { EMPTY_TURN, type TurnPhase } from './turn-stream';
 
 const SOURCE = readFileSync(
   join(process.cwd(), 'src/features/conversation/turn-ending.ts'),
@@ -46,6 +47,7 @@ const SETTLED: Omit<TurnEndingInput, 'phase' | 'stopReason'> = {
   hasToolCalls: false,
   hasError: false,
   hasRefusal: false,
+  recordedFailure: null,
 };
 
 const NOTHING: Omit<TurnEndingInput, 'phase' | 'stopReason'> = {
@@ -54,6 +56,7 @@ const NOTHING: Omit<TurnEndingInput, 'phase' | 'stopReason'> = {
   hasToolCalls: false,
   hasError: false,
   hasRefusal: false,
+  recordedFailure: null,
 };
 
 function ending(
@@ -124,8 +127,10 @@ describe('how a turn ended, for every way a turn can end', () => {
   it('separates a turn that was cut short from one that simply ended', () => {
     expect(ending('stopped', 'cancelled')).toBe('cutShort');
     expect(ending('stopped', null)).toBe('cutShort');
-    // Read back out of the store, a cancelled turn comes back `complete` with
-    // its stop reason intact. It must still read as cancelled.
+    // `complete` **and** `cancelled` together is not the stored path — see
+    // `a cancelled row never comes back complete` below, which proves the store
+    // cannot produce this pair. It is `settleRun`'s completed branch, which
+    // copies a `RunOutcome`'s `stopReason` verbatim out of the whole union.
     expect(ending('complete', 'cancelled')).toBe('cutShort');
     expect(ending('complete', 'endTurn')).toBeNull();
   });
@@ -136,6 +141,40 @@ describe('how a turn ended, for every way a turn can end', () => {
     // conversation used to render every failure in it as an ordinary reply.
     expect(ending('failed', null, NOTHING)).toBe('failedUnrecorded');
     expect(ending('failed', 'endTurn')).toBe('failedUnrecorded');
+  });
+
+  it('quotes the line the record kept, rather than claiming none was kept', () => {
+    // The defect one level down in the first version of this module: the
+    // `failedUnrecorded` sentence told the user "what went wrong was not kept
+    // with it", which was false — `use-conversation.ts` writes `errorMessage`
+    // on every failure it records, and the restore path was what dropped it.
+    const quoted = describeTurnEnding({
+      phase: 'failed',
+      stopReason: null,
+      ...NOTHING,
+      recordedFailure: 'rateLimited',
+    });
+    expect(quoted?.kind).toBe('failedRecorded');
+    expect(quoted?.detail).toContain('rateLimited');
+    // Quoted, not narrated: the column may hold a refusal's own sentence or a
+    // bare `ChatError.kind`, and this module cannot tell which.
+    expect(quoted?.detail).toContain('“');
+
+    // And the un-quoting sentence, which is still reachable, no longer says the
+    // reason was never kept — only that this row kept none.
+    const bare = describeTurnEnding({ phase: 'failed', stopReason: null, ...NOTHING });
+    expect(bare?.kind).toBe('failedUnrecorded');
+    expect(bare?.detail).not.toMatch(/not kept|cannot say/u);
+  });
+
+  it('consults the recorded line on the failed phase and on no other', () => {
+    // A stopped turn and a completed one are not failures, and a line left on
+    // the row by an earlier failure must not turn either into one.
+    for (const phase of ['complete', 'stopped', 'awaiting', 'streaming'] as const) {
+      const withLine = ending(phase, null, { ...NOTHING, recordedFailure: 'boom' });
+      const without = ending(phase, null, NOTHING);
+      expect(withLine, `${phase} changed its ending because of a recorded line`).toBe(without);
+    }
   });
 
   it('goes quiet whenever the error or refusal block is already speaking', () => {
@@ -209,5 +248,101 @@ describe('the endings stay total against the unions they switch over', () => {
     // into it silently. The type checker catches that too — until someone adds
     // the `default:` to make the type checker stop complaining.
     expect(SOURCE).not.toMatch(/^\s*default:/mu);
+  });
+});
+
+/**
+ * WHERE `endingOfCompleted`'s `case 'cancelled'` ACTUALLY COMES FROM.
+ *
+ * The first version of `turn-ending.ts` said that arm was on the **stored**
+ * path — that a cancelled turn read back from the store arrives `complete` with
+ * its stop reason intact. That was wrong, and prose is not what proves it
+ * either way (RULE T), so this executes the real translation both directions.
+ */
+describe('the cancelled arm is reached from the run, not from the store', () => {
+  const NO_USAGE = {
+    inputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    cachedInputTokens: null,
+  } as const;
+
+  it('writes a stopped turn as `cancelled` and reads `cancelled` back as stopped', () => {
+    // Out: `statusOfTurn` is what `use-conversation.ts` hands the store.
+    expect(statusOfTurn({ ...EMPTY_TURN, phase: 'stopped', stopReason: 'cancelled' })).toBe(
+      'cancelled',
+    );
+
+    // Back in: `phaseOf` maps every non-`failed`, non-`complete` status to
+    // `stopped`, so the round trip cannot produce phase `complete`.
+    const [entry] = entriesFromStored([
+      {
+        id: 'm1',
+        conversationId: 'conv_1',
+        seq: 0,
+        role: 'assistant',
+        status: 'cancelled',
+        parts: [{ kind: 'text', text: 'as far as it got' }],
+        providerId: 'workstation',
+        modelId: 'local-model',
+        answeredByProviderId: null,
+        answeredByModelId: null,
+        usage: NO_USAGE,
+        stopReason: 'cancelled',
+        errorMessage: null,
+        createdAtMs: 1_700_000_000_000,
+        updatedAtMs: 1_700_000_000_000,
+      },
+    ]);
+    expect(entry?.kind).toBe('assistant');
+    const turn = entry?.kind === 'assistant' ? entry.turn : null;
+    expect(turn?.phase).toBe('stopped');
+    expect(turn?.phase).not.toBe('complete');
+    // …and so it lands on the `stopped` arm, never on `endingOfCompleted`.
+    expect(ending('stopped', turn?.stopReason ?? null)).toBe('cutShort');
+  });
+
+  it('restores the line the row kept about a failure', () => {
+    // The write side is `errorMessageOfTurn`; this is the read side, which had
+    // no reader at all before — `StoredMessage.errorMessage` was written by
+    // `use-conversation.ts` and consumed by nothing in the renderer.
+    const [entry] = entriesFromStored([
+      {
+        id: 'm1',
+        conversationId: 'conv_1',
+        seq: 0,
+        role: 'assistant',
+        status: 'failed',
+        parts: [{ kind: 'text', text: 'half an answer' }],
+        providerId: 'workstation',
+        modelId: 'local-model',
+        answeredByProviderId: null,
+        answeredByModelId: null,
+        usage: NO_USAGE,
+        stopReason: null,
+        errorMessage: 'the endpoint refused this model',
+        createdAtMs: 1_700_000_000_000,
+        updatedAtMs: 1_700_000_000_000,
+      },
+    ]);
+    const turn = entry?.kind === 'assistant' ? entry.turn : null;
+    expect(turn?.recordedFailure).toBe('the endpoint refused this model');
+    // Neither of the two things `stored-entries.ts` refuses to invent came back
+    // with it: the sentence is not a typed error and is not treated as one.
+    expect(turn?.error).toBeNull();
+    expect(turn?.refusal).toBeNull();
+
+    const drawn = describeTurnEnding({
+      phase: turn?.phase ?? 'failed',
+      stopReason: null,
+      hasAnswer: true,
+      hasReasoning: false,
+      hasToolCalls: false,
+      hasError: false,
+      hasRefusal: false,
+      recordedFailure: turn?.recordedFailure ?? null,
+    });
+    expect(drawn?.kind).toBe('failedRecorded');
+    expect(drawn?.detail).toContain('the endpoint refused this model');
   });
 });

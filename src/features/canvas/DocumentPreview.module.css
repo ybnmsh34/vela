@@ -143,3 +143,26 @@
 .diagnostics li[data-severity='warning'] {
   color: var(--vela-warning);
 }
+
+/* FORCED COLOURS: HOW BAD A DIAGNOSTIC IS.
+
+   `.diagnostics li[data-severity]` is the whole distinction: an error is red
+   text, a warning is amber text, and anything else is muted text. Substituted,
+   all three are the same text, and a list of complaints from an artifact stops
+   saying which of them stopped it working. Nothing else in the row carries the
+   severity — the `<li>` holds the quoted message and nothing more, so unlike
+   `.diffRow[data-kind]` next door there is no `+`/`-` already doing the job.
+
+   So the word is put back, in this mode only, as generated content. It is the
+   same answer `ToolCallList` reaches by printing `statusLabel` inside its pill
+   and `EmptyConversation` by rendering a tick: state the state. `info` gets no
+   prefix, because "not error, not warning" is what the absence of one means. */
+@media (forced-colors: active) {
+  .diagnostics li[data-severity='error']::before {
+    content: 'Error: ';
+  }
+
+  .diagnostics li[data-severity='warning']::before {
+    content: 'Warning: ';
+  }
+}

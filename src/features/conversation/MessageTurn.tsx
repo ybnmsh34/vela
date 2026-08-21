@@ -69,6 +69,44 @@ interface AssistantTurnProps {
    * test is in.
    */
   readonly laterTurnsFollow?: boolean | undefined;
+  /**
+   * **The question this turn answers**, for the retry control's accessible name
+   * and for nothing else.
+   *
+   * Every retryable turn in a transcript draws a button reading "Try again from
+   * here", and each one discards from a different anchor — the button on turn 2
+   * throws away four later replies, the button on turn 5 throws away one. Read
+   * out of context by a screen reader they were the same control repeated, and
+   * the visible wording could not fix that: it is the same for every one of
+   * them because it is true of every one of them.
+   *
+   * So the *name* carries the target while the *label* stays short. Undefined
+   * for a caller that does not know the question — `MessageTurn.test.tsx` mounts
+   * turns on their own — and then the name falls back to the label, which is
+   * where it was.
+   */
+  readonly question?: string | undefined;
+}
+
+/** How much of the question the retry control's name quotes. */
+const QUESTION_IN_NAME = 60;
+
+/**
+ * "Try again from here" → "Try again from here — the reply to “…”".
+ *
+ * The visible label is unchanged, so nothing about the button's appearance or
+ * its wording depends on this. Long questions are cut at
+ * {@link QUESTION_IN_NAME} with an ellipsis rather than read out whole: the name
+ * exists to tell two buttons apart, and a screen reader announcing a paragraph
+ * before the verb is its own kind of unusable.
+ */
+function retryName(label: string, question: string | undefined): string {
+  if (question === undefined) return label;
+  const trimmed = question.trim();
+  if (trimmed === '') return label;
+  const quoted =
+    trimmed.length > QUESTION_IN_NAME ? `${trimmed.slice(0, QUESTION_IN_NAME)}…` : trimmed;
+  return `${label} — the reply to “${quoted}”`;
 }
 
 export function AssistantTurn({
@@ -78,11 +116,13 @@ export function AssistantTurn({
   runDegradations,
   selectedProviderId,
   laterTurnsFollow = false,
+  question,
 }: AssistantTurnProps) {
   const streaming = turn.phase === 'streaming' || turn.phase === 'awaiting';
   const error = turn.error === null ? null : describeChatError(turn.error);
   const showThinkingOnly = turn.answer === '' && turn.reasoning !== '';
   const retryLabel = laterTurnsFollow ? 'Try again from here' : 'Try again';
+  const retryAccessibleName = retryName(retryLabel, question);
 
   /**
    * How this turn ended, when the text above does not say — the empty reply, the
@@ -102,6 +142,7 @@ export function AssistantTurn({
     hasToolCalls: turn.outcomes.length > 0 || turn.toolProgress.length > 0,
     hasError: turn.error !== null,
     hasRefusal: turn.refusal !== null,
+    recordedFailure: turn.recordedFailure,
   });
 
   // The `trace` id is a reference into the local debug log, and it is shown
@@ -135,22 +176,37 @@ export function AssistantTurn({
         </p>
       ) : null}
 
+      <ToolCalls outcomes={turn.outcomes} progress={turn.toolProgress} />
+      <AnsweredByNote answeredBy={turn.answeredBy} selected={selectedProviderId ?? null} />
+      <DegradationNotes items={turn.degradations} />
+      <RunDegradationNotes items={runDegradations ?? NO_RUN_DEGRADATIONS} />
+
+      {/* BELOW THE NOTES, WHERE ITS SIBLING ALREADY IS.
+
+          This block used to render above `ToolCalls`, which was chosen for the
+          empty ending — the case where nothing else is on the turn at all — and
+          not re-examined for the others. On a truncated turn that made tool
+          calls it put "Cut off at the model's output limit" above the cards for
+          the calls that happened before the cut, and it put the ending block on
+          the opposite side of the notes from the `.error` block underneath,
+          which states the same class of fact. Both are now last, in the order
+          the turn happened. */}
       {ending === null ? null : (
         <div className={styles.ending} data-kind={ending.kind} data-tone={ending.tone}>
           <p className={styles.errorTitle}>{ending.title}</p>
           <p className={styles.errorDetail}>{ending.detail}</p>
           {ending.offerRetry && onRetry !== undefined ? (
-            <button type="button" className={styles.retry} onClick={onRetry}>
+            <button
+              type="button"
+              className={styles.retry}
+              onClick={onRetry}
+              aria-label={retryAccessibleName}
+            >
               {retryLabel}
             </button>
           ) : null}
         </div>
       )}
-
-      <ToolCalls outcomes={turn.outcomes} progress={turn.toolProgress} />
-      <AnsweredByNote answeredBy={turn.answeredBy} selected={selectedProviderId ?? null} />
-      <DegradationNotes items={turn.degradations} />
-      <RunDegradationNotes items={runDegradations ?? NO_RUN_DEGRADATIONS} />
 
       {turn.refusal === null ? null : (
         <div className={styles.error} data-kind="failed" role="alert">
@@ -161,7 +217,12 @@ export function AssistantTurn({
               : turn.refusal.message}
           </p>
           {onRetry === undefined ? null : (
-            <button type="button" className={styles.retry} onClick={onRetry}>
+            <button
+              type="button"
+              className={styles.retry}
+              onClick={onRetry}
+              aria-label={retryAccessibleName}
+            >
               {retryLabel}
             </button>
           )}
@@ -187,22 +248,39 @@ export function AssistantTurn({
             </p>
           )}
           {error.retryable && onRetry !== undefined ? (
-            <button type="button" className={styles.retry} onClick={onRetry}>
+            <button
+              type="button"
+              className={styles.retry}
+              onClick={onRetry}
+              aria-label={retryAccessibleName}
+            >
               {retryLabel}
             </button>
           ) : null}
         </div>
       )}
 
+      {/* THE FOOTER NO LONGER SAYS "STOPPED".
+
+          It used to, under `turn.phase === 'stopped' && turn.error === null` —
+          which is now exactly the condition under which `describeTurnEnding`
+          returns `cutShort` and the ending block above states the same fact in
+          a sentence, with the retry control on it. Two statements of one ending
+          on one turn is the thing the ending rule exists to prevent, and the
+          weaker of the two was this one: a muted word in a footer that is
+          `opacity: 0` until the turn is hovered or focused.
+
+          The other half of the old condition still holds: a `stopped` turn that
+          *does* carry an error renders the error block, whose title for
+          `ChatError` `cancelled` is "Stopped" and whose detail is "You stopped
+          this reply." `describeTurnEnding` returns `null` there for that reason,
+          so that turn still says it exactly once. */}
       <footer className={styles.footer}>
         {turn.answer === '' ? null : (
           <CopyButton getText={() => turn.answer} label="Copy this reply" />
         )}
         {hasReportedUsage(turn.usage) ? (
           <span className={styles.usage}>{formatUsage(turn.usage)}</span>
-        ) : null}
-        {turn.phase === 'stopped' && turn.error === null ? (
-          <span className={styles.usage}>Stopped</span>
         ) : null}
       </footer>
     </article>

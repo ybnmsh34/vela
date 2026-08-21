@@ -50,7 +50,12 @@ import type { TurnPhase } from './turn-stream';
  * name, so the wording can be rewritten without rewriting the tests that prove
  * the ending is reached at all.
  */
-export type TurnEndingKind = 'silent' | 'truncated' | 'cutShort' | 'failedUnrecorded';
+export type TurnEndingKind =
+  | 'silent'
+  | 'truncated'
+  | 'cutShort'
+  | 'failedRecorded'
+  | 'failedUnrecorded';
 
 export interface TurnEnding {
   readonly kind: TurnEndingKind;
@@ -88,6 +93,14 @@ export interface TurnEndingInput {
   readonly hasError: boolean;
   /** A Vela-side refusal is already being rendered. */
   readonly hasRefusal: boolean;
+  /**
+   * The line the **record** kept about this turn's failure, or `null`.
+   *
+   * `TurnState.recordedFailure`, which is the store's `errorMessage` column read
+   * back. Only the `failed` phase consults it, and it is never parsed — see
+   * {@link FAILED_RECORDED}.
+   */
+  readonly recordedFailure: string | null;
 }
 
 const SILENT: TurnEnding = {
@@ -117,7 +130,7 @@ const CUT_SHORT: TurnEnding = {
 };
 
 /**
- * A turn the **record** says failed, whose reason the record does not keep.
+ * A turn the **record** says failed, whose reason the record also kept.
  *
  * Reached only from the store. `stored-entries.ts` restores `status: 'failed'`
  * as {@link TurnPhase} `failed` and deliberately restores neither the typed
@@ -126,17 +139,41 @@ const CUT_SHORT: TurnEnding = {
  * before this, rendered as an ordinary finished reply. Reopening a conversation
  * turned every failure in it into a success.
  *
- * The sentence claims only what the row proves: that it failed, and that the
- * reason is not there to state. `errorMessage` **is** a column on the row and is
- * written by `use-conversation.ts`, but `entriesFromStored` does not read it
- * back, so this cannot quote it — see the note in the final report.
+ * **Quoted, never narrated.** The `errorMessage` column holds whatever
+ * `errorMessageOfTurn` put there — a refusal's own sentence for one kind of
+ * failure, a bare `ChatError.kind` for the other — and this module cannot tell
+ * which. So the line is set in the record's voice inside quotation marks rather
+ * than in Vela's, the same rule `DocumentPreview` states for an artifact's
+ * diagnostics: program-supplied text is never parsed for meaning and never
+ * spoken as Vela's own.
+ */
+function failedRecorded(reason: string): TurnEnding {
+  return {
+    kind: 'failedRecorded',
+    tone: 'warning',
+    title: 'This reply failed',
+    detail: `The record says this turn failed, and kept one line about it: “${reason}”.`,
+    offerRetry: true,
+  };
+}
+
+/**
+ * The same turn, from a row that kept no line about the failure.
+ *
+ * Live now that the column is read back: `StoredMessage.errorMessage` is
+ * `string | null`, and a row written before it carried anything — or by any path
+ * that settled a `failed` status without a reason — restores as `null` here.
+ *
+ * The sentence claims only what the row proves. It does **not** say the reason
+ * was never kept, which is the sentence this used to carry and which was false:
+ * `use-conversation.ts` writes `errorMessage` on every failure it records, and
+ * what had gone wrong was that nothing read it back.
  */
 const FAILED_UNRECORDED: TurnEnding = {
   kind: 'failedUnrecorded',
   tone: 'warning',
   title: 'This reply failed',
-  detail:
-    'The record says this turn failed. What went wrong was not kept with it, so Vela cannot say what it was.',
+  detail: 'The record says this turn failed. It kept no line about why.',
   offerRetry: true,
 };
 
@@ -158,8 +195,11 @@ export function describeTurnEnding(input: TurnEndingInput): TurnEnding | null {
       // A *live* failure never reaches here: the reducer sets `failed` only
       // alongside an `error` and `use-conversation.ts` only alongside a
       // `refusal`, and both returned above. What reaches here is a turn
-      // restored from the store, which keeps the status and drops the reason.
-      return FAILED_UNRECORDED;
+      // restored from the store, which keeps the status and the recorded line
+      // and drops the typed error.
+      return input.recordedFailure === null
+        ? FAILED_UNRECORDED
+        : failedRecorded(input.recordedFailure);
     case 'stopped':
       return CUT_SHORT;
     case 'complete':
@@ -182,11 +222,18 @@ function endingOfCompleted(input: TurnEndingInput): TurnEnding | null {
     case 'maxTokens':
       return TRUNCATED;
     case 'cancelled':
-      // `reduceTurn` maps a `cancelled` stop reason to the `stopped` phase, so
-      // this arm is not on the streaming path. It is on the **stored** one:
-      // `stored-entries.ts` rebuilds a turn from the record with whatever stop
-      // reason was written, and a cancelled turn read back from the store must
-      // read as cancelled rather than as an ordinary finish.
+      // Not the streaming path and not the stored one. `reduceTurn`'s `done`
+      // arm maps a `cancelled` stop reason to the `stopped` phase, and a stored
+      // row is worse than that: `statusOfTurn` writes the `stopped` phase as
+      // status `cancelled` and `phaseOf` reads status `cancelled` back as phase
+      // `stopped`, so a cancelled row never arrives here as `complete` either.
+      //
+      // The producer is `settleRun` in `use-conversation.ts`. Its `completed`
+      // branch sets `phase: 'complete'` and copies `outcome.stopReason`
+      // verbatim, and `RunOutcome`'s completed variant is typed
+      // `stopReason: StopReason` — the whole union, `cancelled` included. So an
+      // agent run whose last turn stopped short settles complete-and-cancelled,
+      // and this arm is what keeps that from reading as an ordinary finish.
       return CUT_SHORT;
     case 'toolUse':
     case 'endTurn':

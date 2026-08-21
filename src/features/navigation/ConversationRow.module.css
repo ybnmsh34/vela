@@ -121,3 +121,22 @@
   outline: var(--vela-focus-ring);
   outline-offset: var(--vela-focus-offset-inset);
 }
+
+/* FORCED COLOURS: WHICH CONVERSATION IS OPEN.
+
+   `.selected` says it with `--vela-row-selected` and with nothing else, and a
+   forced-colours mode replaces that background with the same fill every other
+   row has. `aria-current="page"` is on `.main` and reaches assistive
+   technology; a sighted user in High Contrast is left reading forty identical
+   rows.
+
+   Restated in weight, which forced colours does not substitute. Not in a border
+   — `.main` has `border: 0`, so giving it one would move every row by a pixel
+   in that mode and nowhere else — and not in an outline, because `.main` and
+   `.action` both spend theirs on `:focus-visible` and the focused selected row
+   would lose the cue at the moment it matters most. */
+@media (forced-colors: active) {
+  .selected .title {
+    font-weight: var(--vela-weight-bold);
+  }
+}

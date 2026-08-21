@@ -19,6 +19,12 @@
  *   put a specific claim about *why* a turn failed in front of the user on the
  *   strength of a string match. A restored turn keeps its `failed` phase — the
  *   record that it failed is not lost — and carries no error box.
+ *
+ *   The *sentence itself* is a different question from the variant, and it is
+ *   restored: `errorMessage` lands on {@link TurnState.recordedFailure} and is
+ *   quoted verbatim under the turn. Refusing to rebuild the union is not a
+ *   reason to drop the column, and dropping it is what made a reopened
+ *   conversation say "what went wrong was not kept" about a row that kept it.
  * * **Tool calls.** The parts are stored faithfully, but `emulated` is not one
  *   of them, and it is the flag that decides whether the UI tells the user
  *   "this model has no native tool calling, so Vela recovered these from its
@@ -161,6 +167,7 @@ function turnFromStored(message: StoredMessage): TurnState {
     usage: usageOf(message.usage),
     stopReason: stopReasonOf(message.stopReason),
     answeredBy: answeredByOf(message),
+    recordedFailure: message.errorMessage,
   });
 }
 

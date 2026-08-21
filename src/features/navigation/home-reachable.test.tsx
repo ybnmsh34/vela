@@ -25,7 +25,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -109,6 +109,34 @@ describe('the home screen is reachable without destroying anything', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open Star charts' }));
     expect(screen.getByRole('button', { name: 'Home' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('names every icon in the collapsed rail to the pointer, not only to a reader', async () => {
+    // The rail collapsed is a column of buttons whose only content is a 14px
+    // glyph. `aria-label` names each one for assistive technology and names it
+    // for nobody else; `title` is the browser's own tooltip and is what
+    // `TitleBar.tsx` already uses for the caption buttons it draws itself.
+    //
+    // Asserted for *every* button in the rail rather than for the ones this
+    // track happened to touch: adding a ninth unlabelled glyph is exactly how
+    // the rail got to eight.
+    const user = userEvent.setup();
+    const adapter = host();
+    mount(adapter);
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+
+    const rail = screen.getByRole('navigation', { name: 'Primary' });
+    const buttons = within(rail).getAllByRole('button');
+    expect(buttons.length, 'the collapsed rail, as it stands').toBe(8);
+
+    for (const button of buttons) {
+      const name = button.getAttribute('aria-label');
+      expect(name, 'an icon-only control with no aria-label').not.toBeNull();
+      // No visible text: that is what makes the tooltip the only name a
+      // pointer user gets, and what makes its absence a defect.
+      expect(button.textContent?.trim(), `${String(name)} has visible text`).toBe('');
+      expect(button.getAttribute('title'), `${String(name)} has no tooltip`).toBe(name);
+    }
   });
 
   it('clears the selection from both branches of the component, not one', () => {

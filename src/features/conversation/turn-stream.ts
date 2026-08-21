@@ -86,6 +86,25 @@ export interface TurnState {
    * send them debugging the wrong thing.
    */
   readonly refusal: { readonly code: string; readonly message: string } | null;
+  /**
+   * **The one line the record kept about a failure**, for a turn read back out
+   * of the store — `null` for every live turn and for a row that kept nothing.
+   *
+   * Not produced by any of the six chat events, and set only through
+   * {@link turnFromParts}'s overrides, by `stored-entries.ts`. It exists because
+   * a restored failure arrives with {@link TurnState.error} and
+   * {@link TurnState.refusal} both `null` — `stored-entries.ts` refuses to widen
+   * a stored sentence back into a typed error, and its header says why — while
+   * the `errorMessage` column on `StoredMessage` held the sentence the whole
+   * time. Nothing in the renderer read that column, so reopening a conversation
+   * turned "it failed, and this was said about it" into "it failed".
+   *
+   * Carried as an opaque string and never parsed. It is quoted to the user as
+   * the record's own words, the way `DocumentPreview` quotes an artifact's
+   * diagnostics, because the column may hold a refusal sentence or a bare error
+   * kind and Vela must not narrate either in its own voice.
+   */
+  readonly recordedFailure: string | null;
   /** Scanner state for the markup guard. Internal; not for rendering. */
   readonly guard: GuardState;
 }
@@ -103,6 +122,7 @@ export const EMPTY_TURN: TurnState = {
   stopReason: null,
   error: null,
   refusal: null,
+  recordedFailure: null,
   guard: GUARD_START,
 };
 

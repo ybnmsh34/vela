@@ -58,6 +58,7 @@ export function useConversationsApi(): ConversationsApi {
   const [status, setStatus] = useState<ConversationsState>({ state: 'loading' });
   const [actionError, setActionError] = useState<string | null>(null);
   const select = useNavigationStore((state) => state.select);
+  const startDraft = useNavigationStore((state) => state.startDraft);
   const selectedId = useNavigationStore((state) => state.selectedConversationId);
 
   /**
@@ -123,6 +124,38 @@ export function useConversationsApi(): ConversationsApi {
     })();
   }, [status, repository, load]);
 
+  /**
+   * **New conversation**, from all five of the places that offer it.
+   *
+   * Counted, not remembered: `grep -rn 'createConversation()' src/ --include=*.ts
+   * --include=*.tsx` outside tests names `Sidebar.tsx` twice (the wide button
+   * and the collapsed icon), `CommandPalette.tsx`, `HomeSurface.tsx`'s **Start a
+   * conversation**, and `NavigationSurface.tsx`, which is where `Ctrl/Cmd+N`
+   * arrives. The home screen is not on screen in incognito — `NavigationSurface`
+   * fills the content region with the transcript instead — so four of the five
+   * are reachable in the mode, and all five go through here.
+   *
+   * ## The incognito branch, and why it is here rather than at those four
+   *
+   * `store_create_conversation` is classified `writes`, so the wrapper in
+   * `src/platform/incognito-adapter.ts` refuses it and this `catch` runs. Before
+   * this branch existed, the most prominent control in the window answered a
+   * press by painting the refusal into the sidebar's error line — a raw internal
+   * message, in the mode a user enters precisely because they want it to behave
+   * normally.
+   *
+   * `INCOGNITO_REFUSED` is handled the way `use-theme.ts` handles its own: as
+   * the mode working rather than failing. An incognito conversation is an
+   * unsaved one — `conversationId === null`, no restore on the way in and no
+   * write on settle — so a new one is a cleared selection and a fresh surface,
+   * which is exactly what `startDraft` does. Nothing is quietly reduced: the
+   * user asked for a new conversation and gets one, and the three indications
+   * the mode already carries are what say it will not be kept.
+   *
+   * The branch is here and not at the four call sites for the same reason the
+   * refusal itself is at the adapter: a rule enforced at call sites is a rule
+   * the next call site does not know about.
+   */
   const createConversation = useCallback(async (): Promise<ConversationSummary | null> => {
     try {
       const created = await repository.create();
@@ -131,10 +164,16 @@ export function useConversationsApi(): ConversationsApi {
       select(created.id);
       return created;
     } catch (thrown) {
-      setActionError(toPlatformError(thrown).message);
+      const error = toPlatformError(thrown);
+      if (error.code === 'INCOGNITO_REFUSED') {
+        setActionError(null);
+        startDraft();
+        return null;
+      }
+      setActionError(error.message);
       return null;
     }
-  }, [repository, load, select]);
+  }, [repository, load, select, startDraft]);
 
   const renameConversation = useCallback(
     async (conversationId: string, title: string) => {

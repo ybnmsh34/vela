@@ -32,11 +32,35 @@ export function clampSidebarWidth(width: number): number {
 
 interface NavigationState {
   readonly selectedConversationId: string | null;
+  /**
+   * How many unsaved conversations this window has been asked to start.
+   *
+   * Only incognito produces one. Everywhere else **New conversation** mints a
+   * row and the new id is what makes the transcript surface remount; in
+   * incognito `store_create_conversation` is refused, so there is no id to
+   * change and pressing the button a second time would have left the previous
+   * conversation on screen. This counter is the id's stand-in.
+   *
+   * RULE U — its reader is `src/app/App.tsx`, which puts it in the
+   * `ConversationSurface` `key` alongside the conversation id, and
+   * `src/app/instructions-and-incognito.test.tsx` is what observes that the
+   * remount happens. It is deliberately not a boolean: two presses in a row
+   * have to differ, or the second is a no-op.
+   */
+  readonly draftCount: number;
   readonly sidebarWidth: number;
   readonly sidebarCollapsed: boolean;
   readonly paletteMode: PaletteMode;
 
   select: (conversationId: string | null) => void;
+  /**
+   * Start a conversation that has no row behind it.
+   *
+   * Called by `use-conversations.ts` when the host refuses the create with
+   * `INCOGNITO_REFUSED` — the one refusal that is the mode working rather than
+   * failing, handled the same way `use-theme.ts` handles its own.
+   */
+  startDraft: () => void;
   setSidebarWidth: (width: number) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebar: () => void;
@@ -46,11 +70,13 @@ interface NavigationState {
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
   selectedConversationId: null,
+  draftCount: 0,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   sidebarCollapsed: false,
   paletteMode: 'closed',
 
   select: (conversationId) => set({ selectedConversationId: conversationId }),
+  startDraft: () => set({ selectedConversationId: null, draftCount: get().draftCount + 1 }),
   // Clamped on the way in as well as in the host: the drag handle reads this
   // back every frame, and an unclamped value would render before the host ever
   // saw it.
@@ -65,6 +91,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
 export function resetNavigationStore(): void {
   useNavigationStore.setState({
     selectedConversationId: null,
+    draftCount: 0,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
     paletteMode: 'closed',

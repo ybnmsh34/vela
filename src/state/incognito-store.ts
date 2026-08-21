@@ -24,6 +24,15 @@
  * whose only job was to cause an unmount that already happens is a mechanism
  * with no reader, which is the thing RULE U is about.
  *
+ * **A counter did come back, and the difference is the point.**
+ * `src/state/navigation-store.ts` now carries `draftCount`, and it is not this
+ * one revived: it exists because pressing **New conversation** twice inside
+ * incognito has to produce two conversations, and with no row minted there is no
+ * changing id to remount on. It has a reader - `App.tsx` puts it in the
+ * `ConversationSurface` key - and an observer, in
+ * `src/app/instructions-and-incognito.test.tsx`. That is the test the deleted
+ * epoch could not pass.
+ *
  * **The limit of the claim, either way.** An unmount removes the entries from
  * the React tree and drops the last reference to them. It does not zero the
  * JavaScript heap, and nothing in a renderer can: the strings live until the
@@ -33,15 +42,24 @@
  *
  * ## RULE U - what reads what is written here
  *
- * `active` is read by `App.tsx` (which wraps the adapter with
+ * `active` is read by `IncognitoGate.tsx` (which wraps the adapter with
  * `createIncognitoAdapter`), by `AppShell.tsx` (the banner and the
  * `data-incognito` attribute), by `NavigationSurface.tsx` (which clears the
  * selection on a transition and fills the content region), by `Sidebar.tsx`
  * (the control's pressed state), by `use-navigation-shortcuts.ts` (the shortcut
  * toggles it) and by `StylePanel.tsx` (the switch and the explanation).
- * `debugLog` is read by `StylePanel.tsx`, which is where the sentence about the
- * debug log is shown. Nothing here is persisted, so there is nothing else to
- * name.
+ *
+ * That list named `App.tsx` for the first reader, and `App.tsx` does not select
+ * from this store at all — `grep -c useIncognitoStore src/app/App.tsx` is 0. It
+ * mounts `IncognitoGate`, and the gate is what reads the flag and wraps the
+ * adapter. RULE T exactly: prose asserting an edge that is not there. Naming the
+ * wrong reader is not a small error in a rule whose whole job is to make an
+ * unread write findable.
+ *
+ * `debugLog` is read by `StylePanel.tsx`, where the sentence about the debug log
+ * and what to do about it is shown, and by `AppShell.tsx`, whose band and status
+ * line say which of three things this window is entitled to claim (see `BAND`
+ * there). Nothing here is persisted, so there is nothing else to name.
  */
 
 import { create } from 'zustand';

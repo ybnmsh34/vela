@@ -39,6 +39,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '@/app/App';
 import { BrowserAdapter } from '@/platform/browser-adapter';
 import {
+  COMMAND_ALLOWLIST,
   NO_CAPABILITIES,
   type ChatSendReq,
   type CommandName,
@@ -46,6 +47,7 @@ import {
   type CommandRes,
   type ModelCapabilityReport,
 } from '@/platform/contract';
+import { PlatformError } from '@/platform/errors';
 import { refusedCommands } from '@/platform/incognito-adapter';
 import { resetIncognitoStore } from '@/state/incognito-store';
 import { resetMemoryStore } from '@/state/memory-store';
@@ -116,7 +118,7 @@ function pane(): HTMLElement {
 /** Write standing instructions through the shipping pane, and close it. */
 async function writeInstructions(user: User, text: string): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Style and instructions' }));
-  const box = await screen.findByRole('textbox', { name: 'Your instructions' });
+  const box = await screen.findByRole('textbox', { name: 'Sent in front of every message' });
   await user.click(box);
   await user.paste(text);
   await user.click(within(pane()).getByRole('button', { name: 'Close' }));
@@ -329,7 +331,10 @@ describe('the resolved result is shown, and it tells the truth about each path',
     // which of their words are being left behind, not only that some are.
     expect(within(row()).getByText('Not sent')).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Which kind of turn' }), 'agent');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'For this kind of turn' }),
+      'agent',
+    );
     expect(within(row()).getByText('Sent')).toBeInTheDocument();
   });
 });
@@ -388,8 +393,14 @@ describe('incognito is reachable two ways, and both are the same mode', () => {
 
     const banner = await screen.findByTestId('incognito-banner');
     expect(banner).toHaveAttribute('role', 'status');
-    expect(banner).toHaveTextContent(/nothing from this window is being saved/i);
     expect(document.querySelector('[data-incognito="on"]')).not.toBeNull();
+    // `waitFor`, because the headline sentence is not owed until the disarm has
+    // answered — see the `failed` test below for why it is not unconditional.
+    await waitFor(() => {
+      expect(screen.getByTestId('incognito-banner')).toHaveTextContent(
+        /nothing from this window is being saved/i,
+      );
+    });
     expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · not saved');
   });
 });
@@ -426,6 +437,173 @@ describe('incognito refuses without looking broken', () => {
   });
 });
 
+describe('a speech-input user can address the pane’s controls by what they read', () => {
+  it('contains every visible field label in the control’s accessible name', async () => {
+    // WCAG 2.5.3 Label in Name. Someone driving this window by voice says the
+    // words they can see; if the accessible name does not contain them, the
+    // control cannot be addressed at all. Two of the three fields here failed
+    // it — visible `Sent in front of every message` against a name of `Your
+    // instructions`, and visible `For` against `Which kind of turn`.
+    //
+    // The two sibling panes were checked rather than assumed, and they get there
+    // by different routes: `ProjectPanel.tsx` sets `aria-label` equal to its
+    // `fieldLabel` on both fields (`Working in`, `Instructions for this
+    // project`), while `MemoryPanel.tsx` sets no `aria-label` on its fields at
+    // all and lets the wrapping `<label>` name them, which contains the visible
+    // text by construction. Either is fine; naming the control something else
+    // is not.
+    //
+    // Swept over the pane rather than asserted field by field, so a fourth
+    // field added later is covered without anyone remembering this test.
+    const user = userEvent.setup({ delay: null });
+    render(<App adapter={await host()} />);
+    await user.click(screen.getByRole('button', { name: 'Style and instructions' }));
+    await screen.findByRole('dialog');
+
+    const labels = Array.from(pane().querySelectorAll('label'));
+    expect(labels.length, 'the sweep found no labelled fields to check').toBeGreaterThanOrEqual(3);
+
+    for (const label of labels) {
+      const control = label.querySelector('input, textarea, select');
+      expect(control, `\`${label.textContent ?? ''}\` labels no control`).not.toBeNull();
+      const visible = label.querySelector('span')?.textContent ?? '';
+      expect(visible.length, 'a field with no visible label').toBeGreaterThan(0);
+      expect(control as HTMLElement).toHaveAccessibleName(expect.stringContaining(visible));
+    }
+  });
+});
+
+describe('the mode’s own claim is not made when it cannot be kept', () => {
+  /**
+   * A host that will not answer about its debug log.
+   *
+   * `disarmDebugLogForIncognito` resolves `'failed'` rather than rejecting —
+   * deliberately, so a failure does not abort entering the mode — and in that
+   * state `vela_providers::debuglog` may still be writing the raw upstream
+   * request and response bodies to a file. Everything the window says has to
+   * change, because the alternative is a privacy claim that is false while it is
+   * on screen.
+   */
+  class DeafToDiagnostics extends RecordingHost {
+    override async invoke<C extends CommandName>(
+      command: C,
+      payload: CommandReq<C>,
+    ): Promise<CommandRes<C>> {
+      if (command === 'diagnostics_debug_log_get') {
+        throw new PlatformError('INTERNAL', 'the diagnostics handle is gone');
+      }
+      return super.invoke(command, payload);
+    }
+  }
+
+  it('says the debug log is still on, in the band and in the status line', async () => {
+    const adapter = new DeafToDiagnostics();
+    render(<App adapter={adapter} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+
+    // Not "eventually stops claiming": it must never carry the sentence. The
+    // band is asserted on its settled state, and the state is named on the
+    // element so a failure says which of the three was drawn.
+    await waitFor(() => {
+      expect(screen.getByTestId('incognito-banner')).toHaveAttribute('data-debug-log', 'failed');
+    });
+    const banner = screen.getByTestId('incognito-banner');
+    expect(banner).toHaveTextContent(/provider debug log could not be switched off/i);
+    expect(banner).not.toHaveTextContent(/nothing from this window is being saved/i);
+    expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · debug log still on');
+  });
+
+  it('still says it plainly in the pane, with what to do about it', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<App adapter={new DeafToDiagnostics()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+    await screen.findByTestId('incognito-banner');
+    await user.click(screen.getByRole('button', { name: 'Style and instructions' }));
+
+    expect(await screen.findByTestId('incognito-debug-log')).toHaveTextContent(
+      /could not be switched off/i,
+    );
+  });
+
+  it('makes the claim once the host says the log is off', async () => {
+    // The control: the same three surfaces, against a host that answers. Without
+    // this the test above passes over a window that never claims anything.
+    render(<App adapter={await host()} />);
+    pressIncognitoChord();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('incognito-banner')).toHaveAttribute('data-debug-log', 'clear');
+    });
+    expect(screen.getByTestId('privacy-line')).toHaveTextContent('Incognito · not saved');
+  });
+});
+
+describe('incognito refuses without looking broken — the button pressed first', () => {
+  it('starts a conversation instead of painting an IPC command name at the user', async () => {
+    // The most prominent control in the window. `store_create_conversation` is
+    // `writes`, so the wrapper refuses it, and the sidebar used to render the
+    // refusal verbatim — with the Rust command name in backticks — in the mode a
+    // user enters expecting the window to behave normally.
+    const user = userEvent.setup({ delay: null });
+    const adapter = await host();
+    render(<App adapter={adapter} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+    await screen.findByTestId('incognito-banner');
+    const from = adapter.commands.length;
+
+    await user.click(screen.getByRole('button', { name: /New conversation/ }));
+
+    // Nothing anywhere on screen names a command. Quantified over every command
+    // in the contract rather than over the one this button happens to call, so
+    // the next refusal that reaches a surface fails here too.
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Conversation' })).toBeInTheDocument();
+    });
+    const painted = document.body.textContent ?? '';
+    const leaked = (COMMAND_ALLOWLIST as readonly string[]).filter((command) =>
+      painted.includes(command),
+    );
+    expect(leaked, 'a raw IPC command name reached the screen').toEqual([]);
+    // And no alert at all: the refusal is the mode working, so the sidebar has
+    // nothing to report. `role="alert"` is what the sidebar's error line is,
+    // and a screen reader interrupts for one — the worst possible answer to a
+    // control behaving exactly as the mode promised.
+    expect(screen.queryAllByRole('alert')).toEqual([]);
+    // And the press did not become a durable write on the way.
+    expect(adapter.commands.slice(from)).not.toContain('store_create_conversation');
+  });
+
+  it('gives a second press a second conversation, empty', async () => {
+    // With no row minted there is no new id, so nothing about the selection
+    // changes between two presses. `draftCount` in `navigation-store.ts` is what
+    // makes the surface remount; delete it and the first conversation’s words
+    // are still on screen after the second press.
+    const user = userEvent.setup({ delay: null });
+    const adapter = await host();
+    render(<App adapter={adapter} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    pressIncognitoChord();
+    await screen.findByRole('region', { name: 'Conversation' });
+    await sendTurn(user, 'a private question', false);
+    await waitFor(() => {
+      expect(screen.getAllByText('a private question').length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByRole('button', { name: /New conversation/ }));
+
+    await waitFor(() => {
+      expect(screen.queryAllByText('a private question')).toEqual([]);
+    });
+  });
+});
+
 describe('incognito writes nothing, and leaving destroys what it held', () => {
   it('sends the turn and writes no durable row for it', async () => {
     const user = userEvent.setup({ delay: null });
@@ -448,9 +626,20 @@ describe('incognito writes nothing, and leaving destroys what it held', () => {
     // And nothing that writes reached the host. Quantified over the whole
     // classification rather than over a list of writers somebody remembered:
     // this is the assertion a call-site flag cannot make.
+    //
+    // **The oracle is pinned first, and that is not decoration.** This assertion
+    // asks whether any *refused* command crossed, so it is vacuous against an
+    // empty oracle: gutting `refusedCommands()` to `return []` leaves the line
+    // below green while every writer in the contract sails through. Measured —
+    // it was green, twice, under exactly that mutation. Pinning a floor and a
+    // known member is what makes the emptiness of `wrote` mean something.
+    const refused = refusedCommands();
+    expect(refused.length, 'the oracle is empty; the next line proves nothing').toBeGreaterThan(15);
+    expect(refused).toContain('store_create_conversation');
+    expect(refused).toContain('store_append_message');
     const wrote = adapter.commands
       .slice(from)
-      .filter((command) => (refusedCommands() as readonly string[]).includes(command));
+      .filter((command) => (refused as readonly string[]).includes(command));
     expect(wrote, 'a durable write crossed the seam while incognito').toEqual([]);
   });
 

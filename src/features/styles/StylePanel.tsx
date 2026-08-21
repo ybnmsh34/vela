@@ -57,8 +57,9 @@ interface StylePanelProps {
  * disarm failed is in a mode that is not doing what its name says, and telling
  * them so is the only useful thing this pane can do about it.
  */
-const DEBUG_LOG_SENTENCE: Readonly<Record<'was-off' | 'turned-off' | 'failed', string>> =
+const DEBUG_LOG_SENTENCE: Readonly<Record<'checking' | 'was-off' | 'turned-off' | 'failed', string>> =
   Object.freeze({
+    checking: 'Checking whether the provider debug log is on…',
     'was-off': 'The provider debug log was already off.',
     'turned-off':
       'The provider debug log was on and has been switched off. It is not switched back on when you leave.',
@@ -147,7 +148,7 @@ export function StylePanel({ onClose }: StylePanelProps) {
           <span className={styles.fieldLabel}>Sent in front of every message</span>
           <textarea
             className={styles.input}
-            aria-label="Your instructions"
+            aria-label="Sent in front of every message"
             rows={4}
             value={customInstructions}
             onChange={(event) => {
@@ -176,14 +177,25 @@ export function StylePanel({ onClose }: StylePanelProps) {
             {incognito ? 'Leave incognito' : 'Enter incognito'}
           </button>
         </div>
+        {/*
+          Scoped to what is enforced, because the sentence it replaced was not.
+          "This window writes nothing durable to this machine" was stated flatly
+          and is false whenever the disarm below answers `failed`: the host's
+          provider debug log is not a command this renderer issues, so refusing
+          commands does not stop it. What the wrapper in
+          `src/platform/incognito-adapter.ts` does guarantee — and what
+          `incognito-adapter.test.ts` sweeps the whole contract for — is that
+          every command classified `writes` is refused. That is the claim made
+          here, and the debug log gets its own sentence directly underneath.
+        */}
         <p className={styles.note}>
-          In incognito this window writes nothing durable to this machine. It may still read, and it
-          may still delete. Leaving discards the conversation held in it: the transcript is dropped
-          from the window and was never written down.
+          In incognito this window refuses every command that would write to this machine. It may
+          still read, and it may still delete. Leaving discards the conversation held in it: the
+          transcript is dropped from the window and was never written down.
         </p>
-        {incognito && debugLog !== null && (
+        {incognito && (
           <p className={styles.note} role="status" data-testid="incognito-debug-log">
-            {DEBUG_LOG_SENTENCE[debugLog]}
+            {DEBUG_LOG_SENTENCE[debugLog ?? 'checking']}
           </p>
         )}
         <p className={styles.note}>What it does not reach:</p>
@@ -198,10 +210,10 @@ export function StylePanel({ onClose }: StylePanelProps) {
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}>What the next turn actually carries</h3>
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>For</span>
+          <span className={styles.fieldLabel}>For this kind of turn</span>
           <select
             className={styles.select}
-            aria-label="Which kind of turn"
+            aria-label="For this kind of turn"
             value={path}
             onChange={(event) => {
               setPath(event.target.value as SendPath);

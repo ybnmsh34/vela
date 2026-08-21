@@ -223,11 +223,16 @@ function Transcript({
   readonly projectId: ProjectId | null;
 }) {
   const conversationId = useNavigationStore((state) => state.selectedConversationId);
+  // The `key`'s second half, and it only ever moves in incognito. See
+  // `draftCount` in `src/state/navigation-store.ts`: with no row to mint there
+  // is no new id, so without this a second press of **New conversation** would
+  // leave the first one's transcript on screen.
+  const draftCount = useNavigationStore((state) => state.draftCount);
   const { selection, capabilities, attachments, report } = useSelectedModel();
 
   return (
     <ConversationSurface
-      key={conversationId ?? 'none'}
+      key={conversationId ?? `draft-${draftCount}`}
       conversationId={conversationId}
       onAssistantMessages={onAssistantMessages}
       providerId={selection?.providerId ?? null}

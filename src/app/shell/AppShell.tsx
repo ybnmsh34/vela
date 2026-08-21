@@ -15,7 +15,7 @@
 import type { ReactNode } from 'react';
 
 import { NavigationSurface } from '@/features/navigation/NavigationSurface';
-import { useIncognitoStore } from '@/state/incognito-store';
+import { useIncognitoStore, type DebugLogOutcome } from '@/state/incognito-store';
 
 import { useHostStatus } from './use-host-status';
 import { TitleBar } from './TitleBar';
@@ -28,9 +28,55 @@ interface AppShellProps {
   readonly now?: () => number;
 }
 
+/**
+ * WHAT THE BAND AND THE STATUS LINE ARE ALLOWED TO SAY, PER DEBUG-LOG STATE.
+ *
+ * The mode's headline sentence used to be unconditional, and it was false in a
+ * state a user can reach. `disarmDebugLogForIncognito` answers `'failed'` when
+ * the host will not turn the provider debug log off — deliberately, so that a
+ * failure does not abort entering the mode — and in that state
+ * `vela_providers::debuglog` goes on writing the raw upstream request and
+ * response bodies, the user's prompt and the model's answer, to a file under
+ * the application-data directory. A window asserting `nothing from this window
+ * is being saved on this machine` over that is the exact failure
+ * `incognito-adapter.ts`'s header names: a mode a user can be wrong about is
+ * worse than none.
+ *
+ * `null` is not the same as `'failed'` and is not treated as one. It is the
+ * round trip still being in flight, which is the sub-second window the
+ * `IncognitoGate` header already documents. It gets its own sentence rather
+ * than borrowing either of the other two, because the honest answer for that
+ * moment is that the question has not been answered yet.
+ *
+ * The corrective sentence used to exist only in `StylePanel.tsx`, behind a pane
+ * the user has to open. It is here now because this is the surface a user
+ * cannot miss, and the pane's fuller wording — what to do about it — stays
+ * there.
+ */
+const BAND: Readonly<Record<'checking' | 'clear' | 'failed', string>> = Object.freeze({
+  checking: 'Incognito · checking whether the provider debug log is on',
+  clear: 'Incognito · nothing from this window is being saved on this machine',
+  failed:
+    'Incognito · the provider debug log could not be switched off, so your prompts and answers may still be written to this machine',
+});
+
+const PRIVACY_LINE: Readonly<Record<'checking' | 'clear' | 'failed', string>> = Object.freeze({
+  checking: 'Incognito · checking',
+  clear: 'Incognito · not saved',
+  failed: 'Incognito · debug log still on',
+});
+
+/** Which of the three sentences this window has earned the right to show. */
+export function bandState(debugLog: DebugLogOutcome): 'checking' | 'clear' | 'failed' {
+  if (debugLog === null) return 'checking';
+  return debugLog === 'failed' ? 'failed' : 'clear';
+}
+
 export function AppShell({ children, now }: AppShellProps) {
   const status = useHostStatus();
   const incognito = useIncognitoStore((state) => state.active);
+  const debugLog = useIncognitoStore((state) => state.debugLog);
+  const band = bandState(debugLog);
 
   const dotClass =
     status.state === 'ready'
@@ -62,10 +108,19 @@ export function AppShell({ children, now }: AppShellProps) {
         paints `--vela-warning` on `--vela-warning-bg`, the pair `AttachmentTray`
         already uses and `src/styles/contrast.test.ts` already measures in both
         themes.
+
+        Two of the three carry the debug-log state as well, because an
+        indication that says the wrong thing is worse than one that is missed.
+        See `BAND` above.
       */}
       {incognito && (
-        <div className={styles.incognitoBanner} role="status" data-testid="incognito-banner">
-          Incognito · nothing from this window is being saved on this machine
+        <div
+          className={styles.incognitoBanner}
+          role="status"
+          data-testid="incognito-banner"
+          data-debug-log={band}
+        >
+          {BAND[band]}
         </div>
       )}
       <TitleBar context={incognito ? 'Incognito window' : 'Untitled workspace'} />
@@ -90,7 +145,7 @@ export function AppShell({ children, now }: AppShellProps) {
         </span>
         <span className={styles.spacer} />
         <span data-testid="privacy-line">
-          {incognito ? 'Incognito · not saved' : 'Offline · no telemetry'}
+          {incognito ? PRIVACY_LINE[band] : 'Offline · no telemetry'}
         </span>
       </footer>
     </div>

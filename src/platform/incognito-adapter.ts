@@ -24,12 +24,13 @@
  * **Read anything, erase anything, write nothing.**
  *
  * {@link COMMAND_DURABILITY} answers, for every command in the contract, which
- * of the three it is. Erasing is allowed because a deletion records nothing: a
+ * of the three it is, and `command-durability.test.ts` holds every one of those
+ * answers against the Rust body it was read off. Erasing is allowed because a deletion records nothing: a
  * user who opens their memory pane in incognito and deletes an entry has left
  * *less* behind, not more, and refusing it would be a privacy mode that stops
  * you removing things.
  *
- * ## Why the table is a total `Record` and not a list of blocked commands
+ * ## Why the table is a total `Record`, and what that does NOT defend against
  *
  * A denylist defaults to *allow*, so a command added to `IpcContract` next month
  * ships as a leak until somebody remembers this file. `Record<CommandName, …>`
@@ -37,6 +38,23 @@
  * here does not compile. `incognito-adapter.test.ts` asserts the same thing at
  * runtime against `COMMAND_ALLOWLIST`, because `tsc` does not see `.mjs` and a
  * type is not a test.
+ *
+ * **That defends against omission, and omission is the easy half.** A missing
+ * row does not compile; a *wrong* row compiles perfectly, and it is the wrong
+ * row that leaks — a `writes` command quietly reclassified `no-write` is
+ * forwarded to the host by a window telling the user nothing is being kept.
+ * Measured, before there was anything to catch it: flipping `schedules_create`,
+ * and then `secrets_set`, `ui_set_layout` and `sandbox_submit` together, left
+ * the whole suite green.
+ *
+ * `command-durability.test.ts` is what closes that. Every row below carries a
+ * cited chain of Rust symbols in `src-tauri/`; the test reads those files, finds
+ * each `fn`, brace-matches its body, and fails if the quoted bytes are not in
+ * it — then derives the durability from the kind of effect the terminal bytes
+ * are, and compares that with this table. So the classification is checked
+ * against the host rather than against a memory of the host. Read that file's
+ * header for the bound: it holds a *reviewed path* to the bytes, and it does not
+ * claim to have walked every call graph.
  *
  * ## What incognito does NOT reach, stated because a mode you can be wrong
  * about is worse than no mode
@@ -90,8 +108,14 @@ export type CommandDurability = 'no-write' | 'erases' | 'writes';
 /**
  * Every command in the contract, classified.
  *
- * **Classified from the host body, not from the name.** Three of these read as
- * reads and are not:
+ * **Classified from the host body, not from the name — and held there.** That
+ * sentence used to be a promise about how the table was written, which is a
+ * promise about the day of the commit and nothing after it.
+ * `command-durability.test.ts` makes it a property of the tree: each row cites
+ * the file and symbol its classification came from, and the citation is checked
+ * against the bytes on every run.
+ *
+ * Three of these read as reads and are not:
  *
  * - `project_layout` and `project_reconcile_skills` both resolve to
  *   `ipc::project::layout`, which calls `resolve_layout` in
@@ -235,6 +259,21 @@ export async function disarmDebugLogForIncognito(
  * silent-reduction class conventions §9 forbids — the caller believes it wrote
  * and the user believes it saved. A `PlatformError` with a distinct code is
  * something a surface can catch and word.
+ *
+ * ## The message is the one a user reads, and it names no command
+ *
+ * It used to be `` `store_create_conversation` writes to this machine and the
+ * window is in incognito ``, which is what the sidebar painted when a user
+ * pressed **New conversation** in the mode. `errors.ts` had already written the
+ * rule this broke, on `PlatformError.command`: "The command that failed, for
+ * logging. Never included in user-facing copy." Every surface that shows a
+ * failure — `MemoryPanel`, `ProjectPanel`, `SchedulesPanel`, the sidebar —
+ * renders `PlatformError.message` verbatim, so this string is user-facing copy
+ * whether it was written as such or not.
+ *
+ * The command name is still on the error, where a log or a test can read it;
+ * `incognito-adapter.test.ts` asserts it. What changed is that it is no longer
+ * in the sentence.
  */
 export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapter {
   return {
@@ -244,7 +283,7 @@ export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapte
       if (isRefusedInIncognito(command)) {
         throw new PlatformError(
           'INCOGNITO_REFUSED',
-          `\`${command}\` writes to this machine and the window is in incognito`,
+          'This window is in incognito, so nothing it does is written to this machine.',
           command,
         );
       }

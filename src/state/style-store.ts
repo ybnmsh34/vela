@@ -55,12 +55,28 @@ import { create } from 'zustand';
 import { DEFAULT_STYLE_ID, type StyleId } from '@/lib/instruction-layers';
 
 /**
- * The ceiling on what the box accepts.
+ * The length at which `StylePanel` tells the user their instructions are too
+ * long.
  *
- * Not arbitrary and not a round number picked here: it is
+ * **It is not a ceiling and nothing clamps to it**, which is what this comment
+ * used to claim. The textarea carries no `maxLength`, this store keeps whatever
+ * it is handed, and `composeInstructionText` sends the whole of it: over-length
+ * text raises a `role="status"` line in the pane and then goes out in full. The
+ * previous wording — "the ceiling on what the box accepts" — described a
+ * mechanism that is not in this tree.
+ *
+ * Left as a warning rather than made into a real limit on purpose. There is no
+ * host validation behind these instructions to fail against — they are
+ * session-only, and `COMMAND_ALLOWLIST` has no command that could store them —
+ * so the only thing a hard limit could do is silently drop words the user typed,
+ * which is worse than sending them and saying the block is large. The context
+ * meter is the other half of that answer: `use-conversation.ts` counts this
+ * text against the window, so a user who ignores the warning watches the cost.
+ *
+ * The number is not arbitrary and not picked here: it is
  * `PROJECT_INSTRUCTIONS_MAX_CHARS` from `src/platform/contract-project.ts`, the
  * bound the host already imposes on the other body of instructions a turn can
- * carry. A second, different limit would mean two answers to "how much may a
+ * carry. A second, different number would mean two answers to "how much may a
  * user write" in one prompt.
  */
 export { PROJECT_INSTRUCTIONS_MAX_CHARS as INSTRUCTIONS_MAX_CHARS } from '@/platform/contract-project';

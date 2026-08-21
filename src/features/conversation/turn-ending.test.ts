@@ -294,8 +294,14 @@ describe('how a turn ended, for every way a turn can end', () => {
     // Every cell, against the kind {@link EXPECTED} says it should be — not a
     // "nothing throws" sweep, which is what this was and which let any single
     // cell change its answer silently. The tests above pin the cells that carry
-    // an argument; this one pins the other fifty-odd, including the ones nobody
-    // would think to write a test about, which is where the original defect was.
+    // an argument; this one pins every cell there is — sixty of them, and the
+    // count is asserted below the loop rather than described — including the
+    // ones nobody would think to write a test about, which is where the
+    // original defect was. An earlier version of this comment said it pinned
+    // "the other fifty-odd", a count of the cells the tests above leave over.
+    // Nothing asserts that number, nobody re-measured it when the tests around
+    // it changed, and it was wrong; the sixty is asserted, so the sixty is what
+    // this says.
     let cells = 0;
     for (const phase of PHASES) {
       for (const key of STOP_KEYS) {

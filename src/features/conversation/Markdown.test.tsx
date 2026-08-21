@@ -473,3 +473,79 @@ describe('an aside renders markdown without borrowing the answer’s voice', () 
     }
   });
 });
+
+/**
+ * THE COPY CONTROL A FENCE DRAWS, AND THE NAME IT ANNOUNCES ITSELF BY.
+ *
+ * `CodeBlock`'s copy button was named after the fence's language alone, so the
+ * name was a function of something two fences routinely share. These tests are
+ * the markdown half of the fix — numbering the fences of one document, in
+ * reading order, wherever they sit in the block tree. The transcript half, where
+ * two documents on one screen are told apart, is in
+ * `ConversationSurface.test.tsx`.
+ */
+describe('two fences in one document do not draw one control twice', () => {
+  it('numbers every fence in reading order, including nested ones', () => {
+    // A fence at the top level, a fence inside a list item and a fence inside a
+    // quote. `codePlaces` walks into both containers because `BlockNode`
+    // renders a `CodeBlock` from both; a walk that stopped at the top level
+    // would leave the other two unplaced, and an unplaced fence falls back to
+    // the bare label — measured, the three names become
+    // ["Copy ts code — in the reply", "Copy ts code", "Copy ts code"].
+    render(
+      <Markdown
+        source={[
+          '```ts',
+          'const first = 1;',
+          '```',
+          '',
+          '- a bullet:',
+          '',
+          '  ```ts',
+          '  const second = 2;',
+          '  ```',
+          '',
+          '> quoted:',
+          '>',
+          '> ```ts',
+          '> const third = 3;',
+          '> ```',
+        ].join('\n')}
+        within="the reply"
+      />,
+    );
+
+    const controls = screen.getAllByRole('button', { name: /^Copy ts code/u });
+    const names = controls.map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toEqual([
+      'Copy ts code — code block 1 of 3, in the reply',
+      'Copy ts code — code block 2 of 3, in the reply',
+      'Copy ts code — code block 3 of 3, in the reply',
+    ]);
+    // Each number is on the fence it names, not merely different from its
+    // neighbours' — a walk in the wrong order would satisfy the line above.
+    const bodies = controls.map((button) => button.closest('figure')?.textContent ?? '');
+    expect(bodies[0]).toContain('const first = 1;');
+    expect(bodies[1]).toContain('const second = 2;');
+    expect(bodies[2]).toContain('const third = 3;');
+  });
+
+  it('names an unlabelled fence without inventing a language for it', () => {
+    // `languageLabel` returns `null` for a fence with no info string, and the
+    // name says 'code'. Two of them still have to differ, and only the position
+    // can do it here.
+    render(<Markdown source={'```\nplain one\n```\n\n```\nplain two\n```\n'} />);
+    const names = screen
+      .getAllByRole('button', { name: /^Copy code/u })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toEqual(['Copy code — code block 1 of 2', 'Copy code — code block 2 of 2']);
+  });
+
+  it('leaves a lone fence in an unplaced document with the name it always had', () => {
+    // Nothing to disambiguate: one fence, and a caller that said nothing about
+    // which document this is. The name is the bare label, which is where it was
+    // before any of this.
+    render(<Markdown source={'```ts\nconst only = 1;\n```\n'} />);
+    expect(screen.getByRole('button', { name: 'Copy ts code' })).toBeInTheDocument();
+  });
+});

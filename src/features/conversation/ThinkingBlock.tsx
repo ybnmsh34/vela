@@ -40,6 +40,19 @@ interface ThinkingBlockProps {
   readonly phase: ReasoningPhase;
   /** Distinguishes this turn's block from every other one for aria wiring. */
   readonly id: string;
+  /**
+   * What to call this block in the accessible name of any copy control the
+   * reasoning's own markdown draws.
+   *
+   * Reasoning arrives with fenced blocks in it — one of the reasons this
+   * component renders markdown at all, see the first rule at the top of this
+   * file — so a turn whose reasoning and whose answer both fence `ts` draws two
+   * copy controls from two documents. {@link id} cannot separate them for a
+   * listener: it is an opaque string, and this component uses it only to point
+   * `aria-controls` at the body's own `id`. `MessageTurn.tsx` passes a phrase
+   * instead, and it goes straight through to `<Markdown within>`.
+   */
+  readonly within?: string | undefined;
 }
 
 /**
@@ -64,7 +77,7 @@ export function reasoningPeek(text: string): string {
     .trim();
 }
 
-export function ThinkingBlock({ text, phase, id }: ThinkingBlockProps) {
+export function ThinkingBlock({ text, phase, id, within }: ThinkingBlockProps) {
   const [choice, setChoice] = useState<boolean | null>(null);
   if (phase === 'none' || text === '') return null;
 
@@ -103,7 +116,7 @@ export function ThinkingBlock({ text, phase, id }: ThinkingBlockProps) {
             lost — but the model never marked where its answer was meant to begin.
           </p>
         ) : null}
-        <Markdown source={text} scale="aside" />
+        <Markdown source={text} scale="aside" within={within} />
       </div>
     </section>
   );

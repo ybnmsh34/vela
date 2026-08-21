@@ -73,13 +73,17 @@ interface AssistantTurnProps {
    * **Which reply this turn is**, for the accessible names of the two controls
    * it draws and for nothing else.
    *
-   * Every retryable turn in a transcript draws a button reading "Try again from
-   * here", and each one discards from a different anchor: an earlier one throws
-   * away every reply after it, a later one throws away fewer. Every turn with an
-   * answer also draws a "Copy" button, and each one copies a different reply.
-   * Read out of context by a screen reader each family was the same control
-   * repeated, and the visible wording could not fix that — it is the same on
-   * every one of them because it is true of every one of them.
+   * A transcript can hold several retryable turns, and their visible wording
+   * repeats. {@link laterTurnsFollow} makes the button read "Try again from
+   * here" on every turn the transcript continues past and "Try again" on the
+   * final entry, so every retryable turn but the last carries word-for-word the
+   * same wording — and each of those discards from a different anchor: an
+   * earlier one throws away every reply after it, a later one throws away
+   * fewer. Every turn with an answer also draws a button reading "Copy", all of
+   * them, and each one copies a different reply. Read out of context by a
+   * screen reader each family was the same control repeated, and the visible
+   * wording could not fix that — it is the same on those turns because it is
+   * true of them.
    *
    * So the *name* carries the target while the *label* stays short. Undefined
    * for a caller that does not know the transcript — `MessageTurn.test.tsx`
@@ -217,6 +221,27 @@ export function AssistantTurn({
   // `CopyButton`'s decision to own, not this file's.
   const copyAccessibleName = turnControlName('Copy this reply', retryTarget);
 
+  // AND THE SAME DEFECT ONE COMPONENT DOWN, IN THE PROSE ITSELF.
+  //
+  // A fenced code block draws its own copy control, and `CodeBlock.tsx` named
+  // it after the fence's language alone — so one answer holding two ```ts
+  // fences drew two buttons both called "Copy ts code", each copying a
+  // different block. Two controls, one name, different consequences: the
+  // hazard the two names above were written for, in a component the tests that
+  // pinned them could not see, because those tests walk *turn* controls.
+  //
+  // Two documents on this turn draw them, and both are named: the answer, and
+  // the reasoning — which renders through the same `<Markdown>` and therefore
+  // has the same fences in it. `CodePlace` in `CodeBlock.tsx` says why a
+  // document phrase plus a position inside it cannot collide.
+  const position =
+    retryTarget !== undefined && retryTarget.replyCount > 1
+      ? ` ${String(retryTarget.replyIndex)} of ${String(retryTarget.replyCount)}`
+      : '';
+  const answerContext = position === '' ? 'the reply' : `reply${position}`;
+  const reasoningContext =
+    position === '' ? 'the reasoning' : `the reasoning behind reply${position}`;
+
   /**
    * How this turn ended, when the text above does not say — the empty reply, the
    * answer cut off at the output cap, the turn stopped part-way, and the failure
@@ -248,7 +273,12 @@ export function AssistantTurn({
 
   return (
     <article className={styles.turn} data-role="assistant" aria-label="Model reply">
-      <ThinkingBlock id={id} text={turn.reasoning} phase={turn.reasoningPhase} />
+      <ThinkingBlock
+        id={id}
+        text={turn.reasoning}
+        phase={turn.reasoningPhase}
+        within={reasoningContext}
+      />
 
       {turn.phase === 'awaiting' ? (
         <p className={styles.awaiting} role="status">
@@ -261,7 +291,9 @@ export function AssistantTurn({
         </p>
       ) : null}
 
-      {turn.answer === '' ? null : <Markdown source={turn.answer} streaming={streaming} />}
+      {turn.answer === '' ? null : (
+        <Markdown source={turn.answer} streaming={streaming} within={answerContext} />
+      )}
 
       {showThinkingOnly && !streaming && turn.error === null ? (
         <p className={styles.noAnswer}>

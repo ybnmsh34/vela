@@ -242,7 +242,13 @@ describe('the conversation surface: streaming', () => {
     });
     // Already a code block, before the closing fence exists.
     expect(screen.getByText('still writing')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy ts code' })).toBeInTheDocument();
+    // The name says which document the block is in as well as its language;
+    // see `CodePlace` in `CodeBlock.tsx` for the two controls that used to
+    // share the bare language. One fence in one reply, so neither a block
+    // number nor a reply number is stated.
+    expect(
+      screen.getByRole('button', { name: 'Copy ts code — in the reply' }),
+    ).toBeInTheDocument();
 
     act(() => {
       host.push({ type: 'textDelta', text: ' = 1;\n```\n' }, done());
@@ -1045,12 +1051,20 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
 
     // The button on the *first* turn. It is labelled for what it does: retrying
     // it replaces that turn and everything after it.
-    // NAMED FOR ITS TARGET. Two retryable turns in one transcript used to render
-    // two buttons with one name — "Try again from here" on both — each
-    // discarding from a different anchor. Heard out of context they were the
-    // same control repeated. The name now carries the turn's position among the
-    // replies — which two turns cannot share — and quotes the question it
-    // answers. This transcript holds two replies, so this is the first of two.
+    // NAMED FOR ITS TARGET. At the merge base these two buttons were one
+    // control announced twice: `MessageTurn.tsx` rendered the literal text
+    // "Try again" and no `aria-label` on every retry button it drew, so both
+    // accessible names were the word "Try again" while one discarded the later
+    // turn as well and the other did not. (An earlier version of this comment
+    // said both read "Try again from here". No revision of this tree ever
+    // rendered that on both: before this track every retry button read the bare
+    // "Try again", and from this track's first commit `laterTurnsFollow` has
+    // given the last entry's button that same bare wording while earlier ones
+    // read "Try again from here" — and in a two-reply transcript the second
+    // turn is the last entry.) The
+    // name now carries the turn's position among the replies — which two turns
+    // cannot share — and quotes the question it answers. This transcript holds
+    // two replies, so this is the first of two.
     const again = screen.getByRole('button', {
       name: 'Try again from here — reply 1 of 2, to “first question”',
     });
@@ -1159,8 +1173,16 @@ describe('the conversation surface: retry acts on the turn it is drawn on', () =
  * *names each reply’s copy control for itself, in the same transcript shape*
  * asks the same question of the **copy** controls, which had the same defect and
  * went three rounds without anybody naming it.
+ *
+ * **And the scope of this block is now the transcript, not the turn.** It was
+ * called *no two turn controls share a name*, and that wording did work: it
+ * excluded, by construction, the copy control a fenced code block draws — which
+ * is in the same transcript, carries the same hazard, and had it. The last two
+ * tests here walk those, so the question this block asks is the one its title
+ * asks: no two controls a transcript draws, from whichever component, share a
+ * name.
  */
-describe('the conversation surface: no two turn controls share a name', () => {
+describe('the conversation surface: no two controls in a transcript share a name', () => {
   function storedMessage(id: string, role: 'user' | 'assistant', text: string): StoredMessage {
     return {
       id,
@@ -1332,5 +1354,79 @@ describe('the conversation surface: no two turn controls share a name', () => {
     // reads 'Copy', and every name begins with that word.
     for (const button of controls) expect(button).toHaveTextContent('Copy');
     for (const name of names) expect(name.startsWith('Copy')).toBe(true);
+  });
+
+  it('names every code copy control in a transcript for the block it copies', () => {
+    // THE SAME DEFECT ONE COMPONENT DOWN — the one this block's old title
+    // excluded. `CodeBlock.tsx` named its copy control after the fence's
+    // language and nothing else, so every ```ts fence in a transcript drew a
+    // button called "Copy ts code": two in one answer, more across the
+    // transcript, each copying a different block.
+    show([
+      storedMessage('m0', 'user', 'show me both'),
+      storedMessage(
+        'm1',
+        'assistant',
+        'first:\n\n```ts\nconst a = 1;\n```\n\nsecond:\n\n```ts\nconst b = 2;\n```\n',
+      ),
+      storedMessage('m2', 'assistant', 'and again:\n\n```ts\nconst c = 3;\n```\n'),
+    ]);
+
+    const controls = screen.getAllByRole('button', { name: /^Copy ts code/u });
+    const names = controls.map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size, `three controls, names ${JSON.stringify(names)}`).toBe(3);
+    expect(names).toEqual([
+      'Copy ts code — code block 1 of 2, in reply 1 of 2',
+      'Copy ts code — code block 2 of 2, in reply 1 of 2',
+      'Copy ts code — in reply 2 of 2',
+    ]);
+
+    // AND THE NAME IS ATTACHED TO THE RIGHT BLOCK, not merely unique. A
+    // numbering that counted in the wrong order would still give three
+    // different names while sending the reader to the wrong fence, so each
+    // control is read together with the block it sits on.
+    const bodies = controls.map((button) => button.closest('figure')?.textContent ?? '');
+    expect(bodies[0]).toContain('const a = 1;');
+    expect(bodies[1]).toContain('const b = 2;');
+    expect(bodies[2]).toContain('const c = 3;');
+
+    // WCAG 2.5.3 again: the visible text is still the word the name starts with.
+    for (const button of controls) expect(button).toHaveTextContent('Copy');
+  });
+
+  it('keeps a fence in the reasoning apart from the same fence in the answer', async () => {
+    // THE PAIR THE REPLY'S POSITION CANNOT SEPARATE, because they are the same
+    // reply. `ThinkingBlock` renders the model's reasoning through the same
+    // `<Markdown>` the answer uses — which is the whole reason that component
+    // exists — and reasoning arrives with fenced blocks in it, so a turn that
+    // fences `ts` in both channels draws two copy controls. Only the channel
+    // tells them apart, and `MessageTurn.tsx` is where both are named.
+    const host = new ScriptedHost();
+    mount(host);
+    await ask('show me code');
+    act(() => {
+      host.push(
+        { type: 'reasoningDelta', text: '```ts\nconst considered = 1;\n```\n' },
+        { type: 'textDelta', text: '```ts\nconst answered = 2;\n```\n' },
+        done(),
+      );
+    });
+
+    // The reasoning is collapsed when it settles, and a collapsed block is
+    // `hidden`, so its control is not in the accessibility tree until a reader
+    // opens it — which is exactly when the collision would be heard. Both
+    // halves of that are asserted, because a test that only ever looked at the
+    // opened state would pass just as well if the block were never hidden.
+    expect(screen.queryAllByRole('button', { name: /^Copy ts code/u })).toHaveLength(1);
+    await userEvent.setup().click(screen.getByRole('button', { name: /Thought process/ }));
+
+    const names = screen
+      .getAllByRole('button', { name: /^Copy ts code/u })
+      .map((button) => button.getAttribute('aria-label') ?? '');
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `two controls, names ${JSON.stringify(names)}`).toBe(2);
+    expect(names).toContain('Copy ts code — in the reasoning');
+    expect(names).toContain('Copy ts code — in the reply');
   });
 });

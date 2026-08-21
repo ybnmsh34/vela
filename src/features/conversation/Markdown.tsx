@@ -8,7 +8,7 @@
 
 import { memo } from 'react';
 
-import { CodeBlock } from './CodeBlock';
+import { CodeBlock, type CodePlace } from './CodeBlock';
 import { parseMarkdown, type Block, type Span } from '@/lib/markdown-parser';
 import styles from './Markdown.module.css';
 
@@ -32,6 +32,17 @@ interface MarkdownProps {
   /** Marks the last block as the live edge of a stream, for the caret. */
   readonly streaming?: boolean;
   readonly scale?: MarkdownScale;
+  /**
+   * What to call this document in the accessible name of each copy control it
+   * draws — 'reply 2 of 3', 'the reasoning behind reply 2 of 3'.
+   *
+   * Two documents on one screen can hold fences in the same language, and the
+   * copy control's name was a function of the language alone. See
+   * {@link CodePlace}. Omitted by a caller that has nothing to say about which
+   * document this is (`Markdown.test.tsx` renders one on its own), and then the
+   * names fall back to the language, which is where they were.
+   */
+  readonly within?: string | undefined;
 }
 
 /**
@@ -44,8 +55,10 @@ export const Markdown = memo(function Markdown({
   source,
   streaming = false,
   scale = 'answer',
+  within,
 }: MarkdownProps) {
   const blocks = parseMarkdown(source);
+  const places = codePlaces(blocks, within);
   return (
     <div
       className={styles.prose}
@@ -53,13 +66,60 @@ export const Markdown = memo(function Markdown({
       data-streaming={streaming ? 'true' : undefined}
     >
       {blocks.map((block, index) => (
-        <BlockNode key={index} block={block} last={index === blocks.length - 1} />
+        <BlockNode
+          key={index}
+          block={block}
+          last={index === blocks.length - 1}
+          places={places}
+        />
       ))}
     </div>
   );
 });
 
-function BlockNode({ block, last }: { readonly block: Block; readonly last: boolean }) {
+/**
+ * Every code block of a document, in reading order, with its position.
+ *
+ * Keyed by the block object because `parseMarkdown` builds a fresh literal per
+ * fence — two fences are never one object, whatever their text — so this is an
+ * identity map and not a content map. It walks into quotes and list items
+ * because `BlockNode` renders a `CodeBlock` from those too: a fence inside a
+ * bullet that this never reached would not be in the map at all, and an
+ * unplaced fence falls back to the bare label, which is the collision. Measured
+ * by cutting the two recursive branches out of the walk, against the document
+ * `Markdown.test.tsx` builds from a top-level fence, a fence in a list item and
+ * a fence in a quote: the three names collapse to
+ * ["Copy ts code — in the reply", "Copy ts code", "Copy ts code"].
+ */
+function codePlaces(
+  blocks: readonly Block[],
+  within: string | undefined,
+): ReadonlyMap<Block, CodePlace> {
+  const fences: Block[] = [];
+  const walk = (list: readonly Block[]): void => {
+    for (const block of list) {
+      if (block.kind === 'code') fences.push(block);
+      else if (block.kind === 'quote') walk(block.blocks);
+      else if (block.kind === 'list') for (const item of block.items) walk(item.blocks);
+    }
+  };
+  walk(blocks);
+  const places = new Map<Block, CodePlace>();
+  fences.forEach((block, at) => {
+    places.set(block, { index: at + 1, count: fences.length, within });
+  });
+  return places;
+}
+
+function BlockNode({
+  block,
+  last,
+  places,
+}: {
+  readonly block: Block;
+  readonly last: boolean;
+  readonly places: ReadonlyMap<Block, CodePlace>;
+}) {
   switch (block.kind) {
     case 'paragraph':
       return (
@@ -83,7 +143,14 @@ function BlockNode({ block, last }: { readonly block: Block; readonly last: bool
     }
 
     case 'code':
-      return <CodeBlock language={block.language} text={block.text} open={block.open} />;
+      return (
+        <CodeBlock
+          language={block.language}
+          text={block.text}
+          open={block.open}
+          place={places.get(block)}
+        />
+      );
 
     case 'rule':
       return <hr className={styles.rule} />;
@@ -92,7 +159,7 @@ function BlockNode({ block, last }: { readonly block: Block; readonly last: bool
       return (
         <blockquote className={styles.quote}>
           {block.blocks.map((child, index) => (
-            <BlockNode key={index} block={child} last={false} />
+            <BlockNode key={index} block={child} last={false} places={places} />
           ))}
         </blockquote>
       );
@@ -101,7 +168,7 @@ function BlockNode({ block, last }: { readonly block: Block; readonly last: bool
       const items = block.items.map((item, index) => (
         <li key={index} className={styles.item}>
           {item.blocks.map((child, childIndex) => (
-            <BlockNode key={childIndex} block={child} last={false} />
+            <BlockNode key={childIndex} block={child} last={false} places={places} />
           ))}
         </li>
       ));

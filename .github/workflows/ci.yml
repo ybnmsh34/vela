@@ -149,11 +149,15 @@ jobs:
 
       # A GREEN `cargo test` IS NOT EVIDENCE THAT `cargo test` RAN.
       #
-      # `pnpm verify` reaches these two gates through eight `&&` links, and on
-      # the platform Vela ships on it never once got here: cargo is on no
-      # shell's PATH, gate 2 dies with `'cargo' is not recognized`, and the
-      # chain short-circuits with one ELIFECYCLE line that does not distinguish
-      # a failed gate from an unrun one. This step asks the disk instead. Every
+      # `pnpm verify` was one shell string with ten `&&` operators, nine of them
+      # ahead of `cargo build --workspace --locked`, and on the platform Vela
+      # ships on it never once got here: cargo is on no shell's PATH, gate 2
+      # dies with `'cargo' is not recognized`, and the chain short-circuits with
+      # one ELIFECYCLE line that does not distinguish a failed gate from an
+      # unrun one. It is now `node scripts/verify.mjs`, which names every gate
+      # and counts SKIPPED apart from PASS -- but that can only tell you the
+      # tail did NOT run; it cannot tell you it did. This step asks the disk
+      # instead. Every
       # `tests/*.rs` in the workspace is an integration-test target that only
       # `cargo test` compiles -- `cargo build` does not touch `tests/`, measured
       # with `cargo clean -p vela-store` -- so a binary for each in
@@ -292,11 +296,15 @@ jobs:
 
       # A GREEN `cargo test` IS NOT EVIDENCE THAT `cargo test` RAN.
       #
-      # `pnpm verify` reaches these two gates through eight `&&` links, and on
-      # the platform Vela ships on it never once got here: cargo is on no
-      # shell's PATH, gate 2 dies with `'cargo' is not recognized`, and the
-      # chain short-circuits with one ELIFECYCLE line that does not distinguish
-      # a failed gate from an unrun one. This step asks the disk instead. Every
+      # `pnpm verify` was one shell string with ten `&&` operators, nine of them
+      # ahead of `cargo build --workspace --locked`, and on the platform Vela
+      # ships on it never once got here: cargo is on no shell's PATH, gate 2
+      # dies with `'cargo' is not recognized`, and the chain short-circuits with
+      # one ELIFECYCLE line that does not distinguish a failed gate from an
+      # unrun one. It is now `node scripts/verify.mjs`, which names every gate
+      # and counts SKIPPED apart from PASS -- but that can only tell you the
+      # tail did NOT run; it cannot tell you it did. This step asks the disk
+      # instead. Every
       # `tests/*.rs` in the workspace is an integration-test target that only
       # `cargo test` compiles -- `cargo build` does not touch `tests/`, measured
       # with `cargo clean -p vela-store` -- so a binary for each in

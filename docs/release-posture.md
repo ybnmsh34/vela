@@ -1033,12 +1033,24 @@ omission.** Two reasons, in order of weight:
    application. They are correct right now. Running the installer to learn
    nothing, at the cost of breaking them again, is not a trade worth making.
 
-There is also nothing named `backups` to check. A search of every `.rs` file in
-`src-tauri/` finds no `backups` directory, no backup path constant and no backup
-routine; the 34 occurrences of the string are `FILE_FLAG_BACKUP_SEMANTICS` in
-`vela-projects/src/link.rs`, a `.pre-cleanup-` rename in
-`vela-privatefs/src/lib.rs`, test fixtures, and a mock server named `backup` in
-a provider example. Vela does not write backups today.
+There is also nothing named `backups` to check. A search of all 167 `.rs` files
+under `src-tauri/` (excluding `target/`) finds no `backups` directory, no backup
+path constant and no backup routine. The string `backup`, case-insensitively,
+occurs 21 times on 18 lines in six files, and every one of them is something
+else:
+
+| file | occurrences | what they are |
+| --- | --- | --- |
+| `vela-providers/examples/gate_m_phase_b2.rs` | 12 | a mock server and provider candidate named `backup` in a failover example |
+| `vela-projects/src/link.rs` | 3 | `FILE_FLAG_BACKUP_SEMANTICS`, the Win32 flag for opening a directory handle |
+| `vela-projects/src/workdir.rs` | 2 | a comment about a sibling directory whose name starts with the workdir’s, plus the test fixture it describes |
+| `vela-settings/src/service.rs` | 2 | doc-comment prose: settings are "backup-able", credentials are "never in a backup of the database" |
+| `vela-privatefs/src/lib.rs` | 1 | prose describing the `.pre-cleanup-` rename |
+| `vela-store/src/location.rs` | 1 | the same `.pre-cleanup-` rename, from the other side |
+
+Vela does not write backups today. Round 3 gave this count as 34 and named
+neither `vela-settings/src/service.rs` nor `vela-store/src/location.rs`;
+`docs/corrections.md`, round 4, entry 3.
 
 **Re-run on 2026-08-21, in round 2, before deciding again.** Same script, same
 verdicts, same order: `CONTROL PASS`, then REAL / CONTAINER / CONTAINER / REAL
@@ -1234,25 +1246,175 @@ again `1 failed | 2446 passed (2447)`.
 
 Neither file is changed since tag `run-start-2026-08-17` — last touched at
 `aa33893` and `535f482` respectively, both 2026-08-14 — and nothing this round
-touches either. Run alone, `ModalSurface.test.tsx` was `8 passed (8)`, exit 0,
-three times out of three; `Sidebar.test.tsx` was `1 passed (1)`, exit 0, three
-times out of three. **And the measurement that explains both:** in that
-isolated, otherwise idle run, `resizes by keyboard through the separator` took
-**4535 ms**. Vitest's default `testTimeout` is 5000 ms. A test whose measured
-cost on a quiet machine is 90.7% of its own budget is not protected by that
-budget; it is a coin toss that any concurrent load decides. The failing logs say
-the same thing from the other side: `Duration 156.73s` against
+touches either. Run alone, `ModalSurface.test.tsx` reported `Test Files 1 passed
+(1)` / `Tests 8 passed (8)`, exit 0, three times out of three; `Sidebar.test.tsx`
+reported `Test Files 1 passed (1)` / `Tests 15 passed (15)`, exit 0, three times
+out of three. That file has fifteen tests, and round 3 printed its Test **Files**
+line as though it were its Tests line; `docs/corrections.md`, round 4, entry 2.
+
+**And what the isolated cost actually is.** Re-measured in round 4: three
+consecutive whole-file runs of `npx vitest run
+src/features/navigation/Sidebar.test.tsx --reporter=basic`, nothing else running
+from this session, in which `resizes by keyboard through the separator` reported
+956 ms, 926 ms and 941 ms. Vitest's default `testTimeout` is 5000 ms and
+`vite.config.ts` sets no override, so those three costs are 19.1%, 18.5% and
+18.8% of the budget. Three observations on one machine at one moment are not a
+range and this section does not turn them into one — but they settle the
+direction, and they settle it the other way from what round 3 wrote. This is not
+a test sitting near its own ceiling on a quiet box. Whatever pushed it past 5000
+ms in the full-suite run was the rest of the machine, not the test's own cost.
+The failing logs say the same thing from that side: `Duration 156.73s` against
 `environment 811.58s` and `setup 467.01s`, worker time far exceeding wall clock.
 A different test name each time is what load does to a suite; a defect picks the
-same one.
+same one. Round 3 recorded 4535 ms and 90.7% in this paragraph, which three
+separate sets of attempts — the round-3 critic's, the measurer's and this one's
+— have failed to reproduce; `docs/corrections.md`, round 4, entry 5.
 
 Recorded rather than suppressed, on the same principle as the `cargo-test` flake
 above. Neither timeout was raised, because raising a timeout in a file this
 branch does not own would hide the finding rather than fix it. **For whoever
 owns those two files: the fix is an explicit per-test timeout with a stated
 reason, the way `bundle-guard.test.ts` and `bundle-runner.test.ts` already carry
-`SPAWN_TIMEOUT_MS`.** On the final bytes `pnpm test` was re-run to completion and
-reported `122 files, 2447 tests, all passed`, exit 0, read from the log body.
+`SPAWN_TIMEOUT_MS`.** The reason to state is load, not the test's own cost: the
+three isolated measurements above are 19.1%, 18.5% and 18.8% of the default
+budget. A budget that is generous on an idle box is not generous on this one,
+and the fix is to say so in the file rather than to hope. On the final bytes
+`pnpm test` was re-run to completion and reported `122 files, 2447 tests, all
+passed`, exit 0, read from the log body. A third file joined those two in round
+4; the next subsection records it, and the advice above is meant for its owner
+too.
+
+#### The round-4 run: the same bytes five times, and what that settled
+
+Round 4 changed comments in seven files, deleted one dead field from
+`scripts/check-bundle.mjs`'s `--json` row, added one test, renamed one `describe`
+block, and rewrote parts of this document and `docs/corrections.md`. No product
+code. The ten gates were run **five times**, each in one process, no `--from`,
+`C:\Users\User\.cargo\bin` prepended, every status read from the log body.
+
+The runs fall into three trees that differ from one another only in comment
+text. Runs 1 to 3 ran on the first, runs 4 and 5 on the second and third; the
+executable files were sha256'd before and after each block and were identical
+within it. What changed between the blocks, and why, is set out below. Run 5 is
+on the bytes this round commits.
+
+Five runs, three answers:
+
+```
+                     run 1        run 2        run 3    run 4    run 5
+typecheck            PASS   0     PASS   0     PASS 0   PASS 0   PASS 0
+lint:rust            PASS   0     PASS   0     PASS 0   PASS 0   PASS 0
+test                 PASS   0     FAIL   1     PASS 0   PASS 0   PASS 0
+test:harness         PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+test:click-harness   PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+build                PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+test:transcripts     PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+test:secrets         PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+cargo-build          PASS   0     SKIPPED      PASS 0   PASS 0   PASS 0
+cargo-test           FAIL 101     SKIPPED      PASS 0   PASS 0   PASS 0
+
+RUST_TAIL            NOT-REACHED  NOT-REACHED  CONFIRMED  CONFIRMED  CONFIRMED
+passed               9            2            10         10         10
+failed               1            1            0          0          0
+SKIPPED              0            7            0          0          0
+VERIFY_EXIT          101          1            0          0          0
+```
+
+The verbatim tail of run 5, the run this round commits:
+
+```
+GATE                       STATUS    EXIT   SECONDS
+typecheck                  PASS         0      38.2
+lint:rust                  PASS         0      53.2
+test                       PASS         0      75.0
+test:harness               PASS         0       4.1
+test:click-harness         PASS         0       3.7
+build                      PASS         0      19.9
+test:transcripts           PASS         0       1.7
+test:secrets               PASS         0      19.8
+cargo-build                PASS         0      39.7
+cargo-test                 PASS         0     170.9
+
+RUST_TAIL=CONFIRMED
+
+10 passed, 0 failed, 0 SKIPPED (skipped is not passed), 0 NOT-RUN (not-run is not passed either)
+VERIFY_EXIT=0
+```
+
+**Run 1's red is the socket flake this section already records.**
+`vela-endpoint`'s `dual_endpoint_over_a_real_socket`:
+`a_streamed_anthropic_turn_arrives_as_the_documented_event_sequence` panicked
+with `the endpoint must answer and close: Os { code: 10053, kind:
+ConnectionAborted }`, `test result: FAILED. 11 passed; 1 failed`. The same target
+re-run on its own three times immediately afterwards was `test result: ok. 12
+passed; 0 failed` each time, exit 0 each time. Not this branch's code — nothing
+in this round's diff is Rust — and not raised to a green by a resumed run,
+because `--from` cannot report a clean run (§13c).
+
+**Run 2's red is the load flake, and it named a third file.** `pnpm test`
+reported `2 failed | 2446 passed (2448)`, both `Test timed out in 5000ms`:
+`src/features/navigation/Sidebar.test.tsx > Sidebar > resizes by keyboard
+through the separator` again, at 5171 ms, and
+`src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload >
+puts a staged image in the outgoing chat_send request`, at 5236 ms — a file that
+had not timed out before and that this branch does not touch either. That makes
+four timeouts across this branch's runs, in three different files, none of them
+files this branch touches. Run alone, three times out of three,
+`staged-attachment-payload.test.tsx` reported `Test Files 1 passed (1)` / `Tests
+8 passed (8)`, exit 0, with the test that timed out costing 1331 ms, 644 ms and
+1193 ms of its 5000 ms — the same shape as `Sidebar.test.tsx` above. That is
+what the paragraph above concludes, and this run is a third independent
+observation of it on a third file.
+
+Note also what run 2 does *not* say. Seven gates are `SKIPPED`, and `SKIPPED` is
+not `PASS`: the runner counts the two separately and its summary line spells out
+why, which is the behaviour §13c exists to document.
+
+**What changed between run 3 and run 4.** Run 2 had just made a comment false.
+The `SPAWN_TIMEOUT_MS` docblock in `bundle-guard.test.ts`, `bundle-runner.test.ts`,
+`rust-tail.test.ts` and `verify-runner.test.ts` justified its 60-second ceiling
+by pointing at "two `Test timed out in 5000ms` failures ... in two files this
+branch does not touch". After run 2 that was four failures in three files.
+Rather than move the number — this round exists because a moved number is how
+the last two rounds failed — all four docblocks now carry no count at all and
+point here, which is where the tally is kept and where a reader can check it.
+
+**What changed between run 4 and run 5.** Two more numbers, both flagged by the
+measurer as borderline and both fixed rather than argued: the `50-line` rationale
+attributed to `src-tauri/rust-toolchain.toml` (58 lines, 53 of them comment), and
+"eight `&&` links" in the `A GREEN cargo test IS NOT EVIDENCE` comment, in both
+copies in `.github/workflows/ci.yml`. The tag's `verify` string carries ten `&&`
+operators, nine of them ahead of `cargo build --workspace --locked`, and it is
+not a shell string any more at all. The same paragraph in
+`scripts/check-rust-tail.mjs`'s header was in the present tense about that chain
+and is now in the past. `docs/corrections.md`, round 4, entry 7.
+
+Both changes are comment or documentation text; neither touches a line any
+runtime executes. Run 5 is the whole ten gates over the result.
+
+**Runs 3, 4 and 5 are all clean, and run 5 is the record for this round.** They
+reported the same numbers:
+
+| gate | what it reported |
+| --- | --- |
+| `test` | 122 files, 2448 tests, all passed — one more than round 3's 2447, which is the `bytes` reader this round adds |
+| `test:harness` | 12 files, 142 tests |
+| `test:click-harness` | 2 files, 41 tests |
+| `test:secrets` | `no credential material found in 1270 tracked files (docs/ included)` |
+| `cargo-test` | 65 `test result: ok` lines, zero `test result: FAILED` |
+| the probe | `all 40 integration test targets have a compiled binary`, and `age demand: (nothing: no age is demanded ...)` |
+
+On `test:click-harness`: it does not launch Vela, and this is worth stating
+because the name suggests otherwise. Its vitest project includes `**/*.test.mjs`
+under `tests/harness/desktop-click/`, which resolves to `keys.test.mjs` and
+`verdicts.test.mjs`. Neither imports `vela-drive.mjs` — the module that would
+start the application — and `vela-drive.mjs` is not itself a test file. The gate
+is 41 jsdom tests about key mapping and verdict parsing.
+
+`test:secrets` reads tracked file contents, and this subsection was written after
+the runs it describes. The scan was therefore re-run over the working tree with
+this subsection in it, and reported the same all-clear over the same 1270 tracked
+files, exit 0.
 
 ### 13c. How `pnpm verify` behaves when it cannot run everything
 

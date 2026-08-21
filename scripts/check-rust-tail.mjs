@@ -6,13 +6,19 @@
  *
  * WHY AN EXIT CODE IS NOT THE ANSWER
  *
- * `pnpm verify` ends with `cargo build --workspace --locked && cargo test
- * --workspace --locked`. Those are the last two links of a ten-link `&&` chain,
- * and on the platform Vela ships on they were never once executed by anyone
- * running the documented command: cargo is not on PATH here, gate 2 —
- * `pnpm lint:rust` — dies on `'cargo' is not recognized`, and the chain
- * short-circuits. The run reports exit 1 and one ELIFECYCLE line. Nothing says
- * which gates were skipped, and skipped is not passed.
+ * At tag `run-start-2026-08-17`, `pnpm verify` was one shell string ending in
+ * `cargo build --workspace --locked && cargo test --workspace --locked` — the
+ * last two of its ten gates, reached across ten `&&` operators, nine of them
+ * ahead of `cargo build`. On the platform Vela ships on they were never once
+ * executed by anyone running the documented command: cargo is not on PATH here,
+ * gate 2 — `pnpm lint:rust` — dies on `'cargo' is not recognized`, and the
+ * chain short-circuits. The run reports exit 1 and one ELIFECYCLE line. Nothing
+ * says which gates were skipped, and skipped is not passed.
+ *
+ * `pnpm verify` is now `node scripts/verify.mjs`, which reports SKIPPED apart
+ * from PASS and so does say which gates did not run. It still cannot say that
+ * one DID: a gate that reports PASS is a child process that exited 0, and this
+ * script exists because exiting 0 is not the same as having done the work.
  *
  * So this asks the question an exit code cannot: is the physical output of
  * `cargo test` on disk?

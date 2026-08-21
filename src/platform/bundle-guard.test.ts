@@ -32,12 +32,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * Every test in this file starts at least one child process, and this machine
- * runs seventeen agents and a Rust workspace build at the same time. Vitest's
- * default 5s budget is a statement about an idle box; a red from it here would
- * be fabricated by load rather than caused by the code, and this project has
- * been burned by exactly that. The number is generous on purpose — it is a
- * ceiling that catches a hang, not an assertion about how long a spawn takes.
+ * Every test in this file starts at least one child process, and this suite has
+ * already gone red from load alone. `docs/release-posture.md` §13b records
+ * `Test timed out in 5000ms` failures during this branch's runs, in files this
+ * branch does not touch, each of those files green when run on its own three
+ * times out of three. (No count here on purpose: the list has grown twice
+ * already, and a number in a comment is a number that goes stale. §13b holds
+ * the current one.) Vitest's default 5s budget is a statement about an idle
+ * box; a red from it here would be fabricated by load rather than caused by
+ * the code. The number is generous on purpose — it is a ceiling that catches a
+ * hang, not an assertion about how long a spawn takes.
  */
 const SPAWN_TIMEOUT_MS = 60_000;
 
@@ -77,13 +81,23 @@ const NSIS_SIGNATURE = Buffer.concat([
  * WHAT IS AND IS NOT GATED HERE. That the guard reports the offset it actually
  * found is gated — the `--json` test at the bottom of this file writes the
  * sequence at this constant and reads the number back. That this constant
- * *equals the real setup's* offset is NOT gated and cannot be: `pnpm test` runs
- * on `ubuntu-latest`, where there is no `target/release/bundle` to measure, and
- * a test that asserts only when an artefact happens to be present is the
- * vacuous pass that step 7 of the guard's own header refuses. It is a
- * hand measurement, re-run at the commit this line ships in and printed in
- * `docs/corrections.md`, round 3, entry 1. Changing it changes nothing a test
- * can see, which is exactly why it is written down twice.
+ * *equals the real setup's* offset is NOT gated and cannot be. `pnpm test` runs
+ * in two CI jobs, `test-ts` on `ubuntu-latest` and `test-windows` on
+ * `windows-latest`, and neither has a `target/release/bundle` to measure: the
+ * Linux job cannot produce a Windows setup at all, and the Windows job never
+ * bundles — its build steps are `pnpm build`, `cargo build --workspace
+ * --locked` and `cargo test --workspace --locked`. The only job that runs
+ * `pnpm bundle` is `bundle`, which is a separate job on its own runner and does
+ * not run `pnpm test`. And a test that asserts only when an artefact happens to
+ * be present is the vacuous pass that step 7 of the guard's own header refuses.
+ * (Round 3 justified this with `ubuntu-latest` alone, which named the one job
+ * that could not have threatened the argument; `docs/corrections.md`, round 4,
+ * entry 4.)
+ *
+ * So the constant is a hand measurement, re-run at the commit this line ships
+ * in and printed in `docs/corrections.md`, round 3, entry 1. Changing it
+ * changes nothing a test can see, which is exactly why it is written down
+ * twice.
  */
 const NSIS_SIGNATURE_AT = 52_740;
 
@@ -337,7 +351,26 @@ describe('the guard reads the real repository configuration', { timeout: SPAWN_T
   });
 });
 
-describe('the --json document has a reader for every field it carries', { timeout: SPAWN_TIMEOUT_MS }, () => {
+/**
+ * The two NUMBERS in a `--json` row, and the tests that read them.
+ *
+ * A row carries `target`, `file`, `path`, `verdict` and `detail`, all strings,
+ * plus exactly two numeric fields: `bytes` on every row, and `signatureAt` on a
+ * row whose target demands an installer signature and where one was found. The
+ * strings are the ones the human output path prints — `verdict`, `file ?? path`
+ * and `detail` — so a wrong one is wrong where somebody reads it. A number is
+ * not: `signatureAt` shipped in round 2 written and read by nothing, and the
+ * offset it was documented at was wrong by four bytes, and both survived a full
+ * green run. So each number gets a test that reads it back out of the document
+ * and compares it against a value the fixture chose.
+ *
+ * The block is named for what these two tests check and not for a property of
+ * the whole document. It was named `the --json document has a reader for
+ * every field it carries` in round 3, which was a claim the block did not
+ * check and which was not true of the tree it sat in; `docs/corrections.md`,
+ * round 4, entry 1.
+ */
+describe('every number the --json row carries is read back here', { timeout: SPAWN_TIMEOUT_MS }, () => {
   it('the --json row says WHERE the NSIS signature was found', () => {
     // `signatureAt` shipped in round 2 written and read by nothing, which is
     // the same unread-write shape this branch had already been failed for once.
@@ -384,5 +417,49 @@ describe('the --json document has a reader for every field it carries', { timeou
 
     expect(parsed.ok).toBe(true);
     expect(child.status).toBe(0);
+  });
+
+  it('the --json row on a TRUNCATED verdict says how big the file it rejected was', () => {
+    // `bytes` is what makes TRUNCATED actionable rather than merely negative.
+    // The verdict says the file is below the floor; the number says whether a
+    // caller is looking at a 1 KB stub or at a 250 KB partial write, both of
+    // which are under the msi floor and both of which read TRUNCATED. Without
+    // a reader it is a write nothing consumes, which is the shape this branch
+    // has already been failed for once.
+    //
+    // Both rows are asserted, and the two sizes differ, so a guard that
+    // stamped every row with one constant -- or that reported the floor it
+    // compared against instead of the size it measured -- fails here. RUNT is
+    // well under the msi floor of 262,144 bytes and still carries perfect
+    // OLE2 magic and a perfect name, so size is the only thing wrong with it.
+    const RUNT = 1_024;
+    writeConfig({ active: true, targets: 'all' });
+    artefact('msi', 'Vela_' + VERSION + '_x64_en-US.msi', MSI_MAGIC, RUNT);
+    goodNsis();
+
+    const child = spawnSync(
+      process.execPath,
+      [GUARD, '--root', root, '--platform', 'win32', '--json'],
+      { encoding: 'utf8', shell: false },
+    );
+    const parsed = JSON.parse(child.stdout ?? '{}') as {
+      ok?: boolean;
+      rows?: { target: string; verdict: string; bytes?: number }[];
+    };
+
+    const msi = (parsed.rows ?? []).find((row) => row.target === 'msi');
+    expect(msi?.verdict).toBe('TRUNCATED');
+    expect(
+      msi?.bytes,
+      'the guard reported a size other than the one the fixture wrote, so the ' +
+        'row is not carrying the size of the file it actually rejected',
+    ).toBe(RUNT);
+
+    const nsis = (parsed.rows ?? []).find((row) => row.target === 'nsis');
+    expect(nsis?.verdict).toBe('OK');
+    expect(nsis?.bytes).toBe(BIG);
+
+    expect(parsed.ok).toBe(false);
+    expect(child.status).toBe(1);
   });
 });

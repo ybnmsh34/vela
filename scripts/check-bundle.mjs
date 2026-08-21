@@ -287,7 +287,17 @@ function checkBundle({ root, targetDir, since, platform = process.platform }) {
     for (const file of candidates) {
       const path = join(dir, file);
       const stat = statSync(path);
-      const row = { target: name, file, path, bytes: stat.size, mtimeMs: stat.mtimeMs };
+      // `bytes` is read by `src/platform/bundle-guard.test.ts`, 'the --json row
+      // on a TRUNCATED verdict says how big the file it rejected was'. It is
+      // the only field that ties a TRUNCATED verdict to the artefact that
+      // earned it: the verdict alone cannot tell a 1 KB stub from a 250 KB
+      // partial write, because both are under the 262,144-byte msi floor and
+      // both read TRUNCATED. `mtimeMs` used to sit beside it and was read by
+      // nothing --
+      // the freshness check below reads `stat.mtimeMs` directly, and so does
+      // the STALE detail string, so the copy on the row was a write no reader
+      // ever consumed. Removed; `docs/corrections.md`, round 4, entry 1.
+      const row = { target: name, file, path, bytes: stat.size };
 
       if (stat.size < shape.minBytes) {
         rows.push({ ...row, verdict: 'TRUNCATED', detail: String(stat.size) + ' bytes, below the ' + String(shape.minBytes) + '-byte floor' });
@@ -321,7 +331,9 @@ function checkBundle({ root, targetDir, since, platform = process.platform }) {
         // anyone has written about this guard — measured twice: replacing the
         // `indexOf` in `findBytes` with `includes(...) ? 0 : -1` reds that one
         // test and nothing else across the five release-path test files,
-        // `1 failed | 86 passed (87)`, with `expected +0 to be 52740`.
+        // `1 failed | 87 passed (88)`, with `expected +0 to be 52740`. (It read
+        // `86 passed (87)` when it was measured in round 3; round 4 added the
+        // `bytes` reader below, so the same mutation now leaves one more green.)
         row.signatureAt = at;
       }
       if (version !== '' && !file.includes(version)) {

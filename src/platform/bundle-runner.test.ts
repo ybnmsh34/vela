@@ -49,10 +49,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * This machine runs seventeen agents and a Rust workspace build at once, and
- * every test here starts real child processes. Vitest's default 5s budget is a
- * statement about an idle box; a red from it would be fabricated by load. A
- * ceiling that catches a hang, not an assertion about how long a spawn takes.
+ * Every test here starts real child processes, and this suite has already gone
+ * red from load alone — `Test timed out in 5000ms` failures during this
+ * branch's runs, in files it does not touch, each green when run on its own;
+ * `docs/release-posture.md` §13b holds the list and the count. Vitest's default
+ * 5s budget is a statement about an idle box; a red from it would be fabricated
+ * by load. A ceiling that catches a hang, not an assertion about how long a
+ * spawn takes.
  */
 const SPAWN_TIMEOUT_MS = 60_000;
 

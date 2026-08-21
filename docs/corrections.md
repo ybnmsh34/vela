@@ -9,6 +9,202 @@ having been wrong is the point.
 
 ---
 
+## 2026-08-21 (round 4) — the numbers in the section whose job was to record what was measured
+
+Round 3's write-up was itself measured, before this round committed, by an agent that ran the
+commands rather than reading the sentences. Four of the seventy-four checkable claims in this
+track's diff came back false. All four are claims round 3 wrote **while correcting round 2**,
+which is the third round running that this has been the failing shape. Two further items below
+were raised by the round-3 critic and are fixed here for the same reason.
+
+### 1. Two fields were written into the `--json` document with no reader, under a block named for the opposite
+
+**Claimed:** `src/platform/bundle-guard.test.ts` named its new block
+`the --json document has a reader for every field it carries`.
+
+**True:** it did not. The row literal in `scripts/check-bundle.mjs` was
+
+```js
+const row = { target: name, file, path, bytes: stat.size, mtimeMs: stat.mtimeMs };
+```
+
+and nothing anywhere in the repository read `rows[].bytes` or `rows[].mtimeMs` out of that
+document. Both were written one line above `signatureAt`, the field round 3 had just given a
+reader. The round-3 critic's words for this were "the round-2 defect displaced by one line rather
+than removed", and the measurer reached the same finding independently by running the shipped
+guard against a synthetic tree and enumerating the document it printed.
+
+**How it was caught:** a repository-wide grep for `mtimeMs` and for `.bytes` across `src`,
+`scripts` and `tests` returns the write site and nothing that consumes it. The only `src/platform/`
+hits were a local variable also called `bundleRoot`, used to build fixture paths.
+
+**Fix, and why each half went the way it did.** `mtimeMs` is **deleted** from the row. It was
+never load-bearing: the freshness check reads `stat.mtimeMs` directly and so does the STALE detail
+string, so the row copy was pure duplication. `bytes` is **kept and given a reader**, because it is
+the one field that ties a TRUNCATED verdict to the artefact that earned it — the verdict alone
+cannot separate a 1 KB stub from a 250 KB partial write, both of which are under the 262,144-byte
+msi floor and both of which read TRUNCATED. The new
+test `the --json row on a TRUNCATED verdict says how big the file it rejected was` writes a
+1,024-byte MSI with perfect OLE2 magic and a perfect name, and asserts the TRUNCATED row's `bytes`
+is 1,024 **and** the OK NSIS row's `bytes` is 4,000,000 — two different numbers, so a guard that
+stamped a constant, or that reported the 262,144-byte floor it compared against, fails.
+
+The block is renamed to `every number the --json row carries is read back here`, which is a
+statement about the two tests inside it and is checkable: a row carries exactly two numeric fields,
+`bytes` and `signatureAt`, and each has a test in that block that reads it back and compares it to
+a value the fixture chose. Everything else in a row is a string the human output path prints.
+
+**Mutation evidence.** Three mutations of the write site, each planted, run twice across all five
+release-path test files, and restored from a byte snapshot confirmed by sha256. Every one reds the
+new test and nothing else:
+
+| mutation | result, twice | message |
+| --- | --- | --- |
+| `bytes: stat.size` -> `bytes: 0` | `1 failed \| 87 passed (88)` | `expected +0 to be 1024` |
+| `bytes: stat.size` -> `bytes: 1024` (the constant the TRUNCATED row wants) | `1 failed \| 87 passed (88)` | `expected 1024 to be 4000000` |
+| `bytes: stat.size` -> `bytes: shape.minBytes` (the floor it compared against) | `1 failed \| 87 passed (88)` | `expected 262144 to be 1024` |
+
+The middle row is the point of asserting both rows: a guard that satisfied the TRUNCATED assertion
+with a constant fails on the OK row instead. And the round-3 mutation still bites — replacing
+`findBytes`'s `indexOf` with `includes(...) ? 0 : -1` reds `the --json row says WHERE the NSIS
+signature was found` and nothing else, twice, `1 failed | 87 passed (88)`, `expected +0 to be
+52740`. That count read `86 passed (87)` in round 3 and is one higher now because of the test this
+entry adds; the comment in `scripts/check-bundle.mjs` that quotes it has been updated to match.
+
+### 2. `Sidebar.test.tsx` run alone was reported as `1 passed (1)`
+
+**Claimed:** `docs/release-posture.md` §13b — "Run alone, `ModalSurface.test.tsx` was `8 passed
+(8)`, exit 0, three times out of three; `Sidebar.test.tsx` was `1 passed (1)`, exit 0, three times
+out of three."
+
+**True:** the ModalSurface half is right. `src/features/navigation/Sidebar.test.tsx` contains
+**fifteen** tests and run alone reports `Tests 15 passed (15)`. `1 passed (1)` is that file's Test
+**Files** line, printed in a sentence whose other half is unambiguously a Tests line, and asserted
+three times over. No invocation of that file produces `1 passed (1)` as a Tests line; the
+`-t`-filtered form gives `1 passed | 14 skipped (15)`.
+
+**How it was caught:** the round-3 critic ran the file. The measurer ran it again three times and
+got `Test Files 1 passed (1)` / `Tests 15 passed (15)` / exit 0 every time, with ModalSurface as the
+control. Round 4 ran it a third time, same result.
+
+**Consequence:** the sentence now prints both lines explicitly for both files, so the two cannot be
+confused again.
+
+### 3. The `backup` string was counted at 34 occurrences
+
+**Claimed:** `docs/release-posture.md` §13a — "the 34 occurrences of the string are
+`FILE_FLAG_BACKUP_SEMANTICS` in `vela-projects/src/link.rs`, a `.pre-cleanup-` rename in
+`vela-privatefs/src/lib.rs`, test fixtures, and a mock server named `backup` in a provider
+example."
+
+**True:** the substantive claim — no backups directory, no backup path constant, no backup routine
+— holds. The count does not: there are **21** occurrences on **18** lines in **six** files. No
+widening produces 34 either; including untracked build artefacts under `src-tauri/target` gives 43,
+and the whole tracked repository gives 97. The enumeration also named neither
+`vela-settings/src/service.rs` (2, doc-comment prose about database backups) nor
+`vela-store/src/location.rs` (1, the `.pre-cleanup-` rename from the other side).
+
+**How it was caught:** counting occurrences rather than trusting the sentence — `find src-tauri
+-name target -prune -o -name '*.rs' -type f -print`, piped through `grep -oih backup | wc -l`,
+gives 21; `git grep -ci backup -- 'src-tauri/*'` gives six files summing to 18 lines, whose
+per-file **occurrence** counts are 1 / 3 / 2 / 12 / 2 / 1.
+
+**Consequence:** §13a now carries the per-file table rather than a total plus a partial list, so
+the number and the enumeration cannot drift apart again.
+
+### 4. "cannot be gated" was justified by naming only the CI job that could not have threatened it
+
+**Claimed:** the `NSIS_SIGNATURE_AT` comment in `src/platform/bundle-guard.test.ts` — that the
+constant equalling the real setup's offset is not gated "and cannot be: `pnpm test` runs on
+`ubuntu-latest`, where there is no `target/release/bundle` to measure".
+
+**True as far as it goes, and incomplete.** `pnpm test` runs in **two** jobs in
+`.github/workflows/ci.yml`: `test-ts` on `ubuntu-latest` and `test-windows` on `windows-latest`.
+The sentence named only the job on the platform where a Windows installer could not exist in the
+first place, and omitted the one job on the platform where it could.
+
+**How it was caught:** the round-3 critic, reading the workflow rather than the comment.
+
+**The argument survives, and now says why.** `test-windows` never bundles — its build steps are
+`pnpm build`, `cargo build --workspace --locked` and `cargo test --workspace --locked`, none of
+which write `target/release/bundle`. The only job that runs `pnpm bundle` is `bundle`, which is a
+separate job on its own runner and does not run `pnpm test`. The comment now names both jobs and
+gives that reason.
+
+### 5. 4535 ms, "90.7% of its own budget on a quiet machine"
+
+**Claimed:** `docs/release-posture.md` §13b — that in an isolated, otherwise idle run, `resizes by
+keyboard through the separator` took **4535 ms** against Vitest's 5000 ms default, and that "a test
+whose measured cost on a quiet machine is 90.7% of its own budget ... is a coin toss that any
+concurrent load decides."
+
+**True:** the 5000 ms default is right — `vite.config.ts` sets no `testTimeout`. The 4535 ms is not
+reproducible. Three independent attempts, three whole-file runs each:
+
+```
+round-3 critic    946 /  947 /  917 ms
+the measurer     1496 /  948 / 1071 ms
+round 4           956 /  926 /  941 ms
+```
+
+Nine observations, none of them near 4535 ms and none of them past a third of the budget. That is a
+description of nine measurements and not a bound on the tenth — but the inference the paragraph was
+built on runs the other way regardless. The test is not near its ceiling on a quiet box; the ceiling was eaten by
+everything else running when the full suite went red.
+
+**How it was caught:** running the file three times and reading the per-test duration the basic
+reporter prints, rather than repeating the recorded figure.
+
+**Consequence:** the number is replaced with the three costs actually measured this round and the
+percentages they give, the "coin toss" conclusion is withdrawn, and the recommendation to the two
+files' owner — an explicit per-test timeout with a stated reason — is re-based on load, which is
+what the failing runs' own `Duration 156.73s` against `environment 811.58s` already said. This
+entry does not claim 4535 ms was never observed; it claims the sentence generalising it to a quiet
+machine does not reproduce, across three sets of attempts including the round-3 critic's.
+
+### 6. "This machine runs seventeen agents and a Rust workspace build at the same time"
+
+**Claimed:** the `SPAWN_TIMEOUT_MS` docblock, verbatim in `src/platform/bundle-guard.test.ts`,
+`bundle-runner.test.ts`, `rust-tail.test.ts` and `verify-runner.test.ts`.
+
+**Not false, and not checkable.** The measurer listed it under what it could not check: nothing
+inside one session can count the other sessions on the box. It reads as a measurement and it is
+not one.
+
+**Consequence:** all four copies now justify the 60-second ceiling with something a reader can
+verify — the `Test timed out in 5000ms` failures this branch's own runs hit, in files it does not
+touch, each of those files green when run alone three times out of three, recorded in
+`docs/release-posture.md` §13b. They carry no count, deliberately: the list grew during this very
+round, from two failures in two files to four in three, and §13b is where the current tally lives.
+Same conclusion, evidence that can be checked.
+
+### 7. Two numbers the measurer recorded as borderline rather than raising
+
+It listed both "so the panel can overrule me". The panel does not have to: both are numbers, both
+are checkable, and both were wrong enough to fix.
+
+**a. "carries a 50-line rationale about rustfmt output moving between releases"** — the round-2
+entry in this file about `src-tauri/rust-toolchain.toml`. Measured: the file is 58 lines, 53 of
+them comment. "50-line" is a round number for neither. It now states both counts.
+
+**b. "`pnpm verify` reaches these two gates through eight `&&` links"** — the comment headed
+`A GREEN cargo test IS NOT EVIDENCE`, both copies of it, in `.github/workflows/ci.yml`. Two things
+are wrong with it. The count: the `verify` string at tag `run-start-2026-08-17` carries **ten**
+`&&` operators, **nine** of them ahead of `cargo build --workspace --locked`. Eight is right only
+under a reading of "link" that this track's own `scripts/check-rust-tail.mjs` contradicts, since
+its header called the same thing "a ten-link `&&` chain" — so the file set was not self-consistent
+about what a link is, which is how a number nobody can check stays wrong. And the tense:
+`package.json`'s `verify` is no longer a shell chain at all — this track replaced it with `node
+scripts/verify.mjs` in round 1 — so a present-tense sentence about its `&&` links describes
+something the tree does not contain. Fixed in all three places: both `ci.yml` copies and the
+`check-rust-tail.mjs` header now say ten operators and nine ahead of `cargo build`, in the past
+tense, and each says what replaced the chain and why the replacement still does not make the
+disk-reading step redundant. (The measurer attributed the "ten-link" phrase to
+`scripts/verify.mjs`; it is in `scripts/check-rust-tail.mjs`. `grep -rn 'ten-link'` over the tree
+returns that one site and no other.)
+
+---
+
 ## 2026-08-21 (round 3) — a correction measured four bytes off, and a comment whose mutation was never run
 
 Both entries below were found by the round-2 critic, by measuring the bytes and by mutating the
@@ -232,7 +428,7 @@ paths.
 
 | brief item | state at the tag |
 |---|---|
-| add `rust-toolchain.toml` | `src-tauri/rust-toolchain.toml` exists, pins `channel = "1.97.1"` with `rustfmt` and `clippy`, and carries a 50-line rationale about rustfmt output moving between releases |
+| add `rust-toolchain.toml` | `src-tauri/rust-toolchain.toml` exists, pins `channel = "1.97.1"` with `rustfmt` and `clippy`, and carries a rationale about rustfmt output moving between releases -- 53 comment lines in a 58-line file |
 | add `test:harness` and `build` to Windows CI | both are already steps of the `test-windows` job in `.github/workflows/ci.yml` — `GATE M Part 1 — mock capability matrix` (wrapped in the crash-retry) and `Frontend build` |
 | confirm backups resolve to a real path | Vela writes no backups. No `.rs` file in `src-tauri/` contains a backups directory, a backup path constant or a backup routine |
 

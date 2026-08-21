@@ -39,8 +39,8 @@
  * project so none is left unfiled — and it records nothing about the session,
  * which is why the row stands. It is not nothing, though, so **no surface in
  * this feature may say that a window in incognito changes nothing on this
- * machine**: what it may say is that the commands which would write something
- * down are refused. `command-durability.test.ts`'s erase-may-not-write check
+ * machine**: what it may say is that the commands whose job is to write
+ * something down are refused. `command-durability.test.ts`'s erase-may-not-write check
  * reports any `erases` row in this position and demands the argument in `why`.
  *
  * ## Why the table is a total `Record`, and what that does NOT defend against
@@ -290,11 +290,13 @@ export async function disarmDebugLogForIncognito(
  *
  * ## …and it promises nothing about the machine, because it cannot keep one
  *
- * The sentence that replaced the command name was `This window is in incognito,
- * so nothing it does is written to this machine.` — and that was the defect the
- * same commit had just removed from `StylePanel.tsx`, reintroduced one file
- * along in the copy that *every* failure surface renders verbatim. It is false
- * twice over:
+ * Two sentences have been withdrawn from this string, and the second one is why
+ * the first fix was not enough.
+ *
+ * **Withdrawn once:** `This window is in incognito, so nothing it does is
+ * written to this machine.` — the defect the same commit had just removed from
+ * `StylePanel.tsx`, reintroduced one file along in the copy that *every* failure
+ * surface renders verbatim. It is false twice over:
  *
  * 1. When {@link disarmDebugLogForIncognito} answers `'failed'`, the host's
  *    provider debug log is still recording raw prompts and answers to a file.
@@ -304,12 +306,28 @@ export async function disarmDebugLogForIncognito(
  * 2. Even with the log off, `project_delete` is `erases`, is forwarded, and its
  *    host body runs an `UPDATE`. See the header.
  *
+ * **Withdrawn again:** `This window is in incognito, and that command would
+ * write to this machine, so it was refused.` — narrower, and still not
+ * something this function is in a position to say. The refusal fires on the
+ * command's **row**, and two rows are `writes` by decision rather than by an
+ * observed effect. `sandbox_report_document`'s host body is
+ * `pub fn report_document(&self, _request: SandboxReportDocumentReq) {}` in
+ * `src-tauri/crates/vela-sandbox/src/host.rs` — empty — and its row in
+ * `command-durability.test.ts` says so: "There is therefore no durable effect to
+ * cite, and the row is `writes` by decision". `sandbox_approve`'s row says "An
+ * approval is not itself a write". Both are refused, and for both that sentence
+ * asserted a write that was not going to happen. The sweep
+ * `says the same thing for every command it refuses` quantifies the string over
+ * exactly that set, so the falsehood was enumerated by this file's own test the
+ * day it was written.
+ *
  * So the message states **what happened to the command that was refused** and
  * makes no claim about the machine at all. That is the only claim this function
  * is in a position to make: it knows the command's row and it knows it did not
- * forward it, and it knows nothing about the debug log or about what an
- * allowed command is doing. `incognito-adapter.test.ts` pins it — the oracle is
- * anchored on the withdrawn sentence, so an empty word list cannot pass — and
+ * forward it, and it knows nothing about the debug log, about what an allowed
+ * command is doing, or about what the refused one would have done had it gone
+ * through. `incognito-adapter.test.ts` pins it — the oracle is anchored on both
+ * withdrawn sentences, so an empty word list cannot pass — and
  * `instructions-and-incognito.test.tsx` provokes the refusal with the band in
  * its `failed` state and fails if the two contradict each other.
  */
@@ -321,7 +339,7 @@ export function createIncognitoAdapter(adapter: PlatformAdapter): PlatformAdapte
       if (isRefusedInIncognito(command)) {
         throw new PlatformError(
           'INCOGNITO_REFUSED',
-          'This window is in incognito, and that command would write to this machine, so it was refused.',
+          'This window is in incognito, so that command was refused rather than carried out.',
           command,
         );
       }

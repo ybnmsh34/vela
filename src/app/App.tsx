@@ -62,9 +62,12 @@ export function App({ adapter }: AppProps) {
               line and the sidebar button are the joint. */}
           <SchedulesSurface />
           <ProjectsSurface />
-          {/* The sixth of the same joint. The pane sets nothing on its own; the
-              sidebar's `Style and instructions` button flips a boolean in
-              `src/state/style-store.ts` and this reads it. */}
+          {/* Mounted here for the same reason as the surfaces above it, and it
+              closes the same kind of hole: the pane sets nothing on its own, so
+              the sidebar's `Style and instructions` button flips a boolean in
+              `src/state/style-store.ts` and this line is what reads it. No
+              ordinal, because the comments above number some of these and not
+              others and a count here would collide with theirs. */}
           <StylesSurface />
         </KeyboardProvider>
       </IncognitoGate>

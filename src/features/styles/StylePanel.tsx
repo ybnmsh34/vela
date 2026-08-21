@@ -178,17 +178,26 @@ export function StylePanel({ onClose }: StylePanelProps) {
           </button>
         </div>
         {/*
-          Scoped to what is enforced, because the sentence it replaced was not.
+          Scoped to what is enforced, because two sentences before it were not.
+
           "This window writes nothing durable to this machine" was stated flatly
           and is false whenever the disarm below answers `failed`: the host's
           provider debug log is not a command this renderer issues, so refusing
-          commands does not stop it. What the wrapper in
-          `src/platform/incognito-adapter.ts` does guarantee — and what
-          `incognito-adapter.test.ts` sweeps the whole contract for — is that
-          every command classified `writes` is refused. That is the claim made
-          here, and the debug log gets its own sentence directly underneath.
+          commands does not stop it.
 
-          The second clause is scoped for a second reason, found later and
+          "Refuses every command that would record something on this machine"
+          replaced it and is false in the other direction. The wrapper in
+          `src/platform/incognito-adapter.ts` refuses on the command's row, and
+          two rows are `writes` by decision rather than by an observed effect:
+          `sandbox_report_document`, whose host body is empty, and
+          `sandbox_approve`, which releases a command that writes rather than
+          writing itself. So being refused does not mean something was about to
+          be recorded, and the sentence now says which way round it is. What
+          `incognito-adapter.test.ts` does sweep the whole contract for — and
+          what this claims — is that every command classified `writes` is
+          refused, all of them.
+
+          The delete clause is scoped for a third reason, found later and
           smaller. "It may still delete" left the reader to assume a delete only
           subtracts, and one of them does not: `project_delete` is `erases`, so
           it is forwarded, and `delete_project_reassigning` in
@@ -196,23 +205,24 @@ export function StylePanel({ onClose }: StylePanelProps) {
           `UPDATE conversations SET project_id = ?2 WHERE project_id = ?1`
           alongside its `DELETE FROM projects`, in one transaction, so that no
           conversation is left unfiled. Nothing about this session is recorded by
-          it — but rows on this machine do change, so the sentence says so
-          instead of letting "refuses every command that would write" be read as
-          a promise that nothing at all is written while the mode is on.
+          it — but rows on this machine do change, so the sentence says so.
         */}
         {/*
           The testid is read by `instructions-and-incognito.test.tsx`, which
-          holds this paragraph to the two properties above: that it says what is
-          refused, and that it does not round the delete case off. Matched by
-          testid rather than by a phrase, so a rewrite of the sentence meets the
-          assertion instead of slipping past a stale regex.
+          holds this paragraph to the three properties above: that it says what
+          is refused, that it says refusal is by class, and that it does not
+          round the delete case off. Matched by testid rather than by a phrase,
+          so a rewrite of the sentence meets the assertion instead of slipping
+          past a stale regex.
         */}
         <p className={styles.note} data-testid="incognito-standing-note">
-          In incognito this window refuses every command that would record something on this
-          machine. It may still read, and it may still delete — and a delete can rewrite what is
-          already stored: removing a project re-files its conversations onto your default project.
-          Leaving discards the conversation held in it: the transcript is dropped from the window
-          and was never written down.
+          In incognito this window refuses the commands whose job is to write something down — all
+          of them, not a sample. It refuses by what a command is for, not by what one call would
+          have done, so a refusal does not always mean something was about to be recorded. It may
+          still read, and it may still delete — and a delete can rewrite what is already stored:
+          removing a project re-files its conversations onto your default project. Leaving discards
+          the conversation held in it: the transcript is dropped from the window and was never
+          written down.
         </p>
         {incognito && (
           <p className={styles.note} role="status" data-testid="incognito-debug-log">

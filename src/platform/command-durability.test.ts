@@ -1082,6 +1082,17 @@ describe('the claims that would leak are the ones checked hardest', () => {
         );
       },
     );
+    // The floor, and it names the row rather than counting. Without it this
+    // check goes silent the day its detector stops detecting — an empty
+    // `writesToo` runs no assertion at all and reports success. `project_delete`
+    // is the row that exists to be found: its terminal link is
+    // `delete_project_reassigning`, whose body holds `UPDATE ` — a marker that
+    // is not one of `sqlite-delete`'s own.
+    expect(
+      writesToo.map((row) => row.command),
+      'the erase-and-also-writes check found nothing, so its `why` demand asserted nothing',
+    ).toContain('project_delete');
+
     for (const row of writesToo) {
       expect(
         (row.why ?? '').length,

@@ -21,9 +21,11 @@
  * `startRun` fills `RunContextRequest.preload` from `contextFor(projectId).index()`
  * and `composeSystemMessage` in `src/runtime/agent-loop-harness.ts` joins the
  * loaded chunks into the system message, while `start` builds its messages with
- * `toMessages(history, userText, parts, memoryRef.current)` — history, the new
- * message, and the memory preamble. There is no third argument carrying a
- * project. `src/features/projects/ProjectPanel.tsx` discloses this in a
+ * `toMessages(history, userText, parts, memoryRef.current, instructionsRef.current.chat)`
+ * — history, the new message, the memory preamble, and the text this file
+ * composes for the `chat` path. `toMessages` takes those five and no more:
+ * there is no argument carrying a project.
+ * `src/features/projects/ProjectPanel.tsx` discloses this in a
  * footnote, which is honesty about the hole and not a repair of it.
  *
  * So the obvious way to add a style — put it in `RunContextRequest.systemPrompt`
@@ -41,9 +43,14 @@
  *
  * 1. **Ordering, which is mechanical.** `composeSystemMessage` puts
  *    `systemPrompt` first and the loaded chunks after it, so the text this file
- *    produces always precedes the project's. That is a fact about the two
- *    functions and it is checked by `instruction-layers.test.ts` against the
- *    real `composeSystemMessage`.
+ *    produces always precedes the project's. That is a fact about
+ *    `agent-loop-harness.ts` and not about this module, and
+ *    `instruction-layers.test.ts` deliberately does **not** assert it: that
+ *    function is module-private, so the only thing a pure-function test could
+ *    assert is a restatement of the join, which would stay green through a
+ *    change that reversed the real one. It is asserted in
+ *    `src/app/instructions-and-incognito.test.tsx`, which reads the order off
+ *    the `chat_send` payload the host is handed.
  * 2. **A sentence, which is not.** {@link composeInstructionText} appends
  *    {@link PROJECT_WINS_SENTENCE} when — and only when — a project layer is
  *    actually going to be there to conflict with.
@@ -140,8 +147,8 @@ export type SendPath = 'chat' | 'agent';
 /**
  * What the renderer knows about this project's instructions at compose time.
  *
- * Four arms rather than `string | null`, because the surface has to be able to
- * say four different things and three of them are not "there are none":
+ * Five arms rather than `string | null`, because the surface has to be able to
+ * say five different things and four of them are not "there are none":
  *
  * - `none` — the project exists and its instructions column is empty.
  * - `text` — the project has instructions, and here they are. What the panel

@@ -22,8 +22,9 @@
  * return;` — it asked about the primary modifier and about Alt, and **said
  * nothing about Shift**, then switched on `event.key.toLowerCase()`. So
  * `Ctrl+Shift+N` arrived as `key === 'N'`, lowercased to `'n'`, and opened a new
- * conversation; `Ctrl+Shift+K` opened the switcher; `Ctrl+Shift+F`, the search.
- * Four bindings each answered to two chords.
+ * conversation; `Ctrl+Shift+K` opened the switcher; `Ctrl+Shift+F`, the search;
+ * `Ctrl+Shift+B` collapsed the sidebar. There were five cases — `k`, `p`, `f`,
+ * `n` and `b` — and every one of them answered to two chords.
  *
  * That was invisible while every binding was unshifted — a spare chord that does
  * the same thing looks like generosity. It stops being invisible the moment one

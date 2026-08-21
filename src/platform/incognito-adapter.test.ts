@@ -218,7 +218,7 @@ describe('the wrapper refuses at the seam', () => {
 });
 
 /**
- * The sentence this file exists to keep out of the refusal, kept verbatim.
+ * The first sentence this file exists to keep out of the refusal, kept verbatim.
  *
  * It was the shipped message until this pin was written. It is here so the word
  * list below is anchored on something that really was on screen: a list that
@@ -229,7 +229,22 @@ const WITHDRAWN_REFUSAL =
   'This window is in incognito, so nothing it does is written to this machine.';
 
 /**
- * Shapes that turn a refusal into a promise about the machine.
+ * The second one, and the reason the first pin was not enough.
+ *
+ * `This window is in incognito, and that command would write to this machine`
+ * makes no blanket promise — none of the first four shapes below matches it —
+ * and it is still false for two of the commands this file sweeps it over.
+ * `sandbox_report_document` is `writes` with an empty host body
+ * (`pub fn report_document(&self, _request: SandboxReportDocumentReq) {}`), and
+ * `sandbox_approve` is `writes` because an approval releases a command that
+ * writes, not because approving writes. The wrapper refuses on the row, so it
+ * cannot say what the call would have done.
+ */
+const WITHDRAWN_COUNTERFACTUAL =
+  'This window is in incognito, and that command would write to this machine, so it was refused.';
+
+/**
+ * Shapes that make a refusal claim something about the machine.
  *
  * The refusal is rendered verbatim by every failure surface in the application
  * — `use-memory.ts` sets `problem` from `toPlatformError(error).message`, and
@@ -240,22 +255,30 @@ const WITHDRAWN_REFUSAL =
  * prompts and answers to a file; and `project_delete`, which is `erases`, is
  * forwarded, and whose host body runs an `UPDATE` beside its `DELETE`.
  *
- * So the message may say what was refused and why. It may not say what is or is
- * not being written.
+ * The last shape bans the other direction — the counterfactual. A refusal that
+ * says what the command *would* have done is claiming an effect the wrapper
+ * never observed and that two `writes` rows do not have.
+ *
+ * So the message may say what was refused and why it was refused. It may not say
+ * what is, is not, or would have been written.
  */
 const BLANKET_PROMISES: readonly RegExp[] = [
   /nothing/i,
   /never/i,
   /no trace/i,
   /not (?:written|saved|kept|stored|recorded)/i,
+  /would (?:write|record|save|store|keep)/i,
 ];
 
 describe('the refusal is copy, and it promises only what this wrapper can keep', () => {
-  it('would have caught the sentence it replaced', () => {
-    // The anchor. Without it an empty or misspelt list below passes anything.
-    expect(BLANKET_PROMISES.filter((shape) => shape.test(WITHDRAWN_REFUSAL)).length).toBeGreaterThan(
-      0,
-    );
+  it.each([
+    ['the first sentence it replaced', WITHDRAWN_REFUSAL],
+    ['the second one', WITHDRAWN_COUNTERFACTUAL],
+  ])('would have caught %s', (_name, withdrawn) => {
+    // The anchor, one case per withdrawn sentence. Without it an empty or
+    // misspelt list below passes anything; without the *second* case, the shape
+    // added for the counterfactual could be deleted and nothing would notice.
+    expect(BLANKET_PROMISES.filter((shape) => shape.test(withdrawn)).length).toBeGreaterThan(0);
   });
 
   it('makes no claim about what this machine is writing', async () => {
@@ -281,6 +304,7 @@ describe('the refusal is copy, and it promises only what this wrapper can keep',
       'the refusal may say what it refused; it may not promise what the machine is doing',
     ).toEqual([]);
     expect(error.message).not.toBe(WITHDRAWN_REFUSAL);
+    expect(error.message).not.toBe(WITHDRAWN_COUNTERFACTUAL);
   });
 
   it('says the same thing for every command it refuses, and names none of them', async () => {

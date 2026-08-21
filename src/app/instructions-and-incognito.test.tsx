@@ -350,9 +350,6 @@ describe('incognito is reachable two ways, and both are the same mode', () => {
     // `aria-pressed`, not a label change: this is a mode control, so the state
     // is announced as a state rather than inferred from the words on it.
     expect(incognitoControl()).toHaveAttribute('aria-pressed', 'true');
-    // `aria-pressed`, not a label change: this is a mode control, so the state
-    // is announced as a state rather than inferred from the words on it.
-    expect(incognitoControl()).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('is entered by Ctrl+Shift+N, and left by it', async () => {
@@ -437,19 +434,25 @@ describe('incognito refuses without looking broken', () => {
   });
 });
 
-describe('the other three chords the collision fix touched', () => {
+describe('the other four chords the collision fix touched', () => {
   /**
    * Round 1 changed `use-navigation-shortcuts.ts` from switching on
    * `event.key.toLowerCase()` to switching on a chord string, so that every case
    * has to state its answer to Shift. That was written to stop `Ctrl+Shift+N`
-   * also creating a conversation, and it silently changed `Ctrl+Shift+K`,
-   * `Ctrl+Shift+P` and `Ctrl+Shift+F` too: each used to fall into its unshifted
-   * case and now falls through. The change was disclosed and untested — this is
-   * the test.
+   * also creating a conversation, and it silently changed four other chords:
+   * `Ctrl+Shift+K`, `Ctrl+Shift+P`, `Ctrl+Shift+F` and `Ctrl+Shift+B` each used
+   * to fall into its unshifted case and now falls through to `default`. The
+   * change was disclosed and untested — this is the test.
+   *
+   * `Ctrl+Shift+B` was left out when this block was first written, and it is
+   * not the same assertion as the other three: the palette never opened for it,
+   * so the sweep below would pass over it while saying nothing. What it used to
+   * do is collapse the sidebar, so that is what its own test asserts, off the
+   * collapse control's accessible name.
    *
    * It pins the behaviour rather than arguing for it. The palette answering to
    * `Ctrl+Shift+K` as well would also be defensible; what is not defensible is
-   * three bindings whose behaviour nobody wrote down.
+   * four bindings whose behaviour nobody wrote down.
    */
   function press(key: string, shift: boolean): void {
     fireEvent.keyDown(window, { key, ctrlKey: true, shiftKey: shift });
@@ -465,6 +468,18 @@ describe('the other three chords the collision fix touched', () => {
     expect(screen.queryByTestId('incognito-banner')).toBeNull();
   });
 
+  it('leaves Ctrl+Shift+B alone — the sidebar stays where it was', async () => {
+    render(<App adapter={await host()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+    // How the sidebar says which state it is in: the same control is named
+    // `Collapse sidebar` while it is open and `Expand sidebar` once it is not.
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument();
+
+    press('B', true);
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Expand sidebar' })).toBeNull();
+  });
+
   it('still opens the palette without Shift — the control for the three above', async () => {
     render(<App adapter={await host()} />);
     await screen.findByRole('button', { name: 'Start a conversation' });
@@ -473,6 +488,16 @@ describe('the other three chords the collision fix touched', () => {
     expect(
       await screen.findByRole('combobox', { name: 'Go to conversation' }),
     ).toBeInTheDocument();
+  });
+
+  it('still collapses the sidebar without Shift — the control for the fourth', async () => {
+    // Without this, the test above it passes on a build where `Ctrl+B` stopped
+    // working too, which is not "left alone" but "removed".
+    render(<App adapter={await host()} />);
+    await screen.findByRole('button', { name: 'Start a conversation' });
+
+    press('b', false);
+    expect(await screen.findByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
   });
 });
 
@@ -484,13 +509,14 @@ describe('a speech-input user can address the pane’s controls by what they rea
     // it — visible `Sent in front of every message` against a name of `Your
     // instructions`, and visible `For` against `Which kind of turn`.
     //
-    // The two sibling panes were checked rather than assumed, and they get there
-    // by different routes: `ProjectPanel.tsx` sets `aria-label` equal to its
-    // `fieldLabel` on both fields (`Working in`, `Instructions for this
-    // project`), while `MemoryPanel.tsx` sets no `aria-label` on its fields at
-    // all and lets the wrapping `<label>` name them, which contains the visible
-    // text by construction. Either is fine; naming the control something else
-    // is not.
+    // The two sibling panes were checked rather than assumed, and between them
+    // they use both routes that satisfy this. `ProjectPanel.tsx` has three
+    // fields: `Working in` and `Instructions for this project` carry an
+    // `aria-label` equal to their visible `fieldLabel`, while `New project`
+    // carries none and is named by its wrapping `<label>`. `MemoryPanel.tsx`
+    // sets no `aria-label` on either of its fields and takes that second route
+    // for both. Either is fine — a wrapping label contains the visible text by
+    // construction — and naming the control something else is not.
     //
     // Swept over the pane rather than asserted field by field, so a fourth
     // field added later is covered without anyone remembering this test.
@@ -572,20 +598,26 @@ describe('the mode’s own claim is not made when it cannot be kept', () => {
     );
   });
 
-  it('says in the pane what the mode refuses, and does not round off the delete that rewrites', async () => {
+  it('says in the pane what the mode refuses, how it refuses, and does not round off the delete that rewrites', async () => {
     // The pane's standing sentence — the one a user reads when they go looking
-    // for what the mode is. It used to say the window "refuses every command
-    // that would write to this machine", which is not true of `project_delete`:
-    // that command is `erases`, so the wrapper forwards it, and
-    // `delete_project_reassigning` runs `UPDATE conversations SET project_id`
-    // beside its `DELETE FROM projects` so no conversation is left unfiled.
+    // for what the mode is. Two earlier versions of it were wrong in opposite
+    // directions. It said the window "refuses every command that would write to
+    // this machine", which is not true of `project_delete`: that command is
+    // `erases`, so the wrapper forwards it, and `delete_project_reassigning`
+    // runs `UPDATE conversations SET project_id` beside its `DELETE FROM
+    // projects` so no conversation is left unfiled. It then said "every command
+    // that would record something on this machine", which claims the converse —
+    // that a refused command was going to record — and `sandbox_report_document`
+    // is `writes` with an empty host body, so it is refused and records nothing.
     const user = userEvent.setup({ delay: null });
     render(<App adapter={await host()} />);
     await screen.findByRole('button', { name: 'Start a conversation' });
     await user.click(screen.getByRole('button', { name: 'Style and instructions' }));
 
     const note = await screen.findByTestId('incognito-standing-note');
-    expect(note).toHaveTextContent(/refuses every command that would record something/i);
+    expect(note).toHaveTextContent(/refuses the commands whose job is to write something down/i);
+    // The direction of the refusal, in the user's words: by class, not by call.
+    expect(note).toHaveTextContent(/not by what one call would have done/i);
     // The caveat, in the user's words rather than in a comment.
     expect(note).toHaveTextContent(/re-files its conversations/i);
     for (const shape of [/writes nothing/i, /nothing durable/i, /changes nothing/i]) {

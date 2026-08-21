@@ -362,7 +362,11 @@ describe('a comment when the file moves under it', () => {
       useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha\nGAMMA');
     });
 
-    expect(screen.getByText(/no longer in the diff/)).toBeInTheDocument();
+    const stranded = within(
+      screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+    );
+    expect(stranded.getByText(/The line it quotes is no longer in the diff/)).toBeInTheDocument();
+    expect(stranded.getByText(/sent without a line number/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Submit review' }));
     expect(queue()[0]).toContain('no longer in the diff');
@@ -371,12 +375,17 @@ describe('a comment when the file moves under it', () => {
   });
 
   it('keeps a comment visible when its whole file stops differing', async () => {
-    // The other way to lose a line to point at, and the one with nowhere
+    // The other way to lose a row to sit under, and the one with nowhere
     // obvious to show the result: editing the file back to its baseline takes
     // it out of the changed-file list, so it has no row to select and the
     // comment would be sent from a place the reviewer cannot see or delete.
     // A save is different and is handled in the store — it clears the file's
     // comments outright.
+    //
+    // Here the QUOTED line goes with the file: `BETA` is an added line, so
+    // reverting the edit deletes it and the anchor resolves to null. The test
+    // below is the other half — the quoted line survives the revert — and it is
+    // the half round 2 shipped broken.
     const user = driver();
     seed([
       { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
@@ -391,12 +400,61 @@ describe('a comment when the file moves under it', () => {
 
     const list = within(screen.getByRole('list', { name: 'Changed files' }));
     expect(list.queryByRole('button', { name: /src\/a\.ts/ })).not.toBeInTheDocument();
-    const stranded = within(screen.getByRole('group', { name: 'Comments whose line has moved' }));
+    const stranded = within(
+      screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+    );
     expect(stranded.getByText(/src\/a\.ts · BETA/)).toBeInTheDocument();
     expect(stranded.getByText('this should be a constant')).toBeInTheDocument();
+    // The `line === null` arm, said on the card: `BETA` went with the revert.
+    expect(stranded.getByText(/The line it quotes is no longer in the diff/)).toBeInTheDocument();
 
     await user.click(stranded.getByRole('button', { name: /^Remove comment/ }));
     expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(0);
+  });
+
+  it('keeps a comment removable when its file leaves the changed list with the quoted line intact', async () => {
+    // Round 2's `drifted` filter required `line === null`, which is a claim
+    // that a file leaving the changed-file list takes its rows with it. It does
+    // not: `diffText('alpha', 'alpha')` returns one `same` row. So a comment on
+    // a CONTEXT line survives the revert with a real anchor, has no file row to
+    // be rendered under, and was neither shown nor removable — while the review
+    // bar still counted it and Submit still sent it as `src/a.ts:1 (after)`.
+    const user = driver();
+    seed([
+      { path: 'src/a.ts', baseline: 'alpha', working: 'alpha\nBETA' },
+      { path: 'src/other.ts', baseline: 'one', working: 'ONE' },
+    ]);
+    render(<DiffPane sessionId={SESSION} />);
+
+    await user.click(screen.getByRole('button', { name: 'Comment on line 1 after' }));
+    await user.click(screen.getByLabelText('Your comment on line 1'));
+    await user.paste('this line worries me');
+    await user.keyboard('{Enter}');
+
+    act(() => {
+      useCodeWorkspaceStore.getState().editFile(SESSION, 'src/a.ts', 'alpha');
+    });
+
+    // The file is gone from the list, so there is no row anywhere that could
+    // hold this card — and its anchor is a number, not null.
+    const list = within(screen.getByRole('list', { name: 'Changed files' }));
+    expect(list.queryByRole('button', { name: /src\/a\.ts/ })).not.toBeInTheDocument();
+
+    const stranded = within(
+      screen.getByRole('group', { name: 'Comments with no row to sit under' }),
+    );
+    expect(stranded.getByText(/src\/a\.ts · alpha/)).toBeInTheDocument();
+    expect(stranded.getByText('this line worries me')).toBeInTheDocument();
+    // The reason names the arm it came in on, and says it still carries a line.
+    expect(stranded.getByText(/no longer in the changed-file list/)).toBeInTheDocument();
+    expect(stranded.getByText(/sent as line 1 after/)).toBeInTheDocument();
+    expect(
+      stranded.getByRole('button', { name: 'Remove comment on line 1 after: this line worries me' }),
+    ).toBeInTheDocument();
+
+    await user.click(stranded.getByRole('button', { name: /^Remove comment/ }));
+    expect(useCodeWorkspaceStore.getState().work[SESSION]?.comments).toHaveLength(0);
+    expect(screen.getByText(/No comments yet/)).toBeInTheDocument();
   });
 
   it('names each Remove button for the comment it removes', async () => {

@@ -61,7 +61,8 @@
  * pane therefore never reads `comment.line` to decide which row a card belongs
  * under: `anchorComments` re-finds the quoted line in the diff as it reads now,
  * and every card, every Remove button and the submitted message are placed from
- * that answer. A comment whose line is gone is shown apart, saying so.
+ * that answer. A comment the rows cannot show is shown apart instead, saying
+ * which of the two reasons applies to it — see `drifted` below.
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -153,18 +154,33 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
     );
   }
 
-  // A comment with no line to sit under, and nowhere else it would be seen.
-  // Two ways to get here and both submit the comment: its quoted line was
-  // edited away, or the whole file was edited back to its baseline so it left
-  // the changed-file list and took its own row with it. The second one has no
-  // file row to select, so "show it under the file it belongs to" would show it
-  // never — hence `!listed`, which is what keeps a comment the round is going
-  // to send in front of the reviewer who can still delete it.
+  // Every pending comment the rows below cannot show. Both arms submit, so both
+  // have to stay in front of the reviewer who can still delete them — and the
+  // two arms are NOT the same condition, which is the defect this shape exists
+  // to close.
+  //
+  //   `!listed` — the file left the changed-file list, so it has no row here
+  //   whatever its anchor says. Editing a file back to its baseline does *not*
+  //   take its rows with it: `diffText` on two identical texts returns every
+  //   line as a `same` row (measured: `diffText('alpha', 'alpha')` gives
+  //   `{added: 0, removed: 0, rows: 1}`, that one row `same`). So a comment on
+  //   a context line still anchors to a real number while its file is gone from
+  //   the list. Round 2 required `line === null` on this arm as well, and that
+  //   comment was invisible, un-removable, and still submitted as
+  //   `src/a.ts:1 (after)`. `keeps a comment removable when its file leaves the
+  //   changed list with the quoted line intact` is what measures it now.
+  //
+  //   `line === null && path === current` — the file is still listed, but the
+  //   quoted line is gone from it. `path === current` because the comment's own
+  //   file DOES have a row in the list to select, so this arm can wait for the
+  //   reviewer to go there rather than following them onto every other file's
+  //   diff. The `!listed` arm has no such file to wait for, which is why it
+  //   shows wherever the reviewer is and prefixes its quote with the path.
   const listed = new Set(changed.map((entry) => entry.file.path));
   const drifted = anchored.filter(
     (entry) =>
-      entry.line === null &&
-      (entry.comment.path === current.file.path || !listed.has(entry.comment.path)),
+      !listed.has(entry.comment.path) ||
+      (entry.line === null && entry.comment.path === current.file.path),
   );
 
   function submit(): void {
@@ -218,13 +234,12 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
           <div
             className={styles.drifted}
             role="group"
-            aria-label="Comments whose line has moved"
+            aria-label="Comments with no row to sit under"
           >
             <p className={styles.driftedLead}>
               {drifted.length === 1
-                ? 'One comment quotes a line that is'
-                : `${drifted.length} comments quote lines that are`}{' '}
-              no longer in the diff. They are still sent, without a line number.
+                ? 'One comment has no row in the diff below to sit under. Submitting sends it anyway.'
+                : `${drifted.length} comments have no row in the diff below to sit under. Submitting sends them anyway.`}
             </p>
             {drifted.map((entry) => (
               <div key={entry.comment.id} className={styles.commentCard}>
@@ -232,6 +247,16 @@ export function DiffPane({ sessionId }: { readonly sessionId: string }) {
                   {entry.comment.path === current.file.path
                     ? entry.comment.text
                     : `${entry.comment.path} · ${entry.comment.text}`}
+                </p>
+                {/* The reason is per card, not in the lead, because the two
+                    arms of `drifted` have different consequences and one
+                    sentence covering both would be wrong about one of them. */}
+                <p className={styles.driftedReason}>
+                  {entry.line === null
+                    ? 'The line it quotes is no longer in the diff, so it is sent without a line number.'
+                    : `Its file is no longer in the changed-file list, so it is sent as line ${entry.line} ${
+                        entry.comment.side === 'left' ? 'before' : 'after'
+                      }.`}
                 </p>
                 <p className={styles.commentBody}>{entry.comment.body}</p>
                 <button

@@ -62,8 +62,12 @@ export function App({ adapter }: AppProps) {
             what mounts the thing that reads it.
 
             What bites if this line goes, measured rather than assumed:
-            `src/app/code-workspace-wiring.test.tsx` goes red on all three of its
-            tests, and `pnpm typecheck` exits 2 with TS6133 on the import above.
+            `src/app/code-workspace-wiring.test.tsx` goes red on all **four** of
+            its tests, each with `Unable to find role="dialog" and name "Code
+            workspace"`, and `pnpm typecheck` exits 2 with TS6133 on the import
+            above. (Three when this was written; the fourth,
+            `opens it from the collapsed rail too`, was added in round 3 and
+            re-measured here rather than assumed to follow.)
             `src/runtime/reachable.test.ts` does **not** — it walks import
             specifiers, so the import alone keeps the feature on the graph while
             nothing renders it. It bites only if the import goes too, and then it

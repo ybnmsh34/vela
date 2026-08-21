@@ -466,6 +466,16 @@
   line-height: var(--vela-leading-prose);
 }
 
+/* One line per card saying why that card is here rather than under a row. It
+   is a card's own sentence and not part of `.driftedLead` because the two ways
+   into the block are sent differently — with a line number and without one. */
+.driftedReason {
+  margin: 0;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-prose);
+}
+
 .driftedQuote {
   margin: 0;
   color: var(--vela-text-muted);

@@ -54,8 +54,15 @@ its **text and side** rather than trusting the stored number. That is a heuristi
 known limit: it cannot tell two identical lines apart, and picks the one nearest to where the
 comment was written. A comment whose quoted line is nowhere in the diff is shown apart and
 submitted without a coordinate rather than being attached to whatever now occupies its old
-line number. What would remove the heuristic is a diff the host computes and identities that
-survive an edit — neither exists while `src/platform/contract.ts` declares no `git_*`.
+line number. So is a comment whose **file** has left the changed-file list, and that is a
+different case rather than a special case of the first: editing a file back to its baseline
+does not take its rows away — `diffText('alpha', 'alpha')` returns one `same` row — so a
+comment on a context line keeps a perfectly good anchor while its file has no row on screen
+at all. Round 2 treated the two as one condition, and that comment was invisible,
+un-removable and still submitted with its coordinate; `DiffPane.tsx`'s `drifted` now takes
+either, and each card says which of the two it is. What would remove the heuristic altogether
+is a diff the host computes and identities that survive an edit — neither exists while
+`src/platform/contract.ts` declares no `git_*`.
 
 ## The rules this feature is built under
 
@@ -67,8 +74,15 @@ survive an edit — neither exists while `src/platform/contract.ts` declares no 
 - Everything under `src/` must be reachable from `src/main.tsx`
   (`src/runtime/reachable.test.ts`). The joint is the Code button in
   `src/features/navigation/Sidebar.tsx` — there are **two** of them, the collapsed rail's
-  icon and the expanded list's row, calling the same action, so removing either one alone
-  changes nothing — and `<CodeWorkspaceSurface />` in `src/app/App.tsx`;
+  icon and the expanded list's row, calling the same action, and each is bitten on its own:
+  removing the expanded row reddens three of the four tests in
+  `src/app/code-workspace-wiring.test.tsx` (`3 failed | 9 passed (12)` run beside the
+  reachability guard), and removing the rail's icon reddens the fourth,
+  `opens it from the collapsed rail too` (`1 failed | 11 passed (12)`). Both measured twice.
+  Round 2's text here said removing either one alone "changes nothing", which was false for
+  the expanded row and untested for the rail — the rail's guard was written to make the
+  claim true rather than to restate it. The other half of the joint is
+  `<CodeWorkspaceSurface />` in `src/app/App.tsx`;
   `src/app/code-workspace-wiring.test.tsx` fails if the two stop meeting. The reachability
   guard alone does not: it walks import specifiers, so deleting the mount and keeping the
   import leaves it green (`pnpm typecheck` is what catches that, with TS6133). Deleting the

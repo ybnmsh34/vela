@@ -336,18 +336,31 @@ export function Sidebar({ now = () => Date.now() }: SidebarProps) {
         </button>
         {/* One of the two doors into `src/features/code/` — this one and the
             icon button on the collapsed rail above, which calls the same
-            action. Either one alone keeps the workspace reachable, so removing
-            this button is not what bites.
+            action. Each is guarded on its own, and each was measured on its
+            own, twice, in `src/app/code-workspace-wiring.test.tsx`:
 
-            What bites if both go, measured in this tree rather than assumed:
-            `src/app/code-workspace-wiring.test.tsx` goes red on all three of
-            its tests. `src/runtime/reachable.test.ts` does **not** — it walks
-            import specifiers, and `src/app/App.tsx` still imports and renders
+            Remove THIS button alone and three of that file's four tests go red
+            — `opens it from the sidebar of the assembled application`, `does
+            not read the host’s settings until the user asks for the
+            workspace`, and `carries a comment written on a diff line through
+            to the chat pane` — each with `Unable to find role="button" and
+            name "Code"`, `3 failed | 9 passed (12)` alongside
+            `src/runtime/reachable.test.ts`. The rail's icon does not stand in
+            for it: those three render the sidebar expanded, so the rail is not
+            in the tree they search.
+
+            Remove the RAIL'S icon alone and `opens it from the collapsed rail
+            too` is the one that goes red, same message, `1 failed | 11 passed
+            (12)`. Round 2's version of this comment said removing either one
+            alone "is not what bites"; that was false for this button and
+            unmeasured for both, and it is the claim being corrected here.
+
+            `src/runtime/reachable.test.ts` bites for neither, and stayed green
+            in both runs above — it walks import specifiers, and
+            `src/app/App.tsx` still imports and renders
             `<CodeWorkspaceSurface />`, so the feature stays on the graph with
-            nothing to press. An earlier draft of this comment named that guard
-            as the one that fails; it was corrected in `App.tsx` and in
-            `src/features/code/README.md` and left standing here, two files from
-            its own correction. */}
+            nothing to press. Round 1's draft named that guard as the one that
+            fails; that half was corrected in round 2 and is still correct. */}
         <button
           type="button"
           className={styles.searchButton}

@@ -6,16 +6,29 @@
  * it passes whether or not anything in the application mounts it. Every
  * assertion below goes through `<App />`: the real composition root, the real
  * sidebar, the real store seam. Delete `<CodeWorkspaceSurface />` from
- * `src/app/App.tsx`, or the Code button from `src/features/navigation/Sidebar.tsx`,
- * and the first test fails — which is the property no test of the workspace can
- * have.
+ * `src/app/App.tsx` and all four tests here fail — `Unable to find role="dialog"
+ * and name "Code workspace"`, measured twice — which is the property no test of
+ * the workspace mounted on its own can have.
  *
- * The second test is the other half, and it is the one the joints in `App.tsx`
+ * The sidebar's side of the joint is **two** buttons, not one, and each gets its
+ * own test here. `opens it from the sidebar of the assembled application`, `does
+ * not read the host’s settings until the user asks for the workspace` and
+ * `carries a comment written on a diff line through to the chat pane` all press
+ * the expanded list's row — they render the sidebar expanded, so the collapsed
+ * rail is not even in the tree they search — and `opens it from the collapsed
+ * rail too` is the only thing anywhere in this suite that presses the rail's
+ * icon. Remove that icon from `src/features/navigation/Sidebar.tsx` and it is
+ * the one test in all 123 files that goes red (`1 failed | 2520 passed (2521)`,
+ * measured twice); remove the expanded row and it is the only test here that
+ * stays green.
+ *
+ * `carries a comment written on a diff line through to the chat pane` is the
+ * other half of the wiring question, and it is the one the joints in `App.tsx`
  * are a catalogue of: a control that stages something, and nothing at the other
  * end that reads it. A comment written on a diff line has to come out somewhere,
- * and the somewhere is the chat pane's queue. This drives the whole path —
- * open a file, type into it, comment on the line that changed, submit — and
- * reads the result out of the pane that is supposed to show it.
+ * and the somewhere is the chat pane's queue. This drives the whole path — open
+ * a file, type into it, comment on the line that changed, submit — and reads the
+ * result out of the pane that is supposed to show it.
  *
  * **Honesty (conventions §10):** VERIFIED-BY-FAKE, and only that.
  * `BrowserAdapter` is an in-memory host. Nothing here touches a git worktree, a
@@ -70,6 +83,20 @@ describe('a user can reach the code workspace', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Code workspace' })).toBeInTheDocument();
     expect(screen.getByRole('form', { name: 'New session' })).toBeInTheDocument();
+  });
+
+  it('opens it from the collapsed rail too', async () => {
+    // The sidebar has two doors into the workspace, and every other test that
+    // wants one renders it expanded — so before this test existed the collapsed
+    // rail's icon could be deleted with nothing at all going red. Delete it now
+    // and this is the test that says so.
+    const user = driver();
+    render(<App adapter={await host()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Collapse sidebar' }));
+    await user.click(await screen.findByRole('button', { name: 'Code' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Code workspace' })).toBeInTheDocument();
   });
 
   it('does not read the host’s settings until the user asks for the workspace', async () => {

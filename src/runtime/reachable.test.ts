@@ -16,11 +16,15 @@
  * from what `index.html` loads and insists every shipping file **under `src/`**
  * is in it.
  *
- * ## Six times this asked a narrower question than the product's
+ * ## Eight times this asked a narrower question than the product's
  *
  * Each entry below was executed against the guard as it then stood, not argued
- * from reading it. Twice now the *fix* for one of these has shipped the same
- * class one axis over, so the list is kept rather than tidied away.
+ * from reading it, and every one after the first was found in the fix for an
+ * earlier one. 6 and 7 are both holes in the single commit that closed 2 — the
+ * one that moved the extractor onto a parser and made stylesheets and the html
+ * entry first-class in the same breath. 8 *is* 2, carried forward untouched
+ * through both rebuilds that cited it, two assertions below the extractor they
+ * rewrote. So the list is kept rather than tidied away.
  *
  * 1. **It walked one directory.** It walked `src/runtime/` and named exactly one
  *    module in `src/data/`. That limit was recorded *in prose*, and prose is not
@@ -52,7 +56,9 @@
  *
  * 3. **It walked one file extension of a product that ships several.** The
  *    enumerator kept `/\.tsx?$/` and the resolver only ever returned a `.ts` or
- *    `.tsx` candidate, so the **43 `.module.css` files under `src/`** were
+ *    `.tsx` candidate, so the **43 `.css` files under `src/`** — 40 of them
+ *    `.module.css`, the other three `src/styles/base.css`, `tokens.css` and
+ *    `typeface.css` — were
  *    neither enumerated nor resolvable: a CSS file with no importer was dead
  *    shipped source that the guard reported as a clean tree. That is defect 1 one
  *    axis over, and no amount of parser is any help with it — the fix has to be
@@ -143,11 +149,62 @@
  *        .t05Launder { content: "@import '…/T05Ghost.module.css'"; }
  *
  *    to a stylesheet already on the graph put a planted orphan stylesheet on the
- *    graph and this file passed **21 of 21 in two consecutive runs**, with dead
+ *    graph and this file passed **every assertion in it, in two consecutive
+ *    runs**, with dead
  *    shipped CSS in `src/features/canvas/`. That is defect 2 exactly, in the
  *    commit that closed defect 2, one file kind over — which is why `readCss`
  *    exists: strings come out as opaque tokens and each rule is matched only in
  *    the half of the grammar where CSS honours it.
+ *
+ * 7. **It read what `index.html` *names*, not what the build *loads*.** The
+ *    entry was taken out of the file rather than hard-coded — one axis closed —
+ *    by a reader that looked for a `src=` attribute on `<script type="module">`.
+ *    An **inline** module script has no `src`. Its body is a module: Vite
+ *    compiles it and bundles what it imports. Adding
+ *
+ *        <script type="module">import { FakeTurnDriver } from
+ *          '/src/runtime/run-doubles.ts'; console.log(new FakeTurnDriver());</script>
+ *
+ *    to `index.html` left every assertion in this file green, `npx tsc -b
+ *    --force` exit 0 and `npx vite build` exit 0, and put `run-doubles.ts` —
+ *    the **first `NOT_SHIPPED` entry**, the double this guard exists to keep out
+ *    — into `dist/assets/*.js`. Measured by the string `no turn has
+ *    been sent`, which occurs in exactly one file under `src/`: present in the
+ *    bundle with the plant (221 modules transformed) and absent from the control
+ *    build of the unmodified tree (219 modules transformed).
+ *
+ *    So `htmlLoads` replaces `htmlEntries` and inverts the question. Any
+ *    `src=`/`href=` into this tree is an edge whatever tag carries it and
+ *    however it is quoted; an inline module body is walked as the module it is;
+ *    and anything else that can execute or fetch — a classic `<script>`, an
+ *    import map, a module script with both a `src` and a body, an unterminated
+ *    tag — goes in `unreadHtml` and **reddens** rather than being skipped for
+ *    not matching the shape the reader knew. `build.rollupOptions.input` and
+ *    `build.lib` can move the entry out of `index.html` altogether, so the keys
+ *    of `build` are pinned against `vite.config.ts` as well.
+ *
+ * 8. **It fixed prose-makes-a-fact in the extractor and left it in the two
+ *    assertions underneath.** `builds the sandbox door once` and `reaches the
+ *    runtime through the composition root` are the boundary claims this file
+ *    makes beyond reachability, and both were `/\bcreateAgentRuntime\s*\(/`
+ *    against `readFileSync` — defect 2, still standing, in the commit that took
+ *    it out of the extractor. Broken in both directions, executed twice each:
+ *    `import { createAgentRuntime as buildRuntime }` plus a function returning
+ *    `buildRuntime(adapter)` is a compiling second construction site the regex
+ *    cannot see (green twice, `tsc` exit 0), and a bare comment reading
+ *    `// the shell used to call createAgentRuntime( ) itself` turned that guard
+ *    **red** twice against a file that builds nothing.
+ *
+ *    The name is not the binding, so the parser is asked which binding an
+ *    identifier is and where it came from. `factoryUsesIn` counts calls through
+ *    a rename, through a namespace import and — via `exportsReaching`, a
+ *    fixpoint over the re-export graph — through a barrel of any depth; a
+ *    comment and a string literal are not identifiers and cannot make a site.
+ *    What it cannot follow it does not assume away: a binding used as a *value*
+ *    is reported in `escapes`. Two of the files this assertion reads name
+ *    `createSandboxRepository` in prose today — `CanvasSurface.tsx` once and
+ *    `document-host-double.ts` twice — and the regex missed all three sentences
+ *    only because none of them happens to be followed by `(`.
  *
  * ## What it still cannot see, stated rather than discovered later
  *
@@ -167,6 +224,20 @@
  *   drop a value-imported module whose exports are all unused and whose top
  *   level is side-effect free. Proving emission needs `vite build` and a read of
  *   `dist/`: a different, slower instrument than this one.
+ * - In `index.html`, only `src` and `href` are read as references into this
+ *   tree. `srcset`, an inline `style` with a `url(...)` in it, or a framework
+ *   attribute would each be one this reader does not look at — and unlike a
+ *   `<script>` it cannot classify, an attribute it does not know about is not
+ *   in `unreadHtml` either. There are none in the file today.
+ * - An inline module body is parsed, not type-checked: nothing runs `tsc` over
+ *   `index.html`. A body that neither the TS nor the TSX grammar accepts yields
+ *   whatever partial tree the parser recovers from it, and edges inside the part
+ *   it could not read are lost without a word.
+ * - The entry configuration is pinned at the keys of `build` in `vite.config.ts`.
+ *   A **plugin** can add an entry without any of those keys changing; `react()`
+ *   is the only one here, and a second one is a lockfile change and a reviewer.
+ * - A factory binding used as a value is reported, not followed. `escapes` says
+ *   where the analysis stopped; it does not say where the thing is finally built.
  * - `src-tauri/` is not walked. This is the renderer's graph.
  * - `readdirSync` is the authority on a filename's case, not `existsSync`, which
  *   is case-blind on NTFS. `resolveSpecifier` returns the on-disk spelling, and
@@ -184,13 +255,20 @@ const REPO_ROOT = process.cwd();
 const SRC_ROOT = join(REPO_ROOT, 'src');
 
 /**
- * The entry is read out of `index.html` rather than named here.
+ * The entries are read out of `index.html` rather than named here.
  *
- * `src/main.tsx` is the entry because one `<script type="module">` says so. A
- * guard that names the entry itself keeps walking the module it *believes* is
- * launched after somebody edits that tag, which is the prose-exemption mistake
+ * A guard that names the entry itself keeps walking the module it *believes* is
+ * launched after somebody edits that file, which is the prose-exemption mistake
  * one level further out: the question stops being "what does the product load"
  * and becomes "what did this file's author think it loads".
+ *
+ * `src/main.tsx` is the only file `index.html` names today. That is an
+ * observation about today's file, and the sentence it replaces — "the entry,
+ * because one `<script type="module">` says so" — was false about the product
+ * as written: a second module script, with a body instead of a `src`, is also
+ * an entry, and both this file and the one assertion pinning the entry list
+ * stayed green while what it imported went into `dist/`. `htmlLoads` is what
+ * reads it now, and it reports what it cannot read instead of skipping it.
  */
 const HTML_ENTRY = join(REPO_ROOT, 'index.html');
 
@@ -785,29 +863,151 @@ function resolveSpecifier(fromFile: string, specifier: string): string | null {
   return null;
 }
 
+/** One thing `index.html` hands the bundler. */
+type HtmlLoad =
+  /** A path in this tree named by an attribute — `src=`, `href=`. */
+  | { readonly kind: 'file'; readonly specifier: string }
+  /** The body of an inline `<script type="module">`, which is source. */
+  | { readonly kind: 'inline'; readonly source: string }
+  /** A tag that loads or runs something this reader cannot read. */
+  | { readonly kind: 'unread'; readonly text: string };
+
+/** `text` on one line, cut to `limit`, for a failure message. */
+function collapse(text: string, limit = 120): string {
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length > limit ? `${line.slice(0, limit)}…` : line;
+}
+
 /**
- * Everything `index.html` tells the browser to load, as written in the tag.
+ * The value of `attribute` in a tag's attribute text, or `undefined`.
+ *
+ * Unquoted is a real spelling — `<script type=module src=/src/main.tsx>` is what
+ * HTML5 says it is — and a reader that only matched quotes returned `undefined`
+ * for both halves of that tag, which made it neither an entry nor loud. That is
+ * the same hole as the one this whole reader was rewritten for, one attribute
+ * syntax over, so both spellings are read.
+ */
+function attributeValue(attributes: string, attribute: string): string | undefined {
+  const match = new RegExp(`\\b${attribute}\\s*=\\s*(?:["']([^"']*)["']|([^\\s"'>]+))`, 'i').exec(
+    attributes,
+  );
+  if (match === null) return undefined;
+  return match[1] ?? match[2];
+}
+
+/**
+ * Everything `index.html` hands the bundler, classified — not "what its script
+ * tags name".
+ *
+ * The function this replaced asked the narrower question and answered it
+ * completely: it read `src=` off `<script type="module">` and `href=` off
+ * `<link rel=stylesheet>`. A third agent, shown that fix, got past it in one
+ * line. An **inline** `<script type="module">` has no `src` for that reader to
+ * find, and its body is a real module: Vite compiles it, its imports are real
+ * edges, and what they pull in lands in `dist/`. Executed, not argued —
+ * `<script type="module">import { FakeTurnDriver } from
+ * '/src/runtime/run-doubles.ts'; …</script>` in this file's own `index.html`
+ * left the guard green, `tsc -b --force` exit 0 and `vite build` exit 0, with
+ * `run-doubles.ts` inside `dist/assets/*.js`. That is the first `NOT_SHIPPED`
+ * entry in the bundle with every assertion in this file passing.
+ *
+ * So the reader is built the other way round, and the classes are these:
+ *
+ * - **Any** `src=`/`href=` naming a path in this tree is a `file`, whatever tag
+ *   carries it. Vite rewrites in-tree asset references from any element, so
+ *   enumerating the tags that may carry one is the same losing game as
+ *   enumerating extensions was in defect 3.
+ * - An inline `type="module"` body is `inline`: source, read by the same
+ *   extractor every `.ts` file is read by, with its edges resolved against the
+ *   repo root exactly as the tag's own `src` would be.
+ * - Everything else that can execute or fetch is `unread` and **reddens** this
+ *   file: a classic `<script>` (whose body this file does not parse and whose
+ *   `document.write` or `import()` it cannot see), an import map (which can
+ *   repoint a bare specifier at a file in this tree), a module script carrying
+ *   both a `src` and a body, an unterminated `<script>`. None exist here today;
+ *   the next one stops the build instead of silently widening the entry set.
  *
  * HTML comments are stripped first, for the reason the whole rest of this file
  * exists: a commented-out `<script>` tag is not an entry, and a guard that reads
  * one as an entry is reading prose as code.
+ *
+ * One thing to know before adding a favicon: Vite serves a static directory at
+ * the URL root as well as the project root, so `/vela.svg` would mean
+ * `public/vela.svg`. There is no such directory in this repo — `git ls-files`
+ * matches nothing under `public/` — so `resolveSpecifier` does not look there,
+ * and the first root-absolute reference to a static asset will land in
+ * `unresolved` rather than go quiet. Teach the resolver that directory then,
+ * with a file in it to prove the branch runs.
  */
-function htmlEntries(html: string): string[] {
-  const text = html.replace(/<!--[\s\S]*?-->/g, ' ');
-  const found: string[] = [];
-  for (const match of text.matchAll(/<script\b([^>]*)>/gi)) {
-    const attributes = match[1] ?? '';
-    if (!/\btype\s*=\s*["']module["']/i.test(attributes)) continue;
-    const source = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
-    if (source !== undefined) found.push(source);
+function htmlLoads(html: string): HtmlLoad[] {
+  const found: HtmlLoad[] = [];
+  const scripts: Array<{ attributes: string; body: string }> = [];
+  // Script elements come out first, so that the attribute sweep below reads
+  // markup only and never the inside of a script body: `'<img src="/src/x">'`
+  // written in JavaScript is a string, not a tag, and inventing an edge out of
+  // it would let a body mask an orphan.
+  const markup = html
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi, (_whole, attributes, body) => {
+      scripts.push({ attributes: String(attributes), body: String(body) });
+      return ' ';
+    });
+  for (const { attributes, body } of scripts) {
+    const type = attributeValue(attributes, 'type');
+    const source = attributeValue(attributes, 'src');
+    const hasBody = body.trim() !== '';
+    if (type !== undefined && type.trim().toLowerCase() === 'module') {
+      if (source !== undefined && hasBody) {
+        found.push({ kind: 'unread', text: collapse(`<script${attributes}> with a src and a body`) });
+        continue;
+      }
+      if (source !== undefined && pointsIntoThisTree(source)) {
+        found.push({ kind: 'file', specifier: source });
+        continue;
+      }
+      if (hasBody) found.push({ kind: 'inline', source: body });
+      continue;
+    }
+    if (source !== undefined || hasBody) {
+      found.push({ kind: 'unread', text: collapse(`<script${attributes}>${body}`) });
+    }
   }
-  for (const match of text.matchAll(/<link\b([^>]*)>/gi)) {
-    const attributes = match[1] ?? '';
-    if (!/\brel\s*=\s*["']stylesheet["']/i.test(attributes)) continue;
-    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
-    if (href !== undefined) found.push(href);
+  if (/<script\b/i.test(markup)) {
+    found.push({ kind: 'unread', text: collapse('a <script> tag with no closing tag') });
+  }
+  for (const match of markup.matchAll(/<([a-zA-Z][\w-]*)\b([^>]*)>/g)) {
+    const attributes = match[2] ?? '';
+    for (const attribute of ['src', 'href']) {
+      const value = attributeValue(attributes, attribute);
+      if (value !== undefined && pointsIntoThisTree(value)) {
+        found.push({ kind: 'file', specifier: value });
+      }
+    }
   }
   return found;
+}
+
+/**
+ * An inline module body's edges, read under both grammars.
+ *
+ * The tag declares no dialect — `type="module"` says how the browser loads the
+ * body, not what syntax is in it — so the body is parsed once as TypeScript and
+ * once as TSX and the two readings unioned. Reading it under one grammar only
+ * would drop every edge in a body the other grammar is needed for, and a dropped
+ * edge is the direction `NOT_SHIPPED` reads as proof.
+ */
+function inlineSpecifiers(source: string): string[] {
+  return [...new Set([...specifiers(source, 'inline.ts'), ...specifiers(source, 'inline.tsx')])];
+}
+
+/** The same union, for the edges an inline body has that cannot be followed. */
+function inlineUnfollowable(source: string): string[] {
+  return [
+    ...new Set([
+      ...unanalysableImports(source, 'inline.ts'),
+      ...unanalysableImports(source, 'inline.tsx'),
+    ]),
+  ];
 }
 
 /**
@@ -875,11 +1075,247 @@ function objectKeys(node: ts.Expression | null): string[] {
   });
 }
 
+/** Every shipping module, parsed once and kept, since several passes read them. */
+const PARSED_MODULES = new Map<string, ts.SourceFile>();
+
+function parsedModule(file: string): ts.SourceFile {
+  const cached = PARSED_MODULES.get(file);
+  if (cached !== undefined) return cached;
+  const parsed = parse(readFileSync(file, 'utf8'), file);
+  PARSED_MODULES.set(file, parsed);
+  return parsed;
+}
+
+/** Every shipping module whose edges and uses are read by a parser. */
+function parsedModules(): string[] {
+  return shippingModules(SRC_ROOT).filter((file) => extname(file).toLowerCase() !== '.css');
+}
+
+/** What one file does with a factory it imports. */
+type FactoryUse = {
+  /** Times it is called. */
+  readonly calls: number;
+  /** Every use that is **not** a call, as source text — the loud residue. */
+  readonly escapes: readonly string[];
+};
+
+/**
+ * How a file uses a factory, decided by the parser rather than by matching its
+ * name in the file's text.
+ *
+ * The two boundary assertions at the bottom of this file — the sandbox door is
+ * built once, the runtime is built once — used to be `/\bcreateAgentRuntime\s*\(/`
+ * over `readFileSync`. That is defect 2 exactly, still standing in the commit
+ * that removed it from the extractor, and a third agent broke it in **both**
+ * directions in one sitting:
+ *
+ * - `import { createAgentRuntime as buildRuntime } from '@/runtime/app-runtime'`
+ *   plus a function returning `buildRuntime(adapter)` is a real, compiling,
+ *   second construction site — the exact thing the assertion exists to forbid —
+ *   and the regex never sees the name it is looking for.
+ * - `// Historical note: the shell used to call createAgentRuntime( ) itself.`
+ *   is a sentence, and it turned the guard **red** against a file that does
+ *   nothing. Prose creating a fact, in the file whose finding is that a comment
+ *   is not evidence.
+ *
+ * So the question asked here is the one the product asks: *which binding is this
+ * identifier, and where did it come from?* A local name is a factory binding
+ * only if an `import` in this file bound it to that export — through a rename,
+ * through a namespace import, or through a re-export chain (`exportsReaching`).
+ * A comment is trivia and a string is a literal, so neither can produce one.
+ *
+ * The residue is loud rather than assumed away. A binding that is used as a
+ * *value* — assigned, passed, re-exported, wrapped — is a construction site this
+ * analysis cannot follow to its call, so it is reported instead of counted as
+ * absent. `NOT_SHIPPED` and these two assertions all read absence as proof, and
+ * absence is the direction that goes quiet.
+ */
+function factoryUsesIn(
+  parsed: ts.SourceFile,
+  isFactory: (specifier: string, exported: string) => boolean,
+): FactoryUse {
+  const locals = new Set<string>();
+  const namespaces = new Map<string, string>();
+  eachNode(parsed, (node) => {
+    if (!ts.isImportDeclaration(node)) return;
+    const clause = node.importClause;
+    if (clause === undefined || clause.isTypeOnly) return;
+    const specifier = staticSpecifier(node.moduleSpecifier);
+    if (specifier === null) return;
+    if (clause.name !== undefined && isFactory(specifier, 'default')) locals.add(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (bindings === undefined) return;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.set(bindings.name.text, specifier);
+      return;
+    }
+    for (const element of bindings.elements) {
+      if (element.isTypeOnly) continue;
+      if (isFactory(specifier, (element.propertyName ?? element.name).text)) {
+        locals.add(element.name.text);
+      }
+    }
+  });
+
+  let calls = 0;
+  const escapes: string[] = [];
+  eachNode(parsed, (node) => {
+    let reference: ts.Node | null = null;
+    if (ts.isPropertyAccessExpression(node)) {
+      const target = node.expression;
+      const specifier = ts.isIdentifier(target) ? namespaces.get(target.text) : undefined;
+      if (specifier !== undefined && isFactory(specifier, node.name.text)) reference = node;
+    } else if (ts.isIdentifier(node) && locals.has(node.text)) {
+      const parent = node.parent;
+      // The import clause that created the binding is not a use of it, and
+      // `something.createAgentRuntime` is a different identifier that happens to
+      // be spelled the same.
+      const declares =
+        parent !== undefined &&
+        (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent));
+      const names =
+        parent !== undefined &&
+        ((ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+          (ts.isPropertyAssignment(parent) && parent.name === node) ||
+          (ts.isQualifiedName(parent) && parent.right === node));
+      if (!declares && !names) reference = node;
+    }
+    if (reference === null) return;
+    const parent = reference.parent;
+    if (parent !== undefined && ts.isCallExpression(parent) && parent.expression === reference) {
+      calls += 1;
+      return;
+    }
+    escapes.push(collapse((parent ?? reference).getText(parsed), 80));
+  });
+  return { calls, escapes };
+}
+
+/** The same analysis over text, for the assertions that drive it directly. */
+function factoryUses(
+  source: string,
+  fileName: string,
+  isFactory: (specifier: string, exported: string) => boolean,
+): FactoryUse {
+  return factoryUsesIn(parse(source, fileName), isFactory);
+}
+
+/**
+ * Every `module -> exported name` in this tree that reaches one factory.
+ *
+ * A re-export is a rename with a file boundary in it: `export { createAgentRuntime
+ * as make } from '@/runtime/app-runtime'` in a barrel, then `import { make }` and
+ * `make(adapter)`, is a second construction site that neither the regex nor a
+ * one-hop import check would see. This is a fixpoint over the re-export graph, so
+ * the chain can be any length.
+ *
+ * `export * as ns from` is folded in deliberately conservatively — the namespace
+ * object is treated as reaching the factory, which can only ever produce a red
+ * that a human resolves, never a silent green.
+ */
+/**
+ * The names one module re-exports that reach the factory, given what its
+ * targets export.
+ *
+ * Split out from the fixpoint so it can be driven directly: the tree contains no
+ * barrel over either factory today, so every assertion about re-export
+ * laundering would otherwise pass just as well with this rule deleted.
+ */
+function reExported(
+  parsed: ts.SourceFile,
+  file: string,
+  reaching: (target: string) => ReadonlySet<string> | undefined,
+): string[] {
+  const found: string[] = [];
+  eachNode(parsed, (node) => {
+    if (!ts.isExportDeclaration(node) || node.isTypeOnly) return;
+    if (node.moduleSpecifier === undefined) return;
+    const specifier = staticSpecifier(node.moduleSpecifier);
+    if (specifier === null) return;
+    const target = resolveSpecifier(file, specifier);
+    const exported = target === null ? undefined : reaching(target);
+    if (exported === undefined) return;
+    const clause = node.exportClause;
+    if (clause === undefined) {
+      found.push(...exported);
+      return;
+    }
+    if (ts.isNamedExports(clause)) {
+      for (const element of clause.elements) {
+        if (element.isTypeOnly) continue;
+        if (exported.has((element.propertyName ?? element.name).text)) found.push(element.name.text);
+      }
+      return;
+    }
+    // `export * as ns from` — the namespace object is folded in deliberately
+    // conservatively. It can only ever produce a red a human resolves.
+    found.push(clause.name.text);
+  });
+  return found;
+}
+
+/** One parsed module, with the path its specifiers resolve against. */
+type ParsedModule = { readonly file: string; readonly parsed: ts.SourceFile };
+
+function exportsReaching(
+  factory: string,
+  definingModule: string,
+  modules: readonly ParsedModule[] = parsedModules().map((file) => ({
+    file,
+    parsed: parsedModule(file),
+  })),
+): Map<string, Set<string>> {
+  const reaching = new Map<string, Set<string>>([[definingModule, new Set([factory])]]);
+  // A chain is followed a hop per pass, so the loop runs until nothing new
+  // appears — a barrel over a barrel is two passes, and the bound is the number
+  // of modules because that is the longest chain that can exist.
+  for (let pass = 0; pass <= modules.length; pass += 1) {
+    let changed = false;
+    for (const { file, parsed } of modules) {
+      const mine = reaching.get(file) ?? new Set<string>();
+      for (const name of reExported(parsed, file, (target) => reaching.get(target))) {
+        if (mine.has(name)) continue;
+        mine.add(name);
+        changed = true;
+      }
+      if (mine.size > 0) reaching.set(file, mine);
+    }
+    if (!changed) break;
+  }
+  return reaching;
+}
+
+/** Where a factory is built, and every use of it this analysis cannot follow. */
+type ConstructionSites = {
+  /** Files containing a call to it, by repo path. */
+  readonly builders: readonly string[];
+  /** `file: text` for every use of it that is not a call. */
+  readonly escapes: readonly string[];
+};
+
+function constructionSites(factory: string, definingModule: string): ConstructionSites {
+  const reaching = exportsReaching(factory, definingModule);
+  const builders: string[] = [];
+  const escapes: string[] = [];
+  for (const file of parsedModules()) {
+    if (file === definingModule) continue;
+    const uses = factoryUsesIn(parsedModule(file), (specifier, exported) => {
+      const target = resolveSpecifier(file, specifier);
+      return target !== null && reaching.get(target)?.has(exported) === true;
+    });
+    if (uses.calls > 0) builders.push(asRepoPath(file));
+    for (const escape of uses.escapes) escapes.push(`${asRepoPath(file)}: ${escape}`);
+  }
+  return { builders: builders.sort(), escapes: escapes.sort() };
+}
+
 type Graph = {
   /** Every file the entry reaches, transitively, as an absolute path. */
   readonly reachable: ReadonlySet<string>;
-  /** The entries `index.html` declares, resolved. */
+  /** The files `index.html` names in an attribute, resolved. */
   readonly entries: readonly string[];
+  /** Every tag in `index.html` that loads or runs something this file cannot read. */
+  readonly unreadHtml: readonly string[];
   /** `file: text` for every edge the walk could not follow. */
   readonly unfollowable: readonly string[];
   /** `file: specifier` for every in-tree specifier that resolved to nothing. */
@@ -905,15 +1341,45 @@ function edgesFrom(file: string, source: string): Edge[] {
 }
 
 /** Everything `index.html` reaches at runtime, transitively. */
-function walk(): Graph {
-  const entries = htmlEntries(readFileSync(HTML_ENTRY, 'utf8'))
-    .map((specifier) => resolveSpecifier(HTML_ENTRY, specifier))
-    .filter((file): file is string => file !== null);
+function walk(html: string = readFileSync(HTML_ENTRY, 'utf8')): Graph {
+  const loads = htmlLoads(html);
   const reachable = new Set<string>();
   const unfollowable: string[] = [];
   const unresolved: string[] = [];
   const miscased: string[] = [];
-  const queue = [...entries];
+  const queue: string[] = [];
+  // The same classification the walk gives every other file's edges, applied to
+  // the ones `index.html` itself declares. It used to resolve them and drop
+  // whatever came back `null`, which put the html on a shorter leash than any
+  // module: a mistyped entry read as a clean, and smaller, graph.
+  const record = (label: string, edges: readonly Edge[]): void => {
+    for (const { specifier, resolved, lost } of edges) {
+      if (lost) unresolved.push(`${label}: ${specifier}`);
+      if (resolved === null) continue;
+      if (miscasedAgainst(specifier, resolved)) {
+        miscased.push(`${label}: ${specifier} is on disk as ${basename(resolved)}`);
+      }
+      if (!reachable.has(resolved)) queue.push(resolved);
+    }
+  };
+  const htmlEdge = (specifier: string): Edge => {
+    const resolved = resolveSpecifier(HTML_ENTRY, specifier);
+    return { specifier, resolved, lost: resolved === null && pointsIntoThisTree(specifier) };
+  };
+  const entryEdges = loads.flatMap((load) => (load.kind === 'file' ? [htmlEdge(load.specifier)] : []));
+  const entries = entryEdges.flatMap((edge) => (edge.resolved === null ? [] : [edge.resolved]));
+  record('index.html', entryEdges);
+  const inlineScripts = loads.flatMap((load) => (load.kind === 'inline' ? [load.source] : []));
+  // An inline module body is a module. Its imports are edges Rollup follows and
+  // its specifiers resolve against the repo root, exactly as the tag's own `src`
+  // does — there is no file on disk to enumerate, which is precisely why one of
+  // these could put `run-doubles.ts` in the bundle with this file green.
+  for (const source of inlineScripts) {
+    const label = 'index.html <script type="module">';
+    for (const text of inlineUnfollowable(source)) unfollowable.push(`${label}: ${text}`);
+    record(label, inlineSpecifiers(source).map(htmlEdge));
+  }
+  const unreadHtml = loads.flatMap((load) => (load.kind === 'unread' ? [load.text] : []));
   while (queue.length > 0) {
     const file = queue.pop();
     if (file === undefined || reachable.has(file)) continue;
@@ -930,19 +1396,12 @@ function walk(): Graph {
         unfollowable.push(`${asRepoPath(file)}: ${text}`);
       }
     }
-    for (const { specifier, resolved, lost } of edgesFrom(file, source)) {
-      // A lost edge is not the same thing as `'react'`, and a lost edge shrinks
-      // `REACHABLE` — the direction `NOT_SHIPPED` reads as proof. It gets said
-      // out loud instead of `continue`d past.
-      if (lost) unresolved.push(`${asRepoPath(file)}: ${specifier}`);
-      if (resolved === null) continue;
-      if (miscasedAgainst(specifier, resolved)) {
-        miscased.push(`${asRepoPath(file)}: ${specifier} is on disk as ${basename(resolved)}`);
-      }
-      if (!reachable.has(resolved)) queue.push(resolved);
-    }
+    // A lost edge is not the same thing as `'react'`, and a lost edge shrinks
+    // `REACHABLE` — the direction `NOT_SHIPPED` reads as proof. It gets said
+    // out loud by `record` instead of being `continue`d past.
+    record(asRepoPath(file), edgesFrom(file, source));
   }
-  return { reachable, entries, unfollowable, unresolved, miscased };
+  return { reachable, entries, unreadHtml, unfollowable, unresolved, miscased };
 }
 
 function asRepoPath(file: string): string {
@@ -966,14 +1425,133 @@ describe('the renderer is wired into the product', () => {
   it('starts where index.html starts, not where this file assumes', () => {
     // If the tag moves, the walk moves. A hard-coded entry is a guard that keeps
     // proving something about a module the product may no longer launch.
+    //
+    // This list being exactly one file is a fact about today's `index.html`, not
+    // a licence to stop reading it. The reader that produced it used to see only
+    // `src=` attributes, so an inline `<script type="module">` — a real Vite
+    // entry whose body is bundled — was in neither this list nor the graph, and
+    // this assertion passed while `run-doubles.ts` sat in `dist/`. What makes
+    // the pin safe is not the pin: it is that an inline body is now walked as a
+    // module and that anything else in the file reddens `unreadHtml`.
     expect(
       GRAPH.entries.map(asRepoPath),
       'index.html declares no module entry this walk can resolve; the graph below is vacuous',
     ).toEqual(['src/main.tsx']);
-    expect(htmlEntries('<!-- <script type="module" src="/src/ghost.tsx"></script> -->')).toEqual([]);
-    expect(htmlEntries('<script type="module" src="/src/main.tsx"></script>')).toEqual([
+
+    const specifiersOf = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+    expect(specifiersOf('<!-- <script type="module" src="/src/ghost.tsx"></script> -->')).toEqual([]);
+    expect(specifiersOf('<script type="module" src="/src/main.tsx"></script>')).toEqual([
       '/src/main.tsx',
     ]);
+    // Any tag, not a list of tags this file happened to think of. Enumerating
+    // which elements may carry an in-tree reference is defect 3 one axis over.
+    expect(specifiersOf('<link rel="stylesheet" href="/src/styles/base.css">')).toEqual([
+      '/src/styles/base.css',
+    ]);
+    expect(specifiersOf('<img src="/src/assets/logo.svg">')).toEqual(['/src/assets/logo.svg']);
+    expect(specifiersOf('<link rel="preload" as="font" href="https://cdn.example/x.woff2">')).toEqual(
+      [],
+    );
+    // A `src` written inside a script body is a string in a program, not a tag.
+    expect(specifiersOf('<script type="module">const s = \'<img src="/src/ghost.tsx">\';</script>'))
+      .toEqual([]);
+  });
+
+  /**
+   * An inline `<script type="module">` is an entry, and its body is a module.
+   *
+   * This is the hole a third agent walked through after the rebuild above. The
+   * reader answered *"what do index.html's script tags name?"* completely and
+   * the product's question is *"what does the build load?"* — the same swap this
+   * file has now made six times. One line in `index.html`,
+   *
+   *     <script type="module">import { FakeTurnDriver } from
+   *       '/src/runtime/run-doubles.ts'; console.log(new FakeTurnDriver());</script>
+   *
+   * left every assertion in this file green, `npx tsc -b --force` exit 0 and
+   * `npx vite build` exit 0, and put `run-doubles.ts` — the first `NOT_SHIPPED`
+   * entry, the test double this whole guard exists to keep out — into
+   * `dist/assets/*.js`.
+   */
+  it('reads an inline module script as the module it is', () => {
+    expect(
+      GRAPH.unreadHtml,
+      'a tag in index.html that runs or fetches something this file cannot read. ' +
+        'Everything it loads is invisible to every assertion below, which is how ' +
+        'a test double reaches the bundle while this file reports a clean tree',
+    ).toEqual([]);
+
+    const inlineOf = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'inline' ? [load.source.trim()] : []));
+    const unreadOf = (html: string): number =>
+      htmlLoads(html).filter((load) => load.kind === 'unread').length;
+    const specifiersOfLoad = (html: string): string[] =>
+      htmlLoads(html).flatMap((load) => (load.kind === 'file' ? [load.specifier] : []));
+
+    expect(inlineOf('<script type="module">import "/src/main.tsx";</script>')).toEqual([
+      'import "/src/main.tsx";',
+    ]);
+    expect(inlineOf('<script type="module" src="/src/main.tsx"></script>')).toEqual([]);
+    expect(inlineOf('<!-- <script type="module">import "/src/ghost.ts";</script> -->')).toEqual([]);
+
+    // And the body is read by the same extractor a `.ts` file is read by, under
+    // both grammars, since the tag declares no dialect.
+    expect(inlineSpecifiers('import { A } from "/src/runtime/run-doubles.ts";')).toEqual([
+      '/src/runtime/run-doubles.ts',
+    ]);
+    expect(inlineSpecifiers('void import(`/src/runtime/run-doubles.ts`);')).toEqual([
+      '/src/runtime/run-doubles.ts',
+    ]);
+    expect(inlineSpecifiers('const el = <div className="x" />;\nimport "/src/a.ts";')).toEqual([
+      '/src/a.ts',
+    ]);
+    expect(inlineSpecifiers('// import "/src/ghost.ts";')).toEqual([]);
+    expect(inlineUnfollowable('void import(name);')).toEqual(['import(name)']);
+
+    // Everything that can execute and is not a module body goes in the loud
+    // list rather than being skipped for not matching `type="module"`.
+    expect(unreadOf('<script>document.write("<script src=\'/src/ghost.ts\'>")</script>')).toBe(1);
+    expect(unreadOf('<script type="importmap">{"imports":{"x":"/src/ghost.ts"}}</script>')).toBe(1);
+    expect(unreadOf('<script type="module" src="/src/main.tsx">import "/src/ghost.ts";</script>')).toBe(
+      1,
+    );
+    expect(unreadOf('<script type="module">import "/src/main.tsx";</script>')).toBe(0);
+    expect(unreadOf('<script type="module" src="/src/main.tsx"></script>')).toBe(0);
+
+    // The whole walk, driven from a substitute `index.html`. Reading the tag is
+    // half the job; the other half is that what it says reaches the graph, and
+    // the real file has no lost, mis-cased or inline reference to prove that
+    // with. Measured: without these, dropping the html's edges into the queue
+    // without classifying them at all leaves this file green in two runs.
+    const inline = walk('<script type="module">import "/src/runtime/run-doubles.ts";</script>');
+    expect(
+      [...inline.reachable].map(asRepoPath),
+      'an inline module body reached the reader but not the graph',
+    ).toContain('src/runtime/run-doubles.ts');
+    expect(inline.entries).toEqual([]);
+    expect(walk('<script type="module" src="/src/nothing-here.tsx"></script>').unresolved).toEqual([
+      'index.html: /src/nothing-here.tsx',
+    ]);
+    expect(walk('<script type="module">import "/src/nothing-here.tsx";</script>').unresolved).toEqual(
+      ['index.html <script type="module">: /src/nothing-here.tsx'],
+    );
+    expect(walk('<script type="module">void import(name);</script>').unfollowable).toEqual([
+      'index.html <script type="module">: import(name)',
+    ]);
+    expect(walk('<script>parse("<b>")</script>').unreadHtml.length).toBe(1);
+
+    // Unquoted attribute values are HTML, and a reader that only understood
+    // quotes made this tag invisible in both directions at once — no entry, and
+    // nothing in the loud list either.
+    expect(specifiersOfLoad('<script type=module src=/src/main.tsx></script>')).toEqual([
+      '/src/main.tsx',
+    ]);
+    expect(unreadOf('<script type=text/javascript src=/src/ghost.ts></script>')).toBe(1);
+    expect(specifiersOfLoad('<link rel=modulepreload href=/src/runtime/run-doubles.ts>')).toEqual([
+      '/src/runtime/run-doubles.ts',
+    ]);
+    expect(unreadOf('<script type="module" src="/src/main.tsx"')).toBe(1);
   });
 
   /**
@@ -1001,6 +1579,36 @@ describe('the renderer is wired into the product', () => {
       stringElements(configProperty('setupFiles')),
       'the src/test/setup.ts exemption says setupFiles names it',
     ).toEqual(['./src/test/setup.ts']);
+
+    // And the regex is held to that glob spelling by spelling, not only by the
+    // sentence above it. `TEST_FILE` was `/\.test\.[a-z]+$/`, which also skipped
+    // names vitest does not run — a stylesheet with a test infix in its name is
+    // enumerated by neither instrument, an escape hatch out of both at once — and
+    // nothing in this file
+    // could tell the two regexes apart. The names below are the difference.
+    expect(['a.test.ts', 'a.test.tsx'].filter((name) => TEST_FILE.test(name))).toEqual([
+      'a.test.ts',
+      'a.test.tsx',
+    ]);
+    expect(
+      ['a.test.css', 'a.test.js', 'a.test.mjs', 'a.tests.ts', 'atest.ts', 'a.ts'].filter((name) =>
+        TEST_FILE.test(name),
+      ),
+      'TEST_FILE skips a file vitest does not run: it is out of both walks at once',
+    ).toEqual([]);
+
+    // A fourth claim, and it is the one the whole walk stands on: that
+    // `index.html` is where the entries are. It is a default, not a law —
+    // `build.rollupOptions.input` and `build.lib` both replace it, and an entry
+    // this file never reads is a subgraph it never walks, in the direction
+    // `NOT_SHIPPED` reads as proof. So the keys of `build` are pinned: a new one
+    // reddens here until somebody says whether it moves the entry.
+    expect(
+      objectKeys(configProperty('build')).sort(),
+      'a build option this guard has not been told about. If it can name an ' +
+        'entry — rollupOptions.input, lib — then index.html is no longer the ' +
+        'whole question and this file has to read it too',
+    ).toEqual(['emptyOutDir', 'outDir', 'sourcemap', 'target']);
   });
 
   /**
@@ -1276,8 +1884,8 @@ describe('the renderer is wired into the product', () => {
 
     // A string is not a rule, exactly as a comment is not a node. Measured, not
     // argued: appending the first of these to `src/app/shell/AppShell.module.css`
-    // put a planted orphan stylesheet on the graph and this file passed 21 of 21
-    // in two consecutive runs, with dead shipped CSS in `src/features/canvas/`.
+    // put a planted orphan stylesheet on the graph and every assertion in this
+    // file passed, twice over, with dead shipped CSS in `src/features/canvas/`.
     expect(cssSpecifiers('.a { content: "@import \'./ghost.css\'"; }\n')).toEqual([]);
     expect(
       cssSpecifiers('.a { content: "composes: b from \'./ghost.module.css\'"; }\n'),
@@ -1450,17 +2058,150 @@ describe('the renderer is wired into the product', () => {
    * can reach into.
    */
   it('builds the sandbox door once, at the composition root', () => {
-    const builders = shippingModules(SRC_ROOT)
-      .filter((file) => file !== join(SRC_ROOT, 'data', 'sandbox-repository.ts'))
-      .filter((file) => /\bcreateSandboxRepository\s*\(/.test(readFileSync(file, 'utf8')))
-      .map(asRepoPath);
+    const sites = constructionSites(
+      'createSandboxRepository',
+      join(SRC_ROOT, 'data', 'sandbox-repository.ts'),
+    );
 
     expect(
-      builders,
+      sites.escapes,
+      'the factory is used here as a value rather than called, so this file ' +
+        'cannot say where the door actually gets built. Call it at the ' +
+        'composition root, or teach this analysis the shape',
+    ).toEqual([]);
+    expect(
+      sites.builders,
       'the renderer door to the sandbox commands is built once, at the ' +
         'composition root, and handed down — a surface that builds its own host ' +
         'is how the boundary ended up inside the process it constrains',
     ).toEqual(['src/app/App.tsx']);
+  });
+
+  /**
+   * The two assertions above and below are only worth their names if the thing
+   * they read is a binding rather than a spelling.
+   *
+   * Two of the files this assertion reads name `createSandboxRepository` in a
+   * doc comment right now — `CanvasSurface.tsx` once, `document-host-double.ts`
+   * twice. The regex this replaced missed all three sentences only because none
+   * of them happens to be followed by an open parenthesis; a fourth that was
+   * would have reddened this file against a module that builds nothing. And the rename in
+   * the first case below compiles, runs, and is exactly the second construction
+   * site the assertion exists to forbid.
+   */
+  it('reads a construction site as a binding, not as a spelling', () => {
+    const fromRuntime = (specifier: string, exported: string): boolean =>
+      specifier === '@/runtime/app-runtime' && exported === 'createAgentRuntime';
+    const uses = (source: string): FactoryUse => factoryUses(source, 'probe.tsx', fromRuntime);
+
+    // The evasion, in the spelling it was executed in.
+    expect(
+      uses(
+        "import { createAgentRuntime as buildRuntime } from '@/runtime/app-runtime';\n" +
+          'export const make = (a: A) => buildRuntime(a);\n',
+      ),
+    ).toEqual({ calls: 1, escapes: [] });
+    expect(
+      uses("import { createAgentRuntime } from '@/runtime/app-runtime';\ncreateAgentRuntime(a);\n"),
+    ).toEqual({ calls: 1, escapes: [] });
+    expect(
+      uses("import * as rt from '@/runtime/app-runtime';\nrt.createAgentRuntime(a);\n"),
+    ).toEqual({ calls: 1, escapes: [] });
+
+    // The inverse: prose cannot make a construction site, which is the direction
+    // that reddens an innocent file and gets fixed by weakening the assertion.
+    expect(uses('// the shell used to call createAgentRuntime( ) itself\n')).toEqual({
+      calls: 0,
+      escapes: [],
+    });
+    expect(uses("const doc = 'createAgentRuntime(adapter)';\n")).toEqual({ calls: 0, escapes: [] });
+    expect(uses('/**\n * createAgentRuntime(adapter)\n */\nexport const x = 1;\n')).toEqual({
+      calls: 0,
+      escapes: [],
+    });
+    // A different module exporting the same name is a different function, and a
+    // local one is not imported at all.
+    expect(
+      uses("import { createAgentRuntime } from './elsewhere';\ncreateAgentRuntime(a);\n"),
+    ).toEqual({ calls: 0, escapes: [] });
+    expect(uses('function createAgentRuntime() {}\ncreateAgentRuntime();\n')).toEqual({
+      calls: 0,
+      escapes: [],
+    });
+    expect(uses("import { other } from '@/runtime/app-runtime';\nother(a);\n")).toEqual({
+      calls: 0,
+      escapes: [],
+    });
+    // A type-only import builds nothing; the value it names is erased.
+    expect(
+      uses("import type { createAgentRuntime } from '@/runtime/app-runtime';\nconst x = 1;\n"),
+    ).toEqual({ calls: 0, escapes: [] });
+
+    // And a binding used as a value goes in the loud list rather than counting
+    // as absence, because absence is what the assertions above read as proof.
+    expect(
+      uses("import { createAgentRuntime } from '@/runtime/app-runtime';\nconst make = createAgentRuntime;\n"),
+    ).toEqual({ calls: 0, escapes: ['make = createAgentRuntime'] });
+    expect(
+      uses("import { createAgentRuntime } from '@/runtime/app-runtime';\nexport { createAgentRuntime };\n"),
+    ).toEqual({ calls: 0, escapes: ['createAgentRuntime'] });
+    expect(
+      uses("import { createAgentRuntime } from '@/runtime/app-runtime';\nuse(createAgentRuntime);\n"),
+    ).toEqual({ calls: 0, escapes: ['use(createAgentRuntime)'] });
+  });
+
+  /**
+   * A re-export is a rename with a file boundary in it.
+   *
+   * `export { createAgentRuntime as make } from '@/runtime/app-runtime'` in one
+   * module and `make(adapter)` in another is a second construction site that a
+   * one-hop import check cannot see, and the chain can be any length. There is
+   * no barrel over either factory in this tree, so every assertion above would
+   * pass with the whole fixpoint deleted — hence this, which drives it.
+   *
+   * The module *paths* below are real, because specifiers resolve against them;
+   * the sources are not. That keeps a two-hop chain testable without planting
+   * two files in `src/` and leaving them there.
+   */
+  it('follows a factory through a re-export chain, however long', () => {
+    const runtime = join(SRC_ROOT, 'runtime', 'app-runtime.ts');
+    const shell = join(SRC_ROOT, 'app', 'shell', 'AppShell.tsx');
+    const app = join(SRC_ROOT, 'app', 'App.tsx');
+    const module = (file: string, source: string): ParsedModule => ({
+      file,
+      parsed: parse(source, file),
+    });
+
+    // The far end of the chain is visited **first**, deliberately. One pass is
+    // enough whenever the modules happen to come in dependency order, and the
+    // order they really come in is whatever `readdirSync` returns — so a control
+    // written the easy way round passes with the fixpoint deleted. Measured:
+    // with these two swapped, cutting the loop to a single pass leaves this file
+    // green in two consecutive runs.
+    const chain = exportsReaching('createAgentRuntime', runtime, [
+      module(app, "export { make as build } from './shell/AppShell';\n"),
+      module(shell, "export { createAgentRuntime as make } from '@/runtime/app-runtime';\n"),
+    ]);
+    expect([...(chain.get(shell) ?? [])]).toEqual(['make']);
+    expect(
+      [...(chain.get(app) ?? [])],
+      'a two-hop chain needs the fixpoint; one pass reaches the first barrel only',
+    ).toEqual(['build']);
+
+    // `export *` carries it, a type-only re-export does not, and a name that is
+    // not the factory is not the factory.
+    const reaching = (target: string): ReadonlySet<string> | undefined =>
+      target === runtime ? new Set(['createAgentRuntime']) : undefined;
+    const names = (source: string): string[] =>
+      reExported(parse(source, shell), shell, reaching);
+    expect(names("export * from '@/runtime/app-runtime';\n")).toEqual(['createAgentRuntime']);
+    expect(names("export { createAgentRuntime } from '@/runtime/app-runtime';\n")).toEqual([
+      'createAgentRuntime',
+    ]);
+    expect(names("export type { createAgentRuntime } from '@/runtime/app-runtime';\n")).toEqual([]);
+    expect(names("export { other } from '@/runtime/app-runtime';\n")).toEqual([]);
+    expect(names("export { createAgentRuntime } from './AppShell.module.css';\n")).toEqual([]);
+    expect(names("// export { createAgentRuntime } from '@/runtime/app-runtime';\n")).toEqual([]);
   });
 
   it('names every exemption, and every exemption is still off the graph', () => {
@@ -1495,13 +2236,19 @@ describe('the renderer is wired into the product', () => {
     // A feature that built its own runtime would satisfy the walk above and
     // recreate the defect one level down: a second directory nothing else can
     // see, thrown away on every conversation switch.
-    const builders = shippingModules(SRC_ROOT)
-      .filter((file) => !file.startsWith(join(SRC_ROOT, 'runtime')))
-      .filter((file) => extname(file) !== '.css')
-      .filter((file) => /\bcreateAgentRuntime\s*\(/.test(readFileSync(file, 'utf8')))
-      .map(asRepoPath);
+    //
+    // The exclusion this replaced was the whole of `src/runtime/`, on the
+    // grounds that the factory lives there. Only its own module needs excusing,
+    // and the wider skip meant a second builder written next door to the first
+    // was the one place this assertion could not see.
+    const sites = constructionSites('createAgentRuntime', join(SRC_ROOT, 'runtime', 'app-runtime.ts'));
 
-    expect(builders, 'the runtime is built once, at the composition root').toEqual([
+    expect(
+      sites.escapes,
+      'the runtime factory is used here as a value rather than called; where it ' +
+        'is finally built is then invisible to this assertion',
+    ).toEqual([]);
+    expect(sites.builders, 'the runtime is built once, at the composition root').toEqual([
       'src/app/App.tsx',
     ]);
   });

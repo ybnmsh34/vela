@@ -1,0 +1,168 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: 100%;
+  /* A form of side-by-side fields, not prose: it keeps the width the reading
+     column used to have, and does not follow the reading measure down. */
+  max-width: var(--vela-panel-measure);
+  margin: 0 auto;
+  padding: var(--vela-space-5);
+}
+
+/* The panel takes the keyboard when it opens, because the menu item that opened
+   it unmounted itself in the act. It draws no ring: a ring around the whole
+   screen reads as a rendering fault, and the region announces itself by name. */
+.panel:focus {
+  outline: none;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.heading {
+  margin: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close,
+.add {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.add {
+  align-self: flex-start;
+}
+
+.close:hover,
+.add:hover {
+  background: var(--vela-row-hover);
+}
+
+.close:focus-visible,
+.add:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.muted,
+.backend {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-prose);
+}
+
+.backend code {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+}
+
+.error {
+  margin: 0;
+  padding: var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-danger-bg);
+  color: var(--vela-danger);
+  font-size: var(--vela-text-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-surface);
+}
+
+.rowHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+  flex-wrap: wrap;
+}
+
+.rowIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowName {
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.rowUrl {
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  word-break: break-all;
+}
+
+.rowModel {
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  flex-wrap: wrap;
+}
+
+.credentialState {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.rowButton,
+.rowDanger {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  background: transparent;
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.rowDanger {
+  color: var(--vela-danger);
+  border-color: var(--vela-danger);
+}
+
+.rowButton:focus-visible,
+.rowDanger:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}

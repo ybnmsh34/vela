@@ -1,0 +1,92 @@
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* `safe center`, declared after the plain keyword so an engine that does not
+     know the safety keyword still centres.
+     Read this together with `restingScrollTop` in `scroll.ts`, which is where
+     the 150%-display-scaling defect actually was: the transcript pinned itself
+     to the bottom on every commit, including the one that renders *this*, so on
+     a window too short for the empty state the mark was scrolled off the top on
+     first launch. That is fixed there, and measured by
+     tests/harness/production-bundle/drive-display-scaling.mjs.
+     This declaration is the neighbouring guarantee, and it is not the same one:
+     if this column is ever compressed rather than scrolled — a container with
+     `overflow: hidden`, a shorter parent — plain `center` distributes the
+     *negative* free space to both ends and puts the mark outside the box
+     entirely, where no scroll exists to reach it. `safe` centres until it
+     cannot, then aligns to start. */
+  justify-content: center;
+  justify-content: safe center;
+  /* Also viewport-aware: 3rem of air above and below is generous on a 780px
+     window and is a third of the content box on a 464px one. */
+  padding: min(var(--vela-space-7), 6vh) 0;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: var(--vela-mark-lg);
+  height: var(--vela-mark-lg);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-accent-quiet);
+  color: var(--vela-accent);
+  margin-bottom: var(--vela-space-5);
+}
+
+.title {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xl);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-tight);
+  color: var(--vela-text);
+}
+
+.lede {
+  margin: 0 0 var(--vela-space-6);
+  max-width: 40rem;
+  font-size: var(--vela-text-base);
+  line-height: var(--vela-leading-prose);
+  color: var(--vela-text-muted);
+}
+
+.capabilities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--vela-space-2) var(--vela-space-5);
+  width: 100%;
+}
+
+.capability {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-subtle);
+}
+
+.capability[data-available='true'] {
+  color: var(--vela-text);
+}
+
+.tick {
+  width: 1em;
+  color: var(--vela-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.capability[data-available='true'] .tick {
+  color: var(--vela-accent);
+}
+
+.note {
+  margin: var(--vela-space-5) 0 0;
+  max-width: 40rem;
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-prose);
+  color: var(--vela-text-subtle);
+}

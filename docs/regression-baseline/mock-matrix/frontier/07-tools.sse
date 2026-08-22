@@ -1,0 +1,40 @@
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_3137cf62","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"alp"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ha\","}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"uni"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"t\":\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"cels"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ius\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3137cf62","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

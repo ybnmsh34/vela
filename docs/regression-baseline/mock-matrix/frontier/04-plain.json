@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-mock-d0e7ae8c",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock frontier reply to: what is the weather in Berlin. zenith fathom north gauge beacon rudder umber jetty lantern pennant orbit meridian delta gauge quartz yardarm ivory fathom sextant jetty keel yardarm careful orbit.",
+        "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 86,
+    "total_tokens": 98
+  }
+}

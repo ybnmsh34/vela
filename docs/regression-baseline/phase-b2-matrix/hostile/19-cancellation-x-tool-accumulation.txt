@@ -1,0 +1,73 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 19-cancellation-x-tool-accumulation: the user pressing stop must not leave half a call executable, or run it twice
+================================================================================
+
+PURPOSE   Executor's pick. Cancellation and tool accumulation were each driven alone and never together — the same gap shape FINDING 3 sat in. A half-arrived call is a half-arrived call whether the MODEL truncated it or the USER did.
+SUBJECT   all three shipping adapters, plus the Router
+ENDPOINT  one purpose-built loopback peer per adapter that goes silent mid-batch, real TCP
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE TURN: a batch of parallel tool calls, streamed, with the socket falling silent
+  one third of the way through. The cancel token is fired 120 ms in — while a call is
+  demonstrably half accumulated.
+
+---- openai-compatible — what Vela produced --------------------------------
+  wall clock                             121.183083ms
+  outcome                                Cancelled
+  events the sink was handed             ["toolCallDelta", "toolCallDelta", "error"]
+
+---- openai-compatible — assertions ----------------------------------------
+  [PASS] openai-compatible: cancellation ends the turn promptly — no hang
+        121.183083ms
+  [PASS] openai-compatible: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
+        Some(Cancelled)
+  [PASS] openai-compatible: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint
+        Some(Cancelled)
+  [PASS] openai-compatible: the sink is never told the turn finished normally
+        3 event(s)
+
+---- anthropic — what Vela produced ----------------------------------------
+  wall clock                             121.692605ms
+  outcome                                Cancelled
+  events the sink was handed             ["toolCallDelta", "toolCallDelta", "toolCallDelta", "error"]
+
+---- anthropic — assertions ------------------------------------------------
+  [PASS] anthropic: cancellation ends the turn promptly — no hang
+        121.692605ms
+  [PASS] anthropic: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
+        Some(Cancelled)
+  [PASS] anthropic: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint
+        Some(Cancelled)
+  [PASS] anthropic: the sink is never told the turn finished normally
+        4 event(s)
+
+---- google — what Vela produced -------------------------------------------
+  wall clock                             121.404843ms
+  outcome                                Cancelled
+  events the sink was handed             ["toolCallDelta", "error"]
+
+---- google — assertions ---------------------------------------------------
+  [PASS] google: cancellation ends the turn promptly — no hang
+        121.404843ms
+  [PASS] google: the turn ends in Cancelled — NOT in a ChatResponse carrying half a call
+        Some(Cancelled)
+  [PASS] google: A CANCELLED TURN IS NOT FAILED OVER — the user's stop is not a reason to run the same tool call against a second endpoint
+        Some(Cancelled)
+  [PASS] google: the sink is never told the turn finished normally
+        2 event(s)
+
+---- the same cancellation, driven through the Router with a second candidate waiting 
+  A provider-level answer is not enough: the Router is what decides whether a failed
+  turn is re-sent. If cancellation reached the second candidate, the user's stop would
+  have STARTED a turn rather than ended one.
+  router outcome                         Cancelled
+  requests the SECOND candidate received 0
+  [PASS] THE SECOND CANDIDATE WAS NEVER CONTACTED — a cancelled turn is not sprayed at the next endpoint
+        0 request(s)
+  [PASS] the router reports the cancellation as a cancellation
+        Ok(Err(Cancelled))
+
+================================================================================
+VERDICT  14 assertion(s), 0 failure(s)
+================================================================================

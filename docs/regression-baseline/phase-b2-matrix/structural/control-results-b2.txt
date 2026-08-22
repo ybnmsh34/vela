@@ -1,0 +1,112 @@
+GATE M Part 1 (Phase B2) — EXECUTOR ASSERTION CONTROLS
+================================================================================
+
+Seven defects, injected ONE AT A TIME into a COPY of the tree under $TMPDIR, with
+the recorder re-run after each. The shared working tree is never modified — a
+concurrent session owns it, and this run has already lost work to a script that
+assumed otherwise.
+
+Each block names the defect, the assertion it is aimed at, what was expected, and
+what was observed. A defect that turns nothing red is reported as such: it means
+the assertion above it is not protecting what it claims to.
+
+--------------------------------------------------------------------------------
+BASELINE — the copy, unmodified
+--------------------------------------------------------------------------------
+  gate failures: 24
+  red cases:
+    16-reasoning-x-structured-output
+
+  This is the tree as committed. FINDING 4 (case 16) is red here and is red in
+  every block below; a reader attributing a defect to an injection must subtract
+  this line first.
+
+  recorder control lines captured for comparison: 39
+
+--------------------------------------------------------------------------------
+DEFECT 1 — the FINDING 3 quarantine removed from the answer channel
+--------------------------------------------------------------------------------
+  AIM        cases 14 and 15 — 'a call recovered from a never-closed <think> is NOT executable'
+  EXPECTED   cases 14, 15 and 20 go red — 20 because its second-bound arm salvages a call out of deliberation and so depends on the same quarantine
+  OBSERVED   gate failures: 88 (baseline 24)
+  red cases:
+    14-reasoning-meets-tool-calling
+    15-reasoning-x-tools-every-adapter
+    16-reasoning-x-structured-output
+    20-sibling-surfaces-x-endpoint-text
+  recorder CONTROL lines that changed: none
+
+--------------------------------------------------------------------------------
+DEFECT 2 — CANDIDATE FIX for FINDING 4 — extract_json stops scavenging a loose object
+--------------------------------------------------------------------------------
+  AIM        case 16 — 'the rejected value is not handed back as a conforming structured answer'
+  EXPECTED   case 16 goes GREEN. This is a POSITIVE control: it is the only block here that is not a defect, and it exists to show the finding's cause is where the report says it is — and to show what the naive fix costs elsewhere
+  OBSERVED   gate failures: 0 (baseline 24)
+  red cases:
+  recorder CONTROL lines that changed:
+    <   over answer_text()    Ok(Object {"celsius": Number(-273.15), "city": String("Atlantis")})   → FAIL
+    >   over answer_text()    Err(SchemaMismatch { path: "", detail: "the model returned prose, not JSON — the schema was ignored" })   → PASS
+
+--------------------------------------------------------------------------------
+DEFECT 3 — the raw-argument bound raised from 400 to 40000 characters
+--------------------------------------------------------------------------------
+  AIM        case 20 — 'the deliberate carry is BOUNDED'
+  EXPECTED   case 20 goes red on the arms whose payload exceeds 401 characters
+  OBSERVED   gate failures: 48 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+    20-sibling-surfaces-x-endpoint-text
+  recorder CONTROL lines that changed: none
+
+--------------------------------------------------------------------------------
+DEFECT 4 — the salvaged-call bound raised the same way, in the other place it lives
+--------------------------------------------------------------------------------
+  AIM        case 20 — the same assertion, reached through answer.rs rather than tool_accum.rs
+  EXPECTED   case 20 goes red; injected separately from DEFECT 3 because two bounds in two files is exactly the shape that let round 4's percent-encoding fix cover one binding of three
+  OBSERVED   gate failures: 28 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+    20-sibling-surfaces-x-endpoint-text
+  recorder CONTROL lines that changed: none
+
+--------------------------------------------------------------------------------
+DEFECT 5 — malformed frames counted but never reported
+--------------------------------------------------------------------------------
+  AIM        case 17 — 'the stream really did carry junk', the PREMISE of the whole case
+  EXPECTED   case 17's premise assertion goes red, and case 08's with it. A premise nobody can watch fail is not a premise
+  OBSERVED   gate failures: 29 (baseline 24)
+  red cases:
+    08-malformed-frames
+    16-reasoning-x-structured-output
+    17-tools-x-malformed-frames
+  recorder CONTROL lines that changed: none
+
+--------------------------------------------------------------------------------
+DEFECT 6 — a cancelled turn becomes failable-over
+--------------------------------------------------------------------------------
+  AIM        case 19 — 'THE SECOND CANDIDATE WAS NEVER CONTACTED'
+  EXPECTED   case 19 goes red — and the router arm is the one that matters, because that is where the user's stop would have STARTED a turn on a second endpoint
+  OBSERVED   gate failures: 36 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+    19-cancellation-x-tool-accumulation
+  recorder CONTROL lines that changed:
+    <   Cancelled             allows_failover=false   → PASS
+    >   Cancelled             allows_failover=true   → FAIL
+
+--------------------------------------------------------------------------------
+DEFECT 7 — the closed-vocabulary audit given the 'looks like an identifier' exemption
+--------------------------------------------------------------------------------
+  AIM        case 18 — 'NO ENDPOINT-DERIVED TEXT ON ANY ERROR SURFACE'
+  EXPECTED   control 15's BARE IDENTIFIER line flips from FAIL to PASS — the audit goes blind to exactly the leak diagnostic.rs's comment says this exemption would wave through. The gate count does NOT move, because B2 carries no endpoint text for the audit to miss; the control is the only place this is visible, which is why the control channel exists
+  OBSERVED   gate failures: 24 (baseline 24)
+  red cases:
+    16-reasoning-x-structured-output
+  recorder CONTROL lines that changed:
+    <   bare identifier leak  1 unexplained string(s): ["sk7Q2Xz9f3aDONOTLEAK"]   → FAIL
+    >   bare identifier leak  0 unexplained string(s): []   → PASS
+
+================================================================================
+Reproduce:  bash docs/regression-baseline/phase-b2-matrix/structural/controls-b2.sh
+The shared working tree is read, never written. Everything happens in $TMPDIR.
+================================================================================

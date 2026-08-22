@@ -1,0 +1,321 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Vela is offline-first and ships no telemetry. Keep the toolchains quiet too.
+  DO_NOT_TRACK: '1'
+
+jobs:
+  # Gate ordering is cheap -> expensive, so a syntax error never burns a full
+  # test matrix. `static` must pass before anything else runs.
+  #
+  # The draft guard matters here: this PR is long-running and accumulates
+  # in-flight commits from parallel build agents. A red run on half-written code
+  # is noise, not signal. CI stays quiet while the PR is a draft, then gates
+  # every push once it is marked ready for review.
+  static:
+    name: Static checks
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Clippy has to BUILD the dependency graph before it can lint a line, and
+      # that graph contains glib-sys, gtk-sys, soup3-sys, javascriptcore-rs-sys
+      # and webkit2gtk-sys — every one of which resolves its system library
+      # through pkg-config in a build script. Without these packages the job
+      # dies at `glib-sys`'s build script with "The system library `glib-2.0`
+      # ... was not found", having never reached Vela's own code. `test-rust`
+      # installed them; `static` did not, so the very first gate CI runs could
+      # not run at all. Reproduced locally by pointing PKG_CONFIG_LIBDIR at an
+      # empty directory, which is what a bare runner amounts to.
+      #
+      # Kept as its own step rather than folded into `test-rust`: gate ordering
+      # is cheap -> expensive on purpose, and clippy staying ahead of the test
+      # matrix is worth one apt install.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libssl-dev libsecret-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Rust formatting
+        run: cargo fmt --all --check
+        working-directory: src-tauri
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: src-tauri
+
+  test-ts:
+    name: Frontend and harness tests
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm test
+      - name: GATE M Part 1 — mock capability matrix
+        run: pnpm test:harness
+      - name: Frontend build
+        run: pnpm build
+
+      # The mock harness is deterministic by design, so a diff in the committed
+      # transcripts means real behaviour changed. This turns the GATE M evidence
+      # directory into a regression test rather than a static artifact.
+      #
+      # The check moved out of this file into a script, for the reason stated in
+      # `scripts/check-transcripts.sh`: while it lived here, `pnpm verify` could
+      # not run it, and a check builders cannot run locally is a check they
+      # discover by breaking. `pnpm verify` now invokes this same script.
+      - name: Mock transcripts are reproducible
+        run: ./scripts/check-transcripts.sh
+
+  test-rust:
+    name: Rust core tests
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri v2 needs webkit2gtk and friends. libsecret gives the `keyring`
+      # crate a backend to link against; note this only proves it LINKS, and is
+      # never evidence that OS credential storage works — that verdict belongs
+      # to the desktop session. See docs/desktop-gate/.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libssl-dev libsecret-1-dev
+
+      # The Rust provider tests start the mock-provider harness themselves —
+      # `vela-providers/tests/mock_matrix_live.rs` spawns
+      # `node tests/harness/mock-provider/src/cli.ts` per profile and drives it
+      # over real TCP. Node 22+ is required for its native TypeScript stripping,
+      # so it is pinned here rather than left to whatever the runner image ships.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: src-tauri
+      - name: Test workspace
+        run: cargo test --workspace --locked
+        working-directory: src-tauri
+
+  # THE PLATFORM VELA SHIPS ON.
+  #
+  # Every job above this one runs on Linux, and Vela is a Windows desktop
+  # application. That gap is not a theoretical risk; it is the single generator
+  # of the following defects, each of which passed CI and could not execute
+  # where the product runs:
+  #
+  #  - `chat-contract-parity.test.ts` split Rust source on `'\n'` and searched
+  #    for a line equal to `'}'`. On a Windows checkout every line ends `'}\r'`,
+  #    so 28 of its 31 cases threw and the parity `contract.ts` advertises had
+  #    never once executed here.
+  #  - `no-provider-leak.test.ts` keyed its carrier allowlist off
+  #    `path.split('/')`. Windows paths are backslashed, so the allowlist matched
+  #    nothing and the guard reported its own designated carrier.
+  #  - `handler_binding` and `gate_m_assembled_app` — the only tests that ask the
+  #    assembled `invoke_handler` what the app really answers — died at process
+  #    load with `STATUS_ENTRYPOINT_NOT_FOUND`, because cargo's test binaries
+  #    never got the Common-Controls manifest `vela.exe` carries.
+  #  - The `#[cfg(windows)]` half of every gated pair, including the one holding
+  #    the rule that a skill mount is a junction and never a symlink.
+  #  - Four `*_fixture_replay` controls that fail only when git rewrites the wire
+  #    captures on checkout. See `.gitattributes`.
+  #
+  # So this job exists to make a green run mean something on the platform users
+  # have. It is `needs: static` like the others, but it deliberately does NOT
+  # gate on the Linux test jobs: when the two disagree, that disagreement is the
+  # most valuable signal this file can produce, and serialising them would hide
+  # it behind whichever failed first.
+  #
+  # What it does not cover, stated so nobody reads a green tick as more than it
+  # is: `vela-sandbox`'s escape battery needs a WSL2 distribution, which a
+  # hosted runner does not have. Those tests skip themselves and say so
+  # (`sandbox_boundary.rs` prints `SKIPPED: no WSL distribution on this
+  # machine`). The isolation boundary is therefore still verified only on a real
+  # developer machine, and this job proves the rest of the crate compiles and
+  # its non-WSL half holds.
+  test-windows:
+    name: Windows — the platform this ships on
+    runs-on: windows-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Repeated here rather than inherited from `static`: these are the two
+      # checks that read source off disk and compare it, so they are exactly the
+      # ones a line-ending or path-separator difference breaks.
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+
+      # These two were missing while every other gate in `pnpm verify` was here,
+      # and `test:harness` was the one gate KNOWN to be red on Windows: two
+      # deterministic failures, `record-transcripts.test.ts` on a byte
+      # comparison against CRLF-translated `.json` captures, and `server.test.ts`
+      # on a 413 the client could not read because the server closed the socket
+      # abortively. A job whose stated purpose is to make a green run mean
+      # something on the shipping platform cannot skip the gate that is failing
+      # there; that is not a Windows job, it is a Windows job with the Windows
+      # part removed. Both defects are fixed, so both gates run here now.
+      #
+      # Wrapped, and ONLY here. Adding this gate to a Windows job also imports a
+      # crash that so far only shows up on Windows: about 14% of runs (9 in 64,
+      # and 5 in 32 and 1 in 16 on two other machines) die with
+      # `ERR_IPC_CHANNEL_CLOSED` from tinypool, inside vitest's own worker pool.
+      # The run does not fail — it STOPS. Typically only 7-8 of the 12 test files
+      # ever report, four or five are left unverified, and no `Tests N passed`
+      # summary is emitted at all. So the gate returns no verdict: not a red to
+      # be waved through, not a green either, and the only thing that produces a
+      # verdict is running it again. `scripts/ci-retry-vitest-crash.mjs` does
+      # exactly that and nothing else — it retries once, only on that signature,
+      # only when vitest reported no failing test, and prints a `::warning::`
+      # every time so the rate stays visible rather than being absorbed.
+      #
+      # "Reported no failing test" means the INLINE markers as well as the
+      # end-of-run summary. The first version of that check read only the
+      # summary, which the crash by definition prevents from ever being printed,
+      # so it would retry a run that had already printed a real regression and
+      # could turn it green. Read the header of that script before touching it.
+      #
+      # The bound it cannot exceed, stated so nobody over-reads a green: a
+      # DETERMINISTIC regression cannot survive this, because exiting 0 needs the
+      # second attempt to pass too. A NON-DETERMINISTIC one still can, and this
+      # suite has real TCP and multi-megabyte bodies in it, so that class is not
+      # hypothetical and is load-correlated with the crash itself.
+      #
+      # Deliberately not a general retry, and deliberately not applied to
+      # `pnpm verify` or to the Linux gate above. The trigger is NOT established
+      # as an upstream defect — the files it eats are consistently the heaviest,
+      # which points at resource pressure in our own harness. Find it and delete
+      # this wrapper; do not raise the attempt count.
+      - name: GATE M Part 1 — mock capability matrix
+        run: node scripts/ci-retry-vitest-crash.mjs pnpm test:harness
+      - name: Frontend build
+        run: pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # A separate key from the Linux jobs. Sharing one would let a Linux
+          # build's artifacts answer for a Windows run.
+          prefix-key: windows
+
+      # No apt step: WebView2 ships with the runner image, and the gtk/webkit
+      # stack the Linux jobs install is the Linux backend for the same thing.
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: src-tauri
+
+      # `--locked` on purpose. If a Windows-only dependency resolution differs,
+      # that is a finding, not something to paper over with a lockfile update.
+      - name: Test workspace
+        run: cargo test --workspace --locked
+        working-directory: src-tauri
+
+      # The captures under `docs/regression-baseline/` are compared byte for
+      # byte. On a checkout that rewrote their line endings this reports a
+      # behaviour change nobody made, which is precisely the failure
+      # `.gitattributes` now prevents — so running it here is how we find out if
+      # that protection ever stops working.
+      #
+      # Invoked as `pnpm test:transcripts` rather than as `./scripts/…` under
+      # `shell: bash`. Both run the same script; only this one runs it the way a
+      # Windows developer does. `shell: bash` hands the step to Git Bash, which
+      # is a shell no Windows developer's `pnpm verify` has: pnpm runs script
+      # bodies through `cmd.exe`, where `./scripts/check-transcripts.sh` is
+      # `'.' is not recognized as an internal or external command`. So this
+      # step passing under `shell: bash` proved the script and hid the fact that
+      # nobody on the shipping platform could reach it. `pnpm test:transcripts`
+      # goes through `scripts/run-bash.mjs`, which is the part that has to keep
+      # working. The Linux job still runs `./scripts/check-transcripts.sh`
+      # directly, so the script keeps its own unmediated coverage.
+      - name: Mock transcripts are reproducible
+        run: pnpm test:transcripts
+
+  # Failing this job means a secret reached the tree. It is deliberately crude
+  # and deliberately cheap: the real guarantee is that keys live only in the OS
+  # keychain, and this is the tripwire behind it.
+  #
+  # The scan used to live inline here and carried `':!docs/**'`, exempting the
+  # whole documentation tree — including the committed mock-provider transcripts,
+  # which are precisely the kind of file a real key gets pasted into. That
+  # exclusion is gone; `scripts/secret-scan.sh` scans everything. Two consequences
+  # worth stating: the scan now covers its own script and this workflow file (so
+  # a key shape can no longer hide in either), and the scanner has its own test
+  # suite, which plants real key shapes under `docs/` and proves they are caught.
+  # A tripwire nobody can run is a tripwire nobody tests.
+  secret-tripwire:
+    name: No secrets on disk
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      # `fetch-depth: 0` is not needed — the scan reads tracked files, not history.
+      - uses: actions/checkout@v4
+
+      # Runs first: if the scanner is broken, a clean result from it means
+      # nothing, so prove it still catches planted keys before trusting it.
+      - name: The tripwire still catches planted keys
+        run: ./scripts/secret-scan.test.sh
+
+      - name: Scan tracked files for credential material
+        run: ./scripts/secret-scan.sh

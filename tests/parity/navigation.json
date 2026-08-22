@@ -1,0 +1,178 @@
+{
+  "why": "Two rules the BrowserAdapter has to reimplement in order to behave like the host: how a conversation gets named from what was said in it, and how a search box's raw text becomes an FTS5 expression. Both are pure functions of a string, so a table of (input) -> (expected) pins them exactly. The Rust host is the specification; these expectations were produced by it.",
+  "maxTitleChars": 48,
+  "minWordBoundary": 24,
+  "untitledTitle": "New conversation",
+  "titleDerivation": [
+    {
+      "name": "plain-sentence",
+      "why": "the ordinary case: short enough to use verbatim",
+      "input": "Why is the night sky dark?",
+      "expect": "Why is the night sky dark?"
+    },
+    {
+      "name": "heading-lead-in",
+      "why": "a markdown heading is about its subject, not about its hashes",
+      "input": "## Why the sails matter\n\nbody text follows",
+      "expect": "Why the sails matter"
+    },
+    {
+      "name": "quote-lead-in",
+      "why": "a block quote's caret is punctuation, not content",
+      "input": "> quoted opener\nsecond line",
+      "expect": "quoted opener"
+    },
+    {
+      "name": "bullet-lead-in",
+      "why": "a list opener is a marker; the first item is the subject",
+      "input": "- first item\n- second item",
+      "expect": "first item"
+    },
+    {
+      "name": "ordered-lead-in",
+      "why": "`1. ` is a marker; `1` on its own would not be",
+      "input": "1. First point\n2. Second point",
+      "expect": "First point"
+    },
+    {
+      "name": "negative-number-is-not-a-bullet",
+      "why": "a lead-in needs the separating space, or -5 becomes 5 and the title lies",
+      "input": "-5 degrees today",
+      "expect": "-5 degrees today"
+    },
+    {
+      "name": "emphasis-is-not-a-bullet",
+      "why": "same rule from the other side: `*emphasis*` must keep its first character",
+      "input": "*emphasis* here",
+      "expect": "*emphasis* here"
+    },
+    {
+      "name": "horizontal-rule-is-skipped",
+      "why": "a rule strips to nothing, which correctly disqualifies the line",
+      "input": "---\nActual title here",
+      "expect": "Actual title here"
+    },
+    {
+      "name": "code-fence-is-skipped",
+      "why": "a fence names a language, not a subject",
+      "input": "```rust\nfn main() {}\n```",
+      "expect": "fn main() {}"
+    },
+    {
+      "name": "leading-blank-lines-are-skipped",
+      "why": "the first NON-BLANK line is the candidate",
+      "input": "\n\n   \nActual content",
+      "expect": "Actual content"
+    },
+    {
+      "name": "internal-whitespace-collapses",
+      "why": "tabs and runs of spaces must not survive into a single-line list row",
+      "input": "  lots    of\tspace  ",
+      "expect": "lots of space"
+    },
+    {
+      "name": "empty-input-derives-nothing",
+      "why": "null means `leave the placeholder alone`, never `store an empty title`",
+      "input": "",
+      "expect": null
+    },
+    {
+      "name": "whitespace-only-derives-nothing",
+      "why": "same, for a turn that carried no text at all",
+      "input": "   \n\n  ",
+      "expect": null
+    },
+    {
+      "name": "truncates-at-a-word-boundary",
+      "why": "a cut mid-word reads as a bug; a cut at a space reads as a summary",
+      "input": "The complete and unabridged history of celestial navigation in the southern hemisphere",
+      "expect": "The complete and unabridged history of…"
+    },
+    {
+      "name": "truncates-mid-word-when-there-is-no-boundary",
+      "why": "one long word must still yield a title rather than an empty string",
+      "input": "Antidisestablishmentarianismandmoreofitwithoutanyspacesatallhere",
+      "expect": "Antidisestablishmentarianismandmoreofitwithoutan…"
+    },
+    {
+      "name": "strips-trailing-punctuation-before-the-ellipsis",
+      "why": "`and,…` is noise; `and…` is a truncation",
+      "input": "Explain, in detail, the following points, and then, finally, summarise",
+      "expect": "Explain, in detail, the following points, and…"
+    },
+    {
+      "name": "counts-accented-characters-as-one-each",
+      "why": "Rust counts chars and JS must count code points, not UTF-16 units",
+      "input": "Comment analyser les données météorologiques françaises et européennes",
+      "expect": "Comment analyser les données météorologiques…"
+    },
+    {
+      "name": "counts-an-emoji-by-code-point",
+      "why": "the variation selector is its own code point on both sides, so the cut lands identically",
+      "input": "🛰️ satellite telemetry, then a very long tail that keeps going past the limit",
+      "expect": "🛰️ satellite telemetry, then a very long tail…"
+    }
+  ],
+  "searchQuery": [
+    {
+      "name": "single-term-is-prefix-matched",
+      "why": "results must narrow while the user is still typing the word",
+      "input": "sails",
+      "expect": "\"sails\"*"
+    },
+    {
+      "name": "terms-are-conjoined-and-only-the-last-is-a-prefix",
+      "why": "an earlier word the user finished typing is a whole word",
+      "input": "night sky",
+      "expect": "\"night\" AND \"sky\"*"
+    },
+    {
+      "name": "case-is-folded",
+      "why": "a search box is not case sensitive",
+      "input": "Night Sky",
+      "expect": "\"night\" AND \"sky\"*"
+    },
+    {
+      "name": "fts-syntax-the-user-typed-is-data-not-syntax",
+      "why": "an unbalanced quote is FTS5's problem, and must never become the user's",
+      "input": "\"the deal",
+      "expect": "\"the\" AND \"deal\"*"
+    },
+    {
+      "name": "punctuation-alone-asks-nothing-of-the-index",
+      "why": "null means `skip the content search`, not `error`",
+      "input": "  ...  ",
+      "expect": null
+    },
+    {
+      "name": "empty-asks-nothing-of-the-index",
+      "why": "same",
+      "input": "",
+      "expect": null
+    },
+    {
+      "name": "digits-are-terms",
+      "why": "`100%` is a search for 100, and the percent sign is a separator",
+      "input": "100%",
+      "expect": "\"100\"*"
+    },
+    {
+      "name": "a-hyphen-separates",
+      "why": "FTS tokenises on it too, so the rewrite must agree with the index",
+      "input": "a-b",
+      "expect": "\"a\" AND \"b\"*"
+    },
+    {
+      "name": "non-ascii-letters-are-alphanumeric",
+      "why": "the split is on the Unicode Alphabetic/Number properties, not on [a-z0-9]",
+      "input": "café au lait",
+      "expect": "\"café\" AND \"au\" AND \"lait\"*"
+    },
+    {
+      "name": "runs-of-separators-collapse",
+      "why": "empty terms would produce `\"\"` and an FTS error",
+      "input": "  spaced   out  ",
+      "expect": "\"spaced\" AND \"out\"*"
+    }
+  ]
+}

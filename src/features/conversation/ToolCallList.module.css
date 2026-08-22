@@ -1,0 +1,287 @@
+/* Quiet by default. A tool call is how the answer was reached, not the answer,
+   and only its *state* is allowed to carry colour — a card that shouts turns a
+   routine unreadable call into an incident. */
+
+.group {
+  margin: var(--vela-space-3) 0 0;
+}
+
+.summary {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  color: var(--vela-text-subtle);
+}
+
+.emulation {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-2);
+  margin: 0 0 var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-notice-bg);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+  color: var(--vela-text-muted);
+}
+
+.emulationTag {
+  flex: none;
+  padding: 0 var(--vela-space-2);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  color: var(--vela-text);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.card {
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface);
+}
+
+.headingReset {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  width: 100%;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-muted);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--vela-radius-md);
+}
+
+.toggle:hover {
+  color: var(--vela-text);
+}
+
+.toggle:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+/* A card with nothing to open: the same row, without the promise of a panel. */
+.static {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-muted);
+}
+
+.chevron {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: var(--vela-chevron-run) solid currentcolor;
+  border-top: var(--vela-chevron-rise) solid transparent;
+  border-bottom: var(--vela-chevron-rise) solid transparent;
+  transition: transform var(--vela-duration) var(--vela-ease);
+}
+
+.chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.name {
+  flex: none;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  color: var(--vela-text);
+  overflow-wrap: anywhere;
+}
+
+.state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vela-space-1);
+  padding: 0 var(--vela-space-2);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-muted);
+  white-space: nowrap;
+}
+
+.state[data-status='arriving'],
+.state[data-status='running'] {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.state[data-status='succeeded'] {
+  border-color: var(--vela-success);
+  color: var(--vela-success);
+}
+
+.state[data-status='failed'] {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}
+
+/* Amber, not red: unreadable is a thing models do, not a fault to alarm about. */
+.state[data-status='unreadable'] {
+  border-color: var(--vela-warning);
+  color: var(--vela-warning);
+}
+
+.pulse {
+  width: var(--vela-dot);
+  height: var(--vela-dot);
+  border-radius: var(--vela-radius-pill);
+  background: currentcolor;
+  animation: pulse 1.4s var(--vela-ease) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+.tag {
+  flex: none;
+  padding: 0 var(--vela-space-2);
+  border: 1px dashed var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+}
+
+.preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.body {
+  padding: 0 var(--vela-space-3) var(--vela-space-3);
+}
+
+.problem {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+  color: var(--vela-text-muted);
+}
+
+.label {
+  margin: var(--vela-space-2) 0 var(--vela-space-1);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  color: var(--vela-text-subtle);
+}
+
+.label:first-child {
+  margin-top: 0;
+}
+
+.block {
+  margin: 0;
+  padding: var(--vela-space-2);
+  overflow-x: auto;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+  color: var(--vela-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.block[data-raw='true'] {
+  border-style: dashed;
+}
+
+.block[data-error='true'] {
+  border-color: var(--vela-danger);
+  background: var(--vela-danger-bg);
+}
+
+.reveal {
+  appearance: none;
+  padding: var(--vela-space-1) var(--vela-space-2);
+  margin: 0;
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-muted);
+  cursor: pointer;
+}
+
+.reveal:hover {
+  color: var(--vela-text);
+  border-color: var(--vela-text-subtle);
+}
+
+.reveal:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+/* Only once the bytes are actually showing — a gap under a closed disclosure
+   reads as a rendering fault. */
+.reveal + .block:not([hidden]) {
+  margin-top: var(--vela-space-2);
+}
+
+.callId {
+  margin: var(--vela-space-2) 0 0;
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+.callId code {
+  font-family: var(--vela-font-mono);
+}

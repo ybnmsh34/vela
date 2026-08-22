@@ -1,0 +1,58 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : mid-local  (Mock Mid Local (32k, tools, <think>, no vision))
+  case      : 04-vision-image-input
+  endpoint  : http://127.0.0.1:8102   (a separate `node cli.ts --profile mid-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:37Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### a message containing an image_url content part
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8102/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8102
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 179
+0094: 
+=> Send data, 179 bytes (0xb3)
+0000: {"messages":[{"role":"user","content":[{"type":"text","text":"wh
+0040: at is in this image"},{"type":"image_url","image_url":{"url":"da
+0080: ta:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="}}]}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 181
+Date: Wed, 12 Aug 2026 20:04:37 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (181 bytes) ---
+{
+  "error": {
+    "message": "`mock-mid-local` does not support image input",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "vision_not_supported"
+  }
+}
+--- end of body ---
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  EXPLICIT DEGRADATION: image input is refused with 400; observed 400
+PASS  the refusal carries the code vision_not_supported
+PASS  the refusal names the failing parameter (messages)
+PASS  no answer text is fabricated alongside the refusal

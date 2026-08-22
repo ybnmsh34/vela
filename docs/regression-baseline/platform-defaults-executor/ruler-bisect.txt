@@ -1,0 +1,12 @@
+
+== SHIPPING — `scrollbar-gutter: stable both-edges` (landed at 0f83c71) ==
+  C29a  wide   : PASS  text 720–1200 (480px), composer 720–1200 (480px)
+  C29b  narrow : FAIL  text 388–844 (456px), composer 376–856 (480px)
+  C30   both   : FAIL  1440px → sidebar 480px, column 480px; 880px → sidebar 352px, column 456px
+
+== WITHOUT the gutter — the declaration removed from the built CSS ==
+  C29a  wide   : PASS  text 720–1200 (480px), composer 720–1200 (480px)
+  C29b  narrow : PASS  text 376–856 (480px), composer 376–856 (480px)
+  C30   both   : PASS  1440px → sidebar 480px, column 480px; 880px → sidebar 352px, column 480px
+
+At least one variant broke the ruler — compare the two blocks above.

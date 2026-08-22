@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.harness.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    /* Same strictness as the app. Test infrastructure that lies about its own
+       types cannot be trusted to prove anything about the app. */
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* The harness runs under `node --experimental-strip-types` with no build
+       step, so its relative imports carry explicit `.ts` extensions. */
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  /* The UI-matrix bridge's browser half is React + DOM, not Node, so it is
+     checked by tsconfig.uibridge.json instead. Its Node half is .mjs, which no
+     project picks up. */
+  "include": ["tests/harness"],
+  "exclude": ["tests/harness/ui-bridge"]
+}

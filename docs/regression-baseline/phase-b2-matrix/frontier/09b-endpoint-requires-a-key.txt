@@ -1,0 +1,49 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 09b-endpoint-requires-a-key: an endpoint that demands a credential
+================================================================================
+
+PURPOSE   The 401 must arrive as an auth failure and must never be sprayed at other backends.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the exchange ------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:37013/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (87 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-frontier","stream":false}
+      <<< HTTP 401
+      content-type: application/json; charset=utf-8
+      --- response body (150 bytes, read to end) ---
+      {
+        "error": {
+          "message": "incorrect API key provided",
+          "type": "authentication_error",
+          "param": null,
+          "code": "invalid_api_key"
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  outcome                                Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+
+---- assertions --------------------------------------------------------------
+  [PASS] a 401 is normalised to AuthFailed, not a generic transport error
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+  [PASS] an auth failure is never retried and never failed over
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+  [PASS] no upstream BODY text escapes into the error
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+  [PASS] STRONGER: every string in the error's serde shape is drawn from Vela's own closed vocabulary — nothing on the wire reached it in any spelling
+        0 unexplained strings
+  [PASS] the HTTP status IS carried, as a typed u16 — the diagnostic B2 chose to keep
+        Err(AuthFailed { diagnosis: Diagnosis { cause: CredentialRejected, status: Some(401), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:37013", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(133) } })
+
+================================================================================
+VERDICT  5 assertion(s), 0 failure(s)
+================================================================================

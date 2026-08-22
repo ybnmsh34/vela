@@ -1,0 +1,46 @@
+================================================================================
+GATE M Part 1 (Phase B) round 3 — EXECUTOR ASSERTION CONTROLS
+================================================================================
+
+Each defect below is re-introduced into src/http.rs and the suites re-run.
+An assertion that cannot go red is not an assertion. A control that PASSES
+here means the suite FAILED as it was supposed to.
+
+---- BASELINE (the tree as it stands) ------------------------------------
+  zz_gate_m_round3_executor_probe    5 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+  finding_two_recipe                 4 passed; 0 failed
+  credential_canary                  8 passed; 0 failed
+  compile probes                     all rejected
+
+---- DEFECT 1 — next_chunk hands bytes back unmodified (FINDING 2) -------
+  the round-2 streaming path, restored verbatim: the scrub is skipped
+  zz_gate_m_round3_executor_probe    3 passed; 2 failed
+      a_decorator_that_forwards_nothing_and_lies_about_its_origin_changes_nothing
+      what_the_decorator_itself_saw
+  streamed_credential_canary         12 passed; 3 failed
+      a_new_body_that_forwards_nothing_still_cannot_leak_the_credential
+      positive_control_a_credential_split_across_two_chunks_leaks
+      positive_control_the_pre_fix_streamed_read_leaks
+  finding_two_recipe                 4 passed; 0 failed
+  credential_canary                  8 passed; 0 failed
+
+---- DEFECT 2 — the endpoint is deleted from transport errors ------------
+  round 2's over-redaction: without_url() and nothing re-attached
+  zz_gate_m_round3_executor_probe    4 passed; 1 failed
+      three_configured_candidates_produce_three_distinguishable_errors
+  streamed_credential_canary         14 passed; 1 failed
+      transport_failures_still_name_the_endpoint_they_failed_on
+  finding_two_recipe                 4 passed; 0 failed
+  credential_canary                  8 passed; 0 failed
+
+---- DEFECT 3 — the sealed stream is unsealed (structural claim only) ----
+  BodyStream::inner made public: a decorator can read around the scrubber
+  compile probes                     A PROBE COMPILED — the probe caught it
+      probe-03-private-field COMPILED (correctly detected)
+
+---- tree restored -------------------------------------------------------
+  zz_gate_m_round3_executor_probe    5 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+  finding_two_recipe                 4 passed; 0 failed
+  credential_canary                  8 passed; 0 failed

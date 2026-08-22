@@ -1,0 +1,125 @@
+Focus ownership on real WebView2 (Runtime 151.0.4129.78, Windows 11 26200)
+Verifying the fix at 81b1b12. Cloud observed focus dropping to <body> at four
+moments, needing 7-11 Tab presses to recover. Keys via CDP Input.dispatchKeyEvent.
+
+== A. Escape out of the command bar ==
+   opened, focus    : 'input :: Go to conversation'
+   focus after      : 'textarea :: Send a message…'
+   dropped to body? : False
+   tabs to recover  : 0
+
+== B. Committing an F2 rename ==
+   focused a sidebar row: 'button :: New conversation\n⌘N'
+   after F2         : 'button :: New conversation\n⌘N'
+   F2 did not open a rename field — cannot test this moment
+
+== C. Confirming a delete ==
+   focused
+   delete dialog open: False, focus 'button :: New conversation\n⌘N'
+   Delete key did not open a confirmation — trying the row's own control is out of scope here
+
+== B/C RETRY — the first attempt focused the sidebar's New-conversation BUTTON,
+   not a conversation ROW, so F2 and Delete had nothing to act on. ==
+
+-- B. F2 rename --
+   {'__error__': 'SyntaxError: Invalid regular expression: missing /'}
+   after F2         : 'button :: New conversation\n⌘N'
+   F2 opened no rename field on a focused row
+
+-- C. Delete + confirm --
+   {'__error__': 'SyntaxError: Invalid regular expression: missing /'}
+   confirmation open: False | focus 'button :: New conversation\n⌘N'
+   Delete key opened no confirmation on a focused row
+
+-- B. F2 rename (retry with plain string matching) --
+   focused row: New conversation
+Nothing said yet
+   focus now        : 'button :: New conversation\nNothing said yet'
+   after F2         : 'input :: Rename New conversation'
+   focus after      : 'input :: Rename New conversation'
+   dropped to body? : False
+   tabs to recover  : 0
+
+-- C. Delete + confirm --
+   focused row: New conversation
+Nothing said yet
+   confirmation open: False | focus 'button :: Cancel'
+   -> Delete opened no confirmation
+
+== B/C FINAL — note the delete confirmation is NOT [role=dialog]; detecting it by its buttons ==
+   state now        : 'button :: Cancel'
+   after Escape from rename: 'button :: New conversation\nNothing said yet'
+
+-- B. F2 rename, committed with Enter --
+   focus after      : 'input :: Rename New conversation'
+   dropped to body? : False
+   tabs to recover  : 0
+   rename committed?: False
+
+-- C. Delete + confirm (detect by buttons) --
+   confirmation buttons present: [] | focus 'input :: Rename New conversation'
+
+== SUMMARY, with limits stated ==
+
+VERIFIED FIXED on WebView2:
+  * Escape out of the command bar returns focus to the composer textarea.
+    Not <body>, 0 Tab presses to recover. The cloud observed 11 Tabs before
+    81b1b12; that moment is genuinely fixed on Windows.
+
+VERIFIED GOOD:
+  * F2 on a focused conversation row opens an inline rename field and puts
+    focus in it.
+  * Pressing Delete on a focused row raises a confirmation whose initial focus
+    is the SAFE button (Cancel), not the destructive one. Note this dialog is
+    NOT [role=dialog], so a generic dialog probe misses it -- detect it by its
+    buttons.
+
+NOT VERIFIED -- do not read these as pass or fail:
+  * Focus after COMMITTING an F2 rename, and focus after CONFIRMING a delete.
+    Driving these needs a committed rename, and Enter dispatched through CDP
+    into the rename field did not commit it (the row text was unchanged and
+    focus stayed in the input). That is equally consistent with "Enter does not
+    commit" and with "a synthetic value-set plus Enter does not register with
+    the controlled React input", and the evidence here cannot separate the two.
+    Real OS keystrokes would settle it, but this machine's IME host
+    intermittently steals foreground (see interaction-battery.txt section 9b).
+    These two of the cloud's four moments therefore remain OPEN.
+
+== RETEST with the critic's fix: Enter dispatched WITH text='' ==
+   The critic identified that a text-less keyDown is rawKeyDown only, so no
+   keypress fires and implicit form submission never runs. Testing that.
+
+   no rows
+   after F2        : "body :: Hmmm… can't reach this page\n\nlocalhost refuse"
+   F2 did not open the rename field
+
+== CLOSING THE TWO OPEN MOMENTS — release build, Enter dispatched WITH text ==
+   The interaction critic identified that a text-less keyDown is rawKeyDown only,
+   so no keypress fires and implicit form submission never runs. Applying its fix.
+
+-- MOMENT: committing an F2 rename --
+    focused
+   after F2         : 'input :: Rename New conversation'
+   rename committed  : True   <-- critic predicted True
+   focus after commit: 'button :: RENAME COMMIT PROOF\n4 messages'
+   dropped to body?  : False
+
+-- MOMENT: confirming a delete --
+    focused
+   confirmation buttons: ["Cancel", "Delete"] | focus: 'button :: Cancel'
+   row deleted       : True
+   focus after confirm: 'button :: Start a conversation'
+   dropped to body?  : False
+
+-- MOMENT 4: dismissing the model switcher by CHOOSING a model --
+   switcher trigger: 'Local llama.cpp · unsloth/Qwen3.6-27B-GG'
+   popover options : ["unsloth/Qwen3.6-27B-GGUF:Q5_K_M\nLocal ll"]
+   focus in popover: 'button :: Local llama.cpp · unsloth/Qwen3.6-27B-GGUF:Q5'
+   after CHOOSING a model:
+     focus            : 'button :: Local llama.cpp · unsloth/Qwen3.6-27B-GGUF:Q5'
+     dropped to body? : False
+
+== ALL FOUR MOMENTS, FINAL ==
+  1 Escape out of the command bar : FIXED (focus -> composer, 0 tabs)
+  2 Committing an F2 rename       : FIXED (focus -> the renamed row)
+  3 Confirming a delete           : FIXED (focus -> Start a conversation)

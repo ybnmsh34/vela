@@ -1,0 +1,35 @@
+{
+  "credentialBackend": "memory-fake",
+  "providers": [
+    {
+      "auth": {
+        "type": "none"
+      },
+      "authMode": {
+        "type": "none"
+      },
+      "authRequirement": "notRequired",
+      "baseUrl": "http://127.0.0.1:45741/v1",
+      "credentialCheck": "satisfiedWithoutCredential",
+      "credentialFieldLabel": null,
+      "credentialPresent": false,
+      "displayName": "Capability matrix endpoint",
+      "id": "matrix",
+      "kind": "local",
+      "modelId": "mock-mid-local",
+      "security": {
+        "concerns": [],
+        "credentialInQueryString": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "leavesDevice": false,
+        "level": "none",
+        "scope": "loopback",
+        "trafficIsPlaintext": true
+      },
+      "usable": true
+    }
+  ],
+  "telemetryEnabled": false,
+  "theme": "system"
+}

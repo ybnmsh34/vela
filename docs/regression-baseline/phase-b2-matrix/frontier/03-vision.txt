@@ -1,0 +1,96 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 03-vision: image input
+================================================================================
+
+PURPOSE   Vision where the endpoint has it. Where it does not: the affordance must be absent, and an image must be refused explicitly.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- an image sent to a provider whose capabilities are known ----------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36089/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (207 bytes) ---
+      {"messages":[{"content":[{"text":"what is in this image?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgo="},"type":"image_url"}],"role":"user"}],"model":"mock-frontier","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (739 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-86746035",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge.",
+              "reasoning_content": "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 95,
+          "completion_tokens": 84,
+          "total_tokens": 179
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer                                 "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge."
+  probed vision support                  Supported
+  UI vision affordance                   true
+  requests actually sent                 1
+  wall clock                             2.211612ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] vision is offered and an image is answered
+        Ok("Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge.")
+
+---- the same image before any probe has run ---------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36089/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (207 bytes) ---
+      {"messages":[{"content":[{"text":"what is in this image?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgo="},"type":"image_url"}],"role":"user"}],"model":"mock-frontier","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (739 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-86746035",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge.",
+              "reasoning_content": "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 95,
+          "completion_tokens": 84,
+          "total_tokens": 179
+        }
+      }
+  outcome                                Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [], salvaged_answer: None })
+  [PASS] an unprobed vision endpoint answers
+        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about what is in this image?. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "Mock frontier reply to: what is in this image?. windward careful ivory north lantern meridian keel rudder pennant keel quartz zenith harbor lantern tiller rudder ember delta keel jetty yardarm windward umber gauge." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(95), output_tokens: Some(84), reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [], salvaged_answer: None })
+
+================================================================================
+VERDICT  2 assertion(s), 0 failure(s)
+================================================================================

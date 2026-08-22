@@ -1,0 +1,142 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: frontier — case 04-structured-output: structured output
+================================================================================
+
+PURPOSE   MEASURED-5: three of four profiles answer 200 with prose and say nothing. Vela must never hand that back as if it conformed.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- a json_schema request, non-streaming ------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:36089/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (332 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-frontier","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (569 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-b99d3379",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"celsius\":69,\"city\":\"eastward\"}",
+              "reasoning_content": "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 14,
+          "completion_tokens": 39,
+          "total_tokens": 53
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  answer text                            "{\"celsius\":69,\"city\":\"eastward\"}"
+  structured verdict                     Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+  degradations                           (none)
+  wall clock                             2.005548ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] a structured request always comes back with an explicit verdict
+        Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+  [PASS] an endpoint that honours the schema returns validated JSON
+        Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+
+---- the same request, STREAMED, on a provider that has learned nothing yet --
+
+  >>> exchange 1 — POST http://127.0.0.1:36089/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (371 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-frontier","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (2477 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about give me th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"{\"celsius\":69,\"c"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ity\":\"eastward\"}"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-b99d3379","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":14,"completion_tokens":39,"total_tokens":53}}
+      
+      data: [DONE]
+      
+  answer text                            "{\"celsius\":69,\"city\":\"eastward\"}"
+  structured verdict                     Some(Ok(Object {"celsius": Number(69), "city": String("eastward")}))
+  degradations                           (none)
+  [PASS] the streaming path validates structured output as well
+        Ok(Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})))
+
+---- the same request under StructuredOutputPolicy::Refuse, after probing ----
+
+  >>> exchange 1 — POST http://127.0.0.1:36089/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (332 bytes) ---
+      {"messages":[{"content":"give me the weather in Berlin as JSON","role":"user"}],"model":"mock-frontier","response_format":{"json_schema":{"name":"weather","schema":{"properties":{"celsius":{"type":"number"},"city":{"type":"string"}},"required":["city","celsius"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (569 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-b99d3379",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-frontier",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"celsius\":69,\"city\":\"eastward\"}",
+              "reasoning_content": "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 14,
+          "completion_tokens": 39,
+          "total_tokens": 53
+        }
+      }
+  probe verdict                          Ok(Supported)
+  outcome                                Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "{\"celsius\":69,\"city\":\"eastward\"}" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(14), output_tokens: Some(39), reasoning_tokens: None, cached_input_tokens: None }, structured: Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})), degradations: [], salvaged_answer: None })
+  [PASS] refusal is a capability decision, not a blanket ban
+        Ok(ChatResponse { parts: [Reasoning { text: "Considering the request about give me the weather in Berlin. Profile frontier has a 200000-token window. Answering directly.", signature: None, redacted: false }, Text { text: "{\"celsius\":69,\"city\":\"eastward\"}" }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: Some(14), output_tokens: Some(39), reasoning_tokens: None, cached_input_tokens: None }, structured: Some(Ok(Object {"celsius": Number(69), "city": String("eastward")})), degradations: [], salvaged_answer: None })
+
+================================================================================
+VERDICT  4 assertion(s), 0 failure(s)
+================================================================================

@@ -1,0 +1,51 @@
+RULER REGRESSION — real WebView2, Windows 11 (classic, space-taking scrollbars)
+Sidebar driven to its MAXIMUM via the separator's own keyboard path, as asked.
+
+sidebar now: {"width":336,"ariaNow":"480"}
+
+=== window 1400px (cssW=1384) ===
+{
+ "textLeft": 692,
+ "textRight": 1172,
+ "textWidth": 480,
+ "fieldLeft": 692,
+ "fieldRight": 1172,
+ "fieldWidth": 480,
+ "scrollerReserve": 24,
+ "gutter": "stable both-edges",
+ "leftDelta": 0,
+ "rightDelta": 0,
+ "widthDelta": 0,
+ "sidebar": 480
+}
+
+=== window 880px (cssW=864) ===
+{
+ "textLeft": 372,
+ "textRight": 828,
+ "textWidth": 456,
+ "fieldLeft": 360,
+ "fieldRight": 840,
+ "fieldWidth": 480,
+ "scrollerReserve": 24,
+ "gutter": "stable both-edges",
+ "leftDelta": -12,
+ "rightDelta": 12,
+ "widthDelta": 24,
+ "sidebar": 336
+}
+
+
+== ITEM 2: endpoints-form placeholder colour, WebView2, DARK theme ==
+  open endpoints form: ok | heading: Endpoints
+  placeholders found: []
+
+  UA-resolved ::placeholder colour (WebView2) and the fill behind it:
+no placeholder input on screen
+  (re-run: the form opens behind 'Add an endpoint')
+  placeholders now: ["The workstation in the study","study-box","http://127.0.0.1:8080/v1"]
+  measured: {"placeholderColor":"rgb(117, 117, 117)","inputBg":"rgb(16, 20, 38)","placeholder":"The workstation in the study"}
+  placeholder rgb(117, 117, 117) on rgb(16, 20, 38)
+  CONTRAST RATIO: 3.96:1   (AA body text needs 4.5:1)
+  AA pass: False
+  captured endpoints-form-dark.png                      1400 x 900   124921 bytes

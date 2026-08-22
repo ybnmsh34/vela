@@ -1,0 +1,417 @@
+{
+  "profile": {
+    "name": "mid-local",
+    "modelId": "mock-mid-local",
+    "displayName": "Mock Mid Local (32k, tools, <think>, no vision)",
+    "contextWindow": 32768,
+    "toolCalling": "native",
+    "unsupportedToolsBehaviour": "reject",
+    "vision": false,
+    "structuredOutput": "ignored",
+    "reasoning": "think-tags",
+    "modelListing": true,
+    "emitDoneSentinel": true,
+    "emitMalformedSseFrames": false,
+    "streamUsage": true,
+    "replyWordCount": 16
+  },
+  "captures": [
+    {
+      "file": "01-health.json",
+      "method": "GET",
+      "path": "/health",
+      "what": "liveness probe",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 144,
+      "requestBody": null
+    },
+    {
+      "file": "02-props.json",
+      "method": "GET",
+      "path": "/props",
+      "what": "server properties, including n_ctx",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 583,
+      "requestBody": null
+    },
+    {
+      "file": "03-models.json",
+      "method": "GET",
+      "path": "/v1/models",
+      "what": "model listing",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 174,
+      "requestBody": null
+    },
+    {
+      "file": "04-plain.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "plain question, non-streaming",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 674,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ]
+      }
+    },
+    {
+      "file": "05-plain.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "the same question, streamed, with usage requested",
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bytes": 4788,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    },
+    {
+      "file": "06-tools.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "one tool offered, non-streaming",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 658,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "file": "07-tools.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "one tool offered, streamed",
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bytes": 2770,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ],
+        "stream": true
+      }
+    },
+    {
+      "file": "08-vision.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "an image input part",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 181,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "what is in this image"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "file": "09-structured-output.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "response_format: json_schema",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 681,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "weather_answer",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "celsius": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "city",
+                "celsius"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file": "10-context-overflow.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "a prompt just over the 32768-token window",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 271,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… <131136 chars total, elided>"
+          }
+        ]
+      }
+    },
+    {
+      "file": "11-max-tokens.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "max_tokens: 2, forcing truncation",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 384,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "max_tokens": 2
+      }
+    },
+    {
+      "file": "12-unknown-model.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "a model id this endpoint does not serve",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 200,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin"
+          }
+        ],
+        "model": "gpt-4o"
+      }
+    },
+    {
+      "file": "13-tools-parallel.json",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "two tools offered, parallel calls, non-streaming (no index field anywhere)",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 887,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin and what time is it there"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "get_local_time",
+              "description": "Look up the local time.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timezone"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "file": "14-tools-parallel.sse",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "what": "the same parallel answer, streamed as index-keyed fragments",
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "bytes": 4228,
+      "requestBody": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "what is the weather in Berlin and what time is it there"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Look up the weather.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "enum": [
+                      "celsius",
+                      "fahrenheit"
+                    ]
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "get_local_time",
+              "description": "Look up the local time.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timezone"
+                ]
+              }
+            }
+          }
+        ],
+        "stream": true
+      }
+    }
+  ]
+}

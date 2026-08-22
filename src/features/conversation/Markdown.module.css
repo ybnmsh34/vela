@@ -1,0 +1,297 @@
+.prose {
+  font-size: var(--vela-text-base);
+  line-height: var(--vela-leading-prose);
+  color: var(--vela-text);
+  overflow-wrap: anywhere;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* No `white-space: pre-wrap`, and that absence is the fix.
+   `markdown-parser.ts` now reflows soft-wrapped lines and emits an explicit
+   `<br>` for a hard break, so the model's seventy-column source no longer
+   decides where the reader's lines end. `text-wrap: pretty` asks the engine to
+   even out the rag and avoid a one-word last line; engines that do not know it
+   ignore it and set the paragraph the ordinary way. */
+.paragraph {
+  margin: 0 0 var(--vela-space-3);
+  text-wrap: pretty;
+}
+
+/* ---- the heading scale --------------------------------------------------- *
+ * Six levels, and every one of them used to be `--vela-text-lg`. A six-level
+ * document rendered as a flat one: no way to tell a section from a
+ * sub-sub-section, which on a long answer is the difference between something
+ * you can skim and a wall.
+ *
+ * The first repair fixed levels 1–3 and left 4–6 where the *interface* scale
+ * happened to put them: `h4` at body size, `h5` and `h6` **smaller than the
+ * prose they head**. A heading set smaller than its own paragraphs is not a
+ * quiet heading, it is a caption. And all six sat at `--vela-weight-semibold`
+ * while an unclassed `<strong>` inherits the user agent's 700, so `**a bold
+ * run**` in a paragraph outranked every heading below `h3`: the document's own
+ * emphasis outweighed the document's own structure.
+ *
+ * The rule now: **no heading is smaller than body text, and no heading is
+ * lighter than emphasis.** Four sizes sit at or above body text, and four sizes
+ * cannot express six levels — steps fine enough to try would be steps nobody
+ * can see — so levels that share a size are separated by colour and case
+ * instead. One device changes per step, which is how a type scale is supposed
+ * to work anyway:
+ *
+ *     1  xl                     2  lg                3  md
+ *     4  base                   5  base + muted      6  base + muted + caps
+ *
+ * The *rhythm* is half of it: space above a heading binds it to what follows
+ * and separates it from what came before. Equal margins on every level make a
+ * document read as one long list of equals no matter what the sizes say.       */
+.heading {
+  margin: var(--vela-space-5) 0 var(--vela-space-2);
+  font-size: var(--vela-text-base);
+  /* One step above `strong`. Not decoration — this is the comparison that
+     decides whether structure or emphasis is the loudest thing on the line. */
+  font-weight: var(--vela-weight-bold);
+  line-height: var(--vela-leading-tight);
+  letter-spacing: var(--vela-tracking-tight);
+  color: var(--vela-text);
+  text-wrap: balance;
+}
+
+.heading[data-level='1'] {
+  margin-top: var(--vela-space-6);
+  font-size: var(--vela-text-xl);
+}
+
+.heading[data-level='2'] {
+  margin-top: var(--vela-space-6);
+  font-size: var(--vela-text-lg);
+}
+
+.heading[data-level='3'] {
+  font-size: var(--vela-text-md);
+}
+
+.heading[data-level='4'] {
+  font-size: var(--vela-text-base);
+}
+
+/* From here down the levels are too rare to justify a size step and too real to
+   flatten. Colour first, then case. */
+.heading[data-level='5'] {
+  margin-top: var(--vela-space-4);
+  font-size: var(--vela-text-base);
+  color: var(--vela-text-muted);
+}
+
+/* The deepest level stops being a heading-by-size and becomes a label. It is
+   the only one that could otherwise be mistaken for the level above it. */
+.heading[data-level='6'] {
+  margin-top: var(--vela-space-4);
+  font-size: var(--vela-text-base);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+  color: var(--vela-text-muted);
+}
+
+/* A heading that opens a section should not also be pushed away from the text
+   under it, and two headings in a row are one unit, not two. */
+.heading + .heading {
+  margin-top: var(--vela-space-3);
+}
+
+/* ---- emphasis, ranked below structure ------------------------------------ *
+ * `Markdown.tsx` renders `<strong>` as the element with no class, on purpose —
+ * the parser decides what is emphasised, not the stylesheet. That left it on
+ * the user agent's 700, one step *above* every heading below `h3`, so a phrase
+ * somebody bolded in passing read as more structural than the section it was
+ * in. Emphasis is `semibold`; headings are `bold`; the gap is the ranking.      */
+.prose strong {
+  font-weight: var(--vela-weight-semibold);
+}
+
+/* The same correction pointed the other way. Inside a heading, `## a **bold**
+   word` must not set that one word lighter than the rest of its own line. */
+.heading strong {
+  font-weight: inherit;
+}
+
+.list {
+  margin: 0 0 var(--vela-space-3);
+  padding-left: var(--vela-space-5);
+}
+
+.item {
+  margin: var(--vela-space-1) 0;
+  padding-left: var(--vela-space-1);
+}
+
+/* The marker is punctuation, not content: at full text colour a column of
+   bullets reads as loud as the words beside it. */
+.item::marker {
+  color: var(--vela-text-subtle);
+}
+
+.item > .list {
+  margin-top: var(--vela-space-1);
+  margin-bottom: 0;
+}
+
+/* A paragraph inside a list item is still a list item, so it does not get the
+   full inter-paragraph gap — only the gap between an item's own paragraphs. */
+.item > .paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.quote {
+  margin: 0 0 var(--vela-space-3);
+  padding: var(--vela-space-2) 0 var(--vela-space-2) var(--vela-space-4);
+  border-left: 2px solid var(--vela-accent);
+  color: var(--vela-text-muted);
+}
+
+.quote > :last-child {
+  margin-bottom: 0;
+}
+
+.rule {
+  margin: var(--vela-space-5) 0;
+  border: 0;
+  border-top: 1px solid var(--vela-border);
+}
+
+/* Sized in `em` against whatever it is embedded in, so `` `--jinja` `` in an h2
+   is an h2-sized piece of code. Monospace sets tighter than the proportional
+   face beside it and needs the tracking step back; `CodeBlock.module.css` makes
+   the same correction, from the same token. */
+.inlineCode {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-inline);
+  letter-spacing: var(--vela-tracking-code);
+  padding: 0.1em 0.35em;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+  border: 1px solid var(--vela-border);
+}
+
+/* A heading is already semibold, so code inside one must not double up into a
+   heavier weight than the words around it. */
+.heading .inlineCode {
+  font-weight: inherit;
+}
+
+.link {
+  color: var(--vela-accent);
+  text-underline-offset: 0.15em;
+}
+
+.link:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+  border-radius: var(--vela-radius-sm);
+}
+
+/* Tables are not prose and are not bound by the reading measure. On a wide
+   window this is where the extra space actually pays off — a table cramped into
+   a 480px column is the thing that suffers most, and widening it costs the
+   reader nothing because nobody reads a table line by line. */
+.tableWrap {
+  margin: 0 0 var(--vela-space-3);
+  overflow-x: auto;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+}
+
+/* Same breakout as the code block, and for the same reason: `width` alone is
+   swallowed by the reading column's `max-width`, so the box is pulled out by
+   half the difference on each side. See `CodeBlock.module.css` for the full
+   account of why the first attempt measured 526px against a 528px column. */
+@media (min-width: 1600px) {
+  .tableWrap {
+    width: var(--vela-wide-measure);
+    margin-inline: calc((var(--vela-measure) - var(--vela-wide-measure)) / 2);
+  }
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--vela-text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  vertical-align: top;
+}
+
+.table th {
+  background: var(--vela-bg-inset);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* The live edge of a stream. A caret on the final paragraph, so the answer
+   reads as being typed rather than as having stalled. */
+.prose[data-streaming='true'] .paragraph[data-last='true']::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 0.1em;
+  vertical-align: text-bottom;
+  background: var(--vela-accent);
+  border-radius: var(--vela-radius-xs);
+  animation: caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes caret {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prose[data-streaming='true'] .paragraph[data-last='true']::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ---- the subordinate scale ----------------------------------------------- *
+ * A channel that is *about* the answer cannot borrow the answer's voice. The
+ * thinking block routes its markdown through this component — that is the whole
+ * point, and it is why the model's `**Deconstruct the requirements:**` stopped
+ * being printed at the reader — but reasoning is deliberation, not output, and
+ * a model that writes `# Plan` in its own reasoning must not get a 24px heading
+ * over the answer it is reasoning about.
+ *
+ * Two rules, and the ceiling is the interesting one: **nothing in an aside sets
+ * larger than the answer's body text.** Every heading level lands on
+ * `--vela-text-base`, one step above the aside's own `--vela-text-sm` body, and
+ * the level devices that are not size — the muted colour at 5, the caps at 6 —
+ * carry through from the rules above and go on doing the separating.           */
+.prose[data-scale='aside'] {
+  font-size: var(--vela-text-sm);
+  /* The block that contains it owns the colour; see ThinkingBlock.module.css. */
+  color: inherit;
+}
+
+.prose[data-scale='aside'] .heading {
+  margin-top: var(--vela-space-3);
+  font-size: var(--vela-text-base);
+}

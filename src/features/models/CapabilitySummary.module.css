@@ -1,0 +1,124 @@
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-3);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.heading {
+  margin: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.probe {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-surface);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.probe:hover:not(:disabled) {
+  background: var(--vela-row-hover);
+}
+
+.probe:disabled {
+  color: var(--vela-text-muted);
+  cursor: progress;
+}
+
+.probe:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.floor,
+.failure {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+.floor {
+  background: var(--vela-notice-bg);
+  color: var(--vela-text-muted);
+}
+
+.failure {
+  background: var(--vela-warning-bg);
+  color: var(--vela-warning);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: var(--vela-space-3);
+  align-items: baseline;
+  padding-left: var(--vela-space-3);
+  border-left: 2px solid var(--vela-border);
+}
+
+.label {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+}
+
+.badge {
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+}
+
+.detail {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+/* Tone is carried by the rule on the left, not by the text colour: a sentence
+   the user must read stays at full contrast whatever it says. */
+.available {
+  border-left-color: var(--vela-success);
+}
+
+.emulated {
+  border-left-color: var(--vela-accent);
+}
+
+.absent {
+  border-left-color: var(--vela-warning);
+}
+
+.unknown {
+  border-left-color: var(--vela-border-strong);
+}

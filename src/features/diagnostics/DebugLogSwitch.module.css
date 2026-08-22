@@ -1,0 +1,46 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+.heading {
+  margin: 0;
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+}
+
+.label {
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+}
+
+.explanation {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-prose);
+}
+
+.path {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+}
+
+.error {
+  margin: 0;
+  color: var(--vela-danger);
+  font-size: var(--vela-text-xs);
+}

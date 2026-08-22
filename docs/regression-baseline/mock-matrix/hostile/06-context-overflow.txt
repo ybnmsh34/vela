@@ -1,0 +1,110 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : hostile  (Mock Hostile (4k, broken everything))
+  case      : 06-context-overflow
+  endpoint  : http://127.0.0.1:8104   (a separate `node cli.ts --profile hostile` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:46Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+The prompt is a single user message of 16448 'x' characters —
+just over this profile's advertised 4096-token window at the harness's fixed
+4-chars-per-token estimate. The request body is elided below at 16495 bytes.
+
+### a prompt deliberately larger than the context window
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8104/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 152 bytes (0x98)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8104
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 16495
+0096: 
+=> Send data, 16495 bytes (0x406f)
+0000: <request body elided: 16495 bytes; see the case notes above for its exact composition>
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 268
+Date: Wed, 12 Aug 2026 20:04:46 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (268 bytes) ---
+{
+  "error": {
+    "message": "this model's maximum context length is 4096 tokens, however you requested 4116 tokens (4116 in the messages, 0 in the completion)",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "context_length_exceeded"
+  }
+}
+--- end of body ---
+
+### a prompt at half the window, for contrast
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8104/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 151 bytes (0x97)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8104
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 8239
+0095: 
+=> Send data, 8239 bytes (0x202f)
+0000: <request body elided: 8239 bytes; see the case notes above for its exact composition>
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 877
+Date: Wed, 12 Aug 2026 20:04:46 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (877 bytes) ---
+{
+  "id": "chatcmpl-mock-c5bb2fe3",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> </s> <|im_start|> Considering the request about xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx. Profile hostile has a 4096-token window. Answering directly. � <think> nested Mock hostile reply to: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx. lantern careful sextant tiller delta orbit pennant harbor tiller tiller keel lantern. ▒▒ �"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2052,
+    "completion_tokens": 123,
+    "total_tokens": 2175
+  }
+}
+--- end of body ---
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS  the refusal carries the code context_length_exceeded
+PASS  the message states the real limit (4096) and what was asked for
+PASS  no partial answer is returned alongside the refusal
+PASS  a prompt inside the window still succeeds; observed 200
+PASS  the endpoint keeps serving after the overflow (no crash)

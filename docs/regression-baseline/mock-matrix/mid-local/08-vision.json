@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "`mock-mid-local` does not support image input",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "vision_not_supported"
+  }
+}

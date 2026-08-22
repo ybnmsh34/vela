@@ -1,0 +1,60 @@
+{
+  "capabilities": {
+    "modelListing": true,
+    "promptCaching": false,
+    "reasoning": true,
+    "streaming": true,
+    "toolCalls": true,
+    "usageReporting": false,
+    "vision": false
+  },
+  "contextWindowTokens": 4096,
+  "findings": [
+    {
+      "capability": "streaming",
+      "evidence": "declared",
+      "support": "unknown"
+    },
+    {
+      "capability": "modelListing",
+      "evidence": "probed",
+      "support": "supported"
+    },
+    {
+      "capability": "streaming",
+      "evidence": "probed",
+      "support": "supported"
+    },
+    {
+      "capability": "usageReporting",
+      "evidence": "probed",
+      "support": "unsupported"
+    },
+    {
+      "capability": "reasoning",
+      "evidence": "probed",
+      "support": "supported"
+    },
+    {
+      "capability": "toolCalling",
+      "evidence": "probed",
+      "support": "degraded"
+    },
+    {
+      "capability": "vision",
+      "evidence": "probed",
+      "support": "unsupported"
+    },
+    {
+      "capability": "structuredOutput",
+      "evidence": "probed",
+      "support": "degraded"
+    }
+  ],
+  "maxOutputTokens": null,
+  "modelId": "mock-hostile",
+  "probed": true,
+  "providerId": "matrix",
+  "structuredOutput": false,
+  "toolCallsEmulated": false
+}

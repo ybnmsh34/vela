@@ -1,0 +1,268 @@
+{
+  "$comment": "Read tests/parity/README.md before editing. Both languages iterate every row; neither owns the truth.",
+  "concerns": [
+    "credentialSentInPlaintext",
+    "plaintextTrafficLeavesDevice",
+    "queryParamCredentialIsLogged",
+    "remoteEndpointIsUnauthenticated",
+    "requiredCredentialMissing"
+  ],
+  "cases": [
+    {
+      "name": "loopback-http-no-auth",
+      "why": "THE case the product exists to support. If this row ever expects a concern, Vela has started nagging people for using llama.cpp correctly.",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "auth": { "type": "none" },
+      "credentialPresent": false,
+      "credentialRequired": false,
+      "expect": {
+        "level": "none",
+        "scope": "loopback",
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": true,
+        "concerns": []
+      }
+    },
+    {
+      "name": "loopback-http-bearer-present",
+      "why": "llama.cpp started with --api-key. The key never leaves the machine, so nothing is said.",
+      "baseUrl": "http://localhost:8080/v1",
+      "auth": { "type": "bearerToken" },
+      "credentialPresent": true,
+      "credentialRequired": false,
+      "expect": {
+        "level": "none",
+        "scope": "loopback",
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": []
+      }
+    },
+    {
+      "name": "private-http-no-auth",
+      "why": "A GPU box on the LAN: the conversation crosses the network in the clear and anyone who can route there can use the model.",
+      "baseUrl": "http://gpu-box.local:8080/v1",
+      "auth": { "type": "none" },
+      "credentialPresent": false,
+      "credentialRequired": false,
+      "expect": {
+        "level": "elevated",
+        "scope": "privateNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": true,
+        "concerns": ["plaintextTrafficLeavesDevice", "remoteEndpointIsUnauthenticated"]
+      }
+    },
+    {
+      "name": "public-http-bearer-present",
+      "why": "The loudest configuration: the key itself is readable by every observer on the path.",
+      "baseUrl": "http://api.example.test/v1",
+      "auth": { "type": "bearerToken" },
+      "credentialPresent": true,
+      "credentialRequired": true,
+      "expect": {
+        "level": "high",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["credentialSentInPlaintext", "plaintextTrafficLeavesDevice"]
+      }
+    },
+    {
+      "name": "public-http-bearer-not-yet-stored",
+      "why": "Nothing is transmitted yet, so the credential exposure is absent even though the traffic exposure remains.",
+      "baseUrl": "http://api.example.test/v1",
+      "auth": { "type": "bearerToken" },
+      "credentialPresent": false,
+      "credentialRequired": false,
+      "expect": {
+        "level": "elevated",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["plaintextTrafficLeavesDevice"]
+      }
+    },
+    {
+      "name": "public-https-bearer-present",
+      "why": "The ordinary hosted-API configuration. Clean, and it must stay clean or the warnings mean nothing.",
+      "baseUrl": "https://api.example.test/v1",
+      "auth": { "type": "bearerToken" },
+      "credentialPresent": true,
+      "credentialRequired": true,
+      "expect": {
+        "level": "none",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": []
+      }
+    },
+    {
+      "name": "public-https-no-auth",
+      "why": "Encrypted in transit, but open to anyone who can route to it.",
+      "baseUrl": "https://gpu.example.test/v1",
+      "auth": { "type": "none" },
+      "credentialPresent": false,
+      "credentialRequired": false,
+      "expect": {
+        "level": "notice",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": true,
+        "concerns": ["remoteEndpointIsUnauthenticated"]
+      }
+    },
+    {
+      "name": "public-https-bearer-required-and-missing",
+      "why": "A configuration problem, not a traffic risk. Kept distinct so the UI can word it as 'finish setting this up'.",
+      "baseUrl": "https://api.example.test/v1",
+      "auth": { "type": "bearerToken" },
+      "credentialPresent": false,
+      "credentialRequired": true,
+      "expect": {
+        "level": "notice",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["requiredCredentialMissing"]
+      }
+    },
+    {
+      "name": "public-https-query-key-present",
+      "why": "Phase A security critic, finding 1. Before the fix both languages reported level 'none' with no concerns here, because every rule was keyed on plaintext transport. TLS is exactly what does not help: the server logs the request line, query string included, and so does every proxy that terminates TLS in front of it.",
+      "baseUrl": "https://api.example.test/v1",
+      "auth": { "type": "apiKeyQuery", "param": "key" },
+      "credentialPresent": true,
+      "credentialRequired": true,
+      "expect": {
+        "level": "elevated",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": true,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["queryParamCredentialIsLogged"]
+      }
+    },
+    {
+      "name": "public-https-header-key-present",
+      "why": "The control for the row above: identical in every respect except that the key rides in a header. Must stay clean, or the query-param concern is really just 'a credential exists'.",
+      "baseUrl": "https://api.example.test/v1",
+      "auth": { "type": "apiKeyHeader", "header": "x-api-key" },
+      "credentialPresent": true,
+      "credentialRequired": true,
+      "expect": {
+        "level": "none",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": []
+      }
+    },
+    {
+      "name": "public-https-query-key-not-yet-stored",
+      "why": "The warning has to reach the user while the form is still open. Gating it on a stored credential would only ever show it after the key had already been pasted into a shape that logs it.",
+      "baseUrl": "https://api.example.test/v1",
+      "auth": { "type": "apiKeyQuery", "param": "key" },
+      "credentialPresent": false,
+      "credentialRequired": true,
+      "expect": {
+        "level": "elevated",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": true,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["queryParamCredentialIsLogged", "requiredCredentialMissing"]
+      }
+    },
+    {
+      "name": "loopback-http-query-key",
+      "why": "Same rule as the rest of the module: risk comes from the endpoint being remote. A key logged by the user's own server on the user's own machine has not gone anywhere.",
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "auth": { "type": "apiKeyQuery", "param": "key" },
+      "credentialPresent": true,
+      "credentialRequired": false,
+      "expect": {
+        "level": "none",
+        "scope": "loopback",
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": false,
+        "endpointIsUnauthenticated": false,
+        "concerns": []
+      }
+    },
+    {
+      "name": "private-https-query-key",
+      "why": "A LAN endpoint still has an access log, and it is still not this machine.",
+      "baseUrl": "https://gpu-box.local:8443/v1",
+      "auth": { "type": "apiKeyQuery", "param": "key" },
+      "credentialPresent": true,
+      "credentialRequired": false,
+      "expect": {
+        "level": "elevated",
+        "scope": "privateNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "credentialInQueryString": true,
+        "endpointIsUnauthenticated": false,
+        "concerns": ["queryParamCredentialIsLogged"]
+      }
+    },
+    {
+      "name": "public-http-query-key-present",
+      "why": "Both reasons at once. The louder one takes the level, and neither reason disappears from the list.",
+      "baseUrl": "http://api.example.test/v1",
+      "auth": { "type": "apiKeyQuery", "param": "key" },
+      "credentialPresent": true,
+      "credentialRequired": true,
+      "expect": {
+        "level": "high",
+        "scope": "publicNetwork",
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "credentialInQueryString": true,
+        "endpointIsUnauthenticated": false,
+        "concerns": [
+          "credentialSentInPlaintext",
+          "plaintextTrafficLeavesDevice",
+          "queryParamCredentialIsLogged"
+        ]
+      }
+    }
+  ]
+}

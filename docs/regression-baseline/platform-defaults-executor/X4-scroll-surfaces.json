@@ -1,0 +1,35 @@
+[
+  {
+    "theme": "light",
+    "scrollerFound": true,
+    "scrollerGutter": 24,
+    "scrollHeight": 1581,
+    "clientHeight": 355,
+    "adHocGutter": 0,
+    "scrollbarSizeToken": "12px",
+    "thumbToken": "#6f7896",
+    "gutterProperty": "stable both-edges"
+  },
+  {
+    "theme": "dark",
+    "scrollerFound": true,
+    "scrollerGutter": 24,
+    "scrollHeight": 1581,
+    "clientHeight": 355,
+    "adHocGutter": 0,
+    "scrollbarSizeToken": "12px",
+    "thumbToken": "#6f7896",
+    "gutterProperty": "stable both-edges"
+  },
+  {
+    "theme": "system",
+    "scrollerFound": true,
+    "scrollerGutter": 24,
+    "scrollHeight": 1581,
+    "clientHeight": 355,
+    "adHocGutter": 0,
+    "scrollbarSizeToken": "12px",
+    "thumbToken": "#6f7896",
+    "gutterProperty": "stable both-edges"
+  }
+]

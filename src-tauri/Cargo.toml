@@ -1,0 +1,123 @@
+[workspace]
+members = ["crates/*"]
+# Bare `cargo build` / `cargo test` must cover every crate, not just the host
+# package — otherwise the domain crates silently stop being tested.
+default-members = [
+  ".",
+  "crates/vela-core",
+  "crates/vela-endpoint",
+  "crates/vela-mcp",
+  "crates/vela-privatefs",
+  "crates/vela-projects",
+  "crates/vela-providers",
+  "crates/vela-sandbox",
+  "crates/vela-secrets",
+  "crates/vela-settings",
+  "crates/vela-skills",
+  "crates/vela-store",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://github.com/ybnmsh34/vela"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+vela-core = { path = "crates/vela-core" }
+vela-endpoint = { path = "crates/vela-endpoint" }
+vela-mcp = { path = "crates/vela-mcp" }
+vela-privatefs = { path = "crates/vela-privatefs" }
+vela-projects = { path = "crates/vela-projects" }
+vela-secrets = { path = "crates/vela-secrets" }
+vela-providers = { path = "crates/vela-providers" }
+vela-sandbox = { path = "crates/vela-sandbox" }
+vela-settings = { path = "crates/vela-settings" }
+vela-skills = { path = "crates/vela-skills" }
+vela-store = { path = "crates/vela-store" }
+
+# ---------------------------------------------------------------------------
+# The Tauri application crate. This crate is DELIBERATELY THIN: it owns the IPC
+# boundary and nothing else. All domain logic lives in crates/* so it can be
+# unit-tested headlessly without a Tauri runtime.
+# ---------------------------------------------------------------------------
+[package]
+name = "vela-app"
+description = "Vela desktop application — Tauri host process"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "vela_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "vela"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"
+# `tests/gate_appdata_root_acl.rs` reads ACLs back through the same crate the
+# store hardens with, so the gate and the shell disagree loudly if either is
+# wrong. Production code reaches it through `vela_providers::private_fs`.
+vela-privatefs.workspace = true
+# The mock runtime, so the gate can build and drive the REAL application —
+# `run()`'s own builder configuration, its `setup`, and its `invoke_handler` —
+# with no window and no display server. `tauri`'s `test` feature is `[]`: it
+# pulls in no additional dependency, it only un-gates `tauri::test`.
+tauri = { version = "2", features = ["test"] }
+# `tests/handler_binding.rs` needs the *registered* command list, and
+# `generate_handler!` leaves no runtime trace of its argument list. Reachability
+# itself is decided by invoking the assembled app (no source reading); `syn`
+# only supplies the two source-derived sets that make the reverse direction
+# decidable — the paths inside `generate_handler!` and every `#[tauri::command]`
+# in the crate. A real Rust parser rather than a substring scan, because the
+# substring answer is wrong on this very tree: `ipc/mod.rs` documents a
+# `thing_do` command inside a doc comment, which any grep counts as real.
+syn = { version = "2", features = ["full", "visit"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+vela-mcp.workspace = true
+vela-projects.workspace = true
+vela-secrets.workspace = true
+vela-providers.workspace = true
+vela-sandbox.workspace = true
+vela-settings.workspace = true
+vela-skills.workspace = true
+vela-store.workspace = true
+# The dual local endpoint. It has no runtime and no provider registry of its
+# own; `src/endpoint_host.rs` is the join, and it is the only place in the
+# workspace that calls `vela_endpoint::server::serve`.
+vela-endpoint.workspace = true
+
+# `src/fatal.rs`, and only that. A release build sets
+# `windows_subsystem = "windows"`, so a startup failure has no console to print
+# to and no window to attach a dialog to; `MessageBoxW` with a null owner is the
+# one channel that still reaches the user at that point. One namespace, one
+# function.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[features]
+default = ["os-keychain"]
+# Enables the real OS keychain backend (keyring crate). Disable in CI or on
+# headless hosts where no keychain daemon exists; the in-memory fake is used
+# instead and every read/write is scoped to the process.
+os-keychain = ["vela-secrets/os-keychain"]

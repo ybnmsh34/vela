@@ -1,0 +1,45 @@
+{
+  /* The GATE M UI-matrix harness (tests/harness/ui-bridge). It mounts the real
+     <App/> in a browser against a relay adapter, so it needs the app's DOM libs
+     and the `@/` alias — but it is NOT part of the app: tsconfig.app.json still
+     includes `src` and nothing else, and `pnpm build` never sees this entry.
+
+     Same strictness as the app, deliberately. Test infrastructure that lies
+     about its own types cannot be trusted to prove anything about the app. */
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.uibridge.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+    "types": ["vite/client"],
+
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  /* `src` is listed as well because this entry imports the real component
+     tree: a project must own every file it type-checks. tsconfig.app.json
+     remains the app's own project and is unchanged — the app does not gain a
+     dependency on the harness in either direction. */
+  "include": ["tests/harness/ui-bridge", "src"]
+}

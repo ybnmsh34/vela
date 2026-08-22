@@ -1,0 +1,79 @@
+================================================================================
+GATE M Part 1 (Phase B) round 4 — EXECUTOR ASSERTION CONTROLS
+================================================================================
+
+Each defect below is re-introduced into the shipping source and the suites
+re-run. An assertion that cannot go red is not an assertion. A suite that goes
+RED here is the control PASSING.
+
+Run with --include-ignored, so the executor probe's known-red matrix test —
+which carries round 4's open finding — is counted rather than skipped.
+
+---- BASELINE (the tree as it stands) ------------------------------------
+  wire_redirect_egress               6 passed; 0 failed
+  encoded_credential_canary          11 passed; 0 failed
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+
+  NOTE: zz_gate_m_round4_executor_probe is EXPECTED to be red at baseline.
+  Its matrix test carries round 4's open finding — see RESULTS.md §5. Every
+  other suite is green at baseline, and the deltas below are read against
+  that.
+
+---- DEFECT 4 — the redirect policy removed ------------------------------
+  reqwest's defaults restored: Policy::limited(10) and referer: true.
+  This is the tree the round-3 security critic failed.
+  wire_redirect_egress               2 passed; 4 failed
+      a_protocol_relative_location_is_not_a_way_around_the_authority_check
+      a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one
+      a_same_authority_redirect_loop_is_refused_rather_than_followed_forever
+      no_redirect_carries_a_request_or_a_credential_off_the_configured_authority
+  encoded_credential_canary          11 passed; 0 failed
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+      no_spelling_of_the_credential_survives_into_any_surface
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+
+---- DEFECT 5 — BARRIER ONE: the byte scrub is byte-literal again --------
+  scrub_bytes stops resolving escape spans; round 3's tree, exactly.
+  wire_redirect_egress               6 passed; 0 failed
+  encoded_credential_canary          9 passed; 2 failed
+      positive_control_a_byte_literal_scrub_is_undone_by_the_decoder
+      the_two_barriers_are_independent
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+      no_spelling_of_the_credential_survives_into_any_surface
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+
+---- DEFECT 6 — BARRIER TWO: the decoded value is not scrubbed -----------
+  decode_json stops calling scrub_value, so anything that survived the
+  byte scrub is handed onward as the decoder reassembled it.
+  wire_redirect_egress               6 passed; 0 failed
+  encoded_credential_canary          10 passed; 1 failed
+      the_two_barriers_are_independent
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+      no_spelling_of_the_credential_survives_into_any_surface
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+
+---- DEFECT 7 — authority_of forgets the port ----------------------------
+  scheme and host still compared, port dropped. A redirect to a DIFFERENT
+  SERVICE on the same host is then 'same authority' and is followed.
+  wire_redirect_egress               2 passed; 4 failed
+      a_protocol_relative_location_is_not_a_way_around_the_authority_check
+      a_same_authority_hop_cannot_be_used_to_launder_a_cross_authority_one
+      a_same_authority_redirect_loop_is_refused_rather_than_followed_forever
+      no_redirect_carries_a_request_or_a_credential_off_the_configured_authority
+  encoded_credential_canary          11 passed; 0 failed
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+      no_spelling_of_the_credential_survives_into_any_surface
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed
+
+---- tree restored -------------------------------------------------------
+  wire_redirect_egress               6 passed; 0 failed
+  encoded_credential_canary          11 passed; 0 failed
+  zz_gate_m_round4_executor_probe    3 passed; 1 failed
+  zz_integration_round4_probe        3 passed; 0 failed
+  streamed_credential_canary         15 passed; 0 failed

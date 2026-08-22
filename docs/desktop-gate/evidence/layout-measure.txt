@@ -1,0 +1,141 @@
+LAYOUT CHANGE — measured on real WebView2, Windows 11, Inter bundled
+Characters per line counted by walking real line-break boundaries with Range rects,
+not divided out of a token. Binding band: 60-80 characters for prose.
+
+=== window  900px (cssW 884) ===
+   prose column  480px | avg CPL  63.8 | max 66 | full lines 4 | IN 60-80 BAND: True
+   code block width: 0
+   turn: left  368 right  848 width  480 align flex-end
+   turn: left  368 right  848 width  480 align stretch
+
+=== window 1280px (cssW 1264) ===
+   prose column  480px | avg CPL  63.8 | max 66 | full lines 4 | IN 60-80 BAND: True
+   code block width: 0
+   turn: left  632 right 1112 width  480 align flex-end
+   turn: left  632 right 1112 width  480 align stretch
+
+=== window 1440px (cssW 1424) ===
+   prose column  480px | avg CPL  63.8 | max 66 | full lines 4 | IN 60-80 BAND: True
+   code block width: 0
+   turn: left  712 right 1192 width  480 align flex-end
+   turn: left  712 right 1192 width  480 align stretch
+
+=== window 1920px (cssW 1904) ===
+   prose column  498px | avg CPL  67.3 | max 71 | full lines 4 | IN 60-80 BAND: True
+   code block width: 0
+   turn: left  943 right 1441 width  498 align flex-end
+   turn: left  943 right 1441 width  498 align stretch
+
+=== window 2560px (cssW 2544) ===
+   prose column  528px | avg CPL  71.8 | max 73 | full lines 4 | IN 60-80 BAND: True
+   code block width: 0
+   turn: left 1248 right 1776 width  528 align flex-end
+   turn: left 1248 right 1776 width  528 align stretch
+
+
+== turn ownership: measuring the BUBBLE, not the turn container ==
+[
+ {
+  "turn": {
+   "left": 1248,
+   "right": 1776,
+   "w": 528,
+   "align": "flex-end"
+  },
+  "children": [
+   {
+    "cls": "_userBody_1e188_71",
+    "left": 1360,
+    "right": 1776,
+    "w": 416
+   }
+  ]
+ },
+ {
+  "turn": {
+   "left": 1248,
+   "right": 1776,
+   "w": 528,
+   "align": "stretch"
+  },
+  "children": [
+   {
+    "cls": "_block_1jtsp_1",
+    "left": 1248,
+    "right": 1776,
+    "w": 528
+   },
+   {
+    "cls": "_prose_bm8ct_1",
+    "left": 1248,
+    "right": 1776,
+    "w": 528
+   },
+   {
+    "cls": "_footer_1e188_349",
+    "left": 1248,
+    "right": 1776,
+    "w": 528
+   }
+  ]
+ }
+]
+
+== code block / wide measure ==
+{
+ "pre": {
+  "w": 0,
+  "left": 0,
+  "display": "block",
+  "maxW": "none"
+ }
+}
+
+== every <pre> in main, with visibility and hidden-ancestor check ==
+[
+ {
+  "w": 0,
+  "hiddenAncestor": true,
+  "inThinking": false,
+  "text": "# Track your sharpening sche"
+ },
+ {
+  "w": 0,
+  "hiddenAncestor": true,
+  "inThinking": false,
+  "text": "# Track your sharpening sche"
+ },
+ {
+  "w": 0,
+  "hiddenAncestor": true,
+  "inThinking": false,
+  "text": "# Track your sharpening sche"
+ },
+ {
+  "w": 0,
+  "hiddenAncestor": true,
+  "inThinking": false,
+  "text": "# Track your sharpening sche"
+ },
+ {
+  "w": 0,
+  "hiddenAncestor": true,
+  "inThinking": false,
+  "text": "Total: ~209. I'll add ~40 wo"
+ },
+ {
+  "w": 526,
+  "hiddenAncestor": false,
+  "inThinking": false,
+  "text": "# Track your sharpening sche"
+ }
+]
+
+== scrolling to the answer's code block and re-measuring ==
+{"preWidth":526,"wrapperWidth":null,"wrapperMaxW":null,"proseWidth":0,"codeWiderThanProse":null}
+
+== BREAKOUT FIX verified: code block vs prose column ==
+  1280px | prose 480 | code 480 | code wider by   +0 | overflows scroller: False
+  1600px | prose 480 | code 480 | code wider by   +0 | overflows scroller: False
+  1920px | prose 498 | code 754 | code wider by +256 | overflows scroller: False
+  2560px | prose 528 | code 784 | code wider by +256 | overflows scroller: False

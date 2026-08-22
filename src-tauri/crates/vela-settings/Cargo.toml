@@ -1,0 +1,22 @@
+[package]
+name = "vela-settings"
+description = "Typed settings and provider configuration — persisted through vela-store, credentials in the OS keychain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+vela-secrets.workspace = true
+vela-store.workspace = true
+# Endpoint URLs are parsed, never string-matched: the loopback-vs-network
+# decision that drives the security posture must not hinge on `starts_with`.
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"

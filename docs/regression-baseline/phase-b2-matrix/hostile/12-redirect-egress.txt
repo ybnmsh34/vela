@@ -1,0 +1,89 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 12-redirect-egress: a 3xx must not carry the request — or the credential — off the configured authority
+================================================================================
+
+PURPOSE   The round-3 panel's security FAIL. `reqwest`'s cross-host protection strips five headers and none of them is `x-api-key`, `x-goog-api-key` or anything an `Auth::ApiKeyHeader` binding names; `make_referer` keeps the query string. So a redirect from the configured endpoint handed the user's key to a host they never configured, on the first request of a healthy turn.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE SUBJECT IS THE THIRD PARTY, not Vela. Every assertion below is made against
+  what a recording listener on a port the user never configured actually received:
+  accepted connections, raw bytes, and the literal request the client wrote. A
+  credential smuggled in a `Referer`, in a query string, or in a header nobody
+  thought to enumerate is caught the same way, because nothing is enumerated.
+  The canary is masked wherever this file prints received bytes. It is a fake that
+  was never a credential for anything, and the transcript is still committed.
+
+---- Vela's shipping transport — every binding, complete() and stream() ----
+  Auth::None / complete()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35353/v1/chat/completions] [http 302] [ref 00000000000001b3]
+  Auth::None / stream()                  third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:44527/v1/chat/completions] [http 302] [ref 00000000000001b4]
+  Auth::Bearer / complete()              third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:35201/v1/chat/completions] [http 302] [ref 00000000000001b5]
+  Auth::Bearer / stream()                third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:40547/v1/chat/completions] [http 302] [ref 00000000000001b6]
+  Auth::ApiKeyHeader{x-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:39191/v1/chat/completions] [http 302] [ref 00000000000001b7]
+  Auth::ApiKeyHeader{x-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:38219/v1/chat/completions] [http 302] [ref 00000000000001b8]
+  Auth::ApiKeyHeader{x-goog-api-key} / complete() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:34907/v1/chat/completions] [http 302] [ref 00000000000001b9]
+  Auth::ApiKeyHeader{x-goog-api-key} / stream() third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:40501/v1/chat/completions] [http 302] [ref 00000000000001ba]
+  example error (Display)                could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:39229/v1/chat/completions] [http 302] [ref 00000000000001bb]
+  Auth::ApiKeyQuery{key} / complete()    third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:39229/v1/chat/completions] [http 302] [ref 00000000000001bb]
+  Auth::ApiKeyQuery{key} / stream()      third party: 0 connections, 0 bytes · redirector: 1 connections · refused: could not reach the endpoint (request): the endpoint redirected to a different host, which Vela refuses to follow [endpoint http://127.0.0.1:42977/v1/chat/completions] [http 302] [ref 00000000000001bc]
+
+---- assertions — the shipping transport -----------------------------------
+  [PASS] the configured endpoint really was contacted on every arm — nothing is vacuous
+        10 connections across 10 arms
+  [PASS] THE THIRD PARTY ACCEPTED ZERO CONNECTIONS
+        0 connections
+  [PASS] THE THIRD PARTY RECEIVED ZERO BYTES — not 'no credential', zero bytes
+        0 bytes
+  [PASS] no spelling of the canary reached the third party, on any binding
+        none
+  [PASS] every arm ended in an error rather than a silently-followed hop
+        10 refused of 10 arms
+  [PASS] the error names the CONFIGURED authority and NOT the redirect target, in every rendering — the target is a host the endpoint chose
+        10 of 10
+  [PASS] a refused redirect is never retried — the same request earns the same Location
+        0 arms reported the failure as retryable
+  [PASS] no rendering of any refusal carries the credential
+        5 renderings × 10 arms clean
+
+---- every redirect status, not just 302 — a sweep nobody had run ----------
+  statuses driven                        301: third party 0 bytes, refused · 302: third party 0 bytes, refused · 303: third party 0 bytes, refused · 307: third party 0 bytes, refused · 308: third party 0 bytes, refused
+  [PASS] 301, 302, 303, 307 and 308 are all refused — 303 rewrites the method, and that changes nothing
+        5 of 5 refused, third party got 0 bytes
+
+---- a same-authority hop — what the implementation chose to do ------------
+  outcome                                FOLLOWED, answer "followed"
+  connections to the one authority       2
+  the second hop's path was requested    true
+  [PASS] a redirect to the SAME scheme, host and port is followed — a reverse proxy normalising a path is real and egresses nowhere new
+        2 hops, second path seen: true, outcome ok: true
+
+---- POSITIVE CONTROL — the same sockets with the policy removed -----------
+  `PreFixTransport` is this transport as it was before the fix: the same client
+  with `no_proxy` and a user agent, and `reqwest`'s untouched redirect and referer
+  defaults. If the canary does not arrive here, the assertions above are vacuous.
+    Auth::None: third party got 173 bytes, canary absent
+    Auth::Bearer: third party got 173 bytes, canary absent
+    Auth::ApiKeyHeader{x-api-key}: third party got 227 bytes, canary ARRIVED
+    Auth::ApiKeyHeader{x-goog-api-key}: third party got 232 bytes, canary ARRIVED
+    Auth::ApiKeyQuery{key}: third party got 223 bytes, canary ARRIVED
+
+---- what the third party received under the control (canary masked) ---------
+    GET /v1/chat/completions HTTP/1.1
+    user-agent: vela/pre-fix-control
+    accept: application/json
+    x-api-key: <CANARY — MASKED BY THE RECORDER>
+    referer: http://127.0.0.1:43563/v1/chat/completions
+    host: 127.0.0.1:33389
+    
+  [PASS] CONTROL: with the policy removed the canary DOES reach the third party — so the assertions above are about a real channel
+        3 of 5 bindings leaked
+  [PASS] CONTROL: it leaks for exactly the bindings `reqwest` does not protect — x-api-key, x-goog-api-key and the query string — and not for Bearer
+        5 of 5 bindings matched the predicted upstream behaviour
+  [PASS] CONTROL, AND THE REASON THE FIX REFUSES RATHER THAN STRIPS: even on the bindings upstream DOES protect, the third party still received the request — the prompt, the model id, the tool catalogue. Stripping the credential would have left that.
+        1028 bytes reached the unconfigured host across 5 bindings under the control; 0 under the shipping transport
+
+================================================================================
+VERDICT  13 assertion(s), 0 failure(s)
+================================================================================

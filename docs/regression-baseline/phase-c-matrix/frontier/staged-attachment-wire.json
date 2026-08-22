@@ -1,0 +1,331 @@
+{
+  "expectedBase64": "iVBORw0KGgoAAAANSUhEUg==",
+  "rendererToHost": [
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Choosing a local model for this machine\n\nShort answer: sta",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#headings show me every heading level",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Choosing a local model for this machine\n\nShort answer: sta",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#headings show me every heading level",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Reading a capability report end to end\n\nThis document exis",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#thinkmd which local model should I run?",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Choosing a local model for this machine\n\nShort answer: sta",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#headings show me every heading level",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Reading a capability report end to end\n\nThis document exis",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#thinkmd which local model should I run?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: #thinkmd which local model should I ",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#tools What is the weather in Lisbon?",
+          "parts": []
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Choosing a local model for this machine\n\nShort answer: sta",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#headings show me every heading level",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Reading a capability report end to end\n\nThis document exis",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#thinkmd which local model should I run?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: #thinkmd which local model should I ",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#tools What is the weather in Lisbon?",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "read the attached note",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "Attached file: endpoint-notes.md\n\nthe study workstation answers on port 8033"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "messages": [
+        {
+          "role": "user",
+          "text": "Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: Summarise what this endpoint can do.",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#markdown Which local model should I run on this machine?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Choosing a local model for this machine\n\nShort answer: sta",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#headings show me every heading level",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "# Reading a capability report end to end\n\nThis document exis",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#thinkmd which local model should I run?",
+          "parts": []
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: #thinkmd which local model should I ",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "#tools What is the weather in Lisbon?",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "read the attached note",
+          "parts": [
+            {
+              "kind": "text",
+              "text": "Attached file: endpoint-notes.md\n\nthe study workstation answers on port 8033"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "text": "Mock frontier reply to: read the attached note Attached file",
+          "parts": []
+        },
+        {
+          "role": "user",
+          "text": "what is in this picture?",
+          "parts": [
+            {
+              "kind": "image",
+              "mimeType": "image/png",
+              "bytes": 24,
+              "data": "iVBORw0KGgoAAAANSUhEUg=="
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "coreToEndpoint": [
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 144
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 351
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 301
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 335
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 157
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 503
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 3869
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 7355
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 7877
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 7855
+    },
+    {
+      "path": "/v1/chat/completions",
+      "bytes": 8304
+    }
+  ]
+}

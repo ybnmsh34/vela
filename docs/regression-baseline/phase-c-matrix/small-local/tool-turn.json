@@ -1,0 +1,11 @@
+{
+  "answer": "Mock small-local reply to: #tools What is the weather in Lisbon?. quartz delta yardarm orbit meridian north beacon quartz alpha zenith.",
+  "whole": "Mock small-local reply to: #tools What is the weather in Lisbon?. quartz delta yardarm orbit meridian north beacon quartz alpha zenith.\n\nTools were described in the prompt\nThis model has no built-in tool calling, so 1 tool was described in the prompt and the reply was read back for a call.\nNo token counts\nThis endpoint does not report token usage.\nCopy",
+  "reasoning": null,
+  "tools": null,
+  "degradations": [
+    "Tools were described in the prompt\nThis model has no built-in tool calling, so 1 tool was described in the prompt and the reply was read back for a call.",
+    "No token counts\nThis endpoint does not report token usage."
+  ],
+  "error": null
+}

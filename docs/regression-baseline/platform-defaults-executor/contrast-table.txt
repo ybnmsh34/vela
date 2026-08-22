@@ -1,0 +1,51 @@
+theme   ratio    size/wt  kind   foreground -> ground
+--------------------------------------------------------------------------------------------------------------
+dark     3.96     13/400  body   #757575 NO TOKEN                         on #101426 --vela-bg-inset              [endpoints:<input>::placeholder] <-- UNDER 4.5:1
+dark     4.55     12/400  body   #868fac --vela-syntax-comment            on #112c39 NO TOKEN                     [conversation:<span> text]
+dark      4.9     12/500  body   #868fac --vela-syntax-comment            on #1e2233 NO TOKEN                     [home:<kbd> text]
+dark     5.08     12/400  body   #9aa2bd --vela-scrollbar-thumb-hover     on #193542 NO TOKEN                     [palette:<span> text]
+dark     5.09     12/400  body   #868fac --vela-syntax-comment            on #1a1f31 --vela-code-surface          [conversation:<button> text]
+dark     5.69     13/400  body   #868fac --vela-syntax-comment            on #101426 --vela-bg-inset              [conversation:<button> text]
+dark     6.11     12/400  body   #868fac --vela-syntax-comment            on #080b16 --vela-bg                    [conversation:<p> text]
+dark      n/a                    #9aa2bd — NOT COMPUTABLE: opacity 0.75 on <kbd> (conversation:<kbd> text)
+dark     6.44     13/400  body   #9aa2bd --vela-scrollbar-thumb-hover     on #1a1f31 --vela-code-surface          [conversation:<span> text]
+dark      7.2     12/400  body   #9aa2bd --vela-scrollbar-thumb-hover     on #101426 --vela-bg-inset              [conversation:<button> text]
+dark     7.74     18/400  body   #9aa2bd --vela-scrollbar-thumb-hover     on #080b16 --vela-bg                    [conversation:<h6> text]
+dark     9.04     13/500  body   #8ce8df --vela-accent-hover              on #193542 NO TOKEN                     [palette:<span> text]
+dark    10.24     13/500  body   #8ce8df --vela-accent-hover              on #112c39 NO TOKEN                     [conversation:<span> text]
+dark     11.6     13/400  body   #5fe2d6 --vela-accent                    on #101426 --vela-bg-inset              [conversation:<span> text]
+dark    12.47     13/500  body   #080b16 --vela-bg                        on #5fe2d6 --vela-accent                [conversation:<span> text]
+dark      n/a                    #080b16 — NOT COMPUTABLE: opacity 0.75 on <kbd> (conversation:<kbd> text)
+dark    13.82     13/500  body   #eef0f6 --vela-text                      on #1e2233 NO TOKEN                     [switcher:<span> text]
+dark    14.24     13/400  body   #e0e3ed --vela-code-text                 on #101426 --vela-bg-inset              [conversation:<code> text]
+dark    14.35     15/400  body   #eef0f6 --vela-text                      on #1a1f31 --vela-code-surface          [conversation:<label> text]
+dark    16.03     13/600  body   #eef0f6 --vela-text                      on #101426 --vela-bg-inset              [conversation:<code> text]
+dark    17.23     24/600  LARGE  #eef0f6 --vela-text                      on #080b16 --vela-bg                    [conversation:<h2> text]
+dark    17.23     15/400  body   #eef0f6 --vela-text                      on #080b16 --vela-bg                    [conversation:<em> text]
+light    4.61     13/400  body   #757575 NO TOKEN                         on #ffffff --vela-surface               [endpoints:<input>::placeholder]
+light    5.26     13/400  body   #5b6280 --vela-text-subtle               on #eef0f6 --vela-bg-inset              [conversation:<button> text]
+light    5.41     12/500  body   #5b6280 --vela-text-subtle               on #f3f3f4 NO TOKEN                     [home:<kbd> text]
+light    5.57     12/400  body   #5b6280 --vela-text-subtle               on #e6fbf8 --vela-accent-quiet          [conversation:<span> text]
+light    5.64     12/400  body   #5b6280 --vela-text-subtle               on #f7f8fb --vela-bg                    [conversation:<p> text]
+light    5.69     12/400  body   #868fac --vela-syntax-comment            on #101426 --vela-code-surface          [conversation:<button> text]
+light     5.8     13/400  body   #0b6864 --vela-accent                    on #eef0f6 --vela-bg-inset              [switcher:<button> text]
+light    5.99     15/400  body   #5b6280 --vela-text-subtle               on #ffffff --vela-surface               [conversation:<textarea>::placeholder]
+light    6.11     13/400  body   #868fac --vela-syntax-comment            on #080b16 --vela-code-bg               [conversation:<span> text]
+light    6.14     13/500  body   #0b6864 --vela-accent                    on #e6fbf8 --vela-accent-quiet          [conversation:<span> text]
+light    6.35     12/400  body   #4d5675 --vela-scrollbar-thumb-hover     on #eef0f6 --vela-bg-inset              [conversation:<button> text]
+light     n/a                    #4d5675 — NOT COMPUTABLE: opacity 0.75 on <kbd> (conversation:<kbd> text)
+light    6.61     13/500  body   #ffffff --vela-surface                   on #0b6864 --vela-accent                [conversation:<span> text]
+light    6.72     12/400  body   #4d5675 --vela-scrollbar-thumb-hover     on #e6fbf8 --vela-accent-quiet          [palette:<span> text]
+light    6.81     18/400  body   #4d5675 --vela-scrollbar-thumb-hover     on #f7f8fb --vela-bg                    [conversation:<h6> text]
+light     n/a                    #ffffff — NOT COMPUTABLE: opacity 0.75 on <kbd> (conversation:<kbd> text)
+light    7.23     12/400  body   #4d5675 --vela-scrollbar-thumb-hover     on #ffffff --vela-surface               [conversation:<button> text]
+light    7.74     13/400  body   #9aa2bd --vela-syntax-punct              on #080b16 --vela-code-bg               [conversation:<span> text]
+light   12.47     13/400  body   #5fe2d6 --vela-syntax-keyword            on #080b16 --vela-code-bg               [conversation:<span> text]
+light    14.5     13/500  body   #101426 --vela-code-surface              on #e3e5ec NO TOKEN                     [switcher:<span> text]
+light   15.31     13/400  body   #e0e3ed --vela-border                    on #080b16 --vela-code-bg               [conversation:<code> text]
+light   16.03     13/600  body   #101426 --vela-code-surface              on #eef0f6 --vela-bg-inset              [conversation:<code> text]
+light   17.19     24/600  LARGE  #101426 --vela-code-surface              on #f7f8fb --vela-bg                    [conversation:<h2> text]
+light   17.19     15/400  body   #101426 --vela-code-surface              on #f7f8fb --vela-bg                    [conversation:<em> text]
+light   18.26     13/500  body   #101426 --vela-code-surface              on #ffffff --vela-surface               [conversation:<label> text]
+
+47 distinct painted pairs; 43 computable

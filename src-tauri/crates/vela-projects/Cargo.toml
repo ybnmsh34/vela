@@ -1,0 +1,20 @@
+[package]
+name = "vela-projects"
+description = "Vela's per-project on-disk layout — the private agent workspace and the skills mount"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+# Every test in this crate touches a real filesystem, because every claim it
+# makes is a claim about one. A tempdir is the only honest fixture: a mocked
+# filesystem cannot tell you whether this machine creates junctions.
+tempfile = "3"
+# The wire shapes here are what `src/platform/contract-project.ts` declares, so
+# the tests assert the serialised form rather than the Rust one.
+serde_json.workspace = true

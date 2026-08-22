@@ -1,0 +1,111 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-4);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-surface);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+}
+
+.label {
+  color: var(--vela-text);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+}
+
+.optional {
+  color: var(--vela-text-subtle);
+  font-weight: var(--vela-weight-regular);
+}
+
+.input {
+  padding: var(--vela-space-2);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+}
+
+.input:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+.hint {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  color: var(--vela-text);
+  font-size: var(--vela-text-xs);
+}
+
+.error {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-danger-bg);
+  color: var(--vela-danger);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+}
+
+.actions {
+  display: flex;
+  gap: var(--vela-space-2);
+}
+
+.save {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-accent);
+  /* The role, not the ramp: --vela-night-0 is white in *both* themes, and in
+     dark the accent fill is a light cyan. This token inverts with the fill. */
+  color: var(--vela-text-on-accent);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: pointer;
+}
+
+.save:hover:not(:disabled) {
+  background: var(--vela-accent-hover);
+}
+
+.save:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.cancel {
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-md);
+  background: transparent;
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.save:focus-visible,
+.cancel:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}

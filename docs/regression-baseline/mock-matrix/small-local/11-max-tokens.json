@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-mock-9d93550d",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-small-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock sma"
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 2,
+    "total_tokens": 14
+  }
+}

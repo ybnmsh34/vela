@@ -1,0 +1,117 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : mid-local  (Mock Mid Local (32k, tools, <think>, no vision))
+  case      : 02-chat-plain-streaming
+  endpoint  : http://127.0.0.1:8102   (a separate `node cli.ts --profile mid-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:37Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### the same question, streamed, with stream_options.include_usage
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8102/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8102
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 126
+0094: 
+=> Send data, 126 bytes (0x7e)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"stream":true,"stream_options":{"include_usage":true}}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: text/event-stream; charset=utf-8
+cache-control: no-cache
+connection: keep-alive
+Date: Wed, 12 Aug 2026 20:04:37 GMT
+Transfer-Encoding: chunked
+
+--- response body, verbatim (4788 bytes) ---
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about what is the weathe"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"r in Berlin. Profile mid"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"-local has a 32768-token"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" window. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"</thi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"\n"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Mock mid-local r"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"eply to: what is"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" the weather in "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Berlin. north qu"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"artz beacon umbe"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"r umber rudder u"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"mber keel ivory "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"gauge tiller qua"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"rtz orbit fathom"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" fathom umber."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":75,"total_tokens":87}}
+
+data: [DONE]
+
+
+--- end of body ---
+
+--- stream statistics (tolerant reassembly; see reassemble-sse.py) ---
+data: frames           25
+unparseable frames     0
+[DONE] sentinel        yes
+usage frames           1
+finish_reason values   ['stop']
+content fragments      21
+reassembled chars      298
+
+--- reassembled from the stream by concatenating every choices[0].delta.content ---
+(unparseable frames skipped, which is itself a decision a consumer has to make)
+<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think>
+Mock mid-local reply to: what is the weather in Berlin. north quartz beacon umber umber rudder umber keel ivory gauge tiller quartz orbit fathom fathom umber.
+--- the same field from the non-streamed response above ---
+<think>Considering the request about what is the weather in Berlin. Profile mid-local has a 32768-token window. Answering directly.</think>
+Mock mid-local reply to: what is the weather in Berlin. north quartz beacon umber umber rudder umber keel ivory gauge tiller quartz orbit fathom fathom umber.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  streaming answers 200; observed 200
+PASS  content-type is text/event-stream
+PASS  the stream terminates — the body ends and the socket closes
+PASS  streamed text is identical to the non-streamed text

@@ -1,0 +1,140 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  height: var(--vela-titlebar-height);
+  padding: 0 var(--vela-space-3);
+  background: var(--vela-chrome);
+  border-bottom: 1px solid var(--vela-border);
+  flex: 0 0 auto;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  min-width: 0;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-accent);
+  background: var(--vela-accent-quiet);
+}
+
+.wordmark {
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-wordmark);
+  text-transform: uppercase;
+  color: var(--vela-text);
+}
+
+.context {
+  font-size: var(--vela-text-sm);
+  color: var(--vela-text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The draggable region. Everything interactive must sit outside it, or it
+   swallows the click. */
+.drag {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: var(--vela-space-6);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-1);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  height: var(--vela-control-sm);
+  padding: 0 var(--vela-space-3);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-surface);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+  transition: color var(--vela-duration) var(--vela-ease),
+    border-color var(--vela-duration) var(--vela-ease);
+}
+
+.action:hover {
+  color: var(--vela-text);
+  border-color: var(--vela-border-strong);
+}
+
+/* ---- the caption buttons ------------------------------------------------- */
+
+/* Full height and hard against the right edge, which is what the OS would draw
+   and what a Windows user's cursor is thrown at. The negative inline margin
+   cancels the bar's own padding so the hit target reaches the window corner —
+   a caption button that stops 12px short of the edge cannot be hit by slamming
+   the pointer into it, which is how the maximise button is used. */
+.caption {
+  display: flex;
+  align-self: stretch;
+  margin-inline-end: calc(-1 * var(--vela-space-3));
+  margin-inline-start: var(--vela-space-2);
+}
+
+/* 46px is the OS caption-button metric, not a Vela design step: these buttons
+   have to feel like the ones Windows draws, and they are wider than they are
+   tall so the target can be hit by throwing the pointer into the corner rather
+   than by aiming. It stays here rather than in tokens.css for the same reason
+   `--vela-titlebar-height` does not answer it — nothing else in the app is a
+   caption button, so there is no second opinion to keep in step. */
+.captionButton {
+  display: grid;
+  /* `safe center`, declared after the plain keyword so an engine that does not
+     know the safety keyword still centres. The glyph is 10px inside a box of at
+     least 40, so it should never overflow — but "should never" is how the
+     150%-scaling defect was argued too, and plain `center` distributes negative
+     free space to *both* ends, putting the glyph outside a box no scroll can
+     reach. The title bar is the one strip of this app with no scroller behind
+     it at all. */
+  place-items: center;
+  place-items: safe center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vela-text-muted);
+  cursor: default;
+  transition: background-color var(--vela-duration) var(--vela-ease),
+    color var(--vela-duration) var(--vela-ease);
+}
+
+.captionButton:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+/* Inset, because an outward ring on a full-bleed control that touches the
+   window edge is clipped by the window. */
+.captionButton:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+/* Close is the one control here that loses work, so it is the one that looks
+   different under the pointer — the OS convention, and a last cue before the
+   click lands. */
+.closeButton:hover {
+  background: var(--vela-danger);
+  color: var(--vela-text-on-danger);
+}

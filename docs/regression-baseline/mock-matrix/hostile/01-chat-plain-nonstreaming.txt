@@ -1,0 +1,70 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : hostile  (Mock Hostile (4k, broken everything))
+  case      : 01-chat-plain-nonstreaming
+  endpoint  : http://127.0.0.1:8104   (a separate `node cli.ts --profile hostile` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:45Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### a plain chat completion, non-streaming
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8104/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 149 bytes (0x95)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8104
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 72
+0093: 
+=> Send data, 72 bytes (0x48)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 727
+Date: Wed, 12 Aug 2026 20:04:45 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (727 bytes) ---
+{
+  "id": "chatcmpl-mock-b85cd143",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-hostile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<think> ▒▒ <|channel|>analysis Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. <|channel|>analysis <think> nested Mock hostile reply to: what is the weather in Berlin. delta gauge gauge windward harbor harbor yardarm zenith tiller jetty fathom keel. <|im_start|> <|im_start|>"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 88,
+    "total_tokens": 100
+  }
+}
+--- end of body ---
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  a plain question is answered with 200; observed 200
+PASS  finish_reason is one of stop|length|tool_calls; observed 'stop'
+PASS  usage totals are self-consistent
+PASS  the response carries a model id

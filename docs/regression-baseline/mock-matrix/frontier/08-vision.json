@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-mock-74f82518",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock frontier reply to: what is in this image. pennant harbor alpha lantern careful fathom delta meridian fathom umber jetty orbit orbit umber tiller pennant jetty sextant rudder quartz orbit umber orbit windward.",
+        "reasoning_content": "Considering the request about what is in this image. Profile frontier has a 200000-token window. Answering directly."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 95,
+    "completion_tokens": 83,
+    "total_tokens": 178
+  }
+}

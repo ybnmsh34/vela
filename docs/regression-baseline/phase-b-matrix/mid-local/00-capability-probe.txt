@@ -1,0 +1,223 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 00-capability-probe: capability probe
+================================================================================
+
+PURPOSE   Establish what this endpoint can do by asking it. Nothing may be assumed from a name.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the probe on the wire ---------------------------------------------------
+
+  >>> exchange 1 — GET http://127.0.0.1:34037/props
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (583 bytes, read to end) ---
+      {
+        "default_generation_settings": {
+          "n_ctx": 32768,
+          "model": "mock-mid-local",
+          "seed": 4294967295
+        },
+        "total_slots": 4,
+        "model_path": "/models/mock-mid-local.gguf",
+        "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+        "build_info": "vela-mock-provider",
+        "vela_mock": {
+          "profile": "mid-local",
+          "context_window": 32768,
+          "tool_calling": "native",
+          "vision": false,
+          "structured_output": "ignored",
+          "reasoning": "think-tags",
+          "emits_done_sentinel": true,
+          "emits_malformed_sse_frames": false
+        }
+      }
+
+  >>> exchange 2 — GET http://127.0.0.1:34037/v1/models
+      (no authorization header)
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (174 bytes, read to end) ---
+      {
+        "object": "list",
+        "data": [
+          {
+            "id": "mock-mid-local",
+            "object": "model",
+            "created": 1700000000,
+            "owned_by": "vela-mock-provider"
+          }
+        ]
+      }
+
+  >>> exchange 3 — POST http://127.0.0.1:34037/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (145 bytes) ---
+      {"max_tokens":16,"messages":[{"content":"Say OK.","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1578 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about Say OK.. Profile m"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"id-local "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+      data: {"id":"chatcmpl-mock-73b489b1","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":16,"total_tokens":22}}
+      
+      data: [DONE]
+      
+
+  >>> exchange 4 — POST http://127.0.0.1:34037/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (352 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"What is the weather in Berlin?","role":"user"}],"model":"mock-mid-local","stream":false,"tool_choice":"required","tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (635 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-8a8bddee",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-mid-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"alpha\"}"
+                  },
+                  "id": "call_8a8bddee"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 7,
+          "total_tokens": 19
+        }
+      }
+
+  >>> exchange 5 — POST http://127.0.0.1:34037/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (302 bytes) ---
+      {"max_tokens":16,"messages":[{"content":[{"text":"What colour is this?","type":"text"},{"image_url":{"url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="},"type":"image_url"}],"role":"user"}],"model":"mock-mid-local","stream":false}
+      <<< HTTP 400
+      content-type: application/json; charset=utf-8
+      --- response body (181 bytes, read to end) ---
+      {
+        "error": {
+          "message": "`mock-mid-local` does not support image input",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "vision_not_supported"
+        }
+      }
+
+  >>> exchange 6 — POST http://127.0.0.1:34037/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (336 bytes) ---
+      {"max_tokens":64,"messages":[{"content":"Reply with a JSON object containing the key \"answer\".","role":"user"}],"model":"mock-mid-local","response_format":{"json_schema":{"name":"vela_probe","schema":{"properties":{"answer":{"type":"string"}},"required":["answer"],"type":"object"},"strict":true},"type":"json_schema"},"stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (634 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-444cddf9",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-mid-local",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think>Considering the request about Reply with a JSON object containing. Profile mid-local has a 32768-token window. Answering directly.</think>\nMock mid-local reply to: Reply with a JSON object containing the key. orbit keel north sextant umber beacon iv"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 64,
+          "total_tokens": 82
+        }
+      }
+
+---- what Vela concluded -----------------------------------------------------
+  model                                  mock-mid-local
+  context window (tokens)                Some(32768)
+  streaming                              Supported
+  tool calling                           Supported
+  vision                                 Unsupported
+  structured output                      Degraded
+  reasoning                              Supported
+  model listing                          Supported
+  usage reporting                        Supported
+  prompt caching                         Unknown
+  probe wall clock                       15.707087ms
+
+  findings (how each belief was reached):
+    Streaming = Unknown (Declared) — endpoint declares a 32768-token context window
+    ModelListing = Supported (Probed) — 1 model(s) listed
+    Streaming = Supported (Probed) — streamed a completion
+    UsageReporting = Supported (Probed) — usage frame on a streamed turn
+    Reasoning = Supported (Probed) — emitted a reasoning channel
+    ToolCalling = Supported (Probed) — returned a well-formed tool call
+    Vision = Unsupported (Probed) — refused an image part
+    StructuredOutput = Degraded (Probed) — answered 200 without honouring the schema: the model returned prose, not JSON — the schema was ignored
+
+---- the flag set the renderer is allowed to see -----------------------------
+  {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+
+---- assertions --------------------------------------------------------------
+  [PASS] the declared context window is read from the endpoint, not guessed
+        expected 32768, probe reported Some(32768)
+  [PASS] tool calling matches the recorded matrix row
+        expected Supported, probed Supported
+  [PASS] vision matches the recorded matrix row
+        expected Unsupported, probed Unsupported
+  [PASS] structured output matches the recorded matrix row
+        expected Degraded, probed Degraded
+  [PASS] every belief carries probe evidence, none is a default
+        8 findings recorded
+  [PASS] no backend identity reaches the UI flag set
+        flag set = {"streaming":true,"vision":false,"toolCalls":true,"reasoning":true,"modelListing":true,"usageReporting":true,"promptCaching":false}
+  [PASS] the vision affordance follows the probe exactly
+        descriptor.vision = false, probe = Unsupported
+  [PASS] structured output is never advertised unless honoured (MEASURED-5)
+        honours_structured_output() = false
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

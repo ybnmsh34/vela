@@ -1,0 +1,55 @@
+[package]
+name = "vela-providers"
+description = "Model-provider seam — the trait every backend (local or hosted) implements"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+# The credential seam. This crate resolves an `Auth` binding into request
+# material through `vela_secrets::resolve_auth`; it never touches the OS
+# keychain, and never sees a `SecretValue` it did not ask that function for.
+vela-secrets.workspace = true
+async-trait = "0.1"
+# `time` for the stall timeout that MEASURED-1 makes mandatory, `sync` for the
+# cancellation token. No `rt`: the runtime belongs to the host process.
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+# THE ONLY HTTP CLIENT IN THE WORKSPACE, and it lives here on purpose: the mock
+# matrix proved the endpoints send no CORS headers and answer OPTIONS with 405,
+# so a browser-hosted renderer can never call them. All provider HTTP therefore
+# originates in the Rust core. `vela-settings/tests/capability_matrix_endpoints.rs`
+# fails if a second crate declares one.
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  "http2",
+  "charset",
+] }
+
+# `private_fs` used to be a module in this crate, and the Win32 dependency it
+# needs used to be declared here. It moved out when a second crate needed the
+# same promise: `vela-store` protects the application-data root that holds every
+# conversation, and it cannot depend on this crate to get there — the provider
+# seam carries an HTTP client and a Tokio runtime, and it already dev-depends on
+# `vela-store` in the other direction.
+#
+# Re-exported below under its old name so every existing call site and doc link
+# (`vela_providers::private_fs::…`, `crate::private_fs::…`) still resolves.
+vela-privatefs.workspace = true
+
+[dev-dependencies]
+# `net` is dev-only and buys one thing: `tests/wire_auth_headers.rs` opens a
+# real loopback socket to record the literal bytes Vela puts on the wire. That
+# is the only vantage point from which "Auth::None sends no credential" is a
+# claim about the wire rather than about a struct. It is not an HTTP client —
+# `vela-settings/tests/capability_matrix_endpoints.rs` still sees exactly one.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "process", "io-util", "net"] }
+# The parity test deserialises this crate's content model as vela-store's and
+# back, so the two models cannot drift. A dev-dependency only: the provider seam
+# must not depend on persistence at runtime.
+vela-store.workspace = true

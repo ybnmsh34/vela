@@ -1,0 +1,154 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 14-reasoning-meets-tool-calling: deliberation about a call is not a call
+================================================================================
+
+PURPOSE   The intersection cases 06 and 02 never drove together. An unterminated <think> on a token limit is routine; emulated tool calling is the only way tools work on a runtime that refuses a `tools` array. Together they turned a model REFUSING to run `delete_everything` into a turn that would have run it.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE TURN, verbatim from the round-4 panel:
+    <think>I could call <tool_call>{"name":"delete_everything",
+    "arguments":{"path":"/"}}</tool_call> but that would be destructive,
+    so I will not.
+  — and the stream ends there. The block never closes.
+  THE PEER answers `400 tools_not_supported` to any request carrying `tools`,
+  exactly as `small-local` does (FINDING 6), so emulation is entered the way it
+  is entered in production rather than by a test flag.
+
+---- streamed — the raw exchange -------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:34939/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (350 bytes) ---
+      {"messages":[{"content":"tidy up the disk","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true},"tools":[{"function":{"description":"Irreversibly delete a directory tree","name":"delete_everything","parameters":{"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (117 bytes, read to end) ---
+      {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
+
+  >>> exchange 2 — POST http://127.0.0.1:34939/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (673 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n","role":"system"},{"content":"tidy up the disk","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream
+      --- response body (1791 bytes, read to end) ---
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"<think>I co"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"uld call <t"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ool_call>{\""},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"name\":\"dele"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"te_everythi"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ng\",\"argume"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"nts\":{\"path"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"\":\"/\"}}</to"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ol_call> bu"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"t that woul"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"d be destru"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ctive, so I"},"finish_reason":null}]}
+      
+      data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" will not."},"finish_reason":null}]}
+      
+      data: {"id":"c","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+      
+      data: [DONE]
+      
+
+---- streamed — what Vela produced -----------------------------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  TextDelta events                       "I could call  but that would be destructive, so I will not."
+
+---- streamed — assertions -------------------------------------------------
+  [PASS] streamed: emulation was entered through the endpoint's own 400
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  [PASS] streamed: the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }, UsageNotReported
+  [PASS] streamed: a call recovered from a never-closed <think> is NOT executable
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] streamed: the turn does not end in ToolUse
+        MaxTokens
+  [PASS] streamed: the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] streamed: no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] streamed: no raw tool-call markup on any TextDelta
+        "I could call  but that would be destructive, so I will not."
+  [PASS] streamed: MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] streamed: the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+---- non-streamed — the raw exchange ---------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:34487/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (311 bytes) ---
+      {"messages":[{"content":"tidy up the disk","role":"user"}],"model":"mock-hostile","stream":false,"tools":[{"function":{"description":"Irreversibly delete a directory tree","name":"delete_everything","parameters":{"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 400
+      content-type: application/json
+      --- response body (117 bytes, read to end) ---
+      {"error":{"message":"this model does not support tools","code":"tools_not_supported","type":"invalid_request_error"}}
+
+  >>> exchange 2 — POST http://127.0.0.1:34487/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (634 bytes) ---
+      {"messages":[{"content":"You have access to the following tools. To use one, reply with a single\nblock in exactly this form and nothing else:\n\n<tool_call>{\"name\": \"<tool name>\", \"arguments\": {<arguments object>}}</tool_call>\n\nUse a tool only when it is needed. If no tool is needed, answer normally\nand do not emit a tool_call block.\n\nTools:\n- delete_everything: Irreversibly delete a directory tree\n  arguments schema: {\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}\n","role":"system"},{"content":"tidy up the disk","role":"user"}],"model":"mock-hostile","stream":false}
+      <<< HTTP 200
+      content-type: application/json
+      --- response body (282 bytes, read to end) ---
+      {"choices":[{"finish_reason":"length","index":0,"message":{"content":"<think>I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not.","role":"assistant"}}],"id":"c","object":"chat.completion"}
+
+---- non-streamed — what Vela produced -------------------------------------
+  answer                                 "I could call  but that would be destructive, so I will not."
+  reasoning                              "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+  tool calls                             MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  stop reason                            MaxTokens
+  degradations                           ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  (`complete` sinks its events into a NullSink by construction — there is no
+  user-visible delta stream on this transport to inspect.)
+
+---- non-streamed — assertions ---------------------------------------------
+  [PASS] non-streamed: emulation was entered through the endpoint's own 400
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] non-streamed: the reasoning block really never closed
+        ToolCallingEmulated { tool_count: 1 }, UnterminatedReasoning { recovered_answer_chars: 59 }, MalformedToolCalls { count: 1 }
+  [PASS] non-streamed: a call recovered from a never-closed <think> is NOT executable
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] non-streamed: the turn does not end in ToolUse
+        MaxTokens
+  [PASS] non-streamed: the refusal is REPORTED, not silently dropped
+        MALFORMED index=None id=call_emulated_0 name=delete_everything reason=RecoveredFromUnterminatedReasoning raw="{\"path\":\"/\"}"
+  [PASS] non-streamed: no raw tool-call markup in the answer
+        "I could call  but that would be destructive, so I will not."
+  [PASS] non-streamed: MEASURED-3 still holds — the answer is not swallowed
+        "I could call  but that would be destructive, so I will not."
+  [PASS] non-streamed: the deliberation is kept as reasoning
+        "I could call <tool_call>{\"name\":\"delete_everything\",\"arguments\":{\"path\":\"/\"}}</tool_call> but that would be destructive, so I will not."
+
+================================================================================
+VERDICT  17 assertion(s), 0 failure(s)
+================================================================================

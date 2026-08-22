@@ -1,0 +1,99 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: frontier — case 08-malformed-frames: malformed SSE frames
+================================================================================
+
+PURPOSE   MEASURED-2: a consumer that JSON.parse'd every frame threw after 4 frames and lost 318 of 349 characters. One bad frame must cost one frame.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `frontier`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream --------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:42255/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (150 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-frontier","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (5071 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"Mock frontier re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ply to: what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"the weather in B"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"erlin. rudder ga"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"uge windward bea"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"con meridian bea"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"con sextant fath"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"om windward harb"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"or fathom ember "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"umber rudder nor"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"th pennant ivory"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":" orbit beacon me"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ridian umber zen"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"ith pennant umbe"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"content":"r."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: {"id":"chatcmpl-mock-3674c004","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":88,"total_tokens":100}}
+      
+      data: [DONE]
+      
+
+---- frame census ------------------------------------------------------------
+  frames in the body                     26
+  frames that are not valid JSON         0
+
+---- what Vela produced, against the non-streamed ground truth ---------------
+  streamed answer                        "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+  non-streamed answer                    "Mock frontier reply to: what is the weather in Berlin. rudder gauge windward beacon meridian beacon sextant fathom windward harbor fathom ember umber rudder north pennant ivory orbit beacon meridian umber zenith pennant umber."
+  streamed characters                    226
+  ground-truth characters                226
+  degradations                           (none)
+  a strict-JSON consumer would have delivered 226
+
+---- assertions --------------------------------------------------------------
+  [PASS] an endpoint that emits no bad frames produces no skip degradation
+        (none)
+  [PASS] content that arrives AFTER the bad frames still reaches the user
+        the tail of the ground truth is present in the streamed answer
+  [PASS] one bad frame never aborts the turn
+        226 characters delivered
+
+================================================================================
+VERDICT  3 assertion(s), 0 failure(s)
+================================================================================

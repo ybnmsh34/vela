@@ -1,0 +1,152 @@
+/**
+ * Configured endpoints → the rows a switcher can show.
+ *
+ * Pure. No React, no adapter, so the rules below are testable without a DOM.
+ *
+ * The one rule worth stating: **an endpoint that cannot be used is still
+ * listed.** Hiding it would leave the user staring at a switcher that omits the
+ * thing they just configured, with nowhere to find out why. It is listed,
+ * marked, and unselectable, and the reason is an enumerable value so the UI —
+ * not this file, and certainly not the host — owns the sentence.
+ */
+
+import type { ModelOption, ProviderKind, ProviderView, SecurityPosture } from '@/platform/contract';
+import type { ModelSelection } from '@/state/model-store';
+
+/** Why a row cannot be chosen. `null` means it can. */
+export type EntryBlock = 'noModelChosen' | 'credentialRequired';
+
+export interface ModelEntry {
+  readonly providerId: string;
+  /** The user's own name for the endpoint. */
+  readonly providerLabel: string;
+  /** `null` when the endpoint is configured but no model has been named yet. */
+  readonly modelId: string | null;
+  readonly modelLabel: string | null;
+  readonly kind: ProviderKind;
+  readonly blocked: EntryBlock | null;
+  readonly security: SecurityPosture;
+}
+
+/**
+ * The separator inside {@link entryKey}.
+ *
+ * A NUL, because a provider id and a model id are both user-supplied and
+ * neither has a forbidden character: any printable separator is one an id could
+ * itself contain, and then `('a/b', 'c')` and `('a', 'b/c')` produce the same
+ * key and two rows in the switcher become one.
+ *
+ * **Constructed, never typed.** It used to be a raw `U+0000` sitting inside the
+ * template literal below, where no editor draws it, no diff shows it and no
+ * reviewer can see it — a load-bearing byte that any copy-paste, `sed` pass or
+ * whitespace-fixing patch tool was free to delete, silently turning the
+ * separator into nothing. `src/platform/control-characters.test.ts` now fails
+ * the build if one reappears anywhere in the tree.
+ */
+const KEY_SEPARATOR = String.fromCodePoint(0);
+
+/** Stable identity for a row, for React keys and equality checks. */
+export function entryKey(entry: Pick<ModelEntry, 'providerId' | 'modelId'>): string {
+  return `${entry.providerId}${KEY_SEPARATOR}${entry.modelId ?? ''}`;
+}
+
+function blockOf(view: ProviderView): EntryBlock | null {
+  // Order matters: a provider with neither a model nor its required credential
+  // must always blame the same thing, or the UI's message flickers between two
+  // truths as the user fixes them in either order. The credential is the
+  // stronger claim — the host computed it — so it wins.
+  if (!view.usable) return 'credentialRequired';
+  if (view.modelId === null || view.modelId.trim() === '') return 'noModelChosen';
+  return null;
+}
+
+/**
+ * One row per configured endpoint.
+ *
+ * `discovered` adds the models an endpoint enumerated for itself, keyed by
+ * provider id. An endpoint with no listing route contributes nothing there and
+ * still gets its configured row — that is the llama.cpp-shaped case and it is
+ * the common one, not the exception.
+ */
+export function modelEntries(
+  providers: readonly ProviderView[],
+  discovered: ReadonlyMap<string, readonly ModelOption[]> = new Map(),
+): readonly ModelEntry[] {
+  const entries: ModelEntry[] = [];
+
+  for (const view of providers) {
+    const block = blockOf(view);
+    entries.push({
+      providerId: view.id,
+      providerLabel: view.displayName,
+      modelId: view.modelId,
+      modelLabel: view.modelId,
+      kind: view.kind,
+      blocked: block,
+      security: view.security,
+    });
+
+    for (const option of discovered.get(view.id) ?? []) {
+      // The configured model is already listed above; an endpoint that also
+      // enumerates it must not produce the row twice.
+      if (option.modelId === view.modelId) continue;
+      entries.push({
+        providerId: view.id,
+        providerLabel: view.displayName,
+        modelId: option.modelId,
+        modelLabel: option.displayName === '' ? option.modelId : option.displayName,
+        kind: view.kind,
+        // A discovered model inherits only the endpoint-level block. It cannot
+        // be `noModelChosen` — it *is* a model.
+        blocked: view.usable ? null : 'credentialRequired',
+        security: view.security,
+      });
+    }
+  }
+
+  return entries;
+}
+
+export function isSelectable(entry: ModelEntry): entry is ModelEntry & { readonly modelId: string } {
+  return entry.blocked === null && entry.modelId !== null;
+}
+
+export function selectionOf(entry: ModelEntry): ModelSelection | null {
+  if (!isSelectable(entry)) return null;
+  return {
+    providerId: entry.providerId,
+    modelId: entry.modelId,
+    providerLabel: entry.providerLabel,
+    modelLabel: entry.modelLabel ?? entry.modelId,
+  };
+}
+
+/**
+ * What to start on when nothing is chosen yet.
+ *
+ * The first selectable row in the host's order, which is alphabetical by id and
+ * therefore stable. Deliberately *not* "the most recently used" or "the one
+ * that looks best": neither is knowable here, and a switcher whose default
+ * moves around is a switcher the user stops trusting.
+ */
+export function defaultSelection(entries: readonly ModelEntry[]): ModelSelection | null {
+  for (const entry of entries) {
+    const selection = selectionOf(entry);
+    if (selection !== null) return selection;
+  }
+  return null;
+}
+
+/** Does this selection still exist in the catalogue? */
+export function stillExists(
+  entries: readonly ModelEntry[],
+  selection: ModelSelection | null,
+): boolean {
+  if (selection === null) return false;
+  return entries.some(
+    (entry) =>
+      isSelectable(entry) &&
+      entry.providerId === selection.providerId &&
+      entry.modelId === selection.modelId,
+  );
+}

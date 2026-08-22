@@ -1,0 +1,200 @@
+/* THE COMPOSER STANDS INSIDE THE TRANSCRIPT'S RESERVATION.
+ *
+ * The transcript's scroller reserves a gutter on both edges so a classic
+ * Windows scrollbar cannot bend the reading ruler (see the long note in
+ * `ConversationView.module.css`). The column it centres lives INSIDE that
+ * reservation; this form is its sibling and lived OUTSIDE it, so the two boxes
+ * agreed only while the window was wide enough for the column to still reach
+ * `--vela-measure`. Narrower than that and the column clamped to the scroller's
+ * reduced content box while the field kept the full measure: 456px of text over
+ * a 480px box, overhanging 12px on each side, at 880px with the sidebar at its
+ * maximum — on Linux, and confirmed on real WebView2.
+ *
+ * So the form reserves the same gutter, with the same property. `overflow:
+ * hidden` is what makes it a scroll container, which is what `scrollbar-gutter`
+ * applies to; nothing here can overflow (the field, its hint and the offscreen
+ * label are all in flow), so nothing is clipped by it.
+ *
+ * WHY MIRROR THE PROPERTY RATHER THAN PAD BY `--vela-scroll-reserve`. Padding
+ * would put this file's arithmetic where the engine's answer belongs, and the
+ * two part company on any engine that resolves `scrollbar-gutter` differently
+ * or not at all — where a padded composer would break the ruler by the full
+ * reservation instead of holding it at zero. Mirroring makes both boxes ask the
+ * same engine the same question. The token exists for the one place that cannot
+ * ask: the sidebar's cap, which is a length in `min()`.
+ *
+ * The gutter the field is centred against is still `--vela-space-5`, the same
+ * one the column pads by — `surfaces.test.ts` requires those two to be one
+ * number, and the reservation below is not a gutter and does not change it. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) var(--vela-space-5) var(--vela-space-4);
+  background: var(--vela-bg);
+  border-top: 1px solid var(--vela-border);
+  overflow: hidden;
+  scrollbar-gutter: stable both-edges;
+}
+
+.field {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vela-space-2);
+  width: 100%;
+  max-width: var(--vela-measure);
+  margin: 0 auto;
+  padding: var(--vela-space-2) var(--vela-space-2) var(--vela-space-2) var(--vela-space-3);
+  border: 1px solid var(--vela-border-strong);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-surface-raised);
+  box-shadow: var(--vela-shadow-sm);
+  transition: border-color var(--vela-duration) var(--vela-ease);
+}
+
+.field:focus-within {
+  border-color: var(--vela-accent);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--vela-text-base);
+  line-height: var(--vela-leading-ui);
+  color: var(--vela-text);
+  padding: var(--vela-space-1) 0;
+  /* 320px is 41% of the configured window and 69% of the same machine's window
+     at 150% display scaling, where it would leave the transcript a sliver. The
+     cap is whichever is smaller — a long draft still scrolls inside it. */
+  max-height: min(320px, 30vh);
+  overflow-y: auto;
+}
+
+.input::placeholder {
+  color: var(--vela-text-subtle);
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-1);
+  flex: 0 0 auto;
+}
+
+.send,
+.stop {
+  appearance: none;
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  padding: var(--vela-space-2) var(--vela-space-4);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--vela-duration) var(--vela-ease),
+    color var(--vela-duration) var(--vela-ease);
+}
+
+.send {
+  background: var(--vela-accent);
+  color: var(--vela-text-on-accent);
+}
+
+.send:hover:not(:disabled) {
+  background: var(--vela-accent-hover);
+}
+
+.send:disabled {
+  background: var(--vela-bg-inset);
+  color: var(--vela-text-subtle);
+  cursor: not-allowed;
+}
+
+.stop {
+  background: var(--vela-surface);
+  border-color: var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.stop:hover {
+  border-color: var(--vela-danger);
+  color: var(--vela-danger);
+}
+
+.send:focus-visible,
+.stop:focus-visible,
+.iconButton:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.iconButton {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: var(--vela-control-md);
+  height: var(--vela-control-md);
+  border-radius: var(--vela-radius-md);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vela-text-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--vela-text);
+  background: var(--vela-bg-inset);
+}
+
+/* A toggle that is on has to read as on without its label: the state changes
+   what pressing Send does, and a control that looks identical either way is a
+   mode the user cannot see they are in. Driven off `aria-pressed` rather than a
+   second class so the accessible state and the visible one cannot diverge. */
+.iconButton[aria-pressed='true'] {
+  color: var(--vela-accent);
+  border-color: var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
+.hint {
+  margin: 0 auto;
+  width: 100%;
+  max-width: var(--vela-measure);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+.hint kbd {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-inline);
+  padding: 0 0.3em;
+  border: 1px solid var(--vela-border);
+  border-bottom-width: 2px;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-bg-inset);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

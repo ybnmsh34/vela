@@ -1,0 +1,138 @@
+/**
+ * Global reset and element defaults. Everything else is a CSS Module beside its
+ * component — see docs/architecture/conventions.md. Do not add component styles
+ * to this file.
+ */
+
+/* The `@font-face` rules must be reachable from the app's entry point, not
+   merely present somewhere in `src/`: a stylesheet nothing imports declares
+   nothing. `src/styles/typeface.test.ts` walks this graph from `main.tsx` and
+   fails if the family a stack names first is not declared along it. */
+@import './typeface.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--vela-bg);
+  color: var(--vela-text);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-base);
+  /* Was a bare `1.5`. `--vela-leading-ui` *is* 1.5, so nothing moves — but the
+     one place every element in the app inherits its leading from was the one
+     place answering the leading question privately, and `design-system.test.ts`
+     could not see it because that scan only walks `*.module.css`.
+     `typeface.test.ts` now walks the global sheets too. */
+  line-height: var(--vela-leading-ui);
+
+  /* Two properties were removed here rather than kept, and the reason is the
+     same reason this commit exists.
+
+     `-webkit-font-smoothing: antialiased` is a macOS-only lever: it turns off
+     subpixel antialiasing, which makes the same face render lighter on macOS
+     than on Windows and Linux. It was inert on the operator's Windows machine
+     and it was compensating for a typeface that never loaded. Now that Vela
+     ships its own face, cross-platform sameness is the entire point of having
+     done so, and deliberately thinning one platform's rendering of it works
+     against that.
+
+     `text-rendering: optimizeLegibility` is an SVG hint browsers reinterpret as
+     "enable kerning and standard ligatures" — both already on by default for
+     `font-kerning: auto` — and it has a long history of engine bugs behind it.
+     It was doing nothing that the default was not already doing.
+
+     Neither removal changes a measurement in this repository's evidence. Both
+     are stated because a future reader will otherwise re-add them. */
+  /* The desktop shell is not a document: no rubber-band, no text selection on
+     chrome. Content regions opt selection back in. */
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--vela-focus);
+  outline-offset: 2px;
+  border-radius: var(--vela-radius-sm);
+}
+
+::selection {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-text);
+}
+
+/* ---- the scrollbar -------------------------------------------------------- *
+ * There was no scrollbar styling anywhere in `src/`, and `color-scheme` said
+ * `light dark` at the root and nothing in either dark block. On Windows that
+ * combination is not "the default": it is the *legacy* non-overlay scrollbar —
+ * a white trough with grey arrow buttons at each end — painted down the side of
+ * a dark application, because the OS was answering a question the app had left
+ * open. `tokens.css` now narrows `color-scheme` per theme; these rules draw the
+ * scrollbar itself so it is the same object on every platform Vela ships to.
+ *
+ * **Do not add `scrollbar-color` or `scrollbar-width` here.** They are the
+ * standard properties and they look like the more modern choice, but in
+ * Chromium — which is WebView2, which is what Vela runs inside on Windows —
+ * setting either one on an element makes the engine ignore every
+ * `::-webkit-scrollbar-*` rule for that scroller, including
+ * `::-webkit-scrollbar-button`, and the arrow buttons come back. The two
+ * mechanisms do not compose; this file picks the one that can remove them.
+ * `src/styles/platform-defaults.test.ts` fails if the other one appears.
+ *
+ * The thumb is drawn with a transparent border and `background-clip:
+ * padding-box` so it sits inside the track without the track being painted:
+ * a scroller can be on the page, on the chrome or inside a popover, and a
+ * painted trough would be wrong on two of the three.                          */
+::-webkit-scrollbar {
+  width: var(--vela-scrollbar-size);
+  height: var(--vela-scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--vela-scrollbar-track);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vela-scrollbar-thumb);
+  background-clip: padding-box;
+  border: var(--vela-scrollbar-inset) solid transparent;
+  border-radius: var(--vela-radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vela-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

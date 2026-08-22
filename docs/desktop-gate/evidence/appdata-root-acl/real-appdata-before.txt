@@ -1,0 +1,116 @@
+﻿The finding, measured read-only. This file is a MEASUREMENT, not a run: nothing
+here modified anything.
+
+WHICH ROWS ARE REAL. Read this before quoting any row below.
+
+  Row 1, `...\dev.vela.desktop` itself, resolves to the REAL per-user
+  application-data directory. Review confirmed its live SDDL is byte-identical
+  to what is recorded here, so its 6 access rules and Protected=False are the
+  user's actual ACL. This is the row the finding rests on, and the only row
+  anything in the branch relies on.
+
+  The remaining rows -- the child entries, INCLUDING `diagnostics` -- resolve
+  into a container view rather than the real directory. They are recorded here
+  as they were read, but they are NOT evidence about the user's real files and
+  must not be quoted as such. An earlier draft of `vela-privatefs`' module docs
+  quoted the `diagnostics` row to contrast a protected debug-log directory with
+  an unprotected root; that quotation has been removed.
+
+  This line originally said all nine rows were "measured on the real
+  application-data directory", which was wrong for eight of them.
+
+  The gate transcript beside this file is unaffected: it drives a scratch
+  directory under %TEMP%, which resolves real throughout.
+Taken at HEAD, before the fix, on DESKTOP-298M5DU as User, 2026-08-15T14:30:52.8684628+03:00.
+
+Note diagnostics — hardened by the earlier fix — against everything beside it.
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop  (<dir>)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 268435456                      inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;OICIIOID;GA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;OICIID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\diagnostics  (<dir>)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=False
+      DESKTOP-298M5DU\User                       FullControl                    inherited=False
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\skills  (<dir>)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 268435456                      inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;OICIIOID;GA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;OICIID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;OICIID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db  (315392 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db-shm  (32768 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db-shm.pre-cleanup-20260815  (32768 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db-wal  (98912 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db-wal.pre-cleanup-20260815  (2603872 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+
+--- C:\Users\User\AppData\Roaming\dev.vela.desktop\vela.db.pre-cleanup-20260815  (4096 bytes)
+    Owner                   : DESKTOP-298M5DU\User
+    AreAccessRulesProtected : False
+      S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932 FullControl                    inherited=True
+      DESKTOP-298M5DU\User                       FullControl                    inherited=True
+      DESKTOP-298M5DU\CodexSandboxUsers          ReadAndExecute, Synchronize    inherited=True
+      NT AUTHORITY\SYSTEM                        FullControl                    inherited=True
+      BUILTIN\Administrators                     FullControl                    inherited=True
+    SDDL                    : O:S-1-5-21-1337097237-1456437254-2378116049-1001G:S-1-5-21-1337097237-1456437254-2378116049-1001D:AI(A;ID;FA;;;S-1-15-3-3557520199-3666692283-3112367039-3524159787-2791857073-3163583606-3692855932)(A;ID;FA;;;S-1-5-21-1337097237-1456437254-2378116049-1001)(A;ID;0x1200a9;;;S-1-5-21-1337097237-1456437254-2378116049-1006)(A;ID;FA;;;SY)(A;ID;FA;;;BA)
+

@@ -1,0 +1,43 @@
+GATE M — the staged attachment, mutated in the composition root
+
+Scratch worktree at HEAD with this wave's harness copied in, and ONE line removed:
+  src/app/App.tsx: `attachments={attachments}` — the prop that joins the staging
+  hook to the surface that sends the turn. That is the defect exactly as it shipped.
+
+vitest, the component-level control:
+   × a staged file reaches the payload > puts a staged image in the outgoing chat_send request 396ms
+   × a staged file reaches the payload > puts a staged text file in the payload too, alongside an image 193ms
+   × a staged file reaches the payload > sends a text file on a model with no vision, where that is the only picker 172ms
+   × a staged file reaches the payload > empties the tray once the bytes are on their way, and not before 1201ms
+        ×
+   × a staged file reaches the payload > tells the user when a staged file could not be read, and sends nothing 1178ms
+   × every attach affordance in the app is a real one > stages and sends through the composer button, which used to do nothing at all 1136ms
+   ✓ every attach affordance in the app is a real one > offers the composer picker only where the capability is, and never as a dead control 76ms
+   × every attach affordance in the app is a real one > gives the composer picker the same accept list the staging rules enforce 65ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload > puts a staged image in the outgoing chat_send request
+ FAIL  src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload > puts a staged text file in the payload too, alongside an image
+ FAIL  src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload > sends a text file on a model with no vision, where that is the only picker
+ FAIL  src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload > empties the tray once the bytes are on their way, and not before
+        ×
+ FAIL  src/app/staged-attachment-payload.test.tsx > a staged file reaches the payload > tells the user when a staged file could not be read, and sends nothing
+ FAIL  src/app/staged-attachment-payload.test.tsx > every attach affordance in the app is a real one > stages and sends through the composer button, which used to do nothing at all
+ FAIL  src/app/staged-attachment-payload.test.tsx > every attach affordance in the app is a real one > gives the composer picker the same accept list the staging rules enforce
+ Test Files  1 failed (1)
+      Tests  7 failed | 1 passed (8)
+
+The same mutation, driven through the REAL browser matrix over the relay against
+the real Rust core and a real mock endpoint (frontier profile), out of the mutated
+worktree served by its own Vite on 127.0.0.1:1420:
+
+  frontier: 37/40 passed
+
+C32	attachments	FAIL	a staged text file reaches the outgoing payload AND the endpoint, carrying its name	renderer->host textParts=[] | core->endpoint carriesName=false carriesBody=false
+C33	attachments	PASS	the composer's attach button opens the composer's own picker	chooser opened on composer-attachment-picker
+C34	attachments	FAIL	a staged image reaches the outgoing payload AND the bytes arrive at the endpoint	renderer->host parts=[] carriesImage=false | core->endpoint body 8029 bytes, carriesImage=false
+C35	attachments	FAIL	the endpoint was asked to look at an image part, not handed base64 as prose	content parts=[] url starts ""
+
+Exactly the three attachment assertions go red, and nothing else in the matrix
+moves. C33 stays green and should: the mutation removes the payload wiring, not
+the button's handler, and an assertion set that could not tell those apart would
+not be able to say which half broke.

@@ -1,0 +1,56 @@
+Vela performance — RELEASE build, Windows 11 Home 26200, i7-11700K, 63.8 GB RAM
+WebView2 Runtime 151.0.4129.78. Binary size: 14.91 MB
+
+  run 1: cold start to RENDERED CONTENT = 3170 ms  (ok=True)
+  run 2: cold start to RENDERED CONTENT = 3102 ms  (ok=True)
+  run 3: cold start to RENDERED CONTENT = 3106 ms  (ok=True)
+  --> MEDIAN cold start to rendered content: 3106 ms
+
+  (For contrast: time to the window HANDLE merely existing was 46-47 ms warm /
+   579 ms on the first uncached launch. That is not 'interactive' and is not the
+   number to quote -- the window exists before WebView2 has painted anything.)
+
+== idle footprint, RELEASE build ==
+  after 60 s at rest:
+vela.exe RSS        : 34.5 MB
+    webview2 RSS (30 proc): 1,363.1 MB
+    TOTAL               : 1,397.6 MB
+
+  CPU at idle (sampled over 10 s):
+vela.exe CPU        : 0.00% of one core (0.000% of machine, 16 cores)
+
+== CORRECTION to the idle-footprint figure above ==
+  The "webview2 RSS (30 proc): 1,363.1 MB" line above is WRONG and is withdrawn.
+  It summed EVERY msedgewebview2.exe on this machine. This box runs other
+  WebView2 apps (the Claude desktop app among them), so most of that total
+  belongs to other processes entirely.
+
+  Re-measured by walking Vela's actual process tree (descendants of vela.exe):
+
+    vela.exe RSS                       :  34.5 MB
+    WebView2 children of Vela (6 procs): 326.1 MB
+    VELA TOTAL, attributed             : 360.6 MB     <-- the real idle figure
+    (all msedgewebview2 machine-wide   : 1,362.6 MB across 30 procs, mostly other apps)
+
+== SUMMARY OF MEASURED NUMBERS (release build) ==
+  binary size                          : 14.91 MB
+  cold start to RENDERED CONTENT       : 3106 ms median of 3 (3170 / 3102 / 3106)
+  cold start to window HANDLE existing :   47 ms warm, 579 ms first uncached launch
+                                         (NOT interactive -- the window exists before
+                                          WebView2 has painted; not the number to quote)
+  idle RSS after 60 s, attributed      : 360.6 MB
+  idle CPU                             : 0.00% of one core over a 10 s sample (16 cores)
+
+  Server-side reference for streaming, measured earlier against the same llama.cpp:
+    generation 27.9 tok/s, prompt 103 tok/s. Through Vela's own event stream,
+    first reasoningDelta at 0.57 s and first textDelta at 10.21 s on a trivial prompt.
+
+== NOT MEASURED -- stated rather than estimated ==
+  * RAM after a 200-message conversation. Not run. Generating 200 real turns against a
+    27B model is hours of wall clock, and synthesising them through the store IPC would
+    measure the renderer under synthetic load, not the app under use. Either is a real
+    test; neither was run, so no number is offered.
+  * Streaming render throughput / dropped frames during fast token streams. Not measured.
+    At 27.9 tok/s this endpoint cannot stress a renderer; a faster endpoint is needed
+    before any frame-drop claim would mean anything.
+  * TTFT against a third-party API provider. No API provider is configured on this machine.

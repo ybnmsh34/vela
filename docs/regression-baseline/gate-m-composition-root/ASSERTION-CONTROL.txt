@@ -1,0 +1,144 @@
+GATE M — ASSERTION CONTROLS for the assembled application
+=========================================================
+
+Each control breaks ONE joint of the composition root and records which
+assertions of tests/gate_m_assembled_app.rs go red. An assertion that
+stays green under the defect it claims to detect is not evidence.
+
+worktree : /tmp/vela-gate-m-controls  (detached at 59455cd)
+target   : /tmp/vela-gate-m-controls-target
+The shared checkout at /home/user/vela is only read.
+
+=== C0 — BASELINE: the unmodified tree ===
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... ok
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... ok
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... ok
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... ok
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+
+=== C1 — startup never syncs the provider set from settings ===
+    edit: delete the sync_from_settings call from run()'s setup
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... FAILED
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... ok
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... ok
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... ok
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== C2 — a configured endpoint is written but never built ===
+    edit: settings::put_provider stops installing into the ProviderHost
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... ok
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... FAILED
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... FAILED
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... FAILED
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... FAILED
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... FAILED
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... FAILED
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... FAILED
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: FAILED. 7 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== C3 — the debug-log switch is left with no caller in the app ===
+    edit: drop the DebugLogHandle from run()'s setup
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... ok
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... ok
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... ok
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... ok
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... FAILED
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== C4 — the chat IPC can no longer carry an image or a tool ===
+    edit: build_request drops tools and non-text parts, as before the wave
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... ok
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... FAILED
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... ok
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... FAILED
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== C5 — the transcript is kept in memory instead of on disk ===
+    edit: store_host::open returns an in-memory database
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... FAILED
+    test a_remote_origin_cannot_reach_a_command ... ok
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... ok
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... FAILED
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... ok
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... FAILED
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... ok
+    test result: FAILED. 11 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== C6 — a command is missing from the invoke handler ===
+    edit: remove app_info from generate_handler!
+    test a_command_outside_the_allowlist_is_not_dispatchable ... ok
+    test a_provider_configured_in_an_earlier_session_is_live_after_a_restart ... ok
+    test a_remote_origin_cannot_reach_a_command ... FAILED
+    test a_tool_catalogue_offered_in_the_payload_reaches_the_endpoint ... ok
+    test a_turn_sent_through_the_real_chat_command_reaches_the_configured_endpoint ... ok
+    test a_turn_that_offers_nothing_puts_no_tools_and_no_image_on_the_wire ... ok
+    test a_turn_written_through_the_shipping_commands_survives_a_cold_restart ... ok
+    test an_image_attached_in_the_payload_reaches_the_endpoint ... ok
+    test deleting_an_endpoint_makes_it_unreachable_immediately ... ok
+    test nothing_is_readable_before_anything_is_written ... ok
+    test the_assembled_app_writes_a_database_file_to_the_application_data_directory ... ok
+    test the_debug_log_switch_has_a_caller_in_the_assembled_app_and_starts_off ... ok
+    test the_pre_fix_wiring_still_reproduces_not_found_on_demand ... ok
+    test the_runtime_state_reports_the_credential_backend_it_actually_built ... FAILED
+    test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+    error: test failed, to rerun pass `-p vela-app --test gate_m_assembled_app`
+
+=== the scratch worktree, after every control ===
+(nothing above this line means clean)

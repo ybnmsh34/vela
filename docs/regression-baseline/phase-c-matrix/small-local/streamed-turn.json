@@ -1,0 +1,10 @@
+{
+  "answer": "Mock small-local reply to: Summarise what this endpoint can do.. jetty beacon rudder rudder umber jetty ember orbit sextant sextant.",
+  "whole": "Mock small-local reply to: Summarise what this endpoint can do.. jetty beacon rudder rudder umber jetty ember orbit sextant sextant.\n\nNo token counts\nThis endpoint does not report token usage.\nCopy",
+  "reasoning": null,
+  "tools": null,
+  "degradations": [
+    "No token counts\nThis endpoint does not report token usage."
+  ],
+  "error": null
+}

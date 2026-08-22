@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+#
+# Tests for `secret-scan.sh` — the tripwire's own tripwire.
+#
+# A scanner that has never caught anything is indistinguishable from a scanner
+# that cannot catch anything. Each case below plants a **real key shape** in a
+# throwaway git repository and asserts the scanner's verdict on it. The headline
+# case is `docs/`: the scan used to exempt that whole tree, which is where the
+# committed mock-provider transcripts live.
+#
+# No literal key appears in this file. Every shape is assembled at runtime from
+# fragments, so the file itself stays clean under the very pattern it is
+# testing — `scan_scans_itself_and_stays_clean` proves that rather than assuming
+# it.
+#
+# Usage: scripts/secret-scan.test.sh
+
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+scanner="$here/secret-scan.sh"
+repo_root=$(cd "$here/.." && pwd)
+
+passed=0
+failed=0
+
+pass() { printf 'ok   %s\n' "$1"; passed=$((passed + 1)); }
+fail() { printf 'FAIL %s\n     %s\n' "$1" "${2:-}"; failed=$((failed + 1)); }
+
+# Key shapes, assembled so this file never contains one. Lengths are chosen to
+# clear the pattern's minimums, exactly as a real key would.
+anthropic_key="sk-ant-api03-$(printf 'A%.0s' {1..24})"
+openai_key="sk-$(printf 'B%.0s' {1..40})"
+google_key="AIza$(printf 'C%.0s' {1..35})"
+# Split mid-literal on purpose. Written whole, this line trips the scanner when
+# it scans its own repository — which is the correct behaviour, and the reason
+# `scan_scans_itself_and_stays_clean` exists. Bash concatenates the adjacent
+# strings, so the value below is a complete PEM header at runtime.
+pem_block="-----BEGIN RSA ""PRIVATE KEY-----"
+
+# Builds a throwaway repository containing one file, runs the scanner over it,
+# and echoes "caught" or "clean".
+#
+#   verdict_for <relative/path> <file contents>
+verdict_for() {
+  local relative_path=$1 contents=$2 tmp output rc
+  tmp=$(mktemp -d)
+  (
+    cd "$tmp" || exit 1
+    git init -q .
+    git config user.email tripwire@vela.test
+    git config user.name Tripwire
+    mkdir -p "$(dirname "$relative_path")"
+    printf '%s\n' "$contents" > "$relative_path"
+    git add -A
+    git commit -qm 'fixture'
+  ) >/dev/null 2>&1
+
+  output=$("$scanner" --root "$tmp" 2>&1)
+  rc=$?
+  rm -rf "$tmp"
+
+  if [ "$rc" -eq 0 ]; then
+    echo "clean"
+  else
+    echo "caught"
+    printf '%s\n' "$output" | sed 's/^/       | /' >&2
+  fi
+}
+
+expect_caught() {
+  local label=$1 path=$2 contents=$3 verdict
+  verdict=$(verdict_for "$path" "$contents" 2>/dev/null)
+  if [ "$verdict" = "caught" ]; then
+    pass "$label"
+  else
+    fail "$label" "a credential at $path was NOT caught"
+  fi
+}
+
+expect_clean() {
+  local label=$1 path=$2 contents=$3 verdict
+  verdict=$(verdict_for "$path" "$contents" 2>/dev/null)
+  if [ "$verdict" = "clean" ]; then
+    pass "$label"
+  else
+    fail "$label" "$path was flagged, but it holds no credential"
+  fi
+}
+
+echo "# the finding this file exists for: docs/ is scanned"
+
+# THE regression. `docs/regression-baseline/mock-matrix/` is where the committed
+# provider transcripts live, and it sat inside the old `':!docs/**'` exclusion.
+expect_caught "a key in a committed mock transcript is caught" \
+  "docs/regression-baseline/mock-matrix/frontier/01-chat-plain-nonstreaming.txt" \
+  "> POST /v1/chat/completions
+> authorization: Bearer $openai_key
+< 200 OK"
+
+expect_caught "a key in ordinary docs prose is caught" \
+  "docs/architecture/conventions.md" \
+  "Set your key to $anthropic_key and restart."
+
+expect_caught "a key in a docs JSON fixture is caught" \
+  "docs/regression-baseline/mock-matrix/frontier/manifest.json" \
+  "{\"apiKey\": \"$google_key\"}"
+
+expect_caught "a private key committed under docs/ is caught" \
+  "docs/desktop-gate/VERDICTS.md" \
+  "$pem_block"
+
+echo
+echo "# the shapes it already covered, still covered"
+
+expect_caught "a key in source is caught" \
+  "src/platform/contract.ts" \
+  "const key = '$openai_key';"
+
+expect_caught "a key in a Rust test is caught" \
+  "src-tauri/crates/vela-core/src/credential.rs" \
+  "let key = \"$anthropic_key\";"
+
+expect_caught "a tracked .env file is caught even when empty" \
+  ".env.local" \
+  ""
+
+echo
+echo "# no false positives, or the tripwire gets muted"
+
+expect_clean "prose that merely contains 'sk-' is not a credential" \
+  "docs/vela-feature-spec.md" \
+  "Subagent handling: the pre-spawn task-description check runs first."
+
+expect_clean "a placeholder that is not key-shaped is left alone" \
+  "docs/architecture/conventions.md" \
+  "Store the value under <providerId>/primary. Never a literal like sk-REPLACE-ME."
+
+expect_clean "an empty repository is clean" \
+  "README.md" \
+  "# Vela"
+
+echo
+echo "# the scanner and this test are themselves in scope"
+
+# The old workflow excluded `.github/workflows/ci.yml` because it held the
+# pattern inline. Now nothing is excluded, so both these files have to survive
+# their own scan. If either ever fails here, the fix is to split the offending
+# literal — never to add an exclusion.
+if out=$("$scanner" --root "$repo_root" 2>&1); then
+  pass "scan_scans_itself_and_stays_clean: the real tree passes with no exclusions"
+else
+  fail "scan_scans_itself_and_stays_clean" "$out"
+fi
+
+if grep -qE '^excluded_paths=\(\)$' "$scanner"; then
+  pass "exclusions_are_exact_paths_never_globs: the exclusion list is empty"
+elif grep -A20 '^excluded_paths=(' "$scanner" | sed -n '/^excluded_paths=(/,/^)/p' | grep -q '\*'; then
+  fail "exclusions_are_exact_paths_never_globs" \
+    "a glob appeared in excluded_paths; that is how the docs/ blind spot got here"
+else
+  pass "exclusions_are_exact_paths_never_globs: no glob in excluded_paths"
+fi
+
+echo
+printf '%d passed, %d failed\n' "$passed" "$failed"
+[ "$failed" -eq 0 ]

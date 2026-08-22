@@ -1,0 +1,122 @@
+Vela interaction battery — real WebView2, keys via CDP Input.dispatchKeyEvent
+(Ctrl+K additionally confirmed with a genuine OS-level keystroke.)
+
+== 1. keyboard shortcuts ==
+  start state           : dialog=False heading='Vela'
+  Ctrl+K                : dialog=True  focus='input :: Go to conversation'
+  Escape                : dialog=False  focus='body :: VELA\nUntitled workspace\nTheme: system\nNe'
+  Ctrl+N                : heading='No model chosen yet'
+
+== 2. label vs behaviour ==
+  sidebar new-conv label: '⌘N'
+  all kbd glyphs        : ["\u2318N", "\u2318K", "Enter", "Shift", "Enter"]
+  platform              : 'Win32'
+  NOTE: handler accepts metaKey||ctrlKey (use-navigation-shortcuts.ts:47) so Ctrl works;
+        the LABELS are hardcoded Mac glyphs.
+
+== 3. focus visibility and tab order ==
+  tab 1 -> button :: Theme: system
+  tab 2 -> button :: New conversation
+⌘N
+  tab 3 -> button :: Collapse sidebar
+  tab 4 -> button :: Search conversations
+⌘K
+  tab 5 -> button :: New conversation
+Nothing said yet
+  tab 6 -> div :: Resize sidebar
+  tab 7 -> button :: Start a conversation
+  tab 8 -> button :: Search everything
+⌘K
+  tab 9 -> button :: New conversation
+Nothing said yet
+  focus ring on last    : {"outline":"solid 2px rgb(20, 168, 158)","boxShadow":"none"}
+
+== 4. dialog focus trap ==
+  opened, focus         : 'input :: Go to conversation'
+  tabbing inside dialog :
+     body :: VELA
+Untitled workspace
+Theme: system
+Ne
+     button :: Theme: system
+     button :: New conversation
+⌘N
+     button :: Collapse sidebar
+     button :: Search conversations
+⌘K
+     button :: New conversation
+Nothing said yet
+  dialog still open     : True
+  after Escape          : dialog=False focus='button :: New conversation\nNothing said yet'
+
+== 5. dialog modal semantics ==
+  role/aria on dialog   : {"role":"dialog","ariaModal":"true","tag":"div","isNativeDialog":false,"open":false}
+  background inert?     : {"mainInert":false,"navInert":false,"mainAriaHidden":null}
+  focusable count outside dialog: 15
+
+== 6. window resize behaviour ==
+  window 1400x900 -> cssW=1384  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 1000x700 -> cssW=984  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 760x620 -> cssW=744  hasHorizontalScrollbar=False  sidebarVisible=True
+  window 560x560 -> cssW=544  hasHorizontalScrollbar=False  sidebarVisible=True
+
+== 7. FOLLOW-UP: does a leaked background control actually ACTIVATE while the palette is open? ==
+  (the interaction critic flagged this as inferred-from-source, not measured)
+  theme label before      : Theme: system
+  palette open            : True
+  focus after 2x Tab      : button :: New conversation
+⌘N
+  theme label after Enter : Theme: system
+  palette still open      : True
+  >>> BACKGROUND CONTROL ACTIVATED WHILE MODAL OPEN: False
+
+== 8. FOLLOW-UP: reverse traversal (Shift+Tab) out of the palette ==
+  palette open, focus     : input :: Go to conversation
+     shift+tab -> button :: New conversation
+Nothing said yet
+     shift+tab -> button :: New conversation
+Nothing said yet
+     shift+tab -> button :: Search everything
+⌘K
+     shift+tab -> button :: Start a conversation
+  dialog still open       : True
+
+== 7b. CORRECTED: activate a SPECIFIC leaked control (earlier run checked the wrong indicator) ==
+  theme label before : Theme: system
+  palette open       : True
+  focus reached Theme button after 1 Tab(s): 'button :: Theme: system'
+  theme label after Enter : Theme: system
+  palette still open      : True
+  >>> BACKGROUND CONTROL ACTIVATED WHILE aria-modal DIALOG OPEN: False
+
+== 7c. AUTHORITATIVE: real OS keystrokes (SendKeys) — Ctrl+K, Tab, Enter ==
+  dialog open now  : False
+  focused element  : button :: Theme: system
+  theme label      : Theme: system
+  main heading     : Vela
+  conversations    : 9
+
+== 9. Windows browser-shortcut leakage (real OS keystrokes) ==
+  after real Ctrl+P -> app quick-switcher open: False
+  focused element                            : button :: Theme: system
+  (no Print dialog process was found on the desktop)
+
+== 9b. CORRECTION — section 9 is INCONCLUSIVE, do not read it as a pass ==
+  Section 9 reported "no Print dialog process was found" after sending Ctrl+P.
+  That conclusion is UNSAFE and is withdrawn.
+
+  On re-test with the foreground window verified at send time, the foreground
+  was 'Windows Input Experience' (textinputhost), not 'Vela'. Ten attempts to
+  force Vela to the foreground failed. So the Ctrl+P/Ctrl+F/Ctrl+B keystrokes
+  in section 9 may never have reached the app at all, and the absence of a
+  Print dialog proves nothing.
+
+  Whether WebView2's native Ctrl+P (print) and Ctrl+F (find-in-page) are
+  suppressed in Vela is therefore UNVERIFIED. It cannot be settled with CDP
+  Input.dispatchKeyEvent either, because that dispatches into the page and
+  never exercises the browser's own accelerator handling — real OS input is
+  required, and this machine's IME host is intercepting it.
+
+  Note the earlier Ctrl+K and the section 7c activation test DID reach the app
+  (the app demonstrably responded), so foreground capture is intermittent
+  rather than total. Those results stand; section 9 does not.

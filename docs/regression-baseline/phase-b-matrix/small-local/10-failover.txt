@@ -1,0 +1,114 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: small-local — case 10-failover: routing and failover
+================================================================================
+
+PURPOSE   A dead candidate must be routed past. An endpoint that dies MID-STREAM, after the user has already seen output, must NOT be replayed from another candidate.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- candidate 1 refuses the connection; candidate 2 is live -----------------
+
+  >>> exchange 1 — POST http://127.0.0.1:1/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (129 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< NO RESPONSE — Connect: error sending request for url (http://127.0.0.1:1/v1/chat/completions)
+
+  >>> exchange 2 — POST http://127.0.0.1:46381/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (129 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1804 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: hello"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":". keel lantern e"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"mber yardarm ivo"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ry yardarm quart"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"z gauge lantern "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ivory."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-0adb8906","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+      data: [DONE]
+      
+  outcome                                Ok(true)
+  wall clock                             8.571676ms
+  answer                                 Some("Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory.")
+  degradations                           UsageNotReported, FailedOver { attempts: 2 }
+
+---- assertions --------------------------------------------------------------
+  [PASS] a dead candidate is routed past, not surfaced as a failure
+        Ok(Ok(ChatResponse { parts: [Text { text: "Mock small-local reply to: hello. keel lantern ember yardarm ivory yardarm quartz gauge lantern ivory." }], tool_calls: [], stop_reason: EndTurn, usage: TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }, structured: None, degradations: [UsageNotReported, FailedOver { attempts: 2 }] }))
+  [PASS] the failover is declared to the caller
+        UsageNotReported, FailedOver { attempts: 2 }
+  [PASS] failover does not hang
+        8.571676ms
+
+---- the endpoint is KILLED mid-stream, after output has already been shown --
+  The primary is started with a 40 ms inter-frame delay so the turn is still running
+  when its process is SIGKILLed. A second, healthy candidate is configured behind it.
+  Rule 2 of the router: once a character has reached the user, moving to another
+  candidate would restart the answer in front of them.
+
+  >>> exchange 1 — POST http://127.0.0.1:34175/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (175 bytes) ---
+      {"max_tokens":256,"messages":[{"content":"write me something reasonably long","role":"user"}],"model":"mock-small-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (1125 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-518d7013","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-518d7013","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-518d7013","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: write"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-518d7013","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" me something re"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-518d7013","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"asonably long. p"},"finish_reason":null}]}
+      
+      
+      <<< body read failed: Reset error decoding response body for url (http://127.0.0.1:34175/v1/chat/completions) >>>
+
+---- what Vela produced ------------------------------------------------------
+  wall clock                             206.698363ms
+  answer text the user saw               "Mock small-local reply to: write me something reasonably long. p"
+  reasoning text the user saw            ""
+  TextDelta events                       4
+  ReasoningDelta events                  0
+  outcome                                Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:34175/v1/chat/completions)" })
+  requests sent to the backup candidate  0
+
+---- assertions --------------------------------------------------------------
+  [PASS] killing the endpoint mid-stream does not hang the app
+        206.698363ms
+  output had already been committed      true
+  [PASS] after visible output, the turn is NOT replayed from another candidate
+        0 request(s) reached the backup
+  [PASS] a killed stream is never reported as a normally finished turn
+        Ok(Err(Transport { failure: Reset, detail: "error decoding response body for url (http://127.0.0.1:34175/v1/chat/completions)" }))
+
+================================================================================
+VERDICT  6 assertion(s), 0 failure(s)
+================================================================================

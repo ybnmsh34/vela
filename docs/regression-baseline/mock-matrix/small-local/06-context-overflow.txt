@@ -1,0 +1,110 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : small-local  (Mock Small Local (8k, plain text only))
+  case      : 06-context-overflow
+  endpoint  : http://127.0.0.1:8103   (a separate `node cli.ts --profile small-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:39Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+The prompt is a single user message of 32832 'x' characters —
+just over this profile's advertised 8192-token window at the harness's fixed
+4-chars-per-token estimate. The request body is elided below at 32879 bytes.
+
+### a prompt deliberately larger than the context window
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 152 bytes (0x98)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8103
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 32879
+0096: 
+=> Send data, 32879 bytes (0x806f)
+0000: <request body elided: 32879 bytes; see the case notes above for its exact composition>
+
+--- response status and headers, verbatim ---
+HTTP/1.1 400 Bad Request
+content-type: application/json; charset=utf-8
+content-length: 268
+Date: Wed, 12 Aug 2026 20:04:39 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (268 bytes) ---
+{
+  "error": {
+    "message": "this model's maximum context length is 8192 tokens, however you requested 8212 tokens (8212 in the messages, 0 in the completion)",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "context_length_exceeded"
+  }
+}
+--- end of body ---
+
+### a prompt at half the window, for contrast
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8103/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 152 bytes (0x98)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8103
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 16431
+0096: 
+=> Send data, 16431 bytes (0x402f)
+0000: <request body elided: 16431 bytes; see the case notes above for its exact composition>
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 599
+Date: Wed, 12 Aug 2026 20:04:39 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (599 bytes) ---
+{
+  "id": "chatcmpl-mock-5f7bcbbc",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-small-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock small-local reply to: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx. keel delta fathom sextant harbor meridian keel pennant ember lantern."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4100,
+    "completion_tokens": 55,
+    "total_tokens": 4155
+  }
+}
+--- end of body ---
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS  the refusal carries the code context_length_exceeded
+PASS  the message states the real limit (8192) and what was asked for
+PASS  no partial answer is returned alongside the refusal
+PASS  a prompt inside the window still succeeds; observed 200
+PASS  the endpoint keeps serving after the overflow (no crash)

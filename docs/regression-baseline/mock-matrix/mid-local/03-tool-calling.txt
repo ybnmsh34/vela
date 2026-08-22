@@ -1,0 +1,216 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : mid-local  (Mock Mid Local (32k, tools, <think>, no vision))
+  case      : 03-tool-calling
+  endpoint  : http://127.0.0.1:8102   (a separate `node cli.ts --profile mid-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:37Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+### one tool offered, non-streaming
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8102/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8102
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 305
+0094: 
+=> Send data, 305 bytes (0x131)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}]}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 658
+Date: Wed, 12 Aug 2026 20:04:37 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (658 bytes) ---
+{
+  "id": "chatcmpl-mock-26c85e75",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-mid-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"berlin\",\"unit\":\"celsius\"}"
+            },
+            "id": "call_26c85e75"
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 12,
+    "total_tokens": 24
+  }
+}
+--- end of body ---
+
+### the same, with tool_choice: "required"
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8102/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8102
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 330
+0094: 
+=> Send data, 330 bytes (0x14a)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"tool_choice":"
+0140: required"}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+content-length: 660
+Date: Wed, 12 Aug 2026 20:04:37 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+--- response body, verbatim (660 bytes) ---
+{
+  "id": "chatcmpl-mock-f783c733",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-mid-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"eastward\",\"unit\":\"celsius\"}"
+            },
+            "id": "call_f783c733"
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 12,
+    "total_tokens": 24
+  }
+}
+--- end of body ---
+
+### one tool offered, streamed
+
+$ curl -sS -X POST -H 'content-type: application/json' --data-binary @request.json http://127.0.0.1:8102/v1/chat/completions
+
+--- request, exactly as sent (curl --trace-ascii, send side) ---
+=> Send header, 150 bytes (0x96)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: 127.0.0.1:8102
+003a: User-Agent: curl/8.5.0
+0052: Accept: */*
+005f: content-type: application/json
+007f: Content-Length: 319
+0094: 
+=> Send data, 319 bytes (0x13f)
+0000: {"messages":[{"role":"user","content":"what is the weather in Be
+0040: rlin"}],"tools":[{"type":"function","function":{"name":"get_weat
+0080: her","description":"Look up the weather.","parameters":{"type":"
+00c0: object","properties":{"city":{"type":"string"},"unit":{"enum":["
+0100: celsius","fahrenheit"]}},"required":["city"]}}}],"stream":true}
+
+--- response status and headers, verbatim ---
+HTTP/1.1 200 OK
+content-type: text/event-stream; charset=utf-8
+cache-control: no-cache
+connection: keep-alive
+Date: Wed, 12 Aug 2026 20:04:37 GMT
+Transfer-Encoding: chunked
+
+--- response body, verbatim (2770 bytes) ---
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_26c85e75","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ber"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"lin\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\"un"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"it\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"cel"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"sius"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-26c85e75","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+
+--- end of body ---
+
+### naive-consumer probe: index-keyed-tool-accumulator
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8102 --probe index-keyed-tool-accumulator
+
+--- probe: index-keyed-tool-accumulator ---
+    streamed frames             13 (0 unparseable, skipped)
+    stream outcome              COMPLETED
+    accumulated calls           1
+      index=0 id=call_26c85e75 type=function name=get_weather argumentsParse=ok args="{\"city\":\"berlin\",\"unit\":\"celsius\"}"
+    non-streaming HTTP status   200
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  tools are supported: 200 and a tool_calls turn; observed 200
+PASS  exactly one tool call is returned
+PASS  its arguments parse as JSON
+PASS  it carries an id and type=function
+PASS  finish_reason is tool_calls
+PASS  tool_choice:required is honoured, not ignored

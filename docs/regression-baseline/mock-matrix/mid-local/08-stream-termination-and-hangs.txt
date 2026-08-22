@@ -1,0 +1,72 @@
+================================================================================
+GATE M Part 1 — LIVE mock-matrix transcript
+  profile   : mid-local  (Mock Mid Local (32k, tools, <think>, no vision))
+  case      : 08-stream-termination-and-hangs
+  endpoint  : http://127.0.0.1:8102   (a separate `node cli.ts --profile mid-local` process)
+  client    : curl 8.5.0 and node:http probes — NOT the harness's own client
+  recorded  : 2026-08-12T20:04:38Z by tests/harness/mock-provider/live-matrix/record.sh
+--------------------------------------------------------------------------------
+THIS IS A MOCK. Nothing below was produced by a language model; every byte is a
+deterministic function of the request. Any claim resting on it is
+VERIFIED-BY-FAKE (docs/architecture/conventions.md §10). The real llama.cpp
+endpoint (GATE M Part 2) is unreachable from this container.
+================================================================================
+
+The termination contract. Three naive consumers, each with a 5-second
+budget: one that finalises on [DONE], one that waits for the usage frame
+it asked for, and one that assumes every data: payload is JSON.
+
+--- the last 6 frames of the streamed body, verbatim ---
+}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"mber keel ivory "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"gauge tiller qua"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"rtz orbit fathom"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" fathom umber."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":75,"total_tokens":87}}
+
+data: [DONE]
+
+--- end ---
+
+### naive-consumer probe: wait-for-done
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8102 --probe wait-for-done
+
+--- probe: wait-for-done ---
+    frames seen                 24
+    outcome                     SAW-[DONE]
+    elapsed                     8 ms
+    VERDICT                     terminated on the [DONE] sentinel.
+
+### naive-consumer probe: wait-for-usage
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8102 --probe wait-for-usage
+
+--- probe: wait-for-usage ---
+    frames seen                 24
+    outcome                     SAW-USAGE
+    usage                       {"prompt_tokens":12,"completion_tokens":75,"total_tokens":87}
+    elapsed                     9 ms
+    VERDICT                     usage frame arrived as requested.
+
+### naive-consumer probe: strict-json-frames
+$ node tests/harness/mock-provider/live-matrix/consumer-probes.mjs --url http://127.0.0.1:8102 --probe strict-json-frames
+
+--- probe: strict-json-frames ---
+    frames consumed before stop 24
+    outcome                     COMPLETED
+    chars accumulated           298
+    chars in non-streamed body  298
+    VERDICT                     every frame parsed; nothing lost.
+
+--------------------------------------------------------------------------------
+ASSERTIONS — profile specification vs observed behaviour
+--------------------------------------------------------------------------------
+PASS  [DONE] is sent, so a sentinel-driven consumer terminates
+PASS  the usage frame arrives when include_usage was requested
+PASS  every frame is parseable — a strict consumer loses nothing

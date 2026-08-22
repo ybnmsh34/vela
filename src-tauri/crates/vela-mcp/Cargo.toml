@@ -1,0 +1,17 @@
+[package]
+name = "vela-mcp"
+description = "MCP client — stdio transport, JSON-RPC peer, connection pool and notification-invalidated tool cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# No async runtime and no HTTP client on purpose. The stdio transport is two
+# pipes and a child process, which the standard library already owns; pulling a
+# runtime in to move bytes between them would add a dependency the shipped app
+# would then carry for the life of the project.
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

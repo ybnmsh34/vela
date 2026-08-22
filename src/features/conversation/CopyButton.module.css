@@ -1,0 +1,48 @@
+.button {
+  appearance: none;
+  border: 1px solid var(--vela-border);
+  background: var(--vela-surface);
+  color: var(--vela-text-muted);
+  font: inherit;
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-none);
+  padding: var(--vela-space-1) var(--vela-space-2);
+  border-radius: var(--vela-radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--vela-duration) var(--vela-ease),
+    border-color var(--vela-duration) var(--vela-ease),
+    background-color var(--vela-duration) var(--vela-ease);
+}
+
+.button:hover {
+  color: var(--vela-text);
+  border-color: var(--vela-border-strong);
+}
+
+.button:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.button[data-outcome='copied'] {
+  color: var(--vela-success);
+  border-color: var(--vela-success);
+}
+
+.button[data-outcome='failed'] {
+  color: var(--vela-danger);
+  border-color: var(--vela-danger);
+}
+
+/* Inside a code block, which paints its own dark surface in both themes. */
+.subtle {
+  background: transparent;
+  border-color: var(--vela-code-border);
+  color: var(--vela-syntax-comment);
+}
+
+.subtle:hover {
+  color: var(--vela-code-text);
+  border-color: var(--vela-syntax-comment);
+}

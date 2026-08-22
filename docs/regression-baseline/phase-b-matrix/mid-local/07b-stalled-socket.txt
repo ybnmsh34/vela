@@ -1,0 +1,40 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: mid-local — case 07b-stalled-socket: a socket that stops producing
+================================================================================
+
+PURPOSE   Every read carries a stall timeout, so a wedged endpoint cannot wedge the app.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `mid-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the stream (endpoint configured with --chunk-delay 4000, stall budget 800 ms) 
+
+  >>> exchange 1 — POST http://127.0.0.1:36415/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (127 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-mid-local","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (192 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-d0844676","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+
+---- what Vela produced ------------------------------------------------------
+  outcome                                Ok(Err(Transport { failure: Stalled, detail: "no data for 800 ms for url (http://127.0.0.1:36415/v1/chat/completions)" }))
+  error                                  Some(Transport { failure: Stalled, detail: "no data for 800 ms for url (http://127.0.0.1:36415/v1/chat/completions)" })
+  WALL CLOCK                             809.225576ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] a stalled socket is abandoned rather than awaited forever
+        809.225576ms
+  [PASS] and the abandonment is an explicit error, not an empty success
+        Some(true)
+
+================================================================================
+VERDICT  2 assertion(s), 0 failure(s)
+================================================================================

@@ -1,0 +1,56 @@
+GATE M — GUARD CONTROLS
+
+Both guards exist for defect classes this container is blind to by construction.
+A guard that has never been seen to fail is indistinguishable from a guard that
+cannot fail, so each is violated here and recorded going red.
+
+Every violation is staged in a DETACHED git worktree, never in the shared tree:
+  /tmp/claude-0/-home-user-vela/f4ba580b-2587-5903-90a0-e1d08f42104e/scratchpad/guard-controls  (detached at 9a0fd54)
+The shared checkout at /home/user/vela is not touched by any line below.
+
+=== CONTROL G0 — both guards are GREEN on the unmodified tree ===
+ Test Files  2 passed (2)
+      Tests  125 passed (125)
+
+=== CONTROL G1 — reintroduce the EXACT shipped defect: the resolution ambush ===
+$ git mv src/features/conversation/markdown-parser.ts src/features/conversation/markdown.ts
+ FAIL  src/platform/case-collision.test.ts > the tree survives a case-insensitive checkout > has no case-ambiguous module stems in 'src/features/conversation'
+AssertionError: src/features/conversation contains module files whose stems differ only by case: Markdown.tsx / markdown.ts. On Windows and macOS an extensionless import of either one resolves by extension order (.mjs before .js before .mts before .ts before .jsx before .tsx before .json), not by case, so the specifier silently binds the wrong file and the app fails to mount. Rename one stem so they differ by more than case, e.g. markdown.ts -> markdown-parser.ts.: expected [ [ 'Markdown.tsx', 'markdown.ts' ] ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 114 passed (115)
+
+=== CONTROL G2 — a CHECKOUT collision: two paths differing only by case ===
+$ cp src/features/conversation/Markdown.tsx src/features/conversation/markdown.tsx
+ FAIL  src/platform/case-collision.test.ts > the tree survives a case-insensitive checkout > has no case-only duplicate names in 'src/features/conversation'
+AssertionError: src/features/conversation contains entries that differ only by case: Markdown.tsx / markdown.tsx. A case-insensitive checkout can only materialise one of them. Rename one so the names differ by more than case — a case-only rename does not propagate through such a checkout.: expected [ [ 'Markdown.tsx', 'markdown.tsx' ] ] to deeply equal []
+ FAIL  src/platform/case-collision.test.ts > the tree survives a case-insensitive checkout > has no case-ambiguous module stems in 'src/features/conversation'
+AssertionError: src/features/conversation contains module files whose stems differ only by case: Markdown.tsx / markdown.tsx. On Windows and macOS an extensionless import of either one resolves by extension order (.mjs before .js before .mts before .ts before .jsx before .tsx before .json), not by case, so the specifier silently binds the wrong file and the app fails to mount. Rename one stem so they differ by more than case, e.g. markdown.ts -> markdown-parser.ts.: expected [ [ 'Markdown.tsx', 'markdown.tsx' ] ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  2 failed | 113 passed (115)
+
+=== CONTROL G3 — the Windows resource icon goes missing (the tauri-build blocker) ===
+$ rm src-tauri/icons/icon.ico
+ FAIL  src/platform/bundle-icons.test.ts > the bundle icon set is complete > ships the .ico that tauri-build compiles into the Windows resource
+AssertionError: src-tauri/icons/icon.ico is missing or empty. tauri-build requires it when the target OS is windows and returns a hard error before compiling any of Vela's code, so `cargo build` fails there while staying green on Linux and macOS — no run in this container can observe it any other way. Regenerate with `pnpm tauri icon <source.png>`.: expected [ 'icons/icon.ico' ] to deeply equal []
+ FAIL  src/platform/bundle-icons.test.ts > the bundle icon set is complete > ships an .ico that is actually an ICO
+AssertionError: src-tauri/icons/icon.ico is unreadable or does not begin with an ICO header. Something other than `pnpm tauri icon` produced it — most likely a PNG that was renamed rather than converted.: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 passed (10)
+
+=== CONTROL G4 — icon.ico is present but is not an ICO ===
+$ printf 'not an icon' > src-tauri/icons/icon.ico
+ FAIL  src/platform/bundle-icons.test.ts > the bundle icon set is complete > ships an .ico that is actually an ICO
+AssertionError: src-tauri/icons/icon.ico is unreadable or does not begin with an ICO header. Something other than `pnpm tauri icon` produced it — most likely a PNG that was renamed rather than converted.: expected false to be true // Object.is equality
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+
+=== CONTROL G5 — tauri.conf.json lists a bundle icon that is not on disk ===
+$ rm src-tauri/icons/128x128.png
+ FAIL  src/platform/bundle-icons.test.ts > the bundle icon set is complete > ships every icon tauri.conf.json declares
+AssertionError: tauri.conf.json declares bundle.icon entries that are missing or empty under src-tauri/. The bundler resolves those paths relative to src-tauri/ and fails at package time. Regenerate the whole set with `pnpm tauri icon <source.png>` rather than adding one file by hand.: expected [ 'icons/128x128.png' ] to deeply equal []
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+
+=== after every control, the scratch worktree is restored ===
+$ git status --short
+(clean)

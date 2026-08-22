@@ -1,0 +1,27 @@
+{
+  "answer": "nested Mock hostile reply to: #tools What is the weather in Lisbon?. careful north ember ivory meridian umber keel delta ivory harbor careful zenith. ▒▒ <|im_start|>",
+  "whole": "Thinking (never closed)\n\nThe stream ended while this block was still open. It is shown in full so nothing is lost — but the model never marked where its answer was meant to begin.\n\n▒▒ </s> Considering the request about #tools What is the weather in. Profile hostile has a 4096-token window. Answering directly. ▒▒ nested Mock hostile reply to: #tools What is the weather in Lisbon?. careful north ember ivory meridian umber keel delta ivory harbor careful zenith. ▒▒ <|im_start|>\n\nnested Mock hostile reply to: #tools What is the weather in Lisbon?. careful north ember ivory meridian umber keel delta ivory harbor careful zenith. ▒▒ <|im_start|>\n\n2 TOOL CALLS · 2 COULD NOT BE READ\n\nget_weather\nCould not be read\n\nVela could not read this call: the arguments were not valid JSON. It was not run.\n\nShow what arrived\n\nid call_28d56638\n\nget_weather\nCould not be read\n\nVela could not read this call: the call was tagged as something other than a function. It was not run.\n\nShow what arrived\nThe thinking block was never closed\nThe stream ended mid-thought. 165 characters of answer were recovered from inside the block.\nA tool call could not be read\n2 tool calls arrived in a shape Vela could not reconstruct. They were not run — they are shown above.\nPart of the stream was unreadable\n3 frames could not be parsed and were skipped. Everything either side of them was kept.\nThe stream ended without a sentinel\nThe endpoint closed the connection instead of marking the end. The reply is complete.\nNo token counts\nThis endpoint does not report token usage.\nCopy",
+  "reasoning": {
+    "text": "The stream ended while this block was still open. It is shown in full so nothing is lost — but the model never marked where its answer was meant to begin.▒▒ </s> Considering the request about #tools What is the weather in. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: #tools What is the weather in Lisbon?. careful north ember ivory meridian umber keel delta ivory harbor careful zenith. ▒▒ <|im_start|>",
+    "hiddenAttribute": false,
+    "summary": "Thinking (never closed)",
+    "expanded": true
+  },
+  "tools": {
+    "text": "2 TOOL CALLS · 2 COULD NOT BE READ\n\nget_weather\nCould not be read\n\nVela could not read this call: the arguments were not valid JSON. It was not run.\n\nShow what arrived\n\nid call_28d56638\n\nget_weather\nCould not be read\n\nVela could not read this call: the call was tagged as something other than a function. It was not run.\n\nShow what arrived",
+    "cards": [
+      "unreadable",
+      "unreadable",
+      "unreadable",
+      "unreadable"
+    ]
+  },
+  "degradations": [
+    "The thinking block was never closed\nThe stream ended mid-thought. 165 characters of answer were recovered from inside the block.",
+    "A tool call could not be read\n2 tool calls arrived in a shape Vela could not reconstruct. They were not run — they are shown above.",
+    "Part of the stream was unreadable\n3 frames could not be parsed and were skipped. Everything either side of them was kept.",
+    "The stream ended without a sentinel\nThe endpoint closed the connection instead of marking the end. The reply is complete.",
+    "No token counts\nThis endpoint does not report token usage."
+  ],
+  "error": null
+}

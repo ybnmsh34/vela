@@ -1,0 +1,110 @@
+id	verdict	claim	detail
+D-1920x1080@150-light-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 161.8, heading top 230.8, container 86.5–545.2; the surface rested at scrollTop 0; viewport 1280×672
+D-1920x1080@150-light-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1920x1080@150-light-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1920x1080@150-light-c	PASS	overflow is reachable by scrolling	scrollHeight 536, clientHeight 459
+D-1920x1080@150-light-d	PASS	the composer is still inside the window	bottom 604.7 of 672
+D-1920x1080@150-light-e	PASS	the status line is still inside the window	bottom 667.5
+D-1920x1080@150-light-f	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+D-1920x1080@150-light-h	PASS	the transcript column and the composer field share both edges and one width	text 540–1020 (480px), composer 540–1020 (480px)
+D-1920x1080@150-light-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1920x1080@150-light-g	PASS	no uncaught exception at this size	
+D-1920x1080@150-dark-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 161.8, heading top 230.8, container 86.5–545.2; the surface rested at scrollTop 0; viewport 1280×672
+D-1920x1080@150-dark-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1920x1080@150-dark-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1920x1080@150-dark-c	PASS	overflow is reachable by scrolling	scrollHeight 536, clientHeight 459
+D-1920x1080@150-dark-d	PASS	the composer is still inside the window	bottom 604.7 of 672
+D-1920x1080@150-dark-e	PASS	the status line is still inside the window	bottom 667.5
+D-1920x1080@150-dark-f	PASS	the window does not scroll sideways	document 1280 vs viewport 1280
+D-1920x1080@150-dark-h	PASS	the transcript column and the composer field share both edges and one width	text 540–1020 (480px), composer 540–1020 (480px)
+D-1920x1080@150-dark-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1920x1080@150-dark-g	PASS	no uncaught exception at this size	
+D-1600x900@150-light-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 194.6, heading top 263.6, container 126.5–445.2; the surface rested at scrollTop 0; viewport 1066×552
+D-1600x900@150-light-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1600x900@150-light-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1600x900@150-light-c	PASS	overflow is reachable by scrolling	scrollHeight 521, clientHeight 319
+D-1600x900@150-light-d	PASS	the composer is still inside the window	bottom 504.7 of 552
+D-1600x900@150-light-e	PASS	the status line is still inside the window	bottom 547.5
+D-1600x900@150-light-f	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+D-1600x900@150-light-h	PASS	the transcript column and the composer field share both edges and one width	text 433–913 (480px), composer 433–913 (480px)
+D-1600x900@150-light-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1600x900@150-light-g	PASS	no uncaught exception at this size	
+D-1600x900@150-dark-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 194.6, heading top 263.6, container 126.5–445.2; the surface rested at scrollTop 0; viewport 1066×552
+D-1600x900@150-dark-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1600x900@150-dark-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1600x900@150-dark-c	PASS	overflow is reachable by scrolling	scrollHeight 521, clientHeight 319
+D-1600x900@150-dark-d	PASS	the composer is still inside the window	bottom 504.7 of 552
+D-1600x900@150-dark-e	PASS	the status line is still inside the window	bottom 547.5
+D-1600x900@150-dark-f	PASS	the window does not scroll sideways	document 1066 vs viewport 1066
+D-1600x900@150-dark-h	PASS	the transcript column and the composer field share both edges and one width	text 433–913 (480px), composer 433–913 (480px)
+D-1600x900@150-dark-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1600x900@150-dark-g	PASS	no uncaught exception at this size	
+D-1366x768@150-light-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 189.3, heading top 258.3, container 126.5–368.4; the surface rested at scrollTop 0; viewport 911×464
+D-1366x768@150-light-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1366x768@150-light-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1366x768@150-light-c	PASS	overflow is reachable by scrolling	scrollHeight 511, clientHeight 242
+D-1366x768@150-light-d	PASS	the composer is still inside the window	bottom 427.9 of 464
+D-1366x768@150-light-e	PASS	the status line is still inside the window	bottom 459.5
+D-1366x768@150-light-f	PASS	the window does not scroll sideways	document 911 vs viewport 911
+D-1366x768@150-light-h	PASS	the transcript column and the composer field share both edges and one width	text 355.5–835.5 (480px), composer 355.5–835.5 (480px)
+D-1366x768@150-light-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1366x768@150-light-g	PASS	no uncaught exception at this size	
+D-1366x768@150-dark-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 189.3, heading top 258.3, container 126.5–368.4; the surface rested at scrollTop 0; viewport 911×464
+D-1366x768@150-dark-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-1366x768@150-dark-b	PASS	the Vela mark is drawn at a real size	34×34
+D-1366x768@150-dark-c	PASS	overflow is reachable by scrolling	scrollHeight 511, clientHeight 242
+D-1366x768@150-dark-d	PASS	the composer is still inside the window	bottom 427.9 of 464
+D-1366x768@150-dark-e	PASS	the status line is still inside the window	bottom 459.5
+D-1366x768@150-dark-f	PASS	the window does not scroll sideways	document 911 vs viewport 911
+D-1366x768@150-dark-h	PASS	the transcript column and the composer field share both edges and one width	text 355.5–835.5 (480px), composer 355.5–835.5 (480px)
+D-1366x768@150-dark-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-1366x768@150-dark-g	PASS	no uncaught exception at this size	
+D-min-window-light-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 192.7, heading top 261.7, container 126.5–417.2; the surface rested at scrollTop 0; viewport 720×520
+D-min-window-light-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-min-window-light-b	PASS	the Vela mark is drawn at a real size	34×34
+D-min-window-light-c	PASS	overflow is reachable by scrolling	scrollHeight 517, clientHeight 291
+D-min-window-light-d	PASS	the composer is still inside the window	bottom 476.7 of 520
+D-min-window-light-e	PASS	the status line is still inside the window	bottom 515.5
+D-min-window-light-f	PASS	the window does not scroll sideways	document 720 vs viewport 720
+D-min-window-light-h	PASS	the transcript column and the composer field share both edges and one width	text 204–684 (480px), composer 204–684 (480px)
+D-min-window-light-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-min-window-light-g	PASS	no uncaught exception at this size	
+D-min-window-dark-a	PASS	on first launch the Vela mark and the heading are both on screen	mark top 192.7, heading top 261.7, container 126.5–417.2; the surface rested at scrollTop 0; viewport 720×520
+D-min-window-dark-a2	PASS	wound to the top, no part of the empty state is above the container	above the top edge: 0.0px
+D-min-window-dark-b	PASS	the Vela mark is drawn at a real size	34×34
+D-min-window-dark-c	PASS	overflow is reachable by scrolling	scrollHeight 517, clientHeight 291
+D-min-window-dark-d	PASS	the composer is still inside the window	bottom 476.7 of 520
+D-min-window-dark-e	PASS	the status line is still inside the window	bottom 515.5
+D-min-window-dark-f	PASS	the window does not scroll sideways	document 720 vs viewport 720
+D-min-window-dark-h	PASS	the transcript column and the composer field share both edges and one width	text 204–684 (480px), composer 204–684 (480px)
+D-min-window-dark-i	PASS	the transcript and the composer lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+D-min-window-dark-g	PASS	no uncaught exception at this size	
+R1440-left	PASS	wide: neither box is clamped: the text and the composer's box start on one line	text 720–1200 (480px), composer 720–1200 (480px), sidebar 480px
+R1440-right	PASS	wide: neither box is clamped: and they end on one line	text 720–1200 (480px), composer 720–1200 (480px), sidebar 480px
+R1440-width	PASS	wide: neither box is clamped: and they are the same width	text 720–1200 (480px), composer 720–1200 (480px), sidebar 480px
+R1440-reserve	PASS	wide: neither box is clamped: both boxes lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+R960-left	PASS	the sidebar is giving way: the text and the composer's box start on one line	text 444–924 (480px), composer 444–924 (480px), sidebar 408px
+R960-right	PASS	the sidebar is giving way: and they end on one line	text 444–924 (480px), composer 444–924 (480px), sidebar 408px
+R960-width	PASS	the sidebar is giving way: and they are the same width	text 444–924 (480px), composer 444–924 (480px), sidebar 408px
+R960-reserve	PASS	the sidebar is giving way: both boxes lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+R880-left	PASS	the desktop session’s own reading: the text and the composer's box start on one line	text 364–844 (480px), composer 364–844 (480px), sidebar 328px
+R880-right	PASS	the desktop session’s own reading: and they end on one line	text 364–844 (480px), composer 364–844 (480px), sidebar 328px
+R880-width	PASS	the desktop session’s own reading: and they are the same width	text 364–844 (480px), composer 364–844 (480px), sidebar 328px
+R880-reserve	PASS	the desktop session’s own reading: both boxes lose the same width to the scrollbar	scroller reserves 24px, composer reserves 24px
+R-sweep-bites	PASS	the sweep includes a window where the sidebar has to give way	1440px → sidebar 480px, column 480px; 880px → sidebar 328px, column 480px
+S-system-oslight	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: light → widgets light; page rgb(247, 248, 251) (light)
+S-system-oslight-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: light
+S-system-osdark	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: dark → widgets dark; page rgb(8, 11, 22) (dark)
+S-system-osdark-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: dark
+S-light-oslight	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: light → widgets light; page rgb(247, 248, 251) (light)
+S-light-oslight-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: light
+S-light-osdark	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: light → widgets light; page rgb(247, 248, 251) (light)
+S-light-osdark-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: light
+S-dark-oslight	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: dark → widgets dark; page rgb(8, 11, 22) (dark)
+S-dark-oslight-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: dark
+S-dark-osdark	PASS	the user agent paints its widgets in the palette the app is in	color-scheme: dark → widgets dark; page rgb(8, 11, 22) (dark)
+S-dark-osdark-decides	PASS	the app states one scheme rather than delegating to the OS	color-scheme: dark
+B-scrollbar	PASS	the scrollbar gutter is measurable in this engine	overlay scrollbars: gutter is 0, so width cannot be measured here — reported, not asserted
+B-scrollbar-token	PASS	the dark palette carries a scrollbar thumb colour	--vela-scrollbar-thumb: #6f7896
+K2-dark-on-light-os	PASS	the damaged sheet lets the OS paint light widgets on the dark app	color-scheme resolved to "light dark" over rgb(8, 11, 22)
+K3-composer-cap	PASS	the damaged sheet caps the composer at a constant taller than 30% of the window	max-height resolved to 320px in a 464px window

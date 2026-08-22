@@ -1,0 +1,217 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-dialog);
+  display: grid;
+  justify-items: center;
+  /* Same rule the other dialogs keep: a pane taller than a scaled-up window
+     overflows downwards into a scroll rather than symmetrically off both edges,
+     where its heading could not be reached. */
+  align-items: center;
+  align-items: safe center;
+  overflow: auto;
+  padding: var(--vela-space-6);
+  background: var(--vela-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-4);
+  width: min(var(--vela-overlay-md), 100%);
+  padding: var(--vela-space-5);
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+  color: var(--vela-text);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vela-space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.close,
+.back {
+  padding: var(--vela-space-1) var(--vela-space-3);
+  background: transparent;
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  cursor: pointer;
+}
+
+.back {
+  align-self: flex-start;
+}
+
+.intro,
+.note,
+.footnote {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.footnote {
+  padding-top: var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+}
+
+/* Text on the danger tint rather than danger-coloured text on the dialog:
+   `--vela-danger` is audited against `--vela-surface`, `--vela-chrome` and its
+   own tint, never against `--vela-surface-raised`, and painting an unaudited
+   pair is how `--vela-text-subtle` shipped under AA in both themes. */
+.error {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-danger-bg);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Bounded so a large store cannot push the footnote — the sentence saying
+     Vela never writes here — off the bottom of the window. */
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-1);
+  width: 100%;
+  padding: var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--vela-row-hover);
+}
+
+.rowName {
+  font-weight: var(--vela-weight-medium);
+}
+
+.rowDescription {
+  color: var(--vela-text-muted);
+  line-height: var(--vela-leading-ui);
+}
+
+/* A directory the host could not read as a skill. It is a row like any other —
+   the whole point is that it does not vanish — and the amber edge says why.
+   An *edge* rather than a fill: a fill would put every other colour in the row
+   onto a ground `contrast.test.ts` does not audit them against, and the
+   sentence in `.rowProblem` is what actually carries the meaning. */
+.rowBroken {
+  border-left: 3px solid var(--vela-warning);
+}
+
+.rowProblem {
+  color: var(--vela-warning);
+  line-height: var(--vela-leading-ui);
+}
+
+.rowDirectory {
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  font-family: var(--vela-font-mono);
+  letter-spacing: var(--vela-tracking-code);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-3);
+}
+
+.detailName {
+  margin: 0;
+  font-size: var(--vela-text-lg);
+  font-weight: var(--vela-weight-semibold);
+}
+
+.detailDescription {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.sectionLabel {
+  margin: 0;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.body {
+  margin: 0;
+  max-height: 34vh;
+  overflow: auto;
+  padding: var(--vela-space-3);
+  background: var(--vela-code-bg);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  letter-spacing: var(--vela-tracking-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.resources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  margin: 0;
+}
+
+.resourceGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resourceName {
+  padding: var(--vela-space-1) var(--vela-space-2);
+  background: var(--vela-bg-inset);
+  border-radius: var(--vela-radius-sm);
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  letter-spacing: var(--vela-tracking-code);
+}

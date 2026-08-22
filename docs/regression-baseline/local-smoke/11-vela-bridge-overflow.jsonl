@@ -1,0 +1,3 @@
+{"ready":true,"registered":true,"seeded":true}
+{"id":1,"ok":{"accepted":true,"turnId":"t2"}}
+{"at":1786616247021,"event":"chat:event","payload":{"event":{"error":{"diagnosis":{"cause":"endpoint_rejected_request","correlation":1,"endpoint":{"authority":"http://localhost:8033","path":"/v1/chat/completions"},"status":400},"failure":{"request":{"status":400}},"kind":"transport"},"type":"error"},"turnId":"t2"}}

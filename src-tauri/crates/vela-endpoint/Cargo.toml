@@ -1,0 +1,26 @@
+[package]
+name = "vela-endpoint"
+description = "The dual local endpoint — Vela's configured brain, served as both an OpenAI-compatible and an Anthropic-compatible API on one port with one key"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+vela-core.workspace = true
+# The whole point: what this crate serves is `vela_providers::ChatRequest` in,
+# `vela_providers::StreamEvent` out. It translates two foreign dialects into
+# Vela's own vocabulary and back, and reuses `vela_providers::sse::SseFrame` so
+# the frames this crate writes are the same type the crate's own decoder reads.
+vela-providers.workspace = true
+
+# NOTE ON DEPENDENCIES: there is no HTTP server crate here, and that is
+# deliberate. `vela-settings/tests/capability_matrix_endpoints.rs` fails if a
+# second crate declares an HTTP *client*; a server is a different thing, but the
+# spirit is the same — the workspace keeps its network surface countable. The
+# listener in `server.rs` is `std::net::TcpListener` and a hand-written HTTP/1.1
+# request reader, which is enough for a single-user loopback endpoint and adds
+# nothing to `Cargo.lock`.

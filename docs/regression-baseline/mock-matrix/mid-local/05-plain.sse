@@ -1,0 +1,50 @@
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"<thi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Considering the request "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"about what is the weathe"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"r in Berlin. Profile mid"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"-local has a 32768-token"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" window. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"</thi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"nk>"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"\n"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Mock mid-local r"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"eply to: what is"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" the weather in "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"Berlin. north qu"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"artz beacon umbe"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"r umber rudder u"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"mber keel ivory "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"gauge tiller qua"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":"rtz orbit fathom"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{"content":" fathom umber."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-mock-f0c3494b","object":"chat.completion.chunk","created":1700000000,"model":"mock-mid-local","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":75,"total_tokens":87}}
+
+data: [DONE]
+

@@ -1,0 +1,224 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 02p-parallel-tool-calls: parallel tool calls, both transports
+================================================================================
+
+PURPOSE   GATE M FINDING 1 (round 1): N parallel calls collapsed into one on the non-streamed path. Driven LIVE here, on every profile, and compared call by call — not by count.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  WHY THIS CASE EXISTS
+  Round 1 could only SCRIPT this shape: the harness answered every tool request with
+  exactly one call, and one call cannot collide with itself. That blindness is why the
+  defect reached a gate. Three tools are offered below, so the endpoint answers with a
+  BATCH — native profiles well-formed, hostile with the middle call broken — and every
+  byte below came off a real socket from the profile's own OS process.
+
+  The two shapes are NOT the same shape, and that is the whole point:
+  streamed      `delta.tool_calls[]`   — FRAGMENTS, joined by `index`
+  non-streamed  `message.tool_calls[]` — WHOLE CALLS, and no `index` exists
+  The assertions below therefore compare identity/name/arguments/reason, and record
+  the `index` difference as the legitimate wire difference it is.
+
+---- transport A — complete(): one whole body ------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (722 bytes) ---
+      {"messages":[{"content":"the weather in Berlin, the time in Berlin, and the ACME quote","role":"user"}],"model":"mock-hostile","stream":false,"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"},{"function":{"description":"Latest quote for a ticker","name":"get_quote","parameters":{"properties":{"ticker":{"type":"string"}},"required":["ticker"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (1377 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-36cb7766",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> </s> ▒▒ Considering the request about the weather in Berlin, the time. Profile hostile has a 4096-token window. Answering directly. ЖЖЖ <think> nested Mock hostile reply to: the weather in Berlin, the time in Berlin,. umber lantern beacon fathom keel delta quartz jetty tiller yardarm meridian fathom. <|channel|>analysis [UNK]",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"alpha\"}"
+                  },
+                  "id": "call_36cb7766"
+                },
+                {
+                  "type": "funktion",
+                  "function": {
+                    "name": "get_time",
+                    "arguments": "{\"timezone\":\""
+                  }
+                },
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_quote",
+                    "arguments": "{\"ticker\":\"eastward\"}"
+                  },
+                  "id": "call_36cb7766_2"
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20,
+          "completion_tokens": 105,
+          "total_tokens": 125
+        }
+      }
+
+---- transport B — stream(): the identical request, frame by frame ---------
+
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (761 bytes) ---
+      {"messages":[{"content":"the weather in Berlin, the time in Berlin, and the ACME quote","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true},"tools":[{"function":{"description":"Current weather for a city","name":"get_weather","parameters":{"properties":{"city":{"type":"string"}},"required":["city"],"type":"object"}},"type":"function"},{"function":{"description":"Current time in a timezone","name":"get_time","parameters":{"properties":{"timezone":{"type":"string"}},"required":["timezone"],"type":"object"}},"type":"function"},{"function":{"description":"Latest quote for a ticker","name":"get_quote","parameters":{"properties":{"ticker":{"type":"string"}},"required":["ticker"],"type":"object"}},"type":"function"}]}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (10007 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" </s> ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about the weat"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"her in Berlin, the "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_36cb7766","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"type":"funktion","function":{"name":"get_time","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"id":"call_36cb7766_2","type":"function","function":{"name":"get_quote","arguments":""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"ti"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"{\"ti"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"mezo"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"cker"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"alp"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"ne\":"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"\":\"e"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ha\"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"astw"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"ard\""}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"tool_calls":[{"index":4,"function":{"arguments":"}"}}]},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"time. Profile hosti"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"le has a 4096-token"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-36cb7766","object":"chat.completion.chunk","created":1700
+      … [elided: 10000 characters total]
+
+---- what Vela produced from each --------------------------------------------
+  non-streamed calls                     OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                                    MALFORMED index=None id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                                    OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+  streamed calls                         OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                                    MALFORMED index=Some(1) id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                                    OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+  non-streamed executable                2
+  streamed executable                    2
+  non-streamed degradations              UnterminatedReasoning { recovered_answer_chars: 183 }, MalformedToolCalls { count: 1 }
+  streamed degradations                  UnterminatedReasoning { recovered_answer_chars: 183 }, MalformedToolCalls { count: 1 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+
+---- the two wire shapes, as recorded ----------------------------------------
+  non-streamed elements                  3
+  any element carried `index`            false
+    element 0 arguments                  "{\"city\":\"alpha\"}"
+    element 1 arguments                  "{\"timezone\":\""
+    element 2 arguments                  "{\"ticker\":\"eastward\"}"
+  streamed tool-call elements            17
+  every streamed element carried `index` true
+    wire index slot 0 arguments          "{\"city\":\"alpha\"}"
+    wire index slot 1 arguments          "{\"timezone\":\""
+    wire index slot 2 arguments          "{\"ticker\":\"eastward\"}"
+
+---- assertions --------------------------------------------------------------
+  [PASS] the endpoint really did answer with a BATCH — otherwise nothing below discriminates
+        expected 3 elements on the wire, saw Some(3)
+  [PASS] the non-streamed body carries NO `index` on any element (the FINDING 1 shape)
+        any_index=Some(false)
+  [PASS] the streamed frames DO carry `index` — the two shapes genuinely differ
+        17 element(s), all indexed=true
+  [PASS] non-streamed: every call in the batch is reported, none collapsed
+        3 reported, 3 expected
+  [PASS] streamed: every call in the batch is reported
+        3 reported, 3 expected
+  [PASS] THE TWO TRANSPORTS AGREE, call by call — id, name, arguments, reason
+        non-streamed [
+    "OK|id=call_36cb7766|name=get_weather|emulated=false|args={\"city\":\"alpha\"}",
+    "MALFORMED|id=MISSING|name=get_time|reason=UnknownDiscriminator|raw=\"{\\\"timezone\\\":\\\"\"",
+    "OK|id=call_36cb7766_2|name=get_quote|emulated=false|args={\"ticker\":\"eastward\"}",
+]
+        streamed     [
+    "OK|id=call_36cb7766|name=get_weather|emulated=false|args={\"city\":\"alpha\"}",
+    "MALFORMED|id=MISSING|name=get_time|reason=UnknownDiscriminator|raw=\"{\\\"timezone\\\":\\\"\"",
+    "OK|id=call_36cb7766_2|name=get_quote|emulated=false|args={\"ticker\":\"eastward\"}",
+]
+  [PASS] the two transports agree on how many calls are EXECUTABLE
+        non-streamed Ok(2), streamed Ok(2)
+  [PASS] NO SPLICING — every arguments string reported is one the endpoint sent
+        sent ["{\"city\":\"alpha\"}", "{\"timezone\":\"", "{\"ticker\":\"eastward\"}"]
+        reported ["{\"city\":\"alpha\"}", "{\"timezone\":\"", "{\"ticker\":\"eastward\"}"]
+        not-on-the-wire []
+  [PASS] the correlation ids in the batch are distinct — a result cannot be misrouted
+        ["call_36cb7766", "call_36cb7766_2"]
+  [PASS] each offered tool appears in the batch — no call was replaced by its neighbour
+        ["get_weather", "get_time", "get_quote"]
+  [PASS] partially broken batch: the two good calls survive and are executable
+        OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                                    MALFORMED index=None id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                                    OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+  [PASS] partially broken batch: the broken call is reported, not dropped or repaired
+        OK id=call_36cb7766 name=get_weather emulated=false args={"city":"alpha"}
+                                    MALFORMED index=None id=MISSING name=get_time reason=UnknownDiscriminator raw="{\"timezone\":\""
+                                    OK id=call_36cb7766_2 name=get_quote emulated=false args={"ticker":"eastward"}
+  [PASS] the malformed call is declared as a degradation on BOTH transports
+        non-streamed Ok([UnterminatedReasoning { recovered_answer_chars: 183 }, MalformedToolCalls { count: 1 }]), streamed Ok([UnterminatedReasoning { recovered_answer_chars: 183 }, MalformedToolCalls { count: 1 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported])
+
+================================================================================
+VERDICT  13 assertion(s), 0 failure(s)
+================================================================================

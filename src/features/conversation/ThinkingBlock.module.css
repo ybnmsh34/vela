@@ -1,0 +1,113 @@
+.block {
+  margin: 0 0 var(--vela-space-3);
+  border: 1px solid var(--vela-thinking-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-thinking-bg);
+}
+
+.headingReset {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  width: 100%;
+  min-width: 0;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  color: var(--vela-thinking-text);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--vela-radius-md);
+}
+
+.toggle:hover {
+  color: var(--vela-text);
+}
+
+.toggle:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset-inset);
+}
+
+.chevron {
+  width: 0;
+  height: 0;
+  border-left: var(--vela-chevron-run) solid currentcolor;
+  border-top: var(--vela-chevron-rise) solid transparent;
+  border-bottom: var(--vela-chevron-rise) solid transparent;
+  transition: transform var(--vela-duration) var(--vela-ease);
+}
+
+.chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.summary {
+  flex: 0 0 auto;
+  font-weight: var(--vela-weight-medium);
+  letter-spacing: var(--vela-tracking-label);
+}
+
+.pulse {
+  width: var(--vela-dot);
+  height: var(--vela-dot);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-accent);
+  animation: pulse 1.4s var(--vela-ease) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+/* The live edge of the thought, on the collapsed row. It takes whatever space
+   the summary and the pulse leave and then stops: a peek that wraps is not a
+   peek. `min-width: 0` because a flex item will otherwise refuse to shrink
+   below its text and push the row wider than the card. */
+.peek {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vela-text-subtle);
+}
+
+/* The colour is set here rather than inside the rendered markdown, so the whole
+   channel is one voice and `Markdown` keeps deciding only structure. */
+.body {
+  padding: 0 var(--vela-space-3) var(--vela-space-3);
+  color: var(--vela-thinking-text);
+}
+
+/* `.text` and its `white-space: pre-wrap` are gone, and that absence is the
+   fix: this block renders `<Markdown scale="aside">` now, so the model's source
+   line endings stopped being the reader's line endings. */
+
+.notice {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-ui);
+  color: var(--vela-warning);
+}

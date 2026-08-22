@@ -1,0 +1,563 @@
+/**
+ * VELA DESIGN TOKENS — the only place raw colour, spacing, radius or type
+ * values may be written.
+ *
+ * Rules for builders:
+ *   1. Components use `var(--vela-*)`. A hex code, a px radius or a bare font
+ *      stack inside a component file is a review-blocking change.
+ *   2. Add a token here rather than a one-off value there.
+ *   3. Every colour token is defined in the light block first, then overridden
+ *      in the two dark blocks. Never define a colour only inside a dark block.
+ *
+ * IDENTITY: Vela is the constellation of the Sails. The palette is night-sky
+ * indigo with a cyan-teal "signal" accent and a warm amber highlight. It is
+ * deliberately unlike any other assistant product's trade dress; do not
+ * introduce clay/terracotta oranges or cream paper tones.
+ */
+
+:root {
+  /* ---- brand ramp: teal-cyan "signal" ------------------------------------ */
+  --vela-signal-50: #e6fbf8;
+  --vela-signal-100: #c2f4ee;
+  --vela-signal-200: #8ce8df;
+  --vela-signal-300: #5fe2d6;
+  --vela-signal-400: #2ec9bd;
+  --vela-signal-500: #14a89e;
+  --vela-signal-600: #0d857f;
+  --vela-signal-700: #0b6864;
+  --vela-signal-800: #0a4f4d;
+  --vela-signal-900: #073836;
+
+  /* ---- neutral ramp: night-sky indigo ------------------------------------ *
+   * The two half-steps exist because a *quiet* text role has to clear 4.5:1 in
+   * both themes and the ramp had no rung that does: 400 is 3.74–4.18:1 on the
+   * grounds it actually lands on. 350 is the quiet role in dark, 450 in light.
+   * See src/styles/contrast.test.ts, which measures every pair.              */
+  --vela-night-0: #ffffff;
+  --vela-night-25: #f7f8fb;
+  --vela-night-50: #eef0f6;
+  --vela-night-100: #e0e3ed;
+  --vela-night-200: #c7ccdc;
+  --vela-night-300: #9aa2bd;
+  --vela-night-350: #868fac;
+  --vela-night-400: #6f7896;
+  --vela-night-450: #5b6280;
+  --vela-night-500: #4d5675;
+  --vela-night-600: #363e59;
+  --vela-night-700: #262c42;
+  --vela-night-800: #1a1f31;
+  --vela-night-900: #101426;
+  --vela-night-950: #080b16;
+
+  /* ---- status ------------------------------------------------------------ */
+  /* Each status hue carries a 400 for dark grounds and a 700 for light ones.
+     The 600s were the light values and every one of them was under AA on the
+     light page — amber-600 measured 3.20:1, mint-600 3.16:1 — and a warning the
+     user cannot read is worse than no warning. They are kept because both dark
+     fills and the light *fills* still read them. */
+  --vela-amber-400: #f0b429;
+  --vela-amber-600: #b7791f;
+  --vela-amber-700: #975a16;
+  --vela-rose-400: #f2668b;
+  --vela-rose-600: #c33c62;
+  --vela-rose-700: #a93253;
+  --vela-mint-400: #45cf88;
+  --vela-mint-600: #1f9a5c;
+  --vela-mint-700: #16794a;
+
+  /* ---- semantic (LIGHT is the base definition) --------------------------- */
+  --vela-bg: var(--vela-night-25);
+  --vela-bg-inset: var(--vela-night-50);
+  --vela-surface: var(--vela-night-0);
+  --vela-surface-raised: var(--vela-night-0);
+  --vela-chrome: var(--vela-night-50);
+  --vela-border: var(--vela-night-100);
+  --vela-border-strong: var(--vela-night-200);
+
+  --vela-text: var(--vela-night-900);
+  --vela-text-muted: var(--vela-night-500);
+  /* The quiet role: the composer's placeholder, a row's timestamp, the status
+     line. It was night-400 in *both* themes — the one colour role never
+     re-authored for dark — and measured 4.16:1 light / 4.43:1 dark on the
+     operator's machine, under AA in both. It is now per theme, and every ground
+     it lands on is measured in contrast.test.ts. */
+  --vela-text-subtle: var(--vela-night-450);
+  /* What is legible *on* the two filled controls. The accent fill is dark in
+     light mode and light in dark mode, so this token inverts with it; that is
+     the whole reason it is a token and not a component's guess. Two components
+     used to write `--vela-night-0` here, which is white in both themes and so
+     was 1.4:1 on the dark theme's cyan fill. */
+  --vela-text-on-accent: var(--vela-night-0);
+  --vela-text-on-danger: var(--vela-night-0);
+
+  /* signal-700 rather than 600 because this token is read two ways — as text on
+     a light page (5.8:1 at 700, 3.9:1 at 600) and as a fill under
+     --vela-text-on-accent (6.6:1 at 700). One value answers both. */
+  --vela-accent: var(--vela-signal-700);
+  --vela-accent-hover: var(--vela-signal-800);
+  --vela-accent-quiet: var(--vela-signal-50);
+  /* A focus ring is a UI component: WCAG 1.4.11 asks 3:1 against what is around
+     it, and signal-500 gave 2.59:1 on the chrome. */
+  --vela-focus: var(--vela-signal-600);
+
+  --vela-success: var(--vela-mint-700);
+  --vela-warning: var(--vela-amber-700);
+  --vela-danger: var(--vela-rose-700);
+
+  --vela-shadow-sm: 0 1px 2px rgb(16 20 38 / 8%);
+  --vela-shadow-md: 0 6px 20px -6px rgb(16 20 38 / 18%);
+  --vela-shadow-lg: 0 24px 64px -16px rgb(16 20 38 / 30%);
+
+  /* ---- list rows and overlays -------------------------------------------- */
+  /* Row states are their own tokens because a list row is the single most
+     repeated surface in the app; deriving them per-component guarantees drift. */
+  --vela-row-hover: rgb(16 20 38 / 5%);
+  --vela-row-selected: var(--vela-signal-50);
+  --vela-row-selected-text: var(--vela-signal-700);
+  --vela-scrim: rgb(16 20 38 / 32%);
+
+  /* ---- the scrollbar ------------------------------------------------------ *
+   * Vela had no scrollbar styling at all and declared `color-scheme: light dark`
+   * once, at the root, narrowed in neither dark block. So on Windows the OS
+   * painted its own light scrollbar — white trough, grey arrow buttons — down
+   * the side of a dark application. `base.css` draws it instead; `color-scheme`
+   * below is now per theme so that everything else the UA paints (the `<select>`
+   * popup, the caret, an overflow the pseudo-elements do not reach) follows the
+   * palette rather than the OS.
+   *
+   * The thumb is night-400 in *both* themes on purpose: it is the one value that
+   * clears 3:1 against every ground a scroller sits on in either theme, and a
+   * scrollbar is a control the user has to be able to see and grab.            */
+  --vela-scrollbar-thumb: var(--vela-night-400);
+  --vela-scrollbar-thumb-hover: var(--vela-night-500);
+  /* Transparent, not a colour: a scroller can sit on the page, on the chrome or
+     inside a popover, and a painted trough would be wrong on two of the three. */
+  --vela-scrollbar-track: transparent;
+
+  /* ---- type -------------------------------------------------------------- *
+   * Both stacks lead with the *bundled* face, which `src/styles/typeface.css`
+   * declares and Vite emits into the app bundle — see that file for why Vela
+   * ships a typeface rather than committing to the platform's. The second entry
+   * is the same family as a user might have installed system-wide, so a machine
+   * with a real Inter still gets Inter if the bundled face is ever unavailable.
+   * Everything after it is the platform's, reached only for codepoints outside
+   * the bundled Latin subset.
+   *
+   * Naming the first family here is not what makes it render. Until this commit
+   * these stacks named Inter and JetBrains Mono and *nothing shipped them*, so
+   * every Windows install ran on Segoe UI and Consolas. The check that the
+   * leading family actually paints is an advance-width comparison against a
+   * deliberately absent family — `P17`/`P18` in
+   * `tests/harness/production-bundle/drive-app-root.mjs`. Do not substitute
+   * `document.fonts.check()`: it returns `true` for a font the engine cannot
+   * draw, which is how this went unnoticed for the whole of Phases A–C.       */
+  --vela-font-sans:
+    'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+    'Helvetica Neue', sans-serif;
+  --vela-font-mono:
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --vela-text-2xs: 0.625rem;
+  --vela-text-xs: 0.75rem;
+  --vela-text-sm: 0.8125rem;
+  --vela-text-base: 0.9375rem;
+  /* The step between body and `lg`. It exists because the rendered answer needs
+     six distinguishable heading levels out of a scale built for interface
+     chrome, and `base` → `lg` was the one gap wide enough to hide a level in. */
+  --vela-text-md: 1rem;
+  --vela-text-lg: 1.125rem;
+  --vela-text-xl: 1.5rem;
+
+  /* Sized against the text it sits in, not the root: a glyph button's mark and
+     inline code have to track whatever they are embedded in. */
+  --vela-text-icon: 1rem;
+  --vela-text-inline: 0.9em;
+
+  --vela-weight-regular: 400;
+  --vela-weight-medium: 500;
+  --vela-weight-semibold: 600;
+  /* The step above emphasis. It exists because a rendered document has two
+     kinds of loud text — a heading and a bold run — and they must not be the
+     same weight: `<strong>` is unclassed by design, so without a step above it
+     the user agent's 700 outranked every heading below `h3` at 600, and the
+     document's own emphasis outweighed its own structure. */
+  --vela-weight-bold: 700;
+
+  /* ---- leading: one step per job, not one per author --------------------- *
+   * Four Phase C builders each answered "how tall is a line?" separately and
+   * the tree ended up with 1.3/1.45/1.5/1.55/1.6/1.65 for overlapping jobs.
+   * These are the steps; a bare ratio in a component is drift.               */
+  --vela-leading-none: 1; /* a glyph centred in a box */
+  --vela-leading-tight: 1.3; /* headings */
+  --vela-leading-snug: 1.45; /* large-size text — a lede at --vela-text-lg up */
+  --vela-leading-ui: 1.5; /* the default for interface text */
+  --vela-leading-code: 1.55; /* monospace blocks */
+  --vela-leading-prose: 1.6; /* sustained reading: answers, markdown, notices */
+
+  /* ---- tracking ---------------------------------------------------------- */
+  --vela-tracking-tight: -0.01em; /* display sizes, which set too loose */
+  --vela-tracking-label: 0.01em; /* the slight lift on an emphasised label */
+  --vela-tracking-code: 0.02em; /* monospace, which sets too tight */
+  --vela-tracking-caps: 0.04em; /* uppercase micro-labels */
+  --vela-tracking-wordmark: 0.06em; /* identity: the Vela wordmark alone */
+
+  /* ---- space: 4px base scale --------------------------------------------- */
+  --vela-space-1: 0.25rem;
+  --vela-space-2: 0.5rem;
+  --vela-space-3: 0.75rem;
+  --vela-space-4: 1rem;
+  --vela-space-5: 1.5rem;
+  --vela-space-6: 2rem;
+  --vela-space-7: 3rem;
+
+  /* ---- radius ------------------------------------------------------------ */
+  --vela-radius-xs: 2px;
+  --vela-radius-sm: 4px;
+  --vela-radius-md: 8px;
+  --vela-radius-lg: 12px;
+  --vela-radius-pill: 999px;
+
+  /* ---- square controls --------------------------------------------------- *
+   * A bare icon button arrived at 22px, 24px, 26px, 30px and 32px from five
+   * different files. Three steps cover every one of those jobs.              */
+  --vela-control-xs: 24px; /* a glyph button inside a row or a chip */
+  --vela-control-sm: 28px; /* a compact control in chrome */
+  --vela-control-md: 32px; /* a standalone icon button */
+
+  /* One size for every status/activity dot, so four indicators cannot each
+     land on a different diameter. */
+  --vela-dot: 6px;
+
+  /* An attachment's thumbnail. Its own token rather than a control size: it is
+     an image well, and it should not move when a button size does. */
+  --vela-thumb: 32px;
+
+  /* The Vela mark at empty-state size. Two features draw this same mark to
+     introduce an empty screen; they arrived at 52px and 56px. */
+  --vela-mark-lg: 56px;
+
+  /* ---- overlay widths ---------------------------------------------------- */
+  --vela-overlay-sm: 420px; /* a dialog asking one question */
+  --vela-overlay-md: 620px; /* a palette listing results */
+
+  /* The disclosure triangle, drawn with borders in two features. Tokenised so
+     the two cannot drift apart. */
+  --vela-chevron-run: 5px; /* the pointing edge */
+  --vela-chevron-rise: 4px; /* each transparent flank */
+
+  /* ---- focus ------------------------------------------------------------- *
+   * base.css sets the global :focus-visible ring; these are the same ring for
+   * components that must draw their own. Offset has exactly two answers: the
+   * ring sits outside a control, or inside a full-bleed row where an outward
+   * ring would be clipped by the scroll container.                           */
+  --vela-focus-width: 2px;
+  --vela-focus-ring: var(--vela-focus-width) solid var(--vela-focus);
+  --vela-focus-offset: 2px;
+  --vela-focus-offset-inset: -2px;
+
+  /* ---- layering ---------------------------------------------------------- *
+   * The whole stacking order of the app, in one place. A bare z-index in a
+   * component is a guess about what else is on screen.                       */
+  --vela-z-overlay: 10; /* an overlay inside a surface — the drop target */
+  --vela-z-popover: 20; /* a menu anchored to its control */
+  --vela-z-dialog: 40; /* a modal dialog and its scrim */
+  --vela-z-palette: 50; /* the command palette, above everything */
+
+  /* ---- chrome metrics ---------------------------------------------------- */
+  --vela-titlebar-height: 40px;
+  --vela-statusbar-height: 28px;
+  --vela-rail-width: 56px;
+  /* How wide a scrollbar is, and how far its thumb is inset from the trough
+     edge. One answer, because the transcript, the sidebar, the palette and the
+     model list all have one. */
+  --vela-scrollbar-size: 12px;
+  --vela-scrollbar-inset: 3px;
+  /* The width before the host has said what the user chose. `Sidebar.tsx`
+     overwrites this per element from `navigation-store.ts`, which is where the
+     live value and its 200–480 clamp live; this is only what the first paint
+     uses. Kept in step with `DEFAULT_SIDEBAR_WIDTH` there. */
+  --vela-sidebar-width: 280px;
+
+  /* ---- motion: one duration, one easing. Respect reduced motion. --------- */
+  --vela-duration: 140ms;
+  --vela-ease: cubic-bezier(0.2, 0, 0.1, 1);
+
+  /* ---- conversation surface ---------------------------------------------- *
+   * Owned by src/features/conversation. Defined in the light block first, then
+   * overridden in both dark blocks, per the rule at the top of this file.     */
+  /* THE READING MEASURE — a character count, expressed as a length.
+     It was 46rem, which is 736px of box and 688px of text at --vela-text-base,
+     and on the operator's Windows machine that set prose at ~95–105 characters
+     per line. Comfortable sustained reading is 65–75. Scaling that measurement
+     linearly, ~70 characters is ~480px, so 30rem.
+     Two things this is *not*: it is not the width of the transcript's box (the
+     column adds --vela-gutter on each side and the composer's field is exactly
+     this wide, which is what puts them on one ruler), and it is not a width for
+     anything that is not prose — a settings form reads --vela-panel-measure.
+     The characters-per-line figure itself is measured, not asserted — and it
+     had to be re-measured once Vela started bundling a typeface, because a
+     reading measure is a property of the pair (width, face) and 30rem was
+     back-calculated from a reading taken in Segoe UI. In Inter it is **68.3
+     characters per line** (480px column, 7.029px mean advance): assertion P20
+     of tests/harness/production-bundle/drive-app-root.mjs, which computes it as
+     column ÷ mean advance rather than characters ÷ line boxes, the latter being
+     biased ~8% by the partial last line of every paragraph. Control K6d shows
+     the same column reading 64.2 in the platform fallback, which is why the
+     re-measurement was not optional; control K7 shows the old 46rem reading
+     104.7, reproducing the operator's ~95–105 from a different engine. */
+  /* The prose measure GROWS WITH THE WINDOW, within the readable band. A hard
+     30rem meant a 2560px window and a 900px window showed an identical 480px
+     column — the operator's "just tied up to the middle of the screen", with
+     800px of dead space on each side of a maximised window.
+
+     The floor is the measured-good 480px (68.3 chars in Inter). The ceiling is
+     33rem = 528px = 75.1 chars, still inside the 60–80 band the desktop `visual`
+     critic passed us on. It is deliberately NOT larger: the previous defect here
+     was a 46rem column reading 104.7 characters, and filling the pane with prose
+     would reproduce it at ~280. The window paying off must not cost the measure.
+
+     The 24rem + 6vw ramp keeps 30rem until roughly 1600px, so ordinary windows
+     are unchanged and only genuinely wide ones widen. */
+  --vela-measure: clamp(30rem, 24rem + 6vw, 33rem);
+  /* Content that is NOT prose — code blocks, tables, diagrams — is not bound by
+     a reading measure, and it is what actually suffers at 480px. This is where
+     a big window pays off most: on a wide viewport a code block may use the
+     space a paragraph must not. */
+  /* NOT `min(100%, …)`, and that mistake is worth the comment. `100%` resolves
+     against the containing block — which IS the reading column — so the min()
+     collapsed to the column's own width and the token could never be wider than
+     the thing it exists to exceed. Measured on WebView2 at 2560px before the
+     fix: the code block rendered 526px against a 528px prose column, i.e. the
+     breakout did nothing at the one window size it was written for.
+     Unbounded here; the breakout that consumes it is gated on a viewport with
+     provable room — see `CodeBlock.module.css`. */
+  --vela-wide-measure: calc(var(--vela-measure) + 16rem);
+  /* The viewport from which a breakout has room to land. At 1600px with the
+     sidebar dragged to its 480 maximum the pane is 1120 and the column 528, so
+     there is 296px of slack on each side against a 128px breakout. */
+  --vela-wide-breakout-from: 1600px;
+  /* The user's own turn is capped NARROWER than the assistant's and sits on the
+     opposite edge, so a glance tells you who spoke without reading a word. */
+  --vela-turn-user-measure: min(100%, 26rem);
+  /* The gap between the reading column and the window. One token, because the
+     transcript and the composer share it — that shared value *is* the vertical
+     ruler both of them stand on. */
+  --vela-gutter: var(--vela-space-5);
+  /* The transcript's column: the measure plus a gutter on each side. It is one
+     token rather than an expression repeated in two files because two things
+     read it, and the second one is the interesting one — the sidebar is capped
+     at `100vw` minus *this*, so as the window narrows the sidebar gives way and
+     the reader's column does not. "How wide may the sidebar be?" has no answer
+     of its own; a share of the viewport is a guess, and this is the thing that
+     was actually being protected. */
+  --vela-reading-column: calc(var(--vela-measure) + 2 * var(--vela-gutter));
+  /* What `scrollbar-gutter: stable both-edges` takes out of a scroller, on
+     every platform Vela ships to. It is knowable as a number — rather than
+     being whatever the OS says a scrollbar is — only because `base.css` styles
+     `::-webkit-scrollbar` to `--vela-scrollbar-size`, which replaces the native
+     widget in Chromium and WebKit alike. Both edges, so it is twice.
+
+     Two boxes stand inside that reservation and they must reserve the same
+     amount, which is the whole lesson of the regression this token exists to
+     close: the transcript's scroller reserves it, and `Composer.module.css`
+     reserves it with the same property so that the *engine* computes both
+     rather than this file guessing at one of them. What reads the number here
+     is the one place that cannot ask an engine — the sidebar's cap, below. */
+  --vela-scroll-reserve: calc(2 * var(--vela-scrollbar-size));
+  /* The width the reading *surface* needs, which is the column plus what the
+     scroller reserves around it — and it is what the sidebar gives way to. The
+     column alone was the answer until `scrollbar-gutter` landed: the sidebar
+     then took the last 24px the column needed to reach its measure, and at
+     880px the reader lost 12px of text on each side while the composer, outside
+     the reservation, kept the full 480. */
+  --vela-reading-surface: calc(var(--vela-reading-column) + var(--vela-scroll-reserve));
+  /* A form of side-by-side fields is not prose and does not want a prose
+     measure. This is the width the reading column used to have. */
+  --vela-panel-measure: 46rem;
+  /* How deep content fades into a scroll edge instead of being cut off at it. */
+  --vela-scroll-fade: var(--vela-space-6);
+
+  --vela-turn-user-bg: var(--vela-night-50);
+  --vela-turn-user-border: var(--vela-night-100);
+  --vela-turn-rule: var(--vela-night-100);
+
+  --vela-code-bg: var(--vela-night-950);
+  --vela-code-surface: var(--vela-night-900);
+  --vela-code-text: var(--vela-night-100);
+  --vela-code-border: var(--vela-night-800);
+
+  /* night-350, not 400, and the same value in both themes: a code block is dark
+     in light mode too, so the comment colour has exactly one job in both — and
+     at night-400 it was 3.74:1 on the language bar. */
+  --vela-syntax-comment: var(--vela-night-350);
+  --vela-syntax-string: var(--vela-signal-200);
+  --vela-syntax-number: var(--vela-amber-400);
+  --vela-syntax-keyword: var(--vela-signal-300);
+  --vela-syntax-punct: var(--vela-night-300);
+
+  /* One step *in* from the page, not equal to it. This token used to be
+     --vela-night-25, which is exactly what --vela-bg is in light: the block had
+     a border, a heading and a body, and painted nothing. */
+  --vela-thinking-bg: var(--vela-night-50);
+  --vela-thinking-border: var(--vela-night-100);
+  --vela-thinking-text: var(--vela-night-500);
+
+  --vela-notice-bg: var(--vela-night-50);
+  --vela-warning-bg: #fdf4e0;
+  --vela-danger-bg: #fdeef2;
+
+  /* `light`, not `light dark`. This declaration decides what the *user agent*
+     paints — scrollbars, form controls, the caret, the `<select>` popup — and
+     `light dark` hands that decision to the OS while the three blocks in this
+     file hand the palette to the user's choice. The two then disagree: a user
+     on `data-theme='dark'` with an OS set to light got Vela's dark palette and
+     Windows' white legacy scrollbar, arrow buttons and all, down the side of it.
+     Each of the three theme states now states its own answer, so the widget
+     scheme and the palette are chosen by the same rule.
+     `src/styles/platform-defaults.test.ts` walks all six (three states × two OS
+     preferences) and fails if they ever part company. */
+  color-scheme: light;
+}
+
+/* Dark by system preference, unless the user forced light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --vela-bg: var(--vela-night-950);
+    --vela-bg-inset: var(--vela-night-900);
+    --vela-surface: var(--vela-night-900);
+    --vela-surface-raised: var(--vela-night-800);
+    --vela-chrome: var(--vela-night-900);
+    --vela-border: var(--vela-night-700);
+    --vela-border-strong: var(--vela-night-600);
+
+    --vela-text: var(--vela-night-50);
+    --vela-text-muted: var(--vela-night-300);
+    --vela-text-subtle: var(--vela-night-350);
+    --vela-text-on-accent: var(--vela-night-950);
+    --vela-text-on-danger: var(--vela-night-950);
+
+    --vela-accent: var(--vela-signal-300);
+    --vela-accent-hover: var(--vela-signal-200);
+    --vela-accent-quiet: var(--vela-signal-900);
+    --vela-focus: var(--vela-signal-300);
+
+    --vela-success: var(--vela-mint-400);
+    --vela-warning: var(--vela-amber-400);
+    --vela-danger: var(--vela-rose-400);
+
+    --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+    --vela-shadow-lg: 0 28px 72px -20px rgb(0 0 0 / 72%);
+
+    --vela-row-hover: rgb(255 255 255 / 6%);
+    --vela-row-selected: rgb(20 168 158 / 16%);
+    --vela-row-selected-text: var(--vela-signal-200);
+    --vela-scrim: rgb(2 4 10 / 62%);
+
+    /* The thumb is the same night-400 as in light — the one rung that clears 3:1
+       on every ground a scroller sits on in either theme. Only its hover state
+       inverts: darker on a light page, lighter on a dark one. */
+    --vela-scrollbar-thumb: var(--vela-night-400);
+    --vela-scrollbar-thumb-hover: var(--vela-night-300);
+    --vela-scrollbar-track: transparent;
+
+    --vela-turn-user-bg: var(--vela-night-800);
+    --vela-turn-user-border: var(--vela-night-700);
+    --vela-turn-rule: var(--vela-night-800);
+
+    /* In dark the page is already --vela-night-950, so a code block painted
+       --vela-night-950 was a 1px border around nothing. The block steps *up*
+       out of the page and its language bar steps up again. */
+    --vela-code-bg: var(--vela-night-900);
+    --vela-code-surface: var(--vela-night-800);
+    --vela-code-text: var(--vela-night-100);
+    --vela-code-border: var(--vela-night-700);
+
+    --vela-syntax-comment: var(--vela-night-350);
+    --vela-syntax-string: var(--vela-signal-200);
+    --vela-syntax-number: var(--vela-amber-400);
+    --vela-syntax-keyword: var(--vela-signal-300);
+    --vela-syntax-punct: var(--vela-night-300);
+
+    --vela-thinking-bg: var(--vela-night-900);
+    --vela-thinking-border: var(--vela-night-700);
+    --vela-thinking-text: var(--vela-night-300);
+
+    --vela-notice-bg: var(--vela-night-800);
+    --vela-warning-bg: #2a2109;
+    --vela-danger-bg: #2e1420;
+
+    color-scheme: dark;
+  }
+}
+
+/* Dark by explicit user choice — must win in both directions. */
+:root[data-theme='dark'] {
+  --vela-bg: var(--vela-night-950);
+  --vela-bg-inset: var(--vela-night-900);
+  --vela-surface: var(--vela-night-900);
+  --vela-surface-raised: var(--vela-night-800);
+  --vela-chrome: var(--vela-night-900);
+  --vela-border: var(--vela-night-700);
+  --vela-border-strong: var(--vela-night-600);
+
+  --vela-text: var(--vela-night-50);
+  --vela-text-muted: var(--vela-night-300);
+  --vela-text-subtle: var(--vela-night-350);
+  --vela-text-on-accent: var(--vela-night-950);
+  --vela-text-on-danger: var(--vela-night-950);
+
+  --vela-accent: var(--vela-signal-300);
+  --vela-accent-hover: var(--vela-signal-200);
+  --vela-accent-quiet: var(--vela-signal-900);
+  --vela-focus: var(--vela-signal-300);
+
+  --vela-success: var(--vela-mint-400);
+  --vela-warning: var(--vela-amber-400);
+  --vela-danger: var(--vela-rose-400);
+
+  --vela-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --vela-shadow-md: 0 8px 24px -8px rgb(0 0 0 / 60%);
+  --vela-shadow-lg: 0 28px 72px -20px rgb(0 0 0 / 72%);
+
+  --vela-row-hover: rgb(255 255 255 / 6%);
+  --vela-row-selected: rgb(20 168 158 / 16%);
+  --vela-row-selected-text: var(--vela-signal-200);
+  --vela-scrim: rgb(2 4 10 / 62%);
+
+  /* The thumb is the same night-400 as in light — the one rung that clears 3:1
+     on every ground a scroller sits on in either theme. Only its hover state
+     inverts: darker on a light page, lighter on a dark one. */
+  --vela-scrollbar-thumb: var(--vela-night-400);
+  --vela-scrollbar-thumb-hover: var(--vela-night-300);
+  --vela-scrollbar-track: transparent;
+
+  --vela-turn-user-bg: var(--vela-night-800);
+  --vela-turn-user-border: var(--vela-night-700);
+  --vela-turn-rule: var(--vela-night-800);
+
+  /* Same correction as the block above; see the note there. */
+  --vela-code-bg: var(--vela-night-900);
+  --vela-code-surface: var(--vela-night-800);
+  --vela-code-text: var(--vela-night-100);
+  --vela-code-border: var(--vela-night-700);
+
+  /* night-350, not 400, and the same value in both themes: a code block is dark
+     in light mode too, so the comment colour has exactly one job in both — and
+     at night-400 it was 3.74:1 on the language bar. */
+  --vela-syntax-comment: var(--vela-night-350);
+  --vela-syntax-string: var(--vela-signal-200);
+  --vela-syntax-number: var(--vela-amber-400);
+  --vela-syntax-keyword: var(--vela-signal-300);
+  --vela-syntax-punct: var(--vela-night-300);
+
+  --vela-thinking-bg: var(--vela-night-900);
+  --vela-thinking-border: var(--vela-night-700);
+  --vela-thinking-text: var(--vela-night-300);
+
+  --vela-notice-bg: var(--vela-night-800);
+  --vela-warning-bg: #2a2109;
+  --vela-danger-bg: #2e1420;
+
+  color-scheme: dark;
+}

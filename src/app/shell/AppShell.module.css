@@ -1,0 +1,48 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--vela-bg);
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Phase A's placeholder rail and content region used to live here. Both are
+   gone: `NavigationSurface` owns the sidebar and the content region now, and
+   the shell is left with the two bands it actually draws. */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  height: var(--vela-statusbar-height);
+  padding: 0 var(--vela-space-3);
+  background: var(--vela-chrome);
+  border-top: 1px solid var(--vela-border);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+  flex: 0 0 auto;
+}
+
+.dot {
+  width: var(--vela-dot);
+  height: var(--vela-dot);
+  border-radius: var(--vela-radius-pill);
+  background: var(--vela-text-subtle);
+}
+
+.dotOk {
+  background: var(--vela-success);
+}
+
+.dotWarn {
+  background: var(--vela-warning);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}

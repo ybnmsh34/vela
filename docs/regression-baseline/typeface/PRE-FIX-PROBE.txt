@@ -1,0 +1,38 @@
+PASS  P1  the production bundle mounts a non-empty React tree at #root  — 5196 bytes of markup
+PASS  P2  every feature that only meets at the composition root is on screen  — {"statusLine":1,"startAConversation":1,"searchEverything":1,"navigation":1}
+PASS  P3  the page booted the built bundle, not a source module  — ["/assets/index-DpJ8fIBh.js"]
+PASS  P4  no uncaught exception during mount
+PASS  P5  no console error during mount
+PASS  P6a  the traps were installed before the document had a body  — document.readyState was loading
+PASS  P6b  the app made zero fetch/XHR/WebSocket/EventSource/beacon calls of its own  — []
+PASS  P6c  Chromium itself saw no request leave the page origin  — []
+PASS  P7  the app names the fake it is running on rather than implying a real one  — browser / memory-fake (not a real keychain) / Bridge ready · memory-fake
+FAIL  P17a  the family --vela-font-sans names first ("Inter") actually loads — WIDTH CONTROL, not document.fonts.check  — requested=1725.91 absent-font control=1725.91 (document.fonts.check said true, which is not evidence)
+FAIL  P17b  --vela-font-sans as the app applies it resolves to that same face, not to a fallback  — applied=2134.16 requested=1725.91 stack="\"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif"
+FAIL  P18a  the family --vela-font-mono names first ("JetBrains Mono") actually loads — WIDTH CONTROL, not document.fonts.check  — requested=1725.91 absent-font control=1725.91 (document.fonts.check said true, which is not evidence)
+FAIL  P18b  --vela-font-mono as the app applies it resolves to that same face, not to a fallback  — applied=2388.94 requested=1725.91 stack="\"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace"
+PASS  P18c  the sans and mono faces are two different faces, not one stack shadowing the other  — sans=2134.16 mono=2388.94
+FAIL  P19  every font byte came from the bundle itself — no request left the origin for a face  — 0 font requests: []
+PASS  P8  with no endpoint configured the meter states no figure at all  — the meter is not rendered before a model is selected
+PASS  P2b  opening a conversation brings up the composer, the send action and the model bar  — {"composer":1,"send":1,"modelSwitcher":1,"capabilityReadout":1}
+PASS  P9  typing a very large draft moves the context meter off zero  — before="Context window not reported by this endpoint · about 0 tokens in this turn" after="Context window not reported by this endpoint · about 220,004 tokens in this turn"
+PASS  P10  the meter never claims a window this endpoint did not report  — "Context window not reported by this endpoint · about 220,004 tokens in this turn"
+PASS  P13  a sent turn appears in the transcript  — {"user":1,"assistant":1}
+PASS  P14  navigating to another conversation leaves the first transcript behind  — {"user":0,"assistant":0}
+PASS  P15  coming back restores the turn — the surface reads it from the store, not from its own state  — {"counts":{"user":1,"assistant":1},"sample":"The workstation in the study · a-local-model\nCapabilities unknown\n\nContext window not reported by this endpoint · about 36 tokens in this turn\n\nText file\n\na sen"}
+PASS  P16  the restored turn is the one that was sent, not a re-run of it  — 1 -> 1 adapter chat calls
+PASS  P11  configuring an endpoint and typing 880,000 characters still produces zero browser requests  — 0 trapped, 0 off-origin
+PASS  P12  no uncaught exception across the whole session
+
+--- assertion controls ---
+PASS  K1  CONTROL: P1/P2 fail against a page with an empty #root
+PASS  K2a  CONTROL: the in-page traps record fetch, XHR, WebSocket and EventSource when they are used  — ["fetch","xhr","websocket","eventsource"]
+PASS  K2b  CONTROL: Chromium's own request event sees an off-origin request when one is made  — ["http://127.0.0.1:9/v1/models","http://127.0.0.1:9/events"]
+PASS  K3  CONTROL: P4/P5 fail when an error is actually thrown  — 1 console, 1 uncaught
+PASS  K4  CONTROL: P9 fails on an empty draft — the meter is not stuck at a large number  — "Context window not reported by this endpoint · about 0 tokens in this turn"
+PASS  K6a  CONTROL: a family that is not there measures exactly the absent-font control  — absent=1725.91 control=1725.91
+PASS  K6b  CONTROL: with every @font-face stripped from the real bundle, P17a/P18a FAIL — the probe catches the defect this commit closes  — sans=1725.91 mono=1725.91 control=1725.91 (document.fonts.check said sans=true mono=true)
+PASS  K6c  CONTROL: and the stack then paints in a platform fallback instead — which is what Windows saw as Segoe UI  — applied=2134.16 requested=1725.91 loaded faces=[]
+PASS  K5  CONTROL: the served policy is the shipping CSP and it confines connections to self  — default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
+
+34 assertions, 5 failures

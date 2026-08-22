@@ -1,0 +1,13 @@
+{
+  "answer": "Mock mid-local reply to: Summarise what this endpoint can do.. lantern meridian pennant tiller zenith jetty zenith fathom orbit yardarm keel tiller careful alpha ember orbit.",
+  "whole": "Thought process\n\nMock mid-local reply to: Summarise what this endpoint can do.. lantern meridian pennant tiller zenith jetty zenith fathom orbit yardarm keel tiller careful alpha ember orbit.\n\nCopy\n13 in · 81 out tokens",
+  "reasoning": {
+    "text": "Considering the request about Summarise what this endpoint can do.. Profile mid-local has a 32768-token window. Answering directly.",
+    "hiddenAttribute": true,
+    "summary": "Thought process",
+    "expanded": false
+  },
+  "tools": null,
+  "degradations": [],
+  "error": null
+}

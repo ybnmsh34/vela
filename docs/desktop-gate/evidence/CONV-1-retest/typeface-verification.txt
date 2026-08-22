@@ -1,0 +1,27 @@
+TYPEFACE VERIFICATION — the width-control probe, run again after the fix
+Real WebView2 151.0.4129.78, Windows 11 26200.
+
+  absentControl            481.72
+  Inter                    481.72
+  InterVariable            560.09
+  JetBrainsMono            481.72
+  JetBrainsMonoVariable    614.41
+  SegoeUI                  523.91
+  appBody                  560.09
+  appMono                  614.41
+
+  absent-control value is what a MISSING font renders at.
+  app body still == Segoe UI ? False
+  app body now differs from the absent control ? True
+
+  resolved --vela-font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+    'Helvetica Neue', sans-serif
+  document.fonts.size (loaded faces): 4
+  NOTE: document.fonts.check is NOT used here — it false-positives for Inter on this box.
+
+== SCROLLBAR / color-scheme, runtime ==
+  theme=light dataTheme=light rootColorScheme=light
+  theme=dark  dataTheme=dark  rootColorScheme=dark
+
+  ::-webkit-scrollbar rules now present in the stylesheet: 5
+  scrollbar-gutter on the transcript scroller: auto

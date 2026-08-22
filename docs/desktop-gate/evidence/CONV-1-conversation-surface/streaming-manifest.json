@@ -1,0 +1,33 @@
+[
+  {
+    "file": "10-streaming-thinking-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "heading": null,
+      "composerBtn": "Stop",
+      "thinkingVisible": true,
+      "answerChars": 36
+    }
+  },
+  {
+    "file": "10-streaming-thinking-dark.png",
+    "state": {
+      "theme": "dark",
+      "dataTheme": "dark",
+      "heading": null,
+      "composerBtn": "Stop",
+      "thinkingVisible": true,
+      "answerChars": 32
+    }
+  },
+  {
+    "file": "11-streaming-answer-light.png",
+    "state": {
+      "theme": "light",
+      "dataTheme": "light",
+      "answerParagraphChars": 44,
+      "composerBtn": "Stop"
+    }
+  }
+]

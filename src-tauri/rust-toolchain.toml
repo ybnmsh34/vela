@@ -1,0 +1,58 @@
+# The compiler this workspace is built and checked with.
+#
+# WHY THIS FILE EXISTS
+#
+# `Cargo.lock` pins every dependency; nothing pinned the compiler. CI resolves
+# its toolchain with `dtolnay/rust-toolchain@stable`, which follows the calendar
+# — so the same commit was checked by a different rustc every six weeks, and
+# `rust-version = "1.82"` in Cargo.toml is only a floor, not a pin.
+#
+# WHY THIS EXACT VERSION, AND WHY CHANGING IT IS NOT COSMETIC
+#
+# 1.97.1 is the toolchain installed on the machine this pin was introduced on:
+#
+#     rustc 1.97.1 (8bab26f4f 2026-07-14)
+#     cargo 1.97.1 (c980f4866 2026-06-30)
+#     rustfmt 1.9.0-stable (8bab26f4f6 2026-07-14)
+#     clippy 0.1.97 (8bab26f4f6 2026-07-14)
+#     host x86_64-pc-windows-msvc
+#
+# The load-bearing one is rustfmt. **rustfmt's output changes between
+# releases**, so `cargo fmt --all --check` is a gate whose expected answer is a
+# function of the toolchain. Formatting fixes are made against one rustfmt and
+# silently un-made by another: raising this version can turn gate 2 red again
+# with a diff nobody wrote, and the cause will not look like a toolchain
+# change. Treat a bump here as a change to the formatting gate — bump it
+# deliberately, reformat in the same commit, and expect a diff.
+#
+# COMPONENTS
+#
+# `rustfmt` and `clippy` are what the gates actually invoke:
+#   cargo fmt --all --check
+#   cargo clippy --workspace --all-targets -- -D warnings
+# `profile = "minimal"` keeps everything else (rust-docs and friends) out; the
+# two components above are added back explicitly, because "minimal" does not
+# include them and a toolchain without rustfmt fails the first gate by being
+# unable to run it.
+#
+# `targets` is deliberately NOT set. The host target is always installed, and
+# naming x86_64-pc-windows-msvc here would make the Linux CI jobs download a
+# Windows std they cannot link against.
+#
+# The exact count, since a wrong number is what this comment used to carry:
+# `.github/workflows/ci.yml` has four `runs-on: ubuntu-latest` jobs — `static`
+# (:32), `test-ts` (:80), `test-rust` (:112) and `secret-tripwire` (:310) — of
+# which exactly **two** install a toolchain, at :66 and :138. Those two are the
+# ones a `targets` entry would cost. The third `dtolnay/rust-toolchain@stable`
+# in the file, at :255, sits inside `test-windows` (`runs-on: windows-latest`,
+# :188), where naming the Windows target would be a no-op rather than a wasted
+# download.
+#
+# Line numbers are `runs-on:` lines and were re-checked after merging main at
+# 92a3d1b, which moved two of them. They are a convenience, not the claim: the
+# claim is four Linux jobs, two of which install a toolchain.
+
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

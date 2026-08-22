@@ -1,0 +1,141 @@
+{
+  "control": 1725.91,
+  "absentControlFamily": "ZzQqNoSuchFontXx",
+  "readings": {
+    "bodyRoot": {
+      "found": true,
+      "selector": "body",
+      "tag": "body",
+      "resolvedStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "firstFamily": "\"Inter Variable\"",
+      "fontSizePx": 15,
+      "fontWeight": "400",
+      "appliedWidth": 2009,
+      "firstFamilyWidth": 2009,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    },
+    "emptyStateHeading": {
+      "found": true,
+      "selector": "h2",
+      "tag": "h2",
+      "resolvedStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "firstFamily": "\"Inter Variable\"",
+      "fontSizePx": 12,
+      "fontWeight": "600",
+      "appliedWidth": 2043,
+      "firstFamilyWidth": 2043,
+      "control": 1808.09,
+      "checkSaysLoaded": true
+    },
+    "prose": {
+      "found": true,
+      "selector": ".prose p, article p, main p",
+      "tag": "p",
+      "resolvedStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "firstFamily": "\"Inter Variable\"",
+      "fontSizePx": 12,
+      "fontWeight": "400",
+      "appliedWidth": 2009,
+      "firstFamilyWidth": 2009,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    },
+    "button": {
+      "found": true,
+      "selector": "button",
+      "tag": "button",
+      "resolvedStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "firstFamily": "\"Inter Variable\"",
+      "fontSizePx": 12,
+      "fontWeight": "400",
+      "appliedWidth": 2009,
+      "firstFamilyWidth": 2009,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    },
+    "composer": {
+      "found": true,
+      "selector": "#vela-composer",
+      "tag": "textarea",
+      "resolvedStack": "\"Inter Variable\", Inter, -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, \"Helvetica Neue\", sans-serif",
+      "firstFamily": "\"Inter Variable\"",
+      "fontSizePx": 15,
+      "fontWeight": "400",
+      "appliedWidth": 2009,
+      "firstFamilyWidth": 2009,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    },
+    "inlineCode": {
+      "found": true,
+      "selector": "code",
+      "tag": "code",
+      "resolvedStack": "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace",
+      "firstFamily": "\"JetBrains Mono Variable\"",
+      "fontSizePx": 13.5,
+      "fontWeight": "400",
+      "appliedWidth": 2356,
+      "firstFamilyWidth": 2356,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    },
+    "codeBlock": {
+      "found": true,
+      "selector": "pre, pre code",
+      "tag": "pre",
+      "resolvedStack": "\"JetBrains Mono Variable\", \"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, Consolas, monospace",
+      "firstFamily": "\"JetBrains Mono Variable\"",
+      "fontSizePx": 13,
+      "fontWeight": "400",
+      "appliedWidth": 2356,
+      "firstFamilyWidth": 2356,
+      "control": 1725.91,
+      "checkSaysLoaded": true
+    }
+  },
+  "loadedFaces": [
+    {
+      "family": "Inter Variable",
+      "weight": "100 900",
+      "style": "normal"
+    },
+    {
+      "family": "Inter Variable",
+      "weight": "100 900",
+      "style": "italic"
+    },
+    {
+      "family": "JetBrains Mono Variable",
+      "weight": "100 800",
+      "style": "normal"
+    },
+    {
+      "family": "JetBrains Mono Variable",
+      "weight": "100 800",
+      "style": "italic"
+    }
+  ],
+  "declaredFaces": [
+    {
+      "family": "Inter Variable",
+      "style": "normal",
+      "status": "loaded"
+    },
+    {
+      "family": "Inter Variable",
+      "style": "italic",
+      "status": "loaded"
+    },
+    {
+      "family": "JetBrains Mono Variable",
+      "style": "normal",
+      "status": "loaded"
+    },
+    {
+      "family": "JetBrains Mono Variable",
+      "style": "italic",
+      "status": "loaded"
+    }
+  ]
+}

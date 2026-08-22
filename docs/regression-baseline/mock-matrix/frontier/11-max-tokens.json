@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-mock-65fbfc65",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-frontier",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock fro",
+        "reasoning_content": "Considering the request about what is the weather in Berlin. Profile frontier has a 200000-token window. Answering directly."
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 33,
+    "total_tokens": 45
+  }
+}

@@ -1,0 +1,169 @@
+PASS	frontier	00-server-and-capabilities	/health answers 200 while the process is up
+PASS	frontier	00-server-and-capabilities	/props advertises exactly the profile's context window (200000); observed 200000
+PASS	frontier	00-server-and-capabilities	/v1/models lists exactly this endpoint's model; observed 'mock-frontier'
+PASS	frontier	00-server-and-capabilities	a wrong method is refused with 405, not a crash; observed 405
+PASS	frontier	00-server-and-capabilities	OPTIONS preflight is answered (not hung); observed 405
+PASS	frontier	00-server-and-capabilities	LIMITATION, recorded not asserted: no Access-Control-Allow-Origin — a browser-hosted renderer cannot call this endpoint directly
+PASS	frontier	01-chat-plain-nonstreaming	a plain question is answered with 200; observed 200
+PASS	frontier	01-chat-plain-nonstreaming	finish_reason is one of stop|length|tool_calls; observed 'stop'
+PASS	frontier	01-chat-plain-nonstreaming	usage totals are self-consistent
+PASS	frontier	01-chat-plain-nonstreaming	the response carries a model id
+PASS	frontier	02-chat-plain-streaming	streaming answers 200; observed 200
+PASS	frontier	02-chat-plain-streaming	content-type is text/event-stream
+PASS	frontier	02-chat-plain-streaming	the stream terminates — the body ends and the socket closes
+PASS	frontier	02-chat-plain-streaming	streamed text is identical to the non-streamed text
+PASS	frontier	03-tool-calling	tools are supported: 200 and a tool_calls turn; observed 200
+PASS	frontier	03-tool-calling	exactly one tool call is returned
+PASS	frontier	03-tool-calling	its arguments parse as JSON
+PASS	frontier	03-tool-calling	it carries an id and type=function
+PASS	frontier	03-tool-calling	finish_reason is tool_calls
+PASS	frontier	03-tool-calling	tool_choice:required is honoured, not ignored
+PASS	frontier	04-vision-image-input	vision is supported: 200; observed 200
+PASS	frontier	04-vision-image-input	the image is charged for in prompt_tokens (>85)
+PASS	frontier	05-structured-output	json_schema is honoured: 200; observed 200
+PASS	frontier	05-structured-output	the content parses as JSON
+PASS	frontier	05-structured-output	the parsed object has exactly the schema's keys
+PASS	frontier	06-context-overflow	EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS	frontier	06-context-overflow	the refusal carries the code context_length_exceeded
+PASS	frontier	06-context-overflow	the message states the real limit (200000) and what was asked for
+PASS	frontier	06-context-overflow	no partial answer is returned alongside the refusal
+PASS	frontier	06-context-overflow	a prompt inside the window still succeeds; observed 200
+PASS	frontier	06-context-overflow	the endpoint keeps serving after the overflow (no crash)
+PASS	frontier	07-reasoning-think-blocks	reasoning arrives in its own reasoning_content field
+PASS	frontier	07-reasoning-think-blocks	the answer text contains no <think> markup
+PASS	frontier	08-stream-termination-and-hangs	[DONE] is sent, so a sentinel-driven consumer terminates
+PASS	frontier	08-stream-termination-and-hangs	the usage frame arrives when include_usage was requested
+PASS	frontier	08-stream-termination-and-hangs	every frame is parseable — a strict consumer loses nothing
+PASS	frontier	09-no-credential-endpoint	no credential is NOT an error: the request succeeds; observed 200
+PASS	frontier	09-no-credential-endpoint	an empty Authorization header is refused loudly with 401; observed 401
+PASS	frontier	09-no-credential-endpoint	…with the code empty_authorization_header
+PASS	mid-local	00-server-and-capabilities	/health answers 200 while the process is up
+PASS	mid-local	00-server-and-capabilities	/props advertises exactly the profile's context window (32768); observed 32768
+PASS	mid-local	00-server-and-capabilities	/v1/models lists exactly this endpoint's model; observed 'mock-mid-local'
+PASS	mid-local	00-server-and-capabilities	a wrong method is refused with 405, not a crash; observed 405
+PASS	mid-local	00-server-and-capabilities	OPTIONS preflight is answered (not hung); observed 405
+PASS	mid-local	00-server-and-capabilities	LIMITATION, recorded not asserted: no Access-Control-Allow-Origin — a browser-hosted renderer cannot call this endpoint directly
+PASS	mid-local	01-chat-plain-nonstreaming	a plain question is answered with 200; observed 200
+PASS	mid-local	01-chat-plain-nonstreaming	finish_reason is one of stop|length|tool_calls; observed 'stop'
+PASS	mid-local	01-chat-plain-nonstreaming	usage totals are self-consistent
+PASS	mid-local	01-chat-plain-nonstreaming	the response carries a model id
+PASS	mid-local	02-chat-plain-streaming	streaming answers 200; observed 200
+PASS	mid-local	02-chat-plain-streaming	content-type is text/event-stream
+PASS	mid-local	02-chat-plain-streaming	the stream terminates — the body ends and the socket closes
+PASS	mid-local	02-chat-plain-streaming	streamed text is identical to the non-streamed text
+PASS	mid-local	03-tool-calling	tools are supported: 200 and a tool_calls turn; observed 200
+PASS	mid-local	03-tool-calling	exactly one tool call is returned
+PASS	mid-local	03-tool-calling	its arguments parse as JSON
+PASS	mid-local	03-tool-calling	it carries an id and type=function
+PASS	mid-local	03-tool-calling	finish_reason is tool_calls
+PASS	mid-local	03-tool-calling	tool_choice:required is honoured, not ignored
+PASS	mid-local	04-vision-image-input	EXPLICIT DEGRADATION: image input is refused with 400; observed 400
+PASS	mid-local	04-vision-image-input	the refusal carries the code vision_not_supported
+PASS	mid-local	04-vision-image-input	the refusal names the failing parameter (messages)
+PASS	mid-local	04-vision-image-input	no answer text is fabricated alongside the refusal
+PASS	mid-local	05-structured-output	the request is NOT rejected — the field is accepted; observed 200
+PASS	mid-local	05-structured-output	SILENT DEGRADATION (the dangerous one): the content is prose, not JSON
+PASS	mid-local	05-structured-output	and nothing in the response says the schema was ignored
+PASS	mid-local	06-context-overflow	EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS	mid-local	06-context-overflow	the refusal carries the code context_length_exceeded
+PASS	mid-local	06-context-overflow	the message states the real limit (32768) and what was asked for
+PASS	mid-local	06-context-overflow	no partial answer is returned alongside the refusal
+PASS	mid-local	06-context-overflow	a prompt inside the window still succeeds; observed 200
+PASS	mid-local	06-context-overflow	the endpoint keeps serving after the overflow (no crash)
+PASS	mid-local	07-reasoning-think-blocks	there is NO reasoning_content field — reasoning is inline
+PASS	mid-local	07-reasoning-think-blocks	the answer text carries an opened <think> block
+PASS	mid-local	07-reasoning-think-blocks	the block is closed in the non-streamed body
+PASS	mid-local	07-reasoning-think-blocks	HAZARD: no single streamed fragment contains the closing </think>
+PASS	mid-local	07-reasoning-think-blocks	consequently a frame-local stripper leaks reasoning to the user (recorded above)
+PASS	mid-local	08-stream-termination-and-hangs	[DONE] is sent, so a sentinel-driven consumer terminates
+PASS	mid-local	08-stream-termination-and-hangs	the usage frame arrives when include_usage was requested
+PASS	mid-local	08-stream-termination-and-hangs	every frame is parseable — a strict consumer loses nothing
+PASS	mid-local	09-no-credential-endpoint	no credential is NOT an error: the request succeeds; observed 200
+PASS	mid-local	09-no-credential-endpoint	an empty Authorization header is refused loudly with 401; observed 401
+PASS	mid-local	09-no-credential-endpoint	…with the code empty_authorization_header
+PASS	small-local	00-server-and-capabilities	/health answers 200 while the process is up
+PASS	small-local	00-server-and-capabilities	/props advertises exactly the profile's context window (8192); observed 8192
+PASS	small-local	00-server-and-capabilities	/v1/models lists exactly this endpoint's model; observed 'mock-small-local'
+PASS	small-local	00-server-and-capabilities	a wrong method is refused with 405, not a crash; observed 405
+PASS	small-local	00-server-and-capabilities	OPTIONS preflight is answered (not hung); observed 405
+PASS	small-local	00-server-and-capabilities	LIMITATION, recorded not asserted: no Access-Control-Allow-Origin — a browser-hosted renderer cannot call this endpoint directly
+PASS	small-local	01-chat-plain-nonstreaming	a plain question is answered with 200; observed 200
+PASS	small-local	01-chat-plain-nonstreaming	finish_reason is one of stop|length|tool_calls; observed 'stop'
+PASS	small-local	01-chat-plain-nonstreaming	usage totals are self-consistent
+PASS	small-local	01-chat-plain-nonstreaming	the response carries a model id
+PASS	small-local	02-chat-plain-streaming	streaming answers 200; observed 200
+PASS	small-local	02-chat-plain-streaming	content-type is text/event-stream
+PASS	small-local	02-chat-plain-streaming	the stream terminates — the body ends and the socket closes
+PASS	small-local	02-chat-plain-streaming	streamed text is identical to the non-streamed text
+PASS	small-local	03-tool-calling	EXPLICIT DEGRADATION: tools are refused with 400, not silently dropped; observed 400
+PASS	small-local	03-tool-calling	the refusal carries the machine-readable code tools_not_supported
+PASS	small-local	03-tool-calling	tool_choice:required is refused the same way; observed 400
+PASS	small-local	03-tool-calling	no tool_calls field is invented in the refusal
+PASS	small-local	04-vision-image-input	EXPLICIT DEGRADATION: image input is refused with 400; observed 400
+PASS	small-local	04-vision-image-input	the refusal carries the code vision_not_supported
+PASS	small-local	04-vision-image-input	the refusal names the failing parameter (messages)
+PASS	small-local	04-vision-image-input	no answer text is fabricated alongside the refusal
+PASS	small-local	05-structured-output	the request is NOT rejected — the field is accepted; observed 200
+PASS	small-local	05-structured-output	SILENT DEGRADATION (the dangerous one): the content is prose, not JSON
+PASS	small-local	05-structured-output	and nothing in the response says the schema was ignored
+PASS	small-local	06-context-overflow	EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS	small-local	06-context-overflow	the refusal carries the code context_length_exceeded
+PASS	small-local	06-context-overflow	the message states the real limit (8192) and what was asked for
+PASS	small-local	06-context-overflow	no partial answer is returned alongside the refusal
+PASS	small-local	06-context-overflow	a prompt inside the window still succeeds; observed 200
+PASS	small-local	06-context-overflow	the endpoint keeps serving after the overflow (no crash)
+PASS	small-local	07-reasoning-think-blocks	no reasoning_content field
+PASS	small-local	07-reasoning-think-blocks	no <think> markup anywhere in the answer
+PASS	small-local	07-reasoning-think-blocks	nothing leaks through a frame-local stripper
+PASS	small-local	08-stream-termination-and-hangs	[DONE] is sent, so a sentinel-driven consumer terminates
+PASS	small-local	08-stream-termination-and-hangs	DOCUMENTED HAZARD: include_usage accepted, usage never sent — waiting for it HANGS
+PASS	small-local	08-stream-termination-and-hangs	every frame is parseable — a strict consumer loses nothing
+PASS	small-local	09-no-credential-endpoint	no credential is NOT an error: the request succeeds; observed 200
+PASS	small-local	09-no-credential-endpoint	an empty Authorization header is refused loudly with 401; observed 401
+PASS	small-local	09-no-credential-endpoint	…with the code empty_authorization_header
+PASS	hostile	00-server-and-capabilities	/health answers 200 while the process is up
+PASS	hostile	00-server-and-capabilities	/props advertises exactly the profile's context window (4096); observed 4096
+PASS	hostile	00-server-and-capabilities	/v1/models lists exactly this endpoint's model; observed 'mock-hostile'
+PASS	hostile	00-server-and-capabilities	a wrong method is refused with 405, not a crash; observed 405
+PASS	hostile	00-server-and-capabilities	OPTIONS preflight is answered (not hung); observed 405
+PASS	hostile	00-server-and-capabilities	LIMITATION, recorded not asserted: no Access-Control-Allow-Origin — a browser-hosted renderer cannot call this endpoint directly
+PASS	hostile	01-chat-plain-nonstreaming	a plain question is answered with 200; observed 200
+PASS	hostile	01-chat-plain-nonstreaming	finish_reason is one of stop|length|tool_calls; observed 'stop'
+PASS	hostile	01-chat-plain-nonstreaming	usage totals are self-consistent
+PASS	hostile	01-chat-plain-nonstreaming	the response carries a model id
+PASS	hostile	02-chat-plain-streaming	streaming answers 200; observed 200
+PASS	hostile	02-chat-plain-streaming	content-type is text/event-stream
+PASS	hostile	02-chat-plain-streaming	the stream terminates — the body ends and the socket closes
+PASS	hostile	02-chat-plain-streaming	streamed text is identical to the non-streamed text
+PASS	hostile	03-tool-calling	tools are accepted with 200 and answered with BROKEN calls; observed 200
+PASS	hostile	03-tool-calling	two tool calls arrive
+PASS	hostile	03-tool-calling	call #1 arguments are truncated and DO NOT parse
+PASS	hostile	03-tool-calling	call #2 has no id at all
+PASS	hostile	03-tool-calling	call #2 has a misspelled discriminator (type=funktion)
+PASS	hostile	03-tool-calling	the naive index-keyed accumulator loses the function name (recorded above)
+PASS	hostile	04-vision-image-input	EXPLICIT DEGRADATION: image input is refused with 400; observed 400
+PASS	hostile	04-vision-image-input	the refusal carries the code vision_not_supported
+PASS	hostile	04-vision-image-input	the refusal names the failing parameter (messages)
+PASS	hostile	04-vision-image-input	no answer text is fabricated alongside the refusal
+PASS	hostile	05-structured-output	the request is NOT rejected — the field is accepted; observed 200
+PASS	hostile	05-structured-output	SILENT DEGRADATION (the dangerous one): the content is prose, not JSON
+PASS	hostile	05-structured-output	and nothing in the response says the schema was ignored
+PASS	hostile	06-context-overflow	EXPLICIT DEGRADATION: overflow is refused with 400, not truncated silently; observed 400
+PASS	hostile	06-context-overflow	the refusal carries the code context_length_exceeded
+PASS	hostile	06-context-overflow	the message states the real limit (4096) and what was asked for
+PASS	hostile	06-context-overflow	no partial answer is returned alongside the refusal
+PASS	hostile	06-context-overflow	a prompt inside the window still succeeds; observed 200
+PASS	hostile	06-context-overflow	the endpoint keeps serving after the overflow (no crash)
+PASS	hostile	07-reasoning-think-blocks	no reasoning_content field
+PASS	hostile	07-reasoning-think-blocks	<think> is opened
+PASS	hostile	07-reasoning-think-blocks	…and NEVER closed
+PASS	hostile	07-reasoning-think-blocks	a second <think> is opened inside the first
+PASS	hostile	07-reasoning-think-blocks	junk/control tokens are interleaved into it
+PASS	hostile	07-reasoning-think-blocks	a frame-local stripper leaks all of it to the user (recorded above)
+PASS	hostile	08-stream-termination-and-hangs	DOCUMENTED HAZARD: no [DONE] sentinel — a consumer that waits for it HANGS
+PASS	hostile	08-stream-termination-and-hangs	DOCUMENTED HAZARD: include_usage accepted, usage never sent — waiting for it HANGS
+PASS	hostile	08-stream-termination-and-hangs	DOCUMENTED HAZARD: unparseable frames kill a strict consumer mid-answer
+PASS	hostile	08-stream-termination-and-hangs	the transport still terminates: curl completed and the body ended
+PASS	hostile	09-no-credential-endpoint	no credential is NOT an error: the request succeeds; observed 200
+PASS	hostile	09-no-credential-endpoint	an empty Authorization header is refused loudly with 401; observed 401
+PASS	hostile	09-no-credential-endpoint	…with the code empty_authorization_header

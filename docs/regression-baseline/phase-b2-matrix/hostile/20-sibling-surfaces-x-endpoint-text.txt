@@ -1,0 +1,233 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 20-sibling-surfaces-x-endpoint-text: the string-bearing fields on the SUCCESS path, held to B2's standard
+================================================================================
+
+PURPOSE   Executor's pick. B2 closed `ProviderError`. `ChatResponse` crosses the same IPC boundary and has three string fields nobody has audited, for one reason: they live on the success path, and four rounds of security work all started from an error.
+SUBJECT   all three shipping adapters
+ENDPOINT  one purpose-built loopback peer per adapter, real TCP
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  THE THREE FIELDS:
+    Degradation::StructuredOutputMismatch { detail }   documented as Vela's own words
+    SchemaMismatch { path, detail }                    path from the USER's schema
+    ToolCallOutcome::Malformed { raw_arguments }       endpoint text, ON PURPOSE
+  The third one is not a defect and this case does not treat it as one. It asks
+  whether the deliberate carry is BOUNDED, whether it stayed in its own field, and
+  whether any of it reached the error surface.
+
+---- openai-compatible / stream() — schema mismatch, hostile offending value 
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"usageNotReported"},{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] openai-compatible / stream(): the marker really was on the wire — nothing below is vacuous
+        10322 response byte(s) recorded
+  [PASS] openai-compatible / stream(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / stream(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] openai-compatible / stream(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / stream(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"usageNotReported"},{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] openai-compatible / stream(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / stream(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- openai-compatible / complete() — schema mismatch, hostile offending value 
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] openai-compatible / complete(): the marker really was on the wire — nothing below is vacuous
+        3765 response byte(s) recorded
+  [PASS] openai-compatible / complete(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / complete(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] openai-compatible / complete(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / complete(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] openai-compatible / complete(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] openai-compatible / complete(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- anthropic / stream() — schema mismatch, hostile offending value -------
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] anthropic / stream(): the marker really was on the wire — nothing below is vacuous
+        10366 response byte(s) recorded
+  [PASS] anthropic / stream(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / stream(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] anthropic / stream(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / stream(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] anthropic / stream(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / stream(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- anthropic / complete() — schema mismatch, hostile offending value -----
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] anthropic / complete(): the marker really was on the wire — nothing below is vacuous
+        3754 response byte(s) recorded
+  [PASS] anthropic / complete(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / complete(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] anthropic / complete(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / complete(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] anthropic / complete(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] anthropic / complete(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- google / stream() — schema mismatch, hostile offending value ----------
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] google / stream(): the marker really was on the wire — nothing below is vacuous
+        10224 response byte(s) recorded
+  [PASS] google / stream(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / stream(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] google / stream(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / stream(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] google / stream(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / stream(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- google / complete() — schema mismatch, hostile offending value --------
+  marker on the wire                     true
+  STRUCTURED VERDICT                     Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  degradations (serde)                   [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] google / complete(): the marker really was on the wire — nothing below is vacuous
+        3787 response byte(s) recorded
+  [PASS] google / complete(): the mismatch is REPORTED, not passed through as conforming
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / complete(): SchemaMismatch::detail is VELA'S OWN WORDS — the endpoint's bytes are not interpolated into the explanation
+        {"Err":{"path":"/celsius","detail":"expected number, got string"}}
+  [PASS] google / complete(): SchemaMismatch::path names a field of the USER'S schema, not anything the endpoint chose
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / complete(): no Degradation carries endpoint text — the sibling of the error surface holds the same line
+        [{"kind":"structuredOutputMismatch","detail":"expected number, got string"}]
+  [PASS] google / complete(): the mismatch detail is BOUNDED — a hostile answer cannot make it unbounded
+        Some(Err(SchemaMismatch { path: "/celsius", detail: "expected number, got string" }))
+  [PASS] google / complete(): the answer text DOES carry it — which is correct. The model's answer is the model's answer; this case is about the METADATA
+        3556 answer character(s)
+
+---- the field that carries endpoint text ON PURPOSE — is it bounded? ------
+  `ToolCallOutcome::Malformed { raw_arguments }` exists so a user can see what the
+  model was trying to do with a call Vela refused to run. That is a deliberate,
+  documented carry and this case does not argue with it. It argues with an UNBOUNDED
+  one: 400 repetitions of the marker are sent, and the bound is 400 CHARACTERS.
+  openai-compatible / stream(): marker occurrences sent / kept 400 / 13
+  openai-compatible / stream(): longest raw_arguments 401
+  openai-compatible / stream(): calls    MALFORMED index=Some(0) id=call_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] openai-compatible / stream(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] openai-compatible / stream(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] openai-compatible / stream(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=Some(0) id=call_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] openai-compatible / stream(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }, UsageNotReported
+  openai-compatible / complete(): marker occurrences sent / kept 400 / 13
+  openai-compatible / complete(): longest raw_arguments 401
+  openai-compatible / complete(): calls  MALFORMED index=None id=call_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] openai-compatible / complete(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] openai-compatible / complete(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] openai-compatible / complete(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=None id=call_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] openai-compatible / complete(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }
+  anthropic / stream(): marker occurrences sent / kept 400 / 13
+  anthropic / stream(): longest raw_arguments 401
+  anthropic / stream(): calls            MALFORMED index=Some(0) id=toolu_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] anthropic / stream(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] anthropic / stream(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] anthropic / stream(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=Some(0) id=toolu_x name=get_weather reason=UnparseableArguments raw="{\"city\": \"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLI…"
+  [PASS] anthropic / stream(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }
+  anthropic / complete(): marker occurrences sent / kept 400 / 13
+  anthropic / complete(): longest raw_arguments 401
+  anthropic / complete(): calls          MALFORMED index=Some(0) id=toolu_x name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] anthropic / complete(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] anthropic / complete(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] anthropic / complete(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=Some(0) id=toolu_x name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] anthropic / complete(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }
+  google / stream(): marker occurrences sent / kept 400 / 13
+  google / stream(): longest raw_arguments 401
+  google / stream(): calls               MALFORMED index=Some(0) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] google / stream(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] google / stream(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] google / stream(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=Some(0) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] google / stream(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }
+  google / complete(): marker occurrences sent / kept 400 / 13
+  google / complete(): longest raw_arguments 401
+  google / complete(): calls             MALFORMED index=Some(0) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] google / complete(): the hostile payload really was sent — nothing here is vacuous
+        400 occurrence(s) on the wire
+  [PASS] google / complete(): THE DELIBERATE CARRY IS BOUNDED — raw_arguments never exceeds 401 characters however much the endpoint sends
+        401 character(s)
+  [PASS] google / complete(): a call Vela could not parse is NOT executable — it is reported, not run
+        MALFORMED index=Some(0) id=MISSING name=MISSING reason=MissingName raw="{\"city\":\"{\\\"city\\\": \\\"VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/VELA-B2-SIBLING-MARKER-Wm4Zt/V…"
+  [PASS] google / complete(): no Degradation carries the payload either
+        MalformedToolCalls { count: 1 }
+
+---- the SECOND bound — a call salvaged out of deliberation, in answer.rs --
+  salvaged raw_arguments lengths         [401]
+  [PASS] a salvaged call really was produced — this arm reaches `answer::bounded`
+        MALFORMED index=None id=call_emulated_0 name=get_weather reason=RecoveredFromUnterminatedReasoning raw="{\"city\":\"Wm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtW…"
+  [PASS] THE SECOND BOUND HOLDS TOO — a call salvaged out of deliberation is bounded at 401 characters, in answer.rs as well as in tool_accum.rs
+        [401] from a 2000-character payload
+  [PASS] and it is still not executable
+        MALFORMED index=None id=call_emulated_0 name=get_weather reason=RecoveredFromUnterminatedReasoning raw="{\"city\":\"Wm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtWm4ZtW…"
+
+---- and none of it reaches the error surface, where B2 says nothing may -----
+  openai-compatible error                Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:45783", path: "/v1/chat/completions" }), filter: None, correlation: CorrelationId(549) } })
+  [PASS] openai-compatible: the identical hostile bytes reached the error path too — the comparison is like for like
+        true
+  [PASS] openai-compatible: and NOTHING of it is on the error surface — 0 unexplained strings
+        []
+  anthropic error                        Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:40357", path: "/v1/messages" }), filter: None, correlation: CorrelationId(550) } })
+  [PASS] anthropic: the identical hostile bytes reached the error path too — the comparison is like for like
+        true
+  [PASS] anthropic: and NOTHING of it is on the error surface — 0 unexplained strings
+        []
+  google error                           Some(Transport { failure: Request { status: 400 }, diagnosis: Diagnosis { cause: EndpointRejectedRequest, status: Some(400), endpoint: Some(EndpointIdentity { authority: "http://127.0.0.1:33349", path: "/v1beta/models/gemini-cross:generateContent" }), filter: None, correlation: CorrelationId(551) } })
+  [PASS] google: the identical hostile bytes reached the error path too — the comparison is like for like
+        true
+  [PASS] google: and NOTHING of it is on the error surface — 0 unexplained strings
+        []
+
+================================================================================
+VERDICT  75 assertion(s), 0 failure(s)
+================================================================================

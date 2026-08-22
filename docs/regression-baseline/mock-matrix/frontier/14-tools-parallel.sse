@@ -1,0 +1,54 @@
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"Considering the requ"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"est about what is th"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"e weather in Berlin."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":" Profile frontier ha"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"s a 200000-token win"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"dow. Answering direc"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"reasoning_content":"tly."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_3f5e28ef","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"ci"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"fix"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ture"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\",\"u"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"nit\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"ce"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"lsiu"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"s\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_3f5e28ef_1","type":"function","function":{"name":"get_local_time","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"ti"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"mezo"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"ne\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\"ber"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"lin\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-3f5e28ef","object":"chat.completion.chunk","created":1700000000,"model":"mock-frontier","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

@@ -1,0 +1,162 @@
+================================================================================
+GATE M Part 1 — EDGE PROBES (undeclared surface)
+  recorded : 2026-08-12T21:26:38Z
+  by       : tests/harness/mock-provider/live-matrix/edge-probes.sh
+--------------------------------------------------------------------------------
+These probes go outside the declared capability matrix. The endpoints are the
+same deterministic fakes; nothing here is evidence about any real model.
+================================================================================
+
+### PROBE 1 — a request body larger than the server's 8 MiB cap
+The server declares a MAX_BODY_BYTES guard that answers 413 with code
+invalid_json. This is what a client actually observes.
+
+--- PRE-FIX BEHAVIOUR — archived verbatim from the GATE M Part 1 run of
+--- 2026-08-12T20:13:34Z. THIS IS THE DEFECT, kept as regression evidence.
+--- Do not re-run to reproduce it; the code that produced it is gone.
+
+$ curl -sS -H 'Expect:' --data-binary @9.4MB.json http://127.0.0.1:8201/v1/chat/completions
+curl: (56) Recv failure: Connection reset by peer
+http_code=000
+curl exit code = 56   (56 = 'Recv failure: Connection reset by peer')
+response bytes = 0
+response body  =
+
+DEFECT: over the cap there was NO HTTP RESPONSE AT ALL — the socket was reset.
+The 413 branch was unreachable dead code: readBody() called request.destroy()
+in the same turn it rejected, so the error response could not be written. Under
+the cap the same request was answered properly. The server survived either way,
+and logged nothing, so the failure was silent on both ends.
+--- end of archived pre-fix transcript ---
+
+--- POST-FIX BEHAVIOUR — measured live by this run ---
+$ curl -sS -H 'Expect:' --data-binary @9.4MB.json http://127.0.0.1:8201/v1/chat/completions
+http_code=413
+curl exit code = 0   (56 would be 'Recv failure: Connection reset by peer')
+response bytes = 144
+response body  = {
+  "error": {
+    "message": "request body too large",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "invalid_json"
+  }
+}
+
+--- and one past the drain cap too (17 MiB), where the server stops
+--- reading mid-upload and must still deliver the answer before closing ---
+http_code=413
+curl exit code = 0
+response bytes = 144
+response body  = {
+  "error": {
+    "message": "request body too large",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "invalid_json"
+  }
+}
+
+$ curl -sS http://127.0.0.1:8201/health          # did the server survive?
+{
+  "status": "ok",
+  "slots_idle": 4,
+  "slots_processing": 0,
+  "vela_mock": {
+    "profile": "hostile",
+    "model": "mock-hostile"
+  }
+}
+http_code=200
+
+--- the same request one byte class smaller (7 MiB, under the cap) ---
+http_code=400
+curl exit code = 0
+{
+  "error": {
+    "message": "this model's maximum context length is 4096 tokens, however you requested 1835012 tokens (1835012 in the messages, 0 in the completion)",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "context_length_exceeded"
+  }
+}
+--- the server's own stdout/stderr for the whole probe ---
+vela mock-provider listening on http://127.0.0.1:8201
+  profile            hostile  (Mock Hostile (4k, broken everything))
+  model id           mock-hostile
+  context window     4096 tokens
+  tool calling       malformed
+  vision             no — image parts are rejected with 400
+  structured output  ignored
+  reasoning          unterminated-think-junk
+  [DONE] sentinel    NO — the stream just stops
+  malformed frames   YES
+  auth               none (valid, first-class state)
+
+This is a MOCK. Nothing it returns is evidence about any real model.
+Ctrl-C to stop.
+--- end of server output ---
+
+FINDING: FIXED. Over the cap the client now reads the documented 413 with
+code invalid_json — including past the drain cap, where the server stops
+reading mid-upload, writes the response, and only then closes. Under the cap
+the same request is still answered exactly as before. Regression test:
+tests/harness/mock-provider/src/server.test.ts, 'a request body over the
+8 MiB cap'. The pre-fix transcript above is what this replaced.
+
+### PROBE 2 — 30 concurrent streaming requests
+200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 
+health after concurrency = 200
+FINDING: none. Every request answered; the server stayed up.
+
+### PROBE 3 — client disconnects in the middle of a stream
+curl exit code = 0
+health after abort = 200
+FINDING: none. writeStream() checks for a destroyed response between frames.
+
+### PROBE 4 — sampling parameters nobody implements
+$ ... -d '{"messages":[…],"n":3,"temperature":0.9,"stop":["STOP"],"top_p":0.1,"seed":42}'
+{
+  "id": "chatcmpl-mock-49e93fb5",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "mock-small-local",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mock small-local reply to: hi. beacon tiller careful quartz pennant gauge gauge careful orbit alpha."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 5,
+    "completion_tokens": 25,
+    "total_tokens": 30
+  }
+}
+FINDING: n=3 returns ONE choice and nothing says so. temperature, top_p, stop
+and seed are accepted and discarded. Silent, like every real endpoint that
+does not implement them — a consumer cannot detect it from the response.
+
+### PROBE 5 — tools offered with tool_choice:"none" on a no-tools endpoint
+{
+  "error": {
+    "message": "`mock-small-local` does not support tools",
+    "type": "invalid_request_error",
+    "param": "tools",
+    "code": "tools_not_supported"
+  }
+}
+http_code=400
+FINDING: refused, even though the caller explicitly asked for no tool use and
+the turn could have been answered as plain prose. Over-rejection: a consumer
+that always attaches its tool catalogue is locked out of this endpoint even
+for turns where it wants none of them.
+
+### PROBE 6 — a body sent with the wrong content type
+content-type: text/plain -> http_code=200
+FINDING: the content type is not validated at all. Benign here, but it means
+these transcripts prove nothing about content-type negotiation.

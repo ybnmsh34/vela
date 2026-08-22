@@ -1,0 +1,121 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vela-z-palette);
+  display: flex;
+  justify-content: center;
+  /* `flex-start`, not the default `stretch`: a palette showing two results
+     must be two results tall, not a half-empty pane. */
+  align-items: flex-start;
+  padding: 12vh var(--vela-space-5) var(--vela-space-5);
+  background: var(--vela-scrim);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--vela-overlay-md), 100%);
+  max-height: 60vh;
+  overflow: hidden;
+  /* The results scroll; the panel itself is only as tall as it needs to be. */
+  flex: 0 1 auto;
+  background: var(--vela-surface-raised);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+  box-shadow: var(--vela-shadow-lg);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  flex: 0 0 auto;
+  padding: var(--vela-space-4);
+  border-bottom: 1px solid var(--vela-border);
+  color: var(--vela-text-subtle);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-lg);
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--vela-text-subtle);
+}
+
+.results {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--vela-space-2);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  cursor: default;
+}
+
+.active {
+  background: var(--vela-row-selected);
+}
+
+.rowTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vela-text);
+  font-size: var(--vela-text-sm);
+}
+
+.active .rowTitle {
+  color: var(--vela-row-selected-text);
+}
+
+/* The selected row is a *different ground* — a teal wash that is lighter than
+   the panel in dark — and the quiet role is authored against the panel. On the
+   wash it measures 4.01:1; the muted role, which is what a selected row's
+   secondary text wants anyway, is 5.08:1. */
+.active .rowKind {
+  color: var(--vela-text-muted);
+}
+
+.rowKind {
+  flex: 0 0 auto;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.mark {
+  padding: 0 1px;
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-accent-quiet);
+  color: inherit;
+  font-weight: var(--vela-weight-semibold);
+}
+
+.footnote {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--vela-space-3) var(--vela-space-4);
+  border-top: 1px solid var(--vela-border);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}

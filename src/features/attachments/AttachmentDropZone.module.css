@@ -1,0 +1,36 @@
+.zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.overlay {
+  position: absolute;
+  inset: var(--vela-space-3);
+  z-index: var(--vela-z-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
+  border: 2px dashed var(--vela-accent);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-accent-quiet);
+  pointer-events: none;
+}
+
+.overlayText {
+  margin: 0;
+  color: var(--vela-accent-hover);
+  font-size: var(--vela-text-base);
+  font-weight: var(--vela-weight-medium);
+}
+
+.overlayHint {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}

@@ -1,0 +1,49 @@
+{
+  "sidebarDraggedTo": 480,
+  "wide": {
+    "viewportWidth": 1440,
+    "reserve": {
+      "scroller": 24,
+      "composer": 24
+    },
+    "transcript": {
+      "left": 720,
+      "right": 1200,
+      "width": 480
+    },
+    "composer": {
+      "left": 720,
+      "right": 1200,
+      "width": 480
+    },
+    "sidebarWidth": 480,
+    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), rgba(0, 0, 0, 0) 100%)",
+    "scrollerEdges": {
+      "atTop": "false",
+      "atBottom": "false"
+    }
+  },
+  "narrow": {
+    "viewportWidth": 880,
+    "reserve": {
+      "scroller": 24,
+      "composer": 24
+    },
+    "transcript": {
+      "left": 364,
+      "right": 844,
+      "width": 480
+    },
+    "composer": {
+      "left": 364,
+      "right": 844,
+      "width": 480
+    },
+    "sidebarWidth": 328,
+    "scrollerMask": "linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(0, 0, 0) 32px, rgb(0, 0, 0) calc(100% - 32px), rgba(0, 0, 0, 0) 100%)",
+    "scrollerEdges": {
+      "atTop": "false",
+      "atBottom": "false"
+    }
+  }
+}

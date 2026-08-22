@@ -1,0 +1,145 @@
+/* The stage is the frame's whole world: it owns the scroll, so a wide artifact
+   scrolls inside the panel instead of pushing the app sideways. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+/* `border: 0` rather than a reset elsewhere: a bare iframe carries a 2px inset
+   border in every engine, and it reads as a second panel edge. */
+.frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--vela-bg);
+}
+
+.card {
+  margin: var(--vela-space-4);
+  padding: var(--vela-space-4);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-surface-raised);
+}
+
+.cardTitle {
+  margin: 0 0 var(--vela-space-3);
+  font-size: var(--vela-text-md);
+  font-weight: var(--vela-weight-semibold);
+  color: var(--vela-text);
+}
+
+/* Two columns, so the four facts of the grant read as a table rather than as a
+   sentence a user skims past. The grant is the whole of what is being agreed
+   to; a prompt that summarises it manufactures consent. */
+.grant {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--vela-space-2) var(--vela-space-4);
+  margin: 0 0 var(--vela-space-4);
+  font-size: var(--vela-text-sm);
+}
+
+.grant dt {
+  color: var(--vela-text-subtle);
+}
+
+.grant dd {
+  margin: 0;
+  color: var(--vela-text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--vela-space-2);
+}
+
+.primary,
+.secondary {
+  height: var(--vela-control-md);
+  padding: 0 var(--vela-space-4);
+  border-radius: var(--vela-radius-sm);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: pointer;
+}
+
+.primary {
+  border: 1px solid var(--vela-accent);
+  background: var(--vela-accent);
+  color: var(--vela-text-on-accent);
+}
+
+.primary:hover {
+  background: var(--vela-accent-hover);
+}
+
+.secondary {
+  border: 1px solid var(--vela-border);
+  background: transparent;
+  color: var(--vela-text-muted);
+}
+
+.secondary:hover {
+  background: var(--vela-row-hover);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.notice {
+  margin: var(--vela-space-4);
+  padding: var(--vela-space-3);
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-notice-bg);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+}
+
+/* Foreign text, and it is drawn as foreign text: quoted, attributed, in the
+   monospace face the source is in, never in the app's own voice. */
+.diagnostics {
+  border-top: 1px solid var(--vela-border);
+  background: var(--vela-bg-inset);
+  padding: var(--vela-space-3);
+  /* Read against the viewport, not against the parent: a percentage cap is a
+     cap written for the window it was written on, and at 150% display scaling
+     the artifact loses more of the frame than the reader expected. */
+  max-height: min(14rem, 25vh);
+  overflow: auto;
+}
+
+.diagnosticsLead {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+.diagnostics ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostics li {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  color: var(--vela-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.diagnostics li[data-severity='error'] {
+  color: var(--vela-danger);
+}
+
+.diagnostics li[data-severity='warning'] {
+  color: var(--vela-warning);
+}

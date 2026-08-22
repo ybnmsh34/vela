@@ -1,0 +1,213 @@
+{
+  "run": "2026-08-17",
+  "tag": "run-start-2026-08-17",
+  "sha": "c0feb93",
+  "state": "PAUSED after round 7, at the operator's request",
+  "round": 7,
+  "ladderNote": "No track grades above dev-clicked until T1 produces an installer. That is a grading rule, not a sequence.",
+  "updated": "2026-08-22 - round 7 complete, run paused",
+  "tracks": [
+    {
+      "id": "t01",
+      "title": "Release path — the installer nobody has produced",
+      "wt": "vela-t01",
+      "guard": false,
+      "tier": "dev-clicked",
+      "verdict": "CAPPED-PASS",
+      "round": 5,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t02",
+      "title": "The Close collision",
+      "wt": "vela-t02",
+      "guard": false,
+      "tier": "dev-clicked",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t03",
+      "title": "The instrument",
+      "wt": "vela-t03",
+      "guard": true,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t04",
+      "title": "Contrast guard",
+      "wt": "vela-t04",
+      "guard": true,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION, PROBE, DOC-HONESTY, ACCESSIBILITY"
+    },
+    {
+      "id": "t05",
+      "title": "Reachability guard",
+      "wt": "vela-t05",
+      "guard": true,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION"
+    },
+    {
+      "id": "t06",
+      "title": "CI-coverage guard",
+      "wt": "vela-t06",
+      "guard": true,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY, PROBE"
+    },
+    {
+      "id": "t07",
+      "title": "Remaining guards",
+      "wt": "vela-t07",
+      "guard": true,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION, PROBE"
+    },
+    {
+      "id": "t08",
+      "title": "MCP surface",
+      "wt": "vela-t08",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t09",
+      "title": "MCP HTTP/SSE transport",
+      "wt": "vela-t09",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t10",
+      "title": "Provenance closure",
+      "wt": "vela-t10",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t11",
+      "title": "File creation",
+      "wt": "vela-t11",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t12",
+      "title": "Plugins",
+      "wt": "vela-t12",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t13",
+      "title": "Cowork surface",
+      "wt": "vela-t13",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 5,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t14",
+      "title": "Code workspace",
+      "wt": "vela-t14",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION, DOC-HONESTY"
+    },
+    {
+      "id": "t15",
+      "title": "Styles and incognito",
+      "wt": "vela-t15",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 5,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t16",
+      "title": "Subagent fan-out",
+      "wt": "vela-t16",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    },
+    {
+      "id": "t17",
+      "title": "Shell and edge states",
+      "wt": "vela-t17",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "FAIL",
+      "round": 7,
+      "blocker": "LADDER, MUTATION"
+    },
+    {
+      "id": "t18",
+      "title": "Host boundary",
+      "wt": "vela-t18",
+      "guard": false,
+      "tier": "test-bites",
+      "verdict": "CAPPED-PASS",
+      "round": 4,
+      "blocker": "LADDER only - operator decision"
+    }
+  ],
+  "note": "Round 6: no track cleared, but RULE V found 34 unguarded invariants across the six (7,5,5,4,7,6) and MUTATION now fails on four of six because of them. A critic named the SIXTH form of the governing class: an invariant asserted only over an input the test itself supplies - the builder pinned the data list its reader consumes and left the reader's own thirteen-branch list entirely unasserted. Five branches deleted with tsc at 0 and the whole suite green. The class moved from data to code, so round 7 adds RULE W. Also assigned at last: forced-colors, raised by four consecutive critic reports and owned by nobody - zero @media (forced-colors: active) anywhere under src/, on a product that ships on Windows where High Contrast discards author colours wholesale.",
+  "blocker": {
+    "id": "ladder",
+    "doc": "docs/run/BLOCKER-ladder.md",
+    "summary": "LADDER fails on all 18 and cannot be lifted from inside this session: the NSIS setup installs to %LOCALAPPDATA%Vela, which resolves inside the Claude MSIX container (4 container-only paths, control passing). Installing from here would produce a void observation, and a previous attempt removed an unrelated third-party Vela shortcuts. Decision needed from the operator."
+  },
+  "verdicts": {
+    "PASS": "LADDER genuinely at reaches-user — impossible this session",
+    "CAPPED_PASS": "every applicable member passes; LADDER is the only failure",
+    "FAIL": "real members outstanding"
+  },
+  "rules": [
+    "RULE P reachability-classified",
+    "RULE Q measurement is not a bound",
+    "RULE R symbols not line numbers",
+    "RULE S grade against a tag",
+    "RULE T a comment is not evidence",
+    "RULE U name the reader",
+    "RULE V an invariant in a comment is not guarded",
+    "RULE W (new, round 7): mutate the READER, not only the data - any branch whose deletion reds nothing is an unguarded structural position"
+  ],
+  "pause": "Paused as asked. Round 7 was graded and recorded; no round 8 launched. Twelve of eighteen tracks are CAPPED-PASS. Two things wait on the operator: the ladder blocker (docs/run/BLOCKER-ladder.md), which is the only reason those twelve are not full passes; and whether to continue the remaining six, which are converging but have not cleared."
+}

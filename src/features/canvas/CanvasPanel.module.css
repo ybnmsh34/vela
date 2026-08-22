@@ -1,0 +1,242 @@
+/* The panel is a column that owns its own overflow. Nothing inside it may make
+   the app scroll sideways, which is why every scrolling region below sets its
+   own `overflow` rather than inheriting one. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid var(--vela-border);
+  background: var(--vela-surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  color: var(--vela-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  width: var(--vela-control-xs);
+  height: var(--vela-control-xs);
+  border: 0;
+  border-radius: var(--vela-radius-sm);
+  background: transparent;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-md);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--vela-row-hover);
+  color: var(--vela-text);
+}
+
+.close:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-3);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  background: var(--vela-bg-inset);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--vela-space-1);
+}
+
+.tab {
+  height: var(--vela-control-sm);
+  padding: 0 var(--vela-space-3);
+  border: 0;
+  border-radius: var(--vela-radius-pill);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-accent);
+}
+
+.tab:disabled {
+  color: var(--vela-text-subtle);
+  cursor: default;
+}
+
+.tab:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.versions {
+  display: flex;
+  gap: var(--vela-space-1);
+  margin-left: auto;
+}
+
+.version {
+  height: var(--vela-control-sm);
+  min-width: var(--vela-control-sm);
+  padding: 0 var(--vela-space-2);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-sm);
+  background: transparent;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-2xs);
+  cursor: pointer;
+}
+
+.version[aria-pressed='true'] {
+  border-color: var(--vela-accent);
+  color: var(--vela-accent);
+}
+
+.version:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.scripts {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-top: 1px solid var(--vela-border);
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-xs);
+}
+
+.code {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--vela-space-3);
+  overflow: auto;
+  background: var(--vela-code-bg);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  tab-size: 2;
+}
+
+.code code {
+  font: inherit;
+  white-space: pre;
+}
+
+.diff {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.diffLead {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.diffBody {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--vela-space-2) 0;
+  overflow: auto;
+  background: var(--vela-code-bg);
+  color: var(--vela-code-text);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  line-height: var(--vela-leading-code);
+  white-space: pre;
+}
+
+/* The gutter character carries the meaning on its own, so a reader who cannot
+   distinguish the two tints still reads the diff. The tint is the fast path,
+   not the only path. */
+.diffRow {
+  display: block;
+  padding: 0 var(--vela-space-3);
+}
+
+/* A tinted row RE-GROUNDS itself, so it must re-colour itself too.
+ *
+ * `.diffBody` is a code surface, and a code surface does not go pale in light
+ * mode: `--vela-code-bg` is night-950 in light and night-900 in dark — dark in
+ * BOTH themes. That is precisely why `--vela-code-text` can be one fixed value,
+ * night-100, and be right twice.
+ *
+ * These two tints are page-palette tokens, and the page turns over with the
+ * theme: `--vela-accent-quiet` is signal-50 in light and signal-900 in dark, and
+ * `--vela-danger-bg` inverts with it. So a tinted row is not a code ground at
+ * all — in light it is a pale band — and the `--vela-code-text` inherited from
+ * `.diffBody` measured 1.19:1 (added) and 1.14:1 (removed) against the 4.5:1
+ * that `.diffBody`'s own `font-size: var(--vela-text-xs)` (0.75rem, regular
+ * weight) demands. Dark read 10.06:1 and 13.24:1. The rule was right in one
+ * theme by coincidence, and in the other the added and removed lines — the whole
+ * point of the view — were near-invisible.
+ *
+ * `--vela-text` is the page's own text role, so it turns over in step with the
+ * grounds that are now under it: 16.97:1 and 16.25:1 in light, 11.32:1 and
+ * 14.90:1 in dark. It costs no new colour — both pairings already ship elsewhere
+ * (`base.css ::selection`, `MessageTurn .errorTitle`), and both rows are now
+ * named in `src/styles/contrast.test.ts`, which measures them in both themes.
+ *
+ * The other repair — keep `--vela-code-text` and make the tints dark in both
+ * themes — is possible, and it loses on the merits rather than on impossibility.
+ * Every hue-carrying *ground token* Vela owns follows the page: accent-quiet,
+ * danger-bg, warning-bg, notice-bg, thinking-bg, row-selected, turn-user-bg. The
+ * grounds that stay dark in both themes are the neutral code family — and they
+ * change rung rather than side, night-950 to night-900, so what is fixed there
+ * is the polarity, not the value. A neutral cannot say "added" or "removed".
+ *
+ * Reaching past the tokens into the ramp does give one real option:
+ * `--vela-signal-900` is a single value, dark, and carries the accent hue, so it
+ * could ground "added" with no new colour whatever — code-text on it is 10.06:1.
+ * "Removed" has no counterpart. The rose ramp stops at 700, a mid-tone that
+ * reads 3.05:1 against the light code ground where signal-900 reads 1.52:1, so
+ * the two states would be a whisper and a shout; a symmetric pair needs a rose
+ * rung that does not exist, and inventing one is a new colour value. That, and
+ * two rules reaching into the ramp for a ground against rule 1 at the top of
+ * tokens.css, is why the semantic repair wins: it invents no value, adds no
+ * token, and both of its pairings already ship.
+ *
+ * A row whose `data-kind` is `same` sets no background, so it keeps the code
+ * ground and the code text untouched — 15.31:1 light, 14.24:1 dark. */
+.diffRow[data-kind='added'] {
+  background: var(--vela-accent-quiet);
+  color: var(--vela-text);
+}
+
+.diffRow[data-kind='removed'] {
+  background: var(--vela-danger-bg);
+  color: var(--vela-text);
+}

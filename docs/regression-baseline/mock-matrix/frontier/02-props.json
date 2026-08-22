@@ -1,0 +1,21 @@
+{
+  "default_generation_settings": {
+    "n_ctx": 200000,
+    "model": "mock-frontier",
+    "seed": 4294967295
+  },
+  "total_slots": 4,
+  "model_path": "/models/mock-frontier.gguf",
+  "chat_template": "{%- for message in messages -%}{{ message['content'] }}{%- endfor -%}",
+  "build_info": "vela-mock-provider",
+  "vela_mock": {
+    "profile": "frontier",
+    "context_window": 200000,
+    "tool_calling": "native",
+    "vision": true,
+    "structured_output": "honoured",
+    "reasoning": "reasoning-content-field",
+    "emits_done_sentinel": true,
+    "emits_malformed_sse_frames": false
+  }
+}

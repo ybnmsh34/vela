@@ -1,0 +1,16 @@
+[package]
+name = "vela-core"
+description = "Vela domain model — provider-agnostic, runtime-agnostic, headlessly testable"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Overwrites a credential's bytes when the value is dropped, so a secret does
+# not linger in freed heap memory for the rest of the process's life.
+zeroize = "1"

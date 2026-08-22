@@ -1,0 +1,114 @@
+.surface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--vela-bg);
+}
+
+/* ---- the scroll edge ------------------------------------------------------ *
+ * A transcript that ends in a hard horizontal cut reads as a rendering fault:
+ * a line of text sliced through its x-height at the top of the viewport looks
+ * like a paint bug, not like more content. So the container fades its own
+ * content into its edges.
+ *
+ * The fade is *switched*, not permanent, and that is the half that is easy to
+ * get wrong: a gradient that is always on dims the first turn of a conversation
+ * scrolled to the top, and the last line while you are reading the end — which
+ * is the same defect pointed the other way. `ConversationView` already measures
+ * both edges for the follow-the-stream rule, so it publishes them here and only
+ * an edge with something beyond it is masked.
+ *
+ * `mask-image` rather than an overlay gradient in the page colour: an overlay
+ * has to know what is behind it, and behind it is `--vela-bg` in one theme, a
+ * user turn's fill in another, and a code block in a third.                    */
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* THE SCROLLBAR IS PART OF THE RULER — AND SO IS THE COMPOSER.
+     On Windows the transcript's text and the composer's box stood ~7px apart,
+     because this container is a scroller and the composer is not: a classic
+     (non-overlay) scrollbar takes its width out of the content box, the centred
+     column re-centres inside what is left, and the ruler bends by half a
+     scrollbar. Linux and macOS overlay their scrollbars, so it is invisible
+     here and plain on the platform most users are on.
+     `both-edges` rather than plain `stable`: reserving the gutter on one side
+     stops the column *moving* as content grows, but still shifts its centre off
+     the window's by half a scrollbar. Reserving both keeps the centre true.
+
+     THE HALF THAT WAS MISSING, AND WHAT IT COST. This declaration alone closed
+     the 7px at 1400px and opened 12px on each side at every width narrow enough
+     for the column to stop reaching `--vela-measure` — because the column lives
+     INSIDE the reservation and the composer lived OUTSIDE it, so the two boxes
+     agreed only while neither was clamped. The fix is not a different gutter
+     value: it is that `Composer.module.css` now reserves the same gutter with
+     the same property, and `--vela-reading-surface` (which the sidebar gives way
+     to) counts it. One ruler governs both boxes because both stand on the same
+     side of one reservation, and the engine computes it for both.
+
+     Measured, not declared: `oneVerticalRuler` in the Phase C matrix (C29a/b)
+     and the `R…` sweep in `drive-display-scaling.mjs` compare the two boxes'
+     left edges, right edges and widths at 1440 / 960 / 880 with the sidebar at
+     its maximum. `src/styles/surfaces.test.ts` computes the same geometry from
+     this stylesheet at CI time. Nothing anywhere asserts the *string* below;
+     an assertion that pinned it would forbid the next repair. */
+  scrollbar-gutter: stable both-edges;
+  /* Keeps the last turn from being glued to the composer as it grows. */
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--vela-scroll-fade),
+    black calc(100% - var(--vela-scroll-fade)),
+    transparent 100%
+  );
+}
+
+.scroller[data-at-top='true'] {
+  mask-image: linear-gradient(
+    to bottom,
+    black 0,
+    black calc(100% - var(--vela-scroll-fade)),
+    transparent 100%
+  );
+}
+
+.scroller[data-at-bottom='true'] {
+  mask-image: linear-gradient(to bottom, transparent 0, black var(--vela-scroll-fade), black 100%);
+}
+
+/* A transcript shorter than its viewport has no edge to fade at either end. */
+.scroller[data-at-top='true'][data-at-bottom='true'] {
+  mask-image: none;
+}
+
+/* `flex: 1` rather than `min-height: 100%`: it makes the column fill a short
+   transcript so the empty state can centre itself in the viewport, while a long
+   one still grows and scrolls normally.
+
+   `--vela-measure` is the *text* measure, so the box is `--vela-reading-column`
+   — the measure plus a gutter on each side, in one token because the sidebar
+   caps itself against the same number. The composer's field is exactly
+   `--vela-measure` wide and both are centred, which puts the reader's left text
+   edge and the composer's left box edge on one vertical ruler. They used to be 688px and
+   736px — near enough to look like a mistake rather than a decision, which is
+   the worst width to be off by. `src/styles/surfaces.test.ts` computes both
+   edges from these declarations and fails when they part company. */
+.column {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--vela-reading-column);
+  margin: 0 auto;
+  padding: var(--vela-space-5) var(--vela-gutter) var(--vela-space-6);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+}

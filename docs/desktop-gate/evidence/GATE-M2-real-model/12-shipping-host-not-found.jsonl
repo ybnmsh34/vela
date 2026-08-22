@@ -1,0 +1,3 @@
+{"ready":true,"registered":false,"seeded":true}
+{"err":{"code":"NOT_FOUND","message":"no provider configured with id `local`"},"id":1}
+{"err":{"code":"NOT_FOUND","message":"no provider configured with id `local`"},"id":2}

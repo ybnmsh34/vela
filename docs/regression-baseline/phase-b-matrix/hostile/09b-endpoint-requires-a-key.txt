@@ -1,0 +1,45 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: hostile — case 09b-endpoint-requires-a-key: an endpoint that demands a credential
+================================================================================
+
+PURPOSE   The 401 must arrive as an auth failure and must never be sprayed at other backends.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- the exchange ------------------------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:35847/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (86 bytes) ---
+      {"messages":[{"content":"hello","role":"user"}],"model":"mock-hostile","stream":false}
+      <<< HTTP 401
+      content-type: application/json; charset=utf-8
+      --- response body (150 bytes, read to end) ---
+      {
+        "error": {
+          "message": "incorrect API key provided",
+          "type": "authentication_error",
+          "param": null,
+          "code": "invalid_api_key"
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  outcome                                Err(AuthFailed { detail: "incorrect API key provided" })
+
+---- assertions --------------------------------------------------------------
+  [PASS] a 401 is normalised to AuthFailed, not a generic transport error
+        Err(AuthFailed { detail: "incorrect API key provided" })
+  [PASS] an auth failure is never retried and never failed over
+        Err(AuthFailed { detail: "incorrect API key provided" })
+  [PASS] no upstream body or HTTP status escapes into the error
+        Err(AuthFailed { detail: "incorrect API key provided" })
+
+================================================================================
+VERDICT  3 assertion(s), 0 failure(s)
+================================================================================

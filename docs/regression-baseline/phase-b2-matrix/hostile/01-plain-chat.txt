@@ -1,0 +1,149 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 01-plain-chat: plain chat, streamed and not
+================================================================================
+
+PURPOSE   The same question down both paths. A consumer must not be able to tell them apart.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+
+---- streamed turn — on the wire -------------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
+      content-type: application/json
+      accept: text/event-stream
+      (no authorization header)
+      --- request body (149 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-hostile","stream":true,"stream_options":{"include_usage":true}}
+      <<< HTTP 200
+      content-type: text/event-stream; charset=utf-8
+      transfer-encoding: chunked
+      --- response body (5757 bytes, read to end) ---
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|channel|>analysis ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"
+      
+      : keepalive
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Considering the req"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uest about what is "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"the weather in Berl"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"choices":"not-an-array"}
+      
+      data: not-json-at-all
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"in. Profile hostile"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" has a 4096-token w"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"indow. Answering di"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rectly."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" ▒▒ "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"<think>"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" nested "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"Mock hostil"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e reply to:"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" what is th"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"e weather i"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"n Berlin. a"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"lpha umber "},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"rudder zeni"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"th fathom q"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"uartz jetty"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" alpha meri"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"dian sextan"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"t umber ivo"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":"ry."},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{"content":" <|channel|>analysis ЖЖЖ"},"finish_reason":null}]}
+      
+      data: {"id":"chatcmpl-mock-3cd9d8d4","object":"chat.completion.chunk","created":1700000000,"model":"mock-hostile","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+      
+
+---- non-streamed turn — on the wire ---------------------------------------
+
+  >>> exchange 1 — POST http://127.0.0.1:39745/v1/chat/completions
+      content-type: application/json
+      accept: application/json
+      (no authorization header)
+      --- request body (110 bytes) ---
+      {"messages":[{"content":"what is the weather in Berlin","role":"user"}],"model":"mock-hostile","stream":false}
+      <<< HTTP 200
+      content-type: application/json; charset=utf-8
+      --- response body (714 bytes, read to end) ---
+      {
+        "id": "chatcmpl-mock-3cd9d8d4",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "mock-hostile",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "<think> <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒ <think> nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 83,
+          "total_tokens": 95
+        }
+      }
+
+---- what Vela produced ------------------------------------------------------
+  streamed answer                        "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  non-streamed answer                    "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  streamed reasoning                     " <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  non-streamed reasoning                 " <|channel|>analysis ▒▒ Considering the request about what is the weather in Berlin. Profile hostile has a 4096-token window. Answering directly. ▒▒  nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  sum of TextDelta events                "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  stop reason                            EndTurn
+  usage                                  TokenUsage { input_tokens: None, output_tokens: None, reasoning_tokens: None, cached_input_tokens: None }
+  degradations (streamed)                UnterminatedReasoning { recovered_answer_chars: 166 }, MalformedFramesSkipped { count: 3 }, NoTerminationSentinel, UsageNotReported
+  degradations (non-streamed)            UnterminatedReasoning { recovered_answer_chars: 166 }
+  streamed wall clock                    5.546475ms
+  non-streamed wall clock                2.377254ms
+
+---- assertions --------------------------------------------------------------
+  [PASS] the turn produces an answer
+        166 characters
+  [PASS] streamed and non-streamed answers are identical
+        streamed 166 chars / whole 166 chars
+  [PASS] the deltas add up to the answer
+        delta sum 166 chars
+  [PASS] no wire-format remnant reaches the answer
+        "nested Mock hostile reply to: what is the weather in Berlin. alpha umber rudder zenith fathom quartz jetty alpha meridian sextant umber ivory. <|channel|>analysis ЖЖЖ"
+  [PASS] the turn does not hang (well inside the recorded 5003 ms consumer hang)
+        5.546475ms
+
+================================================================================
+VERDICT  5 assertion(s), 0 failure(s)
+================================================================================

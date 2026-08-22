@@ -1,0 +1,15 @@
+{
+  "scale": "aside",
+  "text": "Deconstruct the requirements:The user wants a model-agnostic client, so the answer cannot name a vendor.They mentioned llama-server, which means the endpoint is OpenAI-compatible.Sketching the command they would run:bashCopyllama-server --port 8033 --ctx-size 131072Answering now.",
+  "whiteSpace": "normal",
+  "fontSizePx": 13,
+  "answerFontSizePx": 15,
+  "largestPx": 13,
+  "counts": {
+    "strong": 1,
+    "listItems": 2,
+    "inlineCode": 1,
+    "codeBlocks": 1,
+    "headings": 0
+  }
+}

@@ -1,0 +1,95 @@
+/* Code is not prose. It has its own natural line length — often far longer than
+   a readable paragraph — and it is what suffers most in a 480px column, where
+   every second line wraps or scrolls. So on a wide window it takes the space a
+   paragraph must not: `--vela-wide-measure` rather than the reading measure.
+   This is the single change that makes a maximised window worth maximising. */
+.block {
+  margin: var(--vela-space-4) 0;
+  border: 1px solid var(--vela-code-border);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-code-bg);
+  overflow: hidden;
+}
+
+/* The breakout, and why it is a negative margin rather than a width.
+   `width` alone cannot make a child wider than a parent that clamps it: the
+   reading column carries `max-width: var(--vela-reading-column)` and every
+   descendant inherits that ceiling. Setting `width: var(--vela-wide-measure)`
+   on its own — which is what the first attempt did — resolved to the column
+   width and changed nothing. The box has to be pulled OUT of the column by
+   half the difference on each side.
+
+   Gated on a viewport with provable room, because a breakout that overflows is
+   worse than no breakout: below this width code stays in the column and the
+   reader loses nothing. */
+@media (min-width: 1600px) {
+  .block {
+    width: var(--vela-wide-measure);
+    margin-inline: calc((var(--vela-measure) - var(--vela-wide-measure)) / 2);
+  }
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-2) var(--vela-space-2) var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-code-surface);
+  border-bottom: 1px solid var(--vela-code-border);
+}
+
+.language {
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-syntax-comment);
+  letter-spacing: var(--vela-tracking-code);
+}
+
+.pending {
+  font-size: var(--vela-text-xs);
+  color: var(--vela-syntax-comment);
+  font-style: italic;
+}
+
+.bar > :last-child {
+  margin-left: auto;
+}
+
+/* The one place horizontal scrolling is allowed: inside its own container, so
+   a wide line never makes the page itself scroll sideways. */
+.pre {
+  margin: 0;
+  padding: var(--vela-space-3);
+  overflow-x: auto;
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-code);
+  color: var(--vela-code-text);
+  tab-size: 2;
+}
+
+.pre code {
+  font: inherit;
+  white-space: pre;
+}
+
+.comment {
+  color: var(--vela-syntax-comment);
+  font-style: italic;
+}
+
+.string {
+  color: var(--vela-syntax-string);
+}
+
+.number {
+  color: var(--vela-syntax-number);
+}
+
+.keyword {
+  color: var(--vela-syntax-keyword);
+}
+
+.punct {
+  color: var(--vela-syntax-punct);
+}

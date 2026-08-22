@@ -1,0 +1,50 @@
+GATE M — the allowlist / generate_handler! binding, mutated in BOTH directions
+Scratch worktree: /tmp/claude-0/-home-user-vela/f4ba580b-2587-5903-90a0-e1d08f42104e/scratchpad/mutant (git worktree, detached at HEAD). The shared tree is never mutated.
+
+=== BASELINE — the unmutated worktree ===
+test every_allowlisted_command_is_reachable_in_the_assembled_app ... ok
+test the_call_shape_parser_sees_the_argument_names_it_judges ... ok
+test every_registered_command_is_one_the_parser_also_found_declared ... ok
+test every_command_takes_exactly_one_argument_and_it_is_named_payload ... ok
+test the_crate_declares_no_command_it_does_not_expose ... ok
+test the_registered_handler_list_and_the_allowlist_are_the_same_set ... ok
+test the_probe_can_tell_a_registered_command_from_an_unregistered_one ... ok
+test the_registration_parser_reports_exactly_the_registered_paths ... ok
+test no_command_is_reachable_that_the_allowlist_does_not_declare ... ok
+test the_parser_reads_code_and_not_comments_or_string_literals ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+=== MUTATION A — diagnostics_echo removed from generate_handler! ONLY ===
+    (kept in the Rust COMMAND_ALLOWLIST and in src/platform/contract.ts)
+test every_command_takes_exactly_one_argument_and_it_is_named_payload ... ok
+test the_call_shape_parser_sees_the_argument_names_it_judges ... ok
+test every_registered_command_is_one_the_parser_also_found_declared ... ok
+test the_crate_declares_no_command_it_does_not_expose ... ok
+test the_probe_can_tell_a_registered_command_from_an_unregistered_one ... ok
+test the_parser_reads_code_and_not_comments_or_string_literals ... ok
+test the_registration_parser_reports_exactly_the_registered_paths ... ok
+test no_command_is_reachable_that_the_allowlist_does_not_declare ... ok
+test every_allowlisted_command_is_reachable_in_the_assembled_app ... FAILED
+test the_registered_handler_list_and_the_allowlist_are_the_same_set ... FAILED
+these commands are in COMMAND_ALLOWLIST but the assembled app answers `Command … not found` for them: diagnostics_echo.
+in COMMAND_ALLOWLIST but not in `generate_handler!` (so: unreachable in the shipped app): diagnostics_echo
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+=== MUTATION B — ui_set_layout removed from BOTH allowlists, still registered ===
+test every_registered_command_is_one_the_parser_also_found_declared ... ok
+test the_call_shape_parser_sees_the_argument_names_it_judges ... ok
+test every_command_takes_exactly_one_argument_and_it_is_named_payload ... ok
+test every_allowlisted_command_is_reachable_in_the_assembled_app ... ok
+test the_probe_can_tell_a_registered_command_from_an_unregistered_one ... ok
+test the_parser_reads_code_and_not_comments_or_string_literals ... ok
+test the_registration_parser_reports_exactly_the_registered_paths ... ok
+test the_registered_handler_list_and_the_allowlist_are_the_same_set ... FAILED
+test the_crate_declares_no_command_it_does_not_expose ... FAILED
+test no_command_is_reachable_that_the_allowlist_does_not_declare ... FAILED
+in `generate_handler!` but not in COMMAND_ALLOWLIST (so: reachable and undeclared): ui_set_layout
+these commands are reachable from the renderer but absent from COMMAND_ALLOWLIST: ui_set_layout.
+The allowlist is supposed to *be* the IPC surface. A command registered in `generate_handler!` and left out of it is an unreviewed, untyped door into the host.
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+=== after restore ===
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s

@@ -1,0 +1,226 @@
+/* The width the user dragged to arrives as `--vela-sidebar-width` from
+   `Sidebar.tsx`, and it is a ceiling rather than the answer: a 480px sidebar is
+   a third of a 1440px window and half of a 1000px one. Only CSS knows which
+   window it is in, so the cap is applied here.
+
+   What it is capped *against* is the interesting part. Not a share of the
+   viewport — that is a guess with a percentage on it — but the width the
+   reading surface needs: `--vela-reading-surface` is the transcript's column at
+   its full measure *plus the gutter its scroller reserves around it*. As the
+   window narrows, the sidebar gives way and the reader's column does not. That
+   is the whole rule, and it is why the number is defined next to the measure
+   rather than here.
+
+   It was `--vela-reading-column`, and the missing `--vela-scroll-reserve` is
+   exactly how the reader lost 12px of text on each side at 880px: the sidebar
+   was allowed to take the last 24px the column needed to reach its measure, so
+   the column clamped inside the scroller's reservation while the composer,
+   outside it, kept the full 480. Both halves are one number now.
+
+   `min()`/`max()` and not `clamp()`: the lower bound on the *stored* width is
+   `clampSidebarWidth`'s job, in both the renderer and the host. Repeating it
+   here would fight the viewport at the one size where giving way is the right
+   answer, and the rail is what a genuinely narrow window has left. */
+.sidebar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: min(
+    var(--vela-sidebar-width),
+    max(var(--vela-rail-width), calc(100vw - var(--vela-reading-surface)))
+  );
+  background: var(--vela-chrome);
+  border-right: 1px solid var(--vela-border);
+}
+
+/* Declared after `.sidebar` and at equal specificity, so the rail wins on
+   source order. A collapsed sidebar is a fixed rail of icon buttons and has no
+   business tracking the viewport. */
+.collapsed {
+  width: var(--vela-rail-width);
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) 0;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3);
+  border-bottom: 1px solid var(--vela-border);
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+}
+
+.newButton {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-accent);
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-on-accent);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: default;
+}
+
+.newButton span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.newButton:hover {
+  background: var(--vela-accent-hover);
+}
+
+.searchButton {
+  display: flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-muted);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: default;
+}
+
+.searchButton span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchButton:hover {
+  border-color: var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.newButton:focus-visible,
+.searchButton:focus-visible,
+.iconButton:focus-visible,
+.handle:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.kbd {
+  flex: 0 0 auto;
+  padding: 1px var(--vela-space-1);
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-row-hover);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-xs);
+  opacity: 0.75;
+}
+
+.iconButton {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--vela-control-md);
+  height: var(--vela-control-md);
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text-muted);
+  cursor: default;
+}
+
+.iconButton:hover {
+  background: var(--vela-surface);
+  color: var(--vela-text);
+}
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vela-space-2);
+}
+
+.group + .group {
+  margin-top: var(--vela-space-3);
+}
+
+.groupLabel {
+  margin: 0;
+  padding: var(--vela-space-2) var(--vela-space-3) var(--vela-space-1);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note {
+  margin: 0;
+  padding: var(--vela-space-4) var(--vela-space-3);
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-sm);
+}
+
+.error {
+  margin: var(--vela-space-2) 0 0;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  border-radius: var(--vela-radius-md);
+  background: var(--vela-row-hover);
+  color: var(--vela-danger);
+  font-size: var(--vela-text-xs);
+}
+
+/* The drag target is wider than the visible line: a 1px hit area is a 1px
+   frustration. The line itself only appears on hover or focus. */
+.handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--vela-accent);
+  opacity: 0;
+  transition: opacity var(--vela-duration) var(--vela-ease);
+}
+
+.handle:hover::after,
+.handle:focus-visible::after {
+  opacity: 1;
+}

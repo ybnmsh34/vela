@@ -1,0 +1,42 @@
+[
+  {
+    "file": "51-empty-150pct-light.png",
+    "state": {
+      "theme": "light",
+      "dpr": 1.5,
+      "cssW": 923,
+      "heading": "Vela",
+      "markVisible": true
+    }
+  },
+  {
+    "file": "52-answer-150pct-light.png",
+    "state": {
+      "theme": "light",
+      "dpr": 1.5,
+      "cssW": 923,
+      "heading": "The Essential Kitchen Knife Sharpening Guide",
+      "markVisible": true
+    }
+  },
+  {
+    "file": "51-empty-150pct-dark.png",
+    "state": {
+      "theme": "dark",
+      "dpr": 1.5,
+      "cssW": 923,
+      "heading": "Vela",
+      "markVisible": true
+    }
+  },
+  {
+    "file": "52-answer-150pct-dark.png",
+    "state": {
+      "theme": "dark",
+      "dpr": 1.5,
+      "cssW": 923,
+      "heading": "The Essential Kitchen Knife Sharpening Guide",
+      "markVisible": true
+    }
+  }
+]

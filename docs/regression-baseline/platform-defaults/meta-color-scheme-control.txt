@@ -1,0 +1,70 @@
+# CONTROL — is `<meta name="color-scheme" content="light dark">` in index.html inert?
+
+Produced by the integration wave. Real Chromium (Playwright 1187 headless shell), against the
+**built production bundle** (`dist/`, the directory `tauri.conf.json` points `frontendDist` at),
+built from the tree recorded in the commit that carries this file.
+
+## The question
+
+`src/styles/tokens.css` narrows `color-scheme` per theme — `light` on bare `:root`, `dark` in both
+dark blocks. `index.html` separately declares `<meta name="color-scheme" content="light dark">`,
+which is the widened value the narrowing exists to remove, at document level. Nothing in `src/`
+reads `index.html`, so the six-case table in `src/styles/platform-defaults.test.ts` models a
+cascade that does not include it.
+
+Reasoning says the author declaration on the root element outranks the metadata. This is the
+measurement instead of the reasoning.
+
+## Method
+
+The same bundle is served twice by a local static server: once verbatim, and once with the
+`<meta name="color-scheme">` element deleted from the served HTML and nothing else changed. Each is
+loaded under an emulated OS preference in both directions, and in each of the three in-app theme
+states, and the **used** value of `color-scheme` on the root element is read back along with the
+page background.
+
+`theme` here is what `applyThemePreference` does: `system` removes `data-theme`, the other two set
+it.
+
+## Result — twelve readings, pairwise identical
+
+```
+Q1 meta=present os=light theme=system    used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=present os=light theme=light     used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=present os=light theme=dark      used color-scheme=dark        body=rgb(8, 11, 22)
+Q1 meta=present os=dark  theme=system    used color-scheme=dark        body=rgb(8, 11, 22)
+Q1 meta=present os=dark  theme=light     used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=present os=dark  theme=dark      used color-scheme=dark        body=rgb(8, 11, 22)
+Q1 meta=STRIPPED os=light theme=system    used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=STRIPPED os=light theme=light     used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=STRIPPED os=light theme=dark      used color-scheme=dark        body=rgb(8, 11, 22)
+Q1 meta=STRIPPED os=dark  theme=system    used color-scheme=dark        body=rgb(8, 11, 22)
+Q1 meta=STRIPPED os=dark  theme=light     used color-scheme=light       body=rgb(247, 248, 251)
+Q1 meta=STRIPPED os=dark  theme=dark      used color-scheme=dark        body=rgb(8, 11, 22)
+```
+
+Stripping the meta changes **nothing**: every used value is the one the palette selected, with the
+meta and without it. The declaration is inert in the shipping application.
+
+`body` corroborates that the reading is of the real app and not of an unstyled document:
+`rgb(247, 248, 251)` is `--vela-night-25` and `rgb(8, 11, 22)` is `--vela-night-950`.
+
+## What this does and does not establish
+
+- It **does** establish that the meta cannot re-widen what the token sheet narrowed, in any of the
+  six states, in this engine.
+- It **does not** establish anything about the frame painted *before* the stylesheet applies, which
+  is the one thing the meta is actually for. That frame was not captured: with the stylesheet held
+  back deliberately, `page.screenshot()` waits for the load to settle and returns the styled frame,
+  so the instrument measured the wrong moment and the attempt is reported rather than counted.
+  The cold-start appearance question is filed for the desktop session in
+  `docs/desktop-gate/REQUESTS.md` instead, where it belongs — it is a Windows/WebView2 judgement.
+- **VERIFIED-BY-FAKE** per `docs/architecture/conventions.md` §10: Chromium on Linux, not WebView2.
+  The desktop session's `A1-scaffold-shell` visual PASS is the binding reading for what the OS
+  actually paints.
+
+## Consequence
+
+The inertness is conditional on the author declaration existing. `platform-defaults.test.ts` now
+asserts that condition directly, so deleting the `:root` declaration fails a test that names the
+meta rather than silently handing the widget scheme back to the OS.

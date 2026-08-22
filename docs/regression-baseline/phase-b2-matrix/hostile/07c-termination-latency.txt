@@ -1,0 +1,108 @@
+================================================================================
+GATE M Part 1 (Phase B2) — profile: hostile — case 07c-termination-latency: stream termination latency, five samples per arm, credentialed and not
+================================================================================
+
+PURPOSE   MEASURED-1 sharpened: the turn must end in single-digit milliseconds, not merely inside the 5 s a naive [DONE]-driven consumer hung for — and it must do so on the path a configured user actually runs.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `hostile`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  Five identical streamed turns per arm. The endpoint is the same OS process
+  throughout, so the spread below is this container's scheduling noise and nothing
+  else. `hostile` never sends [DONE] and `small-local` never sends usage though it
+  accepted `include_usage`: both are the shapes that hung the recorded consumers
+  for 5 s.
+  ROUND 4. This case used to have one arm, built with `Auth::None`. An empty
+  credential set means an empty `Scrubber`, and `BodyStream::next_chunk` takes a
+  short-circuit when the scrubber is empty: no copy, no carry buffer, no scan. The
+  medians it published were therefore medians of a path that does not run once a
+  user configures a key — offered, implicitly, as the latency evidence for the
+  redaction they never touched. The CREDENTIALED arm below is the one the
+  single-digit claim is now made about; the uncredentialed arm is kept beside it so
+  the cost of redaction is visible rather than asserted.
+
+---- arm A — Auth::None (empty scrubber, fast path) ------------------------
+  run 1                                  5.435803ms   (160 answer characters)
+  run 2                                  3.751353ms   (160 answer characters)
+  run 3                                  4.10376ms   (160 answer characters)
+  run 4                                  4.148522ms   (160 answer characters)
+  run 5                                  3.774178ms   (160 answer characters)
+  MEDIAN                                 4.10376ms
+  worst sample                           5.435803ms
+  credential on the wire                 false
+
+---- arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len) 
+  run 1                                  5.436688ms   (160 answer characters)
+  run 2                                  4.724832ms   (160 answer characters)
+  run 3                                  4.717407ms   (160 answer characters)
+  run 4                                  4.736944ms   (160 answer characters)
+  run 5                                  4.516603ms   (160 answer characters)
+  MEDIAN                                 4.724832ms
+  worst sample                           5.436688ms
+  credential on the wire                 true
+
+---- the comparison ----------------------------------------------------------
+  median, uncredentialed                 4.10376ms
+  MEDIAN, CREDENTIALED                   4.724832ms
+  cost of redaction (median delta)       621.072µs
+  recorded naive [DONE] consumer         5003 ms (TIMED OUT)
+
+---- assertions --------------------------------------------------------------
+  [PASS] the credentialed arm really did put a credential on the wire
+        credentialed arm: true, uncredentialed arm: false
+  [PASS] the uncredentialed arm really did not — the two arms are different paths
+        false
+  [PASS] every sampled turn completed without error, both arms
+        uncredentialed: 5 samples, credentialed: 5 samples
+  [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms
+        median 4.724832ms, samples [5.436688ms, 4.724832ms, 4.717407ms, 4.736944ms, 4.516603ms]
+  [PASS] …and on the uncredentialed one, so redaction is not what makes or breaks it
+        median 4.10376ms
+  [PASS] no sample came anywhere near the recorded 5003 ms hang, either arm
+        worst uncredentialed 5.435803ms, worst credentialed 5.436688ms
+  [PASS] every sample returned the same answer length — timing did not truncate anything
+        uncredentialed [160, 160, 160, 160, 160], credentialed [160, 160, 160, 160, 160]
+  [PASS] redaction did not change the answer — both arms delivered the same text length
+        uncredentialed Some(160), credentialed Some(160)
+
+---- arm C — a CREDENTIALED provider against a payload that exercises the scrubber 
+  Round 4's arm B was credentialed and still measured a short-circuit: 222 characters
+  with no backslash byte means `Scrubber::touches` early-outs, `encoded_spans` never
+  runs, and `hold_back_len` returns 0 on every chunk. This arm's payload is built so
+  none of those three can skip. The counts below are read OFF THE WIRE, so a future
+  round can see if this arm has gone hollow.
+
+---- arm C — adversarial payload, credentialed -----------------------------
+  run 1                                  7.589086ms   (5420 answer characters)
+  run 2                                  6.416322ms   (5420 answer characters)
+  run 3                                  6.893652ms   (5420 answer characters)
+  run 4                                  6.351707ms   (5420 answer characters)
+  run 5                                  6.451916ms   (5420 answer characters)
+  MEDIAN                                 6.451916ms
+  worst sample                           7.589086ms
+  credential on the wire                 true
+  backslash bytes on the wire            4200
+  `\u00XX` escapes on the wire           600
+  near-miss credential prefixes at frame ends 150
+  profile this arm ran beside            hostile
+  [PASS] arm C really was credentialed
+        true
+  [PASS] THE PAYLOAD ACTUALLY EXERCISES THE CODE BEING MEASURED — thousands of backslash bytes, not round 4's zero
+        4200 backslash byte(s) across 5 turns
+  [PASS] …and the escape-resolution path is walked, not skipped
+        600 `\u00XX` escape(s)
+  [PASS] …and `hold_back_len` had something to hold back — near-miss credential prefixes ended frames
+        150 near-miss prefix(es)
+  [PASS] every sampled turn completed without error on the adversarial payload
+        5 samples
+  [PASS] TERMINATION IS STILL SINGLE-DIGIT MILLISECONDS with the scrubber fully exercised
+        median 6.451916ms, samples [7.589086ms, 6.416322ms, 6.893652ms, 6.351707ms, 6.451916ms]
+  [PASS] every sample returned the same answer length — the carry buffer loses nothing
+        [5420, 5420, 5420, 5420, 5420]
+  [PASS] and the credential is still absent from the answer the scrubber produced
+        checked
+
+================================================================================
+VERDICT  16 assertion(s), 0 failure(s)
+================================================================================

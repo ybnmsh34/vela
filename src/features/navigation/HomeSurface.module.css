@@ -1,0 +1,215 @@
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-6);
+  width: min(64rem, 100%);
+  margin: 0 auto;
+  padding: var(--vela-space-7) var(--vela-space-6) var(--vela-space-6);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--vela-space-2);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: var(--vela-mark-lg);
+  height: var(--vela-mark-lg);
+  margin-bottom: var(--vela-space-2);
+  border-radius: var(--vela-radius-lg);
+  background: var(--vela-accent-quiet);
+  color: var(--vela-accent);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--vela-text-xl);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-tight);
+  color: var(--vela-text);
+}
+
+.lede {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-lg);
+  line-height: var(--vela-leading-snug);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-3);
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vela-space-2);
+  padding: var(--vela-space-3) var(--vela-space-5);
+  border-radius: var(--vela-radius-md);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-medium);
+  cursor: default;
+}
+
+.primary {
+  background: var(--vela-accent);
+  border: 1px solid var(--vela-accent);
+  color: var(--vela-text-on-accent);
+}
+
+.primary:hover {
+  background: var(--vela-accent-hover);
+  border-color: var(--vela-accent-hover);
+}
+
+.secondary {
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border-strong);
+  color: var(--vela-text);
+}
+
+.secondary:hover {
+  background: var(--vela-bg-inset);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.recentItem:focus-visible {
+  outline: var(--vela-focus-ring);
+  outline-offset: var(--vela-focus-offset);
+}
+
+.kbd {
+  padding: 1px var(--vela-space-1);
+  border-radius: var(--vela-radius-sm);
+  background: var(--vela-row-hover);
+  font-family: var(--vela-font-sans);
+  font-size: var(--vela-text-xs);
+  color: var(--vela-text-subtle);
+}
+
+.proposition {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--vela-space-4);
+}
+
+.point {
+  padding: var(--vela-space-4);
+  background: var(--vela-surface);
+  border: 1px solid var(--vela-border);
+  border-radius: var(--vela-radius-lg);
+}
+
+.pointHeading {
+  margin: 0 0 var(--vela-space-2);
+  font-size: var(--vela-text-sm);
+  font-weight: var(--vela-weight-semibold);
+  color: var(--vela-text);
+}
+
+.pointBody {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-size: var(--vela-text-sm);
+  line-height: var(--vela-leading-ui);
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vela-space-2);
+}
+
+.recentHeading {
+  margin: 0;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  font-weight: var(--vela-weight-semibold);
+  letter-spacing: var(--vela-tracking-caps);
+  text-transform: uppercase;
+}
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recentItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vela-space-3);
+  width: 100%;
+  padding: var(--vela-space-2) var(--vela-space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--vela-radius-md);
+  color: var(--vela-text);
+  font: inherit;
+  font-size: var(--vela-text-sm);
+  text-align: left;
+  cursor: default;
+}
+
+.recentItem:hover {
+  background: var(--vela-row-hover);
+}
+
+.recentTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentMeta {
+  flex: 0 0 auto;
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+}
+
+.facts {
+  padding-top: var(--vela-space-4);
+  border-top: 1px solid var(--vela-border);
+}
+
+.factList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vela-space-5);
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fact dt {
+  color: var(--vela-text-subtle);
+  font-size: var(--vela-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--vela-tracking-caps);
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--vela-text-muted);
+  font-family: var(--vela-font-mono);
+  font-size: var(--vela-text-xs);
+}

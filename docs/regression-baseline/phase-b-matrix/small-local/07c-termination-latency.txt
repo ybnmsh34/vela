@@ -1,0 +1,71 @@
+================================================================================
+GATE M Part 1 (Phase B) — profile: small-local — case 07c-termination-latency: stream termination latency, five samples per arm, credentialed and not
+================================================================================
+
+PURPOSE   MEASURED-1 sharpened: the turn must end in single-digit milliseconds, not merely inside the 5 s a naive [DONE]-driven consumer hung for — and it must do so on the path a configured user actually runs.
+SUBJECT   Vela's own provider stack (vela-providers::OpenAiCompatibleProvider)
+ENDPOINT  tests/harness/mock-provider, profile `small-local`, a real OS process on loopback
+HONESTY   VERIFIED-BY-FAKE. The endpoint is a deterministic mock; no model produced
+          any byte below. Nothing here is evidence about a real model.
+
+  Five identical streamed turns per arm. The endpoint is the same OS process
+  throughout, so the spread below is this container's scheduling noise and nothing
+  else. `hostile` never sends [DONE] and `small-local` never sends usage though it
+  accepted `include_usage`: both are the shapes that hung the recorded consumers
+  for 5 s.
+  ROUND 4. This case used to have one arm, built with `Auth::None`. An empty
+  credential set means an empty `Scrubber`, and `BodyStream::next_chunk` takes a
+  short-circuit when the scrubber is empty: no copy, no carry buffer, no scan. The
+  medians it published were therefore medians of a path that does not run once a
+  user configures a key — offered, implicitly, as the latency evidence for the
+  redaction they never touched. The CREDENTIALED arm below is the one the
+  single-digit claim is now made about; the uncredentialed arm is kept beside it so
+  the cost of redaction is visible rather than asserted.
+
+---- arm A — Auth::None (empty scrubber, fast path) ------------------------
+  run 1                                  2.446135ms   (130 answer characters)
+  run 2                                  2.273221ms   (130 answer characters)
+  run 3                                  2.418138ms   (130 answer characters)
+  run 4                                  2.193659ms   (130 answer characters)
+  run 5                                  1.835529ms   (130 answer characters)
+  MEDIAN                                 2.273221ms
+  worst sample                           2.446135ms
+  credential on the wire                 false
+
+---- arm B — Auth::ApiKeyQuery (every chunk through scrub_bytes + hold_back_len) 
+  run 1                                  2.751017ms   (130 answer characters)
+  run 2                                  2.326709ms   (130 answer characters)
+  run 3                                  2.032586ms   (130 answer characters)
+  run 4                                  2.130331ms   (130 answer characters)
+  run 5                                  2.050028ms   (130 answer characters)
+  MEDIAN                                 2.130331ms
+  worst sample                           2.751017ms
+  credential on the wire                 true
+
+---- the comparison ----------------------------------------------------------
+  median, uncredentialed                 2.273221ms
+  MEDIAN, CREDENTIALED                   2.130331ms
+  cost of redaction (median delta)       0ns
+  recorded naive [DONE] consumer         5003 ms (TIMED OUT)
+
+---- assertions --------------------------------------------------------------
+  [PASS] the credentialed arm really did put a credential on the wire
+        credentialed arm: true, uncredentialed arm: false
+  [PASS] the uncredentialed arm really did not — the two arms are different paths
+        false
+  [PASS] every sampled turn completed without error, both arms
+        uncredentialed: 5 samples, credentialed: 5 samples
+  [PASS] TERMINATION IS SINGLE-DIGIT MILLISECONDS ON THE CREDENTIALED PATH — median under 10 ms
+        median 2.130331ms, samples [2.751017ms, 2.326709ms, 2.032586ms, 2.130331ms, 2.050028ms]
+  [PASS] …and on the uncredentialed one, so redaction is not what makes or breaks it
+        median 2.273221ms
+  [PASS] no sample came anywhere near the recorded 5003 ms hang, either arm
+        worst uncredentialed 2.446135ms, worst credentialed 2.751017ms
+  [PASS] every sample returned the same answer length — timing did not truncate anything
+        uncredentialed [130, 130, 130, 130, 130], credentialed [130, 130, 130, 130, 130]
+  [PASS] redaction did not change the answer — both arms delivered the same text length
+        uncredentialed Some(130), credentialed Some(130)
+
+================================================================================
+VERDICT  8 assertion(s), 0 failure(s)
+================================================================================

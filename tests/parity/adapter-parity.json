@@ -1,0 +1,2267 @@
+{
+  "$note": "SHARED PARITY FIXTURE — read by BOTH `cargo test` (src-tauri/tests/adapter_parity_fixture.rs) and `pnpm test` (src/platform/adapter-parity.test.ts). It pins the SEMANTICS of the settings_put_provider derivation across the two implementations: the Rust host in src-tauri/crates/vela-settings, and the hand-written mirror of it in src/platform/browser-adapter.ts. The Rust host is the specification: when the two disagree, the fake is wrong (docs/architecture/conventions.md §8).",
+  "$howToChange": "Never edit an expectation to make a suite pass. Change the host first, re-derive the expectation from the host's behaviour, then make the fake match. A case whose expectation was edited to match the fake proves nothing.",
+  "providerId": "parity",
+  "displayName": "Parity fixture",
+  "kind": "local",
+  "credentialValue": "fixture-credential-DO-NOT-LOG",
+  "cases": [
+    {
+      "id": "loopback-ipv4-http-no-auth",
+      "why": "THE case Vela exists for: llama.cpp on 127.0.0.1 over http with no key. Must raise nothing at all, or the product nags people for using local models correctly.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-hostname-bearer-present",
+      "why": "llama.cpp started with --api-key. The credential never leaves the machine, so it is not a concern.",
+      "input": {
+        "baseUrl": "http://localhost:8080/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": true,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://localhost:8080/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "loopback-ipv6-api-key-header-is-trimmed-and-lowercased",
+      "why": "Header names are normalised host-side (HTTP/2 requires lowercase); the fake must normalise identically.",
+      "input": {
+        "baseUrl": "http://[::1]:8000/v1",
+        "authMode": {
+          "type": "apiKeyHeader",
+          "header": "  X-Api-Key "
+        },
+        "credentialStored": true,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[::1]:8000/v1",
+        "auth": {
+          "type": "apiKeyHeader",
+          "header": "x-api-key",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "loopback-trailing-dot-and-mixed-case-hostname",
+      "why": "A fully-qualified `LocalHost.` is still loopback: the host lowercases and strips trailing dots.",
+      "input": {
+        "baseUrl": "https://LocalHost./v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://localhost./v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-shorthand-ipv4-127-1",
+      "why": "`127.1` is a legal IPv4 shorthand. Both sides must run it through a URL parser, not a string match.",
+      "input": {
+        "baseUrl": "http://127.1/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-hex-ipv4",
+      "why": "`0x7f.0.0.1` is 127.0.0.1 after WHATWG IPv4 parsing.",
+      "input": {
+        "baseUrl": "http://0x7f.0.0.1/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-decimal-ipv4",
+      "why": "`2130706433` is 127.0.0.1 as a single decimal.",
+      "input": {
+        "baseUrl": "http://2130706433/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-whole-127-8-block-required-credential-missing",
+      "why": "127.0.0.2 is loopback (the whole /8 is), and a Required credential that is not stored is a notice, never a traffic risk.",
+      "input": {
+        "baseUrl": "http://127.0.0.2:1234/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": false,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.2:1234/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "loopback",
+        "riskLevel": "notice",
+        "concerns": [
+          "requiredCredentialMissing"
+        ],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": false,
+        "credentialCheck": "missingRequired",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "loopback-api-key-query-raises-no-logging-concern",
+      "why": "The query-string concern is deliberately silent on loopback: a key logged by the user's own llama.cpp, on the user's own machine, has not gone anywhere.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "apiKeyQuery",
+          "param": "api_key"
+        },
+        "credentialStored": true,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "auth": {
+          "type": "apiKeyQuery",
+          "param": "api_key",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "loopback-dot-localhost-suffix",
+      "why": "`*.localhost` resolves to loopback by RFC 6761 and the host treats it so.",
+      "input": {
+        "baseUrl": "http://my.localhost:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://my.localhost:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-userinfo-is-preserved-verbatim",
+      "why": "Neither side strips userinfo from the echoed baseUrl. Pinned so that if one side ever starts sanitising it, the other is forced to as well.",
+      "input": {
+        "baseUrl": "http://user:pass@127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://user:pass@127.0.0.1:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-missing-path-normalises-to-root",
+      "why": "A bare authority gains a `/` path in the echoed URL.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1:8080/",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-surrounding-whitespace-is-trimmed",
+      "why": "A pasted URL carries whitespace. Both sides trim before parsing.",
+      "input": {
+        "baseUrl": "  http://127.0.0.1:8080/v1  ",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-expanded-ipv6-is-compressed",
+      "why": "The echoed URL is the canonical serialisation, not the input text.",
+      "input": {
+        "baseUrl": "http://[0:0:0:0:0:0:0:1]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[::1]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "loopback-query-and-fragment-survive",
+      "why": "The endpoint is echoed whole; neither side quietly drops a query string a runtime may need.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1?key=abc#frag",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.0.0.1:8080/v1?key=abc#frag",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "loopback",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": false,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "rfc1918-192-168-http-no-auth",
+      "why": "A GPU box on the LAN over plaintext: the conversation is readable by every hop, and anyone on the LAN can use the model.",
+      "input": {
+        "baseUrl": "http://192.168.1.50:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://192.168.1.50:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "rfc1918-10-http-bearer-present-exposes-the-credential",
+      "why": "The credential itself crosses the wire in the clear. Highest level, and the concern order is the host's enum order, not alphabetical.",
+      "input": {
+        "baseUrl": "http://10.0.0.7:11434/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": true,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://10.0.0.7:11434/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "high",
+        "concerns": [
+          "credentialSentInPlaintext",
+          "plaintextTrafficLeavesDevice"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "rfc1918-172-16-http-bearer-missing-required",
+      "why": "Nothing is transmitted, so credential exposure is absent even though traffic exposure remains.",
+      "input": {
+        "baseUrl": "http://172.16.4.4:8000/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": false,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://172.16.4.4:8000/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "requiredCredentialMissing"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": false,
+        "credentialCheck": "missingRequired",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "rfc1918-172-31-https-no-auth",
+      "why": "Top of the RFC1918 172.16/12 range, encrypted: only the open-endpoint notice remains.",
+      "input": {
+        "baseUrl": "https://172.31.255.254/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://172.31.255.254/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "ula-fd00-http-no-auth",
+      "why": "fc00::/7 unique-local addresses are LAN addresses.",
+      "input": {
+        "baseUrl": "http://[fd00::1]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[fd00::1]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "link-local-fe80-http-api-key-query",
+      "why": "fe80::/10 link-local, with the query-parameter auth mode: the key crosses the wire in a URL.",
+      "input": {
+        "baseUrl": "http://[fe80::1]:8080/v1",
+        "authMode": {
+          "type": "apiKeyQuery",
+          "param": "key"
+        },
+        "credentialStored": true,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[fe80::1]:8080/v1",
+        "auth": {
+          "type": "apiKeyQuery",
+          "param": "key",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "high",
+        "concerns": [
+          "credentialSentInPlaintext",
+          "plaintextTrafficLeavesDevice",
+          "queryParamCredentialIsLogged"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "link-local-169-254-http-no-auth",
+      "why": "IPv4 link-local is a local-network address, not a public one.",
+      "input": {
+        "baseUrl": "http://169.254.10.10:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://169.254.10.10:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "unspecified-ipv4-is-private-not-loopback",
+      "why": "0.0.0.0 is the unspecified address. It is NOT loopback — treating it as loopback would silence the warning for an endpoint that can route anywhere.",
+      "input": {
+        "baseUrl": "http://0.0.0.0:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://0.0.0.0:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "zero-prefixed-ipv4-is-public",
+      "why": "0.1.2.3 is public: the host compares against the single unspecified address, not the 0.0.0.0/8 block, so an implementation that tests the first octet alone diverges here.",
+      "input": {
+        "baseUrl": "http://0.1.2.3:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://0.1.2.3:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "unspecified-ipv6-is-private-not-public",
+      "why": "`[::]` is the IPv6 unspecified address and the host classifies it alongside 0.0.0.0.",
+      "input": {
+        "baseUrl": "http://[::]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[::]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "mdns-local-https-bearer-present",
+      "why": "A LAN box over TLS with a stored key: leaves the device, but nothing is exposed.",
+      "input": {
+        "baseUrl": "https://gpu-box.local:8443/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": true,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://gpu-box.local:8443/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "mdns-local-with-trailing-dots",
+      "why": "`gpu-box.local..` — the host strips ALL trailing dots before matching the suffix, so this is still a LAN name. A single-dot strip would misclassify it as public.",
+      "input": {
+        "baseUrl": "http://gpu-box.local../v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://gpu-box.local../v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "internal-suffix-http-no-auth",
+      "why": "`.internal` is a private-use suffix.",
+      "input": {
+        "baseUrl": "http://gpu.corp.internal:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://gpu.corp.internal:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "privateNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "public-https-bearer-present-is-clean",
+      "why": "The ordinary hosted-API configuration. Leaves the device and is still level none.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": true,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "public-https-bearer-missing-required-is-unusable",
+      "why": "The only failure state in the whole auth model.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": false,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "requiredCredentialMissing"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": false,
+        "credentialCheck": "missingRequired",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "public-http-bearer-present-is-the-worst-case",
+      "why": "Plaintext to the public internet with a real key: both traffic and credential are exposed.",
+      "input": {
+        "baseUrl": "http://api.example.test/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": true,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://api.example.test/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "high",
+        "concerns": [
+          "credentialSentInPlaintext",
+          "plaintextTrafficLeavesDevice"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "public-http-bearer-missing-required",
+      "why": "Two independent concerns that are not the credential-exposure one: level stays elevated.",
+      "input": {
+        "baseUrl": "http://api.example.test/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": false,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://api.example.test/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "requiredCredentialMissing"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": false,
+        "credentialCheck": "missingRequired",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "public-https-no-auth-is-only-a-notice",
+      "why": "Encrypted, but open to anyone who can route to it.",
+      "input": {
+        "baseUrl": "https://gpu.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://gpu.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "public-ipv4-http-no-auth",
+      "why": "A routable IPv4 literal is public, not private.",
+      "input": {
+        "baseUrl": "http://203.0.113.9:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://203.0.113.9:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "just-outside-rfc1918-172-32",
+      "why": "172.32.0.1 is one block past the private range. An off-by-one in either implementation shows here.",
+      "input": {
+        "baseUrl": "http://172.32.0.1:8000/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://172.32.0.1:8000/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "site-local-ipv6-fec0-is-not-unique-local",
+      "why": "fec0::/10 is deprecated site-local, outside fc00::/7 and fe80::/10, so the host calls it public.",
+      "input": {
+        "baseUrl": "http://[fec0::1]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[fec0::1]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "default-port-is-dropped-from-the-echoed-url",
+      "why": ":443 on https is the default and disappears from the canonical form.",
+      "input": {
+        "baseUrl": "https://api.example.test:443/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "non-default-port-is-kept-with-api-key-header",
+      "why": "A non-default port survives normalisation, and the api-key header mode reaches the same credential-exposure verdict as bearer.",
+      "input": {
+        "baseUrl": "http://api.example.test:8443/v1",
+        "authMode": {
+          "type": "apiKeyHeader",
+          "header": "x-api-key"
+        },
+        "credentialStored": true,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://api.example.test:8443/v1",
+        "auth": {
+          "type": "apiKeyHeader",
+          "header": "x-api-key",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "high",
+        "concerns": [
+          "credentialSentInPlaintext",
+          "plaintextTrafficLeavesDevice"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": true,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "scheme-and-host-are-lowercased-but-the-path-is-not",
+      "why": "Case normalisation is host-and-scheme only. A fake that lowercases the whole URL breaks paths.",
+      "input": {
+        "baseUrl": "HTTP://API.EXAMPLE.TEST/V1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://api.example.test/V1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "trailing-dot-fqdn-is-still-public",
+      "why": "The trailing dot is stripped for classification but kept in the echoed URL.",
+      "input": {
+        "baseUrl": "http://api.example.test.:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://api.example.test.:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "unicode-host-is-punycoded",
+      "why": "IDNA happens in the parser, so both sides must show the same ASCII host.",
+      "input": {
+        "baseUrl": "http://☃.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://xn--n3h.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "localhost-as-a-prefix-is-not-loopback",
+      "why": "`localhost.localdomain` is a real DNS name. Only `localhost` and `*.localhost` are loopback.",
+      "input": {
+        "baseUrl": "http://localhost.localdomain:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://localhost.localdomain:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "notlocalhost-is-not-loopback",
+      "why": "Substring matching on `localhost` would silence the warning for an attacker-chosen host.",
+      "input": {
+        "baseUrl": "http://notlocalhost/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://notlocalhost/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "v4-mapped-loopback-is-not-loopback",
+      "why": "`::ffff:127.0.0.1` is an IPv6 address whose Rust is_loopback() is false. Pinned as the host's behaviour: it is warned about rather than silently trusted.",
+      "input": {
+        "baseUrl": "http://[::ffff:127.0.0.1]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[::ffff:7f00:1]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "v4-mapped-rfc1918-is-not-private",
+      "why": "Same rule for a mapped LAN address: classified public, i.e. the louder side of the ambiguity.",
+      "input": {
+        "baseUrl": "http://[::ffff:192.168.1.10]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://[::ffff:c0a8:10a]:8080/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-127-is-not-loopback",
+      "why": "ADVERSARIAL: `127.evil.example` is a DNS name an attacker can register. Prefix-matching `127.` would report a remote endpoint as loopback and hide every warning.",
+      "input": {
+        "baseUrl": "http://127.evil.example/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://127.evil.example/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-10-is-not-private",
+      "why": "ADVERSARIAL: `10.example.test` is a domain, not an RFC1918 address.",
+      "input": {
+        "baseUrl": "http://10.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://10.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-192-168-is-not-private",
+      "why": "ADVERSARIAL: the same trap for the 192.168 prefix.",
+      "input": {
+        "baseUrl": "http://192.168.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://192.168.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-172-16-is-not-private",
+      "why": "ADVERSARIAL: the same trap for the 172.16/12 prefix.",
+      "input": {
+        "baseUrl": "http://172.16.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://172.16.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-169-254-is-not-link-local",
+      "why": "ADVERSARIAL: the same trap for the link-local prefix.",
+      "input": {
+        "baseUrl": "http://169.254.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://169.254.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-fd-is-not-unique-local",
+      "why": "ADVERSARIAL: a hex-prefix test applied to a DNS name would call `fdn.example.test` a ULA address.",
+      "input": {
+        "baseUrl": "https://fdn.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://fdn.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "domain-that-begins-fe8-is-not-link-local",
+      "why": "ADVERSARIAL: `feasible.example.test` starts with `fea`.",
+      "input": {
+        "baseUrl": "https://feasible.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://feasible.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "empty-authority-parses-the-path-as-the-host",
+      "why": "`http:///v1` yields host `v1` in both URL parsers. Pinned as a known shared quirk: if either side ever starts rejecting it, the other must too.",
+      "input": {
+        "baseUrl": "http:///v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "http://v1/",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "plaintextTrafficLeavesDevice",
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": true,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "stored-credential-is-ignored-when-the-mode-sends-nothing",
+      "why": "A key in the store for a provider configured to send nothing is NOT 'present': the endpoint is still unauthenticated, and the UI must not claim otherwise.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": true,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "required-with-no-auth-mode-is-a-contradictory-config",
+      "why": "requirement=required with mode=none can never be satisfied. Both concerns fire and the provider is unusable — no crash, no silent repair.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "required"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "none"
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "notice",
+        "concerns": [
+          "remoteEndpointIsUnauthenticated",
+          "requiredCredentialMissing"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": true,
+        "credentialPresent": false,
+        "usable": false,
+        "credentialCheck": "missingRequired",
+        "credentialFieldLabel": null
+      }
+    },
+    {
+      "id": "api-key-query-param-is-trimmed-but-not-lowercased",
+      "why": "Query parameter names are case-sensitive, unlike header names. Note the level: https does not clear the query-string concern, because TLS does not stop the server writing the URL to a log.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "apiKeyQuery",
+          "param": "  Api_Key  "
+        },
+        "credentialStored": true,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "apiKeyQuery",
+          "param": "Api_Key",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "elevated",
+        "concerns": [
+          "queryParamCredentialIsLogged"
+        ],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": true,
+        "usable": true,
+        "credentialCheck": "satisfied",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "api-key-header-is-lowercased",
+      "why": "`AUTHORIZATION` becomes `authorization`.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "apiKeyHeader",
+          "header": "AUTHORIZATION"
+        },
+        "credentialStored": false,
+        "authRequirement": "optional"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "apiKeyHeader",
+          "header": "authorization",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": "API key"
+      }
+    },
+    {
+      "id": "optional-auth-with-no-credential-stored-is-a-success-state",
+      "why": "The --api-key-not-set case: configured mode, empty store, and nothing to warn about.",
+      "input": {
+        "baseUrl": "https://api.example.test/v1",
+        "authMode": {
+          "type": "bearerToken"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": true,
+        "baseUrl": "https://api.example.test/v1",
+        "auth": {
+          "type": "bearer",
+          "secret": {
+            "providerId": "parity",
+            "field": "primary"
+          }
+        },
+        "scope": "publicNetwork",
+        "riskLevel": "none",
+        "concerns": [],
+        "leavesDevice": true,
+        "trafficIsPlaintext": false,
+        "credentialSentInPlaintext": false,
+        "endpointIsUnauthenticated": false,
+        "credentialPresent": false,
+        "usable": true,
+        "credentialCheck": "satisfiedWithoutCredential",
+        "credentialFieldLabel": "Access token"
+      }
+    },
+    {
+      "id": "reject-ftp-scheme",
+      "why": "Only http and https reach a model endpoint.",
+      "input": {
+        "baseUrl": "ftp://example.test/",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-file-scheme",
+      "why": "A file: URL would turn a settings row into a local-file read primitive.",
+      "input": {
+        "baseUrl": "file:///etc/passwd",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-data-scheme",
+      "why": "data: URLs are not endpoints.",
+      "input": {
+        "baseUrl": "data:text/plain,hello",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-javascript-scheme",
+      "why": "javascript: must never survive parsing.",
+      "input": {
+        "baseUrl": "javascript:alert(1)",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-not-a-url",
+      "why": "Free text is not an endpoint.",
+      "input": {
+        "baseUrl": "not a url",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-blank",
+      "why": "Whitespace only: the shortest way to describe no endpoint at all.",
+      "input": {
+        "baseUrl": "   ",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-scheme-with-no-host",
+      "why": "`http://` has no host to send anything to.",
+      "input": {
+        "baseUrl": "http://",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-protocol-relative",
+      "why": "`//host/path` has no scheme, so it cannot be classified.",
+      "input": {
+        "baseUrl": "//127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-port-out-of-range",
+      "why": "65535 is the maximum port.",
+      "input": {
+        "baseUrl": "https://example.test:99999/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-invalid-ipv4-octet",
+      "why": "`1.2.3.999` is a failed IPv4 parse, not a domain.",
+      "input": {
+        "baseUrl": "http://1.2.3.999/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-ipv6-zone-id",
+      "why": "A zone id is not accepted by either URL parser.",
+      "input": {
+        "baseUrl": "http://[fe80::1%25eth0]:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    },
+    {
+      "id": "reject-unnamed-api-key-header",
+      "why": "An API-key header must be named, or the credential goes nowhere.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "apiKeyHeader",
+          "header": "   "
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "header"
+      }
+    },
+    {
+      "id": "reject-unnamed-api-key-query-param",
+      "why": "Same rule for the query-parameter mode.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "apiKeyQuery",
+          "param": ""
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "param"
+      }
+    },
+    {
+      "id": "reject-blank-id",
+      "why": "The id namespaces the keychain entry.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "id": "   "
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "id"
+      }
+    },
+    {
+      "id": "reject-id-containing-a-slash",
+      "why": "`/` separates provider from field in a keychain key.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "id": "a/b"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "id"
+      }
+    },
+    {
+      "id": "reject-blank-display-name",
+      "why": "Every provider needs a name the user can see.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "displayName": "  "
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "displayName"
+      }
+    },
+    {
+      "id": "reject-over-long-id",
+      "why": "The id is a settings key and a keychain entry name; the host caps it at 200 characters.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "id": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "id"
+      }
+    },
+    {
+      "id": "reject-over-long-display-name",
+      "why": "The same 200-character ceiling applies to the label the user types.",
+      "input": {
+        "baseUrl": "http://127.0.0.1:8080/v1",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "displayName": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "displayName"
+      }
+    },
+    {
+      "id": "reject-order-auth-is-validated-before-the-url",
+      "why": "Two faults at once: the host binds auth before parsing the URL, so `header` is the reported field. Pins the validation ORDER, not just the outcome.",
+      "input": {
+        "baseUrl": "file:///etc/passwd",
+        "authMode": {
+          "type": "apiKeyHeader",
+          "header": ""
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired"
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "header"
+      }
+    },
+    {
+      "id": "reject-order-url-is-validated-before-the-id",
+      "why": "Two faults at once: the URL is parsed before the id is validated.",
+      "input": {
+        "baseUrl": "not a url",
+        "authMode": {
+          "type": "none"
+        },
+        "credentialStored": false,
+        "authRequirement": "notRequired",
+        "id": "  "
+      },
+      "expect": {
+        "accepted": false,
+        "invalidField": "baseUrl"
+      }
+    }
+  ]
+}

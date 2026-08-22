@@ -1,0 +1,281 @@
+/**
+ * The composer.
+ *
+ * ## Keyboard contract
+ *
+ * | Key | Effect |
+ * |---|---|
+ * | `Enter` | send |
+ * | `Shift+Enter` | newline |
+ * | `Escape` | stop the stream in flight (and nothing at all when idle) |
+ *
+ * `Enter` during IME composition inserts, it does not send. Without that check
+ * every Japanese, Chinese and Korean user sends a half-converted fragment the
+ * first time they press Enter to accept a candidate — the single most common
+ * way a chat composer is broken for a large fraction of its users.
+ *
+ * ## Capability gating
+ *
+ * Affordances are rendered from the capability struct, never from a model or
+ * backend name. A model with no vision gets **no attach control at all** —
+ * not a disabled one. A disabled button is a promise the endpoint cannot keep.
+ *
+ * ## The attach button, and what it did before
+ *
+ * **Nothing.** It had no `onClick` at all: it opened no picker, staged nothing
+ * and sent nothing, while looking exactly like the way to attach a picture.
+ * A control that looks like the route to something and is not costs the user
+ * the thing they were trying to do, and they have no way to tell whether it was
+ * their file, their model or Vela that was wrong.
+ *
+ * It now opens a picker and stages into the same holder the drop zone and the
+ * model bar's own control stage into — one owner of staged files, three routes
+ * into it, one tray showing what is there. The holder arrives through
+ * {@link useTurnAttachments} rather than a prop, so the presentational view
+ * between here and the surface never has to know files exist.
+ */
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+
+import type { ChatCapabilities } from '@/platform/contract';
+import { useFocusAnchor } from '@/state/focus-store';
+
+import { useTurnAttachments } from './turn-attachments';
+import type { AgentMode } from './use-conversation';
+import styles from './Composer.module.css';
+
+const MAX_TEXTAREA_HEIGHT = 320;
+
+/** No runtime, no affordance — the state a composer rendered on its own is in. */
+const NO_AGENT: AgentMode = { available: false, enabled: false, setEnabled: () => undefined };
+
+interface ComposerProps {
+  readonly capabilities: ChatCapabilities;
+  readonly streaming: boolean;
+  /** Blocks sending, e.g. no model chosen yet. `null` when sending is fine. */
+  readonly blockedReason: string | null;
+  /**
+   * Whether this turn runs through the agent runtime.
+   *
+   * Rendered on the same rule as the attach control above it: the toggle exists
+   * only when {@link AgentMode.available} says a run could actually do something
+   * a plain send cannot, and that answer is a capability answer. A disabled
+   * toggle would be a promise the model cannot keep.
+   */
+  readonly agent?: AgentMode;
+  readonly onSend: (text: string) => void;
+  readonly onCancel: () => void;
+  /**
+   * The draft, on every change and on send.
+   *
+   * The composer keeps owning its own text — an editor whose value round-trips
+   * through a parent is an editor that drops characters the moment anything
+   * above it re-renders slowly. What travels upward is a *copy*, for surfaces
+   * that need to know what the turn currently weighs. Without it the context
+   * meter measures an empty string forever, which is exactly what it did.
+   */
+  readonly onDraftChange?: ((text: string) => void) | undefined;
+}
+
+export function Composer({
+  capabilities,
+  streaming,
+  blockedReason,
+  agent = NO_AGENT,
+  onSend,
+  onCancel,
+  onDraftChange,
+}: ComposerProps) {
+  const [text, setText] = useState('');
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const staging = useTurnAttachments();
+
+  /**
+   * The composer is where a chat application's keyboard lives, so it is the
+   * first rung of the focus ladder every overlay falls back to when the thing
+   * it was opened from is gone (`src/state/focus-store.ts`). Registering it
+   * here rather than naming it from the overlays keeps the knowledge in one
+   * place: this component knows it is the message box; nothing else has to.
+   */
+  const anchor = useFocusAnchor<HTMLTextAreaElement>('composer');
+  const attach = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      textarea.current = node;
+      anchor(node);
+    },
+    [anchor],
+  );
+
+  const change = (next: string): void => {
+    setText(next);
+    onDraftChange?.(next);
+  };
+
+  // Grow with the content, up to a ceiling, then scroll inside. Layout effect
+  // so the height is corrected in the same frame the text changed — measuring
+  // in a passive effect makes the box visibly jump one frame late.
+  useLayoutEffect(() => {
+    const node = textarea.current;
+    if (node === null) return;
+    node.style.height = 'auto';
+    node.style.height = `${String(Math.min(node.scrollHeight, MAX_TEXTAREA_HEIGHT))}px`;
+  }, [text]);
+
+  // Focus follows the end of a stream: after a reply lands, the next thing the
+  // user does is type.
+  useEffect(() => {
+    if (!streaming) textarea.current?.focus();
+  }, [streaming]);
+
+  const canSend = text.trim() !== '' && blockedReason === null && !streaming;
+
+  const send = (): void => {
+    if (!canSend) return;
+    onSend(text.trim());
+    change('');
+    // Focus stays in the box, including when the send came from the button.
+    // Otherwise focus lands on Send, and `Escape` — the documented way to stop
+    // the stream that just started — goes nowhere.
+    textarea.current?.focus();
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === 'Escape' && streaming) {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    // `nativeEvent.isComposing` is the reliable signal; `keyCode === 229` is
+    // the older one some webviews still send.
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    send();
+  };
+
+  return (
+    <form
+      className={styles.composer}
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+    >
+      <div className={styles.field}>
+        <label className={styles.srOnly} htmlFor="vela-composer">
+          Message
+        </label>
+        <textarea
+          id="vela-composer"
+          ref={attach}
+          className={styles.input}
+          rows={1}
+          value={text}
+          placeholder={blockedReason ?? 'Send a message…'}
+          disabled={blockedReason !== null}
+          onChange={(event) => {
+            change(event.target.value);
+          }}
+          onKeyDown={onKeyDown}
+        />
+
+        <div className={styles.actions}>
+          {/* Same rule, one capability along: offered only when a run through
+              the agent runtime could do something this send cannot. */}
+          {agent.available ? (
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label="Run this turn as an agent"
+              aria-pressed={agent.enabled}
+              data-testid="composer-agent-toggle"
+              onClick={() => {
+                agent.setEnabled(!agent.enabled);
+              }}
+            >
+              <AgentGlyph />
+            </button>
+          ) : null}
+
+          {/* Rendered only when the capability struct says the model takes
+              images. Never gated on a backend identity. */}
+          {capabilities.vision ? (
+            <>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                className={styles.srOnly}
+                data-testid="composer-attachment-picker"
+                accept={staging?.accept ?? ''}
+                onChange={(event) => {
+                  const chosen = event.target.files;
+                  if (chosen !== null && chosen.length > 0) staging?.add([...chosen]);
+                  // Reset, so choosing the same file twice in a row still fires.
+                  event.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="Attach an image"
+                onClick={() => {
+                  picker.current?.click();
+                }}
+              >
+                <ImageGlyph />
+              </button>
+            </>
+          ) : null}
+
+          {streaming ? (
+            <button type="button" className={styles.stop} onClick={onCancel}>
+              Stop
+            </button>
+          ) : (
+            <button type="submit" className={styles.send} disabled={!canSend}>
+              Send
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className={styles.hint}>
+        {streaming ? (
+          <>
+            <kbd>Esc</kbd> to stop
+          </>
+        ) : agent.enabled ? (
+          <>Agent mode · this turn may take several steps and run tools</>
+        ) : (
+          <>
+            <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+          </>
+        )}
+      </p>
+    </form>
+  );
+}
+
+function AgentGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none">
+      <rect x="2.5" y="5" width="11" height="8.5" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 2.25v2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="5.9" cy="9.1" r="1" fill="currentColor" />
+      <circle cx="10.1" cy="9.1" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ImageGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="5.75" cy="6.25" r="1.25" fill="currentColor" />
+      <path d="M2 11.5 5.5 8l3 2.5L11 8.5l3 3" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}

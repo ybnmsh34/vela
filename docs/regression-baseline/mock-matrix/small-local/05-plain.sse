@@ -1,0 +1,22 @@
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"Mock small-local"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":" reply to: what "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"is the weather i"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"n Berlin. delta "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"gauge beacon zen"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"ith ivory orbit "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"pennant ivory al"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{"content":"pha north."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-caaf91e4","object":"chat.completion.chunk","created":1700000000,"model":"mock-small-local","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

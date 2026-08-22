@@ -1,0 +1,40 @@
+[package]
+name = "vela-store"
+description = "Vela's local system of record — SQLite, offline-first, migration-versioned"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+vela-core.workspace = true
+# `bundled`: SQLite is compiled into the binary. Vela must not depend on
+# whatever libsqlite3 happens to be installed on a user's machine — the schema
+# and the pragmas we rely on (WAL, foreign keys, FTS5) must be the same
+# everywhere, including on a machine with no system SQLite at all.
+rusqlite = { version = "0.37", features = ["bundled", "blob"] }
+uuid = { version = "1", features = ["v4"] }
+# The database holds every conversation the user has ever had, and on Windows
+# the directory it sits in inherits its ACL from `%APPDATA%` — which, on the
+# machine this was measured on, granted a second local group read access. This
+# crate does not decide *where* it lives (that is still injected), but it does
+# decide *what must be true of it*, and it enforces that itself rather than
+# trusting a caller to remember. See `location::DatabaseLocation::prepare`.
+vela-privatefs.workspace = true
+
+[features]
+default = []
+# Exposes deterministic in-memory constructors to other crates' tests. Never
+# enabled in a release build: nothing in it belongs in a shipped binary.
+test-support = []
+
+[dev-dependencies]
+tempfile = "3"
+# The integration tests stand up a database at an *older* schema version by
+# hand, which needs a raw connection — that is the only way to prove an
+# in-place upgrade of a file an earlier build left behind.
+rusqlite = { version = "0.37", features = ["bundled"] }

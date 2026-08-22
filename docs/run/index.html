@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vela — run 2026-08-17</title>
+<meta http-equiv="refresh" content="30">
+<style>
+  :root{--bg:#080b16;--sur:#101426;--sur2:#161b30;--line:#242a44;--tx:#e0e3ed;--dim:#8b93ad;
+        --ok:#14a89e;--no:#d9576f;--wait:#7a83a0;--warn:#c9a227}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:14px/1.55 ui-sans-serif,-apple-system,Segoe UI,system-ui,sans-serif;padding:32px}
+  h1{font-size:20px;margin:0 0 4px;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:24px}
+  .bar{display:flex;gap:24px;flex-wrap:wrap;background:var(--sur);border:1px solid var(--line);
+       border-radius:12px;padding:16px 20px;margin-bottom:20px}
+  .bar div{display:flex;flex-direction:column;gap:2px}
+  .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .v{font-size:16px;font-weight:600}
+  .note{background:var(--sur);border:1px solid var(--line);border-left:3px solid var(--warn);
+        border-radius:8px;padding:12px 16px;margin-bottom:20px;color:var(--dim);font-size:13px}
+  table{width:100%;border-collapse:collapse;background:var(--sur);border:1px solid var(--line);
+        border-radius:12px;overflow:hidden}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+     padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;background:var(--sur2)}
+  td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .id{font-family:ui-monospace,Consolas,monospace;color:var(--dim);font-size:12px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;
+        border:1px solid var(--line)}
+  .p-pass{color:var(--ok);border-color:var(--ok)}
+  .p-fail{color:var(--no);border-color:var(--no)}
+  .p-run{color:var(--wait);border-color:var(--wait)}
+  .tier{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--dim)}
+  .tier.reached{color:var(--tx)}
+  .g{font-size:11px;color:var(--dim)}
+  .blk{color:var(--no);font-size:12px}
+  footer{margin-top:20px;color:var(--dim);font-size:12px}
+  @media (prefers-reduced-motion:no-preference){.p-run{animation:pulse 2s ease-in-out infinite}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+</style>
+<h1>Vela — run 2026-08-17</h1>
+<div class="sub" id="sub">loading…</div>
+<div class="bar" id="bar"></div>
+<div class="note" id="note"></div>
+<table><thead><tr>
+  <th style="width:52px">track</th><th>title</th><th style="width:110px">verdict</th>
+  <th style="width:120px">ladder</th><th style="width:64px">round</th><th style="width:74px">probe</th><th>blocker</th>
+</tr></thead><tbody id="rows"></tbody></table>
+<footer>Auto-refreshes every 30s. Source: <code>docs/run/status.json</code>, written by the lead each round.</footer>
+<script>
+const LADDER=["traced","test-bites","dev-clicked","reaches-user","ships"];
+fetch('status.json?'+Date.now()).then(r=>r.json()).then(d=>{
+  document.getElementById('sub').textContent =
+    `tag ${d.tag} (${d.sha}) · state ${d.state} · round ${d.round} · updated ${d.updated}`;
+  const pass=d.tracks.filter(t=>t.verdict==='PASS').length;
+  const fail=d.tracks.filter(t=>t.verdict==='FAIL').length;
+  const run=d.tracks.filter(t=>t.verdict==='running').length;
+  const blocked=d.tracks.filter(t=>t.blocker).length;
+  document.getElementById('bar').innerHTML=
+    [['tracks',d.tracks.length],['passed',pass],['failed',fail],['running',run],['blocked',blocked]]
+    .map(([k,v])=>`<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+  document.getElementById('note').textContent=d.ladderNote;
+  document.getElementById('rows').innerHTML=d.tracks.map(t=>{
+    const cls=t.verdict==='PASS'?'p-pass':t.verdict==='FAIL'?'p-fail':'p-run';
+    const idx=LADDER.indexOf(t.tier);
+    const tier=idx<0?'<span class="tier">pending</span>'
+      :`<span class="tier reached">${t.tier}</span>`;
+    return `<tr><td class="id">${t.id.toUpperCase()}</td><td>${t.title}
+      <div class="g">${t.wt}</div></td>
+      <td><span class="pill ${cls}">${t.verdict}</span></td>
+      <td>${tier}</td><td class="id">${t.round}</td>
+      <td class="g">${t.guard?'RULE P':'—'}</td>
+      <td class="blk">${t.blocker??''}</td></tr>`;
+  }).join('');
+}).catch(e=>{document.getElementById('sub').textContent='could not read status.json: '+e});
+</script>
